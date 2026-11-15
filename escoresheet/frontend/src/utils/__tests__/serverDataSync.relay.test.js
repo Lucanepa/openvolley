@@ -317,6 +317,24 @@ describe('relay subscription (tablets)', () => {
     unsubscribe()
   })
 
+  // 3.2.12: the relay says whether the scorer device is connected
+  it('hands the relay\'s scorer-presence on as a marker, never as match data', () => {
+    const updates = []
+    const unsubscribe = subscribeToMatchData('match_presence', (p) => updates.push(p))
+    const ws = FakeWebSocket.instances.at(-1)
+    ws.open()
+    ws.receive({ type: 'match-full-data', matchId: 'match_presence', access: 'full', match: { id: 1, status: 'live' }, homePlayers: [], sets: [], events: [] })
+    ws.receive({ type: 'scorer-presence', matchId: 'match_presence', present: false, timestamp: 1 })
+    expect(updates.at(-1)).toEqual({ _scorerPresence: false, matchId: 'match_presence' })
+    ws.receive({ type: 'scorer-presence', matchId: 'match_presence', present: true, timestamp: 2 })
+    expect(updates.at(-1)).toEqual({ _scorerPresence: true, matchId: 'match_presence' })
+    // a live state afterwards still re-delivers the bundle (the marker did not replace it)
+    ws.receive({ type: 'live-state-update', matchId: 'match_presence', liveState: { current_set: 1, points_a: 1, points_b: 0, updated_at: new Date().toISOString() } })
+    vi.advanceTimersByTime(5000)
+    expect(updates.at(-1).match).toEqual({ id: 1, status: 'live' })
+    unsubscribe()
+  })
+
   it('labels the subscription with the device and team', () => {
     setRelayDevice('bench', 'home')
     expect(subscribeMessage(SEED)).toEqual({ type: 'subscribe-match', matchId: SEED, device: 'bench', team: 'home' })

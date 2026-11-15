@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getMatchData, updateMatchData } from '../utils/serverDataSync'
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection'
+import { useScorerAway } from '../hooks/useScorerAway'
 import { db } from '../db/db'
 import ballFallback from '../ball_fallback.png'
 
@@ -168,12 +169,15 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   }, [onBack])
 
   // Use Supabase Realtime as primary connection, WebSocket as fallback
-  useRealtimeConnection({
+  const { scorerPresent } = useRealtimeConnection({
     matchId: matchId !== -1 ? matchId : null, // Disable for test mode
     onData: updateFromMatchData,
     onDeleted: handleMatchDeleted,
     enabled: matchId && matchId !== -1
   })
+  // The relay reports the scorer device gone for a while: the bench's requests
+  // reach nobody and the score stops (same notice as the referee tablet)
+  const scorerAway = useScorerAway(scorerPresent, { enabled: !!matchId && matchId !== -1 })
 
   // Load initial data and handle test mode
   useEffect(() => {
@@ -1032,6 +1036,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       flex: embedded ? '1 0 auto' : 'none',
       gap: 'clamp(8px, 1.4vh, 16px)'
     }}>
+      {scorerAway && (
+        <div role="alert" data-testid="scorer-away" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium leading-snug text-amber-900">
+          {t('benchDashboard.scorerAway', "The scorer's device is not connected: the score may be out of date and requests wait. Tell the scorer.")}
+        </div>
+      )}
       {/* Header with Back button - only show when not embedded */}
       {!embedded && (
         // 1fr auto 1fr: the team name stays centred whatever the Back width.

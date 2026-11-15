@@ -1317,6 +1317,12 @@ export function subscribeToMatchData(matchId, onUpdate) {
                 }, LIVE_STATE_HOLD_MS)
               }
             }
+          } else if (message.type === 'scorer-presence') {
+            // Whether the match's scorer device is connected to this relay
+            // (sent on subscribe and when it changes; older relays never send
+            // it): the tablets warn when it is gone (useScorerAway)
+            connection.scorerPresent = message.present === true
+            notify({ _scorerPresence: connection.scorerPresent, matchId: matchIdStr })
           } else if (message.type === 'match-deleted' && String(message.matchId) === matchIdStr) {
             // Match removed from the relay (match end / scorer deleted it)
             connection.lastPayload = null

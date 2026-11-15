@@ -2149,6 +2149,7 @@
     "back": "Passer aux vrais matchs"
   },
   "benchDashboard": {
+    "scorerAway": "L'appareil du marqueur n'est pas connecté : le score n'est peut-être pas à jour et les demandes attendent. Préviens le marqueur.",
     "title": "Espace équipe",
     "selectGame": "Sélectionner le match",
     "loadingGames": "Chargement...",
@@ -2176,6 +2177,7 @@
     "loadGames": "Charger les matchs"
   },
   "refereeDashboard": {
+    "scorerAway": "L'appareil du marqueur n'est pas connecté : le score n'est peut-être pas à jour. Vérifie qu'il est allumé et en ligne.",
     "recorded": {
       "title": "Enregistré par le marqueur",
       "closesIn": "Se ferme dans {{s}} s",
@@ -3186,7 +3188,7 @@
       "q_recorded": "Qu'est-ce que la fenêtre « Enregistré par le marqueur » ?",
       "a_recorded": "Quand le marqueur enregistre un temps mort, un remplacement ou une sanction, chaque tablette d'arbitre l'affiche dans une fenêtre, avec l'équipe, le set et le score. Touche « OK », ou elle se ferme seule après 10 secondes. Ce qui est enregistré pendant qu'elle est ouverte s'y ajoute. Pendant un temps mort, elle montre le compte à rebours, qui rejoint le terrain à la fermeture.",
       "q_offline": "Il est écrit « Hors ligne : pas de connexion à la feuille de match » ?",
-      "a_offline": "Cette tablette a perdu sa connexion (Wi-Fi ou serveur) pendant quelques secondes, le score peut donc ne pas être à jour. Elle se reconnecte d'elle-même quand le réseau revient ; sinon, appuie sur « Actualiser » dans le menu. Si le score ne change plus sans cet avertissement, vérifie que l'appareil du marqueur est allumé et en ligne.",
+      "a_offline": "Cette tablette a perdu sa connexion (Wi-Fi ou serveur) pendant quelques secondes, le score peut donc ne pas être à jour. Elle se reconnecte d'elle-même quand le réseau revient ; sinon, appuie sur « Actualiser » dans le menu. Un avis jaune « L'appareil du marqueur n'est pas connecté » veut dire que cette tablette va bien, mais que l'appareil du marqueur est éteint, en veille ou hors ligne : préviens le marqueur.",
       "q_screen": "Comment garder l'écran allumé ?",
       "a_screen": "Ouvre le menu et active « Garder l'écran allumé ». Le bouton plein écran masque les barres du navigateur.",
       "q_bell": "Qu'est-ce que l'alerte de la cloche ?",
@@ -3218,7 +3220,9 @@
       "q_lineup": "Comment l'entraîneur envoie-t-il la formation de départ ?",
       "a_lineup": "Après le tirage au sort, appuie sur « Composition », appuie sur une position puis sur un joueur jusqu'à ce que les six soient placés, et appuie sur « Envoyer la composition ». Seul le marqueur la voit jusqu'au début du set. Le marqueur la vérifie et la confirme ; le bouton indique alors « Enregistrée par le marqueur ».",
       "q_status": "Que signifient « Le marqueur l’a reçue », « Accordé » et « Refusée » ?",
-      "a_status": "« Envoyée – en attente du marqueur » : en route. « Le marqueur l’a reçue » : le marqueur la voit. « Accordé » ou « Accepté » : enregistrée. « Refusée : … » : le marqueur a dit non, avec la raison. « Non envoyée – pas de connexion » : réessaie quand la tablette est en ligne."
+      "a_status": "« Envoyée – en attente du marqueur » : en route. « Le marqueur l’a reçue » : le marqueur la voit. « Accordé » ou « Accepté » : enregistrée. « Refusée : … » : le marqueur a dit non, avec la raison. « Non envoyée – pas de connexion » : réessaie quand la tablette est en ligne.",
+      "q_scorerAway": "Il est écrit « L'appareil du marqueur n'est pas connecté » ?",
+      "a_scorerAway": "L'ordinateur ou la tablette du marqueur est éteint, en veille ou a perdu sa connexion : le score n'est peut-être pas à jour et tes demandes attendent. Préviens le marqueur ; l'avis disparaît dès que son appareil est de retour."
     },
     "livescore": {
       "q_open": "Comment suivre un match en direct ?",

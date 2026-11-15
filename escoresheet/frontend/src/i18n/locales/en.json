@@ -2151,6 +2151,7 @@
     "back": "Switch to real games"
   },
   "benchDashboard": {
+    "scorerAway": "The scorer's device is not connected: the score may be out of date and requests wait. Tell the scorer.",
     "title": "Team dashboard",
     "selectGame": "Select game",
     "loadingGames": "Loading games...",
@@ -2178,6 +2179,7 @@
     "loadGames": "Load games"
   },
   "refereeDashboard": {
+    "scorerAway": "The scorer's device is not connected: the score may be out of date. Check that it is on and online.",
     "recorded": {
       "title": "Recorded by the scorer",
       "closesIn": "Closes in {{s}} s",
@@ -3193,7 +3195,7 @@
       "q_recorded": "What is the “Recorded by the scorer” popup?",
       "a_recorded": "When the scorer records a time-out, a substitution or a sanction, every referee tablet shows it in a popup, with the team, the set and the score. Tap “OK”, or it closes by itself after 10 seconds. What is recorded while it is open is added to it. During a time-out the countdown shows in the popup and moves to the court when it closes.",
       "q_offline": "It says “Offline: no connection to the scoresheet”?",
-      "a_offline": "This tablet has lost its connection (Wi-Fi or server) for a few seconds, so the score may be out of date. It reconnects by itself when the network is back; if not, tap “Refresh” in the menu. If the score stops changing without this warning, check that the scorer's device is on and online.",
+      "a_offline": "This tablet has lost its connection (Wi-Fi or server) for a few seconds, so the score may be out of date. It reconnects by itself when the network is back; if not, tap “Refresh” in the menu. A yellow “The scorer's device is not connected” means this tablet is fine but the scorer's device is off, asleep or offline: tell the scorer.",
       "q_screen": "How do I keep the screen on?",
       "a_screen": "Open the menu and switch on “Keep screen on”. The fullscreen button hides the browser bars.",
       "q_bell": "What is the bell alert?",
@@ -3225,7 +3227,9 @@
       "q_lineup": "How does the coach send the starting line-up?",
       "a_lineup": "After the coin toss, tap “Line-up”, tap a position and then a player until all six are placed, and tap “Send line-up”. Only the scorer sees it until the set starts. The scorer checks it and confirms it; the button then says “Recorded by the scorer”.",
       "q_status": "What do “The scorer has it”, “Granted” and “Declined” mean?",
-      "a_status": "“Sent – waiting for the scorer”: on its way. “The scorer has it”: the scorer sees it. “Granted” or “Accepted”: recorded. “Declined: …”: the scorer said no, with the reason. “Not sent – no connection”: try again when the tablet is online."
+      "a_status": "“Sent – waiting for the scorer”: on its way. “The scorer has it”: the scorer sees it. “Granted” or “Accepted”: recorded. “Declined: …”: the scorer said no, with the reason. “Not sent – no connection”: try again when the tablet is online.",
+      "q_scorerAway": "It says “The scorer's device is not connected”?",
+      "a_scorerAway": "The scorer's laptop or tablet is off, asleep or has lost its connection, so the score may be out of date and your requests wait. Tell the scorer; the notice goes once the scorer's device is back."
     },
     "livescore": {
       "q_open": "How do I follow a match live?",

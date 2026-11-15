@@ -2150,6 +2150,7 @@
     "back": "Passa alle partite reali"
   },
   "benchDashboard": {
+    "scorerAway": "Il dispositivo del segnapunti non è collegato: il punteggio potrebbe non essere aggiornato e le richieste aspettano. Avvisa il segnapunti.",
     "title": "Dashboard squadra",
     "selectGame": "Seleziona partita",
     "loadingGames": "Caricamento partite...",
@@ -2177,6 +2178,7 @@
     "loadGames": "Carica partite"
   },
   "refereeDashboard": {
+    "scorerAway": "Il dispositivo del segnapunti non è collegato: il punteggio potrebbe non essere aggiornato. Controlla che sia acceso e online.",
     "recorded": {
       "title": "Registrato dal segnapunti",
       "closesIn": "Si chiude tra {{s}} s",
@@ -3192,7 +3194,7 @@
       "q_recorded": "Cos'è la finestra «Registrato dal segnapunti»?",
       "a_recorded": "Quando il segnapunti registra un tempo di riposo, una sostituzione o una sanzione, ogni tablet dell'arbitro la mostra in una finestra, con la squadra, il set e il punteggio. Tocca «OK», oppure si chiude da sola dopo 10 secondi. Ciò che viene registrato mentre è aperta si aggiunge. Durante un tempo di riposo mostra il conto alla rovescia, che passa sul campo alla chiusura.",
       "q_offline": "C'è scritto «Offline: nessuna connessione al referto»?",
-      "a_offline": "Questo tablet ha perso la connessione (Wi-Fi o server) per qualche secondo, quindi il punteggio può non essere aggiornato. Si ricollega da solo quando torna la rete; se non succede, tocca «Aggiorna» nel menu. Se il punteggio smette di cambiare senza questo avviso, controlla che il dispositivo del segnapunti sia acceso e online.",
+      "a_offline": "Questo tablet ha perso la connessione (Wi-Fi o server) per qualche secondo, quindi il punteggio può non essere aggiornato. Si ricollega da solo quando torna la rete; se non succede, tocca «Aggiorna» nel menu. Un avviso giallo «Il dispositivo del segnapunti non è collegato» vuol dire che questo tablet va bene, ma il dispositivo del segnapunti è spento, in standby o offline: avvisa il segnapunti.",
       "q_screen": "Come tengo acceso lo schermo?",
       "a_screen": "Apri il menu e attiva «Mantieni schermo acceso». Il pulsante a schermo intero nasconde le barre del browser.",
       "q_bell": "Cos'è l'avviso con la campana?",
@@ -3224,7 +3226,9 @@
       "q_lineup": "Come invia l'allenatore la formazione iniziale?",
       "a_lineup": "Dopo il sorteggio, tocca «Formazione», tocca una posizione e poi un giocatore finché tutti e sei sono piazzati, e tocca «Invia la formazione». Solo il segnapunti la vede finché il set non inizia. Il segnapunti la controlla e la conferma; il pulsante dice allora «Registrata dal segnapunti».",
       "q_status": "Cosa significano «Il segnapunti l’ha ricevuta», «Concesso» e «Rifiutata»?",
-      "a_status": "«Inviata – in attesa del segnapunti»: in arrivo. «Il segnapunti l’ha ricevuta»: il segnapunti la vede. «Concesso» o «Accettata»: registrata. «Rifiutata: …»: il segnapunti ha detto no, con il motivo. «Non inviata – nessuna connessione»: riprova quando il tablet è online."
+      "a_status": "«Inviata – in attesa del segnapunti»: in arrivo. «Il segnapunti l’ha ricevuta»: il segnapunti la vede. «Concesso» o «Accettata»: registrata. «Rifiutata: …»: il segnapunti ha detto no, con il motivo. «Non inviata – nessuna connessione»: riprova quando il tablet è online.",
+      "q_scorerAway": "C'è scritto «Il dispositivo del segnapunti non è collegato»?",
+      "a_scorerAway": "Il portatile o il tablet del segnapunti è spento, in standby o ha perso la connessione: il punteggio potrebbe non essere aggiornato e le tue richieste aspettano. Avvisa il segnapunti; l'avviso sparisce appena il suo dispositivo torna."
     },
     "livescore": {
       "q_open": "Come seguo una partita in diretta?",
