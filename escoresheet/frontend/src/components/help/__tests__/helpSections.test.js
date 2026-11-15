@@ -23,8 +23,9 @@ const placeholders = (s) => [...String(s).matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map(
 
 // The ids the website, the support form (area) and the videos share
 const IDS = [
-  'home', 'setup', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
-  'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates'
+  'home', 'setup', 'rosters', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
+  'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates',
+  'global', 'club-manager', 'team-links', 'requests', 'team-manager', 'club-licences', 'club-api', 'manager-accounts'
 ]
 
 const PANEL_KEYS = ['helpButton', 'noHelp', 'showMe', 'moreHelp', 'contactSupport', 'videoLabel', 'videoOffline', 'videoUnavailable', 'videoOnSite']
@@ -109,11 +110,13 @@ describe('help sections', () => {
 })
 
 describe('help screens', () => {
-  it('cover every screen and app of the scorer, referee, bench and livescore', () => {
+  it('cover every screen and app of the scorer, referee, bench, livescore and manager console', () => {
     expect(Object.keys(HELP_SCREENS).sort()).toEqual([
       'bench', 'closedCopy', 'coinToss', 'connectTablets', 'home', 'liveCorrections', 'livescore',
+      'manageAdmin', 'manageMyClub', 'manageMyClubApi', 'manageMyClubLicences', 'manageMyClubRequests', 'manageMyClubTeams', 'manageMyTeams',
       'manualAdjustments', 'matchEnd', 'matchSetup', 'referee', 'restore', 'scoreboard', 'takeBack'
     ])
+    for (const id of Object.keys(HELP_SCREENS).filter(k => k.startsWith('manage') && k !== 'manualAdjustments')) expect(HELP_SCREENS[id].app, id).toBe('manager')
     expect(HELP_SCREENS.referee.app).toBe('referee')
     expect(HELP_SCREENS.bench.app).toBe('bench')
     expect(HELP_SCREENS.livescore.app).toBe('livescore')
@@ -212,5 +215,34 @@ describe('help videos and links', () => {
     expect(videoLanguage('fr')).toBe('fr')
     expect(videoLanguage('xx')).toBe('en')
     expect(videoLanguage(undefined)).toBe('en')
+  })
+})
+
+describe('the Global tool\'s section', () => {
+  it('shows only while the device uses the Global tool, and then first', () => {
+    const ids = (screen, toolMode) => sectionsForScreen(screen, { toolMode }).map(s => s.id)
+    expect(ids('home', 'global')[0]).toBe('global')
+    expect(ids('matchSetup', 'global')[0]).toBe('global')
+    expect(ids('restore', 'global')[0]).toBe('global')
+    for (const mode of ['swiss', null]) {
+      expect(ids('home', mode)).not.toContain('global')
+      expect(ids('home', mode)[0]).toBe('home')
+    }
+    // without a tool (the support page's export): every section of the screen
+    expect(ids('home')).toEqual(HELP_SCREENS.home.sections)
+  })
+})
+
+describe('manageHelpScreen', () => {
+  it('picks the console screen by its tab and My club part', async () => {
+    const { manageHelpScreen } = await import('../helpSections')
+    expect(manageHelpScreen('myclub', '')).toBe('manageMyClub')
+    expect(manageHelpScreen('myclub', 'teams')).toBe('manageMyClubTeams')
+    expect(manageHelpScreen('myclub', 'licences')).toBe('manageMyClubLicences')
+    expect(manageHelpScreen('myclub', 'api')).toBe('manageMyClubApi')
+    expect(manageHelpScreen('myclub', 'requests')).toBe('manageMyClubRequests')
+    expect(manageHelpScreen('myclub', 'members')).toBe('manageMyClub')
+    expect(manageHelpScreen('myteams')).toBe('manageMyTeams')
+    expect(manageHelpScreen('accounts')).toBe('manageAdmin')
   })
 })

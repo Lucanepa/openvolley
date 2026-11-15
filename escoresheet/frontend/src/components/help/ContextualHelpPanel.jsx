@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDown, CircleHelp, ExternalLink, LifeBuoy, VideoOff, X } from 'lucide-react'
 import FAQItem from './FAQItem'
 import { HELP_SCREENS, sectionsForScreen, sectionVideo, supportPageUrl, videoLanguage } from './helpSections'
+import { useToolMode } from '../../utils/toolMode'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import ScaleContext, { ScaleProvider } from '../../contexts/ScaleContext'
 import { openAppWindow } from '../../utils/openAppWindow'
@@ -168,7 +169,9 @@ export default function ContextualHelpPanel({ open, onClose, screen, currentPage
   const titleId = useId()
   const panelRef = useRef(null)
   const screenId = screen || currentPage
-  const sections = sectionsForScreen(screenId)
+  // the Global tool's own section only while this device uses it
+  const toolMode = useToolMode()
+  const sections = sectionsForScreen(screenId, { toolMode: toolMode || null })
   const startSection = (sections.some(s => s.id === openSection) ? openSection : sections[0]?.id) || null
   const pageName = HELP_SCREENS[screenId] ? t(HELP_SCREENS[screenId].nameKey) : screenId
   const online = useOnline(open)

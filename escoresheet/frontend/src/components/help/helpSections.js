@@ -46,21 +46,33 @@ export const HELP_SECTIONS = [
     q('home', 'deleteMatch', 'home-delete-button'),
     q('home', 'cleanUp'),
     q('home', 'restoreMatch', 'home-restore-button'),
-    q('home', 'settings')
+    q('home', 'settings'),
+    q('home', 'tool'),
+    q('home', 'dashboards'),
+    q('home', 'gamePin')
   ]),
   section('setup', [
     q('matchSetup', 'loadSchedule'),
     q('matchSetup', 'matchInfo', 'setup-match-info-card'),
     q('matchSetup', 'officials'),
     q('matchSetup', 'teamColors', 'setup-home-team-card'),
+    q('matchSetup', 'teamContact'),
+    q('matchSetup', 'pins'),
+    q('matchSetup', 'backups'),
+    q('matchSetup', 'proceed', 'setup-proceed-cointoss'),
+    q('matchSetup', 'afterCoinToss')
+  ]),
+  // The rosters of Match setup (its "Edit roster"): own section since 3.2.5, setup had 18 questions
+  section('rosters', [
     q('matchSetup', 'addPlayers', 'setup-add-player'),
     q('matchSetup', 'importPdf', 'setup-pdf-import'),
     q('matchSetup', 'rosterUpload'),
+    q('matchSetup', 'sentRoster'),
     q('matchSetup', 'liberos', 'setup-libero-toggle'),
     q('matchSetup', 'captain', 'setup-captain-toggle'),
     q('matchSetup', 'benchOfficials', 'setup-bench-officials'),
-    q('matchSetup', 'pins'),
-    q('matchSetup', 'proceed', 'setup-proceed-cointoss')
+    q('matchSetup', 'rosterSignatures'),
+    q('matchSetup', 'clubPlayers')
   ]),
   section('coin-toss', [
     q('coinToss', 'record', 'cointoss-team-selector'),
@@ -69,10 +81,12 @@ export const HELP_SECTIONS = [
     q('coinToss', 'signatures'),
     q('coinToss', 'start', 'cointoss-confirm-button'),
     q('coinToss', 'lineups'),
-    q('coinToss', 'gameCaptain')
+    q('coinToss', 'gameCaptain'),
+    q('coinToss', 'mistake')
   ]),
   section('scoring', [
     q('scoreboard', 'lineup', 'scoreboard-court-left'),
+    q('scoreboard', 'coveredLineup'),
     q('scoreboard', 'startRally', 'scoreboard-start-rally'),
     q('scoreboard', 'missingSignature'),
     q('scoreboard', 'awardPoint', 'scoreboard-point-left'),
@@ -92,7 +106,10 @@ export const HELP_SECTIONS = [
     q('scoreboard', 'libero', 'scoreboard-bench-left'),
     q('subsTimeouts', 'liberoOut'),
     q('subsTimeouts', 'liberoUnable'),
-    q('subsTimeouts', 'captainRing')
+    q('subsTimeouts', 'captainRing'),
+    q('subsTimeouts', 'gameCaptain'),
+    q('subsTimeouts', 'benchRequests'),
+    q('subsTimeouts', 'requestWarning')
   ]),
   section('sanctions', [
     q('scoreboard', 'sanction', 'scoreboard-court-right'),
@@ -101,10 +118,11 @@ export const HELP_SECTIONS = [
     q('sanctions', 'penaltyPoint'),
     q('sanctions', 'expulsion'),
     q('sanctions', 'warningOnce'),
-    q('sanctions', 'fixSanction')
+    q('sanctions', 'fixSanction'),
+    q('sanctions', 'lateRequest')
   ]),
   section('set-end', [
-    q('scoreboard', 'setEnd', 'scoreboard-score-display'),
+    q('scoreboard', 'setEnd', 'scoreboard-set-display'),
     q('setEnd', 'interval'),
     q('setEnd', 'nextSet'),
     q('scoreboard', 'set5', 'scoreboard-set-display'),
@@ -122,10 +140,14 @@ export const HELP_SECTIONS = [
     q('matchEnd', 'exportPdf', 'matchend-export-pdf'),
     q('matchEnd', 'downloadJson', 'matchend-export-json'),
     q('matchEnd', 'closeMatch'),
-    q('matchEnd', 'reopenSet', 'matchend-reopen-set')
+    q('matchEnd', 'reopenSet', 'matchend-reopen-set'),
+    q('matchEnd', 'finalMail'),
+    q('matchEnd', 'remarksSignature')
   ]),
   section('corrections', [
     q('manualAdjustments', 'whereCorrections'),
+    q('manualAdjustments', 'goBack'),
+    q('manualAdjustments', 'editMatchInfo'),
     q('manualAdjustments', 'missedPoint'),
     q('manualAdjustments', 'editScores', 'manual-corrections-tab'),
     q('manualAdjustments', 'editEvents', 'manual-corrections-tab'),
@@ -144,7 +166,10 @@ export const HELP_SECTIONS = [
     q('connections', 'pin'),
     q('connections', 'hallServer'),
     q('connections', 'hallNetwork'),
-    q('connections', 'internetTablets')
+    q('connections', 'internetTablets'),
+    q('connections', 'testMatch'),
+    q('connections', 'connectToServer'),
+    q('connections', 'status')
   ]),
   section('referee', [
     q('referee', 'open'),
@@ -154,14 +179,20 @@ export const HELP_SECTIONS = [
     q('referee', 'recorded'),
     q('referee', 'offline'),
     q('referee', 'screen'),
-    q('referee', 'bell')
+    q('referee', 'bell'),
+    q('referee', 'scoresheet'),
+    q('referee', 'benchRequests'),
+    q('referee', 'awaiting'),
+    q('referee', 'upright')
   ]),
   section('bench', [
     q('bench', 'open'),
     q('bench', 'shows'),
     q('bench', 'requests'),
+    q('bench', 'lineup'),
+    q('bench', 'status'),
+    q('bench', 'grey'),
     q('bench', 'invalidPin'),
-    q('bench', 'awaiting'),
     q('bench', 'outage'),
     q('bench', 'roster')
   ]),
@@ -180,7 +211,8 @@ export const HELP_SECTIONS = [
     q('handover', 'takeBack'),
     q('handover', 'backups'),
     q('handover', 'restoreFile'),
-    q('handover', 'restoreRefused')
+    q('handover', 'restoreRefused'),
+    q('handover', 'lostPins')
   ]),
   section('sync-offline', [
     q('syncOffline', 'offlineScoring'),
@@ -190,7 +222,8 @@ export const HELP_SECTIONS = [
     q('syncOffline', 'signIn'),
     q('syncOffline', 'closedServer'),
     q('syncOffline', 'movedDevice'),
-    q('syncOffline', 'refused')
+    q('syncOffline', 'refused'),
+    q('syncOffline', 'testMatch')
   ]),
   section('install-updates', [
     q('installUpdates', 'appOrBrowser'),
@@ -199,9 +232,94 @@ export const HELP_SECTIONS = [
     q('installUpdates', 'macos'),
     q('installUpdates', 'android'),
     q('installUpdates', 'desktopUpdates'),
-    q('installUpdates', 'webUpdate')
+    q('installUpdates', 'webUpdate'),
+    q('installUpdates', 'updateNeeded')
+  ]),
+  // The Global tool (utils/toolMode.js): shown only while the device uses it
+  section('global', [
+    q('global', 'what'),
+    q('global', 'switch'),
+    q('global', 'match', 'home-global-match-button'),
+    q('global', 'importGames'),
+    q('global', 'importRosters'),
+    q('global', 'stored'),
+    q('global', 'rules'),
+    q('global', 'nextToName'),
+    q('global', 'backupCode'),
+    q('global', 'restore'),
+    q('global', 'language')
+  ]),
+  // The manager console (manager.openvolley.app, and Admin in the app)
+  section('club-manager', [
+    q('clubManager', 'where'),
+    q('clubManager', 'noTab'),
+    q('clubManager', 'contact'),
+    q('clubManager', 'members'),
+    q('clubManager', 'inviteCodes'),
+    q('clubManager', 'otherManagers'),
+    q('clubManager', 'bell'),
+    q('clubManager', 'myTeams'),
+    q('clubManager', 'missingTeam')
+  ]),
+  section('team-links', [
+    q('teamLinks', 'what'),
+    q('teamLinks', 'create'),
+    q('teamLinks', 'once'),
+    q('teamLinks', 'limits'),
+    q('teamLinks', 'who'),
+    q('teamLinks', 'open'),
+    q('teamLinks', 'otherAccount')
+  ]),
+  section('requests', [
+    q('requests', 'what'),
+    q('requests', 'where'),
+    q('requests', 'approve'),
+    q('requests', 'propose'),
+    q('requests', 'emailFirst'),
+    q('requests', 'waiting')
+  ]),
+  section('team-manager', [
+    q('teamManager', 'squad'),
+    q('teamManager', 'games'),
+    q('teamManager', 'prepare'),
+    q('teamManager', 'rules'),
+    q('teamManager', 'einsatzliste'),
+    q('teamManager', 'signatures'),
+    q('teamManager', 'status'),
+    q('teamManager', 'change'),
+    q('teamManager', 'hall'),
+    q('teamManager', 'privacy')
+  ]),
+  section('club-licences', [
+    q('clubLicences', 'what'),
+    q('clubLicences', 'upload'),
+    q('clubLicences', 'kept'),
+    q('clubLicences', 'shields'),
+    q('clubLicences', 'addFromClub'),
+    q('clubLicences', 'gender'),
+    q('clubLicences', 'delete')
+  ]),
+  section('club-api', [
+    q('clubApi', 'what'),
+    q('clubApi', 'create'),
+    q('clubApi', 'scopes'),
+    q('clubApi', 'once'),
+    q('clubApi', 'revoke')
+  ]),
+  section('manager-accounts', [
+    q('managerAccounts', 'oneAccount'),
+    q('managerAccounts', 'whoSees'),
+    q('managerAccounts', 'allSet'),
+    q('managerAccounts', 'inviteCode'),
+    q('managerAccounts', 'approve'),
+    q('managerAccounts', 'club'),
+    q('managerAccounts', 'savedTeams')
   ])
 ]
+
+// Sections only for one tool (utils/toolMode.js): listed on their screens
+// only while the device uses that tool, and then first
+export const TOOL_SECTIONS = { global: 'global' }
 
 export const SECTION_IDS = HELP_SECTIONS.map(s => s.id)
 
@@ -213,8 +331,8 @@ export const SECTION_IDS = HELP_SECTIONS.map(s => s.id)
  * their own screen (helpEvents.js openHelp).
  */
 export const HELP_SCREENS = {
-  home: { app: 'scorer', nameKey: 'contextHelp.pageNames.home', sections: ['home', 'handover', 'sync-offline', 'install-updates'] },
-  matchSetup: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchSetup', sections: ['setup', 'connections'] },
+  home: { app: 'scorer', nameKey: 'contextHelp.pageNames.home', sections: ['home', 'global', 'handover', 'sync-offline', 'install-updates'] },
+  matchSetup: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchSetup', sections: ['setup', 'rosters', 'global', 'connections'] },
   coinToss: { app: 'scorer', nameKey: 'contextHelp.pageNames.coinToss', sections: ['coin-toss'] },
   scoreboard: { app: 'scorer', nameKey: 'contextHelp.pageNames.scoreboard', sections: ['scoring', 'subs-timeouts', 'sanctions', 'set-end', 'corrections', 'sync-offline'] },
   matchEnd: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchEnd', sections: ['match-end', 'corrections'] },
@@ -225,7 +343,7 @@ export const HELP_SCREENS = {
   // Connect tablets (ConnectTabletsModal: header menu, Options)
   connectTablets: { app: 'scorer', nameKey: 'contextHelp.pageNames.connectTablets', sections: ['connections', 'referee', 'bench', 'livescore'] },
   // Restore match and its Restore preview (App)
-  restore: { app: 'scorer', nameKey: 'contextHelp.pageNames.restore', sections: ['handover', 'sync-offline'] },
+  restore: { app: 'scorer', nameKey: 'contextHelp.pageNames.restore', sections: ['handover', 'global', 'sync-offline'] },
   // Scored on another device, with Take back scoring here (ScorerMovedModal)
   takeBack: { app: 'scorer', nameKey: 'contextHelp.pageNames.takeBack', sections: ['handover', 'sync-offline'] },
   // Closed on the server (ClosedOnServerModal)
@@ -233,7 +351,24 @@ export const HELP_SCREENS = {
   // RefereeApp (game and PIN) and Referee (the match)
   referee: { app: 'referee', nameKey: 'contextHelp.pageNames.referee', sections: ['referee', 'connections'] },
   bench: { app: 'bench', nameKey: 'contextHelp.pageNames.bench', sections: ['bench', 'connections'] },
-  livescore: { app: 'livescore', nameKey: 'contextHelp.pageNames.livescore', sections: ['livescore', 'connections'] }
+  livescore: { app: 'livescore', nameKey: 'contextHelp.pageNames.livescore', sections: ['livescore', 'connections'] },
+  // The manager console (ManageConsole: manageHelpScreen picks one by the open page)
+  manageMyClub: { app: 'manager', nameKey: 'contextHelp.pageNames.manager', sections: ['club-manager', 'requests', 'team-links', 'club-licences', 'club-api', 'team-manager', 'manager-accounts'] },
+  manageMyClubTeams: { app: 'manager', nameKey: 'contextHelp.pageNames.manager', sections: ['team-links', 'club-manager', 'team-manager', 'requests'] },
+  manageMyClubLicences: { app: 'manager', nameKey: 'contextHelp.pageNames.manager', sections: ['club-licences', 'club-manager'] },
+  manageMyClubApi: { app: 'manager', nameKey: 'contextHelp.pageNames.manager', sections: ['club-api', 'club-manager'] },
+  manageMyClubRequests: { app: 'manager', nameKey: 'contextHelp.pageNames.manager', sections: ['requests', 'club-manager'] },
+  manageMyTeams: { app: 'manager', nameKey: 'contextHelp.pageNames.manager', sections: ['team-manager', 'team-links', 'requests', 'club-licences'] },
+  manageAdmin: { app: 'manager', nameKey: 'contextHelp.pageNames.manager', sections: ['manager-accounts', 'requests', 'club-manager', 'team-links'] }
+}
+
+/** The console's help screen for its open tab and My club part (ManageConsole). */
+export function manageHelpScreen(tab, part = '') {
+  if (tab === 'myclub') {
+    return { teams: 'manageMyClubTeams', licences: 'manageMyClubLicences', api: 'manageMyClubApi', requests: 'manageMyClubRequests' }[part] || 'manageMyClub'
+  }
+  if (tab === 'myteams') return 'manageMyTeams'
+  return 'manageAdmin'
 }
 
 /** The section with this id, or null. */
@@ -241,9 +376,17 @@ export function helpSection(id) {
   return HELP_SECTIONS.find(s => s.id === id) || null
 }
 
-/** The sections a screen shows, the main one first ([] for an unknown screen). */
-export function sectionsForScreen(screen) {
-  return (HELP_SCREENS[screen]?.sections || []).map(helpSection).filter(Boolean)
+/**
+ * The sections a screen shows, the main one first ([] for an unknown screen).
+ * A tool's own section (TOOL_SECTIONS) only while the device uses that tool
+ * (toolMode, utils/toolMode.js), and then first; every section without one.
+ */
+export function sectionsForScreen(screen, { toolMode } = {}) {
+  const ids = HELP_SCREENS[screen]?.sections || []
+  if (toolMode === undefined) return ids.map(helpSection).filter(Boolean)
+  const own = ids.filter(id => TOOL_SECTIONS[id] && TOOL_SECTIONS[id] === toolMode)
+  const rest = ids.filter(id => !TOOL_SECTIONS[id])
+  return [...own, ...rest].map(helpSection).filter(Boolean)
 }
 
 /** The screens that show a section, its main screen first. */
