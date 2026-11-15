@@ -46,7 +46,9 @@ describe('manageApi: reopening a closed match', () => {
 
   it('a beach competition manager reaches no other admin route', async () => {
     const { route } = setup()
-    for (const [method, path] of [['POST', `/api/admin/matches/${ID}/release-game`], ['GET', '/api/admin/matches'], ['GET', `/api/admin/matches/${ID}/reopen`], ['POST', `/api/admin/matches/${ID}/reopen/x`]]) {
+    for (const [method, path] of [['POST', `/api/admin/matches/${ID}/release-game`], ['GET', '/api/admin/matches'], ['GET', `/api/admin/matches/${ID}/reopen`], ['POST', `/api/admin/matches/${ID}/reopen/x`],
+      // the game PIN (read and new one): admins only
+      ['GET', `/api/admin/matches/${ID}/pin`], ['POST', `/api/admin/matches/${ID}/pin`]]) {
       const r = await route(['beach:competition_manager'], method, path, { reason: 'Wrong pair' })
       assert.equal(r.status, 403, `${method} ${path}`)
     }

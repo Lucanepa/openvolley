@@ -39,6 +39,7 @@ import { ADMIN_ROLES, API_GRANTABLE_ROLES, INDOOR_ROLES, SPORTS, SPORT_ROLES, ac
 import { findClaim, officialRowsOf, publicClaim, seasonOf, sportOf } from './officialGame.js'
 import { EMAIL_CONFIRMATION_MARK } from './auth.js'
 import { connectClient } from './pgClient.js'
+import { createPinHasher, isHashedPin } from './pinHash.js'
 
 export const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 export const INVITE_ROLES = Object.freeze(['scorer', 'referee', 'competition_manager'])
@@ -56,6 +57,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   'match.claim_game', 'match.claim_pin', 'match.restore_pin', 'match.game_taken',
   'match.close',
   'match.reopen', 'match.editor_add', 'match.editor_remove', 'match.release_game',
+  // an admin read a match's game PIN, or gave it a new one (readGamePin /
+  // resetGamePin below; the match only, never the PIN)
+  'match.pin_viewed', 'match.pin_reset',
   // lib/matchRestore.js restoreMatch: a backup or hand-over replaced the match's rows (counts before and after)
   'match.restore',
   // db/018: a home-club scorer took over a game an account outside the club held (takeOverHeldGame)
@@ -266,8 +270,10 @@ function trimmedText (raw, { min = 0, max }) {
  *   account's own delete-account runs it too). Without it both answer 404
  *   and the accounts list says can_delete: false.
  */
-export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, requests: requestsOf = () => null, eraseAccount = null, mailer = null, logger = console } = {}) {
+export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, requests: requestsOf = () => null, eraseAccount = null, mailer = null, pins = null, onGamePinChanged = null, logger = console } = {}) {
   const log = logger
+  /** lib/pinHash.js of the server (OV_PIN_SECRET); without one PINs are plaintext, as there. */
+  const pinHasher = pins || createPinHasher(null)
   /** lib/clubs.js (db/018), wired after this module (it audits through it); null before. */
   const clubs = () => (typeof clubsOf === 'function' ? clubsOf() : null)
   /** lib/teams.js (db/023), wired after this module too; null before. */
@@ -1461,7 +1467,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
    * (the only way past db/007's lock): the row is locked, `check` may refuse,
    * `data` is the update, `details` the audit entry.
    */
-  async function adminMatchUpdate ({ where, actorId, matchId, check, data, action, details, settings = {} }) {
+  async function adminMatchUpdate ({ where, actorId, matchId, check, data, action, details, settings = {}, after = null }) {
     const changes = []
     const res = await guarded(where, () => withTx(async (client) => {
       await client.query("SELECT set_config('ov.allow_closed', 'on', true)")
@@ -1481,6 +1487,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         { internal: true, client, collectChanges: true })
       if (r.body.error) throw Object.assign(new Error(`update failed: ${r.body.error.code}`), { code: r.body.error.code })
       if (r.changes) changes.push(...r.changes)
+      if (after) await after(client, m)
       await audit(client, { actorId, action, matchId, details: details(m) })
       return { match: m }
     }))
@@ -1563,6 +1570,70 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     })
     if (!res.match) return res
     return { ...ok({ match: { id: res.match.id, official_game_exempt: true, released_at: releasedAt } }), changes }
+  }
+
+  /**
+   * GET /api/admin/matches/:id/pin: the game PIN of a match, the one the scorer
+   * app's restore asks for with the game number (Restore match, restore-by-pin;
+   * owner 2026-11-15: to open a reopened match on a scorer device). Never in
+   * listMatches or any other answer. Every read is audited (match.pin_viewed,
+   * without the PIN), before the answer: no audit row, no PIN.
+   * A PIN stored as its HMAC (lib/pinHash.js, OV_PIN_SECRET) cannot be read
+   * back: `stored` says which ('plain' with the PIN, 'hashed' or 'none'
+   * without), and resetGamePin gives the match a new one.
+   */
+  async function readGamePin ({ actorId, matchId } = {}) {
+    if (!isUuid(matchId)) return notFound()
+    return guarded('read-pin', async () => {
+      const { rows: [m] } = await pool.query(
+        'SELECT id, external_id, game_n, game_pin::text AS game_pin FROM public.matches WHERE id = $1', [matchId])
+      if (!m) return notFound()
+      const value = m.game_pin == null ? '' : String(m.game_pin).trim()
+      const stored = !value ? 'none' : isHashedPin(value) ? 'hashed' : 'plain'
+      await audit(pool, { actorId, action: 'match.pin_viewed', matchId, details: { external_id: m.external_id, game_n: m.game_n, shown: stored === 'plain' } })
+      return ok({ pin: stored === 'plain' ? value : null, stored, game_n: m.game_n ?? null })
+    })
+  }
+
+  /**
+   * POST /api/admin/matches/:id/pin: a new random 6-digit game PIN for the
+   * match (closed or not), stored as the server stores PINs (hashed with a
+   * PIN secret) and answered once. As when the scorer changes it: the
+   * accounts that became editors by the old PIN are editors no more and the
+   * old PIN's failure count ends (onGamePinChanged, server.js); a device that
+   * holds the old PIN needs the new one. Never the same as one of the match's
+   * connection PINs (a referee PIN must not open the scoresheet).
+   * Audited as match.pin_reset, without the PIN.
+   */
+  async function resetGamePin ({ actorId, matchId } = {}) {
+    if (!isUuid(matchId)) return notFound()
+    const found = await guarded('reset-pin', async () => {
+      const { rows: [row] } = await pool.query('SELECT connection_pins FROM public.matches WHERE id = $1', [matchId])
+      if (!row) return notFound()
+      const taken = isPlainObject(row.connection_pins) ? Object.entries(row.connection_pins) : []
+      for (let i = 0; i < 100; i++) {
+        const next = String(randomInt(0, 1000000)).padStart(6, '0')
+        if (!taken.some(([kind, stored]) => pinHasher.matches(kind, next, stored))) return { pin: next }
+      }
+      return unavailable()
+    })
+    if (!found.pin) return found
+    const { pin } = found
+    const { res } = await adminMatchUpdate({
+      where: 'reset-pin',
+      actorId,
+      matchId,
+      data: () => ({ game_pin: pinHasher.hash('game', pin) }),
+      // the editors the old PIN made (server.js dropPinEditors); an admin's stay
+      after: (client, m) => client.query("DELETE FROM public.match_editors WHERE match_id = $1 AND granted_via <> 'admin'", [m.id]),
+      action: 'match.pin_reset',
+      details: (m) => ({ external_id: m.external_id, game_n: m.game_n })
+    })
+    if (!res.match) return res
+    if (typeof onGamePinChanged === 'function') {
+      try { onGamePinChanged(res.match.external_id) } catch (err) { log.warn?.(`[accounts] pin change hook failed: ${err?.message}`) }
+    }
+    return ok({ pin, stored: pinHasher.enabled ? 'hashed' : 'plain', game_n: res.match.game_n ?? null })
   }
 
   async function addMatchEditor ({ actorId, matchId, body } = {}) {
@@ -1891,6 +1962,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     reopenMatch,
     listMatchClosures,
     releaseGame,
+    readGamePin,
+    resetGamePin,
     addMatchEditor,
     listMatchEditors,
     removeMatchEditor,

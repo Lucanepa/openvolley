@@ -32,6 +32,9 @@
  *   GET    /api/admin/approvals[?app=indoor|beach]   isAdmin
  *   GET    /api/admin/matches/:id/revisions          isAdmin: undone / edited events (db/015)
  *   GET    /api/admin/matches/:id/closures           isAdmin: the closed record of each reopen, and the re-close (db/039)
+ *   GET    /api/admin/matches/:id/pin                isAdmin: the match's game PIN (audited match.pin_viewed);
+ *                                                    { pin, stored: plain|hashed|none }: a hashed one cannot be read back
+ *   POST   /api/admin/matches/:id/pin                isAdmin: a new game PIN, answered once (audited match.pin_reset)
  *   GET    /api/admin/activity?match=&account=&...   isAdmin: the activity log (db/016; a read of a match or an account audited)
  *   GET    /api/admin/clubs                          isAdmin: clubs, their teams, the rule (db/018, lib/clubs.js)
  *   POST   /api/admin/clubs, PATCH/DELETE /api/admin/clubs/:id   isAdmin
@@ -364,6 +367,9 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['DELETE', new RegExp(`^/api/match-editors/${ID}/${ID}$`), 'any', (m, c) => accounts.removeMatchEditor({ actorId: c.user.id, matchId: m[1], userId: m[2], isAdmin: !!c.access?.isAdmin })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/editors$`), 'admin', (m, c) => accounts.addMatchEditor({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/release-game$`), 'admin', (m, c) => accounts.releaseGame({ actorId: c.user.id, matchId: m[1], body: c.body })],
+    // the game PIN the scorer app's restore asks for (read audited; a hashed one cannot be read: a new one)
+    ['GET', new RegExp(`^/api/admin/matches/${ID}/pin$`), 'admin', (m, c) => accounts.readGamePin({ actorId: c.user.id, matchId: m[1] })],
+    ['POST', new RegExp(`^/api/admin/matches/${ID}/pin$`), 'admin', (m, c) => accounts.resetGamePin({ actorId: c.user.id, matchId: m[1] })],
     // The activity log (db/016, lib/activityLog.js); the export is streamed by server.js
     ['GET', /^\/api\/admin\/activity$/, 'admin', (m, c) => (activity ? activity.adminList({ actorId: c.user.id, query: c.query }) : notFound())],
     ['DELETE', /^\/api\/admin\/activity$/, 'admin', (m, c) => (activity ? activity.adminDelete({ actorId: c.user.id, query: c.query }) : notFound())],

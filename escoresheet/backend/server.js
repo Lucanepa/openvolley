@@ -461,7 +461,9 @@ function getDataLayer() {
     let teams = null
     // Sign-up requests and who approves them (db/025, lib/accountRequests.js), the same way
     let requests = null
-    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, teams: () => teams, requests: () => requests, eraseAccount: auth.eraseAccount, mailer })
+    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, teams: () => teams, requests: () => requests, eraseAccount: auth.eraseAccount, mailer,
+      // an admin's new game PIN (POST /api/admin/matches/:id/pin): hashed like every PIN, its old count ends
+      pins, onGamePinChanged: (externalId) => pinFailureLimiter.pinChanged(externalId, ['game']) })
     // db/029: a club manager link for someone not linked to the club, mailed
     clubs = cl.createClubs({ pool: db.pool, audit: accounts.audit, access, createInvite: accounts.createInvite, mailer })
     // Saved teams; deletes and roster replacements are audited
