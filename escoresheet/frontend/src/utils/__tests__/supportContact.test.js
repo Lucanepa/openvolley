@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
-  CONTACT_AREAS, SUPPORT_SECTIONS, LEGACY_AREAS, MAX_FILES, MAX_FILES_BYTES, buildContactForm, checkFiles,
+  CONTACT_AREAS, SUPPORT_SECTIONS, LEGACY_AREAS, HELP_AREAS, MAX_FILES, MAX_FILES_BYTES, buildContactForm, checkFiles,
   collectDiagnostics, contactAreaOf, contactMailto, downloadDiagnosticsFile, isAllowedFile, isContactEmail, isScoringMatchHere, pageUrl
 } from '../supportContact'
 import { setActiveMatch } from '../activity/activeMatch'
@@ -13,11 +13,16 @@ const win = (href = 'https://app.openvolley.app/referee?pin=123456#set2') => {
 }
 
 describe('support form: areas', () => {
-  it('are the 16 help sections and "other"', () => {
+  it('are the backend\'s 16 help sections and "other"; the newer sections map onto them', () => {
     expect(SUPPORT_SECTIONS).toEqual(['home', 'setup', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
       'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates'])
-    expect(SUPPORT_SECTIONS).toEqual(SECTION_IDS)
     expect(CONTACT_AREAS).toEqual([...SUPPORT_SECTIONS, 'other'])
+    // every help section is an area or maps onto one
+    for (const id of SECTION_IDS) expect(CONTACT_AREAS, id).toContain(contactAreaOf(id))
+    for (const v of Object.values(HELP_AREAS)) expect(CONTACT_AREAS).toContain(v)
+    expect(contactAreaOf('rosters')).toBe('setup')
+    expect(contactAreaOf('global')).toBe('home')
+    expect(contactAreaOf('club-api')).toBe('other')
   })
 
   it('maps the older area names and every screen of the help onto a section', () => {
@@ -28,7 +33,7 @@ describe('support form: areas', () => {
     expect(contactAreaOf('uploadRoster')).toBe('setup')
     expect(contactAreaOf('approval')).toBe('match-end')
     // a screen: its main section (the panel passes the section itself)
-    for (const [id, screen] of Object.entries(HELP_SCREENS)) expect(contactAreaOf(id), id).toBe(screen.sections[0])
+    for (const [id, screen] of Object.entries(HELP_SCREENS)) expect(contactAreaOf(id), id).toBe(contactAreaOf(screen.sections[0]))
     expect(contactAreaOf('liveCorrections')).toBe('corrections')
     expect(contactAreaOf('connectTablets')).toBe('connections')
     expect(contactAreaOf('closedCopy')).toBe('sync-offline')

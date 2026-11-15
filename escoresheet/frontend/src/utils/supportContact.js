@@ -40,7 +40,25 @@ import { HELP_SCREENS, SECTION_IDS } from '../components/help/helpSections'
 
 export const SUPPORT_EMAIL = 'support@openvolley.app'
 
-export const SUPPORT_SECTIONS = Object.freeze([...SECTION_IDS])
+// Help sections newer than the backend's contact areas, and the area each is
+// filed under (the console's own: 'other')
+export const HELP_AREAS = Object.freeze({
+  rosters: 'setup',
+  global: 'home',
+  'club-manager': 'other',
+  'team-links': 'other',
+  requests: 'other',
+  'team-manager': 'other',
+  'club-licences': 'other',
+  'club-api': 'other',
+  'manager-accounts': 'other'
+})
+const NEWER_SECTIONS = new Set(Object.keys(HELP_AREAS))
+
+// The areas the backend knows (backend/lib/contact.js SECTION_IDS): the help's
+// sections up to 3.2.5. The sections added since map onto them (HELP_AREAS);
+// anything else the backend files under 'other'.
+export const SUPPORT_SECTIONS = Object.freeze(SECTION_IDS.filter((id) => !NEWER_SECTIONS.has(id)))
 export const CONTACT_AREAS = Object.freeze([...SUPPORT_SECTIONS, 'other'])
 
 // Older area values (the form's own before the sections, and the pages of
@@ -73,8 +91,9 @@ const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key)
 export function contactAreaOf(raw) {
   if (typeof raw !== 'string' || !raw) return ''
   if (CONTACT_AREAS.includes(raw)) return raw
+  if (own(HELP_AREAS, raw)) return HELP_AREAS[raw]
   if (own(LEGACY_AREAS, raw)) return LEGACY_AREAS[raw]
-  return own(HELP_SCREENS, raw) ? HELP_SCREENS[raw].sections[0] : ''
+  return own(HELP_SCREENS, raw) ? contactAreaOf(HELP_SCREENS[raw].sections[0]) : ''
 }
 
 export const MAX_FILES = 5
