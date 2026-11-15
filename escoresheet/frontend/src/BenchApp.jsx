@@ -754,7 +754,7 @@ export default function BenchApp() {
         // The relay holds more than one match with this PIN: the PIN stays typed
         setError(t('benchDashboard.pickGame', 'More than one match has this PIN. Pick your game in the list, then enter the PIN again.'))
       } else {
-        setError('Invalid PIN code. Please check and try again.')
+        setError(t('benchDashboard.invalidPin', 'Invalid PIN. Please try again.'))
         setPinInput('')
       }
     } catch (err) {
