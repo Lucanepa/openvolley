@@ -1,9 +1,9 @@
 import { gamesTemplate, rosterTemplate } from '../domain/globalImport'
 
 /** Download the games or the rosters template (an .xlsx made in the browser). */
-export async function downloadGlobalTemplate(kind) {
+export async function downloadGlobalTemplate(kind, idMode = 'dob') {
   const codec = await import('../lib/xlsxCodec')
-  const bytes = codec.writeWorkbook([kind === 'games' ? gamesTemplate() : rosterTemplate()])
+  const bytes = codec.writeWorkbook([kind === 'games' ? gamesTemplate() : rosterTemplate(idMode)])
   const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
   const a = document.createElement('a')
   a.href = url

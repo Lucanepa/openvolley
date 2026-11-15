@@ -8,7 +8,7 @@ import { remarksSignaturesOf } from '../src/domain/remarksSignatures';
 import { LEGEND_WIDTH, LeftInfoBox } from './components/LeftInfoBox';
 import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { Player, SanctionRecord } from './types_scoresheet';
-import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
+import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, idHeadingOf, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData, rosterLiberos } from './utils/extractLiberoData';
 import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
@@ -2270,6 +2270,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                     coinTossConfirmed={coinTossConfirmed}
                     isHome={true}
                     readOnly={readOnly}
+                    idHeading={idHeadingOf(match)}
                   />
                 </div>
                 <div ref={rosterBRef} className="flex-1 min-w-0">
@@ -2284,6 +2285,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                     coinTossConfirmed={coinTossConfirmed}
                     isHome={false}
                     readOnly={readOnly}
+                    idHeading={idHeadingOf(match)}
                   />
                 </div>
               </div>

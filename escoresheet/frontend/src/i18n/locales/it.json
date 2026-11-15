@@ -240,6 +240,7 @@
     "noRefereeHistory": "Nessuno storico arbitri. Inserisci gli arbitri manualmente e verranno salvati per le prossime partite."
   },
   "matchSetup": {
+    "roleName": "Nome del ruolo",
     "pointsPerSet": "Punti per set",
     "pointsDeciding": "Set decisivo",
     "loadingScheduleGame": "Caricamento della partita…",
@@ -1230,6 +1231,7 @@
   },
   "restoreGlobal": {"title": "Ripristina dal backup online", "desc": "Inserisci il codice di backup della partita (Preparazione partita, Backup). L'app chiede poi il suo PIN arbitro.", "code": "Codice di backup", "notFound": "Nessun backup trovato per questo codice.", "notGlobal": "Questo codice non contiene nessuna partita dello strumento Global.", "button": "Cerca backup"},
   "toolChooser": {"title": "Come usi OpenVolley?", "swissBody": "Partite di lega svizzere: accesso, elenco partite, Einsatzliste, rose di club e cloud.", "globalBody": "Qualsiasi torneo o amichevole: senza accesso, rose e partite da Excel. Squadre e giocatori restano su questo dispositivo.", "later": "Puoi cambiarlo più tardi in Opzioni, finché non c’è una partita su questo dispositivo."},
+  "idMode": {"title": "Accanto a ogni nome", "dob": "Usa le date di nascita", "number": "Usa un numero di identificazione", "text": "Usa del testo", "label": {"dob": "Data di nascita", "number": "Numero di identificazione", "text": "Info"}},
   "globalImport": {"templateGames": "Modello partite (Excel)", "templateRosters": "Modello rose (Excel)", "gamesTitle": "Importa partite", "rostersTitle": "Importa rose", "gamesHint": "Un file Excel o CSV con una riga per partita: partita, data, ora, palestra, città, lega, casa, ospite, best of, arbitri. Nulla viene salvato: il file è letto su questo dispositivo.", "rostersHint": "Un file Excel o CSV con una riga per persona: squadra, numero, nome, cognome, ruolo (giocatore, libero, capitano, allenatore...), data di nascita. Nulla viene salvato: il file è letto su questo dispositivo.", "choose": "Scegli file", "template": "Modello", "errFile": "Impossibile leggere il file.", "errEmpty": "Il file è vuoto.", "errColumns": "Colonne non trovate. Usa il modello.", "noTeamName": "(senza nome squadra)", "counts": "{{players}} giocatori, {{staff}} staff", "warnings": "{{count}} righe non pulite: {{list}}", "applied": "{{count}} giocatori aggiunti", "gamesButton": "Importa partite (Excel)", "rostersButton": "Importa rose (Excel)"},
   "home": {
     "storageWarning": "Questo browser può cancellare i dati dell'app, e una partita su questo dispositivo ha modifiche non ancora inviate. Accedi perché vengano sincronizzate, installa l'app o aggiungila alla schermata iniziale, oppure attiva i download dei backup nelle Opzioni.",

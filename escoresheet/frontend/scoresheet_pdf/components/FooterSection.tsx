@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SanctionRecord, Player } from '../types_scoresheet';
 import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
 import { FitText } from './FitText';
-import { findOfficial, formatDob, formatPersonName, type SheetOfficial } from '../utils/sheetFormat';
+import { findOfficial, formatDob, formatPersonName, idHeadingOf, roleLabelOf, type SheetOfficial } from '../utils/sheetFormat';
 
 /** Sanction rows in the box; further sanctions continue in REMARKS (field-spec 7.2). */
 export const SANCTION_ROWS = 9;
@@ -571,7 +571,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                  <div className={`${APPROVAL_COL.name} pl-2 flex items-center`}>Name</div>
                  <div className={`${APPROVAL_COL.country} flex items-center justify-center`}>Country</div>
                  {/* the paper's "Lizenz-Nr." column holds the date of birth (SC p.9-11) */}
-                 <div className={`${APPROVAL_COL.dob} flex items-center justify-center`}>DoB</div>
+                 <div className={`${APPROVAL_COL.dob} flex items-center justify-center`}>{idHeadingOf(match)}</div>
                  <div className="flex-1 flex items-center justify-center">Signature</div>
             </div>
 
@@ -729,9 +729,11 @@ interface RosterProps {
    * liberos, then the re-designated ones. Without it, the players flagged libero.
    */
   liberos?: Array<Player & { redesignated?: boolean }>;
+  /** The heading beside the numbers: DoB, ID or Info (idHeadingOf). */
+  idHeading?: string;
 }
 
-export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false, liberos: liberoList }) => {
+export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false, liberos: liberoList, idHeading = 'DoB' }) => {
     // bench_home / bench_away may be null or an object in older rows
     const staff: any[] = Array.isArray(benchStaff) ? benchStaff : [];
 
@@ -779,7 +781,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
             </div>
             {/* Header */}
             <div className={`bg-white border-b border-r border-black ${gridClass} text-[11px] font-bold h-4 items-center shrink-0`}>
-                <div className="border-r border-black text-center h-full flex items-center justify-center">DoB</div>
+                <div className="border-r border-black text-center h-full flex items-center justify-center">{idHeading}</div>
                 <div className="border-r border-black text-center h-full flex items-center justify-center">No</div>
                 <div className="pl-1 h-full flex items-center">Name</div>
             </div>
@@ -846,16 +848,19 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                          'M': 'Medic'
                      };
                      const official = staff.find(s => s && s.role === roleMap[roleLabel]);
+                     // Global: the official's own name for the role ("Teacher") beside the name
+                     const ownRole = roleLabelOf(official);
                      const fullName = official
                          ? formatPersonName(official.lastName ?? official.last_name, official.firstName ?? official.first_name)
                          : '';
+                     const shownName = ownRole && fullName ? `${fullName} · ${ownRole}` : fullName;
 
                      return (
                          <div key={roleLabel} className={`${gridClass} text-[9px] items-stretch ${rowHeight} ${roleIdx < 4 ? 'border-b ss-rule' : ''}`} data-testid="roster-official-row">
                              <div className={`border-r border-black ${dobClass}`}>{formatDob(official?.dob)}</div>
-                             <div className={`font-bold text-center border-r border-black h-full flex items-center justify-center bg-white ${roleLabel.length > 1 ? 'text-[7px]' : 'text-[9px]'}`}>{roleLabel}</div>
+                             <div className={`font-bold text-center border-r border-black h-full flex items-center justify-center bg-white ${(ownRole || roleLabel).length > 1 ? 'text-[7px]' : 'text-[9px]'}`}>{ownRole ? ownRole.slice(0, 3).toUpperCase() : roleLabel}</div>
                              <div className="bg-white px-1 text-left flex items-center min-w-0">
-                                 <FitText max={9} min={5} className="flex-1">{fullName}</FitText>
+                                 <FitText max={9} min={5} className="flex-1">{shownName}</FitText>
                              </div>
                          </div>
                      );

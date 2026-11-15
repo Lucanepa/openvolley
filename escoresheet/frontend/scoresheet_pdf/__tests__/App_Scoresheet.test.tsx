@@ -300,3 +300,35 @@ describe('App_Scoresheet rosters', () => {
     expect(screen.queryByText(/Captain Signature|Coach Signature/)).toBeNull()
   })
 })
+
+// Global match: what the sheet carries beside a name, and a bench official's own role name
+describe('App_Scoresheet: Global id mode and role name', () => {
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  const withMatch = (extra: Record<string, unknown>) => {
+    const data: any = buildMatch()
+    data.match = { ...data.match, ...extra }
+    data.homePlayers = data.homePlayers.map((p: any) => ({ ...p, dob: p.number === 1 ? '9b' : '' }))
+    return data
+  }
+
+  it('prints DoB for a birthdate match, ID for numbers, Info for text', () => {
+    for (const [mode, heading] of [[undefined, 'DoB'], ['number', 'ID'], ['text', 'Info']] as const) {
+      const { container, unmount } = render(<App matchData={withMatch(mode ? { idMode: mode } : {})} autoAction="preview" />)
+      const header = container.querySelector('[data-testid="roster-home"]')?.textContent || ''
+      expect(header).toContain(heading)
+      if (mode === 'text') expect(header).toContain('9b') // the stored text is printed as it is
+      unmount()
+    }
+  })
+
+  it('prints the official\'s own role name beside the name, the slot stays', () => {
+    const { container } = render(<App matchData={withMatch({ bench_home: [{ role: 'Assistant Coach 1', firstName: 'Tina', lastName: 'Lehrer', dob: '', roleLabel: 'Teacher' }] })} autoAction="preview" />)
+    const rows = [...container.querySelectorAll('[data-testid="roster-home"] [data-testid="roster-official-row"]')].map(r => r.textContent || '')
+    expect(rows[1]).toContain('Lehrer')
+    expect(rows[1]).toContain('Teacher')
+    expect(rows[1]).toContain('TEA') // the short label of the row
+  })
+})
