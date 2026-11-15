@@ -2133,9 +2133,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Sponsors on clothing (domain/sponsors.js): each team's box, Team A first,
           while the option is on or the match is marked; fixed once approved */}
       {showSponsorBoxes && (
-        <div className="card ov-kit" data-testid="matchend-sponsors" style={{ marginBottom: '16px' }}>
+        <div className="card" data-testid="matchend-sponsors" style={{ marginBottom: '16px' }}>
           <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('options.sponsorsOnClothing')}</h3></div>
-          <div className="stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <div className="ov-kit stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             {(homeLabel === 'A' ? ['home', 'away'] : ['away', 'home']).map(team => {
               const name = (team === 'home' ? homeTeam?.name : awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
               return (
