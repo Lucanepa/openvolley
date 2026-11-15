@@ -167,7 +167,7 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal((await call(users.stranger, 'GET', `/api/team/${h1.id}/games`)).status, 403)
   })
 
-  it('a game roster: the game rules, its own games only, no lock after kick-off', async () => {
+  it('a game roster: the game rules, its own games only, locked at kick-off', async () => {
     const path = (n) => `/api/team/${h1.id}/roster?game=${n}`
     const fifteen = Array.from({ length: 15 }, (_, i) => player(i + 1, `L${i}`))
     assert.equal((await call(users.coach, 'PUT', path('940001'), { players: fifteen, staff: [] })).status, 400)
@@ -189,10 +189,21 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(notMine.status, 404, notMine.text)
     assert.equal(notMine.json.error.code, 'OV_GAME_NOT_YOURS')
     assert.equal((await call(users.coach, 'PUT', `/api/team/${h1.id}/roster?game=abc`, { players: [], staff: [] })).status, 400)
-    // started: still open (owner 2026-11-08, no lock)
+    // started: locked (owner 2026-11-15: "how can I prepare a roster for a game already started")
     const late = await call(users.coach, 'PUT', path('940006'), { players: [player(1, 'A')], staff: [] })
-    assert.equal(late.status, 200, late.text)
-    assert.equal(late.json.data.started, true)
+    assert.equal(late.status, 409, late.text)
+    assert.equal(late.json.error.code, 'OV_GAME_STARTED')
+    assert.equal((await call(users.clubmgr, 'PUT', path('940006'), { players: [player(1, 'A')], staff: [] })).json.error.code, 'OV_GAME_STARTED')
+    assert.equal((await sql.query("SELECT 1 FROM public.game_rosters WHERE game_number = '940006'")).rows.length, 0)
+    // reading it stays open
+    const lateRead = await call(users.coach, 'GET', path('940006'))
+    assert.equal(lateRead.status, 200, lateRead.text)
+    assert.equal(lateRead.json.data.started, true)
+    assert.equal(lateRead.json.data.roster, null)
+    // the roster sent before kick-off (written here as it was then): the scorer's tests below use it
+    await sql.query(`INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, kickoff, updated_by, club_id, team_id, expires_at)
+      VALUES ('940006', $1, 'home', 'VBC Musterdorf H1', $2::jsonb, '[]', $3, $4, $5, $6, now() + interval '15 days')`,
+    [season, JSON.stringify([player(1, 'A')]), `${today}T00:00:01`, users.coach.id, musterdorf.id, h1.id])
     // signatures made ahead: PNG data URLs, a coach's needs a Coach, a captain's a captain
     assert.equal((await call(users.coach, 'PUT', path('940001'), { players: [player(1, 'A', { is_captain: true })], staff: [], coach_signature: SIG })).status, 400)
     assert.equal((await call(users.coach, 'PUT', path('940001'), { players: [player(1, 'A')], staff: [], captain_signature: SIG })).status, 400)
@@ -310,10 +321,21 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.ok(g.roster.used_at)
     // idempotent
     assert.equal((await call(users.scorer, 'POST', '/api/game-rosters/used', { game_number: '940006', side: 'home', updated_at: sent.updated_at })).json.data.already, true)
-    // a new version is a fresh roster again
+    // after kick-off the team can't send a new version nor delete it (owner 2026-11-15)
     const again = await call(users.coach, 'PUT', `/api/team/${h1.id}/roster?game=940006`, { players: [player(2, 'B')], staff: [] })
-    assert.equal(again.json.data.roster.used_at, null)
-    assert.ok((await call(users.scorer, 'GET', '/api/game-rosters')).json.data.rosters.some((x) => x.game_number === '940006'))
+    assert.equal(again.status, 409, again.text)
+    assert.equal(again.json.error.code, 'OV_GAME_STARTED')
+    const gone = await call(users.coach, 'DELETE', `/api/team/${h1.id}/roster?game=940006`)
+    assert.equal(gone.status, 409, gone.text)
+    assert.equal(gone.json.error.code, 'OV_GAME_STARTED')
+    assert.equal((await sql.query("SELECT 1 FROM public.game_rosters WHERE game_number = '940006'")).rows.length, 1)
+    // before kick-off a new version is a fresh roster again: 940002, accepted by its home club's scorer
+    const away = (await call(users.otherscorer, 'GET', '/api/game-rosters?games=940002')).json.data.rosters[0]
+    assert.deepEqual((await call(users.otherscorer, 'POST', '/api/game-rosters/used', { game_number: '940002', side: 'away', season: away.season, updated_at: away.updated_at })).json.data, { used: true })
+    const fresh = await call(users.coach, 'PUT', `/api/team/${h1.id}/roster?game=940002`, { players: [player(1, 'A'), player(2, 'B')], staff: [] })
+    assert.equal(fresh.status, 200, fresh.text)
+    assert.equal(fresh.json.data.roster.used_at, null)
+    assert.ok((await call(users.otherscorer, 'GET', '/api/game-rosters')).json.data.rosters.some((x) => x.game_number === '940002'))
     assert.equal((await call(users.scorer, 'POST', '/api/game-rosters/used', { game_number: 'x', side: 'home', updated_at: sent.updated_at })).status, 400)
   })
 

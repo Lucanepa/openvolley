@@ -80,8 +80,10 @@ Shown when `/api/me` `managedTeams` is not empty (team managers, club managers).
   it, unticks the one who had it. **Add official** adds someone typed in (role, names, date of
   birth and licence optional; the physiotherapist offered first, then the medic), not necessarily
   of the club's lists (owner 2026-11-10: "have people be put as P/M manually").
-- No lock (**D2**, owner): a game's roster can be changed at any time, also after kick-off. The
-  scorer adjusts anything in the hall by hand as today.
+- Locked at kick-off (**D2**, owner 2026-11-15, replacing "no lock"): a game's roster can be sent,
+  changed and deleted until its kick-off; after it the team only reads it (409 `OV_GAME_STARTED`),
+  and the console lists the game under **Earlier games**, read-only. The scorer still accepts a
+  sent roster after kick-off, and adjusts anything in the hall by hand as today.
 - Signatures (**D3**, owner): optional. The coach and the captain may sign ahead on that page
   (the same signature pad as the app). A signature belongs to the roster it was made on: a change
   after signing drops it and asks to sign again. Without them, they sign at the coin toss.
@@ -172,7 +174,8 @@ people):
 
 - **D1** The first saved team of a team goes into the season's competition of its league, created
   when there is none. Yes.
-- **D2** No lock: a game's roster can be changed at any time.
+- **D2** No lock: a game's roster can be changed at any time. Replaced 2026-11-15: locked at kick-off
+  ("how can I prepare a roster for a game already started").
 - **D3** The coach and the captain may sign ahead if they want to.
 - **D4** The scorer taps **Accept**; a sent roster never fills Match Setup by itself.
 - **D5** A sent roster is deleted as soon as it is accepted (14 days after the game at the latest).
