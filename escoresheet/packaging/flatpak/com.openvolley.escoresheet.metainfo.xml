@@ -71,6 +71,15 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.1" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.1</url>
+      <description>
+        <ul>
+          <li>The macOS app is signed and available again.</li>
+          <li>Global mode: birthdate, ID number or text beside the names, own role names for bench officials, no Swiss German.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.0" date="2026-11-14">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.0</url>
       <description>
