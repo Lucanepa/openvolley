@@ -262,18 +262,20 @@ export const Results: React.FC<ResultsProps> = ({
   flush = false
 }) => {
     // The rows of sets never played stay blank, not struck off (owner 2026-10-20).
-    // Always the sheet's five rows, cells about square (owner 2026-11-15): a set
-    // sits in its own row, so best of 3 fills rows 1, 2 and 5 (the decider is
-    // stored at index 5) and rows 3 and 4 stay empty.
+    // Always the sheet's five rows, cells about square (owner 2026-11-15): best
+    // of 3 fills rows 1, 2 and 3 (the decider, stored at index 5, in the third
+    // row, owner 2026-11-15 later) and rows 4 and 5 stay empty.
     // A set 3 or 4 played in a match stored as best of 3 (its format changed
     // during the match) is printed too, numbered by index, as the totals and the
     // result count it (the sheet warns about it).
     const playedExtraSet = bestOf === 3 && setResults.some(r => (r.setNumber === 3 || r.setNumber === 4) && r.teamATimeouts !== null);
     const isBestOf3 = bestOf === 3 && !playedExtraSet;
-    const displaySets = [1, 2, 3, 4, 5];
-    // The set number printed in a row, as on the set boxes: best of 3 leaves rows
-    // 3 and 4 unnumbered and numbers the decider (row 5) "3", the 3rd set played
-    // (Swiss Matchblatt numbers sets in play order; displaySetNumber)
+    // Stored set index shown in each row, top to bottom
+    const displaySets = isBestOf3 ? [1, 2, 5, 3, 4] : [1, 2, 3, 4, 5];
+    // The set number printed in a row, as on the set boxes: best of 3 numbers the
+    // decider (index 5, third row) "3", the 3rd set played, and leaves the two
+    // empty rows unnumbered (Swiss Matchblatt numbers sets in play order;
+    // displaySetNumber)
     const rowLabel = (set: number): number | '' => (isBestOf3 ? (set === 5 ? 3 : set <= 2 ? set : '') : set);
     return (
         <div className={`border border-black bg-white flex flex-col h-full ${flush ? '' : 'mr-1'}`}>
@@ -293,7 +295,7 @@ export const Results: React.FC<ResultsProps> = ({
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamATimeouts !== null;
                             return (
-                             <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs relative`} data-testid="result-team-row" data-team="A" data-set={set}>
+                             <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs relative`} data-testid="result-team-row" data-team="A" data-set={set} data-row={idx + 1}>
                                 <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
                                     {isFinished ? (setData.teamATimeouts ?? 0) : ''}
                                 </div>
@@ -338,7 +340,7 @@ export const Results: React.FC<ResultsProps> = ({
                         {displaySets.map((set, idx) => {
                             const setData = setResults.find(r => r.setNumber === set);
                             return (
-                            <div key={set} className={`flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} grid font-bold text-xs bg-white relative`} style={{ gridTemplateColumns: '1fr 2fr' }} data-testid="result-row" data-set={set}>
+                            <div key={set} className={`flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} grid font-bold text-xs bg-white relative`} style={{ gridTemplateColumns: '1fr 2fr' }} data-testid="result-row" data-set={set} data-row={idx + 1}>
                                 <div className="flex items-center justify-center border-r border-black text-[9px]" data-testid="result-row-label">{rowLabel(set)}</div>
                                 <div className="flex items-center justify-center text-[9px]">
                                     <SetIntervalCountdown endTime={setData?.endTime} duration={setData?.duration} />
@@ -378,7 +380,7 @@ export const Results: React.FC<ResultsProps> = ({
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamBTimeouts !== null;
                             return (
-                             <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs min-h-[16px] relative`} data-testid="result-team-row" data-team="B" data-set={set}>
+                             <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs min-h-[16px] relative`} data-testid="result-team-row" data-team="B" data-set={set} data-row={idx + 1}>
                                 <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
                                     {isFinished ? (setData.teamBPoints ?? 0) : ''}
                                 </div>
