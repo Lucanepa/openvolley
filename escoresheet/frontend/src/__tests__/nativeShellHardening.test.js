@@ -62,12 +62,12 @@ describe('Content-Security-Policy (fe-shell-pwa-6, android-7)', () => {
     expect(policy).not.toMatch(/'unsafe-eval'/)
     expect(policy).toContain("object-src 'none'")
     expect(policy).toContain("base-uri 'self'")
-    expect(policy).toContain("img-src 'self' data: blob: https://openvolley.app;")
+    expect(policy).toContain("img-src 'self' data: blob: https://openvolley.app https://openvolley-media.openvolley.app;")
     expect(policy).toContain("frame-ancestors 'self'")
     expect(contentSecurityPolicy({ frameAncestors: null })).not.toContain('frame-ancestors')
   })
 
-  it("the help panel's videos, posters and subtitles from the website are allowed, no other host", () => {
+  it("the help panel's videos, posters and subtitles from the website are allowed, and the media bucket, no other host", () => {
     // A blocked poster made every help video show "unavailable" (CSP check of
     // the production build, 2026-11-14)
     const policy = contentSecurityPolicy()
@@ -78,8 +78,15 @@ describe('Content-Security-Policy (fe-shell-pwa-6, android-7)', () => {
     expect(allowed('img-src', video.poster)).toBe(true)
     expect(allowed('media-src', video.src)).toBe(true)
     for (const track of video.tracks) expect(allowed('media-src', track.src)).toBe(true)
-    expect(sources('img-src')).toEqual(["'self'", 'data:', 'blob:', 'https://openvolley.app'])
-    expect(sources('media-src')).toEqual(["'self'", 'data:', 'blob:', 'https://openvolley.app'])
+    expect(sources('img-src')).toEqual(["'self'", 'data:', 'blob:', 'https://openvolley.app', 'https://openvolley-media.openvolley.app'])
+    expect(sources('media-src')).toEqual(["'self'", 'data:', 'blob:', 'https://openvolley.app', 'https://openvolley-media.openvolley.app'])
+  })
+
+  it("/dictate's videos and result sheets on the media bucket are allowed", () => {
+    const policy = contentSecurityPolicy()
+    const sources = (name) => policy.match(new RegExp(`${name} ([^;]+)`))[1].split(' ')
+    expect(sources('media-src')).toContain(new URL('https://openvolley-media.openvolley.app/dictate/diktat-1_de.mp4').origin)
+    expect(sources('img-src')).toContain(new URL('https://openvolley-media.openvolley.app/dictate/result_orig.jpg').origin)
   })
 
   it('every web build sends it with frame protection; a dev build as Report-Only', () => {

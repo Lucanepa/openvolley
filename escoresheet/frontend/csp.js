@@ -35,18 +35,22 @@ import { VIDEO_BASE } from './src/components/help/helpSections.js'
 /** The website, where the help panel's videos, posters and subtitles are. */
 export const HELP_VIDEO_ORIGIN = new URL(VIDEO_BASE).origin
 
+/** OpenVolley's media bucket (R2, openvolley-media): the /dictate page's
+ *  videos and result sheets, too big for the page host (25 MiB per file). */
+export const OV_MEDIA_ORIGIN = 'https://openvolley-media.openvolley.app'
+
 export const THEME_BOOT_HASH = `'sha256-${createHash('sha256').update(THEME_BOOT_SCRIPT, 'utf8').digest('base64')}'`
 
 const DIRECTIVES = [
   ["default-src", "'self'"],
   ["script-src", `'self' 'wasm-unsafe-eval' ${THEME_BOOT_HASH}`],
   ["style-src", "'self' 'unsafe-inline'"],
-  ["img-src", `'self' data: blob: ${HELP_VIDEO_ORIGIN}`],
+  ["img-src", `'self' data: blob: ${HELP_VIDEO_ORIGIN} ${OV_MEDIA_ORIGIN}`],
   ["font-src", "'self' data:"],
   ["connect-src", "'self' https: wss: http: ws:"],
   ["worker-src", "'self' blob:"],
   ["frame-src", "'self' blob:"],
-  ["media-src", `'self' data: blob: ${HELP_VIDEO_ORIGIN}`],
+  ["media-src", `'self' data: blob: ${HELP_VIDEO_ORIGIN} ${OV_MEDIA_ORIGIN}`],
   ["manifest-src", "'self'"],
   ["object-src", "'none'"],
   ["base-uri", "'self'"],

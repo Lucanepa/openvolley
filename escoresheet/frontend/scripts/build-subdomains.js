@@ -50,6 +50,20 @@ export const subdomains = {
     mainEntry: 'main',
     themeColor: '#ffffff'
   },
+  // app.openvolley.app/dictate: Swiss Volley's Diktat #1 for the test match
+  // (dictate/index.html). Built with base /dictate/ into dist-app/dictate/
+  // when the app is built, like the scoresheet; no service worker of its own.
+  dictate: {
+    name: 'Diktat #1 – OpenVolley test match',
+    shortName: 'Diktat',
+    description: "Swiss Volley's eScoresheet Diktat #1 for the OpenVolley test match",
+    title: 'Diktat #1 – OpenVolley test match',
+    mainEntry: 'dictate-main',
+    htmlFile: 'dictate/index.html',
+    host: 'app.openvolley.app/dictate',
+    pwa: false,
+    themeColor: '#e2001a'
+  },
   referee: {
     name: 'Referee Dashboard',
     shortName: 'Referee',
@@ -475,6 +489,16 @@ async function main() {
         mkdirSync(scoresheetDest, { recursive: true })
         cpSync(scoresheetSrc, scoresheetDest, { recursive: true })
         console.log('✅ Copied scoresheet to dist-app/scoresheet/')
+      }
+
+      console.log('\n🎬 Building app.openvolley.app/dictate...')
+      await buildSubdomain('dictate', '/dictate/')
+      const dictateSrc = resolve(frontendDir, 'dist-dictate')
+      const dictateDest = resolve(frontendDir, 'dist-app', 'dictate')
+      if (existsSync(dictateSrc)) {
+        mkdirSync(dictateDest, { recursive: true })
+        cpSync(dictateSrc, dictateDest, { recursive: true })
+        console.log('✅ Copied dictate to dist-app/dictate/')
       }
     }
   } else {
