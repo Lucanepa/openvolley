@@ -1,0 +1,4 @@
+OpenVolley 3.2.7
+- Referee: the new set's line-ups show during the set interval.
+- Coin toss: your choices are kept when you go back.
+- Birthdays on 1 January are noted in the roster, not at the coin toss.
