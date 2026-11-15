@@ -3181,6 +3181,7 @@
     "title": "Tablet status",
     "allConnected": "All devices connected",
     "issuesDetected": "{{count}} device(s) with issues",
+    "notConnected": "Not connected: {{roles}}",
     "role": {
       "referee": "Referee",
       "bench_home": "Home bench",

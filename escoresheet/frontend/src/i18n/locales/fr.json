@@ -3174,6 +3174,7 @@
     "title": "État des tablettes",
     "allConnected": "Tous les appareils sont connectés",
     "issuesDetected": "{{count}} appareil(s) avec des problèmes",
+    "notConnected": "Non connecté : {{roles}}",
     "role": {
       "referee": "Arbitre",
       "bench_home": "Banc recevant",

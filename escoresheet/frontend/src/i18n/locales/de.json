@@ -3159,6 +3159,7 @@
     "title": "Tablet-Status",
     "allConnected": "Alle Geräte verbunden",
     "issuesDetected": "{{count}} Gerät(e) mit Problemen",
+    "notConnected": "Nicht verbunden: {{roles}}",
     "role": {
       "referee": "Schiedsrichter",
       "bench_home": "Heimbank",

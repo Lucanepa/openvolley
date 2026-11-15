@@ -3180,6 +3180,7 @@
     "title": "Stato dei tablet",
     "allConnected": "Tutti i dispositivi connessi",
     "issuesDetected": "{{count}} dispositivo/i con problemi",
+    "notConnected": "Non connesso: {{roles}}",
     "role": {
       "referee": "Arbitro",
       "bench_home": "Panchina di casa",

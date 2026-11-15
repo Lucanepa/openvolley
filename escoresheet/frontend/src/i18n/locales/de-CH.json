@@ -3175,6 +3175,7 @@
     "title": "Tablet-Status",
     "allConnected": "Alli Grät verbunde",
     "issuesDetected": "{{count}} Grät mit Problem",
+    "notConnected": "Nöd verbunde: {{roles}}",
     "role": {
       "referee": "Schiri",
       "bench_home": "Heimbank",

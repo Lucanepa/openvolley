@@ -111,6 +111,8 @@ export default function TabletStatusIndicator({ match, compact = false }) {
                 <div key={role.role} className="flex items-center justify-between gap-3 py-2">
                   <span className="min-w-0 truncate text-sm font-medium text-stone-800">
                     {t(`tabletStatus.role.${role.role}`, role.label)}
+                    {/* 1R and 2R both in: one role, two tablets */}
+                    {role.devices > 1 && <span className="ml-1 tabular-nums text-stone-500">×{role.devices}</span>}
                   </span>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <StatusPill className={tone.tint}>{t(`tabletStatus.status.${role.status}`, role.status)}</StatusPill>
@@ -129,9 +131,12 @@ export default function TabletStatusIndicator({ match, compact = false }) {
           <div className={cn('mt-2 rounded-lg border px-2.5 py-2 text-center text-xs font-medium', SUMMARY_BOX[summary.overallStatus] || SUMMARY_BOX.none)}>
             {summary.overallStatus === 'ok'
               ? t('tabletStatus.allConnected', 'All devices connected')
-              : t('tabletStatus.issuesDetected', {
-                  defaultValue: '{{count}} device(s) with issues',
-                  count: summary.expectedCount - summary.connectedCount
+              // the roles switched on in Connect tablets with no tablet there,
+              // by name: "1 device with issues" read as a referee tablet while
+              // both referees were in and a bench was missing (owner 15.11)
+              : t('tabletStatus.notConnected', {
+                  defaultValue: 'Not connected: {{roles}}',
+                  roles: summary.roles.filter(r => r.status !== 'connected').map(r => t(`tabletStatus.role.${r.role}`, r.label)).join(', ')
                 })
             }
           </div>
