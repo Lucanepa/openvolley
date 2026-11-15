@@ -67,6 +67,16 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.4" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.4</url>
+      <description>
+        <ul>
+          <li>German, French and Italian now address you informally (du/tu).</li>
+          <li>Swiss German (de-CH) reviewed throughout, with the same terms as OpenVolley.</li>
+          <li>"Made by Swiss referees" under the logo on the home screen.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.3" date="2026-10-30">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.3</url>
       <description>
