@@ -461,6 +461,14 @@ export const admin = {
   resetMatchPin(matchId) {
     return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/pin`, {})
   },
+  /** The final mail of the match's latest close: { sendable, reason, recipients (a count), pdf, resend, state: { outcome, recipients, sent_at } }. */
+  finalMailStatus(matchId) {
+    return apiRequest('GET', `/api/admin/matches/${enc(matchId)}/final-mail`)
+  },
+  /** That mail now, whatever the switch (audited): { outcome, recipients, reached, pdf, resend, state }. */
+  sendFinalMail(matchId) {
+    return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/final-mail`, {})
+  },
   listAudit({ limit, before, action, app } = {}) {
     return apiRequest('GET', `/api/admin/audit${query({ limit, before, action, app })}`)
   },
