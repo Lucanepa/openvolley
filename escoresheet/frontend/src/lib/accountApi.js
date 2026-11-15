@@ -625,6 +625,8 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_SCORESHEET_NOT_FOUND': return 'manage.scoresheets.noPdf'
     // db/023: a team's game roster
     case 'OV_GAME_NOT_YOURS': return 'manage.myTeams.notYourGame'
+    // owner 2026-11-15: no roster sent, changed or deleted after kick-off
+    case 'OV_GAME_STARTED': return 'manage.myTeams.started'
     // db/024: a player of the club's list with the other gender than the team's
     case 'OV_WRONG_GENDER': return 'manage.licences.wrongGender'
     // db/037: people added by hand, bounded per club and per account a day; one row removed

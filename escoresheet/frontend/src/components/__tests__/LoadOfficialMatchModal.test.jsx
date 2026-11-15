@@ -224,3 +224,86 @@ describe('the level from a schedule row', () => {
     expect(m).toMatchObject({ type1: 'championship', type2: 'women', type3: 'senior', type3Other: '', championshipType: 'regional' })
   })
 })
+
+// owner 2026-11-15: "hide previous matches (matches with start time before
+// current time) under 'earlier matches' in load schedule"
+describe('LoadOfficialMatchModal earlier matches', () => {
+  const row = (n, datetime, away = `Away ${n}`) => ({
+    id: ++lastId, game_number: n, gender: 'men', league: '2L', datetime, team_home: `Home ${n}`, team_away: away
+  })
+  beforeEach(() => {
+    // Only Date is faked: 15.11.2026 15:00 in Zürich
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-15T14:00:00Z'))
+    api.error = null
+    api.queries = []
+    api.maxRows = 1000
+    api.rows = [
+      row('E1', '2026-11-15T08:00:00.000000+00:00', 'VBC Rämi'), // 09:00, this morning
+      row('E2', '2026-11-15T13:30:00.000000+00:00'), // 14:30, already on
+      row('U1', '2026-11-15T17:00:00.000000+00:00', 'VBC Rämi'), // 18:00, tonight
+      row('U2', '2026-11-16T08:00:00.000000+00:00') // tomorrow 09:00
+    ]
+  })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  const openLeague = async () => {
+    render(<LoadOfficialMatchModal open onClose={() => {}} onSelectMatch={() => {}} />)
+    await screen.findByRole('combobox', { name: 'loadOfficialMatch.gender' })
+    chooseGender('men')
+    fireEvent.change(leagueSelect(), { target: { value: '2L' } })
+    await screen.findByText('Home U1')
+  }
+
+  it('lists games that already started under a closed "Earlier matches", after the upcoming ones', async () => {
+    await openLeague()
+    expect(screen.getByText('Home U2')).toBeInTheDocument()
+    expect(screen.queryByText('Home E1')).toBeNull()
+    expect(screen.queryByText('Home E2')).toBeNull()
+
+    const toggle = screen.getByTestId('schedule-earlier-toggle')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveTextContent('loadOfficialMatch.earlierMatches (2)')
+    // after the upcoming games
+    expect(screen.getByText('Home U2').compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const earlier = screen.getByTestId('schedule-earlier-games')
+    expect(within(earlier).getAllByText(/^Home /).map(n => n.textContent)).toEqual(['Home E1', 'Home E2'])
+    // the upcoming games keep their order
+    const rows = [...screen.getByTestId('schedule-games').querySelectorAll('.sg-row .sg-num')].map(n => n.textContent)
+    expect(rows).toEqual(['U1', 'U2', 'E1', 'E2'])
+
+    fireEvent.click(toggle)
+    expect(screen.queryByText('Home E1')).toBeNull()
+  })
+
+  it('a search keeps the groups', async () => {
+    await openLeague()
+    fireEvent.change(screen.getByRole('textbox', { name: 'loadOfficialMatch.searchPlaceholder' }), { target: { value: 'rämi' } })
+    expect(screen.getByText('Home U1')).toBeInTheDocument()
+    expect(screen.queryByText('Home U2')).toBeNull()
+    const toggle = screen.getByTestId('schedule-earlier-toggle')
+    expect(toggle).toHaveTextContent('(1)')
+    expect(screen.queryByText('Home E1')).toBeNull()
+    fireEvent.click(toggle)
+    expect(screen.getByText('Home E1')).toBeInTheDocument()
+    expect(screen.queryByText('Home E2')).toBeNull()
+  })
+
+  it('every game earlier: the empty state, with the section below it', async () => {
+    api.rows = api.rows.filter(r => r.game_number.startsWith('E'))
+    render(<LoadOfficialMatchModal open onClose={() => {}} onSelectMatch={() => {}} />)
+    await screen.findByRole('combobox', { name: 'loadOfficialMatch.gender' })
+    chooseGender('men')
+    fireEvent.change(leagueSelect(), { target: { value: '2L' } })
+    const empty = await screen.findByTestId('schedule-empty-upcoming')
+    expect(empty).toHaveTextContent('loadOfficialMatch.noUpcomingMatches')
+    const toggle = screen.getByTestId('schedule-earlier-toggle')
+    expect(empty.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText('Home E1')).toBeNull()
+    fireEvent.click(toggle)
+    expect(screen.getByText('Home E1')).toBeInTheDocument()
+  })
+})

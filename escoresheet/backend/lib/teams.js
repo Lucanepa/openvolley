@@ -15,9 +15,10 @@
  *                                               dates of birth fill the empty ones (lib/licences.js fillTeamDob)
  *   games({ teamId })                           the team's games from today, each with its roster summary
  *   getRoster({ teamId, game })                 the team's roster of game `game`, or null
- *   putRoster({ actorId, teamId, game, body })  { players, staff, coach_signature?, captain_signature? }, any time
- *                                               (OV_WRONG_GENDER and the dates of birth as putSquad)
- *   deleteRoster({ actorId, teamId, game })
+ *   putRoster({ actorId, teamId, game, body })  { players, staff, coach_signature?, captain_signature? }, until
+ *                                               kick-off (409 OV_GAME_STARTED after it; OV_WRONG_GENDER and
+ *                                               the dates of birth as putSquad)
+ *   deleteRoster({ actorId, teamId, game })     until kick-off too (409 OV_GAME_STARTED)
  * Club managers of the club (and admins):
  *   clubTeams({ clubId })                       the club's teams with their managers
  *   teamInviteBody(body)                        a team link within the limits below
@@ -32,8 +33,10 @@
  *
  * Personal data (names, dates of birth, licence numbers): served only through
  * these routes, never on the /api/db allowlist, never anonymous; the audit
- * keeps game numbers, sides and counts only. Owner 2026-11-08: a sent roster
- * has no lock (the team may change it at any time). db/035: it is read and
+ * keeps game numbers, sides and counts only. Owner 2026-11-15 (replacing "no
+ * lock" of 2026-11-08): the team sends, changes and deletes a roster until its
+ * game's kick-off, and reads it after; the scorer still accepts it after
+ * kick-off (markUsed). db/035: it is read and
  * accepted only by the home club's scorers, the match holder and the sending
  * team, every read is audited, accepting records the match, and every row
  * goes at expires_at, 14 days after its game (sweep(), on a timer).
@@ -77,6 +80,8 @@ const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArr
 const key = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
 
 export const NOT_YOUR_GAME = () => fail(404, 'OV_GAME_NOT_YOURS', 'This game is not one of the team\'s games in the schedule')
+// Owner 2026-11-15: "how can I prepare a roster for a game already started"
+export const GAME_STARTED = () => fail(409, 'OV_GAME_STARTED', 'The game has started: no roster can be sent or changed any more')
 // A signature made ahead: the pad's PNG data URL (db/023 CHECK)
 export const SIGNATURE_MAX_LENGTH = 200000
 const SIGNATURE_PREFIX = 'data:image/png;base64,'
@@ -468,7 +473,10 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
     })
   }
 
-  /** The team's game `game`: { team, game, side, season, started } or an answer. No lock (owner 2026-11-08). */
+  /**
+   * The team's game `game`: { team, game, side, season, started } or an answer.
+   * The writes refuse a started game (owner 2026-11-15); reads don't.
+   */
   async function gameOf (db, teamId, game) {
     const team = await teamRow(db, teamId)
     if (!team) return { answer: notFound() }
@@ -513,8 +521,9 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
 
   /**
    * PUT /api/team/:teamId/roster?game=<n> { players, staff, coach_signature?,
-   * captain_signature? }: at any time (no lock). A new version is offered to
-   * the scorer again, also after an earlier one was accepted.
+   * captain_signature? }: until kick-off (owner 2026-11-15; 409 OV_GAME_STARTED
+   * after it). A new version is offered to the scorer again, also after an
+   * earlier one was accepted.
    */
   async function putRoster ({ actorId, teamId, game, body } = {}) {
     const v = validateGameRoster(body)
@@ -522,6 +531,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
     const out = await guarded('put-roster', () => withTx(async (client) => {
       const x = await gameOf(client, teamId, game)
       if (x.answer) throw abort(x.answer)
+      if (x.started) throw abort(GAME_STARTED())
       // db/024: a player can't play in the wrong gender (owner 2026-11-09);
       // the officials are not checked: they may be anyone of the club
       const wrong = licences ? await licences.wrongGender(client, x.team, v.players) : null
@@ -582,6 +592,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
     return guarded('delete-roster', () => withTx(async (client) => {
       const x = await gameOf(client, teamId, game)
       if (x.answer) throw abort(x.answer)
+      if (x.started) throw abort(GAME_STARTED())
       const n = String(x.game.game_number)
       const { rowCount } = await client.query(
         'DELETE FROM public.game_rosters WHERE game_number = $1 AND season = $2 AND side = $3', [n, x.season, x.side])
