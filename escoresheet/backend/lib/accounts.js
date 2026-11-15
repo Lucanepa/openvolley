@@ -130,7 +130,11 @@ export const AUDIT_ACTIONS = Object.freeze([
   // the cutoff and the counts, never a match or a name), and an operator's
   // redaction of one person (scripts/redact-person.mjs; the mode, a digest of
   // the person and the counts per table, never a name)
-  'retention.sweep', 'person.redact'
+  'retention.sweep', 'person.redact',
+  // the manager's Data tab (lib/dataAdmin.js, super admins): one row added,
+  // changed or deleted (the table, the key, the columns; personal values
+  // read "[personal]", json "[json]")
+  'data.insert', 'data.update', 'data.delete'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)

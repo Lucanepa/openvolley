@@ -3703,6 +3703,72 @@
     "menuAdmin": "Admin",
     "menuSavedTeams": "Squadre salvate",
     "menuInviteCode": "Inserisci codice d’invito",
+    "data": {
+      "intro": "Ogni tabella del database, una riga alla volta. PIN, hash dei token e dati di accesso non vengono mai mostrati. I log e i record delle partite chiuse sono di sola lettura, e ogni modifica finisce nel registro.",
+      "findTable": "Trova una tabella",
+      "noTables": "Nessuna tabella trovata.",
+      "allTables": "Tutte le tabelle",
+      "rowsAbout_one": "Circa {{count}} riga",
+      "rowsAbout_other": "Circa {{count}} righe",
+      "columns_one": "{{count}} colonna",
+      "columns_other": "{{count}} colonne",
+      "readOnly": {
+        "log": "Sola lettura (log)",
+        "no_key": "Sola lettura (senza chiave)",
+        "secret_key": "Sola lettura"
+      },
+      "readOnlyLong": {
+        "log": "Questa tabella è un log o un record: solo l’app ci scrive.",
+        "no_key": "Questa tabella non ha una chiave primaria, quindi qui non puoi modificarne le righe.",
+        "secret_key": "La chiave di questa tabella è segreta, quindi qui non puoi modificarne le righe."
+      },
+      "addRow": "Aggiungi riga",
+      "secretHidden": "Non mostrato: {{columns}}",
+      "search": "Cerca in tutte le colonne",
+      "filterColumn": "Colonna",
+      "filterOp": "Condizione",
+      "filterValue": "Valore",
+      "ops": {
+        "like": "Contiene",
+        "null": "È vuoto",
+        "notnull": "Non è vuoto",
+        "eq": "=",
+        "ne": "≠",
+        "gt": ">",
+        "gte": "≥",
+        "lt": "<",
+        "lte": "≤"
+      },
+      "apply": "Filtra",
+      "clearFilter": "Rimuovi filtro",
+      "noRows": "Nessuna riga.",
+      "sortBy": "Ordina per {{column}}",
+      "key": "Chiave",
+      "range": "{{from}}–{{to}} di {{total}}",
+      "previous": "Precedente",
+      "next": "Avanti",
+      "generated": "Generato",
+      "invalid": {
+        "json": "Questo non è un JSON valido.",
+        "array": "Deve essere un array JSON."
+      },
+      "null": "Vuoto (NULL)",
+      "useDefault": "Valore predefinito",
+      "added": "Riga aggiunta",
+      "saved": "Salvato",
+      "deleted": "Riga eliminata",
+      "deleteTitle": "Eliminare questa riga?",
+      "deleteBody": "La riga viene eliminata definitivamente da {{table}}, insieme a tutto ciò che il database elimina con essa. Il registro tiene traccia dell’eliminazione.",
+      "delete": "Elimina",
+      "newRow": "Nuova riga",
+      "changedMeanwhile": "Qualcuno ha modificato {{columns}} da quando hai aperto questa riga. Ricaricala e controlla prima di salvare di nuovo.",
+      "reload": "Ricarica",
+      "add": "Aggiungi",
+      "save": "Salva",
+      "discard": "Annulla le modifiche",
+      "changedColumns": "Modificato: {{columns}}",
+      "audited": "Ogni modifica finisce nel registro, senza valori personali."
+    },
     "tabs": {
       "accounts": "Account",
       "invites": "Codici d’invito",
@@ -3716,7 +3782,8 @@
       "clubs": "Società",
       "myclub": "La mia società",
       "settings": "Impostazioni",
-      "myteams": "Le mie squadre"
+      "myteams": "Le mie squadre",
+      "data": "Dati"
     },
     "status": {
       "setup": "Preparazione",
@@ -3988,6 +4055,9 @@
       "rows_one": "{{count}} voce",
       "rows_other": "{{count}} voci",
       "actions": {
+        "data_insert": "Dati: riga aggiunta",
+        "data_update": "Dati: riga modificata",
+        "data_delete": "Dati: riga eliminata",
         "account_delete": "Account eliminato",
         "account_reject": "Registrazione rifiutata",
         "account_roles": "Ruoli modificati",
