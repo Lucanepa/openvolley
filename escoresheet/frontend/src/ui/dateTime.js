@@ -13,7 +13,7 @@
 //
 // Pure functions only: no React, no clock unless one is passed in.
 
-import { localeOf, todayKey } from './format.js';
+import { localeOf, todayKey, currentTz } from './format.js';
 
 export const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -279,10 +279,10 @@ export function minuteOptions(step = 5, current) {
   return out;
 }
 
-/** 'HH:MM' of the Zürich clock now, rounded down to the step. */
+/** 'HH:MM' of the clock now (Zürich; the device's own in the Global tool), rounded down to the step. */
 export function nowTime(step = 1, now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Zurich', hour12: false, hour: '2-digit', minute: '2-digit',
+    timeZone: currentTz(), hour12: false, hour: '2-digit', minute: '2-digit',
   }).formatToParts(now);
   const h = Number(parts.find((p) => p.type === 'hour')?.value) % 24;
   const m = Number(parts.find((p) => p.type === 'minute')?.value);

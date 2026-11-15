@@ -5,20 +5,23 @@
  * change, UTC) listed a backup written at 14:30 gym time as 15:30.
  */
 
-import { APP_TZ } from '../ui/format'
+import { currentTz } from '../ui/format'
 
 const pad = (n) => String(n).padStart(2, '0')
 
-let zurichSeconds = null
-// day, month, year, hour, minute, second of an instant on the Zürich clock
+const secondFormatters = new Map()
+// day, month, year, hour, minute, second of an instant on the app's clock (Zürich; the device's own in Global)
 function zurichFields(date) {
-  if (!zurichSeconds) {
-    zurichSeconds = new Intl.DateTimeFormat('en-GB', {
-      timeZone: APP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  const tz = currentTz()
+  let fmt = secondFormatters.get(tz)
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
     })
+    secondFormatters.set(tz, fmt)
   }
-  const at = Object.fromEntries(zurichSeconds.formatToParts(date).map(p => [p.type, p.value]))
+  const at = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value]))
   // Some ICU builds render midnight as hour 24
   return { ...at, hour: at.hour === '24' ? '00' : at.hour }
 }

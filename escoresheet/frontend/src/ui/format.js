@@ -1,4 +1,6 @@
 // Swiss formatting: every clock is a Zürich clock, every number a de-CH one.
+// (Global tool, owner 2026-11-15: its clock is the DEVICE's own, for a tournament
+// in any country; currentTz() below.)
 //
 // Port of svrz_rc src/lib/appTime.ts (zonedParts, weekdayLabel, dayLabel,
 // timeLabel, shortDayLabel, dayTimeLabel, dayKey, todayKey) plus the number
@@ -17,7 +19,23 @@
 // Numbers and Date objects are accepted too. Nothing here throws. These run
 // inside render, where a TypeError means a blank page.
 
+import { getToolMode } from '../utils/toolMode';
+
 export const APP_TZ = 'Europe/Zurich';
+
+/** The device's own time zone (IANA), else Zürich. */
+export function deviceTz() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || APP_TZ; } catch { return APP_TZ; }
+}
+
+/**
+ * The zone every clock reads: Zürich, the gym's clock, in the Swiss tool; the
+ * device's own in the Global tool (tournaments in other countries; the scorer's
+ * device is in the hall). The tool is chosen once per device (utils/toolMode).
+ */
+export function currentTz() {
+  return getToolMode() === 'global' ? deviceTz() : APP_TZ;
+}
 
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const WALL_CLOCK_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/;
@@ -25,15 +43,23 @@ const HAS_ZONE_RE = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 
 const INVALID = { valid: false, timed: false, year: 0, month: 0, day: 0, hour: 0, minute: 0 };
 
-const partsFormatter = new Intl.DateTimeFormat('en-GB', {
-  timeZone: APP_TZ,
-  hour12: false,
-  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-});
+const partsFormatters = new Map();
+function partsFormatterFor(timeZone) {
+  let f = partsFormatters.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+    partsFormatters.set(timeZone, f);
+  }
+  return f;
+}
 
 function fromInstant(date) {
   if (Number.isNaN(date.getTime())) return INVALID;
-  const parts = partsFormatter.formatToParts(date);
+  const parts = partsFormatterFor(currentTz()).formatToParts(date);
   const at = (type) => Number(parts.find((p) => p.type === type)?.value ?? NaN);
   const hour = at('hour');
   return {
