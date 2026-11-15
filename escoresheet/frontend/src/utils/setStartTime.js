@@ -37,17 +37,35 @@ export function scheduledStartOnDay(scheduledAt, now = new Date()) {
 }
 
 /**
- * The schedule set 1's start is proposed from: the match's scheduledAt, none
- * for a test match (its scheduledAt is a made-up next 20:00 kickoff,
- * testSeeds getNextTestMatchStartTime: a test scored at 15:00 was proposed
- * 20:00, and any real start became an "Actual start time" remark).
+ * How near "now" a test match's scheduled time of day must be to count as its
+ * schedule (either side). See startScheduleOf.
+ */
+export const TEST_SCHEDULE_WINDOW_MS = 30 * 60 * 1000
+
+/**
+ * The schedule set 1's start is proposed from: the match's scheduledAt.
  *
- * @param {{ scheduledAt?: string|null, test?: boolean }|null|undefined} match
+ * A test match's scheduledAt is a made-up next 20:00 kickoff (testSeeds
+ * getNextTestMatchStartTime: a test scored at 15:00 was proposed 20:00, and
+ * any real start became an "Actual start time" remark, 2026-10-08), unless the
+ * scorer set a real one (a schedule game loaded, the time typed): a test
+ * match used for a real 14:00 game started 14:06 was proposed 14:06 (owner
+ * 2026-11-15: "not 14:00 as suggestion as = to scheduled time"). So a test
+ * match's scheduled time counts only within 30 minutes of now; the made-up
+ * kickoff hours away stays no schedule. An Easy match has none: its
+ * scheduledAt is the moment it was created.
+ *
+ * @param {{ scheduledAt?: string|null, test?: boolean, easy?: boolean }|null|undefined} match
+ * @param {Date} [now]
  * @returns {string|null}
  */
-export function startScheduleOf(match) {
-  if (!match || match.test === true) return null
-  return match.scheduledAt || null
+export function startScheduleOf(match, now = new Date()) {
+  if (!match || match.easy === true) return null
+  const scheduledAt = match.scheduledAt || null
+  if (match.test !== true) return scheduledAt
+  const onDay = scheduledStartOnDay(scheduledAt, now)
+  if (!onDay) return null
+  return Math.abs(new Date(onDay).getTime() - now.getTime()) <= TEST_SCHEDULE_WINDOW_MS ? scheduledAt : null
 }
 
 /** True when the set's start is proposed from the schedule: set 1 of a match with a scheduled time. */

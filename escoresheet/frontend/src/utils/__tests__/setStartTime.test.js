@@ -79,13 +79,37 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
 
   it('a test match (made-up 20:00 kickoff) has no schedule: set 1 now, no remark', () => {
     const testMatch = { test: true, scheduledAt: iso(2026, 10, 8, 20, 0) }
-    expect(startScheduleOf(testMatch)).toBeNull()
-    expect(defaultSetStartTime({ setIndex: 1, now: today, scheduledAt: startScheduleOf(testMatch) })).toBe(iso(2026, 10, 8, 12, 41))
-    expect(startsFromSchedule({ setIndex: 1, scheduledAt: startScheduleOf(testMatch) })).toBe(false)
-    expect(actualStartRemark({ setIndex: 1, scheduledAt: startScheduleOf(testMatch), startTime: iso(2026, 10, 8, 12, 41) })).toBeNull()
+    expect(startScheduleOf(testMatch, today)).toBeNull()
+    expect(defaultSetStartTime({ setIndex: 1, now: today, scheduledAt: startScheduleOf(testMatch, today) })).toBe(iso(2026, 10, 8, 12, 41))
+    expect(startsFromSchedule({ setIndex: 1, scheduledAt: startScheduleOf(testMatch, today) })).toBe(false)
+    expect(actualStartRemark({ setIndex: 1, scheduledAt: startScheduleOf(testMatch, today), startTime: iso(2026, 10, 8, 12, 41) })).toBeNull()
     expect(startScheduleOf({ scheduledAt })).toBe(scheduledAt)
     expect(startScheduleOf({ test: false, scheduledAt })).toBe(scheduledAt)
     expect(startScheduleOf(null)).toBeNull()
+  })
+
+  it('a test match with a real time near now (a real game scored as a test) proposes it (owner 2026-11-15)', () => {
+    // scheduled 14:00, first rally 14:06:30: 14:00, not 14:06
+    const testMatch = { test: true, scheduledAt: iso(2026, 11, 15, 14, 0) }
+    const now = local(2026, 11, 15, 14, 6, 30)
+    const scheduled = startScheduleOf(testMatch, now)
+    expect(scheduled).toBe(testMatch.scheduledAt)
+    expect(defaultSetStartTime({ setIndex: 1, now, scheduledAt: scheduled })).toBe(iso(2026, 11, 15, 14, 0))
+    expect(actualStartRemark({ setIndex: 1, scheduledAt: scheduled, startTime: iso(2026, 11, 15, 14, 0) })).toBeNull()
+    // 30 minutes either side; further away the made-up kickoff rule holds
+    expect(startScheduleOf(testMatch, local(2026, 11, 15, 13, 30))).toBe(testMatch.scheduledAt)
+    expect(startScheduleOf(testMatch, local(2026, 11, 15, 14, 30))).toBe(testMatch.scheduledAt)
+    expect(startScheduleOf(testMatch, local(2026, 11, 15, 14, 31))).toBeNull()
+    expect(startScheduleOf(testMatch, local(2026, 11, 15, 13, 29))).toBeNull()
+    // a real match: the scheduled time whenever it starts (owner 2026-10-08)
+    expect(startScheduleOf({ scheduledAt: testMatch.scheduledAt }, local(2026, 11, 15, 16, 0))).toBe(testMatch.scheduledAt)
+  })
+
+  it('an Easy match has no schedule (its scheduledAt is its creation time): set 1 now', () => {
+    const now = local(2026, 11, 15, 13, 50, 10)
+    const easy = { test: true, easy: true, scheduledAt: local(2026, 11, 15, 13, 41, 23).toISOString() }
+    expect(startScheduleOf(easy, now)).toBeNull()
+    expect(defaultSetStartTime({ setIndex: 1, now, scheduledAt: startScheduleOf(easy, now) })).toBe(iso(2026, 11, 15, 13, 50))
   })
 
   it('later sets keep "now, never before the previous end", without a remark', () => {
