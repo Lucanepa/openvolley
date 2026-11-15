@@ -71,6 +71,14 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.13" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.13</url>
+      <description>
+        <ul>
+          <li>Set 1 is proposed as the scheduled time again; a different start you confirm adds "Actual game start: HH:MM" to the remarks. Later sets are proposed as the last set end + 3 min, and the scoresheet prints the time you confirmed.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.12" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.12</url>
       <description>
