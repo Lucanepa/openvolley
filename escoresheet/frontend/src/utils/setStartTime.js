@@ -68,13 +68,9 @@ export function startScheduleOf(match, now = new Date()) {
   return Math.abs(new Date(onDay).getTime() - now.getTime()) <= TEST_SCHEDULE_WINDOW_MS ? scheduledAt : null
 }
 
-/**
- * Set 1's start is no longer proposed from the schedule (owner 2026-11-15:
- * the match's actual start), so nothing is "from the schedule" any more.
- * Kept for the callers that pass the flag along.
- */
-export function startsFromSchedule() {
-  return false
+/** True when the set's start is proposed from the schedule: set 1 of a match with a scheduled time. */
+export function startsFromSchedule({ setIndex, scheduledAt }) {
+  return setIndex === 1 && scheduledStartOnDay(scheduledAt) !== null
 }
 
 /** Minutes between a set's end and the next set's proposed start (the interval). */
@@ -83,27 +79,39 @@ export const INTERVAL_MINUTES = 3
 /**
  * Default time offered by the "Set N start time" dialog (owner 2026-11-15).
  *
- * Set 1: the match's actual start, now (to the minute, rounded down).
- * Set 2..5: the end of the last set already played + 3 minutes.
- * The scorer's confirmed time is the set's start on the sheet and the result
- * card (utils matchTimes), whatever the first rally's clock said.
+ * Set 1 of a match with a scheduled time: the scheduled time of day, on the
+ * day played. A minor delay does not move it (the rules: a 15:02 start of a
+ * 15:00 match is 15:00); a different time the scorer confirms has to be
+ * explained, so it goes to the remarks ("Actual game start: HH:MM",
+ * actualStartRemark). Without a schedule (test / Easy match): now.
  *
- * @param {{ setIndex: number, sets?: Array<{index: number, endTime?: string}>, now?: Date }} args
+ * Sets 2..5: the end of the last set already played + 3 minutes (now when no
+ * set has an end).
+ *
+ * The confirmed time is the start printed on the scoresheet and the result
+ * card (matchTimes), whatever the clock of the first rally said.
+ *
+ * @param {{ setIndex: number, sets?: Array<{index: number, endTime?: string}>, now?: Date, scheduledAt?: string|null }} args
  * @returns {string} ISO timestamp with zeroed seconds
  */
-export function defaultSetStartTime({ setIndex, sets = [], now = new Date() }) {
+export function defaultSetStartTime({ setIndex, sets = [], now = new Date(), scheduledAt = null }) {
+  if (setIndex === 1) {
+    const scheduled = scheduledStartOnDay(scheduledAt, now)
+    if (scheduled) return scheduled
+    return roundToMinute(now.toISOString())
+  }
   let lastEnd = null
   for (const s of sets) {
     if (!s || !(s.index < setIndex) || !s.endTime) continue
     const end = new Date(s.endTime).getTime()
     if (Number.isFinite(end) && (lastEnd === null || end > lastEnd)) lastEnd = end
   }
-  if (setIndex === 1 || lastEnd === null) return roundToMinute(now.toISOString())
+  if (lastEnd === null) return roundToMinute(now.toISOString())
   return roundToMinute(new Date(lastEnd + INTERVAL_MINUTES * 60000).toISOString())
 }
 
 /**
- * The remark for set 1's start: "Actual start time: HH:MM" when the scorer
+ * The remark for set 1's start: "Actual game start: HH:MM" when the scorer
  * confirmed a time of day other than the scheduled one, else null (the
  * scheduled time kept, a later set, or no schedule).
  *

@@ -432,7 +432,7 @@ describe('set times, rotation, advanced removal', () => {
     expect(p1.update[0].id).toBe(end.id)
   })
 
-  it('set 1 start corrected: one "Actual start time" line, replaced, removed at the scheduled time (owner 2026-10-08)', () => {
+  it('set 1 start corrected: one "Actual game start" line, replaced, removed at the scheduled time (owner 2026-10-08)', () => {
     const { events, sets } = fixture()
     const startDay = new Date(sets[0].startTime)
     const localOn = (h, m) => { const d = new Date(startDay.getTime()); d.setHours(h, m, 0, 0); return d.toISOString() }
@@ -440,18 +440,18 @@ describe('set times, rotation, advanced removal', () => {
     const sched = new Date(2025, 2, 12, 12, 30).toISOString()
     const s1 = [{ ...sets[0], startTime: localOn(12, 30), endTime: localOn(13, 0) }, sets[1]]
     const p1 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 45), scheduledAt: sched, remarks: 'Other' }, review)
-    expect(p1.remarkAdd).toEqual(['Actual start time: 12:45'])
+    expect(p1.remarkAdd).toEqual(['Actual game start: 12:45'])
     expect(p1.remarkRemove).toEqual([])
     // the delay suggestion counts from 12:30 on the day played, not from 2025
     expect(p1.suggestedRemark).toMatch(/\(15' delay\)/)
-    const p2 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 50), scheduledAt: sched, remarks: 'Other\nActual start time: 12:45' }, review)
-    expect(p2.remarkRemove).toEqual(['Actual start time: 12:45'])
-    expect(p2.remarkAdd).toEqual(['Actual start time: 12:50'])
-    const p3 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 30), scheduledAt: sched, remarks: 'Other\nActual start time: 12:50' }, review)
-    expect(p3.remarkRemove).toEqual(['Actual start time: 12:50'])
+    const p2 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 50), scheduledAt: sched, remarks: 'Other\nActual game start: 12:45' }, review)
+    expect(p2.remarkRemove).toEqual(['Actual game start: 12:45'])
+    expect(p2.remarkAdd).toEqual(['Actual game start: 12:50'])
+    const p3 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 30), scheduledAt: sched, remarks: 'Other\nActual game start: 12:50' }, review)
+    expect(p3.remarkRemove).toEqual(['Actual game start: 12:50'])
     expect(p3.remarkAdd).toEqual([])
     // the same time again: no remark change
-    const p4 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 45), scheduledAt: sched, remarks: 'Actual start time: 12:45' }, review)
+    const p4 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 45), scheduledAt: sched, remarks: 'Actual game start: 12:45' }, review)
     expect(p4.remarkAdd).toEqual([])
     expect(p4.remarkRemove).toEqual([])
     // no schedule, or a later set: no actual-start remark

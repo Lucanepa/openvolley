@@ -3,7 +3,7 @@
  *
  * Remarks are written from many places: the remarks box on the scoreboard and
  * on the match end page, the automatic lines of the scoreboard (injury,
- * exceptional substitution, "Actual start time: HH:MM", forfeit / default),
+ * exceptional substitution, "Actual game start: HH:MM", forfeit / default),
  * the Corrections panel and undo (which takes an automatic line back out).
  * Instead of a sync job at each of them, a Dexie table hook on db.matches
  * (like db/eventHistory) queues one match update { remarks } for every

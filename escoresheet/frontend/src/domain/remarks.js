@@ -85,12 +85,13 @@ export function liberoUnableText(liberoNumber, reason) {
 
 /**
  * Set 1's actual start, when the scorer confirmed a time other than the
- * scheduled one (owner 2026-10-08): "Actual start time: 12:45". Always in
+ * scheduled one (owner 2026-10-08): "Actual game start: 12:45". Always in
  * English, like the other automatic remarks the match writes, so the line is
  * found again (replaced / removed) whatever the app language.
  */
-export const ACTUAL_START_LABEL = 'Actual start time'
-const ACTUAL_START_RE = /^Actual start time: \d{1,2}:\d{2}$/
+export const ACTUAL_START_LABEL = 'Actual game start'
+// the earlier wording "Actual start time" is still recognised (replaced / removed)
+const ACTUAL_START_RE = /^Actual (?:game start|start time): \d{1,2}:\d{2}$/
 
 /** The remark line for a set 1 that started at `at` (Zürich HH:MM). */
 export function actualStartLine(at) {
