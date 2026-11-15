@@ -2,6 +2,7 @@ import ballFallback from '../../ball_fallback.png'
 import { DISC, discCssVars } from './discSizing.js'
 import { TEAM_COLOUR_MARK, markColourOn } from '../../utils/teamColours.js'
 import { CardGlyph, topSanction } from './SanctionCards.jsx'
+import { LIBERO_FLASH_MS } from './discFlash.js'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -56,7 +57,8 @@ const SLATE = '#0f172a'
  * @param {string} props.color number colour
  * @param {string} [props.textShadow] outline for the number on a mid-tone fill
  * @param {string|null} [props.ring] edge colour for a fill that would melt into the court (white, yellow...)
- * @param {boolean} [props.flash] recently substituted in: orange flashing ring
+ * @param {boolean|'once'} [props.flash] recently substituted in: orange flashing ring
+ *   (true: pulsing, a substitution; 'once': one pulse, a libero replacement)
  * @param {boolean} [props.showBall]
  * @param {string|number|null} [props.replacedNumber]
  * @param {boolean} [props.replacedByLibero]
@@ -99,7 +101,9 @@ export default function PlayerDisc({
         fontWeight: flash ? 900 : 700,
         fontVariantNumeric: 'tabular-nums',
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
-        animation: flash ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined
+        // a substitution pulses until it is cleared; a libero replacement once
+        animation: flash === 'once' ? `recentSubFlash ${LIBERO_FLASH_MS}ms ease-in-out 1`
+          : flash ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined
       }}
     >
       {showBall && (

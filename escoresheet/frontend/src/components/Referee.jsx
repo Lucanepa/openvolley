@@ -29,6 +29,7 @@ import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
 import { nextLastEvent, refereeEventLabel } from '../utils/refereeLastEvent.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
+import { SUB_FLASH_MS, LIBERO_FLASH_MS, discFlashOf, liberoFlashKey, withoutLiberoFlashes } from './referee/discFlash.js'
 import ScoreServeRow from './referee/ScoreServeRow.jsx'
 import RecordedNoticePopup from './referee/RecordedNoticePopup.jsx'
 import BenchRequestIndicator from './referee/BenchRequestIndicator.jsx'
@@ -268,8 +269,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const shownTimeoutStartRef = useRef(null)
 
   // Flashing substitution state (like Scoreboard)
-  const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }]
+  // [{ team, playerNumber, timestamp, kind: 'sub' | 'libero' }]: a substitution
+  // pulses for SUB_FLASH_MS, a libero replacement once (referee/discFlash.js)
+  const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([])
   const recentSubFlashTimeoutRef = useRef(null)
+  const liberoFlashTimeoutRef = useRef(null)
+  // the libero event of the live-state row last flashed (the row keeps it)
+  const lastLiberoFlashKeyRef = useRef(null)
+  useEffect(() => () => {
+    clearTimeout(recentSubFlashTimeoutRef.current)
+    clearTimeout(liberoFlashTimeoutRef.current)
+  }, [])
 
   // Connection type state (auto, supabase, websocket)
   const [connectionType, setConnectionType] = useState(CONNECTION_TYPES.AUTO)
@@ -811,7 +821,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       setShowTimeoutModal(true) // Show the modal overlay
     } else if (action === 'substitution') {
       // Add player to recently substituted list for flashing effect (no modal, just flash)
-      setRecentlySubstitutedPlayers(prev => [...prev, { team: actionData.team, playerNumber: actionData.playerIn, timestamp: Date.now() }])
+      setRecentlySubstitutedPlayers(prev => [...prev, { team: actionData.team, playerNumber: actionData.playerIn, timestamp: Date.now(), kind: 'sub' }])
 
       // Clear the flash after 5 seconds
       if (recentSubFlashTimeoutRef.current) {
@@ -819,7 +829,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       }
       recentSubFlashTimeoutRef.current = setTimeout(() => {
         setRecentlySubstitutedPlayers([])
-      }, 5000)
+      }, SUB_FLASH_MS)
     } else if (action === 'set_end') {
       console.log('═══════════════════════════════════════════════════════════════')
       console.log('[Referee] 🏁 SET_END Action Received (WebSocket):')
@@ -1113,25 +1123,27 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             const team = state.last_event_team // Already 'home' or 'away'
             setRecentlySubstitutedPlayers(prev => [
               ...prev,
-              { team, playerNumber: state.last_event_data?.playerIn, timestamp: Date.now() }
+              { team, playerNumber: state.last_event_data?.playerIn, timestamp: Date.now(), kind: 'sub' }
             ])
             if (recentSubFlashTimeoutRef.current) clearTimeout(recentSubFlashTimeoutRef.current)
-            recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), 5000)
+            recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), SUB_FLASH_MS)
           }
 
-          // Handle libero entry/exit/exchange
+          // Handle libero entry/exit/exchange: one short pulse, not the
+          // substitution's flash (owner 15.11.2026), and once per event (a
+          // row written again keeps its last event)
           // Note: last_event_team is 'home'/'away', not 'left'/'right', so use directly
-          if (['libero_entry', 'libero_exit', 'libero_exchange'].includes(state.last_event_type)) {
+          const liberoKey = liberoFlashKey(state)
+          if (liberoKey && liberoKey !== lastLiberoFlashKeyRef.current) {
+            lastLiberoFlashKeyRef.current = liberoKey
             const team = state.last_event_team // Already 'home' or 'away'
             const playerNumber = state.last_event_data?.liberoNumber || state.last_event_data?.playerIn
-            if (playerNumber) {
-              setRecentlySubstitutedPlayers(prev => [
-                ...prev,
-                { team, playerNumber, timestamp: Date.now() }
-              ])
-              if (recentSubFlashTimeoutRef.current) clearTimeout(recentSubFlashTimeoutRef.current)
-              recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), 5000)
-            }
+            setRecentlySubstitutedPlayers(prev => [
+              ...withoutLiberoFlashes(prev),
+              { team, playerNumber, timestamp: Date.now(), kind: 'libero' }
+            ])
+            if (liberoFlashTimeoutRef.current) clearTimeout(liberoFlashTimeoutRef.current)
+            liberoFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers(withoutLiberoFlashes), LIBERO_FLASH_MS)
           }
 
           // The scorer's break, from the row as from the relay's actions (a
@@ -2708,10 +2720,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       isLfp = player?.isLfp || player?.is_lfp || false
     }
 
-    // Check if this player was recently substituted in (for flashing effect)
-    const isRecentlySub = recentlySubstitutedPlayers.some(
-      sub => sub.team === team && String(sub.playerNumber) === String(number)
-    )
+    // Recently substituted in (pulsing) or a libero replacement (one pulse)
+    const discFlash = discFlashOf(recentlySubstitutedPlayers, team, number)
+    const isRecentlySub = discFlash !== false
 
     // Determine what to show in top-right badge
     // Ensure badge values are primitives (not objects)
@@ -2753,7 +2764,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         color={isRecentlySub ? '#000' : paint ? paint.color : isLibero ? '#000' : '#fff'}
         textShadow={!isRecentlySub ? paint?.textShadow : undefined}
         ring={!isRecentlySub ? paint?.ring : null}
-        flash={isRecentlySub}
+        flash={discFlash}
         showBall={!!shouldShowBall}
         replacedNumber={topRightBadge}
         replacedByLibero={isLiberoReplacementBadge}
