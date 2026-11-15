@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { render } from '@testing-library/react'
+import { discCssVars, DISC } from '../referee/discSizing.js'
 import PlayerDisc from '../referee/PlayerDisc.jsx'
 import { glyphWidthShare } from '../referee/SanctionCards.jsx'
 
@@ -48,15 +49,21 @@ describe('referee PlayerDisc', () => {
     expect(disc.querySelector('[data-disc-ball]').style.width).toBe('var(--disc-ball)')
   })
 
-  it('keeps every badge inside the disc box (no negative offsets)', () => {
+  it('sets the corner badges out on the disc edge by --disc-badge-out only (at most 5 px), off the number (owner 15.11)', () => {
     const { container } = render(<PlayerDisc {...full} />)
     const badges = container.querySelectorAll('[data-disc-badge]')
     expect([...badges].map(b => b.getAttribute('data-disc-badge')).sort()).toEqual(['captain', 'lfp', 'libero', 'position', 'replaced', 'sanctions'])
     for (const b of badges) {
       for (const p of ['top', 'left', 'right', 'bottom']) {
-        expect(b.style[p], `${b.getAttribute('data-disc-badge')} ${p}`).not.toMatch(/^-/)
+        const v = b.style[p]
+        if (!v || v === 'auto' || v === '50%') continue
+        // never a bare negative length: only the capped outset variable (or a sum with it)
+        expect(v, `${b.getAttribute('data-disc-badge')} ${p}`).toMatch(/var\(--disc-badge-out\)/)
       }
     }
+    const vars = discCssVars(80)
+    expect(vars['--disc-badge-out']).toBe(`calc(min(var(--disc-badge) * ${DISC.badgeOutset}, ${DISC.badgeOutsetMaxPx}px) * -1)`)
+    expect(DISC.badgeOutsetMaxPx).toBeLessThanOrEqual(5)
   })
 
   it('puts the serve ball on the end-line side', () => {

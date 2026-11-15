@@ -39,13 +39,28 @@ describe('referee score row: the SERVE block', () => {
     expect(renderRow(null).querySelector('[data-serve-block]')).toBeNull()
   })
 
-  it('sits next to the score, on the serving team\'s side of it (mirrors with the view)', () => {
+  it('sits at the screen edge of the serving team\'s side (mirrors with the view; owner 15.11)', () => {
     const c = renderRow('left')
     const row = c.querySelector('[data-score-row]')
     const kids = [...row.children]
     expect(kids.map(k => k.getAttribute('data-serve-slot') ?? (k.hasAttribute('data-score') ? 'score' : '?'))).toEqual(['left', 'score', 'right'])
-    expect(c.querySelector('[data-serve-slot="left"]').style.justifyContent).toBe('flex-end')
-    expect(c.querySelector('[data-serve-slot="right"]').style.justifyContent).toBe('flex-start')
+    expect(c.querySelector('[data-serve-slot="left"]').style.justifyContent).toBe('flex-start')
+    expect(c.querySelector('[data-serve-slot="right"]').style.justifyContent).toBe('flex-end')
+  })
+
+  it('upright (large): a bigger score, and the serve block fills its whole slot with a bigger number', () => {
+    const c = renderRow('right', { large: true })
+    const digits = c.querySelector('[data-score] span')
+    expect(digits.style.fontSize).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
+    expect(SCORE_ROW.largeScoreVmin).toBeGreaterThan(SCORE_ROW.scoreVmin)
+    const block = c.querySelector('[data-serve-block="right"]')
+    expect(block.style.width).toBe('100%')
+    expect(block.style.height).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
+    expect(c.querySelector('[data-serve-slot="left"]').style.height).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
+    expect(c.querySelector('[data-serve-box]').style.fontSize).toBe(`min(${vmin(SERVE_BLOCK.largeNumberVmin)}px, ${SERVE_BLOCK.largeNumberCqi}cqi)`)
+    // the referee view passes it upright only (landscape: the row is 15 % of the height)
+    const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+    expect(src).toMatch(/large=\{!wide\}/)
   })
 
   it('reserves the same room on both sides, served or not, so the score never moves', () => {

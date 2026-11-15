@@ -22,7 +22,14 @@
 export const SCORE_ROW = {
   /** score digits, vmin (line height 1: the row's height) */
   scoreVmin: 15,
-  colonVmin: 11
+  colonVmin: 11,
+  /**
+   * upright (`large`): the row has the height to spare (the court below is
+   * limited by the screen's width), so the score and the serve block are a
+   * third bigger (owner, 15.11, phone: "the numbers can then be bigger")
+   */
+  largeScoreVmin: 20,
+  largeColonVmin: 14
 }
 
 export const SERVE_BLOCK = {
@@ -44,7 +51,16 @@ export const SERVE_BLOCK = {
    */
   numberVmin: 8.6,
   numberCqi: 64,
-  numberPadEm: 0.18
+  numberPadEm: 0.18,
+  /**
+   * upright (`large`): the block fills its whole slot, out to the screen
+   * edge (owner, 15.11: "the serve can occupy the space closer to the edge,
+   * full column, much bigger"); the number grows with it
+   */
+  largeNumberVmin: 14,
+  largeNumberCqi: 78,
+  /** upright: the SERVE label, vmin (still held to the slot width by serveLabelCqi) */
+  largeLabelVmin: 4
 }
 
 /** The label's largest font size as a share (cqi) of the slot width. */
@@ -69,17 +85,19 @@ export const SERVE_GREEN_FILL = 'rgba(34, 197, 94, 0.1)'
  * @param {string|null} [props.caption] what the numbers are when they are not
  *   points ("SETS" in the set interval: the sets won read as a score)
  */
-export default function ScoreServeRow({ leftScore, rightScore, servingSide, serverNumber, serveLabel, vmin, scoreFont = 'inherit', caption = null }) {
+export default function ScoreServeRow({ leftScore, rightScore, servingSide, serverNumber, serveLabel, vmin, scoreFont = 'inherit', caption = null, large = false }) {
+  const scoreVmin = large ? SCORE_ROW.largeScoreVmin : SCORE_ROW.scoreVmin
   const slot = (side) => (
     <div
       data-serve-slot={side}
       style={{
         display: 'flex',
         alignItems: 'center',
-        // next to the score: the block sits on the serving team's side of it
-        justifyContent: side === 'left' ? 'flex-end' : 'flex-start',
+        // at the screen edge of the serving team's side (owner, 15.11: it
+        // stood next to the score), as the scorer's SERVE box
+        justifyContent: side === 'left' ? 'flex-start' : 'flex-end',
         minWidth: 0,
-        height: vmin(SERVE_BLOCK.heightVmin),
+        height: vmin(scoreVmin),
         // the label and number size from the slot's width (cqi), so a narrow
         // portrait slot or a long label never spills (the block itself is
         // as wide as its content: no container of its own)
@@ -87,16 +105,16 @@ export default function ScoreServeRow({ leftScore, rightScore, servingSide, serv
       }}
     >
       {servingSide === side && (
-        <ServeBlock side={side} label={serveLabel} number={serverNumber} vmin={vmin} />
+        <ServeBlock side={side} label={serveLabel} number={serverNumber} vmin={vmin} heightVmin={scoreVmin} large={large} />
       )}
     </div>
   )
 
-  const digits = { fontFamily: scoreFont, fontSize: vmin(SCORE_ROW.scoreVmin), fontWeight: 600, lineHeight: 1 }
+  const digits = { fontFamily: scoreFont, fontSize: vmin(scoreVmin), fontWeight: 600, lineHeight: 1 }
   const score = (
     <div data-score="" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'clamp(4px, 1vw, 12px)' }}>
       <span style={{ ...digits, textAlign: 'right' }}>{leftScore}</span>
-      <span style={{ fontFamily: scoreFont, fontSize: vmin(SCORE_ROW.colonVmin), fontWeight: 800, color: 'var(--accent)', lineHeight: 1, marginTop: vmin(-0.5) }}>:</span>
+      <span style={{ fontFamily: scoreFont, fontSize: vmin(large ? SCORE_ROW.largeColonVmin : SCORE_ROW.colonVmin), fontWeight: 800, color: 'var(--accent)', lineHeight: 1, marginTop: vmin(-0.5) }}>:</span>
       <span style={{ ...digits, textAlign: 'left' }}>{rightScore}</span>
     </div>
   )
@@ -129,17 +147,20 @@ export default function ScoreServeRow({ leftScore, rightScore, servingSide, serv
   )
 }
 
-function ServeBlock({ side, label, number, vmin }) {
+function ServeBlock({ side, label, number, vmin, heightVmin = SERVE_BLOCK.heightVmin, large = false }) {
   const B = SERVE_BLOCK
+  const numberVmin = large ? B.largeNumberVmin : B.numberVmin
+  const numberCqi = large ? B.largeNumberCqi : B.numberCqi
   return (
     <div
       data-serve-block={side}
       style={{
-        // as wide as the label or the number box, whichever is wider
+        // as wide as the label or the number box, whichever is wider;
+        // upright the whole slot (large)
         boxSizing: 'border-box',
-        width: 'auto',
+        width: large ? '100%' : 'auto',
         maxWidth: '100%',
-        height: vmin(B.heightVmin),
+        height: vmin(heightVmin),
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'stretch',
@@ -151,7 +172,7 @@ function ServeBlock({ side, label, number, vmin }) {
       <span
         data-serve-label=""
         style={{
-          fontSize: `min(${vmin(B.labelVmin)}px, ${serveLabelCqi(label)}cqi)`,
+          fontSize: `min(${vmin(large ? B.largeLabelVmin : B.labelVmin)}px, ${serveLabelCqi(label)}cqi)`,
           fontWeight: 800,
           letterSpacing: '0.06em',
           lineHeight: 1.1,
@@ -174,7 +195,7 @@ function ServeBlock({ side, label, number, vmin }) {
           alignItems: 'center',
           justifyContent: 'center',
           // the number's size: the padding is in its em
-          fontSize: `min(${vmin(B.numberVmin)}px, ${B.numberCqi}cqi)`,
+          fontSize: `min(${vmin(numberVmin)}px, ${numberCqi}cqi)`,
           padding: `0 ${B.numberPadEm}em`,
           background: SERVE_GREEN_FILL,
           border: `3px solid ${SERVE_GREEN}`,

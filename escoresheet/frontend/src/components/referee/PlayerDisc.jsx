@@ -8,8 +8,9 @@ import { CardGlyph, topSanction } from './SanctionCards.jsx'
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
 
-// Corner badge: a square of --disc-badge, inside the disc's box (never outset,
-// so nothing on a disc can leave its column or the court).
+// Corner badge: a square of --disc-badge on a corner of the disc's box, set
+// out of it by --disc-badge-out (at most 5 px: discSizing badgeOutset) so it
+// sits on the disc's edge, off the number (owner, 15.11).
 const badgeBase = {
   position: 'absolute',
   boxSizing: 'border-box',
@@ -125,8 +126,8 @@ export default function PlayerDisc({
       {/* Top left: position */}
       <span data-disc-badge="position" style={{
         ...badgeBase,
-        top: 0,
-        left: 0,
+        top: 'var(--disc-badge-out)',
+        left: 'var(--disc-badge-out)',
         background: 'rgba(15, 23, 42, 0.95)',
         border: '2px solid var(--border)',
         color: '#fff'
@@ -138,7 +139,7 @@ export default function PlayerDisc({
       {lfp !== null && (
         <span data-disc-badge="lfp" style={{
           ...badgeBase,
-          top: 0,
+          top: 'var(--disc-badge-out)',
           left: '50%',
           transform: 'translateX(-50%)',
           // Narrow enough to sit between the position and replaced-player
@@ -161,8 +162,8 @@ export default function PlayerDisc({
       {replacedNumber != null && replacedNumber !== '' && (
         <span data-disc-badge="replaced" style={{
           ...badgeBase,
-          top: 0,
-          right: 0,
+          top: 'var(--disc-badge-out)',
+          right: 'var(--disc-badge-out)',
           background: replacedByLibero ? '#ffffff' : YELLOW,
           border: replacedByLibero ? '2px solid rgba(0, 0, 0, 0.3)' : '2px solid rgba(0, 0, 0, 0.25)',
           color: '#0f172a',
@@ -176,8 +177,8 @@ export default function PlayerDisc({
       {liberoLabel && !liberoCaptain && (
         <span data-disc-badge="libero" style={{
           ...badgeBase,
-          bottom: 0,
-          left: 0,
+          bottom: 'var(--disc-badge-out)',
+          left: 'var(--disc-badge-out)',
           background: liberoMark,
           border: '2px solid var(--border)',
           color: '#fff'
@@ -203,9 +204,9 @@ export default function PlayerDisc({
       {captain && (
         <span data-disc-badge="captain" style={{
           ...badgeBase,
-          bottom: 0,
+          bottom: 'var(--disc-badge-out)',
           // Next to the L badge when both show
-          left: liberoLabel && !liberoCaptain ? 'calc(var(--disc-badge) + 2px)' : 0,
+          left: liberoLabel && !liberoCaptain ? 'calc(var(--disc-badge) + 2px + var(--disc-badge-out))' : 'var(--disc-badge-out)',
           // LC keeps the type size of every other mark and widens its badge
           // instead (a smaller share fell to 5 px on a 36 px disc)
           background: captain === 'LC' ? '#ffffff' : captain === 'LGC' ? liberoMark : 'rgba(15, 23, 42, 0.95)',
@@ -220,8 +221,8 @@ export default function PlayerDisc({
       {sanctionMark && (
         <span data-disc-badge="sanctions" data-sanction={sanctionMark} style={{
           position: 'absolute',
-          bottom: 0,
-          right: 0,
+          bottom: 'var(--disc-badge-out)',
+          right: 'var(--disc-badge-out)',
           display: 'flex',
           alignItems: 'flex-end',
           height: 'var(--disc-badge)',

@@ -39,12 +39,25 @@ export const DISC = {
   minPxLfp: 50,
   /** LFP mark type size, of the badge size */
   lfp: 0.46,
-  /** player number font size, of the diameter (two digits fit inside the circle) */
-  number: 0.5,
+  /**
+   * player number font size, of the diameter (two digits fit inside the
+   * circle). 0.56 since the corner badges sit out on the disc's edge
+   * (badgeOutset): 0.5 before, when they covered the number's corners
+   * (owner, 15.11, phone).
+   */
+  number: 0.56,
   /** corner badge size, of the diameter, held between min and max px */
   badge: 0.26,
   badgeMinPx: 11,
   badgeMaxPx: 26,
+  /**
+   * how far a corner badge sits out of the disc's box, of the badge size and
+   * at most badgeOutsetMaxPx: inside the box the badges reached the number
+   * on a phone (owner, 15.11). The court's padding and gap (at least 4 px,
+   * 7 px on a phone) and the front column's slack keep it off the neighbours.
+   */
+  badgeOutset: 0.3,
+  badgeOutsetMaxPx: 5,
   /**
    * serve ball: up to this share of the diameter, less when the court is
    * narrow. It was 0.8: as big as a disc next to it, it read as a seventh
@@ -92,6 +105,7 @@ export function discCssVars(capPx, { lfp = false } = {}) {
     '--disc': `min(${d.heightCqh}cqh, ${d.widthCqw}cqw, ${Math.max(lfp ? d.minPxLfp : d.minPx, Math.round(capPx))}px)`,
     '--disc-number': `calc(var(--disc) * ${d.number})`,
     '--disc-badge': `clamp(${d.badgeMinPx}px, calc(var(--disc) * ${d.badge}), ${d.badgeMaxPx}px)`,
+    '--disc-badge-out': `calc(min(var(--disc-badge) * ${d.badgeOutset}, ${d.badgeOutsetMaxPx}px) * -1)`,
     '--disc-ball': `max(0px, min(calc(var(--disc) * ${d.ballMax}), calc(${d.ballRoomCqw}cqw - var(--disc) * ${PCT(0.5 + d.ballGap)} - ${d.ballSafetyPx}px)))`,
     '--disc-ball-gap': `calc(var(--disc) * ${d.ballGap})`
   }
