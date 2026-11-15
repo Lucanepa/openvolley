@@ -1,0 +1,3 @@
+OpenVolley 3.2.12
+- Referee and bench tablets: a notice when the scorer's device is not connected (laptop closed, app crashed, Wi-Fi lost), instead of a frozen score.
+- Support form: every help section can be chosen.
