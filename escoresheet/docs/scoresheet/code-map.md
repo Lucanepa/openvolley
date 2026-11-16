@@ -58,7 +58,12 @@ browser popup; desktop: `window.open`, turned into an app window labelled
   `popups.rs:181-183`).
 - The old dev page `scoresheet_pdf/index_scoresheet.html` (not a build input; it loaded
   React through an `aistudiocdn.com` import map) was removed in 2026-11.
-- Styles: `scoresheet_pdf/scoresheet.css` (full Tailwind with preflight, compiled).
+- Styles: `scoresheet_pdf/scoresheet.css` (full Tailwind with preflight, compiled) for
+  the page; the sheet's own base (`scoresheet_pdf/sheet.css`: bundled Inter as
+  `OV Sheet Inter`, 10px / line height 1.5, a preflight scoped to
+  `.scoresheet-container` and `.ss-sheet`, `.ss-rule`) is imported by `App_Scoresheet`
+  itself, so the Rebuild PDF, the referee view and the subdomain draw the same sheet
+  (field-spec 17.13).
 
 ### 1.3 Data source priority (`index_scoresheet.tsx:878-971`)
 
@@ -308,8 +313,14 @@ output runs for every finished set on every render (l. 429-443, 624-637).
 1. Guard: `containerRef` set and no capture running. (With the LCS view open the
    container is `display:none`: the capture is of a hidden element.)
 2. File name (7.4), computed from the closure's `match` / `homeTeam`.
-3. `setZoomLevel(1)`, wait 200 ms, `document.fonts.ready`.
+3. `setZoomLevel(1)`, wait 200 ms, `document.fonts.ready`, then every `<img>` loaded and
+   decoded (`picturesReady`, at most 3 s); pictures that did not load are named in the
+   console (`missingPictures`, field-spec 17.15).
 4. Lazy `import('html-to-image')` (1.11.13) and `import('jspdf')` (4.2.1); chunk `pdf-vendor`.
+   html-to-image's clone copied every `font-size` as `floor(px) - 0.1`; the Vite plugin
+   `vite-plugin-html-to-image-font-size.js` turns that branch off in every build, the dev
+   server (html-to-image is excluded from `optimizeDeps`) and the tests
+   (`__tests__/htmlToImageFontSize.test.ts`).
 5. `htmlToImage.toCanvas(sheet, { pixelRatio: 2, backgroundColor: '#fff', style: { transform: 'none' }, includeStyleProperties })`.
    - Not WebKitGTK: all computed properties; on failure retry with `usedStyleProperties`.
    - WebKitGTK (Linux desktop, `isWebKitGtk()`): `usedStyleProperties(sheet)` only
@@ -326,6 +337,8 @@ output runs for every finished set on every render (l. 429-443, 624-637).
    stretched to 420 x 297 (x 1.024, y 1.035: not to scale, slightly distorted);
    no `setProperties` (Producer `jsPDF 4.2.1`, no Title / Author / Subject /
    Creator); image only, no text layer.
+   REMARKS too long for its box (`remarksClipped`): the whole text on the pages after the
+   sheet, as many as it needs (`utils/remarksPages.ts writeRemarksPages`).
 8. Output:
    - `returnBlob` (getBlob): `{ blob, filename }` -> `deliverPdfToOpener`.
    - Android in-app view: `savePdfThroughApp(blob, filename)` posts it to the app.
@@ -522,8 +535,8 @@ red; it is a colour, not a federation mark.
 
 ## 11. Tests and harnesses
 
-- Unit: `scoresheet_pdf/__tests__/{App_Scoresheet,Header,ApprovalsStamp}.test.tsx`,
-  `scoresheet_pdf/utils/__tests__/{scoresheetModel,pdfCapture,extractLiberoData,scoresheetStorage}.test.ts`,
+- Unit: `scoresheet_pdf/__tests__/{App_Scoresheet,Header,ApprovalsStamp,FitText}.test.tsx`,
+  `scoresheet_pdf/utils/__tests__/{scoresheetModel,pdfCapture,extractLiberoData,scoresheetStorage,remarksPages}.test.ts`,
   `src/utils/__tests__/openAppWindow.test.js` (in-app view, Android save,
   `isOwnDownload`, `deliverPdfToOpener`), `src/__tests__/brandAssets.test.js`
   (page heads, old green files gone), `src-tauri` `popups.rs` tests

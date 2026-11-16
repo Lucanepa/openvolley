@@ -325,7 +325,11 @@ Other differences from sets 1 to 4:
 - Copy panel 1's line-up into panel 3 as well.
 - Panel 3 stays unused until the change of courts.
 
-**Change of courts at 8** (when either team reaches 8 points, FIVB 18.2.2):
+**Change of courts at 8** (when either team reaches 8 points, FIVB 18.2.2). A Global match that
+plays the deciding set to another target (`match.setTargets.deciding`) changes courts at half of
+it, rounded up, as the Scoreboard does (`rules.courtSwitchPointOf`: 3 for a set to 5, 5 for 10,
+13 for 25); the generated sheet splits the panels there, and panel 1 then prints 1 to that point
+(never fewer than 1-8). See 17.15.
 
 1. Write the **left team's points at the change** (only the left team's points) in the
    "Pte. beim Seitenwechsel" box of panel 3.
@@ -437,6 +441,12 @@ records only what was imposed.
 
 There are 4 ruled lines. If more space is needed, the text keeps flowing (OV decision: wrap, and
 continue on an overflow page if needed, never truncate).
+
+On the generated sheet the text shrinks to fit the box down to **6px** (about 1.6 mm, 4.5 pt on
+the A3 print; `FooterSection REMARKS_MIN_PX`, was 4px, about 3 pt, unreadable on paper). Text
+that does not fit at 6px starts with "Remarks continue on page 2." and the PDF prints the whole
+text after the sheet, on as many pages as it needs (`utils/remarksPages.ts`; each further page
+says "REMARKS (continued, page n of m)"). See 17.15.
 
 Every remark states **Team A/B, the set number and the result** (concerned team first). Time
 problems also state the times and the duration (SC p.71).
@@ -800,3 +810,100 @@ These override sections 4-7 and 16 wherever they differ.
    - File names: an indoor league code loses its spaces, `1L D` → `1LD`
      (`compactLeagueCode`: every word at most 3 characters; a name such as "Mobiliar Volley
      Cup" keeps its words apart). Beach leagues are unchanged.
+13. **The PDF draws the sheet as the screen shows it, wherever it is made** (2026-11-16,
+   after a Rebuild PDF made in Brave on a Linux laptop lost the rule under the LIBERO "No"
+   column and the bottom borders of the rosters and of every box on the bottom line).
+   - **Own base styles.** `scoresheet_pdf/sheet.css`, imported by `App_Scoresheet`
+     itself: the sheet's text is 10px, line height 1.5, letter spacing normal, Tailwind
+     gray-900, in one bundled font (Inter, variable weight, text cut, as the family
+     `OV Sheet Inter`, so it never replaces the app's Inter Display on the host page), and
+     Tailwind's preflight applies inside the sheet only (`.scoresheet-container`, the libero
+     control sheet `.ss-sheet`). The inner rules' grey hairline (`.ss-rule`, #6b6b6b) is
+     defined there too. Before, only the standalone page loaded these:
+     the manager's Rebuild PDF, the referee view and the scoresheet subdomain drew the
+     sheet in the app's 13px / line height 1.3 / Inter Display with near-black inner rules,
+     inline signature pictures and 0.2px letter spacing, so a rebuilt PDF did not look like
+     the approved one (the LIBERO block 7px higher). Every computed style of every element
+     of the sheet is now the same on the standalone page and in the manager.
+   - **One font on every device.** The standalone page asked for `Inter` but never loaded
+     it: each device printed its own system font (Segoe UI, Roboto, Helvetica, DejaVu), and
+     FitText fitted the names differently. FitText fits again once a font has loaded; the
+     capture waits for the fonts and that render. Sizes chosen by the owner (sections 16-17)
+     are unchanged.
+   - **Font sizes printed as set.** html-to-image copied every font size as
+     `floor(px) - 0.1` (8.5px DoB printed at 7.9px, a 5.5px FitText name at 4.9px). The Vite
+     plugin `vite-plugin-html-to-image-font-size.js` turns that off in every build (a
+     postinstall patch would not run in the F-Droid build, `npm ci --ignore-scripts`); a test
+     fails if an html-to-image update brings it back in another form.
+   - **Rules never covered.** In Chromium (Brave, Chrome) and WebKit at a fractional device
+     pixel ratio (page zoom, fractional display scaling) the capture rounds sub-pixel
+     borders up, children overflow their box by a fraction of a pixel and any child with a
+     background painted over the rule. Cells inside a box that is already white have no background of their own (the
+     LIBERO and BENCH OFFICIALS cells, the signatures, the roster headers, the winner band),
+     and every bordered box and row of the footer clips what overflows at its border
+     (`overflow-clip`: rosters, their rows and blocks, REMARKS, APPROVAL and its rows,
+     RESULT). The RESULT table keeps its white cells on the black grid (its rules are the
+     gaps). APPROVAL's role labels never wrap.
+   - **Checking it.** A Playwright context's `deviceScaleFactor` does not reproduce this in
+     Chromium or Firefox: the PDF comes out the same as at ratio 1, also with the old code.
+     Check Chromium launched with `--force-device-scale-factor=1.75` (a window size, viewport
+     `null`), which loses the LIBERO "No" rule and both roster bottoms on the old code as in
+     the Brave PDF, and WebKit with `deviceScaleFactor` 1.5, which loses rules there too.
+     The current sheet keeps every rule in both (ratios 1.1 to 2.625, standalone page and
+     manager).
+14. **Rebuild PDF keeps what the approved sheet had, and Cancel cancels** (2026-11-16, review
+   of the manager's Rebuild PDF). The rebuilt sheet is drawn from the server's record
+   (`src/utils/scoresheetFromCloud.js`), with nothing taken from the admin's device database.
+   - **Account approvals.** The owner's rule that a rebuilt PDF keeps the original signatures
+     holds for the PIN approvals too: the panel reads the match's non-revoked approvals
+     (`GET /api/approvals`, admins see every slot) and the sheet prints each stamp exactly as
+     at the approval (only while it matches the result, a drawn signature first). When they
+     cannot be read (a network or server error) nothing is drawn and the admin is told; a
+     server without the feature, or a beach match, has none.
+   - **Set starts as the scorer's device printed them.** The cloud's `sets.start_time` held
+     the row's creation time (coin toss for set 1, the previous set's end for set n+1) before
+     983fdb500 and still does when that update was lost, and item 16.2's "a start corrected
+     afterwards wins" rule would then print it. The cloud value counts only where it is the
+     confirmed start (same minute), a recorded correction (the log's `setTimes` entry, or the
+     `set_end` event Corrections rewrites) or later than the confirmed start (a creation time
+     never is); otherwise the `set_start` event's confirmed time. A start edited by hand on
+     the server to an earlier minute, with no log entry, therefore does not print: correct
+     set times through Corrections.
+   - **Cancel and limits.** The "Generating PDF" cover stays inside the sheet's view, so the
+     dialog's Cancel can be pressed while the PDF is made. After Cancel the capture stops at
+     its next step and nothing is uploaded, not even a late PDF; a failure after Cancel is not
+     reported. No PDF within 90 s (the approval's own limit) ends as "took too long", nothing
+     stored. A sheet that cannot be drawn (its code chunk gone after a deploy, or an error
+     while drawing an odd record) shows the error inside the dialog, with Reload for the
+     chunk case, instead of replacing the manager.
+   - Not changed: the LFP marks (LFP tracking option, owner 2026-11-16) and the clock zone
+     (Global tool mode) still follow the device that draws the sheet, so a rebuild on another
+     device can differ there from the approved sheet.
+   - The deciding set's change of courts (17.15) needs no set targets on the server: only a
+     Global match has its own points per set, and a Global match is a test match, never
+     sent to the server's `matches` table nor listed or rebuilt there (`m.test IS NOT
+     TRUE`). Every rebuilt match played the deciding set to 15, so its sheet changes at 8.
+15. **Text on the sheet, more pages, pictures** (2026-11-16, review of the PDF, group C).
+   - **The browser's minimum font size.** Android's WebView draws any font below 8px at 8px
+     (its default minimum), and so does a browser whose user set a minimum font size (Chrome,
+     Safari, Firefox). FitText shrank long names to 5-7px and only checked the text's width,
+     so on a scorer tablet those names were cut off, without a word (in Chromium with an 8px
+     minimum: every long roster name lost its initials, the bench officials, the RESULT
+     names, the league). FitText now reads the size the browser really used; when it is held
+     at a floor and the text does not fit there, the text is drawn at the floor size in an
+     inner box 1/k as large, scaled by k (a transform is not subject to the minimum), which is
+     what the smaller font would have drawn, in the PDF too. Where nothing holds the font up
+     there is no inner box: the sheet is unchanged.
+   - **Team names on two lines** in RESULT's head row and in the rosters' headers, when one
+     line is not enough. With no short name stored the full name is printed there, and the
+     single line cut its end: "Damen 1" against "Damen 2" and the sponsor mark (+) / (-).
+   - **REMARKS** shrinks to 6px at most, then goes to the pages after the sheet, as many as
+     the text needs (section 8). jsPDF does not paginate a text call: everything past about
+     58 lines was lost.
+   - **The deciding set follows the match's target** (section 6): the panels, the time-outs,
+     the substitutions, the service rounds, the libero entries and "points at change" split
+     where the Scoreboard changed courts, not always at 8.
+   - **Pictures before the capture.** The PDF waits until every logo and signature has loaded
+     and decoded (at most 3 s; it waited fixed delays only, so a picture still loading was
+     missing from the PDF), and the console names any picture that did not load
+     (`pdfCapture picturesReady`, `missingPictures`).

@@ -34,7 +34,7 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
             </div>
 
             {/* Improper Request Row - Static */}
-            <div className="flex items-center justify-between px-2 py-0.5 border-b border-black bg-white shrink-0">
+            <div className="flex items-center justify-between px-2 py-0.5 border-b border-black shrink-0">
                 <span className="text-[9px] font-bold uppercase">Improper Request</span>
                 <div className="flex items-center gap-3">
                     {/* Team A */}
@@ -58,7 +58,7 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
             {/* W(arning) P(enalty) E(xpulsion) D(isqualification), as the paper
                 sheet (owner 2026-11-15: "D", not "DQ"). A "D" in the W / P cells
                 is a delay sanction; the header's D is the column's name. */}
-            <div className="grid grid-cols-7 text-[9px] font-bold text-center border-b border-black bg-white shrink-0" style={{ height: '0.7cm' }}>
+            <div className="grid grid-cols-7 text-[9px] font-bold text-center border-b border-black shrink-0" style={{ height: '0.7cm' }}>
                 <div className="border-r border-black flex items-center justify-center" title="Warning">W</div>
                 <div className="border-r border-black flex items-center justify-center" title="Penalty">P</div>
                 <div className="border-r border-black flex items-center justify-center" title="Expulsion">E</div>
@@ -141,6 +141,22 @@ export const remarksText = ({ overflowSanctions = [], remarks = '', generated = 
     return parts.join('\n');
 };
 
+/**
+ * The team names in RESULT's head row (20px) and in a roster's header (h-6):
+ * two lines when one is not enough, so the end of a long name (Damen 1 /
+ * Damen 2, the sponsor mark) is never the part cut off (no short name stored:
+ * the full name is printed there).
+ */
+export const RESULT_HEAD_TEXT_H = '18px';
+export const ROSTER_HEAD_TEXT_H = '18px';
+
+/**
+ * REMARKS' smallest size (field-spec 8): 6px, about 1.6 mm or 4.5 pt on the
+ * A3 print, still readable. Text that does not fit at 6px goes to page 2
+ * (it was 4px, about 3 pt: grey noise on paper, and no page 2 down to there).
+ */
+export const REMARKS_MIN_PX = 6;
+
 /** The first line of a REMARKS box too small for its text: the PDF prints all of it on page 2. */
 export const REMARKS_CONTINUED = 'Remarks continue on page 2.';
 
@@ -179,14 +195,14 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remark
 
     return (
         // a box of its own, apart from SANCTIONS and RESULT (owner 2026-10-13)
-        <div className="border border-black bg-white flex flex-col h-full">
+        <div className="border border-black bg-white flex flex-col h-full overflow-clip">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
             <div className="flex-1 flex min-h-0">
                 <div ref={boxRef} className="px-1 flex-1 min-w-0 flex flex-col overflow-hidden min-h-0 relative">
                     {ruled && [1, 2, 3].map(k => (
                         <div key={k} className="absolute left-0 right-0 border-t ss-rule pointer-events-none" style={{ top: `${k * 25}%` }} data-testid="remarks-rule" aria-hidden="true" />
                     ))}
-                    <FitText max={MAX_PX} min={4} multiline className={`w-full h-full relative ${banded ? '' : 'leading-tight py-0.5'}`} style={banded ? { lineHeight: `${band}px` } : undefined} data-testid="remarks-text" onClipped={banded ? undefined : reportClipped}>
+                    <FitText max={MAX_PX} min={REMARKS_MIN_PX} multiline className={`w-full h-full relative ${banded ? '' : 'leading-tight py-0.5'}`} style={banded ? { lineHeight: `${band}px` } : undefined} data-testid="remarks-text" onClipped={banded ? undefined : reportClipped}>
                         {text}
                     </FitText>
                 </div>
@@ -279,7 +295,7 @@ export const Results: React.FC<ResultsProps> = ({
     // displaySetNumber)
     const rowLabel = (set: number): number | '' => (isBestOf3 ? (set === 5 ? 3 : set <= 2 ? set : '') : set);
     return (
-        <div className={`border border-black bg-white flex flex-col h-full ${flush ? '' : 'mr-1'}`}>
+        <div className={`border border-black bg-white flex flex-col h-full overflow-clip ${flush ? '' : 'mr-1'}`}>
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">RESULT</div>
             {/* One grid for the whole table: team A, the centre (Set, Duration) and
                 team B share the same row tracks, so every row's top and bottom line
@@ -293,12 +309,12 @@ export const Results: React.FC<ResultsProps> = ({
                 {/* Team names */}
                 <div className="flex items-center gap-1 px-1 border-b border-black bg-gray-50 min-w-0 overflow-hidden" data-testid="result-head" data-block="A">
                     <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">A</div>
-                    <FitText max={9} min={5} className="font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamAShortName : ''}</FitText>
+                    <FitText max={9} min={5} multiline style={{ height: RESULT_HEAD_TEXT_H }} className="font-bold text-center uppercase w-full bg-transparent leading-none flex items-center justify-center" data-testid="result-head-name">{coinTossConfirmed ? teamAShortName : ''}</FitText>
                 </div>
                 <div className="border-b border-black bg-gray-200" data-testid="result-head" data-block="C"></div>
                 <div className="flex items-center gap-1 px-1 border-b border-black bg-gray-50 flex-row-reverse min-w-0 overflow-hidden" data-testid="result-head" data-block="B">
                     <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">B</div>
-                    <FitText max={9} min={5} className="font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamBShortName : ''}</FitText>
+                    <FitText max={9} min={5} multiline style={{ height: RESULT_HEAD_TEXT_H }} className="font-bold text-center uppercase w-full bg-transparent leading-none flex items-center justify-center" data-testid="result-head-name">{coinTossConfirmed ? teamBShortName : ''}</FitText>
                 </div>
 
                 {/* Column headings */}
@@ -389,19 +405,19 @@ export const Results: React.FC<ResultsProps> = ({
                 <div className="bg-white grid grid-cols-4 min-w-0">
                     <div className="border-r border-black text-[8px] font-bold flex items-center justify-center">Start</div>
                     <div className="col-span-3 flex items-center justify-center min-w-0">
-                        <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchStart}</FitText>
+                        <FitText max={8} min={5} className="w-full text-center font-bold">{matchStart}</FitText>
                     </div>
                 </div>
                 <div className="bg-white grid min-w-0" style={{ gridTemplateColumns: '1fr 2fr' }}>
                     <div className="border-r border-black text-[8px] font-bold flex items-center justify-center">End</div>
                     <div className="flex items-center justify-center min-w-0">
-                        <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchEnd}</FitText>
+                        <FitText max={8} min={5} className="w-full text-center font-bold">{matchEnd}</FitText>
                     </div>
                 </div>
                 <div className="bg-white grid grid-cols-4 min-w-0">
                     <div className="col-span-2 border-r border-black text-[8px] font-bold flex items-center justify-center">Duration</div>
                     <div className="col-span-2 flex items-center justify-center min-w-0">
-                        <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchDuration}</FitText>
+                        <FitText max={8} min={5} className="w-full text-center font-bold">{matchDuration}</FitText>
                     </div>
                 </div>
             </div>
@@ -409,19 +425,19 @@ export const Results: React.FC<ResultsProps> = ({
             {/* Winner Area */}
             {/* one row of exactly the box's height (minmax(0,1fr)): an auto row grew with the
                 unshrunk name (3 lines at 18px), so FitText measured no overflow */}
-            <div className="p-1 grid grid-cols-[3fr_1fr] grid-rows-[minmax(0,1fr)] gap-1 border-t border-black h-14 shrink-0 bg-white">
+            <div className="p-1 grid grid-cols-[3fr_1fr] grid-rows-[minmax(0,1fr)] gap-1 border-t border-black h-14 shrink-0">
                  <div className="relative min-h-0">
                      <span className="text-[12px] leading-none absolute top-0 left-0 text-gray-500">WINNER</span>
                      {/* the full name (field-spec 9): shrinks to fit, never cut or overflowing the box */}
                      {/* the name and the result are centred in the same band under their
                          labels, so they stand on one line (owner 2026-10-13) */}
                      <div className="w-full h-full flex items-center justify-center pb-0.5 pt-[14px] min-w-0">
-                         <FitText max={18} min={6} multiline className="w-full h-full flex items-center justify-center text-center font-black uppercase bg-white leading-none" data-testid="results-winner">{winner}</FitText>
+                         <FitText max={18} min={6} multiline className="w-full h-full flex items-center justify-center text-center font-black uppercase leading-none" data-testid="results-winner">{winner}</FitText>
                      </div>
                  </div>
                  <div className="relative" >
                      <span className="text-[12px] leading-none absolute top-0 left-0 right-0 text-center text-gray-500">RESULT</span>
-                     <div className="w-full h-full font-black text-lg bg-white flex items-center justify-center pb-0.5 pt-[14px] leading-none" data-testid="results-score">
+                     <div className="w-full h-full font-black text-lg flex items-center justify-center pb-0.5 pt-[14px] leading-none" data-testid="results-score">
                          {(() => {
                              // `result` ("3-1", or "3:1" from MatchEntry) is only set once the match
                              // is finished, like WINNER. The official sheet stays blank until then;
@@ -523,7 +539,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
     return (
         // a box of its own, as REMARKS; as tall as its slot, so it ends on the
         // bottom line of SANCTIONS, RESULT and the rosters (owner 2026-10-13)
-        <div className="border border-black bg-white flex flex-col w-full h-full">
+        <div className="border border-black bg-white flex flex-col w-full h-full overflow-clip">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">APPROVAL</div>
 
             {/* Column headers and the officials' rows share one grid (owner 2026-10-13:
@@ -535,7 +551,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                 fixes every box's height on its own, and rules drawn per cell then
                 stopped short of a row's bottom line. */}
             <div className="relative flex flex-col flex-1 min-h-0">
-            <div className="flex items-stretch border-b border-black text-[9px] font-bold bg-white h-5 shrink-0">
+            <div className="flex items-stretch border-b border-black text-[9px] font-bold h-5 shrink-0">
                  <div className={`${APPROVAL_COL.official} pl-2 flex items-center`}>Official</div>
                  <div className={`${APPROVAL_COL.name} pl-2 flex items-center`}>Name</div>
                  <div className={`${APPROVAL_COL.country} flex items-center justify-center`}>Country</div>
@@ -552,8 +568,8 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                     const fullName = official ? formatPersonName(official.lastName, official.firstName) : '';
 
                     return (
-                    <div key={idx} className="flex items-stretch border-b border-black flex-1 min-h-5">
-                        <div className={`${APPROVAL_COL.official} pl-2 font-bold text-[9px] flex items-center`}>{role}</div>
+                    <div key={idx} className="flex items-stretch border-b border-black flex-1 min-h-5 overflow-clip">
+                        <div className={`${APPROVAL_COL.official} pl-2 font-bold text-[9px] flex items-center whitespace-nowrap`}>{role}</div>
 
                         <div className={`${APPROVAL_COL.name} flex items-center pl-2 pr-1 min-w-0`}>
                             <FitText max={9} min={5} className="w-full text-left leading-none" title={fullName}>{fullName}</FitText>
@@ -735,24 +751,25 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
     // players flagged libero by jersey number; a re-designated libero is not
     // listed (remarks, as Genius). Two rows; a further one is named in the last
     // row, never dropped without a trace.
-    const allLiberos: Player[] = liberoList ?? players
-        .filter(p => p.libero && p.libero !== 'redesignated')
+    // By shirt number, like the 14 rows (owner 2026-11-16), not libero 1 / libero 2
+    const allLiberos: Player[] = [...(liberoList ?? players
+        .filter(p => p.libero && p.libero !== 'redesignated'))]
         .sort((a, b) => parseInt(String(a.number || '0')) - parseInt(String(b.number || '0')));
     const liberos = allLiberos.slice(0, 2);
     const extraLiberos = allLiberos.slice(2);
 
     return (
-        <div className={`border border-r-0 border-black bg-white w-full h-full flex flex-col min-w-0 ${noLeftRule ? 'border-l-0' : ''}`} data-testid={`roster-${isHome ? 'home' : 'away'}`}>
+        <div className={`border border-r-0 border-black bg-white w-full h-full flex flex-col min-w-0 overflow-clip ${noLeftRule ? 'border-l-0' : ''}`} data-testid={`roster-${isHome ? 'home' : 'away'}`}>
             {/* The A/B circle at the outer side, the short name centred in the header
                 (owner 2026-10-07: both rosters alike); a spacer as wide as the circle
                 on the other side keeps the name on the header's centre line */}
-            <div className={`bg-white text-black border-b border-r border-black font-bold py-0.5 text-xs flex px-1 items-center gap-1 h-6 shrink-0 ${isHome ? '' : 'flex-row-reverse'}`}>
+            <div className={`text-black border-b border-r border-black font-bold py-0.5 text-xs flex px-1 items-center gap-1 h-6 shrink-0 ${isHome ? '' : 'flex-row-reverse'}`}>
                 <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 font-bold text-[10px] uppercase">{coinTossConfirmed ? side : ''}</div>
-                <FitText max={12} min={6} className="font-bold uppercase flex-1 bg-white text-center" data-testid="roster-team-name">{team}</FitText>
+                <FitText max={12} min={6} multiline style={{ height: ROSTER_HEAD_TEXT_H }} className="font-bold uppercase flex-1 text-center leading-none flex items-center justify-center" data-testid="roster-team-name">{team}</FitText>
                 <div className="w-5 h-5 shrink-0" aria-hidden="true" />
             </div>
             {/* Header */}
-            <div className={`bg-white border-b border-r border-black ${gridClass} text-[11px] font-bold h-4 items-center shrink-0`}>
+            <div className={`border-b border-r border-black ${gridClass} text-[11px] font-bold h-4 items-center shrink-0`}>
                 <div className="border-r border-black text-center h-full flex items-center justify-center">{idHeading}</div>
                 <div className="border-r border-black text-center h-full flex items-center justify-center">No</div>
                 <div className="pl-1 h-full flex items-center">Name</div>
@@ -764,10 +781,10 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     const player = regularPlayers[i];
                     const isCaptain = player?.isCaptain;
                     return (
-                    <div key={i} className={`${gridClass} border-b ss-rule last:border-b-0 flex-1 min-h-0`} data-testid="roster-row">
+                    <div key={i} className={`${gridClass} border-b ss-rule last:border-b-0 flex-1 min-h-0 overflow-clip`} data-testid="roster-row">
                         <div className={`border-r border-black ${dobClass}`}>{player?.dob || ''}</div>
                         <div className="border-r border-black flex items-center justify-center relative font-bold">
-                            <div className="font-bold bg-white text-center w-full text-[10px]">{player?.number || ''}</div>
+                            <div className="font-bold text-center w-full text-[10px]">{player?.number || ''}</div>
                             {isCaptain && (
                                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
                                     <circle cx="50" cy="50" r="40" fill="none" stroke="black" strokeWidth="6" />
@@ -786,15 +803,15 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
             </div>
 
             {/* Liberos - 2 players */}
-            <div className="border-t border-r border-black shrink-0">
+            <div className="border-t border-r border-black shrink-0 overflow-clip">
                 <div className="bg-gray-200 text-[12px] font-bold border-b border-black h-4 flex items-center justify-center">LIBERO</div>
                 {Array.from({ length: 2 }).map((_, i) => {
                     const libero = liberos[i];
                     const liberoName = libero?.name || '';
                     return (
-                        <div key={i} className={`${gridClass} ${rowHeight} text-[9px] ${i === 0 ? 'border-b ss-rule' : ''}`} data-testid="roster-libero-row">
+                        <div key={i} className={`${gridClass} ${rowHeight} text-[9px] overflow-clip ${i === 0 ? 'border-b ss-rule' : ''}`} data-testid="roster-libero-row">
                             <div className={`border-r border-black ${dobClass}`}>{libero?.dob || ''}</div>
-                            <div className="border-r border-black font-bold bg-white text-center flex items-center justify-center">{libero?.number || ''}</div>
+                            <div className="border-r border-black font-bold text-center flex items-center justify-center">{libero?.number || ''}</div>
                             <div className="text-left px-1 font-medium flex items-center justify-between min-w-0">
                                 <FitText max={9} min={5} className="flex-1">{liberoName}</FitText>
                                 {libero?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
@@ -808,7 +825,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
             </div>
 
             {/* Officials */}
-             <div className="border-t border-r border-black bg-white shrink-0">
+             <div className="border-t border-r border-black shrink-0 overflow-clip">
                  <div className="bg-gray-200 text-[12px] font-bold h-4 border-b border-black text-center flex items-center justify-center">BENCH OFFICIALS</div>
                  {['C', 'AC1', 'AC2', 'P', 'M'].map((roleLabel, roleIdx) => {
                      const roleMap: { [key: string]: string } = {
@@ -827,10 +844,10 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                      const shownName = ownRole && fullName ? `${fullName} · ${ownRole}` : fullName;
 
                      return (
-                         <div key={roleLabel} className={`${gridClass} text-[9px] items-stretch ${rowHeight} ${roleIdx < 4 ? 'border-b ss-rule' : ''}`} data-testid="roster-official-row">
+                         <div key={roleLabel} className={`${gridClass} text-[9px] items-stretch ${rowHeight} overflow-clip ${roleIdx < 4 ? 'border-b ss-rule' : ''}`} data-testid="roster-official-row">
                              <div className={`border-r border-black ${dobClass}`}>{formatDob(official?.dob)}</div>
-                             <div className={`font-bold text-center border-r border-black h-full flex items-center justify-center bg-white ${(ownRole || roleLabel).length > 1 ? 'text-[7px]' : 'text-[9px]'}`}>{ownRole ? ownRole.slice(0, 3).toUpperCase() : roleLabel}</div>
-                             <div className="bg-white px-1 text-left flex items-center min-w-0">
+                             <div className={`font-bold text-center border-r border-black h-full flex items-center justify-center ${(ownRole || roleLabel).length > 1 ? 'text-[7px]' : 'text-[9px]'}`}>{ownRole ? ownRole.slice(0, 3).toUpperCase() : roleLabel}</div>
+                             <div className="px-1 text-left flex items-center min-w-0">
                                  <FitText max={9} min={5} className="flex-1">{shownName}</FitText>
                              </div>
                          </div>
@@ -839,7 +856,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
              </div>
 
              {/* Signatures */}
-             <div className="border-t border-r border-black bg-white shrink-0 p-0.5">
+             <div className="border-t border-r border-black shrink-0 p-0.5 overflow-clip">
                  <div className="flex flex-col gap-1">
                     {/* Captain Signature */}
                     <div className="flex items-center gap-1">

@@ -78,6 +78,42 @@ export function drawableImages(root: Element): HTMLImageElement[] {
     win.getComputedStyle(img).visibility === 'visible' && img.getClientRects().length > 0);
 }
 
+// The capture used to start after fixed delays only: a picture still loading or
+// decoding then (the logo in a fresh window or in the manager on a slow
+// network, a large signature) was neither drawn nor noticed, and the PDF came
+// out without it. The capture now waits for every picture, at most a few
+// seconds, and says which ones did not come.
+
+const hasSource = (img: HTMLImageElement): boolean => !!(img.getAttribute('src') || img.currentSrc);
+const loaded = (img: HTMLImageElement): boolean => img.complete && img.naturalWidth > 0;
+
+/** Wait until every picture of `root` has loaded and decoded, or failed; at most `timeoutMs`. */
+export async function picturesReady(root: Element, timeoutMs = 3000): Promise<void> {
+  const one = (img: HTMLImageElement): Promise<void> => {
+    // decode() waits for the load and the decoding; it rejects for a broken picture
+    if (typeof img.decode === 'function') return img.decode().then(() => undefined, () => undefined);
+    if (img.complete) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const done = () => { img.removeEventListener('load', done); img.removeEventListener('error', done); resolve(); };
+      img.addEventListener('load', done);
+      img.addEventListener('error', done);
+    });
+  };
+  const imgs = Array.from(root.querySelectorAll('img')).filter(hasSource);
+  if (imgs.length === 0) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.all(imgs.map(one)),
+    new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); })
+  ]);
+  clearTimeout(timer);
+}
+
+/** The pictures of `root` that have a source but did not load (they are missing from the PDF). */
+export function missingPictures(root: Element): HTMLImageElement[] {
+  return Array.from(root.querySelectorAll('img')).filter((img) => hasSource(img) && !loaded(img));
+}
+
 /** Hide `imgs` (visibility only: the layout stays); returns the undo. */
 export function hideImages(imgs: HTMLImageElement[]): () => void {
   const before = imgs.map((img) => [img.style.getPropertyValue('visibility'), img.style.getPropertyPriority('visibility')] as const);

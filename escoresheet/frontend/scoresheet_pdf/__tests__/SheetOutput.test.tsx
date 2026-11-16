@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest
 import { render, cleanup, act, waitFor } from '@testing-library/react'
 import App from '../App_Scoresheet'
 import { BRAND } from '../../src/brand.js'
+import { REMARKS_MIN_PX } from '../components/FooterSection'
 import { NUMBER_CIRCLE_MM, SERVICE_NUMBER_PX, SUB_CIRCLE_MM, LINEUP_NUMBER_PT, TWO_DIGIT_INK_RADIUS_EM, MARK_STROKE } from '../components/Marks'
 
 // The owner's request of 2026-10-07 on the printed sheet and its PDF:
@@ -179,6 +180,38 @@ describe('the generated sheet', () => {
   })
 })
 
+describe('Rebuild PDF: the sheet drawn from the server\'s record', () => {
+  afterEach(() => cleanup())
+
+  it('a slot approved with a PIN keeps its stamp; the set starts are the confirmed ones, not the rows\' creation times', async () => {
+    const { scoresheetDataFromCloud } = await import('../../src/utils/scoresheetFromCloud')
+    const { resultKey } = await import('../../src/domain/accountApproval')
+    const sets = [
+      { index: 1, home_points: 25, away_points: 20, finished: true, start_time: '2026-11-15T13:00:00Z', end_time: '2026-11-15T13:52:00Z' },
+      { index: 2, home_points: 25, away_points: 18, finished: true, start_time: '2026-11-15T13:55:00Z', end_time: '2026-11-15T14:20:00Z' },
+      { index: 3, home_points: 25, away_points: 22, finished: true, start_time: '2026-11-15T14:23:00Z', end_time: '2026-11-15T14:50:00Z' }
+    ]
+    const key = resultKey(sets.map(x => ({ index: x.index, homePoints: x.home_points, awayPoints: x.away_points, finished: true })))
+    const opened = (i: number, at: string) => ({ external_id: `m:e:s${i}`, set_index: i, type: 'set_start', seq: i * 100, ts: at, payload: { setIndex: i, startTime: at, firstRallyAt: at } })
+    const data = scoresheetDataFromCloud({
+      match: {
+        id: 'x', external_id: 'm', status: 'final', game_n: 424849, scheduled_at: '2026-11-15T13:00:00Z',
+        home_team: { name: 'Home Club', short_name: 'HOME' }, away_team: { name: 'Away Club', short_name: 'AWAY' },
+        coin_toss: { team_a: 'home', team_b: 'away', serve_a: true, confirmed: true },
+        officials: [{ role: '1st referee', firstName: 'Claudia', lastName: 'Moser', country: 'CHE' }],
+        players_home: [], players_away: []
+      },
+      // set 1's row made at the coin toss (13:00), set 2's when set 1 ended (13:52)
+      sets: [sets[0], { ...sets[1], start_time: '2026-11-15T13:52:00Z' }, sets[2]],
+      events: [opened(1, '2026-11-15T13:31:00Z'), opened(2, '2026-11-15T13:55:00Z'), opened(3, '2026-11-15T14:23:00Z')],
+      approvals: [{ id: 'a1', short_id: 'K7Q2', slot: 'referee1', name: 'Moser Claudia', approved_at: '2026-11-15T14:55:00Z', result_key: key }]
+    })
+    const view = render(<App matchData={data} readOnly />)
+    expect(view.getByTestId('approval-stamp-referee1').textContent).toMatch(/^Approved electronically · Moser Claudia · 15\.11\.2026 \d{2}:55 · ID K7Q2$/)
+    expect(data.sets.map((x: any) => x.startTime)).toEqual(['2026-11-15T13:31:00.000Z', '2026-11-15T13:55:00.000Z', '2026-11-15T14:23:00Z'])
+  })
+})
+
 describe('Save PDF', () => {
   let clicked: HTMLAnchorElement[] = []
   beforeAll(() => {
@@ -231,6 +264,35 @@ describe('Save PDF', () => {
     expect(got[0].filename).toBe('game382208_2L_2026-10-07.pdf')
     expect(got[0].blob.type).toBe('application/pdf')
     expect(clicked).toHaveLength(0)
+  })
+
+  it('getBlob with onBlob, the view closed while the PDF is made (Rebuild PDF cancelled): nothing is handed on, no PDF made', async () => {
+    const htmlToImage: any = await import('html-to-image')
+    let release: () => void = () => {}
+    htmlToImage.toCanvas.mockImplementationOnce(() => new Promise(resolve => {
+      release = () => resolve({ width: 3100, height: 2170, toDataURL: () => `data:image/jpeg;base64,${'A'.repeat(20_000)}` })
+    }))
+    const got: any[] = []
+    const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+    await waitFor(() => expect(htmlToImage.toCanvas).toHaveBeenCalled())
+    // the "Generating PDF" cover stays inside the embedded view: the host's bar (Cancel) is free
+    expect(view.getByTestId('pdf-generating').style.position).toBe('absolute')
+    view.unmount()
+    release()
+    await new Promise(r => setTimeout(r, 50))
+    expect(got).toHaveLength(0)
+    expect(pdfCalls.find(c => c[0] === 'new')).toBeUndefined()
+    expect(clicked).toHaveLength(0)
+  })
+
+  it('the view closed before the capture began: no failure is reported either', async () => {
+    const got: any[] = []
+    const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+    // after the automatic start (500 ms), inside the 250 ms wait for the 100 % zoom
+    await new Promise(r => setTimeout(r, 600))
+    view.unmount()
+    await new Promise(r => setTimeout(r, 400))
+    expect(got).toHaveLength(0)
   })
 
   it('a match that is not on this device: no empty sheet is saved, the page says why', async () => {
@@ -340,6 +402,55 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     const { container } = render(<App matchData={set5('hhaahhah')} autoAction="preview" />)
     const grids = [...container.querySelectorAll('[data-testid="points-grid"]')]
     expect(grids.slice(-3).map(g => g.querySelectorAll('[data-blank]').length)).toEqual([0, 0, 0])
+  })
+
+  // A Global match may play the deciding set to another target: the teams change
+  // courts at half of it rounded up (rules.courtSwitchPointOf), as the Scoreboard
+  const set5To = (deciding: number, points: string, timeoutAfter?: number) => {
+    const data: any = set5(points)
+    data.match = { ...data.match, setTargets: { regular: 25, deciding } }
+    if (timeoutAfter !== undefined) {
+      // a time-out of the left team (home) after the given point of the set
+      const pts = data.events.filter((e: any) => e.type === 'point')
+      const to = { ...ev('timeout', 5, { team: 'home' }), seq: pts[timeoutAfter - 1].seq + 0.5 }
+      data.events = [...data.events, to]
+    }
+    return data
+  }
+  const set5Panels = (c: HTMLElement) => {
+    const box = c.querySelector('[data-testid="set5-box"]')!
+    return {
+      grids: [...box.querySelectorAll('[data-testid="points-grid"]')],
+      timeouts: [...box.querySelectorAll('[data-testid="timeout-block"]')].map(b => b.textContent || '')
+    }
+  }
+
+  it('a deciding set to 10 changes courts at 5, not 8: the box, the panels and the time-outs follow', () => {
+    // home (left) 4, then away reaches 5: the change at 4:5; home scores, then its time-out at 5:5
+    const { getByTestId, container } = render(<App matchData={set5To(10, 'hhhh' + 'aaaaa' + 'h', 10)} autoAction="preview" />)
+    expect(getByTestId('set5-points-at-change').textContent).toBe('4')
+    const { grids, timeouts } = set5Panels(container)
+    const mark = (g: Element, n: number) => g.querySelector(`[data-point="${n}"]`)?.getAttribute('data-mark')
+    // panel 1: points 1-4 ticked, the 5th (after the change) is in panel 3
+    expect([1, 2, 3, 4, 5].map(n => mark(grids[0], n))).toEqual(['tick', 'tick', 'tick', 'tick', ''])
+    expect(mark(grids[2], 5)).toBe('tick')
+    // the time-out at 5:5 came after the change: panel 3, not panel 1
+    expect(timeouts[2]).toContain('5:5')
+    expect(timeouts[0]).not.toContain('5:5')
+  })
+
+  it('a deciding set to 25 changes courts at 13: panel 1 prints 1-13', () => {
+    const { getByTestId, container } = render(<App matchData={set5To(25, 'h'.repeat(13) + 'a')} autoAction="preview" />)
+    expect(getByTestId('set5-points-at-change').textContent).toBe('13')
+    const { grids } = set5Panels(container)
+    expect(grids[0].querySelectorAll('[data-point]')).toHaveLength(13)
+    expect([...grids[0].querySelectorAll('[data-point]')].map(e => e.getAttribute('data-mark'))).toEqual(Array(13).fill('tick'))
+  })
+
+  it('a deciding set to 5 changes courts at 3; panel 1 still prints 1-8', () => {
+    const { getByTestId, container } = render(<App matchData={set5To(5, 'hh' + 'aaa')} autoAction="preview" />)
+    expect(getByTestId('set5-points-at-change').textContent).toBe('2')
+    expect(set5Panels(container).grids[0].querySelectorAll('[data-point]')).toHaveLength(8)
   })
 
   it('a 3:0: the unplayed sets 4 and 5 and their RESULT rows are left blank, not struck off (owner 2026-10-20)', () => {
@@ -675,6 +786,17 @@ describe('REMARKS that do not fit their box', () => {
     expect(queryByTestId('remarks-clipped-warning')).toBeNull()
   })
 
+  it('a picture that did not load (jsdom loads none) is named before the capture, the PDF is still made', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    seq = 0
+    const { getByText } = render(<App matchData={fixture()} autoAction="preview" />)
+    await act(async () => { getByText('Save PDF').click() })
+    await waitFor(() => expect(clicked).toHaveLength(1))
+    const line = warn.mock.calls.map(c => c.join(' ')).find(l => l.includes('did not load'))
+    expect(line).toContain('OpenVolley')
+    warn.mockRestore()
+  })
+
   it('still too long at the smallest size: a notice, a warning, and the whole text on PDF page 2', async () => {
     // the remarks text overflows its box at every size
     Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
@@ -687,6 +809,9 @@ describe('REMARKS that do not fit their box', () => {
     const { getByTestId } = render(<App matchData={{ ...base, events: tenSanctions() }} autoAction="save" dataReady />)
     await waitFor(() => expect(getByTestId('remarks-text').textContent).toMatch(/^Remarks continue on page 2\./))
     expect(getByTestId('remarks-clipped-warning')).toBeTruthy()
+    // it shrank no further than 6px (about 4.5 pt on A3) before page 2 took over (field-spec 8)
+    expect(getByTestId('remarks-text').style.fontSize).toBe(`${REMARKS_MIN_PX}px`)
+    expect(REMARKS_MIN_PX).toBe(6)
     await waitFor(() => expect(clicked).toHaveLength(1))
     expect(pdfCalls.some(c => c[0] === 'addPage')).toBe(true)
     const page2 = pdfCalls.filter(c => c[0] === 'text' && Array.isArray(c[1])).map(c => c[1].join('\n')).join('\n')

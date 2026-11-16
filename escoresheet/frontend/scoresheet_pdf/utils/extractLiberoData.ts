@@ -64,7 +64,9 @@ export function extractLiberoData(
   sets: any[],
   teamAKey: 'home' | 'away',
   teamAPlayers: Player[],
-  teamBPlayers: Player[]
+  teamBPlayers: Player[],
+  /** the deciding set's change of courts (rules.courtSwitchPointOf: 8 of 15) */
+  switchAt = 8
 ): LCSData {
   const teamBKey = teamAKey === 'home' ? 'away' : 'home';
 
@@ -104,7 +106,7 @@ export function extractLiberoData(
         if (scoringTeam === 'home') homeScore++;
         else awayScore++;
 
-        if (isSet5 && !courtChangeHappened && (homeScore >= 8 || awayScore >= 8)) {
+        if (isSet5 && !courtChangeHappened && (homeScore >= switchAt || awayScore >= switchAt)) {
           courtChangeHappened = true;
         }
       } else if (event.type === 'libero_entry') {

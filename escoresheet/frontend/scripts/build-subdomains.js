@@ -28,6 +28,7 @@ import { BUILD_TARGET } from '../build-target.js'
 import { themeBoot } from '../theme-boot.js'
 import { buildChannelPlugin, buildChannel, devHeadersFile } from '../build-channel.js'
 import { securityHeaderLines } from '../csp.js'
+import { htmlToImageFontSize } from '../vite-plugin-html-to-image-font-size.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -366,6 +367,9 @@ async function buildSubdomain(subdomain, basePath = '/') {
         react(),
         // Tailwind used to reach these builds only via the merged vite.config.js
         tailwindcss(),
+        // html-to-image's font-size shrinking off, as in vite.config.js (the
+        // manager's Rebuild PDF and the scoresheet subdomain save PDFs)
+        htmlToImageFontSize(),
         // Colour theme boot script (theme-boot.js), as in vite.config.js
         themeBoot({ enabled: usesTheme(config) }),
         // A dev-branch build (Pages preview): its test backend, noindex and

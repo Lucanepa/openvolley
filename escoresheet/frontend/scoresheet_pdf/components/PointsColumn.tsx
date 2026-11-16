@@ -168,7 +168,8 @@ export const PointsColumn: React.FC<{
 };
 
 // Set 5 panel 1: points 1-8 only (one column in the centre), as they stood at the
-// change of courts. The grid spans the header, line-up and substitutions (25 mm);
+// change of courts; a Global match's deciding set changes courts at half its
+// target (rules.courtSwitchPointOf): `rows` numbers then, never fewer than 8. The grid spans the header, line-up and substitutions (25 mm);
 // the "T" block lines up with service rows 1-3.
 export const PointsColumn5: React.FC<{
     compact?: boolean;
@@ -182,8 +183,11 @@ export const PointsColumn5: React.FC<{
     ruleRight?: boolean;
     /** a set never played (owner 2026-11-15): no numbers, not even grey */
     unused?: boolean;
-}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0, pointsAtChange = null, ruleRight = false, unused = false }) => {
-    const fontPx = fontForRows(25, 8);
+    /** numbers printed: the change of courts (8 of 15), at least 8 */
+    rows?: number;
+}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0, pointsAtChange = null, ruleRight = false, unused = false, rows = 8 }) => {
+    const count = Math.max(8, Math.ceil(rows) || 8);
+    const fontPx = fontForRows(25, count);
     // after the change of courts the panel ends at the points then; a set over
     // without a change (a default) at the final score
     const shownUpTo = unused ? 0 : pointsAtChange !== null && pointsAtChange !== undefined ? pointsAtChange : setFinished ? finalScore : null;
@@ -192,7 +196,7 @@ export const PointsColumn5: React.FC<{
             <div className="grid grid-cols-3 bg-white shrink-0 border-b border-black" style={{ height: 'calc(25mm - 1px)' }} data-testid="points-grid">
                 <div className="h-full"></div>
                 <div className="flex flex-col h-full" style={{ paddingTop: `${POINTS_GRID_PAD_MM}mm`, paddingBottom: `${POINTS_GRID_PAD_MM}mm` }}>
-                    {Array.from({ length: 8 }).map((_, i) => {
+                    {Array.from({ length: count }).map((_, i) => {
                         const num = i + 1;
                         return <PointBox key={i} num={num} fontPx={fontPx} filledState={markedPoints.includes(num) ? 1 : 0} isCircled={circledPoints.includes(num)} blank={shownUpTo !== null && num > shownUpTo} />;
                     })}

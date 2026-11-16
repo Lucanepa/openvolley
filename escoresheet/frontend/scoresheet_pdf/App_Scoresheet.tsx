@@ -1,5 +1,8 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+// The sheet's own base styles (font, line height, preflight, .ss-rule): the same
+// sheet wherever it is mounted (standalone page, Rebuild PDF, referee view)
+import './sheet.css';
 import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
 import { COURT_CHANGE_W, SetFive } from './components/SetFive';
@@ -11,7 +14,7 @@ import { Player, SanctionRecord } from './types_scoresheet';
 import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, idHeadingOf, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData, rosterLiberos } from './utils/extractLiberoData';
-import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
+import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, picturesReady, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
 import {
   getStartingLineup,
   assignSubsToColumns,
@@ -28,6 +31,7 @@ import {
 import { trackServiceRounds, courtChangeIndex, splitSet5Rounds, type ServiceRound } from './utils/serviceRounds';
 import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
 import { isMatchOverStatus } from '../src/domain/matchEnd.js';
+import { courtSwitchPointOf, setTargetsOf } from '../src/domain/rules.js';
 import { sponsorsOf, withSponsorMark } from '../src/domain/sponsors.js';
 import { generatedRemarks, correctionRemarks } from './utils/sheetRemarks';
 import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
@@ -35,9 +39,10 @@ import { BRAND } from '../src/brand.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
 import { onPointHubBoard } from '../src/utils/pointHubBoard';
-import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, A3_LANDSCAPE_MM, type SaveOutcome } from './utils/pdfOutput';
+import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, type SaveOutcome } from './utils/pdfOutput';
 import { usePinchZoom } from './usePinchZoom';
 import { applyTextFont } from './utils/pdfFont';
+import { writeRemarksPages } from './utils/remarksPages';
 
 interface AppScoresheetProps {
   matchData: {
@@ -93,6 +98,9 @@ const SHEET_W_PX = (410 * 96) / 25.4;
 const SHEET_H_PX = (287 * 96) / 25.4;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 3;
+
+/** A PDF being made whose view was closed: dropped, never handed on. */
+class CaptureAbandoned extends Error {}
 
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false, readOnly = false, embedded = false, reservedTop = 0, extraRemarks, onBlob }) => {
   const { t } = useTranslation();
@@ -196,10 +204,15 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         ? match.firstServe === teamAKey
         : undefined;
 
+  // Where the teams change courts in the deciding set: 8 of 15, or half of the
+  // match's own deciding target rounded up (a Global match's setTargets, the
+  // Scoreboard's rules.courtSwitchPointOf)
+  const set5SwitchAt: number = courtSwitchPointOf(setTargetsOf(match));
+
   // Compute Libero Control Sheet data from events
   const lcsData = useMemo(() => {
-    return extractLiberoData(events || [], sets || [], teamAKey as 'home' | 'away', teamAPlayers, teamBPlayers);
-  }, [events, sets, teamAKey, teamAPlayers, teamBPlayers]);
+    return extractLiberoData(events || [], sets || [], teamAKey as 'home' | 'away', teamAPlayers, teamBPlayers, set5SwitchAt);
+  }, [events, sets, teamAKey, teamAPlayers, teamBPlayers, set5SwitchAt]);
 
   // Check if LCS button should be visible: at least one team has a libero AND there is libero activity
   const hasLiberoActivity = useMemo(() => {
@@ -331,9 +344,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     });
     const leftServiceRounds: ServiceRound[] = trackedRounds[leftTeamKey];
     const rightServiceRounds: ServiceRound[] = trackedRounds[rightTeamKey];
-    // Set 5: index of the point after which a team reached 8 (change of courts)
+    // Set 5: index of the point after which a team reached the change of courts
     const set5ChangeAt = setNumber === 5
-      ? courtChangeIndex(rallyTeams, 8, rallyCounted)
+      ? courtChangeIndex(rallyTeams, set5SwitchAt, rallyCounted)
       : null;
 
     // Identify points scored due to sanctions
@@ -475,7 +488,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     let currentHomeScore = 0;
     let currentAwayScore = 0;
 
-    // For Set 5, track when court change happens (when any team reaches 8 points)
+    // For Set 5, track when court change happens (when any team reaches set5SwitchAt points)
     const isSet5 = setNumber === 5;
     let courtChangeHappened = false;
     let leftScoreAtCourtChange = 0; // Track left team's score at the moment of court change
@@ -520,8 +533,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           currentAwayScore++;
         }
 
-        // Check if court change has happened (Set 5: when any team reaches 8 points)
-        if (isSet5 && !courtChangeHappened && (currentHomeScore >= 8 || currentAwayScore >= 8)) {
+        // Check if court change has happened (Set 5: when any team reaches set5SwitchAt points)
+        if (isSet5 && !courtChangeHappened && (currentHomeScore >= set5SwitchAt || currentAwayScore >= set5SwitchAt)) {
           courtChangeHappened = true;
           // Store scores at the moment of court change
           leftScoreAtCourtChange = leftTeamKey === 'home' ? currentHomeScore : currentAwayScore;
@@ -1259,7 +1272,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     : '';
 
   // Set 5: three panels (field-spec 6). Panel 1 = the left team until the change of
-  // courts (points 1-8), panel 2 = the right team, panel 3 = the left team after the
+  // courts (points 1-8, or 1 to set5SwitchAt), panel 2 = the right team, panel 3 = the left team after the
   // change. Everything comes from getSetData(5): the same points, circles and the
   // same service-round tracker as sets 1-4, split at the change.
   const set5Changed = set5Data?.set5ChangeAt !== null && set5Data?.set5ChangeAt !== undefined;
@@ -1452,6 +1465,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   }, [turned]);
 
   const generatingRef = useRef(false);
+  // false once this view is gone (the manager's Rebuild PDF cancelled or timed
+  // out): a capture still running stops at its next step and hands nothing on
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   // Where the PDF went, shown next to the buttons until dismissed (field-spec 13.5):
   // the full path on the desktop (Open file / Show in folder), the file name in a
   // browser, or why it failed. Not alert(): in the desktop app the dialog plugin
@@ -1508,6 +1528,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     // the desktop app's quit question says a PDF is still being saved here
     setPdfBusy(true);
 
+    // the view is gone (Rebuild PDF cancelled or timed out): stop here
+    const stillShown = () => { if (!mountedRef.current) throw new CaptureAbandoned(); };
     try {
       const data = latestData.current;
       const filename = buildScoresheetFilename(data);
@@ -1518,16 +1540,29 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       if (wasShowingLCS) setShowLCS(false);
       setZoomLevel(1);
       await new Promise(resolve => setTimeout(resolve, 250));
+      stillShown();
       await (document as any).fonts?.ready;
+      // FitText fits its text again once a font has loaded: let that render land
+      await new Promise(resolve => setTimeout(resolve, 50));
+      stillShown();
 
       const sheet = containerRef.current;
       assertVisibleSheet(sheet);
+      // every logo and signature loaded and decoded (at most 3 s), else the PDF
+      // came out without it and nobody knew (utils/pdfCapture.ts)
+      await picturesReady(sheet!, 3000);
+      stillShown();
+      const missing = missingPictures(sheet!);
+      if (missing.length > 0) {
+        console.warn(`[Scoresheet] ${missing.length} picture(s) did not load and are not in the PDF:`, missing.map(img => img.alt || img.getAttribute('data-testid') || 'picture').join(', '));
+      }
 
       // Lazy-load PDF libraries (only needed when generating PDF)
       const [htmlToImage, { jsPDF }] = await Promise.all([
         import('html-to-image'),
         import('jspdf')
       ]);
+      stillShown();
 
       // pixelRatio 2: ~190 dpi on A3, sharp enough for print, a reasonable file size
       const capture = (props: string[]) => htmlToImage.toCanvas(sheet!, {
@@ -1573,6 +1608,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       } finally {
         restoreText();
       }
+      // a sheet taken off the page during the capture may have come out blank
+      stillShown();
       assertCanvas(canvas);
 
       const imgData = canvas.toDataURL('image/jpeg', 0.85);
@@ -1606,16 +1643,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       } catch { /* text layer is optional */ }
       if (remarksClipped) {
         const all = remarksText({ overflowSanctions, remarks: typeof match?.remarks === 'string' ? match.remarks : '', generated: autoRemarks });
-        pdf.addPage('a3', 'landscape');
         await applyTextFont(pdf, `${title}\n${all}`);
-        pdf.setFontSize(14);
-        pdf.text('REMARKS (continued from the scoresheet)', 15, 20);
-        pdf.setFontSize(10);
-        pdf.text(title, 15, 27);
-        pdf.setFontSize(11);
-        pdf.text(pdf.splitTextToSize(all, A3_LANDSCAPE_MM.width - 30), 15, 38);
+        // as many pages as the text needs (utils/remarksPages)
+        writeRemarksPages(pdf, title, all);
       }
 
+      stillShown();
       const bytes = pdf.output('arraybuffer');
       assertValidPdf(bytes);
       const pdfBlob = new Blob([bytes], { type: 'application/pdf' });
@@ -1636,6 +1669,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         ? { kind: 'desktop-pending', fileName: filename }
         : { kind: 'web', fileName: filename });
     } catch (error) {
+      if (error instanceof CaptureAbandoned) {
+        console.info('[Scoresheet] PDF dropped: the view was closed while it was made');
+        return;
+      }
       console.error('Error generating PDF:', error);
       if (!returnBlob) {
         setSaveOutcome({
@@ -1687,6 +1724,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
     const timer = setTimeout(async () => {
       await (document as any).fonts?.ready;
+      if (!mountedRef.current) return;
       if (autoAction === 'print' || autoAction === 'save') {
         await handleSavePdfRef.current();
       } else if (autoAction === 'getBlob') {
@@ -1694,6 +1732,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         // or tell it the capture failed so it does not wait for its timeout;
         // then close this window / the in-app view either way.
         const out = matchMissing ? null : await handleSavePdfRef.current(true);
+        // closed meanwhile (the manager's Rebuild PDF cancelled or timed out):
+        // whatever came out goes nowhere, not even as a failure
+        if (!mountedRef.current) return;
         // delivered (or failed): closing this window from now on cancels nothing
         approvalBusyRef.current = false;
         if (onBlobRef.current) onBlobRef.current(out || null);
@@ -1722,13 +1763,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // Embedded: one column that fills the host's layer, the sheet scrolling in
   // its own box (pinch zoom and Fit work on that box)
   const Root = embedded ? 'div' : React.Fragment;
-  const rootProps = embedded ? { className: 'flex h-full min-h-0 flex-col bg-gray-100', 'data-testid': 'scoresheet-embedded' } : {};
+  const rootProps = embedded ? { className: 'relative flex h-full min-h-0 flex-col bg-gray-100', 'data-testid': 'scoresheet-embedded' } : {};
   return (
     <Root {...rootProps}>
-      {/* PDF Generating overlay */}
+      {/* PDF Generating overlay. Embedded, it covers this view only: the host's
+          bar (Rebuild PDF's Cancel) stays usable while the PDF is made. */}
       {isGeneratingPdf && (
-        <div style={{
-          position: 'fixed',
+        <div data-testid="pdf-generating" style={{
+          position: embedded ? 'absolute' : 'fixed',
           top: 0,
           left: 0,
           right: 0,
@@ -1958,7 +2000,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         {/* LCS View */}
         {showLCS && (
           <div
-            className="flex flex-col items-center gap-4"
+            className="ss-sheet flex flex-col items-center gap-4"
             style={{
               transform: `scale(${zoomLevel})`,
               transformOrigin: 'top center',
@@ -2219,7 +2261,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       pointsA_Left={set5Shown ? (() => {
                         if (!set5Info || (!set5Info.homePoints && !set5Info.awayPoints && !set5Info.startTime)) return 0;
                         const leftTeamPoints = set5TeamOnLeft === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
-                        return Math.min(leftTeamPoints, 8);
+                        return Math.min(leftTeamPoints, set5SwitchAt);
                       })() : 0}
                       markedPointsA_Left={set5Shown ? markedPointsA_Left : []}
                       circledPointsA_Left={set5Shown ? circledPointsA_Left : []}
@@ -2235,12 +2277,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       pointsA_Right={set5Shown ? (() => {
                         if (!set5Info || (!set5Info.homePoints && !set5Info.awayPoints && !set5Info.startTime)) return 0;
                         const leftTeamPoints = set5TeamOnLeft === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
-                        return Math.max(leftTeamPoints - 8, 0);
+                        return Math.max(leftTeamPoints - set5SwitchAt, 0);
                       })() : 0}
                       markedPointsA_Right={set5Shown ? markedPointsA_Right : []}
                       circledPointsA_Right={set5Shown ? circledPointsA_Right : []}
                       serviceRoundsA_Right={set5Shown ? set5ServiceRoundsLeftTeam_After : []}
                       pointsAtChangeA={set5Shown ? (set5Data.leftScoreAtCourtChange ?? null) : null}
+                      switchAt={set5SwitchAt}
                       positionBoxRef={positionBoxSet5Ref}
                     />
                   </div>

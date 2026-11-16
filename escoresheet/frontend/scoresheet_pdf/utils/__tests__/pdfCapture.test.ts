@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { hideImages, imageBox, isWebKitEngine, isWebKitGtk, styleListFor, usedStyleProperties, wellFormedSheet } from '../pdfCapture'
+import { hideImages, imageBox, isWebKitEngine, isWebKitGtk, missingPictures, picturesReady, styleListFor, usedStyleProperties, wellFormedSheet } from '../pdfCapture'
 
 describe('isWebKitEngine', () => {
   it('every WebKit: Safari, the macOS app, WebKitGTK and all iPhone / iPad browsers; never Chromium or Firefox', () => {
@@ -126,5 +126,57 @@ describe('wellFormedSheet', () => {
     const html = root.innerHTML
     wellFormedSheet(root)()
     expect(root.innerHTML).toBe(html)
+  })
+})
+
+describe('pictures before the capture (logo, signatures)', () => {
+  const pic = (src: string | null, state: { complete?: boolean; naturalWidth?: number; decode?: () => Promise<void> } = {}) => {
+    const img = document.createElement('img')
+    if (src !== null) img.setAttribute('src', src)
+    Object.defineProperty(img, 'complete', { configurable: true, get: () => state.complete ?? true })
+    Object.defineProperty(img, 'naturalWidth', { configurable: true, get: () => state.naturalWidth ?? 0 })
+    Object.defineProperty(img, 'decode', { configurable: true, value: state.decode })
+    return img
+  }
+  const sheet = (...imgs: HTMLImageElement[]) => { const d = document.createElement('div'); imgs.forEach(i => d.appendChild(i)); return d }
+
+  it('waits for a picture that is still loading and decoding', async () => {
+    let finish!: () => void
+    const state: any = { complete: false, naturalWidth: 0 }
+    state.decode = () => new Promise<void>(r => { finish = () => { state.complete = true; state.naturalWidth = 400; r() } })
+    const img = pic('/logo.svg', state)
+    let ready = false
+    const p = picturesReady(sheet(img), 5000).then(() => { ready = true })
+    await new Promise(r => setTimeout(r, 20))
+    expect(ready).toBe(false)
+    finish()
+    await p
+    expect(ready).toBe(true)
+    expect(missingPictures(sheet(img))).toHaveLength(0)
+  })
+
+  it('without decode(): the load or error event', async () => {
+    const img = pic('/sig.png', { complete: false })
+    let ready = false
+    const p = picturesReady(sheet(img), 5000).then(() => { ready = true })
+    await new Promise(r => setTimeout(r, 10))
+    expect(ready).toBe(false)
+    img.dispatchEvent(new Event('error'))
+    await p
+    expect(ready).toBe(true)
+  })
+
+  it('never waits longer than the limit, and names the picture that did not come', async () => {
+    const stuck = pic('/slow.png', { complete: false, decode: () => new Promise<void>(() => {}) })
+    stuck.alt = 'Captain A signature'
+    const broken = pic('data:image/png;base64,xx', { complete: true, naturalWidth: 0, decode: () => Promise.reject(new Error('broken')) })
+    const fine = pic('/ok.png', { complete: true, naturalWidth: 10, decode: () => Promise.resolve() })
+    const none = pic(null)
+    const root = sheet(stuck, broken, fine, none)
+    const t0 = Date.now()
+    await picturesReady(root, 60)
+    expect(Date.now() - t0).toBeLessThan(1000)
+    // an <img> without a source is not a missing picture
+    expect(missingPictures(root)).toEqual([stuck, broken])
   })
 })

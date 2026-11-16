@@ -4295,7 +4295,12 @@
       "rebuildReason": "Perché lo ricrei?",
       "rebuilding": "Il nuovo PDF viene creato dai dati della partita…",
       "rebuilt": "Nuovo PDF salvato",
-      "rebuildFailed": "Non è stato possibile creare il nuovo PDF. Riprova."
+      "rebuildFailed": "Non è stato possibile creare il nuovo PDF. Riprova.",
+      "rebuildTimedOut": "La creazione del nuovo PDF ha richiesto troppo tempo. Non è stato salvato nulla. Riprova.",
+      "rebuildApprovalsFailed": "Non è stato possibile leggere le approvazioni con PIN della partita, e il nuovo PDF le perderebbe. Riprova.",
+      "rebuildDrawFailed": "Non è stato possibile disegnare il referto da questi dati della partita. Non è stato salvato nulla.",
+      "rebuildUpdated": "L'app è stata aggiornata nel frattempo. Ricarica la pagina, poi ricrea il PDF.",
+      "rebuildReload": "Ricarica"
     },
     "clubs": {
       "new": "Nuova società",

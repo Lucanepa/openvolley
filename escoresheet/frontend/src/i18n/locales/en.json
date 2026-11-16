@@ -4296,7 +4296,12 @@
       "rebuildReason": "Why are you rebuilding it?",
       "rebuilding": "Making the new PDF from the match data…",
       "rebuilt": "New PDF stored",
-      "rebuildFailed": "The new PDF could not be made. Try again."
+      "rebuildFailed": "The new PDF could not be made. Try again.",
+      "rebuildTimedOut": "Making the new PDF took too long. Nothing was stored. Try again.",
+      "rebuildApprovalsFailed": "The PIN approvals of the match could not be read, and the new PDF would lose them. Try again.",
+      "rebuildDrawFailed": "The sheet could not be drawn from this match data. Nothing was stored.",
+      "rebuildUpdated": "The app was updated meanwhile. Reload the page, then rebuild the PDF again.",
+      "rebuildReload": "Reload"
     },
     "clubs": {
       "new": "New club",

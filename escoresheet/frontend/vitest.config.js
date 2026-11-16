@@ -5,13 +5,21 @@ import { defineConfig } from 'vitest/config'
 // the workers inherit it.
 process.env.TZ = 'Europe/Zurich'
 import react from '@vitejs/plugin-react'
+import { htmlToImageFontSize } from './vite-plugin-html-to-image-font-size.js'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), htmlToImageFontSize()],
+  resolve: {
+    // the ES build, as the app's bundle uses: its modules (clone-node) go
+    // through htmlToImageFontSize; the CommonJS one's require()s would not
+    alias: [{ find: /^html-to-image$/, replacement: 'html-to-image/es/index.js' }]
+  },
   test: {
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/__tests__/setup.js'],
+    // through the plugins (htmlToImageFontSize), as in the app
+    server: { deps: { inline: ['html-to-image'] } },
     // A whole screen drawn and driven through its writes runs past the
     // default 5 s with the machine loaded. Every wait ends on the screen or
     // the database (setup.js: 10 s each), so only a stuck test runs this long.
