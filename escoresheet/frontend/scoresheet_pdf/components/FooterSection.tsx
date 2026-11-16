@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { CircleLetter } from './CircleLetter';
 import { SanctionRecord, Player } from '../types_scoresheet';
 import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
 import { FitText } from './FitText';
@@ -34,24 +35,24 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
             </div>
 
             {/* Improper Request Row - Static */}
-            <div className="flex items-center justify-between px-2 py-0.5 border-b border-black shrink-0">
-                <span className="text-[9px] font-bold uppercase">Improper Request</span>
-                <div className="flex items-center gap-3">
+            {/* One line, never wrapped (owner 2026-11-16: it wrapped into the W P E D
+                header): 8px, smaller still when the box is narrow */}
+            <div className="flex items-center justify-between gap-1 px-2 py-0.5 border-b border-black shrink-0">
+                <FitText max={8} min={5} className="font-bold uppercase flex-1 min-w-0 leading-tight" data-testid="sanctions-improper-label">Improper Request</FitText>
+                <div className="flex items-center gap-3 shrink-0">
                     {/* Team A */}
-                    <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
-                        <span className="text-[12px] font-bold leading-none relative z-0">A</span>
+                    <CircleLetter letter="A" size={20} fontPx={12}>
                         {improperRequests.teamA && (
                             <span className="absolute inset-0 flex items-center justify-center text-[20px] leading-none z-10">X</span>
                         )}
-                    </div>
+                    </CircleLetter>
 
                     {/* Team B */}
-                    <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
-                        <span className="text-[12px] font-bold leading-none relative z-0">B</span>
+                    <CircleLetter letter="B" size={20} fontPx={12}>
                         {improperRequests.teamB && (
                             <span className="absolute inset-0 flex items-center justify-center text-[20px] leading-none z-10">X</span>
                         )}
-                    </div>
+                    </CircleLetter>
                 </div>
             </div>
 
@@ -64,20 +65,18 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                 <div className="border-r border-black flex items-center justify-center" title="Expulsion">E</div>
                 <div className="border-r border-black flex items-center justify-center" title="Disqualification" data-testid="sanctions-head-disqualification">D</div>
                 <div className="border-r border-black flex items-center justify-center h-full">
-                    {/* The letters half a pixel up (a transform: a padding moved
-                        nothing, the text snaps to whole pixels), so they look
-                        centred in their circles (they read low: the owner,
-                        2026-10-21) */}
+                    {/* centred on the cap height (CircleLetter): HTML text sat high
+                        in the PDF (owner 2026-11-16; 2026-10-21 it read low) */}
                     <div className="flex flex-col items-center justify-center min-h-0 py-0.5 gap-0.5">
-                        <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white"><span className="inline-block -translate-y-[0.5px]">A</span></div>
-                        <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white"><span className="inline-block -translate-y-[0.5px]">B</span></div>
+                        <CircleLetter letter="A" size={10} fontPx={7} />
+                        <CircleLetter letter="B" size={10} fontPx={7} />
                     </div>
                     <div className="flex flex-col items-center justify-center h-full ml-1">
                         <span className="text-[8px] font-normal text-gray-700" style={{ lineHeight: '100%' }}>or</span>
                     </div>
                 </div>
                 <div className="border-r border-black flex items-center justify-center">Set</div>
-                <div className="flex items-center justify-center">Score</div>
+                <div className="flex items-center justify-center text-[7.5px] min-w-0" data-testid="sanctions-head-score">Score</div>
             </div>
             {/* Ruled rows and columns, as the Matchblatt: a referee can still add an entry by hand */}
             <div className="flex-1 flex flex-col min-h-0">
@@ -308,12 +307,12 @@ export const Results: React.FC<ResultsProps> = ({
             <div className="grid bg-black flex-1 min-h-0" style={{ gridTemplateColumns: '1fr 80px 1fr', gridTemplateRows: `20px 13px repeat(${displaySets.length}, minmax(16px, 1fr)) 0.7cm`, columnGap: '1px' }} data-testid="result-table">
                 {/* Team names */}
                 <div className="flex items-center gap-1 px-1 border-b border-black bg-gray-50 min-w-0 overflow-hidden" data-testid="result-head" data-block="A">
-                    <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">A</div>
+                    <CircleLetter letter="A" size={16} fontPx={9} />
                     <FitText max={9} min={5} multiline style={{ height: RESULT_HEAD_TEXT_H }} className="font-bold text-center uppercase w-full bg-transparent leading-none flex items-center justify-center" data-testid="result-head-name">{coinTossConfirmed ? teamAShortName : ''}</FitText>
                 </div>
                 <div className="border-b border-black bg-gray-200" data-testid="result-head" data-block="C"></div>
                 <div className="flex items-center gap-1 px-1 border-b border-black bg-gray-50 flex-row-reverse min-w-0 overflow-hidden" data-testid="result-head" data-block="B">
-                    <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">B</div>
+                    <CircleLetter letter="B" size={16} fontPx={9} />
                     <FitText max={9} min={5} multiline style={{ height: RESULT_HEAD_TEXT_H }} className="font-bold text-center uppercase w-full bg-transparent leading-none flex items-center justify-center" data-testid="result-head-name">{coinTossConfirmed ? teamBShortName : ''}</FitText>
                 </div>
 
@@ -572,7 +571,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                         <div className={`${APPROVAL_COL.official} pl-2 font-bold text-[9px] flex items-center whitespace-nowrap`}>{role}</div>
 
                         <div className={`${APPROVAL_COL.name} flex items-center pl-2 pr-1 min-w-0`}>
-                            <FitText max={9} min={5} className="w-full text-left leading-none" title={fullName}>{fullName}</FitText>
+                            <FitText max={9} min={5} className="w-full text-left leading-tight" title={fullName}>{fullName}</FitText>
                         </div>
 
                         <div className={`${APPROVAL_COL.country} flex items-center justify-center text-[9px] leading-none`}>
@@ -670,8 +669,8 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
 
                 {/* Center: A and B circles */}
                 <div className="flex items-center justify-center gap-3 shrink-0">
-                    <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center font-bold text-xs bg-white">A</div>
-                    <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center font-bold text-xs bg-white">B</div>
+                    <CircleLetter letter="A" size={16} fontPx={12} />
+                    <CircleLetter letter="B" size={16} fontPx={12} />
                 </div>
 
                 {/* Captain B Signature */}
@@ -764,7 +763,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                 (owner 2026-10-07: both rosters alike); a spacer as wide as the circle
                 on the other side keeps the name on the header's centre line */}
             <div className={`text-black border-b border-r border-black font-bold py-0.5 text-xs flex px-1 items-center gap-1 h-6 shrink-0 ${isHome ? '' : 'flex-row-reverse'}`}>
-                <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 font-bold text-[10px] uppercase">{coinTossConfirmed ? side : ''}</div>
+                <CircleLetter letter={coinTossConfirmed ? String(side || '').toUpperCase() : ''} size={20} fontPx={10} className="bg-white" />
                 <FitText max={12} min={6} multiline style={{ height: ROSTER_HEAD_TEXT_H }} className="font-bold uppercase flex-1 text-center leading-none flex items-center justify-center" data-testid="roster-team-name">{team}</FitText>
                 <div className="w-5 h-5 shrink-0" aria-hidden="true" />
             </div>

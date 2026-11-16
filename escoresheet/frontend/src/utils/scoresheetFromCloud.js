@@ -23,6 +23,7 @@
 import { cloudDataFromServer, localMatchRowFromCloud, rosterWithRedesignations } from './backupManager'
 import { recomputeMatch } from '../domain/recompute'
 import { approvalsBySlot } from '../domain/accountApproval'
+import { normalizeMatchData } from '../../scoresheet_pdf/utils/matchData'
 
 const REBUILD_MATCH_ID = 1
 const HOME_TEAM_ID = 1
@@ -90,8 +91,7 @@ const teamRow = (id, team) => (team?.name
  * @param {{ match: object, sets?: object[], events?: object[], liveState?: object|null, approvals?: object[] }} record
  *   GET /api/scoresheets/:id/match (lib/scoresheets.js matchForRebuild), with
  *   `approvals` from GET /api/approvals (the non-revoked records)
- * @returns {{ match: object, homeTeam: object|null, awayTeam: object|null, homePlayers: object[],
- *   awayPlayers: object[], sets: object[], events: object[] }}
+ * @returns {import('../../scoresheet_pdf/utils/matchData').MatchData}
  */
 export function scoresheetDataFromCloud(record) {
   const cloud = cloudDataFromServer({ match: record.match, sets: record.sets || [], events: record.events || [], liveState: record.liveState ?? null })
@@ -121,7 +121,7 @@ export function scoresheetDataFromCloud(record) {
     startTime: rebuildSetStart(s, events, manualChanges),
     endTime: s.end_time,
     externalId: s.external_id
-  })).sort((a, b) => a.index - b.index)
+  }))
   const eventRows = (events || []).map((e, i) => ({
     id: i + 1,
     matchId: REBUILD_MATCH_ID,
@@ -138,6 +138,7 @@ export function scoresheetDataFromCloud(record) {
   const rebuilt = recomputeMatch(cloudRows, { match, matchId: REBUILD_MATCH_ID }).add
     .filter(r => r.type === 'lineup')
     .map((r, i) => ({ id: eventRows.length + i + 1, matchId: REBUILD_MATCH_ID, setIndex: r.setIndex, type: 'lineup', payload: r.payload, ts: r.ts, seq: r.seq }))
-  const allEvents = [...eventRows, ...rebuilt].sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0))
-  return { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets: setRows, events: allEvents }
+  // the one shape every renderer hands the sheet (scoresheet_pdf/utils/matchData):
+  // events by seq as the device reads them (a missing seq last, not first)
+  return normalizeMatchData({ match, homeTeam, awayTeam, homePlayers, awayPlayers, sets: setRows, events: [...eventRows, ...rebuilt] })
 }

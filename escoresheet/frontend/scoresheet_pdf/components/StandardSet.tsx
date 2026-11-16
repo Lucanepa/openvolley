@@ -1,4 +1,5 @@
 import React from 'react';
+import { CircleLetter } from './CircleLetter';
 import { LINEUP_NUMBER_PT, MARK_STROKE } from './Marks';
 import { SubRecord } from '../types_scoresheet';
 import { PointsColumn } from './PointsColumn';
@@ -234,9 +235,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
              <div className="flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm' }}>
                  <div className="flex items-center gap-1 w-full">
                      <div className="flex items-center gap-1">
-                         <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
-                            {leftTeamLabel}
-                         </div>
+                         <CircleLetter letter={leftTeamLabel} size={24} fontPx={14} className="bg-gray-200 text-black" />
                          <SRSelector initialSelection={leftServes} />
                      </div>
                      <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameLeft}</FitText>
@@ -249,9 +248,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                      <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center font-bold text-center bg-white mr-1">{teamNameRight}</FitText>
                      <div className="flex items-center gap-1">
                         <SRSelector initialSelection={rightServes} />
-                        <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
-                            {rightTeamLabel}
-                        </div>
+                        <CircleLetter letter={rightTeamLabel} size={24} fontPx={14} className="bg-gray-200 text-black" />
                      </div>
                  </div>
              </div>

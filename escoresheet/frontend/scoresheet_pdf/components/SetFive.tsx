@@ -1,4 +1,5 @@
 import React from 'react';
+import { CircleLetter } from './CircleLetter';
 import { SubRecord } from '../types_scoresheet';
 import { PointsColumn5, PointsColumn30 } from './PointsColumn';
 import { FitText } from './FitText';
@@ -217,10 +218,15 @@ export const SetFive: React.FC<SetFiveProps> = ({
     // and down): panels 1 and 2 under set 3 (150 mm, as sets 1-4), the court-change
     // strip over set 3's right rule, the gap and the "SET 4" column (COURT_CHANGE_W),
     // and panel 3 exactly under set 4's left team (75 mm). No right border of its
-    // own: panel 3's points column draws it, on set 4's line.
+    // own: panel 3's points column draws it, on set 4's line. Panels 1-2 (and
+    // their header) sit in one 150 mm box and panel 3 (and its header) in one
+    // 75 mm box, as sets 3 and 4 do: each mm width is rounded to the layout grid
+    // once, the same way in both rows. Laid out panel by panel the rule landed
+    // 0.02px off set 4's and was drawn 1px left of it in the PDF (owner 2026-11-16).
     <div className="border border-r-0 border-black bg-white flex flex-col overflow-hidden shadow-sm shrink-0 relative" style={{ width: `calc(225mm + ${COURT_CHANGE_W} + 1px)` }} data-testid="set5-box">
        {/* Header Strip */}
        <div className="flex bg-gray-100 text-xs shrink-0" style={{ height: '0.8cm', width: `calc(225mm + ${COURT_CHANGE_W})` }}>
+           <div className="flex shrink-0" style={{ width: '150mm' }}>
            {/* Start Time */}
            <div className="border-r border-black flex items-center pr-2 gap-2 bg-white shrink-0" style={{ width: '20mm', paddingLeft: '3px' }}>
                 <span className="font-bold text-[9px]">Start:</span>
@@ -231,7 +237,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
            <div className="flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm' }}>
                 <div className="flex items-center gap-1 w-full">
                     <div className="flex items-center gap-1">
-                        <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
+                        <CircleLetter letter={teamALabel} size={24} fontPx={14} className="bg-gray-200 text-black" />
                         <SRSelector initialSelection={firstServeTeamA === true ? 'S' : firstServeTeamA === false ? 'R' : null} />
                     </div>
                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
@@ -245,7 +251,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white mr-1">{teamNameB || ''}</FitText>
                     <div className="flex items-center gap-1">
                         <SRSelector initialSelection={firstServeTeamA === true ? 'R' : firstServeTeamA === false ? 'S' : null} />
-                        <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamBLabel}</div>
+                        <CircleLetter letter={teamBLabel} size={24} fontPx={14} className="bg-gray-200 text-black" />
                     </div>
                 </div>
            </div>
@@ -255,11 +261,13 @@ export const SetFive: React.FC<SetFiveProps> = ({
                 <div className="bg-transparent text-center font-mono text-xs">{endTime}</div>
            </div>
            <div className="border-l border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
+           </div>
+           <div className="flex shrink-0" style={{ width: '75mm', marginLeft: COURT_CHANGE_W }}>
            {/* Panel 3 Header: Team LEFT (Swapped), over positions I-III */}
-           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '30mm', marginLeft: COURT_CHANGE_W }}>
+           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '30mm' }}>
                 <div className="flex items-center gap-1 w-full">
                     <div className="flex items-center gap-1">
-                        <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
+                        <CircleLetter letter={teamALabel} size={24} fontPx={14} className="bg-gray-200 text-black" />
                     </div>
                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
                 </div>
@@ -274,6 +282,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
                 <span className="text-[8px] font-bold leading-none text-center">Points at change</span>
            </div>
            <div className="border-l border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
+           </div>
        </div>
 
        {/* Court Change Box - spans full height of Set 5 (positioned at container level) */}
@@ -285,6 +294,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
 
        {/* Main Body - 3 Panels */}
        <div className="flex justify-start shrink-0" style={{ width: `calc(225mm + ${COURT_CHANGE_W})`, height: '4cm' }}>
+            <div className="flex shrink-0" style={{ width: '150mm' }}>
             {/* Panel 1: Team A */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={firstServeTeamA === false} positionBoxRef={positionBoxRef} serviceRounds={serviceRoundsA_Left} />
@@ -295,6 +305,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
             <div className="flex shrink-0" style={{ width: '75mm' }}>
                  <TeamServiceGridSet5 lineup={lineupB} subs={subsB} startsReceiving={firstServeTeamA === true} serviceRounds={serviceRoundsB} />
                  <PointsColumn30 timeouts={timeoutsB || ["", ""]} markedPoints={markedPointsB || []} circledPoints={circledPointsB || []} maxScore={maxScore} setFinished={setFinished} unused={unused} finalScore={finalScoreB} />
+            </div>
             </div>
 
             {/* Panel 3: Team A (Swapped) */}

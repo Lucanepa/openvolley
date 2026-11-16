@@ -1974,6 +1974,11 @@ export function localMatchRowFromCloud(cloudData, { homeTeamId = null, awayTeamI
     sanctions: results.sanctions || match.sanctions,
     // Scoresheet remarks (db/017; '' when the server has none)
     remarks: typeof match.remarks === 'string' ? match.remarks : '',
+    // The match's correction log (manual_changes). Left out, a device that
+    // took the match over printed no "Corrected after the match" remarks
+    // (Rebuild PDF did), and its next correction sent a log of that one entry
+    // only, which replaced the server's (owner 2026-11-16: one sheet everywhere)
+    manualChanges: Array.isArray(match.manual_changes) ? match.manual_changes : [],
     // Approval: prefer JSONB, fallback to legacy
     approved: approval.approved !== undefined ? approval.approved : match.approved,
     approvedAt: approval.approved_at || match.approved_at,

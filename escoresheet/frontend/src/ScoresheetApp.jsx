@@ -4,6 +4,7 @@ import { db } from './db/db'
 import { apiFrom, apiStorage } from './lib/apiClient'
 import './i18n' // the scoresheet components call useTranslation (own entry, own i18n init)
 import App from '../scoresheet_pdf/App_Scoresheet'
+import { loadLocalMatchData } from '../scoresheet_pdf/utils/matchData'
 import { ArrowLeft, ChevronRight, ClipboardList, FileX2, Lock, LogOut, X } from 'lucide-react'
 import { cn } from './ui/cn.js'
 import { Card } from './ui/Card.jsx'
@@ -18,7 +19,7 @@ import { GateMessage } from './ui/ErrorScreen.jsx'
 import { AppSpinner } from './ui/AppSpinner.jsx'
 import { weekdayLabel, dayLabel, timeLabel } from './ui/format.js'
 import { scheduledInstant } from './components/dashboards/EntryKit.jsx'
-import { describeScoresheetLoadError, findOwnScoresheet, redactScoresheetPath } from '../scoresheet_pdf/utils/scoresheetStorage'
+import { describeScoresheetLoadError, fetchScoresheetJson } from '../scoresheet_pdf/utils/scoresheetStorage'
 import { BRAND } from './brand'
 import LegalLinks from './legal/LegalLinks'
 import { reloadWithReason } from './diagnostics/reload'
@@ -28,30 +29,9 @@ import { reloadWithReason } from './diagnostics/reload'
 // scoresheet"), and its name has a random part, so it is found by listing the
 // date folder. Returns { data } or { error } with the storage error (status,
 // code) so the viewer can tell sign-in / not yours / not found apart.
-const fetchFromStorage = async (date, game) => {
-  try {
-    const bucket = apiStorage.from('scoresheets')
-    const found = await findOwnScoresheet(bucket, date, game)
-    if (found.error) {
-      console.warn('[Scoresheet] Storage lookup:', found.error.code || found.error.status, found.error.message)
-      return { data: null, error: found.error }
-    }
-    console.log('[Scoresheet] Fetching from storage:', redactScoresheetPath(found.path))
-
-    const { data, error } = await bucket.download(found.path)
-
-    if (error) {
-      console.warn('[Scoresheet] Storage fetch error:', error.code || error.status, error.message)
-      return { data: null, error }
-    }
-
-    const text = await data.text()
-    return { data: JSON.parse(text), error: null }
-  } catch (error) {
-    console.error('[Scoresheet] Error fetching from storage:', error)
-    return { data: null, error: { message: error instanceof Error ? error.message : 'Failed to load scoresheet' } }
-  }
-}
+// Approved files only (scoresheet_pdf/utils/scoresheetStorage fetchScoresheetJson,
+// also the scorer app's /scoresheet page, which shows the in-match file too)
+const fetchFromStorage = (date, game) => fetchScoresheetJson(apiStorage.from('scoresheets'), date, game)
 
 // Fetch archived matches from Supabase matches table (indoor only, finalized)
 const fetchArchiveMatches = async () => {
@@ -573,28 +553,10 @@ const MatchIdViewer = ({ matchId, action }) => {
   // Convert matchId to number if it's a numeric string
   const numericMatchId = !isNaN(matchId) ? parseInt(matchId, 10) : matchId
 
-  // One live query, one read transaction: the sheet never pairs the sets of
-  // one moment with the events of another (after a point: "the points
-  // recorded (2:2) do not match the set score (3:2)", and the page jumps)
-  const live = useLiveQuery(
-    () => {
-      if (!numericMatchId) return null
-      return db.transaction('r', [db.matches, db.teams, db.players, db.sets, db.events], async () => {
-        const match = await db.matches.get(numericMatchId)
-        if (!match) return null
-        const [homeTeam, awayTeam, homePlayers, awayPlayers, sets, events] = await Promise.all([
-          match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
-          match.awayTeamId ? db.teams.get(match.awayTeamId) : null,
-          match.homeTeamId ? db.players.where('teamId').equals(match.homeTeamId).toArray() : [],
-          match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).toArray() : [],
-          db.sets.where('matchId').equals(numericMatchId).sortBy('index'),
-          db.events.where('matchId').equals(numericMatchId).sortBy('seq')
-        ])
-        return { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
-      })
-    },
-    [numericMatchId]
-  )
+  // One live query, one read transaction (scoresheet_pdf/utils/matchData
+  // loadLocalMatchData, also the in-app sheet's): the sheet never pairs the
+  // sets of one moment with the events of another
+  const live = useLiveQuery(() => loadLocalMatchData(db, numericMatchId), [numericMatchId])
   const match = live === undefined ? undefined : (live?.match ?? null)
 
   // Show loading state while initial data is being fetched
@@ -615,19 +577,7 @@ const MatchIdViewer = ({ matchId, action }) => {
     )
   }
 
-  // Build match data from live queries
-  const matchData = {
-    match,
-    homeTeam: live.homeTeam || null,
-    awayTeam: live.awayTeam || null,
-    homePlayers: live.homePlayers,
-    awayPlayers: live.awayPlayers,
-    sets: live.sets,
-    events: live.events,
-    sanctions: []
-  }
-
-  return <App matchData={matchData} autoAction={action} />
+  return <App matchData={live} autoAction={action} />
 }
 
 // Main app component
