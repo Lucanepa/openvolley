@@ -290,6 +290,26 @@ describe('App_Scoresheet rosters', () => {
     expect(rows.join(' ')).not.toContain('Seven')
   })
 
+  it('LFP marks only with LFP tracking on (owner 2026-11-16)', () => {
+    const lfpRoster = () => {
+      const data = buildMatch()
+      data.homePlayers = [1, 2, 3, 4, 5, 6].map(n => ({ number: n, firstName: 'H', lastName: `L${n}`, isLfp: true })) as any
+      return data
+    }
+    const count = (c: HTMLElement) => (c.querySelector('[data-testid="roster-home"]')?.textContent || '').split('LFP').length - 1
+    localStorage.removeItem('lfpTrackingEnabled')
+    const off = render(<App matchData={lfpRoster()} autoAction="preview" />)
+    expect(count(off.container)).toBe(0)
+    off.unmount()
+    localStorage.setItem('lfpTrackingEnabled', 'true')
+    try {
+      const on = render(<App matchData={lfpRoster()} autoAction="preview" />)
+      expect(count(on.container)).toBe(6)
+    } finally {
+      localStorage.removeItem('lfpTrackingEnabled')
+    }
+  })
+
   it('signature boxes without a coin-toss signature are read-only on the sheet (no pad, nothing unsaved)', () => {
     const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
     const roster = container.querySelector('[data-testid="roster-home"]') as HTMLElement
