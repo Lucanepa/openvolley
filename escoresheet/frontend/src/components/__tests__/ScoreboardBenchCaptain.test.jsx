@@ -139,6 +139,10 @@ describe('Scoreboard bench: the captain\'s number circled', () => {
     // two digits get the taller ring
     expect(ringOf(chip('away', 12)).style.height).toBe('1.5em')
     expect(ringOf(chip('home', 8)).style.height).toBe('1.35em')
+    // one digit: a true circle, as wide as high (not the number's width plus
+    // the pad, an upright egg); two digits: the number's width, a short oval
+    expect(ringOf(chip('home', 8)).style.width).toBe('1.35em')
+    expect(ringOf(chip('away', 12)).style.width).toMatch(/^calc\(100% \+/)
 
     // everyone else on the bench: the number only, no ring
     for (const [team, number] of [['home', 9], ['away', 7], ['away', 10], ['away', 11]]) {

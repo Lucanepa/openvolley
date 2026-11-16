@@ -93,6 +93,8 @@ import { newGlobalKey, loadGlobal, isGlobalKey, markGlobalMatch, globalRestoreDa
 import { useToolMode, getToolMode, setToolMode, toolModeLocked, impliedToolMode } from './utils/toolMode'
 import { Button, cn, FormError, Input, ScreenLoading } from './ui'
 import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isNativeApp, isStaticHost } from './utils/backendConfig'
+// the Android app (Capacitor): its own plugin hides the system bars
+const isAndroidApp = () => isNativeApp() && window.Capacitor?.getPlatform?.() === 'android'
 import { isViewportTooSmall } from './utils/formLayout'
 import { onPointHubBoard } from './utils/pointHubBoard'
 import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
@@ -759,8 +761,18 @@ export default function App() {
     }
   }, [selfCheckShown], null)
 
-  // Fullscreen functionality
+  // Fullscreen functionality. In the Android app the page's fullscreen does
+  // not reach the status and navigation bars (the WebView keeps them, tablet
+  // check 16.11.2026): the button hides them through the app's own plugin
+  // instead (nativeSystemBars, the scoring screen's), on every screen until
+  // pressed again.
+  const [nativeBarsFullscreen, setNativeBarsFullscreen] = useState(false)
   const toggleFullscreen = useCallback(async () => {
+    if (isAndroidApp()) {
+      setNativeBarsFullscreen(!nativeBarsFullscreen)
+      setIsFullscreen(!nativeBarsFullscreen)
+      return
+    }
     try {
       if (!document.fullscreenElement) {
         await document.documentElement.requestFullscreen()
@@ -784,7 +796,7 @@ export default function App() {
         setIsFullscreen(true)
       }
     }
-  }, [])
+  }, [nativeBarsFullscreen])
 
   // Listen for fullscreen changes
   useEffect(() => {
@@ -3741,7 +3753,7 @@ export default function App() {
   // The Android app on a tablet hides the status and navigation bars on these
   // screens: an 8" tablet held sideways only gets past the gate without them
   // (nativeSystemBars; a no-op in a browser). The gate waits while they go.
-  const systemBarsGoing = useSystemBarsHidden(smallScreenBlocked && !isPhoneScreen())
+  const systemBarsGoing = useSystemBarsHidden((smallScreenBlocked && !isPhoneScreen()) || nativeBarsFullscreen)
   // The Scoreboard covers Home only: a match opened meanwhile (a link) closes it
   const simpleBoardShown = simpleBoardOpen && !matchId
   useEffect(() => {
