@@ -30,13 +30,20 @@ else
   die "cannot read the release $tag"
 fi
 
+# GitHub stores an asset under a cleaned name: a space becomes a dot
+# ("Openvolley eScoresheet_3.3.4_x64-setup.exe" is listed as
+# "Openvolley.eScoresheet_3.3.4_x64-setup.exe"). Compared as is, a re-run on a
+# published release took the Windows installer for missing, uploaded it again
+# and failed on "already exists" (3.3.4).
+asset_name() { printf '%s' "${1// /.}"; }
+
 mkdir -p "$out"
 count=0
 for f in "$@"; do
   [[ -f "$f" ]] || continue
   name=$(basename "$f")
   if [[ -e "$out/$name" ]]; then die "two files named $name"; fi
-  if [[ "$exists" == true ]] && grep -qxF -- "$name" <<<"$published"; then
+  if [[ "$exists" == true ]] && grep -qxF -- "$(asset_name "$name")" <<<"$published"; then
     echo "::warning::kept the published $name (not replaced by this run's build)"
     continue
   fi
