@@ -802,7 +802,10 @@ function SanctionColumn({ team, ink, title, actions, onDone }) {
       {team.easy && (
         <>
           {/* Easy match: no bench or officials, the sanction goes to the team */}
-          <button type="button" data-testid={`phone-team-warning-${team.side}`} disabled={team.formalWarned} style={{ ...wideButton, background: team.formalWarned ? 'var(--ov-sunken-strong)' : '#fef9c3', color: team.formalWarned ? 'var(--ov-text-faint)' : undefined }} onClick={() => { onDone(); actions.sanctionTeam(team.teamKey, 'warning') }}>{t('scoreboard.sanctions.warning')}</button>
+          {/* a team warned once gets no warning button at all */}
+          {!team.formalWarned && (
+            <button type="button" data-testid={`phone-team-warning-${team.side}`} style={{ ...wideButton, background: '#fef9c3' }} onClick={() => { onDone(); actions.sanctionTeam(team.teamKey, 'warning') }}>{t('scoreboard.sanctions.warning')}</button>
+          )}
           <button type="button" data-testid={`phone-team-penalty-${team.side}`} style={{ ...wideButton, background: '#fee2e2' }} onClick={() => { onDone(); actions.sanctionTeam(team.teamKey, 'penalty') }}>{t('scoreboard.sanctions.penalty')}</button>
         </>
       )}

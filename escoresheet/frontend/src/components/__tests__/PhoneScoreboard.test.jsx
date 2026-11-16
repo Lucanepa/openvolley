@@ -349,7 +349,8 @@ describe('Scoreboard: the phone layout', () => {
 
     // one formal warning per team: now a penalty, a point for the other team
     fireEvent.click(view.getByTestId('phone-action-sanction'))
-    await waitFor(() => expect(screen.getByTestId('phone-team-warning-left').disabled).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('phone-team-penalty-left')).toBeTruthy())
+    expect(screen.queryByTestId('phone-team-warning-left')).toBeNull()
     fireEvent.click(screen.getByTestId('phone-team-penalty-left'))
     await waitFor(() => expect(button('Confirm')).toBeTruthy())
     await settle()

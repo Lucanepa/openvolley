@@ -109,6 +109,7 @@ import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIc
 import { cn } from '../ui/cn.js'
 import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
+import { useKeepInViewport } from '../ui/keepInViewport.js'
 import { SectionHeader } from '../ui/SectionHeader.jsx'
 import { DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
@@ -794,6 +795,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setSubstitutionConfirmState(next)
   }, [])
   const [benchPlayerActionMenu, setBenchPlayerActionMenu] = useState(null) // { team: 'home'|'away', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, courtPlayerToSwapWith?: { number: number, position: string } } | null
+  // Anchored scoring-screen menus stay inside the window (ui/keepInViewport.js)
+  const playerMenuWrapRef = useRef(null)
+  useKeepInViewport(playerMenuWrapRef, playerActionMenu)
+  const subDropdownWrapRef = useRef(null)
+  useKeepInViewport(subDropdownWrapRef, substitutionDropdown)
+  const liberoDropdownWrapRef = useRef(null)
+  useKeepInViewport(liberoDropdownWrapRef, liberoDropdown)
+  const liberoInDropdownWrapRef = useRef(null)
+  useKeepInViewport(liberoInDropdownWrapRef, liberoInDropdown)
+  const sanctionDropdownWrapRef = useRef(null)
+  useKeepInViewport(sanctionDropdownWrapRef, sanctionDropdown)
+  const benchMenuWrapRef = useRef(null)
+  useKeepInViewport(benchMenuWrapRef, benchPlayerActionMenu)
+  const injuryDropdownWrapRef = useRef(null)
+  useKeepInViewport(injuryDropdownWrapRef, injuryDropdown)
+  const liberoBenchMenuWrapRef = useRef(null)
+  useKeepInViewport(liberoBenchMenuWrapRef, liberoBenchActionMenu)
   const [summaryTableZoom, setSummaryTableZoom] = useState(null) // { side: 'left'|'right', teamKey: 'home'|'away' } | null
 
   const [benchSubExpanded, setBenchSubExpanded] = useState(false) // Track if substitution list is expanded in bench player menu
@@ -20819,7 +20837,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {...backdropDismiss(() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false); setCourtIllegalExpanded(false) })}
             />
             {/* Action Menu */}
-            <div style={menuStyle} className="modal-wrapper-roll-down">
+            <div ref={playerMenuWrapRef} style={menuStyle} className="modal-wrapper-roll-down">
               <div
                 data-player-action-menu
                 className={SB_POPOVER}
@@ -21090,9 +21108,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </SbMenuItem>
                   {courtSanctionExpanded && (
                     <div className={SB_MENU_SUB}>
-                      <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromMenu('warning')} disabled={!canGetWarning}>
-                        {t('scoreboard.sanctions.warning')}
-                      </SbMenuItem>
+                      {/* a team warned once gets no warning item at all (owner 16.11) */}
+                      {canGetWarning && (
+                        <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromMenu('warning')}>
+                          {t('scoreboard.sanctions.warning')}
+                        </SbMenuItem>
+                      )}
                       <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirmFromMenu('penalty')} disabled={!canGetPenalty}>
                         {t('scoreboard.sanctions.penalty')}
                       </SbMenuItem>
@@ -21208,7 +21229,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-down">
+            <div ref={subDropdownWrapRef} style={dropdownStyle} className="modal-wrapper-roll-down">
               <div
                 data-substitution-dropdown
                 className={SB_POPOVER}
@@ -21357,7 +21378,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-down">
+            <div ref={liberoDropdownWrapRef} style={dropdownStyle} className="modal-wrapper-roll-down">
               <div
                 data-libero-dropdown
                 style={{
@@ -21446,7 +21467,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-down">
+            <div ref={liberoInDropdownWrapRef} style={dropdownStyle} className="modal-wrapper-roll-down">
               <div
                 data-libero-in-dropdown
                 style={{
@@ -21538,7 +21559,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {...backdropDismiss(cancelSanction)}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-up">
+            <div ref={sanctionDropdownWrapRef} style={dropdownStyle} className="modal-wrapper-roll-up">
               <div
                 data-sanction-dropdown
                 className={SB_POPOVER}
@@ -21599,9 +21620,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     return (
                       <>
-                        <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirm('warning')} disabled={!canGetWarning}>
-                          {t('scoreboard.sanctions.warning')}{!canGetWarning && ` (${teamWarning ? t('scoreboard.playerMenu.teamHasWarning') : t('scoreboard.playerMenu.alreadySanctioned')})`}
-                        </SbMenuItem>
+                        {/* a team warned once gets no warning item at all (owner 16.11) */}
+                        {canGetWarning && (
+                          <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirm('warning')}>
+                            {t('scoreboard.sanctions.warning')}
+                          </SbMenuItem>
+                        )}
                         <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirm('penalty')} disabled={!canGetPenalty}>
                           {t('scoreboard.sanctions.penalty')}{!canGetPenalty && ` (${t('scoreboard.playerMenu.alreadySanctioned')})`}
                         </SbMenuItem>
@@ -21712,7 +21736,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchIllegalExpanded(false); setBenchSanctionExpanded(false) })}
             />
             {/* Action Menu */}
-            <div style={menuStyle} className="modal-wrapper-roll-down">
+            <div ref={benchMenuWrapRef} style={menuStyle} className="modal-wrapper-roll-down">
               <div
                 data-bench-player-action-menu
                 className={SB_POPOVER}
@@ -21845,9 +21869,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </SbMenuItem>
                       {benchSanctionExpanded && (
                         <div className={SB_MENU_SUB}>
-                          <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromBenchMenu('warning')} disabled={!canGetWarning}>
-                            {t('scoreboard.sanctions.warning')}
-                          </SbMenuItem>
+                          {/* a team warned once gets no warning item at all (owner 16.11) */}
+                          {canGetWarning && (
+                            <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromBenchMenu('warning')}>
+                              {t('scoreboard.sanctions.warning')}
+                            </SbMenuItem>
+                          )}
                           <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirmFromBenchMenu('penalty')} disabled={!canGetPenalty}>
                             {t('scoreboard.sanctions.penalty')}
                           </SbMenuItem>
@@ -21969,7 +21996,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-up">
+            <div ref={injuryDropdownWrapRef} style={dropdownStyle} className="modal-wrapper-roll-up">
               <div
                 data-injury-dropdown
                 className={SB_POPOVER}
@@ -23069,7 +23096,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }}
               {...backdropDismiss(() => { setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false); setLiberoBenchUnableExpanded(false) })}
             />
-            <div style={menuStyle} className="sb-anchored-popover">
+            <div ref={liberoBenchMenuWrapRef} style={menuStyle} className="sb-anchored-popover">
               {/* Same scale(1.5) as the other player menus, so its rows match them on screen */}
               <div data-libero-bench-action-menu className={SB_POPOVER} style={{
                 padding: '8px',
