@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { scoresheetDataFromCloud, rebuildSetStart } from '../scoresheetFromCloud'
 import { resultKey } from '../../domain/accountApproval'
+import { setTargetsOf, courtSwitchPointOf, DEFAULT_SET_TARGETS } from '../../domain/rules'
 
 // The server's record of a closed match (GET /api/scoresheets/:id/match) as
 // the sheet takes it, with nothing written to this device (Rebuild PDF)
@@ -60,6 +61,19 @@ describe('scoresheetDataFromCloud', () => {
     expect(d.homePlayers).toEqual([])
     expect(d.sets).toEqual([])
   })
+
+  it('the deciding set changes courts at 8: a server match plays the standard targets (field spec 17.14)', () => {
+    // Only a Global match has its own points per set (MatchSetup writes
+    // match.setTargets for match.global only). A Global match is a test
+    // match: it is never queued to the server (queueMatchUpdate, test) and
+    // the server neither lists nor rebuilds a test row (lib/scoresheets.js,
+    // m.test IS NOT TRUE). So a rebuilt sheet never needs set targets.
+    const d = scoresheetDataFromCloud(record())
+    expect(d.match.setTargets).toBeUndefined()
+    expect(setTargetsOf(d.match)).toEqual(DEFAULT_SET_TARGETS)
+    expect(courtSwitchPointOf(setTargetsOf(d.match))).toBe(8)
+  })
+
   it('the account approvals come along by slot (a PIN approval keeps its stamp); revoked ones and unknown slots do not', () => {
     const base = record()
     const key = resultKey([

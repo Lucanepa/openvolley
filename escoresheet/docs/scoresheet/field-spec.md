@@ -835,15 +835,22 @@ These override sections 4-7 and 16 wherever they differ.
      plugin `vite-plugin-html-to-image-font-size.js` turns that off in every build (a
      postinstall patch would not run in the F-Droid build, `npm ci --ignore-scripts`); a test
      fails if an html-to-image update brings it back in another form.
-   - **Rules never covered.** In WebKit at a fractional device pixel ratio (page zoom,
-     fractional display scaling) the capture rounds sub-pixel borders up, children overflow
-     their box by a fraction of a pixel and any child with a background painted over the
-     rule. Cells inside a box that is already white have no background of their own (the
+   - **Rules never covered.** In Chromium (Brave, Chrome) and WebKit at a fractional device
+     pixel ratio (page zoom, fractional display scaling) the capture rounds sub-pixel
+     borders up, children overflow their box by a fraction of a pixel and any child with a
+     background painted over the rule. Cells inside a box that is already white have no background of their own (the
      LIBERO and BENCH OFFICIALS cells, the signatures, the roster headers, the winner band),
      and every bordered box and row of the footer clips what overflows at its border
      (`overflow-clip`: rosters, their rows and blocks, REMARKS, APPROVAL and its rows,
      RESULT). The RESULT table keeps its white cells on the black grid (its rules are the
      gaps). APPROVAL's role labels never wrap.
+   - **Checking it.** A Playwright context's `deviceScaleFactor` does not reproduce this in
+     Chromium or Firefox: the PDF comes out the same as at ratio 1, also with the old code.
+     Check Chromium launched with `--force-device-scale-factor=1.75` (a window size, viewport
+     `null`), which loses the LIBERO "No" rule and both roster bottoms on the old code as in
+     the Brave PDF, and WebKit with `deviceScaleFactor` 1.5, which loses rules there too.
+     The current sheet keeps every rule in both (ratios 1.1 to 2.625, standalone page and
+     manager).
 14. **Rebuild PDF keeps what the approved sheet had, and Cancel cancels** (2026-11-16, review
    of the manager's Rebuild PDF). The rebuilt sheet is drawn from the server's record
    (`src/utils/scoresheetFromCloud.js`), with nothing taken from the admin's device database.
@@ -872,6 +879,10 @@ These override sections 4-7 and 16 wherever they differ.
    - Not changed: the LFP marks (LFP tracking option, owner 2026-11-16) and the clock zone
      (Global tool mode) still follow the device that draws the sheet, so a rebuild on another
      device can differ there from the approved sheet.
+   - The deciding set's change of courts (17.15) needs no set targets on the server: only a
+     Global match has its own points per set, and a Global match is a test match, never
+     sent to the server's `matches` table nor listed or rebuilt there (`m.test IS NOT
+     TRUE`). Every rebuilt match played the deciding set to 15, so its sheet changes at 8.
 15. **Text on the sheet, more pages, pictures** (2026-11-16, review of the PDF, group C).
    - **The browser's minimum font size.** Android's WebView draws any font below 8px at 8px
      (its default minimum), and so does a browser whose user set a minimum font size (Chrome,
