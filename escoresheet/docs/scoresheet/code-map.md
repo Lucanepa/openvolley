@@ -396,7 +396,7 @@ output runs for every finished set on every render (l. 429-443, 624-637).
      the UA defaults somewhere on the sheet, no custom properties, no logical property
      whose physical sides are listed (`withoutLogicalAliases`). The full copy (every
      computed property, ~750 in the manager) was a ~100 MB SVG and took ~9.5 s in
-     Chromium; the lean one is ~12 MB, ~2.1 s from mount to PDF (field-spec 17.16).
+     Chromium; the lean one is ~12 MB, ~2.1 s from mount to PDF (field-spec 17.17).
      `fontEmbedCSS` is the sheet font's CSS from step 3 (null: html-to-image embeds the
      fonts itself).
    - Not WebKit: pictures stay in the SVG; on failure retry with the full copy (`allStyleProperties`).
