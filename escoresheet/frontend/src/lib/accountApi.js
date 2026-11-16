@@ -604,9 +604,9 @@ export const scoresheetsApi = {
   matchRecord(matchId) {
     return apiRequest('GET', `/api/scoresheets/${enc(matchId)}/match`)
   },
-  /** POST /api/scoresheets/:id/rebuild (admins): the PDF drawn again, stored as the match's newest. */
-  rebuild(matchId, { reason, fileBase64 }) {
-    return apiRequest('POST', `/api/scoresheets/${enc(matchId)}/rebuild`, { reason, fileBase64 }, { timeoutMs: 120000 })
+  /** POST /api/scoresheets/:id/rebuild (admins): the PDF drawn again, stored as the match's newest. `signal`: Cancel (an upload already received is stored). */
+  rebuild(matchId, { reason, fileBase64 }, { signal } = {}) {
+    return apiRequest('POST', `/api/scoresheets/${enc(matchId)}/rebuild`, { reason, fileBase64 }, { timeoutMs: 120000, signal })
   }
 }
 

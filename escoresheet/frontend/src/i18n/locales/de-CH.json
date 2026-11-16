@@ -4292,6 +4292,7 @@
       "rebuilt": "Neues PDF gespeichert",
       "rebuildFailed": "Das neue PDF konnte nicht erstellt werden. Versuch es nochmals.",
       "rebuildTimedOut": "Das neue PDF hat zu lange gedauert. Es wurde nichts gespeichert. Versuch es nochmals.",
+      "rebuildCancelledUpload": "Abgebrochen. Falls der Upload den Server schon erreicht hatte, ist das neue PDF gespeichert: Die Liste zeigt es.",
       "rebuildApprovalsFailed": "Die PIN-Freigaben des Spiels konnten nicht gelesen werden, das neue PDF würde sie verlieren. Versuch es nochmals.",
       "rebuildDrawFailed": "Das Matchblatt konnte aus diesen Spieldaten nicht gezeichnet werden. Es wurde nichts gespeichert.",
       "rebuildUpdated": "Die App wurde inzwischen aktualisiert. Lade die Seite neu und erstelle das PDF dann nochmals.",

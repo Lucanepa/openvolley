@@ -570,16 +570,12 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
 
   /**
    * When the data a sheet is drawn from last changed (SQL, over match row
-   * `alias`): the match row (db/006's trigger moves updated_at on every
-   * write: Corrections, the Data tab, an UPDATE in the SQL tab), its sets
-   * (the same trigger), its events (created_at: a new or restored one) and
-   * its event revisions (db/015: a correction, an undo). An UPDATE of an
-   * event row itself in the SQL tab moves none of them: not seen.
+   * `alias`): db/045's public.match_sheet_changes, kept by triggers on the
+   * match row (only the columns the sheet reads: not the close, a game
+   * release or the sync bookkeeping), its sets, events (also an UPDATE of an
+   * event row in the SQL or Data tab), event revisions and approvals.
    */
-  const dataChangedSql = (alias) => `greatest(${alias}.updated_at,
-                (SELECT max((to_jsonb(s) ->> 'updated_at')::timestamptz) FROM public.sets s WHERE s.match_id = ${alias}.id),
-                (SELECT max(e.created_at) FROM public.events e WHERE e.match_id = ${alias}.id),
-                (SELECT max(r.at) FROM public.event_revisions r WHERE r.match_id = ${alias}.id))`
+  const dataChangedSql = (alias) => `(SELECT c.changed_at FROM public.match_sheet_changes c WHERE c.match_id = ${alias}.id)`
 
   /**
    * The newest PDF (stored at `pdfMs`) is out of date: the data changed more

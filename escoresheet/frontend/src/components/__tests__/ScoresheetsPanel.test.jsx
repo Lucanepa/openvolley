@@ -13,7 +13,7 @@ vi.mock('../../lib/accountApi', async (orig) => {
 const toasts = vi.hoisted(() => ({ error: [], success: [] }))
 vi.mock('../../ui', async (orig) => {
   const real = await orig()
-  return { ...real, toast: { ...real.toast, error: (m) => toasts.error.push(m), success: (m) => toasts.success.push(m) } }
+  return { ...real, toast: { ...real.toast, error: (m) => toasts.error.push(m), success: (m) => toasts.success.push(m), info: (m) => (toasts.info = toasts.info || []).push(m) } }
 })
 // "Rebuild PDF": the sheet's drawing is the scoresheet's own (its tests); here
 // the panel's steps: the record read, the remark, the PDF handed back, stored
@@ -43,6 +43,7 @@ describe('ScoresheetsPanel', () => {
     vi.clearAllMocks()
     toasts.error = []
     toasts.success = []
+    toasts.info = []
     rebuildView.props = null
     api.list.mockResolvedValue({ data: { matches: MATCHES }, error: null, status: 200 })
     // a server before the view links (404): View falls back to the file
@@ -210,7 +211,7 @@ describe('ScoresheetsPanel', () => {
     // the PDF made: stored with the reason, the list read again
     const listed = api.list.mock.calls.length
     rebuildView.props.onDone({ blob: pdfBlob, filename: 'game402397_1L_2026-10-10.pdf' })
-    await waitFor(() => expect(api.rebuild).toHaveBeenCalledWith('m-1', { reason: 'Set start times corrected', fileBase64: 'JVBERi0xLjQ=' }))
+    await waitFor(() => expect(api.rebuild).toHaveBeenCalledWith('m-1', { reason: 'Set start times corrected', fileBase64: 'JVBERi0xLjQ=' }, expect.objectContaining({ signal: expect.anything() })))
     await waitFor(() => expect(toasts.success).toEqual(['manage.scoresheets.rebuilt']))
     await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(listed))
     expect(screen.queryByTestId('rebuild-scoresheet')).toBeNull()
@@ -253,6 +254,35 @@ describe('ScoresheetsPanel', () => {
     expect(api.rebuild).not.toHaveBeenCalled()
     expect(toasts.success).toEqual([])
     expect(toasts.error).toEqual([])
+  })
+
+  it('Rebuild PDF: Cancel while the PDF uploads aborts the request, shows no success, says it may be stored and reads the list again', async () => {
+    closedOnly()
+    api.matchRecord.mockResolvedValue({ data: { match: { id: 'm-1', external_id: 'x' }, sets: [], events: [] }, error: null, status: 200 })
+    fromCloud.fn.mockReturnValue({ match: {}, homePlayers: [], awayPlayers: [], sets: [], events: [] })
+    let signal = null
+    let finish = () => {}
+    api.rebuild.mockImplementation((_id, _body, opts) => {
+      signal = opts?.signal
+      return new Promise((resolve) => { finish = resolve; signal?.addEventListener('abort', () => resolve({ data: null, error: { aborted: true, message: 'Cancelled' }, status: 0 })) })
+    })
+    render(<ScoresheetsPanel canRebuild />)
+    await screen.findByText('Voléro vs Smash')
+    await openRebuild()
+    await screen.findByTestId('rebuild-scoresheet')
+    const listed = api.list.mock.calls.length
+    let uploading
+    act(() => { uploading = rebuildView.props.onDone({ blob: pdfBlob, filename: 'game402397.pdf' }) })
+    await waitFor(() => expect(api.rebuild).toHaveBeenCalledTimes(1))
+    expect(signal).toBeTruthy()
+    act(() => rebuildView.props.onCancel())
+    expect(signal.aborted).toBe(true)
+    expect(screen.queryByTestId('rebuild-scoresheet')).toBeNull()
+    await act(async () => { finish({ data: { stored_at: 'x' }, error: null, status: 200 }); await uploading })
+    expect(toasts.success).toEqual([])
+    expect(toasts.error).toEqual([])
+    expect(toasts.info).toEqual(['manage.scoresheets.rebuildCancelledUpload'])
+    await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(listed))
   })
 
   it('Rebuild PDF: no PDF in time says it took too long, stores nothing', async () => {

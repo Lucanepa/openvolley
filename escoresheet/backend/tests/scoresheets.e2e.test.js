@@ -411,6 +411,19 @@ describe('scoresheets end to end', { skip: SKIP }, () => {
       await sql.query('SET session_replication_role = origin')
     }
     await sql.query('UPDATE public.match_scoresheets SET stored_at = stored_at - make_interval(secs => $2), first_stored_at = first_stored_at - make_interval(secs => $2) WHERE match_id = $1', [id, secs])
+    await sql.query('UPDATE public.match_sheet_changes SET changed_at = changed_at - make_interval(secs => $2) WHERE match_id = $1', [id, secs])
+  }
+  /** A write to a closed match as the SQL tab or an admin tool makes it (db/007: ov.allow_closed). */
+  async function closedWrite (text, params) {
+    await sql.query('BEGIN')
+    try {
+      await sql.query("SET LOCAL ov.allow_closed = 'on'")
+      await sql.query(text, params)
+      await sql.query('COMMIT')
+    } catch (err) {
+      await sql.query('ROLLBACK')
+      throw err
+    }
   }
   const rowOf = async (user, id) => (await get(user, '/api/scoresheets?app=indoor&limit=500')).json.data.matches.find((x) => x.id === id)
 
@@ -422,19 +435,56 @@ describe('scoresheets end to end', { skip: SKIP }, () => {
     assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false)
     await backdate(m.id, 3600)
     assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false, 'nothing changed since')
-    // a correction after the match (Corrections, the Data or SQL tab: the row's updated_at moves)
-    await sql.query('SET session_replication_role = replica')
-    try {
-      await sql.query('UPDATE public.matches SET updated_at = now() WHERE id = $1', [m.id])
-    } finally {
-      await sql.query('SET session_replication_role = origin')
-    }
+    // a correction after the match (Corrections, the Data or SQL tab): a column the sheet reads
+    await closedWrite("UPDATE public.matches SET remarks = 'Set 2 start corrected' WHERE id = $1", [m.id])
     const row = await rowOf(users.cm, m.id)
     assert.equal(row.pdf_stale, true, row && JSON.stringify(row))
     assert.ok(Date.parse(row.data_changed_at) > Date.parse(row.pdf_updated_at) + STALE_SLACK_MS)
     // no PDF: never out of date
     const none = await newMatch(users.ivan)
     assert.equal((await rowOf(users.cm, none.id)).pdf_stale, false)
+  })
+
+  it('an UPDATE of an event row (SQL or Data tab) makes the PDF out of date; releasing the game does not (db/045)', async () => {
+    const m = await newMatch(users.ivan)
+    await sql.query("INSERT INTO public.events (external_id, match_id, set_index, type, payload, seq, ts) VALUES ($1, $2, 1, 'point', '{\"team\":\"home\"}', 1, now())", [`ev_${m.ext}`, m.id])
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'approval')
+    await closeNow(users.ivan, m.id)
+    await backdate(m.id, 3600)
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false)
+
+    // the game released (lib/accounts.js release-game: official_game_exempt, released_at, updated_at)
+    const released = await api(srv.base, `/api/admin/matches/${m.id}/release-game`, { token: users.admin.token, body: { reason: 'a duplicate of the other scorer' } })
+    assert.equal(released.status, 200, released.text)
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false, 'nothing on the sheet changed')
+    // an account deletion's ON DELETE SET NULL of an event's voided_by: not a sheet change either
+    await closedWrite('UPDATE public.events SET voided_by = $2 WHERE match_id = $1', [m.id, users.admin.id])
+    await closedWrite('UPDATE public.events SET voided_by = NULL WHERE match_id = $1', [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false)
+
+    // the event row itself edited (it moved no updated_at / created_at before db/045)
+    await closedWrite(`UPDATE public.events SET payload = '{"team":"away"}' WHERE match_id = $1`, [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, true)
+  })
+
+  it('a set changed or an event removed after the PDF: out of date; a write that changes nothing: not', async () => {
+    const m = await newMatch(users.ivan)
+    await sql.query('INSERT INTO public.sets (match_id, index, home_points, away_points, finished) VALUES ($1, 1, 25, 20, true)', [m.id])
+    await sql.query("INSERT INTO public.events (external_id, match_id, set_index, type, seq, ts) VALUES ($1, $2, 1, 'point', 1, now())", [`ev_${m.ext}`, m.id])
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'approval')
+    await closeNow(users.ivan, m.id)
+    await backdate(m.id, 3600)
+    // a no-op rewrite of the set (a resent job: only updated_at moves)
+    await closedWrite('UPDATE public.sets SET home_points = home_points WHERE match_id = $1', [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false)
+    await closedWrite("UPDATE public.sets SET end_time = now() WHERE match_id = $1", [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, true)
+    await backdate(m.id, 3600)
+    await closedWrite('DELETE FROM public.events WHERE match_id = $1', [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, true)
+    // a match deleted with its rows: no trigger error (the child rows' match is gone)
+    await closedWrite('DELETE FROM public.matches WHERE id = $1', [m.id])
+    assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.match_sheet_changes WHERE match_id = $1', [m.id])).rows[0].n, 0)
   })
 
   it('an admin rebuilds a closed match\'s PDF without reopening it: served as the newest, the old one kept, audited', async () => {
