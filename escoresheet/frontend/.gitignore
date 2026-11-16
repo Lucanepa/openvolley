@@ -27,10 +27,9 @@ _build_*.html
 *.sln
 *.sw?
 
-# Capacitor (android/ is committed; its own .gitignore drops build output,
-# local.properties and the copied web assets — see ANDROID.md)
+# Capacitor (android/ and ios/ are committed; their own .gitignore drops build
+# output, local.properties and the copied web assets — see ANDROID.md, IOS.md)
 .capacitor
-ios
 dist-capacitor
 
 # Electron

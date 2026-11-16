@@ -48,6 +48,17 @@ describe('nativeSystemBars', () => {
       expect(registerPlugin.mock.calls.flat()).toEqual(['OpenVolleyBars'])
     })
 
+    it("on iOS: Capacitor's own SystemBars (status bar and home indicator)", async () => {
+      vi.resetModules()
+      window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', registerPlugin }
+      const ios = await import('../nativeSystemBars')
+      await ios.hideSystemBars()
+      await ios.showSystemBars()
+      expect(calls).toEqual(['hide', 'show'])
+      expect(bars.hide).toHaveBeenCalledWith()
+      expect(registerPlugin.mock.calls.flat()).toEqual(['SystemBars'])
+    })
+
     it('a show sent while the hide is in flight runs after it', async () => {
       hideSystemBars()
       await showSystemBars()
