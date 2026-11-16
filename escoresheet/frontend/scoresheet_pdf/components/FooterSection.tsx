@@ -735,8 +735,9 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
     // players flagged libero by jersey number; a re-designated libero is not
     // listed (remarks, as Genius). Two rows; a further one is named in the last
     // row, never dropped without a trace.
-    const allLiberos: Player[] = liberoList ?? players
-        .filter(p => p.libero && p.libero !== 'redesignated')
+    // By shirt number, like the 14 rows (owner 2026-11-16), not libero 1 / libero 2
+    const allLiberos: Player[] = [...(liberoList ?? players
+        .filter(p => p.libero && p.libero !== 'redesignated'))]
         .sort((a, b) => parseInt(String(a.number || '0')) - parseInt(String(b.number || '0')));
     const liberos = allLiberos.slice(0, 2);
     const extraLiberos = allLiberos.slice(2);

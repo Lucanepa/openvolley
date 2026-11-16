@@ -290,6 +290,19 @@ describe('App_Scoresheet rosters', () => {
     expect(rows.join(' ')).not.toContain('Seven')
   })
 
+  it('LIBERO box: by shirt number, not libero 1 / libero 2 (owner 2026-11-16)', () => {
+    const data = buildMatch()
+    data.homePlayers = [
+      ...[2, 3, 4, 5, 6, 9].map(n => ({ number: n, firstName: 'H', lastName: `${n}` })),
+      { number: 38, firstName: 'H', lastName: 'Vega', libero: 'libero1' },
+      { number: 19, firstName: 'H', lastName: 'Hemedawi', libero: 'libero2' }
+    ] as any
+    const { container } = render(<App matchData={data} autoAction="preview" />)
+    const rows = liberoRows(container, 'home')
+    expect(rows[0]).toContain('Hemedawi')
+    expect(rows[1]).toContain('Vega')
+  })
+
   it('LFP marks only with LFP tracking on (owner 2026-11-16)', () => {
     const lfpRoster = () => {
       const data = buildMatch()
