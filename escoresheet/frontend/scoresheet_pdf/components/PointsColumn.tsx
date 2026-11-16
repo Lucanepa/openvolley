@@ -1,5 +1,4 @@
 import React from 'react';
-import { MARK_STROKE } from './Marks';
 
 // One printed number of a points column. As on the paper sheet every number is
 // pre-printed (light grey); a mark makes it black:
@@ -7,7 +6,7 @@ import { MARK_STROKE } from './Marks';
 //  - isCircled: a circle, no tick (penalty / delay-penalty / awarded point)
 // Owner 2026-10-07 (field-spec 4.4, 4.7): no "T" through the unused numbers at
 // set end. Owner 2026-10-13: once the set is over the numbers above the team's
-// final score are left blank (`blank`), and set-5 panel 3 has the reverse T.
+// final score are left blank (`blank`); set-5 panel 3 has no reverse T (owner 2026-11-16).
 // Owner 2026-11-15: a set never played (`unused`) prints no numbers at all.
 export const PointBox: React.FC<{
     num: number;
@@ -68,24 +67,9 @@ const fontForRows = (gridMm: number, rows: number): number => {
 };
 
 /**
- * The reverse T of set-5 panel 3 (field-spec 6): a line down through the points
- * the team scored before the change of courts and a bar under the last of them,
- * drawn over rows 1-`to` of one sub-column of `rows`; `bar` where the points end.
- */
-const ReverseT: React.FC<{ rows: number; to: number; bar: boolean }> = ({ rows, to, bar }) => {
-    const y = (to / rows) * 100;
-    return (
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-mark="reverseT">
-            <line x1="50" y1="0" x2="50" y2={y} stroke="black" strokeWidth={MARK_STROKE} vectorEffect="non-scaling-stroke" />
-            {bar && <line x1="12" y1={y} x2="88" y2={y} stroke="black" strokeWidth={MARK_STROKE} vectorEffect="non-scaling-stroke" />}
-        </svg>
-    );
-};
-
-/**
  * The printed grid: `columns` sub-columns of `rows` numbers.
  * `shownUpTo`: numbers above it are blank (a finished set: the team's final
- * score); `reverseT`: set-5 panel 3, the points scored before the change.
+ * score).
  */
 const PointsGrid: React.FC<{
     columns: number;
@@ -94,8 +78,7 @@ const PointsGrid: React.FC<{
     markedPoints: number[];
     circledPoints: number[];
     shownUpTo?: number | null;
-    reverseT?: number | null;
-}> = ({ columns, rows, gridMm, markedPoints, circledPoints, shownUpTo = null, reverseT = null }) => {
+}> = ({ columns, rows, gridMm, markedPoints, circledPoints, shownUpTo = null }) => {
     const fontPx = fontForRows(gridMm, rows);
     return (
         <div
@@ -105,8 +88,6 @@ const PointsGrid: React.FC<{
             data-testid="points-grid"
         >
             {Array.from({ length: columns }).map((_, c) => {
-                // this sub-column's part of the reverse T: rows 1..tRows
-                const tRows = reverseT ? Math.min(rows, Math.max(0, reverseT - c * rows)) : 0;
                 return (
                     // no rules between the sub-columns (owner 2026-10-13)
                     <div key={c} className="flex flex-col h-full min-w-0" style={{ paddingTop: `${POINTS_GRID_PAD_MM}mm`, paddingBottom: `${POINTS_GRID_PAD_MM}mm` }}>
@@ -124,7 +105,6 @@ const PointsGrid: React.FC<{
                                     />
                                 );
                             })}
-                            {tRows > 0 && <ReverseT rows={rows} to={tRows} bar={reverseT! <= (c + 1) * rows} />}
                         </div>
                     </div>
                 );
@@ -225,22 +205,21 @@ export const PointsColumn5: React.FC<{
 };
 
 // Set 5 panels 2 and 3: 1-30 (3 x 10), growing beyond 30. Panel 3 numbers the
-// left team's points from 1: those scored before the change sit under the reverse T.
+// left team's points from 1: those scored before the change stay plain numbers,
+// with no reverse T over them (owner 2026-11-16).
 export const PointsColumn30: React.FC<{
     isLast?: boolean;
-    isPanel3?: boolean;
     /** a rule on the right (set-5 panel 3: on set 4's line between its teams) */
     ruleRight?: boolean;
     timeouts?: [string, string];
     markedPoints?: number[];
     circledPoints?: number[];
-    preChangePoints?: number | null;
     maxScore?: number;
     setFinished?: boolean;
     finalScore?: number;
     /** a set never played (owner 2026-11-15): no numbers, not even grey */
     unused?: boolean;
-}> = ({ unused = false, isPanel3 = false, ruleRight = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = null, maxScore = 0, setFinished = false, finalScore = 0 }) => {
+}> = ({ unused = false, ruleRight = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], maxScore = 0, setFinished = false, finalScore = 0 }) => {
     const rows = calculateRowsPerColumn(maxScore, 3, 10);
     return (
         <div className={`flex flex-col shrink-0 border-t border-l border-black ${ruleRight ? 'border-r' : ''}`} style={{ width: '15mm', height: '40mm' }}>
@@ -251,8 +230,6 @@ export const PointsColumn30: React.FC<{
                 markedPoints={markedPoints}
                 circledPoints={circledPoints}
                 shownUpTo={unused ? 0 : setFinished ? finalScore : null}
-                // panel 3: the left team's points before the change, under the reverse T
-                reverseT={isPanel3 && preChangePoints ? preChangePoints : null}
             />
             <TimeoutBlock timeouts={timeouts} />
         </div>

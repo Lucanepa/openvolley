@@ -98,6 +98,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   // Players as the sheet prints them, sorted by shirt number (the roster's 14 rows;
   // field-spec 3). Robust to a missing list (an imported JSON without players).
+  // LFP marks print only where LFP tracking is on (Options, default off; owner
+  // 2026-11-16): an imported roster PDF carries them for one team even then
+  const lfpShown = (() => {
+    try { return localStorage.getItem('lfpTrackingEnabled') === 'true'; } catch { return false; }
+  })();
   const formatPlayers = (players: unknown): Player[] => {
     return asArray<any>(players)
       .filter(p => p && typeof p === 'object')
@@ -111,7 +116,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         dob: formatDob(p.dob ?? p.date_of_birth),
         libero: p.libero,
         isCaptain: p.isCaptain || p.is_captain,
-        isLfp: p.isLfp || p.is_lfp || false,
+        isLfp: lfpShown && !!(p.isLfp || p.is_lfp),
         license: p.license || '',
         role: p.role
       }))
