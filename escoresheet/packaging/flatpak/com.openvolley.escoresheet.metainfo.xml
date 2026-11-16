@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.3.4" date="2026-11-16">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.4</url>
+      <description>
+        <ul>
+          <li>Scoresheet on screen: zooming and new points redraw only what changed, much faster.</li>
+          <li>The official PDF is printed on the server as real text (vector): sharp at any zoom, searchable.</li>
+          <li>Rebuild PDF: Cancel stops the upload and says if it had already arrived.</li>
+          <li>"Out of date" shows only when the sheet's data changed (a game release no longer counts).</li>
+          <li>Password fields: new eye button to show or hide what you type.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.3.3" date="2026-11-16">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.3</url>
       <description>
