@@ -18,9 +18,12 @@ Enrolment: Play Console → the app → Test and release → Setup → App signi
 "Export and upload a key from a Java keystore". The console shows a `pepk.jar`
 command with Google's encryption key; run it on lenovoserver against
 `~/.config/openvolley-android/release.p12` (alias `release`), then upload the
-`.zip` it writes. The same key stays the upload key:
-`~/.config/openvolley-android/play-upload.properties` is a copy of
-`signing.properties`. Irreversible: Google keeps a copy of the key.
+`.zip` it writes (done 16.11, certificate SHA-256 `2C:7F:9D:B4:…:BE:87`).
+The upload key is a separate one (Play step 5): `play-upload.jks` +
+`play-upload.properties` in `~/.config/openvolley-android/`, alias `upload`,
+RSA 4096, valid to 2051; a lost or leaked upload key is reset in the Console.
+Back it up in Vaultwarden (folder OpenVolley). Irreversible: Google keeps a
+copy of the app key.
 
 The comparison that led to B:
 
