@@ -268,6 +268,10 @@ services:
       # OV_BACKEND_MEM in .env: raise them together (about half of the memory
       # limit for the heap).
       NODE_OPTIONS: --max-old-space-size=${OV_NODE_HEAP_MB:-256}
+      # The vector PDF (ov-render, profile "render"; field-spec 17.19): both
+      # set = on. Empty = off, every PDF the raster capture as before.
+      OV_RENDER_URL: ${OV_RENDER_URL:-}
+      OV_RENDER_TOKEN: ${OV_RENDER_TOKEN:-}
     volumes:
       - type: bind
         source: ${OV_STORAGE_HOST_DIR:?set OV_STORAGE_HOST_DIR in .env}
@@ -309,6 +313,49 @@ services:
         # with "Address already in use"
         ipv4_address: 172.30.250.3
       ov-internal: {}
+      # the vector PDF service (ov-render, profile "render"); harmless without it
+      ov-render-net: {}
+    logging: *logging
+    labels:
+      traefik.enable: "false"
+
+  # The official scoresheet as a vector PDF (field-spec 17.19,
+  # Dockerfile.render, build-render-image.sh): headless Chromium prints the
+  # sheet the backend hands it. Started only with the profile "render"
+  # (COMPOSE_PROFILES=tunnel,render) and OV_RENDER_IMAGE / OV_RENDER_TOKEN in
+  # .env; the backend then sets OV_RENDER_URL. Without it every PDF stays the
+  # device's or the manager's raster capture, as before.
+  # Only the backend reaches it (ov-render-net, internal: no egress, no
+  # published port); its page and assets come from its own image. Chromium
+  # runs without its own sandbox: the container is the sandbox (no
+  # capabilities, read-only root, no network out, its own memory limit).
+  ov-render:
+    image: ${OV_RENDER_IMAGE:-openvolley-render:unset}
+    profiles: [render]
+    pull_policy: never
+    restart: unless-stopped
+    user: node
+    init: true
+    environment:
+      PORT: "8090"
+      OV_RENDER_TOKEN: ${OV_RENDER_TOKEN:-}
+      OV_RENDER_TIMEOUT_MS: ${OV_RENDER_TIMEOUT_MS:-60000}
+      OV_RENDER_QUEUE: ${OV_RENDER_QUEUE:-8}
+      OV_TIMEZONE: ${OV_TIMEZONE:-Europe/Zurich}
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    shm_size: 128m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # one Chromium page at a time: ~200 MB idle with the browser up, ~300 MB
+    # while printing (measured on lenovoserver); room for a long REMARKS page
+    mem_limit: ${OV_RENDER_MEM:-768m}
+    memswap_limit: ${OV_RENDER_MEM:-768m}
+    cpus: ${OV_RENDER_CPUS:-1.0}
+    pids_limit: 256
+    oom_score_adj: 800
+    networks: [ov-render-net]
     logging: *logging
     labels:
       traefik.enable: "false"
@@ -407,6 +454,9 @@ services:
 networks:
   # Backend <-> Postgres only. internal: no route out, no published ports.
   ov-internal:
+    internal: true
+  # Backend <-> the vector PDF service only. internal: Chromium has no route out.
+  ov-render-net:
     internal: true
   # Tunnel <-> backend only, plus outbound egress (Cloudflare edge for the
   # tunnel, Resend/SMTP for the backend). Nothing listens on the host. A fixed
