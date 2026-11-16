@@ -124,6 +124,17 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
   // server, as the sheet takes it; then RebuildScoresheet draws it
   const startRebuild = async (reason) => {
     const m = rebuildFor
+    // The server prints it as a vector PDF (field-spec 17.20); where it cannot
+    // (no render service, busy, failed) this page draws and captures the sheet
+    // as before. A refusal about the request itself (reason, rights, match) is shown.
+    const vec = await scoresheetsApi.rebuildVector(m.id, { reason })
+    if (!vec.error) {
+      setRebuildFor(null)
+      toast.success(t('manage.scoresheets.rebuiltVector'))
+      reload()
+      return null
+    }
+    if ([400, 401, 403, 404].includes(vec.status ?? vec.error?.status)) return errorText(vec.error)
     const res = await scoresheetsApi.matchRecord(m.id)
     if (res.error) return errorText(res.error)
     // The officials' account approvals (their own table, match_approvals):

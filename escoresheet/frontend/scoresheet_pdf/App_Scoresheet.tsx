@@ -65,6 +65,19 @@ interface AppScoresheetProps {
    * manager draws the sheet on its own page to rebuild it).
    */
   onBlob?: (out: { blob: Blob; filename: string } | null) => void;
+  /**
+   * What a page that prints the sheet itself needs besides the sheet (the
+   * server's vector PDF, render/main.tsx): the file name, the title, and the
+   * full REMARKS text when the box cuts it off (it then goes on further pages).
+   */
+  onSheetInfo?: (info: SheetInfo) => void;
+}
+
+export interface SheetInfo {
+  filename: string;
+  title: string;
+  remarksClipped: boolean;
+  remarksAll: string;
 }
 
 // The sheet's size in CSS px (w-[410mm] h-[287mm]; 96 px per inch)
@@ -76,7 +89,7 @@ const MAX_ZOOM = 3;
 /** A PDF being made whose view was closed: dropped, never handed on. */
 class CaptureAbandoned extends Error {}
 
-const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false, readOnly = false, embedded = false, reservedTop = 0, extraRemarks, onBlob }) => {
+const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false, readOnly = false, embedded = false, reservedTop = 0, extraRemarks, onBlob, onSheetInfo }) => {
   const { t } = useTranslation();
   // One shape whichever renderer drew the input (utils/matchData): a JSON
   // import or an older row may miss lists or hold null; sets by index, events
@@ -571,6 +584,19 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   // Embedded: one column that fills the host's layer, the sheet scrolling in
   // its own box (pinch zoom and Fit work on that box)
+  // The server's vector PDF prints the sheet itself (render/main.tsx): it needs
+  // the same file name, title and REMARKS continuation as handleSavePdf
+  const onSheetInfoRef = useRef(onSheetInfo);
+  onSheetInfoRef.current = onSheetInfo;
+  const remarksAllText = remarksClipped
+    ? remarksText({ overflowSanctions, remarks: typeof match?.remarks === 'string' ? match.remarks : '', generated: autoRemarks })
+    : '';
+  const sheetFilename = buildScoresheetFilename({ match, homeTeam, awayTeam, sets });
+  const sheetTitle = buildScoresheetTitle({ match, homeTeam, awayTeam, sets });
+  useEffect(() => {
+    onSheetInfoRef.current?.({ filename: sheetFilename, title: sheetTitle, remarksClipped, remarksAll: remarksAllText });
+  }, [sheetFilename, sheetTitle, remarksClipped, remarksAllText]);
+
   const Root = embedded ? 'div' : React.Fragment;
   const rootProps = embedded ? { className: 'relative flex h-full min-h-0 flex-col bg-gray-100', 'data-testid': 'scoresheet-embedded' } : {};
   return (

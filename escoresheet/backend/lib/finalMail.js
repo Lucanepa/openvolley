@@ -84,6 +84,8 @@ import { EMAIL_RE } from './emailAddress.js'
 export const DELAY_MS = 2 * 60 * 1000
 // No PDF of the approval this long after the close: mailed without it
 export const PDF_GRACE_MS = 2 * 60 * 60 * 1000
+/** How long a close's mail waits for the server's vector copy of the sheet (then it takes the newest PDF there is). */
+export const VECTOR_HOLD_MS = 25 * 60 * 1000
 const MINUTE_MS = 60 * 1000
 const DAY_MS = 24 * 60 * MINUTE_MS
 // The next look at a close waiting for its PDF, and at one mailed without it
@@ -372,6 +374,14 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
   async function mailOne (m, ctx, { manual = false, info = {} } = {}) {
     const t = now()
     const late = m.outcome === 'sent_no_pdf' // mailed without the PDF: the PDF is what is still to go
+    // The server's vector copy of the sheet is on its way (lib/scoresheets.js
+    // queueVectorCopy, field-spec 17.20): the mail carries it, not the device's
+    // picture of the sheet. At most VECTOR_HOLD_MS after the close.
+    if (!manual && !late && typeof scoresheets.vectorPending === 'function' && scoresheets.vectorPending(m.id) &&
+        t - new Date(m.closed_at).getTime() < VECTOR_HOLD_MS) {
+      await save(m, { outcome: m.outcome || 'pending', attempts: m.attempts, delivered: m.delivered, nextTryAt: t + RECHECK_MS })
+      return 'later'
+    }
     const pdf = await approvalPdf(m)
     info.pdf = !!pdf
     if (!pdf && (late || (!manual && t - new Date(m.closed_at).getTime() < PDF_GRACE_MS))) {

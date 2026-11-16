@@ -82,7 +82,7 @@ export const AUDIT_ACTIONS = Object.freeze([
   'activity.read', 'activity.export',
   // a stored scoresheet PDF opened past the uploader-only rule (lib/scoresheets.js),
   // and an admin's "Rebuild PDF": the sheet drawn again from the match's data
-  'scoresheet.read', 'scoresheet.rebuild',
+  'scoresheet.read', 'scoresheet.rebuild', 'scoresheet.vector',
   // db/018: clubs and the clubs an account scores for (lib/clubs.js)
   'club.create', 'club.update', 'club.delete', 'account.clubs', 'club_rule.set',
   // db/020: club managers, a club's contact address, a member taken off a club

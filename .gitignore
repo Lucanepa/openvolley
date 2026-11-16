@@ -37,6 +37,7 @@ node_modules/
 package-lock.json
 !/escoresheet/backend/package-lock.json
 !/escoresheet/frontend/package-lock.json
+!/escoresheet/render/package-lock.json
 
 # Build output
 dist/

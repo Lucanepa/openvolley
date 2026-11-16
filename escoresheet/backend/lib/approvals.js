@@ -915,6 +915,27 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
    * An absent table (a database without 011) gives an empty map. Throws on
    * other database errors (the caller's handler answers 503).
    */
+  /**
+   * The match's non-revoked approval records as a writer of the match sees
+   * them (listForMatch), for trusted server code only: the vector PDF draws
+   * the stamps from them (lib/scoresheets.js renderRecord, field-spec 17.20).
+   * [] without the feature, for a beach match it refuses, or none.
+   */
+  async function recordsForMatch (matchId) {
+    if (!keys || !isUuid(matchId)) return []
+    try {
+      const { rows: [m] } = await pool.query('SELECT id, sport_type::text AS sport_type FROM public.matches WHERE id = $1', [matchId])
+      if (!m || beachRefused(m)) return []
+      const { rows } = await pool.query(
+        `SELECT ${APPROVAL_COLUMNS} FROM public.match_approvals WHERE match_id = $1 AND revoked_at IS NULL`, [m.id])
+      const currentKey = await serverResultKey(pool, m.id)
+      return rows.sort(bySlot).map((r) => recordOf(r, currentKey, null))
+    } catch (err) {
+      if (err?.code === '42P01') return []
+      throw err
+    }
+  }
+
   async function approvalsForMatches (matchIds) {
     const ids = [...new Set((matchIds || []).filter(isUuid))]
     const out = new Map()
@@ -943,5 +964,5 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
     return out
   }
 
-  return { enabled: !!keys, getPinStatus, setPin, removePin, approve, listForMatch, listMine, revoke, adminSearch, approvalsForMatches, settle }
+  return { enabled: !!keys, getPinStatus, setPin, removePin, approve, listForMatch, listMine, revoke, adminSearch, approvalsForMatches, recordsForMatch, settle }
 }

@@ -44,6 +44,7 @@ import { renderLandingPage, landingMatchRow, INDOOR_ROLES, BEACH_ROLES } from '.
 import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
 import { LIVESCORE_JS, embedPage } from './lib/publicEmbed.js'
 import { createLiveStreams, listParams, MATCH_ID_RE as PUBLIC_MATCH_ID_RE } from './lib/publicApi.js'
+import { createVectorPdf } from './lib/vectorPdf.js'
 import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS, SLOTS as SIGN_SLOTS } from './lib/signSessions.js'
 import { signPageFile } from './lib/signPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
@@ -481,7 +482,17 @@ function getDataLayer() {
     const activity = act.createActivityLog({ pool: db.pool, accounts })
     // The manager's Scoresheets tab: stored PDFs for admins and competition managers (audited);
     // a PDF is stored only for a match its uploader may write (db/033)
-    const scoresheets = ss.createScoresheets({ pool: db.pool, db, storage, accounts, readMatch: (id) => restore.readWhole(id) })
+    // The official sheet as a vector PDF (lib/vectorPdf.js, escoresheet/render; field-spec 17.20):
+    // off unless OV_RENDER_URL and OV_RENDER_TOKEN are set (the raster PDFs stay as before)
+    const vector = createVectorPdf({ url: process.env.OV_RENDER_URL, token: process.env.OV_RENDER_TOKEN })
+    const scoresheets = ss.createScoresheets({
+      pool: db.pool, db, storage, accounts,
+      readMatch: (id) => restore.readWhole(id),
+      readApprovals: (id) => approvals.recordsForMatch(id),
+      vector,
+      // tests only (tests/vectorPdf.e2e.test.js): shorter waits for the vector copy; never in production
+      vectorTimes: process.env.NODE_ENV !== 'production' && process.env.OV_VECTOR_TEST_TIMES ? JSON.parse(process.env.OV_VECTOR_TEST_TIMES) : null
+    })
     // The final scoresheet by email (db/021): its switch and the minute sweep below
     const finalMail = fm.createFinalMail({ pool: db.pool, mailer, scoresheets, audit: accounts.audit, ...(process.env.FINAL_MAIL_LANG ? { lang: process.env.FINAL_MAIL_LANG } : {}) })
     const publicApi = pub.createPublicApi({ pool: db.pool })

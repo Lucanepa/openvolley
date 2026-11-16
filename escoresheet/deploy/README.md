@@ -205,6 +205,50 @@ database does not know as official matches hold at most 60% of the total, so an 
 cannot freeze official matches. Refusals (`relay-full`) show in the `[WS]` summary;
 `OV_RELAY_MAX_MB` sets the total by hand (backend README).
 
+## Vector PDF (ov-render)
+
+The official scoresheet as a vector PDF (field-spec 17.20): text, lines and
+the font in the file, not the device's 3100 x 2170 picture of the sheet.
+
+- **What:** `ov-render` (Dockerfile.render, `escoresheet/render`) runs headless
+  Chromium (Playwright's chromium-headless-shell). It serves the scoresheet page
+  built from the web app's own code (`frontend/render`, `vite.render.config.js`)
+  from its own image, takes a match record from the backend (`POST /render`,
+  shared token) and answers `page.pdf()` of the sheet under the screen media:
+  A3 landscape, 5 mm margins, the 410 x 287 mm sheet where the raster PDF
+  placed its picture. REMARKS that do not fit go on further pages as text.
+- **Where the backend uses it** (`lib/vectorPdf.js`, `lib/scoresheets.js`):
+  - Rebuild PDF in the manager: `POST /api/scoresheets/:id/rebuild-vector`
+    (admins). Without the service (503) the manager captures the sheet itself.
+  - After the approval's PDF of an indoor match: once the match is closed, its
+    data quiet for 60 s and 10 min have passed since that PDF (a corrected
+    approval PDF may still come within them), the server prints its own copy
+    and stores it as the newest (`scoresheet.vector` in the audit log). The
+    device's PDF stays. A record whose finished sets do not end on their last
+    point's score is left alone. The final mail waits for the copy (at most
+    25 min after the close). The jobs live in the backend's memory: a restart
+    drops the pending ones (those matches keep the device's PDF).
+  - The device's own offline "Save PDF" is unchanged (raster).
+- **Isolation:** `ov-render-net` is internal (no egress); only the backend is
+  on it; no published port. Every request of the page outside its own made-up
+  origin is refused, so nothing leaves the container. Chromium runs with
+  `--no-sandbox`: the container is the sandbox (cap_drop ALL, read-only root,
+  no-new-privileges, own memory limit 768m, 1 CPU, one page at a time).
+- **Image:** ~1.2 GB on disk (Node + Chromium headless shell + its libraries).
+  ~200 MB of memory with the browser up, about 1 s per sheet on lenovoserver.
+- **Turn it on** (env.example, "Vector PDF"):
+  1. `escoresheet/deploy/build-render-image.sh --ship ov-vps`
+  2. in `/opt/openvolley/.env`: `OV_RENDER_IMAGE=openvolley-render:<sha>`,
+     `OV_RENDER_TOKEN=$(openssl rand -hex 24)`, `OV_RENDER_URL=http://ov-render:8090`,
+     `COMPOSE_PROFILES=tunnel,render`
+  3. `docker compose --project-directory /opt/openvolley up -d` (recreates the
+     backend with the two variables and starts ov-render)
+  4. check: `docker compose exec ov-backend node -e "fetch('http://ov-render:8090/health').then(r=>r.text()).then(console.log)"`
+  Off again: empty `OV_RENDER_URL` and `up -d` (the service may keep running).
+- **Update:** the page is part of the image: build and ship a new render image
+  with every release that changes the scoresheet (or the render service), then
+  set `OV_RENDER_IMAGE` and `up -d`. No migration, no roles.sql change.
+
 ## Public downloads: get.openvolley.app
 
 `https://get.openvolley.app` serves the public install routes from `ov-pkgs`, through the same

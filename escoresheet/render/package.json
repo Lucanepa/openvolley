@@ -1,0 +1,16 @@
+{
+  "name": "openvolley-render",
+  "private": true,
+  "version": "1.0.0",
+  "description": "The server's vector scoresheet PDF: headless Chromium prints the scoresheet page (frontend/render) with page.pdf()",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  },
+  "engines": { "node": ">=22" }
+}
