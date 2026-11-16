@@ -172,7 +172,7 @@ function ServeBlock({ side, label, number, vmin, heightVmin = SERVE_BLOCK.height
       <span
         data-serve-label=""
         style={{
-          fontSize: `min(${vmin(large ? B.largeLabelVmin : B.labelVmin)}px, ${serveLabelCqi(label)}cqi)`,
+          fontSize: `min(${vmin(large ? B.largeLabelVmin : B.labelVmin)}px, calc(${serveLabelCqi(label)}cqi * var(--cqf, 1)))`,
           fontWeight: 800,
           letterSpacing: '0.06em',
           lineHeight: 1.1,
@@ -195,7 +195,7 @@ function ServeBlock({ side, label, number, vmin, heightVmin = SERVE_BLOCK.height
           alignItems: 'center',
           justifyContent: 'center',
           // the number's size: the padding is in its em
-          fontSize: `min(${vmin(numberVmin)}px, ${numberCqi}cqi)`,
+          fontSize: `min(${vmin(numberVmin)}px, calc(${numberCqi}cqi * var(--cqf, 1)))`,
           padding: `0 ${B.numberPadEm}em`,
           background: SERVE_GREEN_FILL,
           border: `3px solid ${SERVE_GREEN}`,

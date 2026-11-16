@@ -234,7 +234,7 @@ function TeamHalf({ team, name, colour, points, sets, serving, onPoint, onMinus 
         <span className="text-sm font-semibold tabular-nums opacity-85 sm:text-base">
           {t('simpleBoard.setsWon', { n: sets, defaultValue: 'Sets {{n}}' })}
         </span>
-        <span className="font-bold leading-none tabular-nums" style={{ fontSize: 'min(55cqh, 68cqw)' }} data-testid={`simple-board-points-${team}`}>
+        <span className="font-bold leading-none tabular-nums" style={{ fontSize: 'min(calc(55cqh * var(--cqf, 1)), calc(68cqw * var(--cqf, 1)))' }} data-testid={`simple-board-points-${team}`}>
           {points}
         </span>
       </button>

@@ -57,7 +57,7 @@ describe('referee score row: the SERVE block', () => {
     expect(block.style.width).toBe('100%')
     expect(block.style.height).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
     expect(c.querySelector('[data-serve-slot="left"]').style.height).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
-    expect(c.querySelector('[data-serve-box]').style.fontSize).toBe(`min(${vmin(SERVE_BLOCK.largeNumberVmin)}px, ${SERVE_BLOCK.largeNumberCqi}cqi)`)
+    expect(c.querySelector('[data-serve-box]').style.fontSize).toBe(`min(${vmin(SERVE_BLOCK.largeNumberVmin)}px, calc(${SERVE_BLOCK.largeNumberCqi}cqi * var(--cqf, 1)))`)
     // the referee view passes it upright only (landscape: the row is 15 % of the height)
     const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
     expect(src).toMatch(/large=\{!wide\}/)

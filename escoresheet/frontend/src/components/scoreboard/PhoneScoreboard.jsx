@@ -163,7 +163,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       </div>
     )
     const score = (
-      <span data-testid={`phone-score-${team.side}`} style={{ flex: 'none', fontSize: 'clamp(40px, 12cqw, 52px)', lineHeight: 1, letterSpacing: '-0.02em', fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontFamily: scoreFont }}>
+      <span data-testid={`phone-score-${team.side}`} style={{ flex: 'none', fontSize: 'clamp(40px, calc(12cqw * var(--cqf, 1)), 52px)', lineHeight: 1, letterSpacing: '-0.02em', fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontFamily: scoreFont }}>
         {team.points}
       </span>
     )
