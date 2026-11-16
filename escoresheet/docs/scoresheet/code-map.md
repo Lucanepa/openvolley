@@ -365,19 +365,28 @@ output runs for every finished set on every render (l. 429-443, 624-637).
 1. Guard: `containerRef` set and no capture running. (With the LCS view open the
    container is `display:none`: the capture is of a hidden element.)
 2. File name (7.4), computed from the closure's `match` / `homeTeam`.
-3. `setZoomLevel(1)`, wait 200 ms, `document.fonts.ready`, then every `<img>` loaded and
-   decoded (`picturesReady`, at most 3 s); pictures that did not load are named in the
-   console (`missingPictures`, field-spec 17.15).
+3. `setZoomLevel(1)`, two frames (`nextFrames`, at most 100 ms; 250 ms back from the
+   libero control sheet), `document.fonts.ready`, two frames again (FitText's refit), then
+   every `<img>` loaded and decoded (`picturesReady`, at most 3 s, at once when all are);
+   pictures that did not load are named in the console (`missingPictures`, field-spec
+   17.15). Meanwhile `sheetFontEmbedCSS()` reads sheet.css's `OV Sheet Inter` @font-face
+   rules (only those) and inlines their seven files as data: URLs, once per page.
 4. Lazy `import('html-to-image')` (1.11.13) and `import('jspdf')` (4.2.1); chunk `pdf-vendor`.
    html-to-image's clone copied every `font-size` as `floor(px) - 0.1`; the Vite plugin
    `vite-plugin-html-to-image-font-size.js` turns that branch off in every build, the dev
    server (html-to-image is excluded from `optimizeDeps`) and the tests
    (`__tests__/htmlToImageFontSize.test.ts`).
-5. `htmlToImage.toCanvas(sheet, { pixelRatio: 2, backgroundColor: '#fff', style: { transform: 'none' }, includeStyleProperties })`.
-   - Not WebKitGTK: all computed properties; on failure retry with `usedStyleProperties`.
-   - WebKitGTK (Linux desktop, `isWebKitGtk()`): `usedStyleProperties(sheet)` only
-     (the full clone is an ~87 MB data URL, WebKitGTK refuses >64 MB); every
-     loaded same-origin `<img>` is hidden during the capture and drawn onto the
+5. `htmlToImage.toCanvas(sheet, { pixelRatio: 2, backgroundColor: '#fff', style: { transform: 'none' }, includeStyleProperties, fontEmbedCSS })`.
+   - Every engine: `usedStyleProperties(sheet)`, the ~100 properties that differ from
+     the UA defaults somewhere on the sheet, no custom properties, no logical property
+     whose physical sides are listed (`withoutLogicalAliases`). The full copy (every
+     computed property, ~750 in the manager) was a ~100 MB SVG and took ~9.5 s in
+     Chromium; the lean one is ~12 MB, ~2.1 s from mount to PDF (field-spec 17.16).
+     `fontEmbedCSS` is the sheet font's CSS from step 3 (null: html-to-image embeds the
+     fonts itself).
+   - Not WebKit: pictures stay in the SVG; on failure retry with the full copy (`allStyleProperties`).
+   - WebKit (`isWebKitEngine()`: Safari, the desktop apps, every iPhone / iPad browser):
+     every loaded same-origin `<img>` is hidden during the capture and drawn onto the
      canvas afterwards from the page's own element (`drawableImages`,
      `hideImages`, `drawImagesOnto` with step-halving downscale). See
      `utils/pdfCapture.ts` (tested in `utils/__tests__/pdfCapture.test.ts`).

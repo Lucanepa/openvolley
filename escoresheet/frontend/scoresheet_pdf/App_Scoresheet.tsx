@@ -14,7 +14,7 @@ import { Player, SanctionRecord } from './types_scoresheet';
 import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, idHeadingOf, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData, rosterLiberos } from './utils/extractLiberoData';
-import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, picturesReady, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
+import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, nextFrames, picturesReady, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
 import {
   getStartingLineup,
   assignSubsToColumns,
@@ -1539,15 +1539,19 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       const filename = buildScoresheetFilename(data);
       const title = buildScoresheetTitle(data);
 
+      // the sheet font's CSS for the capture, read while the view settles (utils/pdfCapture.ts)
+      const fontEmbedCSS = sheetFontEmbedCSS();
+
       // Capture the sheet itself at 100 %: back from the libero control sheet (the
-      // sheet is display:none there), zoom reset, fonts loaded
+      // sheet is display:none there, it is laid out and fitted anew), zoom reset
+      // (only a transform: the next frame), fonts loaded
       if (wasShowingLCS) setShowLCS(false);
       setZoomLevel(1);
-      await new Promise(resolve => setTimeout(resolve, 250));
+      await (wasShowingLCS ? new Promise(resolve => setTimeout(resolve, 250)) : nextFrames());
       stillShown();
       await (document as any).fonts?.ready;
       // FitText fits its text again once a font has loaded: let that render land
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await nextFrames();
       stillShown();
 
       const sheet = containerRef.current;
@@ -1568,6 +1572,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       ]);
       stillShown();
 
+      // only the sheet's own font, built once per page; null: html-to-image looks for it
+      const fontCss = await fontEmbedCSS;
+      stillShown();
+
       // pixelRatio 2: ~190 dpi on A3, sharp enough for print, a reasonable file size
       const capture = (props: string[]) => htmlToImage.toCanvas(sheet!, {
         pixelRatio: 2,
@@ -1576,13 +1584,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           transform: 'none',
         },
         includeStyleProperties: styleListFor(props),
+        ...(fontCss ? { fontEmbedCSS: fontCss } : {}),
       });
-      // WebKit (the Linux and macOS desktop apps, Safari, every iPhone / iPad
-      // browser) cannot load the full capture (an ~87 MB data URL): it copies
-      // only the properties the sheet uses, and draws the logos and signatures
-      // itself, as WebKit paints pictures nested in the SVG only now and then
-      // (utils/pdfCapture.ts). Elsewhere the full copy as before, and if that
-      // fails the lean one, with the pictures drawn the same way.
+      // Every engine copies only the properties the sheet uses (utils/pdfCapture.ts):
+      // the full copy was a ~100 MB SVG that took ~10 s in Chromium (Brave) and
+      // that WebKit cannot load at all. WebKit (the Linux and macOS desktop apps,
+      // Safari, every iPhone / iPad browser) also draws the logos and signatures
+      // itself, as it paints pictures nested in the SVG only now and then.
+      // Elsewhere a failed capture is tried again with the full copy.
       const leanWithPictures = async () => {
         const pictures = drawableImages(sheet!);
         const showPictures = hideImages(pictures);
@@ -1603,10 +1612,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           canvas = await leanWithPictures();
         } else {
           try {
-            canvas = await capture(allStyleProperties());
+            canvas = await capture(usedStyleProperties(sheet!));
           } catch (err) {
-            console.warn('[Scoresheet] Full capture failed, retrying with the used styles only:', err);
-            canvas = await leanWithPictures();
+            // the slow full copy that was the only one here before
+            console.warn('[Scoresheet] Capture failed, retrying with every style property:', err);
+            stillShown();
+            canvas = await capture(allStyleProperties());
           }
         }
       } finally {

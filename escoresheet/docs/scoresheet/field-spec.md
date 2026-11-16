@@ -926,3 +926,23 @@ These override sections 4-7 and 16 wherever they differ.
      of the SANCTIONS heading touched the top of the ring). The half-pixel lift of 2026-10-21 is
      gone with it. The S / R rings of the set headers are unchanged.
    - **APPROVAL names keep their descenders**: a one-line FitText never has line height 1.
+17. **Save PDF and Rebuild PDF take a few seconds** (2026-11-16, after a Rebuild PDF in Brave
+   on a Linux laptop took far longer than the "a few seconds" the cover promises). Not new
+   with 15: the capture had copied every computed property (~750 in the manager, 275 of
+   them the app's custom properties) onto each of the ~4,400 elements in Chromium (Brave,
+   Chrome, Edge, Android), a ~100 MB SVG to clone, serialise and decode: ~9.5 s from mount
+   to PDF on a fast desktop (before 13-15 too), more on a laptop.
+   - Every engine now copies only the properties the sheet uses (`usedStyleProperties`, as
+     WebKit already did), without the logical second names of physical properties
+     (margin-inline-start for margin-left: rewriting them cost WebKit ~3 s in the
+     manager). From mount to PDF in the manager: Chromium ~2.1 s (was ~9.5 s, also at a
+     forced ratio 1.5), Firefox ~2.5 s (was ~8 s), WebKit ~5.7 s (was ~9 s); standalone
+     page: Chromium ~2.1 s (was ~8.3 s), WebKit ~2.7 s (was ~3.5 s) (lenovoserver,
+     Playwright). A capture that fails in Chromium is tried once more the WebKit way (pictures drawn afterwards), never with the full copy.
+   - The sheet font is embedded from its own seven @font-face rules only, prepared once per
+     page; html-to-image read every stylesheet rule and walked the clone on each capture.
+   - Waits: two frames after the zoom reset and after `fonts.ready` instead of 250 ms and
+     50 ms (250 ms stays when coming back from the libero control sheet).
+   - The PDF is unchanged: pixel-identical to the full copy's in Chromium (ratio 1 and
+     forced 1.25, 1.5, 2.25), WebKit (1.5, 2) and Firefox, standalone page and manager, all
+     132 checked rules kept, the text in OV Sheet Inter.
