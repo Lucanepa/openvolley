@@ -348,15 +348,16 @@ const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
 // The captain on a bench chip: the number circled, as on the paper sheet and
 // the phone layout, not a separate "C" beside it. The ring, in the number's em
 // so it grows with the chip's text, lies over the number, SB_BENCH_CAPTAIN_PAD
-// wider each side and just high enough to hold its digits: round one digit
-// about a circle (an upright oval round a narrow 1), round two a short oval. The
+// wider each side and just high enough to hold its digits: round one digit a
+// true circle (it was the number's width plus the pad, an upright egg round a
+// narrow 1 on the tablet, 16.11.2026), round two a short oval. The
 // same room either side of the number keeps the ring as far off what stands
 // beside it (the L1 / L2 tag, the substitution marks) as the number was, and
 // comes off the chip's own side padding, so the captain's chip is as wide and
 // as high as the others.
 const SB_BENCH_CAPTAIN_PAD = '0.3em'
 const SB_BENCH_CAPTAIN_RING = {
-  one: captainRingStyle({ size: '1.35em', minWidth: '1em', pad: SB_BENCH_CAPTAIN_PAD }),
+  one: captainRingStyle({ size: '1.35em', pad: SB_BENCH_CAPTAIN_PAD, round: true }),
   two: captainRingStyle({ size: '1.5em', minWidth: '1em', pad: SB_BENCH_CAPTAIN_PAD })
 }
 const sbBenchChipPadding = (captain) => (captain ? `1.6cqw calc(3.1cqw - ${SB_BENCH_CAPTAIN_PAD})` : '1.6cqw 3.1cqw')
@@ -609,7 +610,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   ))
   const [displayModeSuggestion, setDisplayModeSuggestion] = useState(null) // null | 'tablet'
   const [showDisplayModeSuggestion, setShowDisplayModeSuggestion] = useState(false)
-  const [currentDateTime, setCurrentDateTime] = useState(() => new Date())
   // Main layout collapsible sections (collapsed by default on tablet)
   const [leftMainBenchExpanded, setLeftMainBenchExpanded] = useState(false)
   const [rightMainBenchExpanded, setRightMainBenchExpanded] = useState(false)
@@ -1316,27 +1316,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // the court side, they ran off the screen there. A large screen keeps them
   // next to the tapped player.
   const centreDialogs = dialogsCentred({ phoneView: isPhoneView, width: viewportWidth, height: viewportHeight })
-
-  // Update current datetime every second for fullscreen header display
-  useEffect(() => {
-    if (activeDisplayMode === 'tablet') {
-      const interval = setInterval(() => {
-        setCurrentDateTime(new Date())
-      }, 1000)
-      return () => clearInterval(interval)
-    }
-  }, [activeDisplayMode])
-
-  // Format datetime as dd/mm/yyyy hh:mm:ss
-  const formatDateTime = (date) => {
-    const day = String(date.getDate()).padStart(2, '0')
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const year = date.getFullYear()
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    const seconds = String(date.getSeconds()).padStart(2, '0')
-    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`
-  }
 
   // Fullscreen and orientation lock for tablet mode
   const enterDisplayMode = useCallback((mode) => {
@@ -14560,7 +14539,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </div>
       )}
       {/* The phone layout has its own header (undo, match menu) */}
-      {!isPhoneView && <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)}>
+      {!isPhoneView && <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)} clock={formatTimestamp(now)}>
         {/* Column 1: Date/Time */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
           <span className="toolbar-clock" style={{ fontSize: '1.28cqw' }}>{formatTimestamp(now)}</span>
@@ -15031,23 +15010,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <PhoneScoreboard {...buildPhoneView()} />
       ) : (
         <>
-          {/* Tablet Mode Header Bar with DateTime */}
-          {activeDisplayMode === 'tablet' && (
-            <div style={{
-              height: '40px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'var(--panel)',
-              borderBottom: '1px solid var(--border)',
-              flexShrink: 0
-            }}>
-              <span className="text-sm font-medium tabular-nums text-stone-500">
-                {formatDateTime(currentDateTime)}
-              </span>
-            </div>
-          )}
-          <div className="match-content" style={activeDisplayMode === 'tablet' ? { transform: 'scale(0.85)', transformOrigin: 'top center' } : {}}>
+          {/* Tablet mode used to add a 40 px date bar and shrink this grid to
+              85 % (scale(0.85)): on a 16:10 tablet that left empty margins at
+              both sides and the bottom (device check 16.11.2026). The grid
+              already fits the space under the toolbar, and the clock is in the
+              toolbar (and in its strip when it is folded away). */}
+          <div className="match-content">
           <ScoreboardTeamColumn side="left">
             <div className="team-info" style={{ overflow: 'hidden' }}>
               <div
@@ -24595,7 +24563,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   )
 }
 
-function ScoreboardToolbar({ children, collapsed, onToggle }) {
+function ScoreboardToolbar({ children, collapsed, onToggle, clock }) {
   const { t } = useTranslation()
   return (
     <div style={{ position: 'relative', zIndex: 101 }}>
@@ -24610,16 +24578,21 @@ function ScoreboardToolbar({ children, collapsed, onToggle }) {
         {children}
       </div>
       {/* Thin collapse/expand strip at bottom center: stone, not a grey slab.
-          Same 16px height, so nothing below moves. */}
+          Same 16px height, so nothing below moves. With the toolbar folded
+          away the strip carries the clock at its left, so the time stays in
+          sight without a bar of its own. */}
       <div
         onClick={onToggle}
         title={collapsed ? t('scoreboard.toolbar.show', 'Show toolbar') : t('scoreboard.toolbar.hide', 'Hide toolbar')}
-        className="flex w-full items-center justify-center bg-stone-100 text-stone-400 hover:bg-stone-200/70 hover:text-stone-600 transition-colors cursor-pointer"
+        className="relative flex w-full items-center justify-center bg-stone-100 text-stone-400 hover:bg-stone-200/70 hover:text-stone-600 transition-colors cursor-pointer"
         style={{
           height: '16px',
           borderBottom: '1px solid var(--border)'
         }}
       >
+        {collapsed && clock && (
+          <span data-testid="toolbar-strip-clock" className="absolute left-3 tabular-nums text-stone-500" style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1 }}>{clock}</span>
+        )}
         <span style={{ fontSize: '10px', fontWeight: 700, lineHeight: 1 }}>{collapsed ? '▼' : '▲'}</span>
       </div>
     </div>
@@ -24653,8 +24626,8 @@ function ScoreboardTeamColumn({ side, children }) {
 }
 
 // The centre card is frozen as a whole (score, serve, court, rally controls).
-// No shadow-card here: in tablet mode the column sits in a scale(0.85) layer
-// and a shadow on it changed the court's anti-aliasing (pixel diff != 0).
+// No shadow-card here: a shadow on it changed the court's anti-aliasing in the
+// old scale(0.85) tablet layer (pixel diff != 0); left off since.
 function ScoreboardCourtColumn({ children }) {
   return <section className="court-wrapper">{children}</section>
 }

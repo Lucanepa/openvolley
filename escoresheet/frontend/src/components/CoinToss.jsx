@@ -1449,7 +1449,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       display: 'flex',
       flexDirection: 'column',
       gap: phone ? 16 : undefined,
-      overflow: phone ? 'visible' : 'hidden'
+      // landscape: the screen's height; anything taller than a short screen
+      // scrolls, rather than being cut off under the card's edge
+      overflowX: phone ? 'visible' : 'hidden',
+      overflowY: phone ? 'visible' : 'auto'
     }}>
       {/* Back, title. On a phone the title follows Back: centred, it ran
           under the button. */}
@@ -1688,14 +1691,22 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
       {/* Bottom buttons */}
 
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: phone ? 0 : Math.round(8 * vhScale), flexShrink: 0 }}>
+      {/* Landscape: the Scoresheet menu and the confirm button share one row.
+          On their own rows they ran past the bottom of a tablet held sideways
+          with its system bars showing (962x539, the button cut off, tablet
+          check 16.11.2026). A phone keeps them stacked (contents). */}
+      <div style={phone
+        ? { display: 'contents' }
+        : { display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: isCompact ? 8 : Math.round(12 * vhScale), paddingBottom: isCompact ? 12 : Math.round(20 * vhScale), flexShrink: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
         <MenuList
           buttonLabel={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FileTextIcon size={14} />{!isCompact && t('header.scoresheet')}</span>}
           buttonTitle={isCompact ? t('header.scoresheet') : ''}
           buttonClassName={TOOLBAR_TRIGGER}
           showArrow={true}
           position="center"
-          // upward: "Confirm the coin toss" sits right under this menu
+          // upward: on a phone "Confirm the coin toss" sits right under this
+          // menu; in landscape the row is at the bottom of the screen
           vertical="top"
           items={[
             {
@@ -1745,7 +1756,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       </div>
       {/* The page's commit: emerald confirm (saves the toss); once confirmed,
           going back to the match is the neutral dark action. */}
-      <div className="ov-kit" data-help-id="cointoss-confirm-button" style={{ display: 'flex', justifyContent: 'center', marginTop: phone ? 0 : (isCompact ? 8 : 12), paddingBottom: phone ? 0 : (isCompact ? 12 : 20), flexShrink: 0 }}>
+      <div className="ov-kit" data-help-id="cointoss-confirm-button" style={{ display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
         {isCoinTossConfirmed && !starting ? (
           <Button variant="dark" size="xl" onClick={handleReturnToMatch} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont, height: 'auto', width: phone ? '100%' : undefined }}>
             {t('coinToss.returnToMatch')}
@@ -1755,6 +1766,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             {t('coinToss.confirmResult')}
           </Button>
         )}
+      </div>
       </div>
 
       {/* Roster Modal */}
