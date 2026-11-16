@@ -360,6 +360,36 @@ export const LATE_EDITOR_WINDOW_MS = 6 * 60 * 60 * 1000
 export const STALE_SLACK_MS = 2 * 60 * 1000
 /** A rebuild's reason (audit_log details): 1 to this many characters. */
 export const REBUILD_REASON_MAX = 300
+/** The vector copy after an approval (queueVectorCopy): the match's data quiet this long, */
+export const VECTOR_QUIET_MS = 60 * 1000
+/** looked at again this often while it is not, */
+export const VECTOR_RECHECK_MS = 30 * 1000
+/** a failed render tried again after this (times the tries), at most VECTOR_MAX_TRIES times, */
+export const VECTOR_RETRY_MS = 60 * 1000
+export const VECTOR_MAX_TRIES = 3
+/** and given up after this long (the device's raster PDF stays). */
+export const VECTOR_MAX_WAIT_MS = 60 * 60 * 1000
+
+/**
+ * The record ends as its close says: every finished set's score on the sheet
+ * is the score the server's sets hold (the close's result is built from
+ * them), and the match has a finished set at all. A record still missing the
+ * last points (the device's events still on their way) fails this.
+ */
+export function setsMatchClose (record) {
+  const sets = Array.isArray(record?.sets) ? record.sets : []
+  const finished = sets.filter((x) => x && x.finished === true)
+  if (!finished.length) return false
+  const events = Array.isArray(record?.events) ? record.events : []
+  for (const set of finished) {
+    const pts = events.filter((e) => e && e.set_index === set.index && e.type === 'point')
+    if (!pts.length) continue
+    const last = pts.reduce((a, b) => (Number(b.seq) > Number(a.seq) ? b : a))
+    const sc = last.payload?.score
+    if (sc && (Number(sc.home) !== Number(set.home_points) || Number(sc.away) !== Number(set.away_points))) return false
+  }
+  return true
+}
 
 /** An answer for the caller, thrown out of a transaction (which then rolls back). */
 class Refused extends Error {
@@ -378,7 +408,7 @@ class Refused extends Error {
  * @param {(matchId: string) => Promise<object|null>} [o.readMatch]  the match's whole
  *   record (lib/matchRestore.js readWhole), for matchForRebuild
  */
-export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, logger = console, now = () => Date.now() } = {}) {
+export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, readApprovals = null, vector = null, vectorTimes = null, logger = console, now = () => Date.now(), setTimer = setTimeout } = {}) {
   const log = logger
   /** token -> { file, expires } (insertion order = age) */
   const viewLinks = new Map()
@@ -978,8 +1008,9 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     if (data.subarray(0, 5).toString('latin1') !== '%PDF-') return fail(415, 'OV_STORAGE_CONTENT_TYPE', 'Not a PDF file')
     if (!db?.withTransaction || !db?.assertMatchWritable) return unavailable()
     const sha256 = createHash('sha256').update(data).digest('hex')
+    let storedFor = null
     try {
-      return await db.withTransaction(async (client) => {
+      const out = await db.withTransaction(async (client) => {
         const m = named ? await namedMatch(client, named, parts, matchOwner) : await pathMatch(client, parts, matchOwner)
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ov.scoresheet:${m.id}`])
         // The approval's PDFs: the match's files stored since its last reopen
@@ -1069,8 +1100,13 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
            ON CONFLICT (path) DO UPDATE SET match_id = EXCLUDED.match_id, stored_by = EXCLUDED.stored_by, sha256 = EXCLUDED.sha256, size = EXCLUDED.size,
              stored_at = now(), first_stored_at = CASE WHEN $6::boolean THEN match_scoresheets.first_stored_at ELSE EXCLUDED.first_stored_at END`,
           [r.body.data.path, m.id, isUuid(userId) ? userId : null, sha256, data.length, s.path_of_approval, firstStoredAt])
+        storedFor = m.id
         return r
       })
+      // the server's own vector copy of the sheet, once the match is closed
+      // and quiet (queueVectorCopy; indoor only, the beach sheet is OpenBeach's)
+      if (out?.status === 200 && storedFor && parts.sport !== 'beach') queueVectorCopy({ matchId: storedFor, ownerId: userId })
+      return out
     } catch (err) {
       // (a file stored but not recorded, its record failed: the app sends it again)
       return storeFailed(err)
@@ -1300,8 +1336,8 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
    */
   async function rebuildPdf ({ actorId, matchId, reason, fileBase64 } = {}) {
     if (!isUuid(matchId)) return notFound()
-    const why = typeof reason === 'string' ? reason.replace(/\s+/g, ' ').trim() : ''
-    if (!why || why.length > REBUILD_REASON_MAX) return invalid(`reason: 1 to ${REBUILD_REASON_MAX} characters`)
+    const why = rebuildReason(reason)
+    if (!why) return invalid(`reason: 1 to ${REBUILD_REASON_MAX} characters`)
     let data
     try {
       data = decodeBase64(fileBase64)
@@ -1310,8 +1346,29 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
       throw err
     }
     if (data.subarray(0, 5).toString('latin1') !== '%PDF-') return fail(415, 'OV_STORAGE_CONTENT_TYPE', 'Not a PDF file')
+    return storeRebuiltPdf({ actorId, matchId, data, why, mode: 'browser' })
+  }
+
+  /** A rebuild's reason, one line, or '' when missing or too long. */
+  function rebuildReason (reason) {
+    const why = typeof reason === 'string' ? reason.replace(/\s+/g, ' ').trim() : ''
+    return why && why.length <= REBUILD_REASON_MAX ? why : ''
+  }
+
+  /**
+   * Stores `data` (a PDF) as match `matchId`'s newest scoresheet: a new file
+   * beside the older ones (rebuildPath), recorded for the match (db/033), on
+   * record. `mode`: 'browser' (the manager drew and captured the sheet),
+   * 'vector' (an admin's rebuild printed by the render service), 'approval'
+   * (the vector copy the server made after the approval's upload: no actor,
+   * `ownerId` is the uploader, who owns the file like their own upload, and
+   * the entry is scoresheet.vector instead of scoresheet.rebuild).
+   */
+  async function storeRebuiltPdf ({ actorId = null, ownerId = null, matchId, data, why = null, mode, extra = {} }) {
     if (!db?.withTransaction) return unavailable()
     const sha256 = createHash('sha256').update(data).digest('hex')
+    const fileBase64 = data.toString('base64')
+    const owner = isUuid(actorId) ? actorId : isUuid(ownerId) ? ownerId : null
     try {
       return await db.withTransaction(async (client) => {
         const { rows: [m] } = await client.query(
@@ -1325,33 +1382,174 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
           'SELECT max(stored_at) AS at FROM public.match_scoresheets WHERE match_id = $1', [m.id])
         // the beach name may be another account's file: kept as its owners' too
         const r = await storage.handle('upload', { bucket: SCORESHEETS_BUCKET, path, fileBase64, contentType: 'application/pdf', upsert: true },
-          { userId: actorId, adopt: (owners) => owners })
+          { userId: owner, adopt: (owners) => owners })
         if (r.status !== 200) throw new Refused(r)
         const { rows: [rec] } = await client.query(
           `INSERT INTO public.match_scoresheets (path, match_id, stored_by, sha256, size) VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (path) DO UPDATE SET match_id = EXCLUDED.match_id, stored_by = EXCLUDED.stored_by, sha256 = EXCLUDED.sha256,
              size = EXCLUDED.size, stored_at = now()
            RETURNING stored_at`,
-          [r.body.data.path, m.id, isUuid(actorId) ? actorId : null, sha256, data.length])
+          [r.body.data.path, m.id, owner, sha256, data.length])
         await accounts.audit(client, {
-          actorId,
-          action: 'scoresheet.rebuild',
+          actorId: mode === 'approval' ? null : actorId,
+          action: mode === 'approval' ? 'scoresheet.vector' : 'scoresheet.rebuild',
           matchId: m.id,
           details: {
             game_n: m.game_n ?? null,
             external_id: m.external_id ?? null,
-            reason: why,
+            ...(why ? { reason: why } : {}),
+            mode,
             closed: m.closed_at != null,
             stored_at: new Date(rec.stored_at).toISOString(),
-            replaced_stored_at: prev?.at ? new Date(prev.at).toISOString() : null
+            replaced_stored_at: prev?.at ? new Date(prev.at).toISOString() : null,
+            ...extra
           }
         })
-        return ok({ stored_at: new Date(rec.stored_at).toISOString() })
+        return ok({ stored_at: new Date(rec.stored_at).toISOString(), mode })
       })
     } catch (err) {
       return storeFailed(err)
     }
   }
+
+  // ---- the vector PDF (field-spec 17.19) -----------------------------------
+
+  /**
+   * What the render service draws match `matchId` from: the whole record as
+   * Rebuild PDF reads it (matchForRebuild) and the officials' account
+   * approvals (their stamps), the non-revoked ones. null: no such match.
+   */
+  async function renderRecord (matchId) {
+    if (typeof readMatch !== 'function') return null
+    const whole = await readMatch(matchId)
+    if (!whole?.match) return null
+    let approvals = []
+    if (typeof readApprovals === 'function') approvals = (await readApprovals(matchId)) || []
+    return { match: whole.match, sets: whole.sets || [], events: whole.events || [], liveState: whole.liveState ?? null, approvals }
+  }
+
+  /**
+   * POST /api/scoresheets/:id/rebuild-vector (admins, lib/manageApi.js)
+   * { reason }: Rebuild PDF on the server. The render service prints the
+   * match from the server's own record as a vector PDF, stored as the
+   * match's newest like a rebuild the manager captured (rebuildPdf), on
+   * record (scoresheet.read purpose 'rebuild', then scoresheet.rebuild mode
+   * 'vector'). 503 OV_RENDER_UNAVAILABLE without the service: the manager
+   * then draws and captures the sheet itself, as before.
+   */
+  async function rebuildVector ({ actorId, matchId, reason } = {}) {
+    if (!isUuid(matchId)) return notFound()
+    const why = rebuildReason(reason)
+    if (!why) return invalid(`reason: 1 to ${REBUILD_REASON_MAX} characters`)
+    if (!vector?.enabled) return fail(503, 'OV_RENDER_UNAVAILABLE', 'The vector PDF is not set up on this server')
+    let record
+    try {
+      record = await renderRecord(matchId)
+    } catch (err) {
+      log.error?.(`[scoresheets] vector read failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return unavailable()
+    }
+    if (!record) return notFound()
+    if (record.match.test === true) return notFound()
+    try {
+      await accounts.audit(null, {
+        actorId,
+        action: 'scoresheet.read',
+        matchId,
+        details: { game_n: record.match.game_n ?? null, external_id: record.match.external_id ?? null, purpose: 'rebuild' }
+      })
+    } catch (err) {
+      log.error?.(`[scoresheets] audit failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return unavailable()
+    }
+    const out = await vector.render({ record, rebuildReason: why, rebuiltAt: new Date(now()).toISOString() })
+    if (!out.ok) return fail(out.status === 422 ? 422 : 503, out.code, out.message)
+    return storeRebuiltPdf({ actorId, matchId, data: out.pdf, why, mode: 'vector', extra: { render_ms: out.ms } })
+  }
+
+  // the waits of queueVectorCopy (tests shorten them: server.js OV_VECTOR_TEST_TIMES, never in production)
+  const VT = {
+    quietMs: VECTOR_QUIET_MS,
+    recheckMs: VECTOR_RECHECK_MS,
+    graceMs: CLOSED_REPLACE_GRACE_MS,
+    retryMs: VECTOR_RETRY_MS,
+    maxTries: VECTOR_MAX_TRIES,
+    maxWaitMs: VECTOR_MAX_WAIT_MS,
+    ...(vectorTimes && typeof vectorTimes === 'object' ? vectorTimes : {})
+  }
+  /** match id -> { timer, tries, since } of the vector copies to make after an approval's upload */
+  const vectorJobs = new Map()
+
+  /**
+   * After the approval's PDF of an indoor match was stored (storePdf): the
+   * server prints its own vector copy and stores it as the match's newest,
+   * so the view link and the final mail serve the vector sheet. The device's
+   * raster PDF stays (a record of its own, and what is served when the copy
+   * cannot be made). Only once the match is closed and its data has been
+   * quiet for VECTOR_QUIET_MS (the events the device still sends after the
+   * PDF), and only after CLOSED_REPLACE_GRACE_MS from the approval's PDF (a
+   * corrected approval PDF still queued on the device must find no other
+   * file, storePdf). A record whose sets do not end as the close says is
+   * left alone (the raster stays). Gives up after VECTOR_MAX_WAIT_MS.
+   */
+  function queueVectorCopy ({ matchId, ownerId }) {
+    if (!vector?.enabled || !isUuid(matchId) || typeof readMatch !== 'function') return
+    if (vectorJobs.has(matchId)) return
+    const job = { since: now(), ownerId, timer: null, tries: 0 }
+    vectorJobs.set(matchId, job)
+    const plan = (ms) => {
+      job.timer = setTimer(() => { run().catch((err) => log.error?.(`[scoresheets] vector copy failed: ${String(err?.message || err).slice(0, 200)}`)) }, ms)
+      job.timer?.unref?.()
+    }
+    const done = () => { if (vectorJobs.get(matchId) === job) vectorJobs.delete(matchId) }
+    async function run () {
+      job.tries++
+      if (now() - job.since > VT.maxWaitMs) { log.warn?.(`[scoresheets] vector copy of ${matchId}: gave up waiting`); return done() }
+      const { rows: [st] } = await pool.query(
+        `SELECT m.closed_at, m.test, (m.sport_type::text = 'beach') AS is_beach,
+                (SELECT max(x.stored_at) FROM public.match_scoresheets x WHERE x.match_id = m.id) AS newest_pdf,
+                greatest(m.updated_at,
+                         (SELECT max(e.created_at) FROM public.events e WHERE e.match_id = m.id),
+                         (SELECT max(se.updated_at) FROM public.sets se WHERE se.match_id = m.id)) AS changed_at
+           FROM public.matches m WHERE m.id = $1`, [matchId]).catch(async () =>
+        // an older schema without sets.updated_at
+        pool.query(
+          `SELECT m.closed_at, m.test, (m.sport_type::text = 'beach') AS is_beach,
+                  (SELECT max(x.stored_at) FROM public.match_scoresheets x WHERE x.match_id = m.id) AS newest_pdf,
+                  greatest(m.updated_at, (SELECT max(e.created_at) FROM public.events e WHERE e.match_id = m.id)) AS changed_at
+             FROM public.matches m WHERE m.id = $1`, [matchId]))
+      if (!st || st.test === true || st.is_beach === true) return done()
+      const t = now()
+      const quietFor = st.changed_at ? t - new Date(st.changed_at).getTime() : Infinity
+      const sincePdf = st.newest_pdf ? t - new Date(st.newest_pdf).getTime() : Infinity
+      if (!st.closed_at || quietFor < VT.quietMs || sincePdf < VT.graceMs) {
+        return plan(Math.max(VT.recheckMs, VT.graceMs - sincePdf, VT.quietMs - quietFor))
+      }
+      const record = await renderRecord(matchId)
+      if (!record) return done()
+      if (!setsMatchClose(record)) {
+        log.warn?.(`[scoresheets] vector copy of ${matchId}: the sets do not end as the close says, the device's PDF stays`)
+        return done()
+      }
+      const out = await vector.render({ record })
+      if (!out.ok) {
+        if (job.tries < VT.maxTries && out.status !== 422) return plan(VT.retryMs * job.tries)
+        log.warn?.(`[scoresheets] vector copy of ${matchId}: ${out.code}, the device's PDF stays`)
+        return done()
+      }
+      // the newest PDF is still the one the job waited behind (none came since)
+      const { rows: [again] } = await pool.query(
+        'SELECT max(stored_at) AS newest_pdf FROM public.match_scoresheets WHERE match_id = $1', [matchId])
+      if (String(again?.newest_pdf ?? '') !== String(st.newest_pdf ?? '')) { done(); return queueVectorCopy({ matchId, ownerId }) }
+      const r = await storeRebuiltPdf({ ownerId: job.ownerId, matchId, data: out.pdf, mode: 'approval', extra: { render_ms: out.ms } })
+      if (r.status !== 200) log.warn?.(`[scoresheets] vector copy of ${matchId}: not stored (${r.body?.code || r.status})`)
+      done()
+    }
+    plan(Math.max(VT.recheckMs, VT.graceMs))
+  }
+
+  /** A vector copy of match `matchId` is still to come: the final mail waits for it (lib/finalMail.js). */
+  const vectorPending = (matchId) => vectorJobs.has(matchId)
 
   /**
    * POST /api/scoresheets/:id/view: the PDF behind a short-lived link for the
@@ -1385,5 +1583,5 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     return { status: 200, file: { ...v.file, disposition: 'inline' } }
   }
 
-  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles, recordOldPdfs, matchForRebuild, rebuildPdf }
+  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles, recordOldPdfs, matchForRebuild, rebuildPdf, rebuildVector, queueVectorCopy, vectorPending }
 }
