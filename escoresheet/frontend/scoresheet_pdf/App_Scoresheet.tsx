@@ -98,11 +98,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   // Players as the sheet prints them, sorted by shirt number (the roster's 14 rows;
   // field-spec 3). Robust to a missing list (an imported JSON without players).
-  // LFP marks only with LFP tracking on (Options, default off) on this device:
-  // the test match's players all carry the flag, and a sheet without tracking
-  // showed LFP on every row (owner 2026-11-16, Diktat check)
-  let lfpOn = false;
-  try { lfpOn = localStorage.getItem('lfpTrackingEnabled') === 'true'; } catch { /* storage blocked */ }
+  // LFP marks print only where LFP tracking is on (Options, default off; owner
+  // 2026-11-16): an imported roster PDF carries them for one team even then
+  const lfpShown = (() => {
+    try { return localStorage.getItem('lfpTrackingEnabled') === 'true'; } catch { return false; }
+  })();
   const formatPlayers = (players: unknown): Player[] => {
     return asArray<any>(players)
       .filter(p => p && typeof p === 'object')
@@ -116,7 +116,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         dob: formatDob(p.dob ?? p.date_of_birth),
         libero: p.libero,
         isCaptain: p.isCaptain || p.is_captain,
-        isLfp: lfpOn && !!(p.isLfp || p.is_lfp),
+        isLfp: lfpShown && !!(p.isLfp || p.is_lfp),
         license: p.license || '',
         role: p.role
       }))

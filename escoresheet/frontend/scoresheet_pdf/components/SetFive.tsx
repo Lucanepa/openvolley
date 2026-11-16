@@ -297,7 +297,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
             {/* Panel 3: Team A (Swapped) */}
             <div className="flex shrink-0" style={{ width: '75mm', marginLeft: COURT_CHANGE_W }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA_Right || subsA} startsReceiving={false} serviceRounds={serviceRoundsA_Right} />
-                 <PointsColumn30 ruleRight isPanel3={true} timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} preChangePoints={pointsAtChangeA ?? null} maxScore={maxScore} setFinished={setFinished} unused={unused} finalScore={finalScoreA} />
+                 <PointsColumn30 ruleRight timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} maxScore={maxScore} setFinished={setFinished} unused={unused} finalScore={finalScoreA} />
             </div>
        </div>
     </div>

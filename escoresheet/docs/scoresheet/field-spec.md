@@ -330,7 +330,8 @@ Other differences from sets 1 to 4:
 1. Write the **left team's points at the change** (only the left team's points) in the
    "Pte. beim Seitenwechsel" box of panel 3.
 2. In **panel 3's points column**, draw a **reverse T `⊥`** over numbers 1..N, the points
-   already scored. The generated sheet draws it (owner decision 2026-10-13, section 17).
+   already scored. **Not on the generated sheet** (owner 2026-11-16, replacing the decision of
+   2026-10-13 in section 17): 1..N stay plain numbers, nothing over them.
 3. In **panel 1's points column**, draw a standard **T** over the numbers not ticked (N+1 to 8).
    **Not on the generated sheet (sections 16 and 17):** no `T`; N+1..8 are left blank.
 4. Copy **all time-outs and substitutions**, with their scores and circles, from panel 1 to
@@ -726,6 +727,8 @@ These override sections 4-7 and 16 wherever they differ.
    got assigned while they were left, on the right box they need to have an inverted T". A
    line down through 1..N (N = the left team's points at the change) and a bar under N, over
    the printed numbers, as on paper (SC p.77-79). Panel 1 still gets no `T`.
+   **Dropped 2026-11-16.** Owner: "can we not have the inverted T in set 5 ... just don't show
+   the points like they haven't been made. nothing". Panel 3 prints 1..N as plain numbers.
 4. **Line-up and substitution numbers: one size.** Owner: "increase the circle radius don't
    decrease the number font. actually decrease by 1pt all number fonts in lineup-sub rows, so
    it's the same". The starting line-up and the substitutes share one size, the circled
