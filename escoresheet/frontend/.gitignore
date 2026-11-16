@@ -47,3 +47,4 @@ localhost-key.pem
 # Environment variables
 .env
 .env.*
+sheet-pixels-out/

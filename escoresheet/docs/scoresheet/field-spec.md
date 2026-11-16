@@ -851,6 +851,16 @@ These override sections 4-7 and 16 wherever they differ.
      the Brave PDF, and WebKit with `deviceScaleFactor` 1.5, which loses rules there too.
      The current sheet keeps every rule in both (ratios 1.1 to 2.625, standalone page and
      manager).
+   - **In CI** (owner 2026-11-16, "fix the leftovers"): `scripts/sheet-pixels.mjs`
+     (workflow `sheet-pixels.yml`, on changes to the sheet's code or styles) draws a
+     synthetic best-of-3 (`scoresheet_pdf/pixel-check`), saves its PDF through the real
+     capture path and reads the picture back: the rule under every column of every roster,
+     LIBERO and BENCH OFFICIALS row, the bottom border of the rosters, SANCTIONS, REMARKS,
+     APPROVAL and RESULT, the deciding set's right rule on set 4's line (16) and the
+     descenders of the APPROVAL names (16). Chromium forced to 1, 1.25 and 1.75 and WebKit
+     at 1.5, standalone and under the manager's stylesheet. On the code before 13 it fails
+     (libero, officials and roster-bottom rules), before 16 too (the deciding set's rule 1 px
+     off at 1, names cut with line height 1).
 14. **Rebuild PDF keeps what the approved sheet had, and Cancel cancels** (2026-11-16, review
    of the manager's Rebuild PDF). The rebuilt sheet is drawn from the server's record
    (`src/utils/scoresheetFromCloud.js`), with nothing taken from the admin's device database.
@@ -876,6 +886,11 @@ These override sections 4-7 and 16 wherever they differ.
      stored. A sheet that cannot be drawn (its code chunk gone after a deploy, or an error
      while drawing an odd record) shows the error inside the dialog, with Reload for the
      chunk case, instead of replacing the manager.
+   - **Cancel while the PDF uploads** (owner 2026-11-16, "fix the leftovers"): the request is
+     aborted and nothing says "rebuilt". The server may already have received it: a PDF
+     stored for a closed match is never removed (db/033), so there is no server-side undo.
+     The toast says so ("if the upload had already reached the server, the new PDF is
+     stored") and the list is read again, so the row shows whether it was stored.
    - The LFP marks and the clock zone come with the match since item 17 (owner 2026-11-16),
      so a rebuild prints them as the approved sheet did.
    - The deciding set's change of courts (17.15) needs no set targets on the server: only a
@@ -962,3 +977,19 @@ These override sections 4-7 and 16 wherever they differ.
      the server, checked by tests). Before, the API rounded the raw `start_time` /
      `end_time`, so a set could differ by a minute, and a set row still holding its creation
      time printed a wrong start.
+19. **"Out of date" sees every change to the sheet's data, and only those** (owner 2026-11-16,
+    "fix the leftovers"). The managers' Scoresheets tab marks a stored PDF out of date when
+    the data the sheet is drawn from changed more than 2 minutes after it (and after the
+    close). Since db/045 the server keeps one time per match (`match_sheet_changes`), moved
+    by triggers:
+   - any new, changed or removed event, set or account approval, and every event revision
+     (a correction, an undo). An event row edited in the SQL or Data tab now counts too
+     (before it moved nothing the list read);
+   - a match-row change of a column the sheet reads (rosters, officials, match info,
+     remarks, the after-match log, signatures, results, ...). The close, a game release, the
+     official season, connection and sync columns and `updated_at` do not count: releasing a
+     game no longer marks its PDF out of date;
+   - not: a rewrite that changes nothing (a resent job), and an account deletion clearing who
+     voided an event or approved (ON DELETE SET NULL).
+   Existing matches start from the value the list computed before, without a game
+   release's own write.
