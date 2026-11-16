@@ -1,26 +1,17 @@
 /**
- * Set and match times, one source for the scoresheet (set headers, RESULT table)
- * and the in-app "Match complete" card (MatchEnd.jsx). Pure.
- *
- * Owner decision 2026-10-07 (field-spec 16): the times are the ACTUAL ones.
- *  - Set start: the real start of the set's first rally, the `rally_start`
- *    event Scoreboard logs with the device clock when the first rally starts.
- *    rally_start events stay on the scoring device; the set_start event, which
- *    is synced, carries the same time (payload.firstRallyAt), so a copy
- *    restored from the server prints the same start.
- *    The "Set n start time" dialog value (set.startTime) can be the scheduled
- *    time typed or kept by the scorer (a match planned 14:30 that started 16:05
- *    printed "Match Start 14:30" and a 104' first set); it is used only when a
- *    set has no rally_start (older records), then the set's first point.
- *    Exception: a start corrected AFTER the dialog (Scoreboard's edit modal
- *    writes set.startTime only, so it no longer matches the time the set_start
- *    event recorded) is the scorer's deliberate word and wins.
- *  - Set end: the recorded set end (set.endTime), else the set's last point.
- *  - Times are taken to the minute (rounded down), so a duration is always the
- *    difference of the two printed times.
- *  - Match start = set 1's actual start; match end = the last set's end;
- *    match duration = end - start (intervals included). Never the schedule.
+ * Set and match times for the scoresheet (set headers, RESULT table) and the
+ * in-app "Match complete" card (MatchEnd.jsx). The rules live in ONE plain-JS
+ * module, src/domain/sheetTimes.js, which the server's public API uses too (a
+ * byte-for-byte copy in backend/lib/sheetTimes.js). See there for the owner's
+ * rules (field-spec 16).
  */
+import {
+  setStartMs as setStartMsJs,
+  setEndMs as setEndMsJs,
+  setDurationMinutes as setDurationMinutesJs,
+  matchTimes as matchTimesJs,
+  isoOf as isoOfJs
+} from '../../src/domain/sheetTimes.js'
 
 export interface TimedSet {
   index: number
@@ -37,87 +28,21 @@ export interface TimedEvent {
   payload?: { startTime?: string | null; firstRallyAt?: string | null } | null
 }
 
-const ms = (v: unknown): number | null => {
-  if (v === null || v === undefined || v === '') return null
-  const n = typeof v === 'number' ? v : Date.parse(String(v))
-  return Number.isFinite(n) ? n : null
-}
-const toMinute = (n: number): number => Math.floor(n / 60000) * 60000
-
-const timesOf = (events: TimedEvent[] | undefined, setIndex: number, type: string): number[] =>
-  (Array.isArray(events) ? events : [])
-    .filter(e => e && e.setIndex === setIndex && e.type === type)
-    .map(e => ms(e.ts))
-    .filter((n): n is number => n !== null)
-
-/** The set's actual start (ms, to the minute), or null when nothing tells it. */
-export function setStartMs(set: TimedSet | null | undefined, events?: TimedEvent[]): number | null {
-  if (!set) return null
-  const confirmed = ms(set.startTime)
-  // the time the "Set n start time" dialog confirmed, as its set_start event recorded it
-  const dialog = (Array.isArray(events) ? events : [])
-    .filter(e => e && e.setIndex === set.index && e.type === 'set_start')
-    .map(e => ms(e.payload?.startTime ?? e.ts))
-    .find((n): n is number => n !== null) ?? null
-  if (confirmed !== null && dialog !== null && toMinute(confirmed) !== toMinute(dialog)) return toMinute(confirmed)
-  // Owner 2026-11-15: the time the scorer confirmed (the dialog proposes the
-  // actual start, or last set end + 3 min) is the set's start, not the clock
-  // of its first rally.
-  if (dialog !== null) return toMinute(dialog)
-  // The rally starts stay on the scoring device: there they tell the start.
-  // set_start's firstRallyAt is for a copy from the server, which has none;
-  // on the device it can be older than every rally start left (the set's
-  // first rally undone or corrected) and printed a start that never was
-  const rallyStarts = timesOf(events, set.index, 'rally_start')
-  const rallies = rallyStarts.length > 0
-    ? rallyStarts
-    : (Array.isArray(events) ? events : [])
-      .filter(e => e && e.setIndex === set.index && e.type === 'set_start')
-      .map(e => ms(e.payload?.firstRallyAt))
-      .filter((n): n is number => n !== null)
-  if (rallies.length > 0) return toMinute(Math.min(...rallies))
-  if (confirmed !== null) return toMinute(confirmed)
-  const points = timesOf(events, set.index, 'point')
-  return points.length > 0 ? toMinute(Math.min(...points)) : null
-}
+/** The set's start (ms, to the minute), or null when nothing tells it. */
+export const setStartMs: (set: TimedSet | null | undefined, events?: TimedEvent[]) => number | null = setStartMsJs
 
 /** The set's end (ms, to the minute): the recorded end, else its last point. */
-export function setEndMs(set: TimedSet | null | undefined, events?: TimedEvent[]): number | null {
-  if (!set) return null
-  const recorded = ms(set.endTime)
-  if (recorded !== null) return toMinute(recorded)
-  if (!set.finished) return null
-  const points = timesOf(events, set.index, 'point')
-  return points.length > 0 ? toMinute(Math.max(...points)) : null
-}
+export const setEndMs: (set: TimedSet | null | undefined, events?: TimedEvent[]) => number | null = setEndMsJs
 
-/** Whole minutes from the set's actual start to its end, or null (unfinished / unknown / not after the start). */
-export function setDurationMinutes(set: TimedSet | null | undefined, events?: TimedEvent[]): number | null {
-  if (!set?.finished) return null
-  const start = setStartMs(set, events)
-  const end = setEndMs(set, events)
-  if (start === null || end === null || end < start) return null
-  return Math.floor((end - start) / 60000)
-}
+/** Whole minutes from the set's start to its end, or null. */
+export const setDurationMinutes: (set: TimedSet | null | undefined, events?: TimedEvent[]) => number | null = setDurationMinutesJs
 
-/**
- * Match start (set 1's actual start), end (the last finished set's end) and
- * duration in minutes. `skip` leaves out sets that had no rally (a set awarded
- * by default). The end and duration exist only once a set has ended.
- */
-export function matchTimes(
+/** Match start (set 1's start), end (the last finished set's end) and duration in minutes. */
+export const matchTimes: (
   sets: TimedSet[] | undefined,
   events?: TimedEvent[],
-  { skip }: { skip?: (set: TimedSet) => boolean } = {}
-): { startMs: number | null; endMs: number | null; durationMinutes: number | null } {
-  const played = (Array.isArray(sets) ? sets : []).filter(s => s && !(skip && skip(s)))
-  const first = played.filter(s => s.index === 1)[0] ?? [...played].sort((a, b) => a.index - b.index)[0]
-  const startMs = setStartMs(first, events)
-  const ends = played.filter(s => s.finished).map(s => setEndMs(s, events)).filter((n): n is number => n !== null)
-  const endMs = ends.length > 0 ? Math.max(...ends) : null
-  const durationMinutes = startMs !== null && endMs !== null && endMs >= startMs ? Math.floor((endMs - startMs) / 60000) : null
-  return { startMs, endMs, durationMinutes }
-}
+  opts?: { skip?: (set: TimedSet) => boolean }
+) => { startMs: number | null; endMs: number | null; durationMinutes: number | null } = matchTimesJs
 
 /** ISO string of a time in ms (for the local-time formatters), '' for null. */
-export const isoOf = (n: number | null): string => (n === null ? '' : new Date(n).toISOString())
+export const isoOf: (n: number | null) => string = isoOfJs

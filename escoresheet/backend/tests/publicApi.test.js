@@ -89,7 +89,7 @@ describe('end-of-match statistics', () => {
     ev('set_end', 1, 9, { team: 'home', homePoints: 3, awayPoints: 1 })
   ]
   const st = buildStats({ external_id: 'match_1', status: 'finished', final_score: '1:0', winner: 'home', home_team: { name: 'H' }, away_team: { name: 'A' } }, events,
-    [{ index: 1, start_time: '2026-11-14T18:00:00Z', end_time: '2026-11-14T18:25:00Z' }])
+    [{ index: 1, start_time: '2026-11-14T18:00:00Z', end_time: '2026-11-14T18:25:00Z', finished: true }])
   it('counts points, timeouts, subs, sanctions with the score at the time', () => {
     const s = st.sets[0]
     assert.deepEqual(s.points, { home: 3, away: 1 })
