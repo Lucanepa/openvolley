@@ -71,6 +71,19 @@
   </screenshots>
 
   <releases>
+    <release version="3.3.1" date="2026-11-16">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.1</url>
+      <description>
+        <ul>
+          <li>Scoresheet PDF: every line kept at any zoom, the same sheet everywhere, real font sizes, saved in about 2 s instead of 10.</li>
+          <li>LIBERO box by shirt number; centred A/B, cleaner SANCTIONS heading.</li>
+          <li>Long names fit on Android; long remarks continue on more pages.</li>
+          <li>LFP tracking and the time zone are saved with the match.</li>
+          <li>Rebuild PDF keeps the approval stamps and the confirmed set starts; Cancel cancels.</li>
+          <li>First Google Play build: Play installs update from Play.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.3.0" date="2026-11-16">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.0</url>
       <description>
