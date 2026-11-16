@@ -572,7 +572,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                         <div className={`${APPROVAL_COL.official} pl-2 font-bold text-[9px] flex items-center whitespace-nowrap`}>{role}</div>
 
                         <div className={`${APPROVAL_COL.name} flex items-center pl-2 pr-1 min-w-0`}>
-                            <FitText max={9} min={5} className="w-full text-left leading-none" title={fullName}>{fullName}</FitText>
+                            <FitText max={9} min={5} className="w-full text-left leading-tight" title={fullName}>{fullName}</FitText>
                         </div>
 
                         <div className={`${APPROVAL_COL.country} flex items-center justify-center text-[9px] leading-none`}>

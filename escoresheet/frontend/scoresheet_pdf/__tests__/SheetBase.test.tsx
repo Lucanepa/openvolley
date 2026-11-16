@@ -163,3 +163,17 @@ describe('FitText fits again once a font has loaded', () => {
     }
   })
 })
+
+describe('descenders', () => {
+  // FitText clips its box (overflow hidden): a one-line FitText with line height 1
+  // cut the g and y of "Nguyen" in the APPROVAL names (owner 2026-11-16)
+  it('no one-line FitText has leading-none', () => {
+    for (const file of ['FooterSection.tsx', 'StandardSet.tsx', 'SetFive.tsx', 'HeaderSection.tsx']) {
+      const path = resolve(here, '../components', file)
+      if (!existsSync(path)) continue
+      const tags = readFileSync(path, 'utf8').match(/<FitText\b[^>]*>/g) || []
+      const bad = tags.filter(t => !/\bmultiline\b/.test(t) && /\bleading-none\b/.test(t))
+      expect(bad, file).toEqual([])
+    }
+  })
+})
