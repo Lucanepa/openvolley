@@ -38,29 +38,27 @@ describe('getHeaderLiberos', () => {
 })
 
 describe('rosterLiberos (the roster LIBERO box)', () => {
-  const rows = (list: ReturnType<typeof rosterLiberos>) => list.map(l => `${l.number}${l.redesignated ? 'R' : ''}`)
+  const rows = (list: ReturnType<typeof rosterLiberos>) => list.map(l => `${l.number}`)
 
-  it('keeps both registered liberos after both became unable and one player was re-designated', () => {
+  it('keeps both registered liberos after both became unable, without the re-designated player', () => {
     const p = players([[1, 'unable'], [7, 'redesignated'], [10, 'unable']])
     const events = [
       { type: 'libero_unable', setIndex: 1, seq: 10, payload: { team: 'home', liberoNumber: 1, liberoType: 'libero1' } },
       { type: 'libero_unable', setIndex: 2, seq: 30, payload: { team: 'home', liberoNumber: 10, liberoType: 'libero2' } },
       { type: 'libero_redesignation', setIndex: 2, seq: 31, payload: { team: 'home', unableLiberoNumber: 10, unableLiberoType: 'libero2', newLiberoNumber: 7 } }
     ]
-    const list = rosterLiberos(p, events, 'home')
-    expect(rows(list.slice(0, 2))).toEqual(['1', '10'])
-    // the re-designated libero is not cut silently: it follows, marked
-    expect(rows(list)).toEqual(['1', '10', '7R'])
+    // the re-designated #7 is not in the box (remarks, as Genius)
+    expect(rows(rosterLiberos(p, events, 'home'))).toEqual(['1', '10'])
   })
 
-  it('a one-libero team re-designated twice: the registered libero first, then both re-designated ones', () => {
+  it('a one-libero team re-designated twice: only the registered libero', () => {
     const p = players([[3, 'unable'], [7, 'unable'], [9, 'redesignated']])
     const events = [
       { type: 'libero_redesignation', setIndex: 1, seq: 5, payload: { team: 'away', unableLiberoNumber: 7, unableLiberoType: 'libero1', newLiberoNumber: 3 } },
       { type: 'libero_unable', setIndex: 2, seq: 20, payload: { team: 'away', liberoNumber: 3, liberoType: 'redesignated' } },
       { type: 'libero_redesignation', setIndex: 2, seq: 21, payload: { team: 'away', unableLiberoNumber: 3, unableLiberoType: 'redesignated', newLiberoNumber: 9 } }
     ]
-    expect(rows(rosterLiberos(p, events, 'away'))).toEqual(['7', '9R', '3R'])
+    expect(rows(rosterLiberos(p, events, 'away'))).toEqual(['7'])
   })
 
   it('no re-designation: the registered liberos in their order', () => {
