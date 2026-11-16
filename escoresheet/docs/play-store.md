@@ -72,8 +72,9 @@ older) before submitting.
 - Collects data: **Yes**. Shared with third parties: **No** (own backend on
   our server in Switzerland; no analytics or ads SDKs, no Firebase, no Play
   Services).
-- Personal info: name, email, phone (accounts and manager contact); players'
-  and officials' names and dates of birth, licence data (match rosters).
+- Personal info: name, email (accounts; no phone numbers are collected);
+  players' and officials' names and dates of birth, licence data (match
+  rosters).
   Purpose: app functionality, account management. Required for the
   corresponding feature; optional for the app as a whole (a match can be
   scored without an account).
