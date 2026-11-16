@@ -907,3 +907,22 @@ These override sections 4-7 and 16 wherever they differ.
      and decoded (at most 3 s; it waited fixed delays only, so a picture still loading was
      missing from the PDF), and the console names any picture that did not load
      (`pdfCapture picturesReady`, `missingPictures`).
+16. **Owner notes on a rebuilt PDF** (2026-11-16).
+   - **The deciding set's right rule on set 4's line.** Panel 3's points column draws the set's
+     right border, on set 4's line between its teams. Laid out panel by panel (each 75 mm and
+     every header cell rounded to the layout grid on its own) the rule ended 0.02 px left of
+     set 4's, and the capture drew it 1 px left of it at 100 %. Panels 1-2 and their header now
+     sit in one 150 mm box and panel 3 and its header in one 75 mm box, as sets 3 and 4 do, so
+     both rows round the same widths the same way. Checked by pixel in the PDF: Chromium at a
+     display scaling of 1, 1.25, 1.5, 1.75 and 2 and at browser zoom 1.1, 1.25 and 1.5,
+     WebKit at 1.5, the standalone sheet and the manager's Rebuild PDF (`SetFive`).
+   - **IMPROPER REQUEST on one line.** It wrapped into the W P E D heading: 8 px, fitted
+     smaller when the box is narrow, never wrapped (`sanctions-improper-label`).
+   - **"Score" smaller** in the SANCTIONS heading: 7.5 px (the others 9 px).
+   - **Letters centred in their rings.** Every A / B ring (teams header, set headers, RESULT,
+     rosters, SANCTIONS, the captains' signature) is `CircleLetter`: the letter is SVG text with
+     its baseline half a cap height (Inter 0.727 em) below the ring's centre. As HTML text it sat
+     on a baseline rounded to whole pixels and the PDF put it up to 1.5 px high (the tiny A / B
+     of the SANCTIONS heading touched the top of the ring). The half-pixel lift of 2026-10-21 is
+     gone with it. The S / R rings of the set headers are unchanged.
+   - **APPROVAL names keep their descenders**: a one-line FitText never has line height 1.

@@ -1,4 +1,5 @@
 import React from 'react';
+import { CircleLetter } from './CircleLetter';
 import { BRAND } from '../../src/brand.js';
 import { formatTimeLocal } from '../../src/utils/timeUtils';
 import { formatSheetDate, gameNumberOf } from '../utils/sheetFormat';
@@ -176,9 +177,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
         {/* Teams: Circle | Home Name | TEAMS/VS | Away Name | Circle (home always left) */}
         <div className="col-span-6 border-r border-black px-2 py-0.5 min-w-0 min-h-0 overflow-hidden">
           <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-1 h-full">
-            <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
-              {coinTossConfirmed ? (homeIsA ? 'A' : 'B') : ''}
-            </div>
+            <CircleLetter letter={coinTossConfirmed ? (homeIsA ? 'A' : 'B') : ''} size={28} fontPx={16} />
             <FitText max={18} min={7} className="font-bold uppercase text-center bg-white" title={homeTeam?.name || ''} data-testid="header-home">
               {homeTeam?.name || ''}
             </FitText>
@@ -189,9 +188,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
             <FitText max={18} min={7} className="font-bold uppercase text-center bg-white" title={awayTeam?.name || ''} data-testid="header-away">
               {awayTeam?.name || ''}
             </FitText>
-            <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
-              {coinTossConfirmed ? (homeIsA ? 'B' : 'A') : ''}
-            </div>
+            <CircleLetter letter={coinTossConfirmed ? (homeIsA ? 'B' : 'A') : ''} size={28} fontPx={16} />
           </div>
         </div>
 
