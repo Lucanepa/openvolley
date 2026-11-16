@@ -71,6 +71,17 @@
   </screenshots>
 
   <releases>
+    <release version="3.3.2" date="2026-11-16">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.2</url>
+      <description>
+        <ul>
+          <li>Tablet: the scoring screen uses the whole screen (it was shrunk to 85%), no second date bar; the clock shows in the toolbar strip when the toolbar is hidden.</li>
+          <li>The captain's one-digit number is circled round, not an oval.</li>
+          <li>Coin toss on a tablet held sideways: the Confirm button no longer runs off the bottom.</li>
+          <li>Android: Fullscreen hides the status and navigation bars.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.3.1" date="2026-11-16">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.1</url>
       <description>
