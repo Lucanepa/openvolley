@@ -1,4 +1,3 @@
-import React from 'react'
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { ServiceBox, TICK_START } from '../components/ServiceBox'

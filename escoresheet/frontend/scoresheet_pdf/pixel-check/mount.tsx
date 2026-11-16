@@ -3,7 +3,6 @@
  * (App_Scoresheet getBlob), then hands the PDF and the sheet's geometry to
  * scripts/sheet-pixels.mjs on window.__sheetPixels. Synthetic data only.
  */
-import React from 'react'
 import { createRoot } from 'react-dom/client'
 import '../../src/i18n'
 import App from '../App_Scoresheet'

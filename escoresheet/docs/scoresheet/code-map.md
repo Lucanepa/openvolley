@@ -200,7 +200,7 @@ Scoreboard and MatchEnd; test matches by `App.jsx:2455-2480`; server matches by
 | `accountApprovals` `{ referee1, referee2, scorer }` | records | APPROVAL text stamp (`domain/accountApproval.js isApprovalValid / formatApprovalStamp`) |
 | `remarks` | text (appended by Scoreboard via `domain/remarks.js appendRemark`) | REMARKS |
 
-### 2.3 Players (`players` table) -> `formatPlayers` (`App_Scoresheet.tsx:58-71`)
+### 2.3 Players (`players` table) -> `formatPlayers` (`utils/sheetModel.ts`)
 
 `{ number, name: p.name ‖ "lastName firstName", firstName, lastName, dob, libero, isCaptain, isLfp ‖ is_lfp, license, role }`.
 `dob` is printed as stored: test seeds use `DD/MM/YYYY` (`src/constants/testSeeds.js`),
@@ -230,6 +230,22 @@ setup uses `DD.MM.YYYY`, sync uses ISO. No normalisation anywhere on the sheet.
 Container: `div.scoresheet-container` `410mm x 287mm`, `p-3`, inner padding
 `4mm 7mm 6mm 5mm` (`App_Scoresheet.tsx:2767-2778`). Zoom is a CSS transform
 (reset to 1 for capture). Order on the page:
+
+**Rendering (review 2026-11-16, F2/F3).** `App_Scoresheet` is the shell: zoom,
+turn, Libero sheet toggle, notices, Save PDF. The sheet itself is a pure model,
+`buildSheetModel(normalizedData, { lfpShown, extraRemarks })`
+(`utils/sheetModel.ts`; each set from `buildSetData`, `utils/setModel.ts`),
+built in one `useMemo` per data change, and drawn by `components/SheetPage.tsx`
+(`React.memo`) inside the zoomed container. The sections below it (Header, the
+set grids, LeftInfoBox, SANCTIONS, REMARKS, APPROVAL, RESULT, rosters, points
+columns, each printed number, FitText) are `React.memo` with a deep props
+comparison (`utils/propsEqual.ts`), and FitText skips its fit when the text,
+limits, style, box size and loaded fonts are unchanged. So a zoom step renders
+nothing of the sheet, and a live point re-renders only the sections it changed
+(owner-like match, Chromium: zoom 69 -> 13 ms, one point 60 -> 21 ms, FitText
+measurements per update 154 -> 0). Type check: `npm run typecheck`
+(`tsc --noEmit -p scoresheet_pdf --noUnusedLocals`), also run by
+`__tests__/typecheck.test.ts`.
 
 ```
 Header (Header.tsx)                                         <- logos, match type, teams, place, date
@@ -278,7 +294,7 @@ Static row labels only ("Rotation", "Starting line up", "Substitutions",
 "Player N.", "Score", "Service Rounds" 1-8 or 1-6). Props `lineup / subs /
 serviceRounds` are passed but unused.
 
-### 4.3 Sets 1-4 (`components/StandardSet.tsx`, `PointsColumn.tsx`; data `getSetData`, `App_Scoresheet.tsx:124-1167`)
+### 4.3 Sets 1-4 (`components/StandardSet.tsx`, `PointsColumn.tsx`; data `buildSetData`, `utils/setModel.ts`)
 
 | Box | Value | Source / rule |
 |---|---|---|
@@ -294,7 +310,7 @@ serviceRounds` are passed but unused.
 | Points 1-32 (expands to 48/64/80/96) | slash = scored; circle only (no slash) = point from a `penalty` / `delay_penalty` (next opponent point after the sanction); vertical "T" through unused numbers once `sets.finished` | `point` + `sanction` events, `finalScore` |
 | "T" (timeouts) x2 | `requesting:other` at the timeout | `timeout` events |
 
-### 4.4 Set 5 (`components/SetFive.tsx`; data `App_Scoresheet.tsx:1211-2249`)
+### 4.4 Set 5 (`components/SetFive.tsx`; data `buildSetData(ctx, 5, …)` and the panel split in `utils/sheetModel.ts`)
 
 Three panels: 1 = left team before the change (points 1-8), 2 = right team
 (1-32+), 3 = left team after the change (numbers up to the score at the change
@@ -304,7 +320,7 @@ before / after the change; panel 3 shows all of them. Shown only when
 `set5LeftTeam ‖ set5FirstServe` is set or set 5 has started. Label "SET 3" in
 best-of-3.
 
-### 4.5 Results (`FooterSection.tsx` `Results`, data `calculateSetResults` l. 1232-1337)
+### 4.5 Results (`FooterSection.tsx` `Results`, data `calculateSetResults` in `utils/sheetModel.ts`)
 
 Per finished set and team: T (timeouts), S (regular subs, `countRegularSubstitutions`),
 W (1/0), P (points); set duration `endTime - startTime` (fallback: first event
@@ -314,7 +330,7 @@ name) and RESULT `3:1` only once a team has 3 (2 in best-of-3) sets.
 
 ### 4.6 Sanctions and Remarks
 
-- `processSanctions` (l. 1342-1454): `improper_request` -> `X` in the A/B circle;
+- `processSanctions` (`utils/sheetModel.ts`): `improper_request` -> `X` in the A/B circle;
   `delay_warning|delay_penalty` -> `D` in W / P; misconduct -> player number or
   role initial (`C AC1 AC2 P M`) in W / P / E / D; team A/B; set (`displaySetNumber`);
   score `sanctioned:other` (`getScoreBeforeEvent`). 10 rows; the rest go to REMARKS
@@ -612,13 +628,16 @@ red; it is a colour, not a federation mark.
 ## 11. Tests and harnesses
 
 - Unit: `scoresheet_pdf/__tests__/{App_Scoresheet,Header,ApprovalsStamp,FitText}.test.tsx`,
-  `scoresheet_pdf/utils/__tests__/{scoresheetModel,pdfCapture,extractLiberoData,scoresheetStorage,remarksPages}.test.ts`,
+  `scoresheet_pdf/utils/__tests__/{scoresheetModel,setModel,sheetModel,pdfCapture,extractLiberoData,scoresheetStorage,remarksPages}.test.ts`
+  (`setModel`: returning substitutes of both teams, the deciding set's
+  substitutions and time-outs across the change, penalties with and without
+  `penaltySeq`, delay penalty, awarded points; `sheetModel`: result, empty grids,
+  the deciding-set split, LFP marks, an equal model for equal data),
   `src/utils/__tests__/openAppWindow.test.js` (in-app view, Android save,
   `isOwnDownload`, `deliverPdfToOpener`), `src/__tests__/brandAssets.test.js`
   (page heads, old green files gone), `src-tauri` `popups.rs` tests
   (`downloads_dir`, `free_path`, script escaping).
-- No test covers: the file name, the header logos, `getSetData` service
-  tracking end to end, set 5 panels, the APPROVAL columns, PDF validity.
+- No test covers: the header logos, the APPROVAL columns end to end.
 - Earlier harnesses: `/tmp/claude-1000/ov-work/apps/scoresheet-windows`
   (desktop scoresheet window + Save PDF screenshots), `connect-modes/pw`
   (Playwright: `e2e.mjs`, `approval-shots.mjs`, `obfix-*.mjs`),

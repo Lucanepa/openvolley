@@ -1,5 +1,6 @@
 import React from 'react';
 import { SubRecord } from '../types_scoresheet';
+import { propsEqual } from '../utils/propsEqual';
 
 interface ServiceRound {
   position: number;
@@ -24,16 +25,12 @@ interface LeftInfoBoxProps {
  */
 export const LEGEND_WIDTH = '39.5mm';
 
-export const LeftInfoBox: React.FC<LeftInfoBoxProps> = ({
+const LeftInfoBoxView: React.FC<LeftInfoBoxProps> = ({
   lineup = [],
   subs = [],
   serviceRounds = [],
   isSet5 = false
 }) => {
-  const positions = [0, 1, 2, 3, 4, 5];
-  const serviceRoundNumbers = isSet5 ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6, 7, 8];
-  const serviceRoundsPerColumn = isSet5 ? 3 : 4;
-
   return (
     <div
       className="border border-black bg-white flex flex-col mr-2 shrink-0"
@@ -106,3 +103,7 @@ export const LeftInfoBox: React.FC<LeftInfoBoxProps> = ({
     </div>
   );
 };
+
+// Memoised (utils/propsEqual): a new sheet model with the same values for this
+// section does not re-render it (review 2026-11-16, F2/F3)
+export const LeftInfoBox = React.memo(LeftInfoBoxView, propsEqual);

@@ -5,6 +5,7 @@ import { SubRecord } from '../types_scoresheet';
 import { PointsColumn } from './PointsColumn';
 import { FitText } from './FitText';
 import { ServiceBox, SubstitutionCells } from './ServiceBox';
+import { propsEqual } from '../utils/propsEqual';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -43,8 +44,6 @@ interface StandardSetProps {
   rightCircledPoints?: number[];
   rightServiceRounds?: ServiceRound[];
   
-  // Ref for measuring position box width
-  positionBoxRef?: React.RefObject<HTMLDivElement>;
   // True when the set is finished — enables T-bar finalization of unused numbers
   setFinished?: boolean;
   /** A set never played (or awarded by default): its points columns print no numbers (owner 2026-11-15). */
@@ -80,9 +79,8 @@ export const TeamServiceGrid: React.FC<{
   lineup?: string[], 
   subs?: SubRecord[][], 
   startsReceiving?: boolean, 
-  positionBoxRef?: React.RefObject<HTMLDivElement>,
   serviceRounds?: ServiceRound[]
-}> = ({ lineup = [], subs = [], startsReceiving = false, positionBoxRef, serviceRounds = [] }) => {
+}> = ({ lineup = [], subs = [], startsReceiving = false, serviceRounds = [] }) => {
     // Ensure we have 6 positions for rendering even if data is missing
     const positions = [0, 1, 2, 3, 4, 5];
     
@@ -104,7 +102,6 @@ export const TeamServiceGrid: React.FC<{
                     return (
                         <div
                             key={roman}
-                            ref={idx === 0 ? positionBoxRef : undefined}
                             className={`flex items-center justify-center font-bold bg-gray-100 text-[10px] border-black border-b border-t ${isLast ? 'border-r-0' : 'border-r'}`}
                             style={{ width: '10mm', height: '5mm'}}
                         >
@@ -163,7 +160,7 @@ export const TeamServiceGrid: React.FC<{
     );
 };
 
-export const StandardSet: React.FC<StandardSetProps> = ({ 
+const StandardSetView: React.FC<StandardSetProps> = ({ 
     setNumber, 
     isSwapped = false,
     firstServeTeamA,
@@ -185,7 +182,6 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     rightMarkedPoints = [],
     rightCircledPoints = [],
     rightServiceRounds = [],
-    positionBoxRef,
     setFinished = false,
     unused = false
 }) => {
@@ -264,7 +260,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
         <div className="flex flex-1 justify-start shrink-0" style={{ width: '150mm' }}>
             {/* Team Left Block - fixed width to match header */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
-                <TeamServiceGrid lineup={leftLineup} subs={leftSubs} startsReceiving={leftServes === 'R'} positionBoxRef={positionBoxRef} serviceRounds={leftServiceRounds} />
+                <TeamServiceGrid lineup={leftLineup} subs={leftSubs} startsReceiving={leftServes === 'R'} serviceRounds={leftServiceRounds} />
                 <PointsColumn timeouts={leftTimeouts} markedPoints={leftMarkedPoints} circledPoints={leftCircledPoints} maxScore={maxScore} setFinished={setFinished} unused={unused} finalScore={typeof leftPoints === 'number' ? leftPoints : Number(leftPoints) || 0} />
             </div>
 
@@ -277,3 +273,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     </div>
   );
 };
+
+// Memoised (utils/propsEqual): a new sheet model with the same values for this
+// section does not re-render it (review 2026-11-16, F2/F3)
+export const StandardSet = React.memo(StandardSetView, propsEqual);

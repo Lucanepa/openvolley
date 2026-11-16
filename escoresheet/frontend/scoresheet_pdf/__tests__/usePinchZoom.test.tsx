@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
-import React, { useRef } from 'react';
+import { useRef } from 'react';
 import { usePinchZoom } from '../usePinchZoom';
 
 function Sheet({ zoom, setZoom, preview }: { zoom: number; setZoom: (z: number) => void; preview?: (z: number, moving: boolean) => boolean }) {

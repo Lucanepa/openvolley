@@ -1,3 +1,4 @@
+import { compareEventsBySeq } from './scoresheetModel';
 import { Player, LCSData, LiberoSetData, LiberoReplacement, LiberoRedesignation } from '../types_scoresheet';
 
 const LIBERO_RANK: Record<string, number> = { libero1: 0, libero2: 1 };
@@ -84,12 +85,7 @@ export function extractLiberoData(
     // Filter events for this set (setIndex is 1-based)
     const setEvents = events
       .filter(e => e.setIndex === setNumber)
-      .sort((a: any, b: any) => {
-        const aSeq = a.seq || 0;
-        const bSeq = b.seq || 0;
-        if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
-        return new Date(a.ts).getTime() - new Date(b.ts).getTime();
-      });
+      .sort(compareEventsBySeq);
 
     let homeScore = 0;
     let awayScore = 0;

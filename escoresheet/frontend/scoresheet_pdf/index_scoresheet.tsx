@@ -1,7 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './scoresheet.css'; // compiled Tailwind (was cdn.tailwindcss.com — broke offline)
-import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import '../src/i18n'; // App_Scoresheet calls useTranslation: this entry needs its own i18n init
 import App from './App_Scoresheet';

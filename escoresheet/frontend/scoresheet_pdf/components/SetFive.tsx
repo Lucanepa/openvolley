@@ -5,6 +5,7 @@ import { PointsColumn5, PointsColumn30 } from './PointsColumn';
 import { FitText } from './FitText';
 import { ServiceBox, SubstitutionCells } from './ServiceBox';
 import { LINEUP_NUMBER_PT, MARK_STROKE } from './Marks';
+import { propsEqual } from '../utils/propsEqual';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -30,7 +31,8 @@ interface SetFiveProps {
     lineupA?: string[];
     subsA?: SubRecord[][];
     timeoutsA?: [string, string];
-    pointsA_Left?: number; // 1-8
+    /** The left team's whole score (panels 1 and 3). */
+    finalScoreA?: number;
     markedPointsA_Left?: number[];
     circledPointsA_Left?: number[];
     serviceRoundsA_Left?: ServiceRound[];
@@ -48,7 +50,6 @@ interface SetFiveProps {
     // Lineup A is usually same as Panel 1, but conceptually we might want to pass it if it differs visually
     subsA_Right?: SubRecord[][];
     timeoutsA_Right?: [string, string];
-    pointsA_Right?: number; // 1-15
     markedPointsA_Right?: number[];
     circledPointsA_Right?: number[];
     serviceRoundsA_Right?: ServiceRound[];
@@ -59,8 +60,6 @@ interface SetFiveProps {
     /** The change of courts (rules.courtSwitchPointOf: 8 of 15): panel 1 prints 1..switchAt (at least 8). */
     switchAt?: number;
 
-    // Ref for measuring position box width
-    positionBoxRef?: React.RefObject<HTMLDivElement>;
 }
 
 // S/R Selector for Set 5
@@ -90,9 +89,8 @@ const TeamServiceGridSet5: React.FC<{
     lineup?: string[],
     subs?: SubRecord[][],
     startsReceiving?: boolean,
-    positionBoxRef?: React.RefObject<HTMLDivElement>,
     serviceRounds?: ServiceRound[]
-}> = ({ lineup = [], subs = [], startsReceiving = false, positionBoxRef, serviceRounds = [] }) => {
+}> = ({ lineup = [], subs = [], startsReceiving = false, serviceRounds = [] }) => {
     const positions = [0, 1, 2, 3, 4, 5];
 
     // Set 5: 6 rotation boxes arranged in 2 columns × 3 rows
@@ -108,7 +106,6 @@ const TeamServiceGridSet5: React.FC<{
                     return (
                         <div
                             key={roman}
-                            ref={idx === 0 ? positionBoxRef : undefined}
                             className={`flex items-center justify-center font-bold bg-gray-100 text-[10px] border-black border-b border-t ${isLast ? 'border-r-0' : 'border-r'}`}
                             style={{ width: '10mm', height: '5mm' }}
                         >
@@ -172,7 +169,7 @@ const TeamServiceGridSet5: React.FC<{
  */
 export const COURT_CHANGE_W = '48px';
 
-export const SetFive: React.FC<SetFiveProps> = ({
+const SetFiveView: React.FC<SetFiveProps> = ({
     teamNameA,
     teamNameB,
     teamALabel = 'A',
@@ -185,7 +182,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
     lineupA,
     subsA,
     timeoutsA,
-    pointsA_Left,
+    finalScoreA: finalScoreAProp,
     markedPointsA_Left = [],
     circledPointsA_Left = [],
     serviceRoundsA_Left = [],
@@ -198,16 +195,14 @@ export const SetFive: React.FC<SetFiveProps> = ({
     serviceRoundsB = [],
     subsA_Right,
     timeoutsA_Right,
-    pointsA_Right,
     markedPointsA_Right = [],
     circledPointsA_Right = [],
     serviceRoundsA_Right = [],
     pointsAtChangeA = null,
-    switchAt = 8,
-    positionBoxRef
+    switchAt = 8
 }) => {
-  // Left (panel 1/3) team's full score: panel 1 holds 1-switchAt, panel 3 the rest (pointsA_Right = score - switchAt)
-  const finalScoreA = (pointsA_Left || 0) + (pointsA_Right || 0);
+  // Left (panel 1/3) team's full score: panel 1 holds 1-switchAt, panel 3 the rest
+  const finalScoreA = finalScoreAProp || 0;
   const finalScoreB = pointsB || 0;
   // Calculate max score for dynamic points column sizing (Panel 2 and 3 use PointsColumn30;
   // panel 3 numbers the left team's points from 1, so size it on the full score)
@@ -297,7 +292,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
             <div className="flex shrink-0" style={{ width: '150mm' }}>
             {/* Panel 1: Team A */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
-                 <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={firstServeTeamA === false} positionBoxRef={positionBoxRef} serviceRounds={serviceRoundsA_Left} />
+                 <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={firstServeTeamA === false} serviceRounds={serviceRoundsA_Left} />
                  <PointsColumn5 ruleRight rows={switchAt} timeouts={timeoutsA || ["", ""]} markedPoints={markedPointsA_Left || []} circledPoints={circledPointsA_Left || []} setFinished={setFinished} unused={unused} finalScore={finalScoreA} pointsAtChange={pointsAtChangeA} />
             </div>
 
@@ -317,3 +312,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
     </div>
   );
 };
+
+// Memoised (utils/propsEqual): a new sheet model with the same values for this
+// section does not re-render it (review 2026-11-16, F2/F3)
+export const SetFive = React.memo(SetFiveView, propsEqual);

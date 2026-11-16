@@ -1,4 +1,5 @@
 import React from 'react';
+import { propsEqual } from '../utils/propsEqual';
 
 // One printed number of a points column. As on the paper sheet every number is
 // pre-printed (light grey); a mark makes it black:
@@ -8,7 +9,7 @@ import React from 'react';
 // set end. Owner 2026-10-13: once the set is over the numbers above the team's
 // final score are left blank (`blank`); set-5 panel 3 has no reverse T (owner 2026-11-16).
 // Owner 2026-11-15: a set never played (`unused`) prints no numbers at all.
-export const PointBox: React.FC<{
+const PointBoxView: React.FC<{
     num: number;
     filledState?: 0 | 1;
     isCircled?: boolean;
@@ -45,6 +46,9 @@ export const PointBox: React.FC<{
         </div>
     );
 };
+
+// Memoised: a live point re-renders only the numbers whose mark changed
+export const PointBox = React.memo(PointBoxView);
 
 /** Diameter of the circle round a number in a points column (rows ~2.4 mm apart). */
 export const POINT_CIRCLE_MM = 3.0;
@@ -146,7 +150,7 @@ const TimeoutBlock: React.FC<{ timeouts: [string, string]; labelRow?: boolean }>
 // Sets 1-4: 1-48 (4 x 12) beside the team's block. The grid spans the roman
 // numerals, the line-up, the substitutions and service row 1 (30 mm); the "T"
 // block lines up with service rows 2-4.
-export const PointsColumn: React.FC<{
+const PointsColumnView: React.FC<{
     isLast?: boolean;
     compact?: boolean;
     timeouts?: [string, string];
@@ -171,7 +175,7 @@ export const PointsColumn: React.FC<{
 // change of courts; a Global match's deciding set changes courts at half its
 // target (rules.courtSwitchPointOf): `rows` numbers then, never fewer than 8. The grid spans the header, line-up and substitutions (25 mm);
 // the "T" block lines up with service rows 1-3.
-export const PointsColumn5: React.FC<{
+const PointsColumn5View: React.FC<{
     compact?: boolean;
     timeouts?: [string, string];
     markedPoints?: number[];
@@ -211,7 +215,7 @@ export const PointsColumn5: React.FC<{
 // Set 5 panels 2 and 3: 1-30 (3 x 10), growing beyond 30. Panel 3 numbers the
 // left team's points from 1: those scored before the change stay plain numbers,
 // with no reverse T over them (owner 2026-11-16).
-export const PointsColumn30: React.FC<{
+const PointsColumn30View: React.FC<{
     isLast?: boolean;
     /** a rule on the right (set-5 panel 3: on set 4's line between its teams) */
     ruleRight?: boolean;
@@ -239,3 +243,8 @@ export const PointsColumn30: React.FC<{
         </div>
     );
 };
+
+// Memoised (utils/propsEqual): an unchanged column of a re-drawn set is not re-rendered
+export const PointsColumn = React.memo(PointsColumnView, propsEqual);
+export const PointsColumn5 = React.memo(PointsColumn5View, propsEqual);
+export const PointsColumn30 = React.memo(PointsColumn30View, propsEqual);
