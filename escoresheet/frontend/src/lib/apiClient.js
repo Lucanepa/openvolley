@@ -104,6 +104,25 @@ function requestTimeoutSignal(ms) {
   return undefined
 }
 
+/** What apiRequest answers when the caller's own signal cancelled the request. */
+const ABORTED_ERROR = () => ({ message: 'Cancelled', status: 0, aborted: true })
+
+/** The timeout signal and the caller's (`signal` option), whichever aborts first. */
+function withCallerSignal(timeout, caller) {
+  if (!caller) return timeout
+  if (!timeout) return caller
+  try {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') return AbortSignal.any([timeout, caller])
+    const ctrl = new AbortController()
+    const abort = () => ctrl.abort()
+    timeout.addEventListener('abort', abort, { once: true })
+    caller.addEventListener('abort', abort, { once: true })
+    return ctrl.signal
+  } catch {
+    return caller
+  }
+}
+
 // ==================== Database (drop-in for supabase.from()) ====================
 
 class QueryBuilder {
@@ -315,16 +334,19 @@ async function postJson(path, body, { auth = true, timeoutMs = DB_REQUEST_TIMEOU
  * @param {{timeoutMs?: number, fallbackError?: string}} [opts]
  * @returns {Promise<{data: any, error: object|null, status: number}>}
  */
-export async function apiRequest(method, path, body, { timeoutMs = DB_REQUEST_TIMEOUT_MS, fallbackError = 'Request failed' } = {}) {
+export async function apiRequest(method, path, body, { timeoutMs = DB_REQUEST_TIMEOUT_MS, fallbackError = 'Request failed', signal } = {}) {
   const apiUrl = getCloudApiUrl(path)
   if (!apiUrl) return { data: null, error: { message: 'Backend not available', status: 0, network: true }, status: 0 }
+  if (signal?.aborted) return { data: null, error: ABORTED_ERROR(), status: 0 }
   const verb = String(method || 'GET').toUpperCase()
-  const init = { method: verb, headers: getAuthHeaders(), signal: requestTimeoutSignal(timeoutMs) }
+  const init = { method: verb, headers: getAuthHeaders(), signal: withCallerSignal(requestTimeoutSignal(timeoutMs), signal) }
   if (verb !== 'GET' && verb !== 'DELETE' && body !== undefined) init.body = JSON.stringify(body ?? {})
   let response
   try {
     response = await fetch(apiUrl, init)
   } catch (err) {
+    // the caller cancelled (Rebuild PDF's Cancel): not a sign the backend is gone
+    if (signal?.aborted) return { data: null, error: ABORTED_ERROR(), status: 0 }
     return { data: null, error: networkError(err), status: 0 }
   }
   noteBackendAnswered(response)

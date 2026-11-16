@@ -4291,6 +4291,7 @@
       "rebuilt": "Nouveau PDF enregistré",
       "rebuildFailed": "Le nouveau PDF n’a pas pu être créé. Réessaie.",
       "rebuildTimedOut": "La création du nouveau PDF a pris trop de temps. Rien n’a été enregistré. Réessaie.",
+      "rebuildCancelledUpload": "Annulé. Si l’envoi était déjà arrivé au serveur, le nouveau PDF est enregistré : la liste l’affiche.",
       "rebuildApprovalsFailed": "Les validations par PIN du match n’ont pas pu être lues, et le nouveau PDF les perdrait. Réessaie.",
       "rebuildDrawFailed": "La feuille n’a pas pu être dessinée à partir de ces données du match. Rien n’a été enregistré.",
       "rebuildUpdated": "L’app a été mise à jour entre-temps. Recharge la page, puis recrée le PDF.",

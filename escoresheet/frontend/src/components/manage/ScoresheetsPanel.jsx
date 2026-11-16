@@ -164,11 +164,14 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
       return
     }
     let res
+    // Cancel during the upload aborts the request (cancelRebuild below)
+    job.upload = typeof AbortController !== 'undefined' ? new AbortController() : null
     try {
-      res = await scoresheetsApi.rebuild(job.m.id, { reason: job.reason, fileBase64: await blobToBase64(out.blob) })
+      res = await scoresheetsApi.rebuild(job.m.id, { reason: job.reason, fileBase64: await blobToBase64(out.blob) }, { signal: job.upload?.signal })
     } catch (err) {
       res = { error: err }
     }
+    if (job.cancelled) return
     closeJob()
     if (res.error) {
       toast.error(errorText(res.error))
@@ -176,6 +179,21 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
     }
     toast.success(t('manage.scoresheets.rebuilt'))
     reload()
+  }
+
+  // Cancel in the rebuild dialog. While the PDF is uploading the request is
+  // aborted; the server may already have stored it (a PDF stored for a closed
+  // match is never removed), so the toast says so and the list is read again.
+  const cancelRebuild = (job) => {
+    if (!job) return
+    job.cancelled = true
+    const uploading = !!job.upload
+    job.upload?.abort()
+    if (rebuildingRef.current === job) showRebuild(null)
+    if (uploading) {
+      toast.info(t('manage.scoresheets.rebuildCancelledUpload'))
+      reload()
+    }
   }
 
   return (
@@ -279,7 +297,7 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
           remark={rebuilding.remark}
           title={t('manage.scoresheets.rebuildTitle', { game: rebuilding.m.game_n ?? '' })}
           onDone={(out, info) => finishRebuild(rebuilding, out, info)}
-          onCancel={() => showRebuild(null)}
+          onCancel={() => cancelRebuild(rebuilding)}
         />
       )}
       <ReasonModal

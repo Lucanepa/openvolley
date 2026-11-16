@@ -5,7 +5,7 @@ vi.mock('../../utils/backendConfig', () => ({
   getCloudApiUrl: (path) => `http://backend.test${path}`
 }))
 
-import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64, BACKEND_REACHED_EVENT, DB_REQUEST_TIMEOUT_MS } from '../apiClient'
+import { apiRequest, apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64, BACKEND_REACHED_EVENT, DB_REQUEST_TIMEOUT_MS } from '../apiClient'
 
 function jsonResponse(body, status = 200) {
   return {
@@ -521,5 +521,42 @@ describe('apiAuth.signInWithPassword when sign-in is busy', () => {
     const wrong = await apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'y' })
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
     expect(wrong.error.message).toBe('Invalid login credentials')
+  })
+})
+
+// Rebuild PDF's Cancel (owner 2026-11-16): the caller's signal aborts the request
+describe('apiRequest signal', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('a cancelled request answers aborted, not a network failure, and the backend is not marked unreachable', async () => {
+    let seen = 0
+    const count = () => { seen++ }
+    // an answer first: whatever an earlier test left marked unreachable is cleared
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { ok: true } }))
+    await apiRequest('GET', '/api/x')
+    window.addEventListener(BACKEND_REACHED_EVENT, count)
+    try {
+      const ctrl = new AbortController()
+      globalThis.fetch = vi.fn((_url, init) => new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }))
+      const pending = apiRequest('POST', '/api/scoresheets/m/rebuild', { reason: 'x' }, { signal: ctrl.signal })
+      ctrl.abort()
+      const res = await pending
+      expect(res.error).toMatchObject({ aborted: true })
+      expect(res.error.network).toBeUndefined()
+      // the next answer is not a "backend reached again" (nothing was marked unreachable)
+      globalThis.fetch = vi.fn(async () => jsonResponse({ data: { ok: true } }))
+      await apiRequest('GET', '/api/x')
+      expect(seen).toBe(0)
+      // already aborted: no request at all
+      const done = new AbortController()
+      done.abort()
+      globalThis.fetch = vi.fn()
+      expect((await apiRequest('GET', '/api/x', undefined, { signal: done.signal })).error).toMatchObject({ aborted: true })
+      expect(globalThis.fetch).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(BACKEND_REACHED_EVENT, count)
+    }
   })
 })

@@ -4297,6 +4297,7 @@
       "rebuilt": "Nuovo PDF salvato",
       "rebuildFailed": "Non è stato possibile creare il nuovo PDF. Riprova.",
       "rebuildTimedOut": "La creazione del nuovo PDF ha richiesto troppo tempo. Non è stato salvato nulla. Riprova.",
+      "rebuildCancelledUpload": "Annullato. Se l’invio era già arrivato al server, il nuovo PDF è salvato: l’elenco lo mostra.",
       "rebuildApprovalsFailed": "Non è stato possibile leggere le approvazioni con PIN della partita, e il nuovo PDF le perderebbe. Riprova.",
       "rebuildDrawFailed": "Non è stato possibile disegnare il referto da questi dati della partita. Non è stato salvato nulla.",
       "rebuildUpdated": "L'app è stata aggiornata nel frattempo. Ricarica la pagina, poi ricrea il PDF.",
