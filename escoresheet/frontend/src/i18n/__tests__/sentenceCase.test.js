@@ -34,6 +34,8 @@ const PROPER = new Set([
   'Casebook',
   // the Android folder Export to Documents writes to, by its name
   'Documents',
+  // the store that updates a Play install (androidUpdate.fromPlay)
+  'Google', 'Play',
 ])
 
 // Title-Cased words after the first one, ignoring placeholders, words after a

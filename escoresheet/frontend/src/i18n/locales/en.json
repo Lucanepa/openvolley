@@ -4819,6 +4819,7 @@
   "androidUpdate": {
     "available": "OpenVolley {{version}} is available",
     "fromFdroid": "Updates come from F-Droid.",
+    "fromPlay": "Updates come from Google Play.",
     "openFdroid": "Open in F-Droid",
     "notFromFdroid": "Installed without F-Droid, so it does not update itself.",
     "notifyOption": "Notify me about new versions",

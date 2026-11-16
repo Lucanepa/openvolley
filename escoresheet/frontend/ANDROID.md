@@ -11,7 +11,11 @@ for the tablets, built with Capacitor from this frontend. Published to:
   auth; Vaultwarden item "Desktop Calendar F-Droid repo web login"), where the
   release script drops it first.
 
-All three carry the same file, signed once with the OpenVolley app key below.
+A fourth channel, **Google Play**, is prepared (`scripts/release-play.sh`,
+`docs/play-store.md`): same sources and version, an `.aab` signed with the
+Play upload key, uploaded by hand. A Play install never checks for updates.
+
+The three above carry the same file, signed once with the OpenVolley app key below.
 
 - Package: `com.openvolley.escoresheet`, name **OpenVolley**
 - The APK **bundles** the web app (`dist-capacitor/`): it works with no

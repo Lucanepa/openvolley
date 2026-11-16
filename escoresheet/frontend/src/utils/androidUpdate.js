@@ -75,16 +75,20 @@ export const SIDELOAD_INSTALLERS = [
   'com.android.packageinstaller',
   'com.android.shell',
 ]
-const FAMILIES = new Set(['fdroid', 'sideload', 'other'])
+// Google Play updates its own installs; Play policy forbids an app from
+// updating itself or pointing to another source, so 'play' never checks.
+export const PLAY_INSTALLERS = ['com.android.vending']
+const FAMILIES = new Set(['fdroid', 'sideload', 'play', 'other'])
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'
 
 // ---------------------------------------------------------------------------
 // Plain data (tested)
 
-/** 'fdroid' | 'sideload' | 'other' from the installer of record. */
+/** 'fdroid' | 'sideload' | 'play' | 'other' from the installer of record. */
 export function familyOf({ installer = null, updateOwner = null } = {}) {
   if (FDROID_INSTALLERS.includes(updateOwner) || FDROID_INSTALLERS.includes(installer)) return 'fdroid'
+  if (PLAY_INSTALLERS.includes(installer) || PLAY_INSTALLERS.includes(updateOwner)) return 'play'
   if (!installer || SIDELOAD_INSTALLERS.includes(installer)) return 'sideload'
   return 'other'
 }
@@ -200,7 +204,7 @@ function writeLastCheck(storage, at) {
 
 /**
  * active: running in the Android app
- * family: 'fdroid' | 'sideload' | 'other' | 'unknown' (null until known)
+ * family: 'fdroid' | 'sideload' | 'play' | 'other' | 'unknown' (null until known)
  * notify: the user's answer, 'yes' | 'no' | 'unset'
  * asking: the opt-in question is waiting for the home screen
  * installedCode: the installed versionCode (null until known / unknown)
