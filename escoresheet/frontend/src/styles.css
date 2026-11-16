@@ -3994,3 +3994,13 @@ body.ios-fullscreen {
   /* standard scrollbar properties for Firefox */
   scrollbar-width: none;
 }
+/* Players on the scoring screen are held and dragged by touch (Scoreboard
+   handleTouchDragStart): no text selection, callout or long-press menu,
+   which on an Android tablet cancelled the touch before the drag began
+   (owner, 16.11.2026). */
+[data-bench-player],
+[data-court-position] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

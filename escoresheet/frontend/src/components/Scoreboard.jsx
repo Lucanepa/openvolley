@@ -309,7 +309,10 @@ function SbMenuItem({ tone = 'neutral', icon, expanded, chip = false, className,
       className={cn(SB_MENU_ITEM, SB_MENU_TONE[tone], chip && 'w-auto min-w-10 justify-center', className)}
       {...rest}
     >
-      <span className={chip ? 'tabular-nums' : 'min-w-0 flex-1 truncate'}>{children}</span>
+      {/* The label's own line box holds the letters' tails: with the row's
+          leading-none and truncate's overflow:hidden, g / p / y / j were cut
+          on an Android tablet (owner, 16.11.2026). The row stays h-8. */}
+      <span className={chip ? 'tabular-nums' : 'min-w-0 flex-1 truncate leading-[1.35] py-px'}>{children}</span>
       {hasSlot && (
         <span aria-hidden="true" className="inline-flex size-5 shrink-0 items-center justify-center">
           {expanded !== undefined
@@ -355,6 +358,35 @@ const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
 // beside it (the L1 / L2 tag, the substitution marks) as the number was, and
 // comes off the chip's own side padding, so the captain's chip is as wide and
 // as high as the others.
+// Sets won in a team column's name bar while the toolbar (and its set counter)
+// is folded away: dark digits on a white chip, readable on any team colour.
+// It took the bar's text colour: white on the white chip of a dark team
+// (left), a pale tint of the bar on the right (tablet check 16.11.2026).
+const SB_COLUMN_SETS_BADGE = {
+  marginLeft: '2px', padding: '1px 5px', borderRadius: '4px', flexShrink: 0,
+  background: '#ffffff', color: '#1c1917', fontWeight: 700, fontVariantNumeric: 'tabular-nums', textShadow: 'none'
+}
+
+// How long a finger rests on a player before it drags (touch screens). Under
+// Android's own long press (about 500 ms), which otherwise wins and cancels
+// the touch.
+const TOUCH_DRAG_HOLD_MS = 350
+
+// A bench official's role as on the scoresheet's bench list.
+const officialRoleAbbr = (role) => ({
+  'Coach': 'C', 'Assistant Coach 1': 'AC1', 'Assistant Coach 2': 'AC2', 'Physiotherapist': 'P', 'Medic': 'M'
+})[role] || role
+const officialName = (official) => `${official.lastName || ''} ${official.firstName || ''}`.trim()
+// Tablet mode: a bench official is a box with the role only (C, AC1...), as
+// big as a bench player's chip and in the same wrapping row (owner,
+// 16.11.2026: the name rows took the column's height on a small tablet).
+// The name is the box's title and label; a tap opens the same sanctions menu.
+const SB_OFFICIAL_CHIP = {
+  padding: '1.6cqw 3.1cqw', minWidth: '44px', minHeight: '44px', justifyContent: 'center',
+  background: 'var(--panel-2)', border: '1px solid var(--ov-hairline)', borderRadius: '1.25cqw',
+  fontSize: 'max(15px, 6.6cqw)', display: 'flex', alignItems: 'center', gap: '1.25cqw', position: 'relative'
+}
+
 const SB_BENCH_CAPTAIN_PAD = '0.3em'
 const SB_BENCH_CAPTAIN_RING = {
   one: captainRingStyle({ size: '1.35em', pad: SB_BENCH_CAPTAIN_PAD, round: true }),
@@ -843,6 +875,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const touchTimerRef = useRef(null)
   const touchStartPositionRef = useRef(null) // Track initial touch position to detect movement
   const touchDragDataRef = useRef(null) // Store player data during touch drag
+  const touchMoveFrameRef = useRef(0) // requestAnimationFrame of the next drag position
+  const touchTapTargetRef = useRef(null) // the element a held finger came down on (its tap = a click)
+  const touchClaimedRef = useRef(false) // that touch was taken from the browser (no click of its own)
+  const touchMovePendingRef = useRef(null) // latest finger position while dragging
 
   // Header collapse state
   const [headerCollapsed, setHeaderCollapsed] = useState(false)
@@ -1305,6 +1341,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Get the active display mode (either forced or auto-detected)
   const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
+  // Tablet mode: bench officials as role-only boxes (SB_OFFICIAL_CHIP)
+  const officialChips = activeDisplayMode === 'tablet'
   // The phone layout (PhoneScoreboard) replaces the desktop / tablet body.
   // A phone in the automatic mode keeps it when turned sideways (the screen
   // stays mounted, dialogs and countdowns included), under a notice to hold
@@ -10499,6 +10537,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Cancel touch drag and reset all state
   const cancelTouchDrag = useCallback(() => {
+    touchTapTargetRef.current = null
+    touchClaimedRef.current = false
+    if (touchMoveFrameRef.current) {
+      cancelAnimationFrame(touchMoveFrameRef.current)
+      touchMoveFrameRef.current = 0
+    }
+    touchMovePendingRef.current = null
     if (touchProgressIntervalRef.current) {
       clearInterval(touchProgressIntervalRef.current)
       touchProgressIntervalRef.current = null
@@ -10658,56 +10703,46 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const handleTouchDragStart = useCallback((e, playerData) => {
     if (rallyStatus !== 'idle') return
 
-    // Prevent native long-press behavior (copy/paste/download context menu on tablets)
-    e.preventDefault()
+    // React's touchstart listener is passive, so preventDefault here did
+    // nothing: the native long press (selection, callout, menu) is held off
+    // by CSS on the players (styles.css, [data-bench-player] and
+    // [data-court-position]) and the contextmenu guard below.
 
     const touch = e.touches[0]
     const startPos = { x: touch.clientX, y: touch.clientY }
 
     touchStartPositionRef.current = startPos
     touchDragDataRef.current = playerData
+    touchTapTargetRef.current = e.target
 
     setTouchDragState(prev => ({
       ...prev,
       isLongPressing: true,
-      longPressProgress: 0,
+      longPressProgress: 0.01,
       touchPosition: startPos,
     }))
 
-    // Start progress interval (update every 16ms for ~60fps)
-    const longPressDuration = 1500 // 1.5 seconds
-    const startTime = Date.now()
-
-    touchProgressIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTime
-      const progress = Math.min(1, elapsed / longPressDuration)
-
+    // The hold that starts a drag. 1.5 s never got there on an Android
+    // tablet: its own long press (about 0.5 s) came first, selected text or
+    // opened a menu and cancelled the touch (owner, 16.11.2026). Under that,
+    // and quick enough to feel direct; a tap (shorter) still opens the menu.
+    // The ring animates itself (LongPressProgressIndicator duration): no
+    // re-render of the whole screen every 16 ms while the finger rests.
+    touchTimerRef.current = setTimeout(() => {
+      touchTimerRef.current = null
+      if (navigator.vibrate) {
+        try { navigator.vibrate(30) } catch { /* not allowed */ }
+      }
       setTouchDragState(prev => ({
         ...prev,
-        longPressProgress: progress,
+        isLongPressing: false,
+        longPressProgress: 1,
+        isDragging: true,
+        dragPosition: touchStartPositionRef.current,
       }))
-
-      if (progress >= 1) {
-        // Long press completed - transition to dragging
-        clearInterval(touchProgressIntervalRef.current)
-        touchProgressIntervalRef.current = null
-
-        // Haptic feedback
-        if (navigator.vibrate) {
-          navigator.vibrate(50)
-        }
-
-        setTouchDragState(prev => ({
-          ...prev,
-          isLongPressing: false,
-          isDragging: true,
-          dragPosition: touchStartPositionRef.current,
-        }))
-
-        setDraggedPlayer(playerData)
-        computeValidDropTargets(playerData)
-      }
-    }, 16)
+      setDraggedPlayer(playerData)
+      computeValidDropTargets(playerData)
+    }, TOUCH_DRAG_HOLD_MS)
   }, [rallyStatus, computeValidDropTargets])
 
   // Handle touch move - update position or cancel if moved too far during long-press
@@ -10726,19 +10761,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         cancelTouchDrag()
         return
       }
-      // Update position for progress indicator
-      setTouchDragState(prev => ({
-        ...prev,
-        touchPosition: pos,
-      }))
+      // the ring stays where the finger came down (it moved under 20 px)
+      return
     }
 
     if (touchState.isDragging) {
-      e.preventDefault() // Prevent scrolling while dragging
-      setTouchDragState(prev => ({
-        ...prev,
-        dragPosition: pos,
-      }))
+      if (e.cancelable) e.preventDefault() // Prevent scrolling while dragging
+      // one update per frame, not per touchmove: every update renders the
+      // whole scoring screen
+      touchMovePendingRef.current = pos
+      if (!touchMoveFrameRef.current) {
+        touchMoveFrameRef.current = requestAnimationFrame(() => {
+          touchMoveFrameRef.current = 0
+          const next = touchMovePendingRef.current
+          if (next) setTouchDragState(prev => (prev.isDragging ? { ...prev, dragPosition: next } : prev))
+        })
+      }
     }
   }, [touchDragState, cancelTouchDrag])
 
@@ -10787,14 +10825,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const touchState = touchDragState
 
     if (touchState.isLongPressing) {
-      // Long-press not completed - cancel
+      // Long-press not completed: a tap. The browser's own click was
+      // suppressed with the touch (the touchstart guard below), so the
+      // player's menu opens from here
+      const target = touchTapTargetRef.current
+      const claimed = touchClaimedRef.current
       cancelTouchDrag()
+      // only when the touch was claimed: else the browser clicks as well
+      if (claimed && target?.isConnected && typeof target.click === 'function') target.click()
       return
     }
 
     if (touchState.isDragging && draggedPlayer) {
-      // Find drop target under finger
-      const pos = touchState.dragPosition
+      // Find drop target under finger (the last move may still wait for its frame)
+      const lifted = e?.changedTouches?.[0]
+      const pos = lifted ? { x: lifted.clientX, y: lifted.clientY } : (touchMovePendingRef.current || touchState.dragPosition)
       if (pos) {
         const element = document.elementFromPoint(pos.x, pos.y)
         const dropInfo = getDropInfoFromElement(element)
@@ -10823,6 +10868,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // This handles edge cases on touchscreen PCs where state timing may differ
     cancelTouchDrag()
   }, [touchDragState, draggedPlayer, cancelTouchDrag, getDropInfoFromElement, isValidDropTarget, handleCourtDrop, handleBenchDrop])
+
+  // A finger that comes down on a draggable player belongs to the drag. The
+  // Android WebView otherwise takes it as a long press after about 500 ms:
+  // contextmenu, then pointercancel / touchcancel, and the drag, already
+  // under way, died there (emulator trace, 16.11.2026; a blocked
+  // contextmenu alone did not stop the cancel). React's touchstart listener
+  // is passive, so this one, on the document and after React's (bubble),
+  // takes the touch once handleTouchDragStart has begun a hold. That also
+  // drops the browser's click: a short tap clicks the player itself
+  // (handleTouchEnd).
+  useEffect(() => {
+    const claim = (e) => {
+      if (!touchDragDataRef.current || !e.cancelable) return
+      e.preventDefault()
+      touchClaimedRef.current = true
+    }
+    const block = (e) => { if (touchDragDataRef.current) e.preventDefault() }
+    document.addEventListener('touchstart', claim, { passive: false })
+    document.addEventListener('contextmenu', block, { capture: true })
+    return () => {
+      document.removeEventListener('touchstart', claim, { passive: false })
+      document.removeEventListener('contextmenu', block, { capture: true })
+    }
+  }, [])
 
   // Handle touch cancel - fires when touch is interrupted (browser context menu, scroll gesture, etc.)
   const handleTouchCancel = useCallback(() => {
@@ -15040,14 +15109,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <span style={{ flexShrink: 0 }}>-</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{teamAShortName}</span>
                 {(isCompactMode || headerCollapsed) && (
-                  <span style={{
-                    marginLeft: '2px',
-                    padding: '1px 4px',
-                    background: 'var(--panel)',
-                    borderRadius: '4px',
-                    fontWeight: 700,
-                    flexShrink: 0
-                  }}>
+                  <span data-testid="column-sets-left" style={SB_COLUMN_SETS_BADGE}>
                     {setsWon.left}
                   </span>
                 )}
@@ -15935,7 +15997,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {isCompactMode && <span style={{ fontSize: '4.65cqw' }}>{leftMainOfficialsExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || leftMainOfficialsExpanded) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
+                    <div data-testid="bench-officials-left" style={officialChips ? { display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' } : { display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
                       {leftTeamBench.benchOfficials.map((official, idx) => {
                         const teamKey = leftIsHome ? 'home' : 'away'
 
@@ -15963,7 +16025,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 })
                               }
                             }}
-                            style={{
+                            data-bench-official={official.role}
+                            title={officialChips ? officialName(official) : undefined}
+                            aria-label={officialChips ? `${officialRoleAbbr(official.role)} ${officialName(official)}` : undefined}
+                            style={officialChips ? {
+                              ...SB_OFFICIAL_CHIP,
+                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                            } : {
                               padding: '1.25cqw 2.5cqw',
                               minHeight: '36px',
                               background: 'var(--panel-2)',
@@ -15976,14 +16044,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
-                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
-                                {official.role === 'Coach' ? 'C' :
-                                  official.role === 'Assistant Coach 1' ? 'AC1' :
-                                    official.role === 'Assistant Coach 2' ? 'AC2' :
-                                      official.role === 'Physiotherapist' ? 'P' :
-                                        official.role === 'Medic' ? 'M' : official.role}
+                              <span style={officialChips ? { fontWeight: 600 } : { fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
+                                {officialRoleAbbr(official.role)}
                               </span>
-                              <span>{official.lastName || ''} {official.firstName || ''}</span>
+                              {!officialChips && <span>{officialName(official)}</span>}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
@@ -18415,14 +18479,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <span style={{ flexShrink: 0 }}>-</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{teamBShortName}</span>
                 {(isCompactMode || headerCollapsed) && (
-                  <span style={{
-                    marginLeft: '2px',
-                    padding: '1px 4px',
-                    background: 'rgba(255, 255, 255, 0.2)',
-                    borderRadius: '4px',
-                    fontWeight: 700,
-                    flexShrink: 0
-                  }}>
+                  <span data-testid="column-sets-right" style={SB_COLUMN_SETS_BADGE}>
                     {setsWon.right}
                   </span>
                 )}
@@ -19308,7 +19365,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {isCompactMode && <span style={{ fontSize: '4.65cqw' }}>{rightMainOfficialsExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || rightMainOfficialsExpanded) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
+                    <div data-testid="bench-officials-right" style={officialChips ? { display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' } : { display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
                       {rightTeamBench.benchOfficials.map((official, idx) => {
                         const teamKey = leftIsHome ? 'away' : 'home'
 
@@ -19336,7 +19393,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 })
                               }
                             }}
-                            style={{
+                            data-bench-official={official.role}
+                            title={officialChips ? officialName(official) : undefined}
+                            aria-label={officialChips ? `${officialRoleAbbr(official.role)} ${officialName(official)}` : undefined}
+                            style={officialChips ? {
+                              ...SB_OFFICIAL_CHIP,
+                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                            } : {
                               padding: '1.25cqw 2.5cqw',
                               minHeight: '36px',
                               background: 'var(--panel-2)',
@@ -19349,14 +19412,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
-                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
-                                {official.role === 'Coach' ? 'C' :
-                                  official.role === 'Assistant Coach 1' ? 'AC1' :
-                                    official.role === 'Assistant Coach 2' ? 'AC2' :
-                                      official.role === 'Physiotherapist' ? 'P' :
-                                        official.role === 'Medic' ? 'M' : official.role}
+                              <span style={officialChips ? { fontWeight: 600 } : { fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
+                                {officialRoleAbbr(official.role)}
                               </span>
-                              <span>{official.lastName || ''} {official.firstName || ''}</span>
+                              {!officialChips && <span>{officialName(official)}</span>}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
@@ -19741,6 +19800,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       {/* Touch Drag Overlays - Long press progress indicator and dragged player */}
       <LongPressProgressIndicator
+        duration={TOUCH_DRAG_HOLD_MS}
+        delay={120}
         progress={touchDragState.longPressProgress}
         position={touchDragState.touchPosition}
         visible={touchDragState.isLongPressing}
