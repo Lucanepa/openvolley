@@ -14,28 +14,11 @@
  */
 
 import { lineupHiddenUntilBoth } from '../../domain/lineupPrivacy'
+import { eventsBySeq, normalizeMatchData, setsByIndex } from '../../../scoresheet_pdf/utils/matchData'
 
 /** Only a 'full' bundle (the referee PIN proved) has rosters and events. */
 export function bundleHasFullAccess(bundle) {
   return !!bundle && typeof bundle === 'object' && bundle.access === 'full' && !!bundle.match && typeof bundle.match === 'object'
-}
-
-const list = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : [])
-
-/** Events in the scorer's order (seq; a decimal seq is a point's sub-event), stable for equal or missing seq. */
-function bySeq(events) {
-  return list(events)
-    .map((e, i) => ({ e, i }))
-    .sort((a, b) => {
-      const sa = Number(a.e.seq)
-      const sb = Number(b.e.seq)
-      const fa = Number.isFinite(sa)
-      const fb = Number.isFinite(sb)
-      if (fa && fb && sa !== sb) return sa - sb
-      if (fa !== fb) return fa ? -1 : 1
-      return a.i - b.i
-    })
-    .map(({ e }) => e)
 }
 
 /** Point events of one set, per team. */
@@ -87,10 +70,8 @@ export function withoutLoneLineups(events) {
  */
 export function scoresheetInputFromBundle(bundle) {
   if (!bundleHasFullAccess(bundle)) return null
-  const events = withoutLoneLineups(bySeq(bundle.events))
-  const sets = list(bundle.sets)
-    .slice()
-    .sort((a, b) => (Number(a.index) || 0) - (Number(b.index) || 0))
+  const events = withoutLoneLineups(eventsBySeq(bundle.events))
+  const sets = setsByIndex(bundle.sets)
     .map((s) => {
       if (s.finished) return s
       const index = Number(s.index)
@@ -99,15 +80,14 @@ export function scoresheetInputFromBundle(bundle) {
       if (s.homePoints === pts.home && s.awayPoints === pts.away) return s
       return { ...s, homePoints: pts.home, awayPoints: pts.away }
     })
-  const team = (t) => (typeof t === 'string' ? { name: t } : (t && typeof t === 'object' ? t : null))
-  return {
+  // the one shape every renderer hands the sheet (scoresheet_pdf/utils/matchData)
+  return normalizeMatchData({
     match: bundle.match,
-    homeTeam: team(bundle.homeTeam),
-    awayTeam: team(bundle.awayTeam),
-    homePlayers: list(bundle.homePlayers),
-    awayPlayers: list(bundle.awayPlayers),
+    homeTeam: bundle.homeTeam,
+    awayTeam: bundle.awayTeam,
+    homePlayers: bundle.homePlayers,
+    awayPlayers: bundle.awayPlayers,
     sets,
-    events,
-    sanctions: []
-  }
+    events
+  })
 }

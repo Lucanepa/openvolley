@@ -102,6 +102,40 @@ export async function findOwnScoresheet(storage: StorageBucket, date: string, ga
 }
 
 /**
+ * The caller's own scoresheet JSON of a game on a date, parsed: the sheet's
+ * input as an earlier app stored it (utils/matchData). One loader for both
+ * viewers of ?date&game (owner 2026-11-16: the same logic everywhere):
+ *  - the archive site (src/ScoresheetApp.jsx): approved (_final) files only;
+ *  - the scorer app's own /scoresheet page (index_scoresheet.tsx): with
+ *    { final: false }, else the in-match file (the approved one first).
+ * Returns { data } or { error } (never throws).
+ */
+export async function fetchScoresheetJson(
+  bucket: StorageBucket & { download: (path: string) => Promise<{ data: any, error: any }> },
+  date: string,
+  game: string | number,
+  { final = true }: { final?: boolean } = {}
+): Promise<{ data: any | null, error: any | null }> {
+  try {
+    const found = await findOwnScoresheet(bucket, date, game, { final });
+    if (found.error || !found.path) {
+      console.warn('[Scoresheet] Storage lookup:', found.error?.code || found.error?.status, found.error?.message);
+      return { data: null, error: found.error };
+    }
+    console.log('[Scoresheet] Fetching from storage:', redactScoresheetPath(found.path));
+    const { data, error } = await bucket.download(found.path);
+    if (error || !data) {
+      console.warn('[Scoresheet] Storage fetch error:', error?.code || error?.status, error?.message);
+      return { data: null, error };
+    }
+    return { data: JSON.parse(await data.text()), error: null };
+  } catch (error) {
+    console.error('[Scoresheet] Error fetching from storage:', error);
+    return { data: null, error: { message: error instanceof Error ? error.message : 'Failed to load scoresheet' } };
+  }
+}
+
+/**
  * Viewer URL (scorer app origin, where the session lives) of a match's approved
  * scoresheet, from a cloud matches row; null when it cannot be located (no
  * scheduled date, no game number or external id) or the match is not closed

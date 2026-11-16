@@ -67,7 +67,7 @@ browser popup; desktop: `window.open`, turned into an app window labelled
 
 ### 1.3 Data source priority (`index_scoresheet.tsx:878-971`)
 
-1. `?matchId=` -> `UrlMatchIdScoresheet` -> `LiveScoresheet` (Dexie live queries).
+1. `?matchId=` -> `UrlMatchIdScoresheet` -> `LiveScoresheet` (one live query: `utils/matchData` `loadLocalMatchData`, one read transaction).
 2. `?date=&game=` -> `StorageScoresheet` (backend storage JSON, own account only).
 3. `?list` / `/storage` -> `ScoresheetList`.
 4. `sessionStorage.scoresheetData` -> `LiveScoresheet` if it has `match.id`, else `StaticScoresheet`.
@@ -75,6 +75,58 @@ browser popup; desktop: `window.open`, turned into an app window labelled
 
 `?action=` (`preview|print|save|getBlob`, default preview) is read once at load
 (`getActionFromUrl`, l. 221-230) and passed as `autoAction`.
+
+### 1.4 Renderers: one sheet everywhere (owner 2026-11-16)
+
+Owner: "make sure ALL scoresheet renderers use the same logic, so we don't have
+different scoresheets". Every scoresheet a person sees or a file holds is
+`scoresheet_pdf/App_Scoresheet` with the same input shape, the same CSS and the
+same rules.
+
+| Renderer | Where | Input built by | Notes |
+|---|---|---|---|
+| Scorer's sheet (view, print, save), approval PDF (`getBlob`) | `/scoresheet/?matchId=` (`index_scoresheet.tsx` `LiveScoresheet`) | `utils/matchData` `loadLocalMatchData` (this device's database) | re-read on a BroadcastChannel notice |
+| Archive site, a match on this device | scoresheet subdomain `?matchId=` (`src/ScoresheetApp.jsx` `MatchIdViewer`) | `loadLocalMatchData` | the same loader as above (was a second copy) |
+| A stored file | `/scoresheet/?date&game` (`StorageScoresheet`), archive `?date&game` (`ScoresheetViewer`) | `utils/scoresheetStorage` `fetchScoresheetJson` | one loader (was two copies); the archive opens approved (`_final`) files only, the scorer app's own page also the in-match file (`{ final: false }`, approved first) |
+| Imported JSON, `sessionStorage` fallback | `/scoresheet/` (`ImportScoresheet`, `StaticScoresheet`) | the object as stored | |
+| Referee tablet's live sheet | `src/components/referee/RefereeScoresheet.jsx` | `referee/scoresheetInput.js` `scoresheetInputFromBundle` (the relay bundle = the scorer's database minus PINs, signatures, officials, dates of birth) | sets and events through `matchData` helpers; a running set takes its score from its points; a lone line-up hidden |
+| Manager "Rebuild PDF" | `src/components/manage/RebuildScoresheet.jsx` | `src/utils/scoresheetFromCloud.js` `scoresheetDataFromCloud` (the server's record) | the same steps as a device taking the match over (`backupManager` `cloudDataFromServer`, `localMatchRowFromCloud`), kept in memory |
+
+- **One input shape.** `App_Scoresheet` passes every input through
+  `utils/matchData` `normalizeMatchData`: `{ match, homeTeam, awayTeam, homePlayers,
+  awayPlayers, sets, events, sanctions: [] }`, sets by index, events by seq (stable, a
+  missing seq last; the cloud builder put it first, the referee's last), a team given as
+  a name becomes `{ name }`. The builders above return that shape too.
+- **One CSS.** `scoresheet_pdf/sheet.css`, imported by `App_Scoresheet` itself
+  (section 1.2), whatever page mounts it.
+- **One set of rules.** Times (`utils/matchTimes`), liberos (`utils/extractLiberoData`),
+  remarks (`utils/sheetRemarks`: generated, corrections, `rebuildRemark`), deciding-set
+  court change (`domain/rules` `courtSwitchPointOf(setTargetsOf(match))`), approvals
+  (`domain/accountApproval`) live in pure helpers the sheet calls. The in-app
+  "Match complete" card (`MatchEnd.jsx`), manual entry (`MatchEntry.jsx`, the sheet's
+  `Results`) and the sanctions/results modal (`SanctionsResultsModal.jsx`) call the same
+  helpers.
+- **Checked:** `src/utils/__tests__/scoresheetRenderersParity.dexie.test.jsx` draws one
+  server record as Rebuild PDF does, as a device that took the match over does (real app
+  database) and as the referee tablet does, and requires the same sheet text. It found
+  one difference, fixed: a device that took a match over had no correction log
+  (`localMatchRowFromCloud` dropped `manual_changes`), so it printed no "Corrected after
+  the match" remarks, and its next correction replaced the server's log.
+- **Still device-dependent** (the same match can print differently on two devices):
+  - **LFP marks**: printed only where the drawing device has LFP tracking on (Options,
+    `localStorage.lfpTrackingEnabled`, default off). Rebuild PDF on the manager prints
+    none.
+  - **Clock zone**: Zürich in the Swiss tool, the device's own zone in the Global tool
+    (`src/ui/format.js` `currentTz`, chosen per device).
+  - Proposed, not done: keep both on the match (`match_info.lfp_tracking` set at the
+    coin toss from the scorer's setting; `match_info.tz` from the tool at match creation)
+    and let the sheet read the match's value first, the device's only for older matches.
+- **Outside the sheet, computed on their own:** the public API's set minutes
+  (`backend/lib/publicApi.js`: raw `sets.start_time`/`end_time`, rounded) can differ by a
+  minute from the sheet's (`matchTimes`: the confirmed start, minutes truncated). The
+  backend cannot import the TypeScript helper; proposed: a plain-JS copy of `matchTimes`
+  shared by both, or the sheet's minutes stored with the set. The final scoresheet mail
+  attaches the stored PDF (no recomputation). OpenBeach has its own sheet.
 
 ---
 

@@ -43,6 +43,7 @@ import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, do
 import { usePinchZoom } from './usePinchZoom';
 import { applyTextFont } from './utils/pdfFont';
 import { writeRemarksPages } from './utils/remarksPages';
+import { normalizeMatchData } from './utils/matchData';
 
 interface AppScoresheetProps {
   matchData: {
@@ -104,14 +105,17 @@ class CaptureAbandoned extends Error {}
 
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false, readOnly = false, embedded = false, reservedTop = 0, extraRemarks, onBlob }) => {
   const { t } = useTranslation();
-  // Normalised once: a JSON import or an older row may miss lists or hold null
-  const match: any = matchData?.match || {};
-  const homeTeam: any = matchData?.homeTeam || null;
-  const awayTeam: any = matchData?.awayTeam || null;
-  const homePlayers = asArray(matchData?.homePlayers);
-  const awayPlayers = asArray(matchData?.awayPlayers);
-  const sets: any[] = asArray(matchData?.sets);
-  const events: any[] = asArray(matchData?.events);
+  // One shape whichever renderer drew the input (utils/matchData): a JSON
+  // import or an older row may miss lists or hold null; sets by index, events
+  // by seq, as this device's database reads them
+  const data = useMemo(() => normalizeMatchData(matchData), [matchData]);
+  const match: any = data.match;
+  const homeTeam: any = data.homeTeam;
+  const awayTeam: any = data.awayTeam;
+  const homePlayers = data.homePlayers;
+  const awayPlayers = data.awayPlayers;
+  const sets: any[] = data.sets;
+  const events: any[] = data.events;
   // Officials: the array, the older role-keyed object or snake_case names (never throws)
   const officials = normalizeOfficials(match?.officials);
 

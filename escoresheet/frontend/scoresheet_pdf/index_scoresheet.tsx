@@ -5,7 +5,8 @@ import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import '../src/i18n'; // App_Scoresheet calls useTranslation: this entry needs its own i18n init
 import App from './App_Scoresheet';
-import { describeScoresheetLoadError, findOwnScoresheet, parseScoresheetName, redactScoresheetPath, type ScoresheetLoadError } from './utils/scoresheetStorage';
+import { loadLocalMatchData, normalizeMatchData } from './utils/matchData';
+import { describeScoresheetLoadError, fetchScoresheetJson, parseScoresheetName, type ScoresheetLoadError } from './utils/scoresheetStorage';
 
 // Initialize Dexie database (same as main app)
 import { db } from '../src/db/db';
@@ -92,29 +93,14 @@ interface ScoresheetItem {
 // its name has a random part, so it is found by listing the date folder
 // (approved game{n}_{key}_final.json first, else the in-match JSON).
 // Returns { data } or { error } (storage error with status / code).
+// The approved file first, else the in-match one (utils/scoresheetStorage
+// fetchScoresheetJson, also the archive site's loader)
 const fetchFromStorage = async (date: string, game: string): Promise<{ data: any | null, error: any | null }> => {
   try {
     // Import the backend storage client dynamically to avoid circular dependencies
     const { apiStorage } = await import('../src/lib/apiClient');
-    const bucket = apiStorage.from('scoresheets');
-
-    const found = await findOwnScoresheet(bucket, date, game, { final: false });
-    if (found.error || !found.path) {
-      console.warn('[Scoresheet] Storage lookup:', found.error?.code || found.error?.status, found.error?.message);
-      return { data: null, error: found.error };
-    }
-    console.log('[Scoresheet] Fetching from storage:', redactScoresheetPath(found.path));
-
-    const { data, error } = await bucket.download(found.path);
-    if (error || !data) {
-      console.warn('[Scoresheet] Storage fetch error:', error?.code || error?.status, error?.message);
-      return { data: null, error };
-    }
-
-    const text = await data.text();
-    return { data: JSON.parse(text), error: null };
+    return await fetchScoresheetJson(apiStorage.from('scoresheets'), date, game, { final: false });
   } catch (error) {
-    console.error('[Scoresheet] Error fetching from storage:', error);
     return { data: null, error: { message: error instanceof Error ? error.message : 'Failed to load scoresheet' } };
   }
 };
@@ -258,73 +244,17 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
     return () => { channel?.close(); };
   }, [matchId]);
 
-  // Use live queries to get real-time data from IndexedDB
-  // useLiveQuery returns undefined while loading, null/result after query completes
-  // refreshVersion is included in deps to force re-query on BroadcastChannel notifications
-  const match = useLiveQuery(
-    async () => {
-      if (!matchId) return null;
-      const result = await (db as any).matches.get(matchId);
-      return result || null; // Return null if not found (deleted)
-    },
+  // One live query, one read transaction (utils/matchData loadLocalMatchData,
+  // also the archive site's ?matchId=): the sheet never pairs the sets of one
+  // moment with the events of another. undefined while loading, null when the
+  // match is not on this device (deleted). refreshVersion re-reads it on a
+  // BroadcastChannel notice.
+  const live = useLiveQuery(
+    async () => (matchId ? await loadLocalMatchData(db, matchId) : null),
     [matchId, refreshVersion]
   );
-
-  // Track if initial load is complete (match query has run at least once)
-  const isMatchLoading = match === undefined;
-  const isMatchDeleted = match === null && !isMatchLoading;
-
-  const homeTeam = useLiveQuery(
-    async () => {
-      // Use live match data, not initial data
-      if (!match?.homeTeamId) return null;
-      return await (db as any).teams.get(match.homeTeamId);
-    },
-    [match, refreshVersion]
-  );
-
-  const awayTeam = useLiveQuery(
-    async () => {
-      // Use live match data, not initial data
-      if (!match?.awayTeamId) return null;
-      return await (db as any).teams.get(match.awayTeamId);
-    },
-    [match, refreshVersion]
-  );
-
-  const homePlayers = useLiveQuery(
-    async () => {
-      // Use live match data, not initial data
-      if (!match?.homeTeamId) return [];
-      return await (db as any).players.where('teamId').equals(match.homeTeamId).toArray();
-    },
-    [match, refreshVersion]
-  );
-
-  const awayPlayers = useLiveQuery(
-    async () => {
-      // Use live match data, not initial data
-      if (!match?.awayTeamId) return [];
-      return await (db as any).players.where('teamId').equals(match.awayTeamId).toArray();
-    },
-    [match, refreshVersion]
-  );
-
-  const sets = useLiveQuery(
-    async () => {
-      if (!matchId || isMatchDeleted) return [];
-      return await (db as any).sets.where('matchId').equals(matchId).sortBy('index');
-    },
-    [matchId, isMatchDeleted, refreshVersion]
-  );
-
-  const events = useLiveQuery(
-    async () => {
-      if (!matchId || isMatchDeleted) return [];
-      return await (db as any).events.where('matchId').equals(matchId).sortBy('seq');
-    },
-    [matchId, isMatchDeleted, refreshVersion]
-  );
+  const isMatchLoading = live === undefined;
+  const isMatchDeleted = live === null;
 
   // Show loading state while initial data is being fetched
   if (isMatchLoading) {
@@ -341,21 +271,10 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
     );
   }
 
-  // Build match data from live queries (use empty values if match is deleted)
-  const liveMatchData = {
-    match: match || {},
-    homeTeam: homeTeam || null,
-    awayTeam: awayTeam || null,
-    homePlayers: homePlayers || [],
-    awayPlayers: awayPlayers || [],
-    sets: sets || [],
-    events: events || [],
-    sanctions: []
-  };
-  // Every query has answered (undefined = still loading): an automatic save /
-  // getBlob waits for this, so the file name and the sheet have the teams.
-  const dataReady = [match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events].every(v => v !== undefined);
-
+  // The match, or an empty sheet when it is gone; every part is read in the one
+  // transaction above, so an automatic save / getBlob is ready once it answers
+  const liveMatchData = live || normalizeMatchData({});
+  const dataReady = !isMatchLoading;
   return <App matchData={liveMatchData} autoAction={action} dataReady={dataReady} matchMissing={isMatchDeleted} />;
 };
 
