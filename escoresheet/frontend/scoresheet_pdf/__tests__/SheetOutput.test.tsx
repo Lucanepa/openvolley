@@ -179,6 +179,38 @@ describe('the generated sheet', () => {
   })
 })
 
+describe('Rebuild PDF: the sheet drawn from the server\'s record', () => {
+  afterEach(() => cleanup())
+
+  it('a slot approved with a PIN keeps its stamp; the set starts are the confirmed ones, not the rows\' creation times', async () => {
+    const { scoresheetDataFromCloud } = await import('../../src/utils/scoresheetFromCloud')
+    const { resultKey } = await import('../../src/domain/accountApproval')
+    const sets = [
+      { index: 1, home_points: 25, away_points: 20, finished: true, start_time: '2026-11-15T13:00:00Z', end_time: '2026-11-15T13:52:00Z' },
+      { index: 2, home_points: 25, away_points: 18, finished: true, start_time: '2026-11-15T13:55:00Z', end_time: '2026-11-15T14:20:00Z' },
+      { index: 3, home_points: 25, away_points: 22, finished: true, start_time: '2026-11-15T14:23:00Z', end_time: '2026-11-15T14:50:00Z' }
+    ]
+    const key = resultKey(sets.map(x => ({ index: x.index, homePoints: x.home_points, awayPoints: x.away_points, finished: true })))
+    const opened = (i: number, at: string) => ({ external_id: `m:e:s${i}`, set_index: i, type: 'set_start', seq: i * 100, ts: at, payload: { setIndex: i, startTime: at, firstRallyAt: at } })
+    const data = scoresheetDataFromCloud({
+      match: {
+        id: 'x', external_id: 'm', status: 'final', game_n: 424849, scheduled_at: '2026-11-15T13:00:00Z',
+        home_team: { name: 'Home Club', short_name: 'HOME' }, away_team: { name: 'Away Club', short_name: 'AWAY' },
+        coin_toss: { team_a: 'home', team_b: 'away', serve_a: true, confirmed: true },
+        officials: [{ role: '1st referee', firstName: 'Claudia', lastName: 'Moser', country: 'CHE' }],
+        players_home: [], players_away: []
+      },
+      // set 1's row made at the coin toss (13:00), set 2's when set 1 ended (13:52)
+      sets: [sets[0], { ...sets[1], start_time: '2026-11-15T13:52:00Z' }, sets[2]],
+      events: [opened(1, '2026-11-15T13:31:00Z'), opened(2, '2026-11-15T13:55:00Z'), opened(3, '2026-11-15T14:23:00Z')],
+      approvals: [{ id: 'a1', short_id: 'K7Q2', slot: 'referee1', name: 'Moser Claudia', approved_at: '2026-11-15T14:55:00Z', result_key: key }]
+    })
+    const view = render(<App matchData={data} readOnly />)
+    expect(view.getByTestId('approval-stamp-referee1').textContent).toMatch(/^Approved electronically · Moser Claudia · 15\.11\.2026 \d{2}:55 · ID K7Q2$/)
+    expect(data.sets.map((x: any) => x.startTime)).toEqual(['2026-11-15T13:31:00.000Z', '2026-11-15T13:55:00.000Z', '2026-11-15T14:23:00Z'])
+  })
+})
+
 describe('Save PDF', () => {
   let clicked: HTMLAnchorElement[] = []
   beforeAll(() => {
@@ -231,6 +263,35 @@ describe('Save PDF', () => {
     expect(got[0].filename).toBe('game382208_2L_2026-10-07.pdf')
     expect(got[0].blob.type).toBe('application/pdf')
     expect(clicked).toHaveLength(0)
+  })
+
+  it('getBlob with onBlob, the view closed while the PDF is made (Rebuild PDF cancelled): nothing is handed on, no PDF made', async () => {
+    const htmlToImage: any = await import('html-to-image')
+    let release: () => void = () => {}
+    htmlToImage.toCanvas.mockImplementationOnce(() => new Promise(resolve => {
+      release = () => resolve({ width: 3100, height: 2170, toDataURL: () => `data:image/jpeg;base64,${'A'.repeat(20_000)}` })
+    }))
+    const got: any[] = []
+    const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+    await waitFor(() => expect(htmlToImage.toCanvas).toHaveBeenCalled())
+    // the "Generating PDF" cover stays inside the embedded view: the host's bar (Cancel) is free
+    expect(view.getByTestId('pdf-generating').style.position).toBe('absolute')
+    view.unmount()
+    release()
+    await new Promise(r => setTimeout(r, 50))
+    expect(got).toHaveLength(0)
+    expect(pdfCalls.find(c => c[0] === 'new')).toBeUndefined()
+    expect(clicked).toHaveLength(0)
+  })
+
+  it('the view closed before the capture began: no failure is reported either', async () => {
+    const got: any[] = []
+    const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+    // after the automatic start (500 ms), inside the 250 ms wait for the 100 % zoom
+    await new Promise(r => setTimeout(r, 600))
+    view.unmount()
+    await new Promise(r => setTimeout(r, 400))
+    expect(got).toHaveLength(0)
   })
 
   it('a match that is not on this device: no empty sheet is saved, the page says why', async () => {

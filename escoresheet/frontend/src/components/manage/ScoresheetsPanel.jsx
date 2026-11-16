@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, Eye, RefreshCw, RotateCcw } from 'lucide-react'
-import { admin, scoresheetsApi } from '../../lib/accountApi'
+import { admin, approvalsApi, isApprovalUnavailable, scoresheetsApi } from '../../lib/accountApi'
 import { openAppWindow, openPendingTab } from '../../utils/openAppWindow'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, ReasonModal, useErrorText } from './common'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
@@ -39,8 +39,9 @@ const pdfOf = (blob) => (blob.type === 'application/pdf' ? blob : new Blob([blob
  * "Out of date" (owner 2026-11-16): the match's data changed after its newest
  * PDF (Corrections, the Data or SQL tab; lib/scoresheets.js pdf_stale).
  * `canRebuild` (admins): "Rebuild PDF" draws the sheet again from the
- * server's data, with a "Rebuilt after the match" remark and the stored
- * signatures, and stores it as the match's newest, a closed match too.
+ * server's data, with a "Rebuilt after the match" remark, the stored
+ * signatures and the account approvals, and stores it as the match's newest,
+ * a closed match too.
  */
 export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false }) {
   const { t } = useTranslation()
@@ -54,6 +55,13 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
   const [rebuildFor, setRebuildFor] = useState(null)
   // the sheet being drawn again: { m, matchData, reason, remark }
   const [rebuilding, setRebuilding] = useState(null)
+  // the job on screen now: a PDF handed back for another one (cancelled, timed
+  // out) is never stored
+  const rebuildingRef = useRef(null)
+  const showRebuild = (job) => {
+    rebuildingRef.current = job
+    setRebuilding(job)
+  }
   const canReopen = app === 'beach'
   const { data, error, loading, reload } = usePanelData(
     () => scoresheetsApi.list({ app, state, q: query || undefined, limit: 200 }),
@@ -118,26 +126,41 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
     const m = rebuildFor
     const res = await scoresheetsApi.matchRecord(m.id)
     if (res.error) return errorText(res.error)
+    // The officials' account approvals (their own table, match_approvals):
+    // a rebuilt sheet keeps them as it keeps the drawn signatures. Not read,
+    // the new PDF would lose every stamp, so nothing is drawn; a server
+    // without the feature (or a match it does not know) has none.
+    let approvals = []
+    const externalId = res.data?.match?.external_id
+    if (externalId) {
+      const listed = await approvalsApi.list(externalId)
+      if (!listed.error) approvals = listed.data?.approvals || []
+      else if (!isApprovalUnavailable(listed.error) && listed.status !== 404) {
+        console.warn('[Scoresheets] rebuild: the account approvals could not be read', listed.error)
+        return t('manage.scoresheets.rebuildApprovalsFailed')
+      }
+    }
     let matchData
     try {
       const { scoresheetDataFromCloud } = await import('../../utils/scoresheetFromCloud')
-      matchData = scoresheetDataFromCloud(res.data)
+      matchData = scoresheetDataFromCloud({ ...res.data, approvals })
     } catch (err) {
       console.warn('[Scoresheets] rebuild: the match data could not be read', err)
       return t('manage.scoresheets.rebuildFailed')
     }
     setRebuildFor(null)
-    setRebuilding({ m, matchData, reason, remark: rebuildRemark(reason) })
+    showRebuild({ m, matchData, reason, remark: rebuildRemark(reason) })
     return null
   }
 
-  // Rebuild, step 2: the PDF made, stored as the match's newest
-  const finishRebuild = async (out) => {
-    const job = rebuilding
-    if (!job) return
+  // Rebuild, step 2: the PDF made, stored as the match's newest. `job` is the
+  // one the PDF was made for: one cancelled meanwhile stores nothing.
+  const finishRebuild = async (job, out, info) => {
+    if (!job || rebuildingRef.current !== job) return
+    const closeJob = () => { if (rebuildingRef.current === job) showRebuild(null) }
     if (!out?.blob) {
-      setRebuilding(null)
-      toast.error(t('manage.scoresheets.rebuildFailed'))
+      closeJob()
+      toast.error(info?.timedOut ? t('manage.scoresheets.rebuildTimedOut') : t('manage.scoresheets.rebuildFailed'))
       return
     }
     let res
@@ -146,7 +169,7 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
     } catch (err) {
       res = { error: err }
     }
-    setRebuilding(null)
+    closeJob()
     if (res.error) {
       toast.error(errorText(res.error))
       return
@@ -255,8 +278,8 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
           matchData={rebuilding.matchData}
           remark={rebuilding.remark}
           title={t('manage.scoresheets.rebuildTitle', { game: rebuilding.m.game_n ?? '' })}
-          onDone={finishRebuild}
-          onCancel={() => setRebuilding(null)}
+          onDone={(out, info) => finishRebuild(rebuilding, out, info)}
+          onCancel={() => showRebuild(null)}
         />
       )}
       <ReasonModal

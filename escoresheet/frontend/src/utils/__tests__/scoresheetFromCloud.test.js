@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { scoresheetDataFromCloud } from '../scoresheetFromCloud'
+import { scoresheetDataFromCloud, rebuildSetStart } from '../scoresheetFromCloud'
+import { resultKey } from '../../domain/accountApproval'
 
 // The server's record of a closed match (GET /api/scoresheets/:id/match) as
 // the sheet takes it, with nothing written to this device (Rebuild PDF)
@@ -58,5 +59,63 @@ describe('scoresheetDataFromCloud', () => {
     expect(d.homeTeam).toBeNull()
     expect(d.homePlayers).toEqual([])
     expect(d.sets).toEqual([])
+  })
+  it('the account approvals come along by slot (a PIN approval keeps its stamp); revoked ones and unknown slots do not', () => {
+    const base = record()
+    const key = resultKey([
+      { index: 1, homePoints: 25, awayPoints: 20, finished: true },
+      { index: 2, homePoints: 20, awayPoints: 25, finished: true }
+    ])
+    const scorer = { id: 'a1', short_id: 'K7Q2', slot: 'scorer', name: 'Schneider Sara', approved_at: '2026-11-15T15:52:00Z', result_key: key }
+    const d = scoresheetDataFromCloud({
+      ...base,
+      approvals: [
+        scorer,
+        { id: 'a2', slot: 'referee1', name: 'Moser Claudia', approved_at: '2026-11-15T15:53:00Z', result_key: key, revoked_at: '2026-11-15T16:00:00Z' },
+        { id: 'a3', slot: 'captain', name: 'X', result_key: key }
+      ]
+    })
+    expect(d.match.accountApprovals).toEqual({ scorer })
+    // none: no key at all, as a match approved by hand only
+    expect(scoresheetDataFromCloud(base).match.accountApprovals).toBeNull()
+  })
+
+  describe('set starts as the scorer\'s device printed them', () => {
+    const at = (hh, mm) => `2026-11-15T${hh}:${mm}:00.000Z`
+    const opened = (setIndex, startTime, extra = {}) => ({ set_index: setIndex, type: 'set_start', ts: startTime, payload: { setIndex, startTime, firstRallyAt: startTime, ...extra } })
+
+    it('an old cloud start_time (the row\'s creation: coin toss, end of the set before) gives way to the confirmed start', () => {
+      const base = record()
+      const d = scoresheetDataFromCloud({
+        ...base,
+        sets: [
+          { ...base.sets[1], start_time: at('14', '00') }, // set 1 row made at the coin toss
+          { ...base.sets[0], start_time: at('14', '34') } // set 2 row made when set 1 ended
+        ],
+        events: [...base.events, opened(1, at('14', '15')), opened(2, at('14', '37'))]
+      })
+      expect(d.sets.map(s => [s.index, s.startTime])).toEqual([[1, at('14', '15')], [2, at('14', '37')]])
+    })
+
+    it('a start corrected after the match (its log entry or the set_end Corrections rewrote) still wins', () => {
+      const events = [
+        opened(1, at('14', '15')),
+        { set_index: 2, type: 'set_start', ts: at('14', '37'), payload: { startTime: at('14', '37') } },
+        { set_index: 2, type: 'set_end', ts: at('14', '58'), payload: { startTime: at('14', '36'), endTime: at('14', '58') } }
+      ]
+      const log = [{ action: 'setTimes', setIndex: 1, after: { startTime: at('14', '12') }, text: 'Set 1 times corrected' }]
+      expect(rebuildSetStart({ index: 1, start_time: at('14', '12') }, events, log)).toBe(at('14', '12'))
+      expect(rebuildSetStart({ index: 2, start_time: at('14', '36') }, events, [])).toBe(at('14', '36'))
+      // the same earlier time without either: taken as the creation time
+      expect(rebuildSetStart({ index: 1, start_time: at('14', '12') }, events, [])).toBe(at('14', '15'))
+    })
+
+    it('a cloud start later than the confirmed one (never a creation time), the same minute, or nothing to compare with: as stored', () => {
+      const events = [opened(1, at('14', '15'))]
+      expect(rebuildSetStart({ index: 1, start_time: at('14', '20') }, events)).toBe(at('14', '20'))
+      expect(rebuildSetStart({ index: 1, start_time: '2026-11-15T14:15:42Z' }, events)).toBe('2026-11-15T14:15:42Z')
+      expect(rebuildSetStart({ index: 2, start_time: at('14', '30') }, events)).toBe(at('14', '30'))
+      expect(rebuildSetStart({ index: 1, start_time: null }, events)).toBeNull()
+    })
   })
 })

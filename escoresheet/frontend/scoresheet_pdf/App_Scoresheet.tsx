@@ -97,6 +97,9 @@ const SHEET_H_PX = (287 * 96) / 25.4;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 3;
 
+/** A PDF being made whose view was closed: dropped, never handed on. */
+class CaptureAbandoned extends Error {}
+
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false, readOnly = false, embedded = false, reservedTop = 0, extraRemarks, onBlob }) => {
   const { t } = useTranslation();
   // Normalised once: a JSON import or an older row may miss lists or hold null
@@ -1455,6 +1458,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   }, [turned]);
 
   const generatingRef = useRef(false);
+  // false once this view is gone (the manager's Rebuild PDF cancelled or timed
+  // out): a capture still running stops at its next step and hands nothing on
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   // Where the PDF went, shown next to the buttons until dismissed (field-spec 13.5):
   // the full path on the desktop (Open file / Show in folder), the file name in a
   // browser, or why it failed. Not alert(): in the desktop app the dialog plugin
@@ -1511,6 +1521,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     // the desktop app's quit question says a PDF is still being saved here
     setPdfBusy(true);
 
+    // the view is gone (Rebuild PDF cancelled or timed out): stop here
+    const stillShown = () => { if (!mountedRef.current) throw new CaptureAbandoned(); };
     try {
       const data = latestData.current;
       const filename = buildScoresheetFilename(data);
@@ -1521,9 +1533,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       if (wasShowingLCS) setShowLCS(false);
       setZoomLevel(1);
       await new Promise(resolve => setTimeout(resolve, 250));
+      stillShown();
       await (document as any).fonts?.ready;
       // FitText fits its text again once a font has loaded: let that render land
       await new Promise(resolve => setTimeout(resolve, 50));
+      stillShown();
 
       const sheet = containerRef.current;
       assertVisibleSheet(sheet);
@@ -1533,6 +1547,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         import('html-to-image'),
         import('jspdf')
       ]);
+      stillShown();
 
       // pixelRatio 2: ~190 dpi on A3, sharp enough for print, a reasonable file size
       const capture = (props: string[]) => htmlToImage.toCanvas(sheet!, {
@@ -1578,6 +1593,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       } finally {
         restoreText();
       }
+      // a sheet taken off the page during the capture may have come out blank
+      stillShown();
       assertCanvas(canvas);
 
       const imgData = canvas.toDataURL('image/jpeg', 0.85);
@@ -1621,6 +1638,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         pdf.text(pdf.splitTextToSize(all, A3_LANDSCAPE_MM.width - 30), 15, 38);
       }
 
+      stillShown();
       const bytes = pdf.output('arraybuffer');
       assertValidPdf(bytes);
       const pdfBlob = new Blob([bytes], { type: 'application/pdf' });
@@ -1641,6 +1659,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         ? { kind: 'desktop-pending', fileName: filename }
         : { kind: 'web', fileName: filename });
     } catch (error) {
+      if (error instanceof CaptureAbandoned) {
+        console.info('[Scoresheet] PDF dropped: the view was closed while it was made');
+        return;
+      }
       console.error('Error generating PDF:', error);
       if (!returnBlob) {
         setSaveOutcome({
@@ -1692,6 +1714,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
     const timer = setTimeout(async () => {
       await (document as any).fonts?.ready;
+      if (!mountedRef.current) return;
       if (autoAction === 'print' || autoAction === 'save') {
         await handleSavePdfRef.current();
       } else if (autoAction === 'getBlob') {
@@ -1699,6 +1722,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         // or tell it the capture failed so it does not wait for its timeout;
         // then close this window / the in-app view either way.
         const out = matchMissing ? null : await handleSavePdfRef.current(true);
+        // closed meanwhile (the manager's Rebuild PDF cancelled or timed out):
+        // whatever came out goes nowhere, not even as a failure
+        if (!mountedRef.current) return;
         // delivered (or failed): closing this window from now on cancels nothing
         approvalBusyRef.current = false;
         if (onBlobRef.current) onBlobRef.current(out || null);
@@ -1727,13 +1753,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // Embedded: one column that fills the host's layer, the sheet scrolling in
   // its own box (pinch zoom and Fit work on that box)
   const Root = embedded ? 'div' : React.Fragment;
-  const rootProps = embedded ? { className: 'flex h-full min-h-0 flex-col bg-gray-100', 'data-testid': 'scoresheet-embedded' } : {};
+  const rootProps = embedded ? { className: 'relative flex h-full min-h-0 flex-col bg-gray-100', 'data-testid': 'scoresheet-embedded' } : {};
   return (
     <Root {...rootProps}>
-      {/* PDF Generating overlay */}
+      {/* PDF Generating overlay. Embedded, it covers this view only: the host's
+          bar (Rebuild PDF's Cancel) stays usable while the PDF is made. */}
       {isGeneratingPdf && (
-        <div style={{
-          position: 'fixed',
+        <div data-testid="pdf-generating" style={{
+          position: embedded ? 'absolute' : 'fixed',
           top: 0,
           left: 0,
           right: 0,

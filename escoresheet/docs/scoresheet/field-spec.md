@@ -834,3 +834,31 @@ These override sections 4-7 and 16 wherever they differ.
      (`overflow-clip`: rosters, their rows and blocks, REMARKS, APPROVAL and its rows,
      RESULT). The RESULT table keeps its white cells on the black grid (its rules are the
      gaps). APPROVAL's role labels never wrap.
+14. **Rebuild PDF keeps what the approved sheet had, and Cancel cancels** (2026-11-16, review
+   of the manager's Rebuild PDF). The rebuilt sheet is drawn from the server's record
+   (`src/utils/scoresheetFromCloud.js`), with nothing taken from the admin's device database.
+   - **Account approvals.** The owner's rule that a rebuilt PDF keeps the original signatures
+     holds for the PIN approvals too: the panel reads the match's non-revoked approvals
+     (`GET /api/approvals`, admins see every slot) and the sheet prints each stamp exactly as
+     at the approval (only while it matches the result, a drawn signature first). When they
+     cannot be read (a network or server error) nothing is drawn and the admin is told; a
+     server without the feature, or a beach match, has none.
+   - **Set starts as the scorer's device printed them.** The cloud's `sets.start_time` held
+     the row's creation time (coin toss for set 1, the previous set's end for set n+1) before
+     983fdb500 and still does when that update was lost, and item 16.2's "a start corrected
+     afterwards wins" rule would then print it. The cloud value counts only where it is the
+     confirmed start (same minute), a recorded correction (the log's `setTimes` entry, or the
+     `set_end` event Corrections rewrites) or later than the confirmed start (a creation time
+     never is); otherwise the `set_start` event's confirmed time. A start edited by hand on
+     the server to an earlier minute, with no log entry, therefore does not print: correct
+     set times through Corrections.
+   - **Cancel and limits.** The "Generating PDF" cover stays inside the sheet's view, so the
+     dialog's Cancel can be pressed while the PDF is made. After Cancel the capture stops at
+     its next step and nothing is uploaded, not even a late PDF; a failure after Cancel is not
+     reported. No PDF within 90 s (the approval's own limit) ends as "took too long", nothing
+     stored. A sheet that cannot be drawn (its code chunk gone after a deploy, or an error
+     while drawing an odd record) shows the error inside the dialog, with Reload for the
+     chunk case, instead of replacing the manager.
+   - Not changed: the LFP marks (LFP tracking option, owner 2026-11-16) and the clock zone
+     (Global tool mode) still follow the device that draws the sheet, so a rebuild on another
+     device can differ there from the approved sheet.
