@@ -132,10 +132,12 @@ export function auditDetailsLine(entry, opts = {}) {
     if (Number.isFinite(d.staff)) parts.push(tr('manage.audit.staffCount', `${d.staff} officials`, { count: d.staff }))
     return parts.join(' · ')
   }
-  // an admin's "Rebuild PDF": the game and why (lib/scoresheets.js rebuildPdf)
-  if (entry?.action === 'scoresheet.rebuild') {
+  // an admin's "Rebuild PDF": the game and why (lib/scoresheets.js rebuildPdf);
+  // the server's vector copy (scoresheet.vector) and a vector rebuild say so
+  if (entry?.action === 'scoresheet.rebuild' || entry?.action === 'scoresheet.vector') {
     if (d.game_n) parts.push(`#${d.game_n}`)
     if (d.reason) parts.push(String(d.reason))
+    if (d.mode === 'vector' || d.mode === 'approval') parts.push(tr('manage.scoresheets.modeVector', 'vector'))
     return parts.join(' · ')
   }
   if (entry?.action === 'account.clubs') {

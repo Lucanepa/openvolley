@@ -607,6 +607,16 @@ export const scoresheetsApi = {
   /** POST /api/scoresheets/:id/rebuild (admins): the PDF drawn again, stored as the match's newest. `signal`: Cancel (an upload already received is stored). */
   rebuild(matchId, { reason, fileBase64 }, { signal } = {}) {
     return apiRequest('POST', `/api/scoresheets/${enc(matchId)}/rebuild`, { reason, fileBase64 }, { timeoutMs: 120000, signal })
+  },
+  /**
+   * POST /api/scoresheets/:id/rebuild-vector (admins): the server prints the
+   * match as a vector PDF and stores it as the newest (field-spec 17.19).
+   * 503 OV_RENDER_UNAVAILABLE / busy / failed: the manager draws and
+   * captures it itself (rebuild above). `signal`: Cancel (a PDF the server
+   * already printed and stored stays stored).
+   */
+  rebuildVector(matchId, { reason }, { signal } = {}) {
+    return apiRequest('POST', `/api/scoresheets/${enc(matchId)}/rebuild-vector`, { reason }, { timeoutMs: 150000, signal })
   }
 }
 

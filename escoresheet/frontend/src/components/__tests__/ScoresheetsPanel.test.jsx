@@ -5,10 +5,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
 }))
 
-const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn(), reopen: vi.fn(), matchRecord: vi.fn(), rebuild: vi.fn(), approvals: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn(), reopen: vi.fn(), matchRecord: vi.fn(), rebuild: vi.fn(), rebuildVector: vi.fn(), approvals: vi.fn() }))
 vi.mock('../../lib/accountApi', async (orig) => {
   const real = await orig()
-  return { ...real, admin: { ...real.admin, reopenMatch: (...a) => api.reopen(...a) }, approvalsApi: { ...real.approvalsApi, list: (...a) => api.approvals(...a) }, scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a), matchRecord: (...a) => api.matchRecord(...a), rebuild: (...a) => api.rebuild(...a) } }
+  return { ...real, admin: { ...real.admin, reopenMatch: (...a) => api.reopen(...a) }, approvalsApi: { ...real.approvalsApi, list: (...a) => api.approvals(...a) }, scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a), matchRecord: (...a) => api.matchRecord(...a), rebuild: (...a) => api.rebuild(...a), rebuildVector: (...a) => api.rebuildVector(...a) } }
 })
 const toasts = vi.hoisted(() => ({ error: [], success: [] }))
 vi.mock('../../ui', async (orig) => {
@@ -49,6 +49,8 @@ describe('ScoresheetsPanel', () => {
     // a server before the view links (404): View falls back to the file
     api.viewLink.mockResolvedValue({ error: { code: 'OV_NOT_FOUND' }, status: 404 })
     api.approvals.mockResolvedValue({ data: { match: {}, approvals: [] }, error: null, status: 200 })
+    // a server without the render service: the manager draws and captures the sheet itself
+    api.rebuildVector.mockResolvedValue({ data: null, error: { code: 'OV_RENDER_UNAVAILABLE', status: 503 }, status: 503 })
     URL.createObjectURL = vi.fn(() => SHEET_URL)
     URL.revokeObjectURL = vi.fn()
     opened = { closed: false, location: { href: '' }, close: vi.fn() }
@@ -214,6 +216,32 @@ describe('ScoresheetsPanel', () => {
     await waitFor(() => expect(api.rebuild).toHaveBeenCalledWith('m-1', { reason: 'Set start times corrected', fileBase64: 'JVBERi0xLjQ=' }, expect.objectContaining({ signal: expect.anything() })))
     await waitFor(() => expect(toasts.success).toEqual(['manage.scoresheets.rebuilt']))
     await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(listed))
+    expect(screen.queryByTestId('rebuild-scoresheet')).toBeNull()
+  })
+
+  it('Rebuild PDF on the server: a vector PDF stored there, nothing drawn here; a refused request says why', async () => {
+    api.list.mockResolvedValue({ data: { matches: [{ ...MATCHES[0], closed_at: '2026-10-10T16:40:00Z' }] }, error: null, status: 200 })
+    api.rebuildVector.mockResolvedValue({ data: { stored_at: '2026-11-16T10:05:00Z', mode: 'vector' }, error: null, status: 200 })
+    render(<ScoresheetsPanel canRebuild />)
+    await screen.findByText('Voléro vs Smash')
+    const listed = api.list.mock.calls.length
+    fireEvent.click(screen.getByTestId('scoresheet-rebuild'))
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Set start times corrected' } })
+    fireEvent.click(screen.getByTestId('reason-confirm'))
+    await waitFor(() => expect(api.rebuildVector).toHaveBeenCalledWith('m-1', { reason: 'Set start times corrected' }))
+    await waitFor(() => expect(toasts.success).toEqual(['manage.scoresheets.rebuiltVector']))
+    await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(listed))
+    expect(api.matchRecord).not.toHaveBeenCalled()
+    expect(api.rebuild).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('rebuild-scoresheet')).toBeNull()
+
+    // a refusal about the request itself (here the match is gone) is shown, nothing drawn
+    api.rebuildVector.mockResolvedValue({ data: null, error: { code: 'OV_NOT_FOUND', status: 404, message: 'Not found' }, status: 404 })
+    fireEvent.click(screen.getByTestId('scoresheet-rebuild'))
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Again' } })
+    fireEvent.click(screen.getByTestId('reason-confirm'))
+    await waitFor(() => expect(api.rebuildVector).toHaveBeenCalledTimes(2))
+    expect(api.matchRecord).not.toHaveBeenCalled()
     expect(screen.queryByTestId('rebuild-scoresheet')).toBeNull()
   })
 
