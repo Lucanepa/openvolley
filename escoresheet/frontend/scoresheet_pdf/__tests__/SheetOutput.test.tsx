@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest'
 import { render, cleanup, act, waitFor } from '@testing-library/react'
 import App from '../App_Scoresheet'
 import { BRAND } from '../../src/brand.js'
@@ -35,6 +35,14 @@ vi.mock('jspdf', () => ({
     output () { return new TextEncoder().encode(`%PDF-1.3\n${'x'.repeat(30_000)}\n%%EOF\n`).buffer }
   }
 }))
+
+// jsdom has no ::before / ::after styles and says so on the console for every
+// element the capture looks at (usedStyleProperties): the element's own style
+// stands in, as it has no generated content either
+const realGetComputedStyle = window.getComputedStyle.bind(window)
+beforeEach(() => {
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element) => realGetComputedStyle(el))
+})
 
 let seq = 0
 const ev = (type: string, setIndex: number, payload: Record<string, unknown>) => ({
@@ -266,6 +274,49 @@ describe('Save PDF', () => {
     expect(clicked).toHaveLength(0)
   })
 
+  it('Chromium (Brave, the manager\'s Rebuild PDF) copies only the styles the sheet uses, in one capture: the copy of every property took ~10 s', async () => {
+    const htmlToImage: any = await import('html-to-image')
+    htmlToImage.toCanvas.mockClear()
+    // a browser lists every property in <html>'s computed style, the app's custom properties too
+    vi.mocked(window.getComputedStyle).mockImplementation((el: Element) => el === document.documentElement
+      ? (['color', 'display', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-inline-start', '--tw-shadow', '--color-red-500'] as unknown as CSSStyleDeclaration)
+      : realGetComputedStyle(el))
+    const got: any[] = []
+    render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+    await waitFor(() => expect(got).toHaveLength(1))
+    expect(got[0].blob.type).toBe('application/pdf')
+    expect(htmlToImage.toCanvas).toHaveBeenCalledTimes(1)
+    const opts = htmlToImage.toCanvas.mock.calls[0][1]
+    expect(opts.pixelRatio).toBe(2)
+    expect(opts.includeStyleProperties).toContain('display')
+    expect(opts.includeStyleProperties.some((p: string) => p.startsWith('--'))).toBe(false)
+    expect(opts.includeStyleProperties).not.toContain('margin-inline-start')
+  })
+
+  it('a lean capture that fails in Chromium is tried once more with the lean list, never with the full copy (~8x larger)', async () => {
+    const htmlToImage: any = await import('html-to-image')
+    htmlToImage.toCanvas.mockClear()
+    const lists: string[][] = []
+    const canvas = { width: 3100, height: 2170, getContext: () => ({ drawImage: () => {} }), toDataURL: () => `data:image/jpeg;base64,${'A'.repeat(20_000)}` }
+    htmlToImage.toCanvas
+      .mockImplementationOnce(async (_n: any, o: any) => { lists.push([...o.includeStyleProperties]); throw new Error('decode failed') })
+      .mockImplementationOnce(async (_n: any, o: any) => { lists.push([...o.includeStyleProperties]); return canvas })
+    vi.mocked(window.getComputedStyle).mockImplementation((el: Element) => el === document.documentElement
+      ? (['color', 'display', '--tw-shadow'] as unknown as CSSStyleDeclaration)
+      : realGetComputedStyle(el))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const got: any[] = []
+    render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+    await waitFor(() => expect(got).toHaveLength(1))
+    expect(got[0]?.blob.type).toBe('application/pdf')
+    expect(lists).toHaveLength(2)
+    expect(lists[0]).not.toContain('--tw-shadow')
+    expect(lists[1]).not.toContain('--tw-shadow')
+    expect(lists[1]).toEqual(lists[0])
+    expect(warn.mock.calls.some(c => /retrying with the pictures drawn afterwards/.test(String(c[0])))).toBe(true)
+    warn.mockRestore()
+  })
+
   it('getBlob with onBlob, the view closed while the PDF is made (Rebuild PDF cancelled): nothing is handed on, no PDF made', async () => {
     const htmlToImage: any = await import('html-to-image')
     let release: () => void = () => {}
@@ -288,7 +339,8 @@ describe('Save PDF', () => {
   it('the view closed before the capture began: no failure is reported either', async () => {
     const got: any[] = []
     const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
-    // after the automatic start (500 ms), inside the 250 ms wait for the 100 % zoom
+    // after the automatic start (500 ms), inside the waits before the capture (jsdom
+    // loads no picture: picturesReady waits its 3 s)
     await new Promise(r => setTimeout(r, 600))
     view.unmount()
     await new Promise(r => setTimeout(r, 400))

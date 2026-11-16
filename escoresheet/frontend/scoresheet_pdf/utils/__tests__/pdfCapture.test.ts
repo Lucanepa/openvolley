@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { hideImages, imageBox, isWebKitEngine, isWebKitGtk, missingPictures, picturesReady, styleListFor, usedStyleProperties, wellFormedSheet } from '../pdfCapture'
+import { fontFaceRules, hideImages, imageBox, isWebKitEngine, isWebKitGtk, missingPictures, nextFrames, physicalOf, picturesReady, resetSheetFontEmbedCSS, SHEET_FONT_FAMILY, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet, withoutLogicalAliases } from '../pdfCapture'
 
 describe('isWebKitEngine', () => {
   it('every WebKit: Safari, the macOS app, WebKitGTK and all iPhone / iPad browsers; never Chromium or Firefox', () => {
@@ -66,6 +66,143 @@ describe('usedStyleProperties', () => {
     expect(used).toContain('display')
     expect(used.some((p) => p.startsWith('--'))).toBe(false)
     expect(document.querySelector('iframe')).toBeNull()
+  })
+
+  it('copies the physical properties, not their logical second names', () => {
+    const real = window.getComputedStyle.bind(window)
+    const sides = ['top', 'right', 'bottom', 'left']
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) =>
+      el === document.documentElement && !pseudo
+        ? ([...sides.map(s => `margin-${s}`), 'margin-inline-start', 'margin-block-end'] as unknown as CSSStyleDeclaration)
+        : real(el, pseudo))
+    document.body.innerHTML = '<div id="sheet"><p style="margin: 3px 4px">A</p></div>'
+    const used = usedStyleProperties(document.getElementById('sheet')!)
+    expect(used).toEqual(expect.arrayContaining(['margin-top', 'margin-left']))
+    expect(used).not.toContain('margin-inline-start')
+    expect(used).not.toContain('margin-block-end')
+  })
+})
+
+describe('logical properties (WebKit spent ~6 s rewriting them over their physical ones)', () => {
+  it('names the physical property each logical one stands for in horizontal-tb', () => {
+    expect(physicalOf('margin-inline-start')).toBe('margin-left')
+    expect(physicalOf('border-block-end-color')).toBe('border-bottom-color')
+    expect(physicalOf('border-inline-end-width')).toBe('border-right-width')
+    expect(physicalOf('scroll-padding-block-start')).toBe('scroll-padding-top')
+    expect(physicalOf('inset-inline-end')).toBe('right')
+    expect(physicalOf('inline-size')).toBe('width')
+    expect(physicalOf('max-block-size')).toBe('max-height')
+    expect(physicalOf('contain-intrinsic-inline-size')).toBe('contain-intrinsic-width')
+    expect(physicalOf('border-end-start-radius')).toBe('border-bottom-left-radius')
+    expect(physicalOf('overflow-block')).toBe('overflow-y')
+    expect(physicalOf('overscroll-behavior-inline')).toBe('overscroll-behavior-x')
+    for (const p of ['margin-left', 'width', 'display', 'block-step-size', 'text-box-edge', 'border-bottom-width']) expect(physicalOf(p), p).toBeNull()
+  })
+
+  it('leaves a logical one out only when every side it can stand for is listed', () => {
+    const borders = ['top', 'right', 'bottom', 'left'].map(s => `border-${s}-width`)
+    expect(withoutLogicalAliases([...borders, 'border-block-end-width', 'color'])).toEqual([...borders, 'color'])
+    // a vertical writing mode makes block-end left or right: without them it stays
+    expect(withoutLogicalAliases(['border-bottom-width', 'border-block-end-width'])).toEqual(['border-bottom-width', 'border-block-end-width'])
+    expect(withoutLogicalAliases(['width', 'height', 'inline-size', 'min-block-size'])).toEqual(['width', 'height', 'min-block-size'])
+    expect(withoutLogicalAliases(['overflow-x', 'overflow-y', 'overflow-inline'])).toEqual(['overflow-x', 'overflow-y'])
+  })
+})
+
+describe('the sheet font for the capture (only its own, built once)', () => {
+  // jsdom's CSSOM drops a @font-face's src: the page's stylesheets as a browser lists them
+  const face = (family: string, src: string, sheetHref: string | null = null) => ({
+    type: 5,
+    style: { getPropertyValue: (p: string) => (p === 'font-family' ? `"${family}"` : '') },
+    cssText: `@font-face { font-family: "${family}"; src: ${src} format("woff2"); }`,
+    parentStyleSheet: { href: sheetHref }
+  })
+  const pageSheets = [
+    { href: null, cssRules: [face('OV Sheet Inter', 'url("/fonts/inter-latin.woff2")'), { type: 1, cssText: '.x { color: red }' }] },
+    // in a build the CSS is a file of its own: its url()s are relative to it
+    { href: 'http://localhost:3000/assets/index.css', cssRules: [{ type: 4, cssRules: [face('OV Sheet Inter', 'url(inter-cyrillic.woff2)', 'http://localhost:3000/assets/index.css')] }] },
+    // the app's own fonts on the manager page: never in the PDF
+    { href: null, cssRules: [face('Inter Variable', 'url("/fonts/app-inter.woff2")'), face('Orbitron', 'url("/fonts/orbitron.woff2")')] },
+    // another origin's stylesheet cannot be read
+    { href: 'https://fonts.example/x.css', get cssRules (): never { throw new DOMException('cross-origin', 'SecurityError') } }
+  ]
+  const fetched: string[] = []
+  const okFetch = vi.fn(async (url: string) => {
+    fetched.push(url)
+    return { ok: true, status: 200, blob: async () => new Blob([new Uint8Array([119, 79, 70, 50])], { type: 'font/woff2' }) }
+  })
+  const withSheets = (sheets: unknown[]) => Object.defineProperty(document, 'styleSheets', { configurable: true, get: () => sheets })
+  afterEach(() => {
+    delete (document as any).styleSheets
+    fetched.length = 0
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    resetSheetFontEmbedCSS()
+  })
+
+  it('reads the @font-face rules of the sheet family only, also inside @media and @layer', () => {
+    withSheets(pageSheets)
+    const faces = fontFaceRules(document, SHEET_FONT_FAMILY)
+    expect(faces).toHaveLength(2)
+    expect(faces.map(f => f.cssText).join(' ')).not.toMatch(/app-inter|orbitron/)
+  })
+
+  it('inlines every file of the sheet font, fetches nothing else, and builds it once', async () => {
+    withSheets(pageSheets)
+    vi.stubGlobal('fetch', okFetch)
+    const css = await sheetFontEmbedCSS()
+    expect(css).not.toBeNull()
+    expect(css!.match(/@font-face/g)).toHaveLength(2)
+    expect(css).toMatch(/OV Sheet Inter/)
+    expect(css).not.toMatch(/Inter Variable|Orbitron/)
+    // every url() is a data: URL: nothing left to fetch from inside the SVG
+    expect(css!.match(/url\(/g)).toHaveLength(2)
+    expect(css!.match(/url\("data:font\/woff2;base64,/g)).toHaveLength(2)
+    expect(fetched.map(u => new URL(u).pathname).sort()).toEqual(['/assets/inter-cyrillic.woff2', '/fonts/inter-latin.woff2'])
+    // the next capture takes the same CSS without fetching again
+    expect(await sheetFontEmbedCSS()).toBe(css)
+    expect(fetched).toHaveLength(2)
+  })
+
+  it('a file that cannot be read: null (html-to-image embeds the fonts itself), and the next capture tries again', async () => {
+    withSheets(pageSheets)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, blob: async () => new Blob([]) })))
+    expect(await sheetFontEmbedCSS()).toBeNull()
+    // an app's fallback page served for the font's path is not a font either
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, blob: async () => new Blob(['<!doctype html>'], { type: 'text/html' }) })))
+    expect(await sheetFontEmbedCSS()).toBeNull()
+    vi.stubGlobal('fetch', okFetch)
+    expect(await sheetFontEmbedCSS()).toMatch(/data:font\/woff2/)
+  })
+
+  it('no sheet font on the page: null, nothing fetched', async () => {
+    withSheets([pageSheets[2]])
+    vi.stubGlobal('fetch', okFetch)
+    expect(await sheetFontEmbedCSS()).toBeNull()
+    expect(fetched).toHaveLength(0)
+  })
+})
+
+describe('nextFrames', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it('ends after two frames', async () => {
+    const queue: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { queue.push(cb); return queue.length })
+    let done = false
+    const p = nextFrames(5000).then(() => { done = true })
+    queue.shift()!(0)
+    await Promise.resolve()
+    expect(done).toBe(false)
+    queue.shift()!(16)
+    await p
+    expect(done).toBe(true)
+  })
+  it('a hidden tab gets no frames: it ends at the limit', async () => {
+    vi.stubGlobal('requestAnimationFrame', () => 0)
+    const t0 = Date.now()
+    await nextFrames(30)
+    expect(Date.now() - t0).toBeLessThan(1000)
   })
 })
 
@@ -164,6 +301,17 @@ describe('pictures before the capture (logo, signatures)', () => {
     img.dispatchEvent(new Event('error'))
     await p
     expect(ready).toBe(true)
+  })
+
+  it('every picture already loaded: no wait for the limit', async () => {
+    const fine = () => pic('/ok.png', { complete: true, naturalWidth: 10, decode: () => Promise.resolve() })
+    const t0 = Date.now()
+    await picturesReady(sheet(fine(), fine(), fine(), pic(null)), 3000)
+    expect(Date.now() - t0).toBeLessThan(500)
+    // no picture with a source at all: nothing to wait for either
+    const t1 = Date.now()
+    await picturesReady(sheet(pic(null)), 3000)
+    expect(Date.now() - t1).toBeLessThan(500)
   })
 
   it('never waits longer than the limit, and names the picture that did not come', async () => {

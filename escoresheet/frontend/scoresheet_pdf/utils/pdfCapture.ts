@@ -16,6 +16,12 @@
 // does not change the picture. Custom properties (--*) are always dropped: the
 // copied values are already resolved, nothing in the clone reads a var().
 // On WebKitGTK this brings the SVG from ~87 MB to ~18 MB.
+//
+// It is also what makes the capture fast, so every engine uses it (2026-11-16):
+// Chromium (Brave, Chrome, Edge, Android) took the full copy, ~750 properties
+// on each of the ~4,400 elements in the manager (275 of them the app's custom
+// properties), a ~100 MB SVG that took ~9.5 s to clone, serialise and decode
+// on a fast desktop; the lean copy is ~100 properties and ~12 MB (~1 s).
 
 import { wellFormedText } from '../../src/utils/stringUtils.js';
 
@@ -107,6 +113,18 @@ export async function picturesReady(root: Element, timeoutMs = 3000): Promise<vo
     new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); })
   ]);
   clearTimeout(timer);
+}
+
+/**
+ * Two animation frames: a render React has committed is laid out. At most
+ * `maxMs`, as a hidden tab (Rebuild PDF behind another tab) gets no frames.
+ */
+export function nextFrames(maxMs = 100): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, maxMs);
+    if (typeof requestAnimationFrame !== 'function') return;
+    requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer); resolve(); }));
+  });
 }
 
 /** The pictures of `root` that have a source but did not load (they are missing from the PDF). */
@@ -231,11 +249,61 @@ export function drawImagesOnto(canvas: HTMLCanvasElement, root: Element, imgs: H
   }
 }
 
+// Logical properties (margin-inline-start, border-block-end-color, inline-size,
+// ...) are second names for physical ones (margin-left, border-bottom-color,
+// width, ...): their computed values are the physical ones', mapped by the
+// element's own writing mode. Copying the physical properties is enough, and
+// copying both made WebKit slow: each logical property set after its physical
+// one rewrites the clone's inline style, which costs WebKit up to ~25 µs a time
+// in the manager page, ~3 of its ~6 s for the whole clone. A
+// logical property is left out only when the browser lists the physical
+// property for every side it can stand for (in a vertical writing mode
+// margin-block-start is margin-left or margin-right, not margin-top).
+
+const SIDE: Record<string, string> = { 'block-start': 'top', 'block-end': 'bottom', 'inline-start': 'left', 'inline-end': 'right' };
+
+/** The physical property the logical `p` stands for in horizontal-tb, ltr; null when `p` is not logical. */
+export function physicalOf(p: string): string | null {
+  const radius = /^border-(start|end)-(start|end)-radius$/.exec(p);
+  if (radius) return `border-${radius[1] === 'start' ? 'top' : 'bottom'}-${radius[2] === 'start' ? 'left' : 'right'}-radius`;
+  const axis = /^(overflow|overscroll-behavior)-(block|inline)$/.exec(p);
+  if (axis) return `${axis[1]}-${axis[2] === 'block' ? 'y' : 'x'}`;
+  const inset = /^inset-((?:block|inline)-(?:start|end))$/.exec(p);
+  if (inset) return SIDE[inset[1]];
+  const q = p
+    .replace(/(^|-)((?:block|inline)-(?:start|end))(?=-|$)/, (_m, pre: string, s: string) => `${pre}${SIDE[s]}`)
+    .replace(/(^|-)block-size$/, '$1height')
+    .replace(/(^|-)inline-size$/, '$1width');
+  return q === p ? null : q;
+}
+
+/** Every physical property the logical one standing for `phys` in horizontal-tb can stand for in any writing mode. */
+function physicalSides(phys: string): string[] {
+  if (/^border-(top|bottom)-(left|right)-radius$/.test(phys)) {
+    return ['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((c) => `border-${c}-radius`);
+  }
+  const axis = /^(overflow|overscroll-behavior)-[xy]$/.exec(phys);
+  if (axis) return [`${axis[1]}-x`, `${axis[1]}-y`];
+  // a side first: border-bottom-width is a side's width, not a size
+  const side = /(^|-)(top|bottom|left|right)(?=-|$)/;
+  if (side.test(phys)) return ['top', 'bottom', 'left', 'right'].map((s) => phys.replace(side, `$1${s}`));
+  return ['width', 'height'].map((d) => phys.replace(/(width|height)$/, d));
+}
+
+/** `props` without the logical properties whose physical properties are all in it. */
+export function withoutLogicalAliases(props: string[]): string[] {
+  const listed = new Set(props);
+  return props.filter((p) => {
+    const phys = physicalOf(p);
+    return !phys || !physicalSides(phys).every((x) => listed.has(x));
+  });
+}
+
 /** The properties of `root`'s subtree that differ from the UA defaults somewhere. */
 export function usedStyleProperties(root: Element): string[] {
   const doc = root.ownerDocument;
   const win = doc.defaultView!;
-  const props = allStyleProperties(doc).filter((p) => !p.startsWith('--'));
+  const props = withoutLogicalAliases(allStyleProperties(doc).filter((p) => !p.startsWith('--')));
 
   const frame = doc.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
@@ -269,19 +337,127 @@ export function usedStyleProperties(root: Element): string[] {
       return style;
     };
 
-    const pairs: Array<[CSSStyleDeclaration, CSSStyleDeclaration]> = [];
+    // the elements' styles by their reference (a few tags): each reference value is read once
+    const byRef = new Map<CSSStyleDeclaration, CSSStyleDeclaration[]>();
+    const add = (ref: CSSStyleDeclaration, style: CSSStyleDeclaration) => {
+      const list = byRef.get(ref);
+      if (list) list.push(style); else byRef.set(ref, [style]);
+    };
     for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
       const ref = refFor(el);
-      pairs.push([win.getComputedStyle(el), ref]);
+      add(ref, win.getComputedStyle(el));
       // ::before / ::after are cloned with the same property list.
       for (const pseudo of ['::before', '::after']) {
         const ps = win.getComputedStyle(el, pseudo);
         const content = ps.getPropertyValue('content');
-        if (content && content !== 'none' && content !== 'normal') pairs.push([ps, ref]);
+        if (content && content !== 'none' && content !== 'normal') add(ref, ps);
       }
     }
-    return props.filter((p) => pairs.some(([s, r]) => s.getPropertyValue(p) !== r.getPropertyValue(p)));
+    return props.filter((p) => {
+      for (const [ref, styles] of byRef) {
+        const uaDefault = ref.getPropertyValue(p);
+        for (const style of styles) if (style.getPropertyValue(p) !== uaDefault) return true;
+      }
+      return false;
+    });
   } finally {
     frame.remove();
   }
+}
+
+// The sheet's font in the capture. The SVG html-to-image draws is loaded as a
+// picture, and a picture fetches nothing: the font files have to be inside it
+// as data: URLs. html-to-image finds them itself on every capture, by reading
+// every rule of every stylesheet of the page and walking the whole clone for
+// the families it uses (~0.4 s in the manager), then fetching every file
+// again. The sheet uses one web font, sheet.css's 'OV Sheet Inter' (seven
+// unicode-range files; the rest of its families are system fonts), so the
+// capture takes the CSS from those @font-face rules only, built once per page
+// and handed to html-to-image as fontEmbedCSS. A file that cannot be read
+// leaves it to html-to-image, as before.
+
+/** The family sheet.css bundles for the sheet. */
+export const SHEET_FONT_FAMILY = 'OV Sheet Inter';
+
+const unquote = (s: string): string => s.trim().replace(/^(['"])(.*)\1$/, '$2');
+const FONT_URL = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g;
+
+/** The @font-face rules of `family` in `doc`'s stylesheets (in @layer, @media and @import too). */
+export function fontFaceRules(doc: Document, family: string): CSSFontFaceRule[] {
+  const found: CSSFontFaceRule[] = [];
+  const seen = new Set<string>();
+  const walk = (rules: CSSRuleList | undefined | null) => {
+    for (const rule of Array.from(rules || [])) {
+      if (rule.type === 5 /* CSSRule.FONT_FACE_RULE */) {
+        const face = rule as CSSFontFaceRule;
+        // the dev server and a build may both have put sheet.css on the page
+        if (unquote(face.style.getPropertyValue('font-family')) === family && !seen.has(face.cssText)) {
+          seen.add(face.cssText);
+          found.push(face);
+        }
+      } else if (rule.type === 3 /* CSSRule.IMPORT_RULE */) {
+        try { walk((rule as CSSImportRule).styleSheet?.cssRules); } catch { /* another origin's */ }
+      } else if ('cssRules' in rule) {
+        walk((rule as CSSGroupingRule).cssRules);
+      }
+    }
+  };
+  for (const sheet of Array.from(doc.styleSheets)) {
+    // another origin's stylesheet cannot be read, and it is not the sheet's
+    try { walk(sheet.cssRules); } catch { /* skip */ }
+  }
+  return found;
+}
+
+const asDataUrl = async (url: string): Promise<string> => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const blob = await res.blob();
+  // a page instead of the file (an app's fallback route) would print the fallback font
+  if (/^text\//i.test(blob.type)) throw new Error(`${url}: ${blob.type}, not a font`);
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error(`${url}: not readable`));
+    reader.readAsDataURL(blob);
+  });
+};
+
+/** The @font-face CSS of `family` with every font file inlined as a data: URL; null without such rules. */
+export async function inlineFontFaceCSS(doc: Document, family: string): Promise<string | null> {
+  const faces = fontFaceRules(doc, family);
+  if (faces.length === 0) return null;
+  const css = await Promise.all(faces.map(async (face) => {
+    const base = face.parentStyleSheet?.href || doc.baseURI;
+    const text = face.cssText;
+    const urls = [...new Set(Array.from(text.matchAll(FONT_URL), (m) => m[2]).filter((u) => !/^data:/i.test(u)))];
+    const inlined = new Map(await Promise.all(urls.map(async (u) => [u, await asDataUrl(new URL(u, base).href)] as const)));
+    return text.replace(FONT_URL, (whole, _q, u: string) => (inlined.has(u) ? `url("${inlined.get(u)}")` : whole));
+  }));
+  return css.join('\n');
+}
+
+let sheetFonts: { doc: Document; css: Promise<string | null> } | null = null;
+
+/**
+ * The sheet font's CSS for html-to-image's fontEmbedCSS, built once per page
+ * (the same files on every capture). null when it could not be built: then
+ * html-to-image embeds the fonts itself, and the next capture tries again.
+ */
+export function sheetFontEmbedCSS(doc: Document = document): Promise<string | null> {
+  if (!sheetFonts || sheetFonts.doc !== doc) {
+    const css = inlineFontFaceCSS(doc, SHEET_FONT_FAMILY).catch((err) => {
+      console.warn('[Scoresheet] The sheet font could not be prepared for the PDF, html-to-image embeds it:', err);
+      return null;
+    });
+    const entry = { doc, css };
+    sheetFonts = entry;
+    void css.then((value) => { if (value === null && sheetFonts === entry) sheetFonts = null; });
+  }
+  return sheetFonts.css;
+}
+
+/** Forget the prepared font CSS (tests). */
+export function resetSheetFontEmbedCSS(): void {
+  sheetFonts = null;
 }
