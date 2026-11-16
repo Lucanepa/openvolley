@@ -28,6 +28,10 @@ substitutions (team) and sanctions (team and type), each with the score at
 that moment, and the number of libero actions. A substitution or a sanction
 never says which shirt number or why (an injury, an expulsion): rosters with
 names can be read by number elsewhere. Voided (undone) events are left out.
+A set's `startedAt`, `endedAt` and `minutes` are the times printed on the
+scoresheet: the start the scorer confirmed (or corrected after the match) and the
+recorded end, each to the minute, `minutes` their difference
+(`lib/sheetTimes.js`, a copy of the app's rules).
 
 In the live snapshot the teams are labelled A / B as in the scoresheet:
 `score.pointsA`, `teams.A.name`, `serving` is `"A"` / `"B"`. In `stats` and the

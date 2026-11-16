@@ -24,6 +24,7 @@ import { cloudDataFromServer, localMatchRowFromCloud, rosterWithRedesignations }
 import { recomputeMatch } from '../domain/recompute'
 import { approvalsBySlot } from '../domain/accountApproval'
 import { normalizeMatchData } from '../../scoresheet_pdf/utils/matchData'
+import { rebuildSetStart } from '../domain/sheetTimes'
 
 const REBUILD_MATCH_ID = 1
 const HOME_TEAM_ID = 1
@@ -41,47 +42,9 @@ const playerRow = (teamId) => (p) => ({
   isLfp: !!p.is_lfp
 })
 
-const minuteOf = (v) => {
-  if (v === null || v === undefined || v === '') return null
-  const n = typeof v === 'number' ? v : Date.parse(String(v))
-  return Number.isFinite(n) ? Math.floor(n / 60000) : null
-}
-
-/**
- * The start a cloud set row prints with, as the scorer's device printed it
- * (scoresheet_pdf/utils/matchTimes setStartMs: a set.startTime other than the
- * one the set_start event recorded wins there, as a correction).
- *
- * On the device set.startTime is the time the "Set n start time" dialog
- * confirmed, or a later correction. In the cloud it can still be the time the
- * row was created (set 1 at the coin toss, set n+1 at the end of set n): the
- * column was not updated before 983fdb500 (2026-10-06), nor when that update
- * was lost. So the cloud value counts only where it can be the scorer's word:
- *  - it is the confirmed start (the same minute), or nothing else is known;
- *  - a correction of the set's times is recorded with it (the log's
- *    `setTimes` entry, or the set_end event Corrections rewrites);
- *  - it is later than the confirmed start (a creation time never is).
- * Otherwise the confirmed start, from the set_start event.
- *
- * @param {{ index: number, start_time?: string|null }} set  a cloud sets row
- * @param {object[]} events  the cloud events (set_index, type, payload, ts)
- * @param {object[]} manualChanges  the match's manual_changes
- * @returns {string|null}
- */
-export function rebuildSetStart(set, events = [], manualChanges = []) {
-  const cloud = set?.start_time ?? null
-  const ofSet = (Array.isArray(events) ? events : []).filter(e => e && e.set_index === set?.index)
-  const opened = ofSet.find(e => e.type === 'set_start' && minuteOf(e.payload?.startTime ?? e.ts) !== null)
-  const confirmed = opened ? (opened.payload?.startTime ?? opened.ts) : null
-  const c = minuteOf(cloud)
-  const d = minuteOf(confirmed)
-  if (c === null || d === null || c === d) return cloud
-  const logged = (Array.isArray(manualChanges) ? manualChanges : [])
-    .some(ch => ch?.action === 'setTimes' && ch.setIndex === set.index && minuteOf(ch.after?.startTime) === c)
-  const endSays = ofSet.some(e => e.type === 'set_end' && minuteOf(e.payload?.startTime) === c)
-  if (logged || endSays || c > d) return cloud
-  return new Date(typeof confirmed === 'number' ? confirmed : Date.parse(String(confirmed))).toISOString()
-}
+// The cloud-start rule lives with the other time rules (domain/sheetTimes,
+// shared with the server's public API); re-exported for older imports
+export { rebuildSetStart }
 
 const teamRow = (id, team) => (team?.name
   ? { id, name: team.name, shortName: team.short_name, color: team.color }

@@ -4,7 +4,8 @@ import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
-import { queueMatchUpdate, toCloudPlayers, toCloudBench } from '../db/matchRepository'
+import { queueMatchUpdate, toCloudPlayers, toCloudBench, matchInfoFromLocal } from '../db/matchRepository'
+import { matchLfpTracking } from '../domain/sheetInputs'
 import { withActivityContext, currentActivityContext, maxVoidedSeq, rememberSeedKey } from '../db/eventHistory'
 import Modal from './Modal'
 import RostersPanel from './rosters/RostersPanel'
@@ -576,7 +577,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const saved = localStorage.getItem('liberoEntrySuggestion')
     return saved !== 'false' // default true
   })
-  const [lfpTrackingEnabled, setLfpTrackingEnabled] = useState(() => {
+  // This device's LFP setting (Options); the match's own, kept at the coin toss,
+  // wins below (lfpTrackingEnabled, domain/sheetInputs)
+  const [lfpTrackingDevice, setLfpTrackingDevice] = useState(() => {
     // (a Swiss league rule: never in a Global match tool)
     return localStorage.getItem('lfpTrackingEnabled') === 'true' && getToolMode() !== 'global' // default false
   })
@@ -1381,6 +1384,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // ref, so a callback made before the match loaded still reads the current one.
   const setTargetsRef = useRef(setTargetsOf(null))
   setTargetsRef.current = setTargetsOf(data?.match)
+  // LFP tracking of this match: its own setting (the scorer's at the coin toss),
+  // else this device's (older matches). Switching it in Options changes the
+  // match's too, so its sheet prints what the scorer tracked (domain/sheetInputs)
+  const lfpTrackingEnabled = matchLfpTracking(data?.match, lfpTrackingDevice) && getToolMode() !== 'global'
+  const setLfpTrackingEnabled = useCallback((value) => {
+    const on = value === true
+    setLfpTrackingDevice(on)
+    const m = data?.match
+    if (!m?.id) return
+    db.matches.update(m.id, { lfpTracking: on })
+      .then(() => db.matches.get(m.id))
+      .then((fresh) => fresh && queueMatchUpdate(db, fresh.seed_key, { match_info: matchInfoFromLocal(fresh) }, { test: fresh.test === true }))
+      .catch((err) => console.warn('[Scoreboard] LFP setting not kept with the match:', err))
+  }, [data?.match])
   scorerMovedRef.current = isScorerMoved(data?.match)
 
   // Monitor tablet connection health — notify when a device drops

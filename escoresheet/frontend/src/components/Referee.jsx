@@ -56,6 +56,8 @@ import { getSideAForSet, servingTeamFromLog } from '../domain/rules'
 import { liveRowTeamA } from '../domain/coinToss'
 import { BRAND } from '../brand'
 import { monotonicNow, elapsedWhenSent, countdownAnchor, secondsLeft, keepCountdown, elapsedAfterTheFact, liveStatePushedAt } from '../utils/countdownClock'
+import { matchLfpTracking } from '../domain/sheetInputs'
+import { useMatchTz } from '../ui/useMatchTz'
 
 // A lineup position: the rich format's { number, ... } or the legacy plain number
 const lineupNumber = (pos) => (pos && typeof pos === 'object') ? pos.number : (pos || '')
@@ -235,7 +237,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const saved = localStorage.getItem('scoreFont')
     return saved || 'default'
   })
-  const [lfpTrackingEnabled] = useState(() => {
+  // This device's LFP setting; the match's own (kept at the coin toss) wins
+  // below (domain/sheetInputs)
+  const [lfpTrackingDevice] = useState(() => {
     return localStorage.getItem('lfpTrackingEnabled') === 'true'
   })
   const getScoreFont = () => {
@@ -426,6 +430,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Match data state
   const [data, setData] = useState(null)
+  // LFP tracking and clocks of the match on this tablet: the match's own, as on
+  // the scorer's sheet (domain/sheetInputs)
+  const lfpTrackingEnabled = matchLfpTracking(data?.match, lfpTrackingDevice)
+  useMatchTz(data?.match?.tz)
 
   // Debounce ref to prevent flickering from rapid updates
   const lastDataUpdateRef = useRef(0)

@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { db } from '../db/db'
+import { matchInfoFromLocal } from '../db/matchRepository'
+import { getToolMode } from '../utils/toolMode'
 import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
 import { saveMatchSignature, clearMatchSignatures } from '../utils/saveSignature'
@@ -743,7 +745,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         coinTossServeA: serveA,
         coinTossServeB: serveB,
         coinTossConfirmed: true,  // Mark coin toss as confirmed
-        coinTossDraft: null // confirmed: the draft has served (domain/coinTossDraft)
+        coinTossDraft: null, // confirmed: the draft has served (domain/coinTossDraft)
+        // The scorer's LFP setting now, kept with the match: every device draws
+        // its sheet (and tracks LFP) by it (domain/sheetInputs, owner 2026-11-16).
+        // Never in a Global match (a Swiss league rule).
+        lfpTracking: lfpTrackingEnabled === true && getToolMode() !== 'global' && matchData.global !== true
       }
 
       // Save signatures - use actual signatures for official matches, placeholder for test
@@ -837,6 +843,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             status: 'live', // Set status to live after coin toss is confirmed
             current_set: 1, // Match starts at set 1
             // JSONB columns only
+            // every match_info key (the server replaces it whole), with the LFP
+            // tracking just kept (domain/sheetInputs)
+            match_info: matchInfoFromLocal(updatedMatch),
             coin_toss: {
               team_a: teamA,
               team_b: teamB,

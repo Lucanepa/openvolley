@@ -44,6 +44,7 @@ import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, cn, confirmDialog, toast } from '../ui'
 import { sponsorsOf, sponsorsToMatchInfo } from '../domain/sponsors'
+import { sheetInputsToMatchInfo } from '../domain/sheetInputs'
 import { useSponsorsOption } from '../hooks/useSponsorsOption'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
@@ -1544,7 +1545,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 match_type_3: match.match_type_3 || '',
                 match_type_3_other: match.match_type_3_other || '',
                 best_of: match.bestOf || 5,
-                ...sponsorsToMatchInfo(match)
+                ...sponsorsToMatchInfo(match),
+                // every key: the server replaces match_info whole (domain/sheetInputs)
+                ...sheetInputsToMatchInfo(match)
               },
               home_team: {
                 name: homeTeam?.name || home || t('common.home'),
@@ -2607,7 +2610,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           match_type_3: type3 || '',
           match_type_3_other: type3Other || '',
           best_of: bestOf,
-          ...sponsorsToMatchInfo({ homeSponsors, awaySponsors, sponsorsMarked })
+          ...sponsorsToMatchInfo({ homeSponsors, awaySponsors, sponsorsMarked }),
+          // every key: the server replaces match_info whole (domain/sheetInputs)
+          ...sheetInputsToMatchInfo(localMatch)
         },
         home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
         away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },

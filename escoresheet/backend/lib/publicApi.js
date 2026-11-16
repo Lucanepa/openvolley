@@ -25,6 +25,7 @@
  */
 
 import { LIVE_STATE_PRIVATE_COLUMNS } from './publicColumns.js'
+import { cloudSetTimes, isoOf } from './sheetTimes.js'
 
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -273,17 +274,22 @@ export function buildStats(match, events, sets) {
     }
   }
 
-  const durations = new Map((sets || []).map((r) => [num(r.index), r]))
+  // The times the scoresheet prints (lib/sheetTimes.js, a copy of the app's
+  // rules): the confirmed start, to the minute; minutes = end - start
+  const timed = cloudSetTimes(
+    (sets || []).map((r) => ({ index: num(r.index), start_time: iso(r.start_time), end_time: iso(r.end_time), finished: r.finished === true })),
+    (events || []).map((e) => ({ set_index: num(e.set_index) ?? 1, type: e.type, payload: isObj(jsonOf(e.payload)) ? jsonOf(e.payload) : null, ts: iso(e.ts) })),
+    Array.isArray(jsonOf(match.manual_changes)) ? jsonOf(match.manual_changes) : []
+  )
+  const times = new Map(timed.map((t) => [t.index, t]))
   const setsOut = [...bySet.values()].sort((a, b) => a.set - b.set).map((s) => {
-    const r = durations.get(s.set)
-    const start = r?.start_time ? new Date(r.start_time) : null
-    const end = r?.end_time ? new Date(r.end_time) : null
+    const t = times.get(s.set)
     const { _run, ...rest } = s
     return {
       ...rest,
-      startedAt: iso(r?.start_time),
-      endedAt: iso(r?.end_time),
-      minutes: start && end && end > start ? Math.round((end - start) / 60000) : null
+      startedAt: t?.startMs != null ? isoOf(t.startMs) : null,
+      endedAt: t?.endMs != null ? isoOf(t.endMs) : null,
+      minutes: t?.minutes ?? null
     }
   }).filter((s) => s.pointLog.length > 0 || s.timeouts.length || s.substitutions.length)
 
@@ -426,11 +432,13 @@ export function createPublicApi({ pool, logger = console } = {}) {
       const cacheControl = { 'Cache-Control': `public, max-age=${m.closed_at ? 300 : 30}` }
       if (cached) return ok(cached, cacheControl)
       const ev = await pool.query(
-        `SELECT type, set_index, seq, payload FROM public.events
+        `SELECT type, set_index, seq, payload, ts FROM public.events
           WHERE match_id = $1 AND voided_at IS NULL AND coalesce(test, false) = false
           ORDER BY set_index, seq LIMIT 20000`, [m._id])
-      const st = await pool.query(`SELECT index, start_time, end_time FROM public.sets WHERE match_id = $1`, [m._id])
-      const body = { ...publicMatchInfo(m, { withRosters: true }), stats: buildStats(m, ev.rows, st.rows) }
+      const st = await pool.query(`SELECT index, start_time, end_time, finished FROM public.sets WHERE match_id = $1`, [m._id])
+      // the correction log, for the set starts (lib/sheetTimes rebuildSetStart); never sent
+      const mc = await pool.query(`SELECT manual_changes FROM public.matches WHERE id = $1`, [m._id])
+      const body = { ...publicMatchInfo(m, { withRosters: true }), stats: buildStats({ ...m, manual_changes: mc.rows[0]?.manual_changes ?? null }, ev.rows, st.rows) }
       for (const k of statsCache.keys()) if (k.startsWith(`${id}|`)) statsCache.delete(k)
       if (cacheKey) {
         while (statsCache.size >= STATS_CACHE_MAX) statsCache.delete(statsCache.keys().next().value)

@@ -373,7 +373,7 @@ const PUBLIC_MATCH_FIELDS = [
   'home_team', 'home_team_connection_enabled', 'home_team_name', 'id', 'importedAt',
   'intervalChoices', 'intervalStartedAt', 'lastAwayTeamHeartbeat', 'lastHomeTeamHeartbeat',
   'lastReferee1Heartbeat', 'lastReferee2Heartbeat', 'lastTeam1Heartbeat', 'lastTeam2Heartbeat',
-  'league', 'leftTeam', 'license_number', 'linesman1', 'linesman2', 'listSource',
+  'league', 'lfpTracking', 'leftTeam', 'license_number', 'linesman1', 'linesman2', 'listSource',
   'liveClockOffsetMs', 'matchGender', 'matchInfo', 'matchInfoConfirmedAt', 'matchNumber',
   'matchPhase', 'matchRound', 'match_external_id', 'match_info', 'match_type_1',
   'match_type_1_other', 'match_type_2', 'match_type_3', 'match_type_3_other', 'phase',
@@ -392,7 +392,7 @@ const PUBLIC_MATCH_FIELDS = [
   'team2Coach', 'team2CoachName', 'team2Color', 'team2Country', 'team2CourtCaptain',
   'team2FirstServe', 'team2FirstServePlayer', 'team2Id', 'team2Name', 'team2Players',
   'team2ShortName', 'team2TeamConnectionEnabled', 'team2TeamId', 'team2_data', 'team2_short_name',
-  'team2_team', 'team2_team_name', 'test', 'type1', 'type2', 'type3', 'type3Other', 'updatedAt',
+  'team2_team', 'team2_team_name', 'test', 'type1', 'type2', 'type3', 'type3Other', 'tz', 'updatedAt',
   'updated_at', 'userRole', 'venue', 'winner', 'winner_entry_id',
 ]
 

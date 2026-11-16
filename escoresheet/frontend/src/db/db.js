@@ -2,6 +2,7 @@ import Dexie from 'dexie'
 import { rewriteQueuedSyncJobs } from '../utils/syncIds'
 import { installEventHistoryHooks } from './eventHistory'
 import { installRemarksSyncHook } from './remarksSync'
+import { toolTz } from '../ui/format.js'
 
 /**
  * ============================================================================
@@ -390,6 +391,14 @@ installEventHistoryHooks(db)
 
 // Every change of match.remarks is queued for the server (db/remarksSync.js, db/017)
 installRemarksSyncHook(db)
+
+// A new match keeps the zone its clocks read (domain/sheetInputs, owner
+// 2026-11-16): the tool's when it is created (Zürich in the Swiss tool, the
+// device's own in the Global tool), so every device prints its times alike.
+// A match restored from the server brings its own (localFromMatchInfo).
+db.matches.hook('creating', (_key, obj) => {
+  if (obj && (typeof obj.tz !== 'string' || !obj.tz)) obj.tz = toolTz()
+})
 
 // Request DURABLE storage for the origin. All match state lives in IndexedDB;
 // without this the browser treats it as "best-effort" and may evict it under
