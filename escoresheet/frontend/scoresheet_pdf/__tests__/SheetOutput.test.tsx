@@ -293,11 +293,11 @@ describe('Save PDF', () => {
     expect(opts.includeStyleProperties).not.toContain('margin-inline-start')
   })
 
-  it('a lean capture that fails in Chromium is tried again with every property (the slow copy that always worked there)', async () => {
+  it('a lean capture that fails in Chromium is tried once more with the lean list, never with the full copy (~8x larger)', async () => {
     const htmlToImage: any = await import('html-to-image')
     htmlToImage.toCanvas.mockClear()
     const lists: string[][] = []
-    const canvas = { width: 3100, height: 2170, toDataURL: () => `data:image/jpeg;base64,${'A'.repeat(20_000)}` }
+    const canvas = { width: 3100, height: 2170, getContext: () => ({ drawImage: () => {} }), toDataURL: () => `data:image/jpeg;base64,${'A'.repeat(20_000)}` }
     htmlToImage.toCanvas
       .mockImplementationOnce(async (_n: any, o: any) => { lists.push([...o.includeStyleProperties]); throw new Error('decode failed') })
       .mockImplementationOnce(async (_n: any, o: any) => { lists.push([...o.includeStyleProperties]); return canvas })
@@ -311,8 +311,9 @@ describe('Save PDF', () => {
     expect(got[0]?.blob.type).toBe('application/pdf')
     expect(lists).toHaveLength(2)
     expect(lists[0]).not.toContain('--tw-shadow')
-    expect(lists[1]).toEqual(['color', 'display', '--tw-shadow'])
-    expect(warn.mock.calls.some(c => /retrying with every style property/.test(String(c[0])))).toBe(true)
+    expect(lists[1]).not.toContain('--tw-shadow')
+    expect(lists[1]).toEqual(lists[0])
+    expect(warn.mock.calls.some(c => /retrying with the pictures drawn afterwards/.test(String(c[0])))).toBe(true)
     warn.mockRestore()
   })
 

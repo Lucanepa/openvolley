@@ -14,7 +14,7 @@ import { Player, SanctionRecord } from './types_scoresheet';
 import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, idHeadingOf, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData, rosterLiberos } from './utils/extractLiberoData';
-import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, nextFrames, picturesReady, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
+import { drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, nextFrames, picturesReady, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
 import {
   getStartingLineup,
   assignSubsToColumns,
@@ -1591,7 +1591,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       // that WebKit cannot load at all. WebKit (the Linux and macOS desktop apps,
       // Safari, every iPhone / iPad browser) also draws the logos and signatures
       // itself, as it paints pictures nested in the SVG only now and then.
-      // Elsewhere a failed capture is tried again with the full copy.
+      // Elsewhere a failed capture is tried once more the WebKit way (pictures drawn
+      // afterwards), never with the full copy: that is ~8x larger and fails for the
+      // same reasons, worst on an Android tablet short of memory.
       const leanWithPictures = async () => {
         const pictures = drawableImages(sheet!);
         const showPictures = hideImages(pictures);
@@ -1614,10 +1616,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           try {
             canvas = await capture(usedStyleProperties(sheet!));
           } catch (err) {
-            // the slow full copy that was the only one here before
-            console.warn('[Scoresheet] Capture failed, retrying with every style property:', err);
+            console.warn('[Scoresheet] Capture failed, retrying with the pictures drawn afterwards:', err);
             stillShown();
-            canvas = await capture(allStyleProperties());
+            canvas = await leanWithPictures();
           }
         }
       } finally {
