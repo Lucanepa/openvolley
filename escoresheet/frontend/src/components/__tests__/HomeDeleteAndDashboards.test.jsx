@@ -44,6 +44,16 @@ const home = (props) => render(
 )
 
 describe('Home: Delete match under Continue match', () => {
+  it('shows the game PIN in the Continue card, under Delete (owner 2026-11-16)', () => {
+    home({ currentOfficialMatch: { id: 7, gamePin: '559767' }, continueMatch: noop, showDeleteMatchModal: noop, restartTestMatch: noop })
+    const card = screen.getByTestId('continue-card')
+    const pin = within(card).getByTestId('home-game-pin')
+    expect(pin.textContent).toContain('559767')
+    const del = screen.getByTestId('home-delete-match')
+    expect(del.compareDocumentPosition(pin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getAllByText('559767')).toHaveLength(1)
+  })
+
   it('sits in the Continue card, right after Continue, Restore stays outside it', () => {
     const showDeleteMatchModal = vi.fn()
     home({ currentOfficialMatch: { id: 7 }, continueMatch: noop, showDeleteMatchModal, restartTestMatch: noop })

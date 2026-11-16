@@ -174,6 +174,16 @@ export default function HomePage({
               >
                 {t('home.deleteMatch')}
               </Button>
+              {/* Game PIN: in the match's card, under Delete, as it belongs
+                  to that match (owner 2026-11-16, was at the card's foot) */}
+              {currentOfficialMatch?.gamePin && (
+                <div data-testid="home-game-pin" className="rounded-xl border border-stone-200/70 bg-white px-4 py-2.5 text-center">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-500">{t('home.gamePin')}</div>
+                  <div className="mt-0.5 font-mono text-xl font-bold tracking-[0.3em] tabular-nums text-stone-900">
+                    {currentOfficialMatch.gamePin}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -282,15 +292,6 @@ export default function HomePage({
             {t('home.restoreMatch')}
           </Button>
 
-          {/* Game PIN (if any) */}
-          {currentOfficialMatch?.gamePin && (
-            <div className="rounded-xl border border-stone-200/70 bg-stone-50/60 px-4 py-3 text-center">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-500">{t('home.gamePin')}</div>
-              <div className="mt-0.5 font-mono text-xl font-bold tracking-[0.3em] tabular-nums text-stone-900">
-                {currentOfficialMatch.gamePin}
-              </div>
-            </div>
-          )}
         </Card>
 
         {/* Two or more open official matches: the buttons above only reach the
