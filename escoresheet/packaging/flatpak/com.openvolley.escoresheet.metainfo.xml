@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.3.3" date="2026-11-16">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.3</url>
+      <description>
+        <ul>
+          <li>Tablet: drag and drop for substitutions works on Android (hold a player 0.35 s); a tap still opens the menu.</li>
+          <li>Letters no longer cut at the bottom in the player menus.</li>
+          <li>Bench officials as role boxes (C, AC1…) in tablet mode; readable set count in the team bars.</li>
+          <li>"Improper request", "Delay warning", "Formal warning" without "Sanctioned with".</li>
+          <li>The header's menu button says Menu.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.3.2" date="2026-11-16">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.2</url>
       <description>
