@@ -4126,6 +4126,7 @@
         "match_approval_revoke": "Konto-Genehmigung rückgängig gemacht",
         "match_approval_void": "Konto-Genehmigungen ungültig",
         "scoresheet_read": "Matchblatt geöffnet",
+        "scoresheet_rebuild": "Matchblatt neu erstellt",
         "activity_delete": "Aktivitätseinträge gelöscht",
         "activity_read": "Aktivität eingesehen",
         "activity_export": "Aktivität exportiert",
@@ -4264,7 +4265,16 @@
       "download": "PDF herunterladen",
       "noPdfYet": "Noch kein Matchblatt gespeichert",
       "noPdf": "Für dieses Spiel ist kein Matchblatt-PDF gespeichert.",
-      "storedAt": "Matchblatt gespeichert {{date}}"
+      "storedAt": "Matchblatt gespeichert {{date}}",
+      "stale": "Veraltet",
+      "staleTitle": "Die Spieldaten wurden am {{date}} geändert, nach diesem PDF",
+      "rebuild": "PDF neu erstellen",
+      "rebuildTitle": "PDF von Spiel {{game}} neu erstellen",
+      "rebuildBody": "Das Matchblatt wird aus den Spieldaten auf dem Server neu gezeichnet und als neuestes PDF des Spiels gespeichert, auch wenn das Spiel abgeschlossen ist. Die Unterschriften bleiben, wie sie waren; das Blatt erhält die Bemerkung «Rebuilt after the match» mit Datum und deinem Grund. Die älteren PDFs bleiben erhalten.",
+      "rebuildReason": "Warum erstellst du es neu?",
+      "rebuilding": "Das neue PDF wird aus den Spieldaten erstellt…",
+      "rebuilt": "Neues PDF gespeichert",
+      "rebuildFailed": "Das neue PDF konnte nicht erstellt werden. Versuch es nochmals."
     },
     "clubs": {
       "new": "Neuer Verein",

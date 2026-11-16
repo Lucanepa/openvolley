@@ -4147,6 +4147,7 @@
         "match_approval_revoke": "Approvazione con account annullata",
         "match_approval_void": "Approvazioni con account annullate",
         "scoresheet_read": "Referto aperto",
+        "scoresheet_rebuild": "Referto ricreato",
         "activity_delete": "Voci di attività eliminate",
         "activity_read": "Attività consultata",
         "activity_export": "Attività esportata",
@@ -4285,7 +4286,16 @@
       "download": "Scarica PDF",
       "noPdfYet": "Nessun referto ancora salvato",
       "noPdf": "Per questa partita non è salvato alcun PDF del referto.",
-      "storedAt": "Referto salvato {{date}}"
+      "storedAt": "Referto salvato {{date}}",
+      "stale": "Non aggiornato",
+      "staleTitle": "I dati della partita sono cambiati il {{date}}, dopo questo PDF",
+      "rebuild": "Ricrea PDF",
+      "rebuildTitle": "Ricrea il PDF della partita {{game}}",
+      "rebuildBody": "Il referto viene ridisegnato dai dati della partita sul server e salvato come PDF più recente della partita, anche se la partita è chiusa. Le firme restano com'erano; il referto riceve l'osservazione «Rebuilt after the match» con la data e il tuo motivo. I PDF precedenti restano.",
+      "rebuildReason": "Perché lo ricrei?",
+      "rebuilding": "Il nuovo PDF viene creato dai dati della partita…",
+      "rebuilt": "Nuovo PDF salvato",
+      "rebuildFailed": "Non è stato possibile creare il nuovo PDF. Riprova."
     },
     "clubs": {
       "new": "Nuova società",

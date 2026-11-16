@@ -16,7 +16,7 @@ import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
-import { VIEW_LINK_MAX, VIEW_LINK_TTL_MS, beachJsonPathParts, bestPdf, cleanGame, createScoresheets, downloadName, filePart, isMatchScoresheetFile, isScoresheetPdf, isScoresheetUploadPath, pdfLocator, pdfPathParts } from '../lib/scoresheets.js'
+import { REBUILD_REASON_MAX, STALE_SLACK_MS, VIEW_LINK_MAX, VIEW_LINK_TTL_MS, beachJsonPathParts, bestPdf, cleanGame, createScoresheets, downloadName, filePart, isMatchScoresheetFile, isScoresheetPdf, isScoresheetUploadPath, pdfLocator, pdfPathParts } from '../lib/scoresheets.js'
 import { manageFamilyOf } from '../lib/manageApi.js'
 
 const key = () => `k${randomBytes(16).toString('hex')}`
@@ -395,5 +395,98 @@ describe('scoresheets end to end', { skip: SKIP }, () => {
     const pdf = await get(users.bcm, `/api/scoresheets/${id}/pdf?download=1`)
     assert.equal(pdf.status, 200, pdf.text)
     assert.match(pdf.headers.get('content-disposition'), /filename="Muster-Beispiel_vs_Rossi-Bianchi/)
+  })
+
+  // "Rebuild PDF" (owner 2026-11-16): the stale flag and the admin's rebuild
+  const closeNow = async (user, id) => {
+    const r = await api(srv.base, '/api/db', { token: user.token, body: { table: 'matches', action: 'update', params: { data: { status: 'final' }, filters: [{ type: 'eq', column: 'id', value: id }] } } })
+    assert.equal(r.status, 200, r.text)
+  }
+  /** The match's close and stored PDFs `secs` earlier (as if the approval was that long ago). */
+  async function backdate (id, secs) {
+    await sql.query('SET session_replication_role = replica')
+    try {
+      await sql.query('UPDATE public.matches SET closed_at = closed_at - make_interval(secs => $2), updated_at = updated_at - make_interval(secs => $2) WHERE id = $1', [id, secs])
+    } finally {
+      await sql.query('SET session_replication_role = origin')
+    }
+    await sql.query('UPDATE public.match_scoresheets SET stored_at = stored_at - make_interval(secs => $2), first_stored_at = first_stored_at - make_interval(secs => $2) WHERE match_id = $1', [id, secs])
+  }
+  const rowOf = async (user, id) => (await get(user, '/api/scoresheets?app=indoor&limit=500')).json.data.matches.find((x) => x.id === id)
+
+  it('a PDF is out of date once the match data changed after it (and after the close)', async () => {
+    const m = await newMatch(users.ivan)
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'approval')
+    await closeNow(users.ivan, m.id)
+    // the close itself and the approval's own writes: not out of date
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false)
+    await backdate(m.id, 3600)
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false, 'nothing changed since')
+    // a correction after the match (Corrections, the Data or SQL tab: the row's updated_at moves)
+    await sql.query('SET session_replication_role = replica')
+    try {
+      await sql.query('UPDATE public.matches SET updated_at = now() WHERE id = $1', [m.id])
+    } finally {
+      await sql.query('SET session_replication_role = origin')
+    }
+    const row = await rowOf(users.cm, m.id)
+    assert.equal(row.pdf_stale, true, row && JSON.stringify(row))
+    assert.ok(Date.parse(row.data_changed_at) > Date.parse(row.pdf_updated_at) + STALE_SLACK_MS)
+    // no PDF: never out of date
+    const none = await newMatch(users.ivan)
+    assert.equal((await rowOf(users.cm, none.id)).pdf_stale, false)
+  })
+
+  it('an admin rebuilds a closed match\'s PDF without reopening it: served as the newest, the old one kept, audited', async () => {
+    const m = await newMatch(users.ivan)
+    const firstPath = `2026-10-10/game${m.n}_${key()}.pdf`
+    await uploadPdf(users.ivan, firstPath, 'approval')
+    await closeNow(users.ivan, m.id)
+    await backdate(m.id, 3600)
+
+    // the record to draw from: admins only, audited
+    const whole = await get(users.admin, `/api/scoresheets/${m.id}/match`)
+    assert.equal(whole.status, 200, whole.text)
+    assert.equal(whole.json.data.match.id, m.id)
+    assert.equal(whole.json.data.match.game_pin, undefined, 'no PIN')
+    assert.ok(Array.isArray(whole.json.data.sets) && Array.isArray(whole.json.data.events))
+    const read = await sql.query("SELECT details FROM audit_log WHERE action = 'scoresheet.read' AND match_id = $1", [m.id])
+    assert.deepEqual(read.rows.map((x) => x.details.purpose), ['rebuild'])
+    expectCode(await get(users.cm, `/api/scoresheets/${m.id}/match`), 403, 'OV_FORBIDDEN')
+    expectCode(await get(users.ivan, `/api/scoresheets/${m.id}/match`), 403, 'OV_FORBIDDEN')
+    expectCode(await get(users.admin, '/api/scoresheets/00000000-0000-4000-8000-000000000000/match'), 404, 'OV_NOT_FOUND')
+
+    const rebuild = (user, body) => api(srv.base, `/api/scoresheets/${m.id}/rebuild`, { token: user?.token, body })
+    const file = pdfBytes('rebuilt').toString('base64')
+    // the scorer (who may still write the match's PDF otherwise) and a competition manager: refused
+    expectCode(await rebuild(users.ivan, { reason: 'times', fileBase64: file }), 403, 'OV_FORBIDDEN')
+    expectCode(await rebuild(users.cm, { reason: 'times', fileBase64: file }), 403, 'OV_FORBIDDEN')
+    assert.equal((await rebuild(null, { reason: 'times', fileBase64: file })).status, 401)
+    // a reason, a PDF
+    expectCode(await rebuild(users.admin, { reason: '  ', fileBase64: file }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await rebuild(users.admin, { reason: 'x'.repeat(REBUILD_REASON_MAX + 1), fileBase64: file }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await rebuild(users.admin, { reason: 'times', fileBase64: Buffer.from('not a pdf').toString('base64') }), 415, 'OV_STORAGE_CONTENT_TYPE')
+
+    const ok = await rebuild(users.admin, { reason: 'Set start times corrected', fileBase64: file })
+    assert.equal(ok.status, 200, ok.text)
+    // the closed match's newest PDF is the rebuilt one (pdf, view link, list)
+    const pdf = await fetch(`${srv.base}/api/scoresheets/${m.id}/pdf`, { headers: { Authorization: `Bearer ${users.cm.token}` } })
+    assert.equal(pdf.status, 200)
+    assert.equal(Buffer.from(await pdf.arrayBuffer()).toString(), pdfBytes('rebuilt').toString())
+    const row = await rowOf(users.cm, m.id)
+    assert.equal(row.pdf_stale, false)
+    assert.equal(row.pdf_updated_at, ok.json.data.stored_at)
+    // the approval's PDF stays, recorded for the match; the match is still closed
+    const recs = await sql.query('SELECT path FROM public.match_scoresheets WHERE match_id = $1 ORDER BY stored_at', [m.id])
+    assert.equal(recs.rows.length, 2)
+    assert.equal(recs.rows[0].path, firstPath)
+    assert.match(recs.rows[1].path, new RegExp(`^2026-10-10/game${m.n}_k[0-9a-f]{32}\\.pdf$`))
+    assert.notEqual((await sql.query('SELECT closed_at FROM public.matches WHERE id = $1', [m.id])).rows[0].closed_at, null)
+    const audit = await sql.query("SELECT actor_id, details FROM audit_log WHERE action = 'scoresheet.rebuild' AND match_id = $1", [m.id])
+    assert.equal(audit.rows.length, 1)
+    assert.equal(audit.rows[0].actor_id, users.admin.id)
+    assert.equal(audit.rows[0].details.reason, 'Set start times corrected')
+    assert.equal(audit.rows[0].details.closed, true)
+    assert.equal(JSON.stringify(audit.rows[0].details).includes('_k'), false, 'the random part stays out of the log')
   })
 })

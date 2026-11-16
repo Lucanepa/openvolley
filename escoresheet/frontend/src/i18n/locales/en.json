@@ -4148,6 +4148,7 @@
         "match_approval_revoke": "Account approval undone",
         "match_approval_void": "Account approvals voided",
         "scoresheet_read": "Scoresheet opened",
+        "scoresheet_rebuild": "Scoresheet rebuilt",
         "activity_delete": "Activity entries deleted",
         "activity_read": "Activity read",
         "activity_export": "Activity exported",
@@ -4286,7 +4287,16 @@
       "download": "Download PDF",
       "noPdfYet": "No scoresheet stored yet",
       "noPdf": "No scoresheet PDF is stored for this match.",
-      "storedAt": "Scoresheet stored {{date}}"
+      "storedAt": "Scoresheet stored {{date}}",
+      "stale": "Out of date",
+      "staleTitle": "The match data changed on {{date}}, after this PDF",
+      "rebuild": "Rebuild PDF",
+      "rebuildTitle": "Rebuild the PDF of game {{game}}",
+      "rebuildBody": "The scoresheet is drawn again from the match data on the server and stored as the match's newest PDF, also when the match is closed. The signatures stay as they were; the sheet gets the remark \"Rebuilt after the match\" with the date and your reason. The older PDFs are kept.",
+      "rebuildReason": "Why are you rebuilding it?",
+      "rebuilding": "Making the new PDF from the match data…",
+      "rebuilt": "New PDF stored",
+      "rebuildFailed": "The new PDF could not be made. Try again."
     },
     "clubs": {
       "new": "New club",

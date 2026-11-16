@@ -222,6 +222,17 @@ describe('Save PDF', () => {
     expect(view.getByTestId('pdf-notice-path').textContent).toBe('game382208_2L_2026-10-07.pdf')
   })
 
+  it('getBlob with onBlob (the manager\'s "Rebuild PDF"): the PDF goes to the callback, no opener, no download; the extra remark is on the sheet', async () => {
+    const got: any[] = []
+    const remark = 'Rebuilt after the match: 16.11.2026, 10:05 - Set start times corrected'
+    const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded extraRemarks={[remark]} onBlob={(out) => got.push(out)} />)
+    expect(sheetText(view.container)).toContain(remark)
+    await waitFor(() => expect(got).toHaveLength(1))
+    expect(got[0].filename).toBe('game382208_2L_2026-10-07.pdf')
+    expect(got[0].blob.type).toBe('application/pdf')
+    expect(clicked).toHaveLength(0)
+  })
+
   it('a match that is not on this device: no empty sheet is saved, the page says why', async () => {
     const view = render(<App matchData={{ match: {}, homeTeam: null, awayTeam: null, homePlayers: [], awayPlayers: [], sets: [], events: [] }} autoAction="save" dataReady matchMissing />)
     await new Promise(r => setTimeout(r, 900))

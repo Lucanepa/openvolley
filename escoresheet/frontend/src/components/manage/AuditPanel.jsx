@@ -132,6 +132,12 @@ export function auditDetailsLine(entry, opts = {}) {
     if (Number.isFinite(d.staff)) parts.push(tr('manage.audit.staffCount', `${d.staff} officials`, { count: d.staff }))
     return parts.join(' · ')
   }
+  // an admin's "Rebuild PDF": the game and why (lib/scoresheets.js rebuildPdf)
+  if (entry?.action === 'scoresheet.rebuild') {
+    if (d.game_n) parts.push(`#${d.game_n}`)
+    if (d.reason) parts.push(String(d.reason))
+    return parts.join(' · ')
+  }
   if (entry?.action === 'account.clubs') {
     // an admin's whole list (names), or the club of an invite code (club_name)
     if (Array.isArray(d.names)) parts.push(d.names.length ? d.names.map(String).join(', ') : tr('manage.invites.noClub', 'No club'))

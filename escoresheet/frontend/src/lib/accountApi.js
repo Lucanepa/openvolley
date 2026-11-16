@@ -599,6 +599,14 @@ export const scoresheetsApi = {
     const r = await apiRequest('POST', `/api/scoresheets/${enc(matchId)}/view`, {})
     if (r.error || !r.data?.path) return { error: r.error || { message: 'No link' }, status: r.status }
     return { url: getCloudApiUrl(r.data.path), filename: r.data.filename || null }
+  },
+  /** GET /api/scoresheets/:id/match (admins): the match's whole record to draw its sheet again. */
+  matchRecord(matchId) {
+    return apiRequest('GET', `/api/scoresheets/${enc(matchId)}/match`)
+  },
+  /** POST /api/scoresheets/:id/rebuild (admins): the PDF drawn again, stored as the match's newest. */
+  rebuild(matchId, { reason, fileBase64 }) {
+    return apiRequest('POST', `/api/scoresheets/${enc(matchId)}/rebuild`, { reason, fileBase64 }, { timeoutMs: 120000 })
   }
 }
 

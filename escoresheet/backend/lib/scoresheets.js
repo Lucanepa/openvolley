@@ -9,7 +9,15 @@
  *                                            (true / false; null = storage unreadable),
  *                                            and `released`: an admin released its game
  *                                            (release-game, db/040: not the game's official
- *                                            match, and not mailed as its final scoresheet)
+ *                                            match, and not mailed as its final scoresheet),
+ *                                            and `pdf_stale`: the match's data changed after
+ *                                            its newest PDF (dataChangedSql, STALE_SLACK_MS)
+ *   matchForRebuild({ actorId, matchId })    an admin's "Rebuild PDF": the match's whole
+ *                                            record (match, sets, events, live state) to
+ *                                            draw the sheet from; audited (scoresheet.read)
+ *   rebuildPdf({ actorId, matchId, reason,   the PDF drawn from it stored as the match's
+ *               fileBase64 })                newest, also for a closed match (no reopen);
+ *                                            the older PDFs stay; audited (scoresheet.rebuild)
  *   readPdf({ actorId, matchId, download })  the newest stored PDF of a match,
  *                                            as { status, file }; audited first
  *                                            (scoresheet.read): no entry, no file
@@ -344,6 +352,14 @@ export const CLOSED_REPLACE_GRACE_MS = 10 * 60 * 1000
  * uploader's (CLOSED_REPLACE_GRACE_MS), also past its end.
  */
 export const LATE_EDITOR_WINDOW_MS = 6 * 60 * 60 * 1000
+/**
+ * A PDF counts as out of date (list pdf_stale) only for a change this long
+ * after it: the approval writes the match row and its last events around the
+ * time the PDF is sent (owner 2026-11-16: "Out of date" chip, "Rebuild PDF").
+ */
+export const STALE_SLACK_MS = 2 * 60 * 1000
+/** A rebuild's reason (audit_log details): 1 to this many characters. */
+export const REBUILD_REASON_MAX = 300
 
 /** An answer for the caller, thrown out of a transaction (which then rolls back). */
 class Refused extends Error {
@@ -359,8 +375,10 @@ class Refused extends Error {
  * @param {ReturnType<import('./pgQuery.js').createPgQuery>} [o.db]  withTransaction, assertMatchWritable (storePdf)
  * @param {ReturnType<import('./storage.js').createStorage>} o.storage
  * @param {ReturnType<import('./accounts.js').createAccounts>} o.accounts  its audit()
+ * @param {(matchId: string) => Promise<object|null>} [o.readMatch]  the match's whole
+ *   record (lib/matchRestore.js readWhole), for matchForRebuild
  */
-export function createScoresheets ({ pool, db = null, storage, accounts, logger = console, now = () => Date.now() } = {}) {
+export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, logger = console, now = () => Date.now() } = {}) {
   const log = logger
   /** token -> { file, expires } (insertion order = age) */
   const viewLinks = new Map()
@@ -550,6 +568,32 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
     `ELSE m.${side === 'home' ? 'home_team' : 'away_team'}->>'name' END`
   const NAME_COLUMNS = `${nameSql('home')} AS home_name, ${nameSql('away')} AS away_name`
 
+  /**
+   * When the data a sheet is drawn from last changed (SQL, over match row
+   * `alias`): the match row (db/006's trigger moves updated_at on every
+   * write: Corrections, the Data tab, an UPDATE in the SQL tab), its sets
+   * (the same trigger), its events (created_at: a new or restored one) and
+   * its event revisions (db/015: a correction, an undo). An UPDATE of an
+   * event row itself in the SQL tab moves none of them: not seen.
+   */
+  const dataChangedSql = (alias) => `greatest(${alias}.updated_at,
+                (SELECT max((to_jsonb(s) ->> 'updated_at')::timestamptz) FROM public.sets s WHERE s.match_id = ${alias}.id),
+                (SELECT max(e.created_at) FROM public.events e WHERE e.match_id = ${alias}.id),
+                (SELECT max(r.at) FROM public.event_revisions r WHERE r.match_id = ${alias}.id))`
+
+  /**
+   * The newest PDF (stored at `pdfMs`) is out of date: the data changed more
+   * than STALE_SLACK_MS after it, and after the close (the close itself, and
+   * an approval PDF sent just before it, move the match row).
+   */
+  const pdfStale = (pdfMs, changedAt, closedAt) => {
+    const changed = changedAt ? new Date(changedAt).getTime() : NaN
+    if (!Number.isFinite(changed) || !Number.isFinite(pdfMs)) return false
+    const closed = closedAt ? new Date(closedAt).getTime() : NaN
+    const base = Number.isFinite(closed) ? Math.max(pdfMs, closed) : pdfMs
+    return changed > base + STALE_SLACK_MS
+  }
+
   /** GET /api/scoresheets?app=indoor|beach&state=closed|open|all&q=&limit= */
   async function list ({ app, state = 'all', q = '', limit } = {}) {
     const given = appParam(app)
@@ -578,7 +622,8 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
                 ${NAME_COLUMNS}, m.match_info->>'league' AS league,
                 nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS scorer_name,
                 ${sheetScorerSql('m')} AS sheet_scorer_name,
-                (m.official_game_exempt IS TRUE AND (to_jsonb(m) ->> 'released_at') IS NOT NULL) AS released
+                (m.official_game_exempt IS TRUE AND (to_jsonb(m) ->> 'released_at') IS NOT NULL) AS released,
+                ${dataChangedSql('m')} AS data_changed_at
            FROM public.matches m
            LEFT JOIN public.profiles p ON p.user_id = m.created_by
           WHERE ${where.join(' AND ')}
@@ -606,7 +651,9 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
           sport: sportOut(r.is_beach),
           released: r.released === true,
           pdf: located[i].files.length ? true : located[i].unknown ? null : false,
-          pdf_updated_at: located[i].files.length ? new Date(located[i].files[0].mtimeMs).toISOString() : null
+          pdf_updated_at: located[i].files.length ? new Date(located[i].files[0].mtimeMs).toISOString() : null,
+          data_changed_at: iso(r.data_changed_at),
+          pdf_stale: located[i].files.length ? pdfStale(located[i].files[0].mtimeMs, r.data_changed_at, r.closed_at) : false
         }))
       })
     } catch (err) {
@@ -1197,6 +1244,120 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
   }
 
   /**
+   * GET /api/scoresheets/:id/match (admins, lib/manageApi.js): the match's
+   * whole record for "Rebuild PDF" (lib/matchRestore.js readWhole: the
+   * match without its PINs, its sets, its events without the voided ones,
+   * its live state). Personal data past the uploader-only rule: on record
+   * first (scoresheet.read, purpose 'rebuild'), no entry, no record.
+   */
+  async function matchForRebuild ({ actorId, matchId } = {}) {
+    if (!isUuid(matchId)) return notFound()
+    if (typeof readMatch !== 'function') return unavailable()
+    let whole
+    try {
+      whole = await readMatch(matchId)
+    } catch (err) {
+      log.error?.(`[scoresheets] rebuild read failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return unavailable()
+    }
+    if (!whole?.match) return notFound()
+    try {
+      await accounts.audit(null, {
+        actorId,
+        action: 'scoresheet.read',
+        matchId,
+        details: { game_n: whole.match.game_n ?? null, external_id: whole.match.external_id ?? null, purpose: 'rebuild' }
+      })
+    } catch (err) {
+      log.error?.(`[scoresheets] audit failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return unavailable()
+    }
+    return ok({ match: whole.match, sets: whole.sets || [], events: whole.events || [], liveState: whole.liveState ?? null })
+  }
+
+  /**
+   * Where a rebuilt PDF of match row `m` goes: the folder the apps use for it
+   * (its scheduled UTC day, pdfLocator) and, indoor, a fresh random part (a
+   * new file beside the approval's, which stays), beach its seed's own name
+   * (written over: the beach name has no random part). null when the match
+   * has no name the apps could give it.
+   */
+  function rebuildPath (m) {
+    const { folders } = pdfLocator(m)
+    const folder = folders[0] ?? (m.sport === 'beach' ? `beach/${utcDay(new Date(now()))}` : utcDay(new Date(now())))
+    if (m.sport === 'beach') {
+      if (!m.external_id) return null
+      return `${folder}/game${m.game_n != null ? String(m.game_n) : 'unknown'}_${cleanSeed(m.external_id)}.pdf`
+    }
+    const game = cleanGame(m.game_n) ?? cleanGame(m.external_id)
+    return game ? `${folder}/game${game}_k${randomBytes(16).toString('hex')}.pdf` : null
+  }
+
+  /**
+   * POST /api/scoresheets/:id/rebuild (admins, lib/manageApi.js) { reason,
+   * fileBase64 }: the PDF the manager drew from matchForRebuild, stored as
+   * the match's newest (the view link and the final mail serve it), also
+   * for a closed match without a reopen (owner 2026-11-16). The older PDFs
+   * stay. The signatures are the match's own, as stored: the sheet keeps
+   * them and says "Rebuilt after the match" in its remarks. On record
+   * (scoresheet.rebuild: who, why, when; the file's random part stays out).
+   */
+  async function rebuildPdf ({ actorId, matchId, reason, fileBase64 } = {}) {
+    if (!isUuid(matchId)) return notFound()
+    const why = typeof reason === 'string' ? reason.replace(/\s+/g, ' ').trim() : ''
+    if (!why || why.length > REBUILD_REASON_MAX) return invalid(`reason: 1 to ${REBUILD_REASON_MAX} characters`)
+    let data
+    try {
+      data = decodeBase64(fileBase64)
+    } catch (err) {
+      if (err instanceof StorageError) return fail(err.status, err.code, err.message)
+      throw err
+    }
+    if (data.subarray(0, 5).toString('latin1') !== '%PDF-') return fail(415, 'OV_STORAGE_CONTENT_TYPE', 'Not a PDF file')
+    if (!db?.withTransaction) return unavailable()
+    const sha256 = createHash('sha256').update(data).digest('hex')
+    try {
+      return await db.withTransaction(async (client) => {
+        const { rows: [m] } = await client.query(
+          `SELECT ${ROW_COLUMNS} FROM public.matches m WHERE m.id = $1 AND m.test IS NOT TRUE FOR SHARE`, [matchId])
+        if (!m) throw new Refused(notFound())
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ov.scoresheet:${m.id}`])
+        const row = { ...m, sport: sportOut(m.is_beach) }
+        const path = rebuildPath(row)
+        if (!path) throw new Refused(invalid('match: no game number or external id to name its scoresheet'))
+        const { rows: [prev] } = await client.query(
+          'SELECT max(stored_at) AS at FROM public.match_scoresheets WHERE match_id = $1', [m.id])
+        // the beach name may be another account's file: kept as its owners' too
+        const r = await storage.handle('upload', { bucket: SCORESHEETS_BUCKET, path, fileBase64, contentType: 'application/pdf', upsert: true },
+          { userId: actorId, adopt: (owners) => owners })
+        if (r.status !== 200) throw new Refused(r)
+        const { rows: [rec] } = await client.query(
+          `INSERT INTO public.match_scoresheets (path, match_id, stored_by, sha256, size) VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (path) DO UPDATE SET match_id = EXCLUDED.match_id, stored_by = EXCLUDED.stored_by, sha256 = EXCLUDED.sha256,
+             size = EXCLUDED.size, stored_at = now()
+           RETURNING stored_at`,
+          [r.body.data.path, m.id, isUuid(actorId) ? actorId : null, sha256, data.length])
+        await accounts.audit(client, {
+          actorId,
+          action: 'scoresheet.rebuild',
+          matchId: m.id,
+          details: {
+            game_n: m.game_n ?? null,
+            external_id: m.external_id ?? null,
+            reason: why,
+            closed: m.closed_at != null,
+            stored_at: new Date(rec.stored_at).toISOString(),
+            replaced_stored_at: prev?.at ? new Date(prev.at).toISOString() : null
+          }
+        })
+        return ok({ stored_at: new Date(rec.stored_at).toISOString() })
+      })
+    } catch (err) {
+      return storeFailed(err)
+    }
+  }
+
+  /**
    * POST /api/scoresheets/:id/view: the PDF behind a short-lived link for the
    * browser's viewer. The read is checked and audited exactly as GET .../pdf.
    */
@@ -1228,5 +1389,5 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
     return { status: 200, file: { ...v.file, disposition: 'inline' } }
   }
 
-  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles, recordOldPdfs }
+  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles, recordOldPdfs, matchForRebuild, rebuildPdf }
 }

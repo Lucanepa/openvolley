@@ -228,7 +228,7 @@ export function personName(first, last, email) {
  * A decision dialog with one required reason (reopen, release game).
  * onSubmit(reason) resolves to an error text or null.
  */
-export function ReasonModal({ open, title, body, label, confirmLabel, tone = 'danger', onClose, onSubmit }) {
+export function ReasonModal({ open, title, body, label, confirmLabel, tone = 'danger', maxLength = 500, onClose, onSubmit }) {
   const { t } = useTranslation()
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -261,7 +261,7 @@ export function ReasonModal({ open, title, body, label, confirmLabel, tone = 'da
     >
       {body && <p className="mb-3 text-sm text-stone-600">{body}</p>}
       <Field label={label}>
-        <Textarea rows={3} value={reason} onChange={e => { setReason(e.target.value); setError('') }} maxLength={500} required />
+        <Textarea rows={3} value={reason} onChange={e => { setReason(e.target.value); setError('') }} maxLength={maxLength} required />
       </Field>
       <InlineError error={error} className="mt-1.5" />
     </KitModal>
