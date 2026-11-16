@@ -1,5 +1,7 @@
 {
   "common": {
+    "showPassword": "Passwort aazeige",
+    "hidePassword": "Passwort verstecke",
     "back": "Zrugg",
     "home": "Heim",
     "away": "Gascht",

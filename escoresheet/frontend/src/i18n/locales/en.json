@@ -1,5 +1,7 @@
 {
   "common": {
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "back": "Back",
     "home": "Home",
     "away": "Away",

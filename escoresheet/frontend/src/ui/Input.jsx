@@ -10,7 +10,9 @@
 //
 // invalid: AuthGate.tsx:149 swaps the border for `border-red-400 bg-red-50`.
 // numeric: hides the browser spinners, App.tsx:10996.
-import { Search } from 'lucide-react';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Eye, EyeOff, Search } from 'lucide-react';
 import { cn } from './cn.js';
 import { renderIcon } from './Button.jsx';
 
@@ -45,7 +47,44 @@ const TRAILING_CLS = 'absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 h
  * @param {boolean} [props.numeric] hide number spinners (pair with inputMode="numeric"|"decimal")
  * @param {string} [props.wrapperClassName] when icon/trailing wrap the input in a relative div
  */
-export function Input({ size = 'md', icon, trailing, invalid, numeric, className, wrapperClassName, ...rest }) {
+export function Input(props) {
+  // Every password field gets a show/hide eye, unless the caller brings its own trailing node.
+  if (props.type === 'password' && !props.trailing) return <PasswordInput {...props} />;
+  return <InputBase {...props} />;
+}
+
+function PasswordInput({ type: _type, ...props }) {
+  const { t } = useTranslation();
+  const [shown, setShown] = useState(false);
+  const label = shown ? t('common.hidePassword', 'Hide password') : t('common.showPassword', 'Show password');
+  const Icon = shown ? EyeOff : Eye;
+  return (
+    <InputBase
+      {...props}
+      type={shown ? 'text' : 'password'}
+      autoCapitalize="none"
+      autoCorrect="off"
+      spellCheck={false}
+      trailing={
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={label}
+          aria-pressed={shown}
+          title={label}
+          data-testid="password-eye"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setShown((v) => !v)}
+          className="-m-2 inline-flex h-9 w-9 items-center justify-center rounded-lg"
+        >
+          <Icon size={18} aria-hidden="true" />
+        </button>
+      }
+    />
+  );
+}
+
+function InputBase({ size = 'md', icon, trailing, invalid, numeric, className, wrapperClassName, ...rest }) {
   const bad = invalid || rest['aria-invalid'] === true || rest['aria-invalid'] === 'true';
   const slot = ICON_SLOT[size] ?? ICON_SLOT.md;
   const input = (

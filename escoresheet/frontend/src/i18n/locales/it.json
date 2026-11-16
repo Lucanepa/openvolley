@@ -1,5 +1,7 @@
 {
   "common": {
+    "showPassword": "Mostra password",
+    "hidePassword": "Nascondi password",
     "back": "Indietro",
     "home": "Home",
     "away": "Ospite",
