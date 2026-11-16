@@ -9,6 +9,7 @@ import { formatTimeLocal } from './timeUtils'
 import { isShownCloudPickerRow, pickerQuerySince, pickerTeamNames } from './pickerMatches'
 import { onPointHubBoard } from './pointHubBoard'
 import { resolveBestOf } from './matchFormat'
+import { sheetInputsFromMatchInfo } from '../domain/sheetInputs'
 
 /**
  * Generate a unique seed_key for a match
@@ -853,6 +854,8 @@ export function buildLiveStateMatchData(match, liveState, matchId) {
       // the row has match_info.best_of, not bestOf: the bench and the referee's
       // recorded popups number a best-of-3 decider from this
       bestOf: resolveBestOf(match, liveState),
+      // the match's LFP tracking and time zone (match_info; domain/sheetInputs)
+      ...sheetInputsFromMatchInfo(match.match_info),
       firstServe: match.coin_toss?.first_serve || match.first_serve,
       // coin_toss_confirmed = true if we have liveState with team names (means coin toss happened)
       coin_toss_confirmed: !!(liveState?.team_a_name),

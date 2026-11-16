@@ -35,6 +35,8 @@ import { courtSwitchPointOf, setTargetsOf } from '../src/domain/rules.js';
 import { sponsorsOf, withSponsorMark } from '../src/domain/sponsors.js';
 import { generatedRemarks, correctionRemarks } from './utils/sheetRemarks';
 import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
+import { matchLfpTracking, deviceLfpSetting } from '../src/domain/sheetInputs.js';
+import { useMatchTz } from '../src/ui/useMatchTz.js';
 import { BRAND } from '../src/brand.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
@@ -110,6 +112,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // by seq, as this device's database reads them
   const data = useMemo(() => normalizeMatchData(matchData), [matchData]);
   const match: any = data.match;
+  // every clock on the sheet reads the match's own zone (domain/sheetInputs)
+  useMatchTz(match?.tz);
   const homeTeam: any = data.homeTeam;
   const awayTeam: any = data.awayTeam;
   const homePlayers = data.homePlayers;
@@ -121,11 +125,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   // Players as the sheet prints them, sorted by shirt number (the roster's 14 rows;
   // field-spec 3). Robust to a missing list (an imported JSON without players).
-  // LFP marks print only where LFP tracking is on (Options, default off; owner
-  // 2026-11-16): an imported roster PDF carries them for one team even then
-  const lfpShown = (() => {
-    try { return localStorage.getItem('lfpTrackingEnabled') === 'true'; } catch { return false; }
-  })();
+  // LFP marks print only where LFP tracking is on (owner 2026-11-16): an imported
+  // roster PDF carries them for one team even then. The match's own setting (kept
+  // at the coin toss, domain/sheetInputs), else this device's (older matches)
+  const lfpShown = matchLfpTracking(match, deviceLfpSetting());
   const formatPlayers = (players: unknown): Player[] => {
     return asArray<any>(players)
       .filter(p => p && typeof p === 'object')

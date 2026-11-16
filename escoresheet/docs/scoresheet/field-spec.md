@@ -876,9 +876,8 @@ These override sections 4-7 and 16 wherever they differ.
      stored. A sheet that cannot be drawn (its code chunk gone after a deploy, or an error
      while drawing an odd record) shows the error inside the dialog, with Reload for the
      chunk case, instead of replacing the manager.
-   - Not changed: the LFP marks (LFP tracking option, owner 2026-11-16) and the clock zone
-     (Global tool mode) still follow the device that draws the sheet, so a rebuild on another
-     device can differ there from the approved sheet.
+   - The LFP marks and the clock zone come with the match since item 17 (owner 2026-11-16),
+     so a rebuild prints them as the approved sheet did.
    - The deciding set's change of courts (17.15) needs no set targets on the server: only a
      Global match has its own points per set, and a Global match is a test match, never
      sent to the server's `matches` table nor listed or rebuilt there (`m.test IS NOT
@@ -946,3 +945,20 @@ These override sections 4-7 and 16 wherever they differ.
    - The PDF is unchanged: pixel-identical to the full copy's in Chromium (ratio 1 and
      forced 1.25, 1.5, 2.25), WebKit (1.5, 2) and Firefox, standalone page and manager, all
      132 checked rules kept, the text in OV Sheet Inter.
+18. **LFP tracking, the clock zone and the API's minutes come with the match** (owner
+    2026-11-16, after the renderer audit: "yes" to all three proposals).
+   - **LFP tracking** is the scorer's setting when the coin toss is confirmed, kept with the
+     match (`lfp_tracking` in the server's `match_info`). Every device prints the match's
+     LFP marks, and its scoreboard and referee tablet track LFP, by that value, whatever its
+     own Options setting; switching LFP tracking in the scoreboard's Options during the
+     match changes the match's value too. Never in a Global match. A match without the value
+     (coin toss before 3.3.x) still follows the drawing device's setting.
+   - **The clock zone** is the tool's when the match is created (Europe/Zurich in the Swiss
+     tool, the device's own zone in the Global tool), kept with the match (`tz`). The sheet,
+     the Match complete card and the referee view print every time on that clock, on any
+     device. A match without one takes the restoring device's tool zone.
+   - **The public API's set times and minutes** are the sheet's: the confirmed start and the
+     recorded end, each to the minute, minutes = their difference (section 16's time rules), from one rule file the app and the server share (a byte-for-byte copy on
+     the server, checked by tests). Before, the API rounded the raw `start_time` /
+     `end_time`, so a set could differ by a minute, and a set row still holding its creation
+     time printed a wrong start.

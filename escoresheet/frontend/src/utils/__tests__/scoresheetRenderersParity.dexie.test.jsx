@@ -119,6 +119,36 @@ describe('every renderer prints the same sheet for the same match', () => {
     expect(sheetText(c.container)).toBe(deviceText)
   })
 
+  it('LFP tracking and the time zone come with the match, not from the drawing device (owner 2026-11-16)', async () => {
+    const record = serverRecord()
+    // the scorer tracked LFP, the match was created in New York (Global tool)
+    record.match.match_info = { ...record.match.match_info, lfp_tracking: true, tz: 'America/New_York' }
+    record.match.players_home = record.match.players_home.map(p => ({ ...p, is_lfp: p.number <= 3 }))
+    // this device: LFP tracking off, the Swiss tool (Zürich clocks)
+    localStorage.removeItem('lfpTrackingEnabled')
+    const fromCloud = scoresheetDataFromCloud(record)
+    expect(fromCloud.match.lfpTracking).toBe(true)
+    expect(fromCloud.match.tz).toBe('America/New_York')
+    const id = await importMatchFromSupabase(cloudDataFromServer({ match: record.match, sets: record.sets, events: record.events, liveState: null }))
+    const fromDevice = await loadLocalMatchData(db, id)
+    expect(fromDevice.match.lfpTracking).toBe(true)
+    expect(fromDevice.match.tz).toBe('America/New_York')
+
+    const texts = []
+    for (const input of [fromCloud, fromDevice, scoresheetInputFromBundle({ access: 'full', ...fromDevice })]) {
+      const r = render(<App matchData={input} autoAction="preview" />)
+      texts.push(sheetText(r.container))
+      r.unmount()
+    }
+    expect(texts[1]).toBe(texts[0])
+    expect(texts[2]).toBe(texts[1])
+    // the marks the scorer tracked, on a device whose own setting is off
+    expect(texts[0]).toContain('LFP')
+    // set 1 started 14:15 UTC: 09:15 on the match's (New York) clock, not Zürich's 15:15
+    expect(texts[0]).toContain('09:15')
+    expect(texts[0]).not.toContain('15:15')
+  })
+
   it('the input is normalised the same way whatever its source: sets by index, events by seq, a missing seq last', () => {
     const d = normalizeMatchData({
       match: null,

@@ -10,6 +10,7 @@
  */
 
 import { sponsorsFromMatchInfo, sponsorsToMatchInfo } from '../domain/sponsors'
+import { sheetInputsFromMatchInfo, sheetInputsToMatchInfo } from '../domain/sheetInputs'
 
 // Valid columns on the Supabase `matches` table. Payloads are filtered to these
 // so stale/legacy backup formats don't send columns that don't exist.
@@ -96,7 +97,9 @@ export function matchInfoFromLocal(m = {}) {
     match_type_3_other: m.match_type_3_other || '',
     best_of: Number(m.bestOf) === 3 ? 3 : 5,
     // Sponsors on clothing (domain/sponsors.js): booleans, false when not set
-    ...sponsorsToMatchInfo(m)
+    ...sponsorsToMatchInfo(m),
+    // The match's LFP tracking and time zone (domain/sheetInputs): only when set
+    ...sheetInputsToMatchInfo(m)
   }
 }
 
@@ -123,7 +126,9 @@ export function localFromMatchInfo(matchInfo, legacyRow) {
     match_type_3: pick(info.match_type_3),
     match_type_3_other: pick(info.match_type_3_other),
     // only the sponsor keys the row has (a false is a value, kept)
-    ...sponsorsFromMatchInfo(info)
+    ...sponsorsFromMatchInfo(info),
+    // LFP tracking (a false is a value, kept) and the time zone
+    ...sheetInputsFromMatchInfo(info)
   }
   return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined))
 }

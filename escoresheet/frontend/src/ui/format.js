@@ -34,7 +34,33 @@ export function deviceTz() {
  * device is in the hall). The tool is chosen once per device (utils/toolMode).
  */
 export function currentTz() {
+  return matchTz || toolTz();
+}
+
+/** The tool's zone, whatever match is on screen: the zone a new match takes (db.js). */
+export function toolTz() {
   return getToolMode() === 'global' ? deviceTz() : APP_TZ;
+}
+
+// The zone of the match on screen (domain/sheetInputs: match.tz, set when the
+// match was created), while a view of it is open (ui/useMatchTz): the sheet,
+// the Match complete card and the referee view print the match's clock on any
+// device. null: the tool's zone (older matches have none).
+let matchTz = null;
+
+/** The zone set by setMatchTz, or null. */
+export function getMatchTz() {
+  return matchTz;
+}
+
+/** Clocks read this zone until it is cleared (null); an unknown zone is ignored. */
+export function setMatchTz(tz) {
+  matchTz = null;
+  if (typeof tz !== 'string' || !tz) return;
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: tz });
+    matchTz = tz;
+  } catch { /* an unknown zone: the tool's */ }
 }
 
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;

@@ -112,21 +112,36 @@ same rules.
   one difference, fixed: a device that took a match over had no correction log
   (`localMatchRowFromCloud` dropped `manual_changes`), so it printed no "Corrected after
   the match" remarks, and its next correction replaced the server's log.
-- **Still device-dependent** (the same match can print differently on two devices):
-  - **LFP marks**: printed only where the drawing device has LFP tracking on (Options,
-    `localStorage.lfpTrackingEnabled`, default off). Rebuild PDF on the manager prints
-    none.
-  - **Clock zone**: Zürich in the Swiss tool, the device's own zone in the Global tool
-    (`src/ui/format.js` `currentTz`, chosen per device).
-  - Proposed, not done: keep both on the match (`match_info.lfp_tracking` set at the
-    coin toss from the scorer's setting; `match_info.tz` from the tool at match creation)
-    and let the sheet read the match's value first, the device's only for older matches.
-- **Outside the sheet, computed on their own:** the public API's set minutes
-  (`backend/lib/publicApi.js`: raw `sets.start_time`/`end_time`, rounded) can differ by a
-  minute from the sheet's (`matchTimes`: the confirmed start, minutes truncated). The
-  backend cannot import the TypeScript helper; proposed: a plain-JS copy of `matchTimes`
-  shared by both, or the sheet's minutes stored with the set. The final scoresheet mail
-  attaches the stored PDF (no recomputation). OpenBeach has its own sheet.
+- **Kept with the match, not the drawing device** (owner 2026-11-16, `src/domain/sheetInputs.js`):
+  - **LFP tracking** (`match.lfpTracking`, server `match_info.lfp_tracking`): the scorer's
+    Options setting, kept when the coin toss is confirmed (`CoinToss.jsx`; never in a
+    Global match). The sheet (`App_Scoresheet` `matchLfpTracking`), the scoreboard and
+    the referee tablet read the match's value; switching it in the scoreboard's Options
+    changes the match's too. Only a match without one (older matches) falls back to the
+    device's `localStorage.lfpTrackingEnabled`.
+  - **Time zone** (`match.tz`, server `match_info.tz`): the tool's zone when the match is
+    created (`db.js` `matches` creating hook, `ui/format` `toolTz`: Zürich in the Swiss
+    tool, the device's own in the Global tool). While the sheet, the Match complete card
+    or the referee view of a match is open, every clock reads it (`ui/useMatchTz` →
+    `ui/format` `setMatchTz`, `currentTz`). A match without one (restored before
+    2026-11-16) takes the restoring device's tool zone.
+  - Both travel with every match_info write (`matchRepository` `matchInfoFromLocal` /
+    `localFromMatchInfo`, MatchSetup's inserts, the coin toss), the relays' allowlist
+    (`shared/relayPrivateFields.json`, `lfpTracking`, `tz`) and the server's live
+    columns (`backend/lib/publicColumns.js` `MATCH_INFO_KEYS`).
+  - Checked by `scoresheetRenderersParity.dexie.test.jsx`: a match with LFP tracking on
+    and a New York zone prints its LFP marks and New York times from the server's
+    record, a device's database and the referee's bundle, on a device whose own LFP
+    setting is off and whose clocks read Zürich.
+- **The public API's set minutes** follow the sheet's rules: the rules are one plain-JS
+  module, `src/domain/sheetTimes.js` (`scoresheet_pdf/utils/matchTimes.ts` re-exports
+  it), copied byte for byte to `backend/lib/sheetTimes.js` (the Docker build sees only
+  the backend). `backend/lib/publicApi.js` `buildStats` uses `cloudSetTimes` (the cloud
+  start rule `rebuildSetStart` first, as Rebuild PDF): `startedAt` / `endedAt` are the
+  printed times (to the minute), `minutes` their difference. `backend/tests/sheetTimes.test.js`
+  and `src/utils/__tests__/sheetTimesParity.test.js` fail when the copies differ or the
+  API's minutes differ from the sheet's. The final scoresheet mail attaches the stored
+  PDF (no recomputation). OpenBeach has its own sheet.
 
 ---
 

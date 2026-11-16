@@ -74,6 +74,7 @@ import { Checkbox } from '../ui/Checkbox.jsx'
 import { showsSponsorBoxes, sponsorsOf, sponsorsPatch, withSponsorMark, SPONSOR_MARK_NO, SPONSOR_MARK_YES } from '../domain/sponsors'
 import { useSponsorsOption } from '../hooks/useSponsorsOption'
 import { matchInfoFromLocal, queueMatchUpdate } from '../db/matchRepository'
+import { useMatchTz } from '../ui/useMatchTz'
 
 // volleyui recipes for this page (RESTYLE-SPEC P3b). The paper-sheet blocks
 // (ResultsTable, SanctionsTable, RemarksBox and their black frames), the
@@ -389,6 +390,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const { vmin } = useScaledLayout()
   const preloaded = usePreloaded(matchId != null ? matchEndKey(matchId) : null)
   const data = useLiveQuery(() => readMatchEnd(matchId), [matchId], preloaded)
+  // the Match complete card prints the match's own clock (domain/sheetInputs)
+  useMatchTz(data?.match?.tz)
   const { t, i18n } = useTranslation()
   // Sponsors on clothing (domain/sponsors.js): this device's option shows the boxes
   const [sponsorsOption] = useSponsorsOption()

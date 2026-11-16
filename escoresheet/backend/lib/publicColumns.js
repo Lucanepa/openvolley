@@ -41,7 +41,10 @@ const MATCH_INFO_KEYS = Object.freeze([
   'best_of',
   // Sponsors on clothing (owner 2026-11-15): the (+)/(-) printed after each
   // team's name on the sheet; nothing personal
-  'sponsors_home', 'sponsors_away', 'sponsors_marked'
+  'sponsors_home', 'sponsors_away', 'sponsors_marked',
+  // The match's LFP tracking and the zone its clocks read (owner 2026-11-16,
+  // frontend/src/domain/sheetInputs.js): every device draws the same sheet
+  'lfp_tracking', 'tz'
 ])
 const COIN_TOSS_KEYS = Object.freeze(['team_a', 'team_b', 'confirmed', 'first_serve', 'serve_a'])
 // Roster entries as the referee/bench render them. No dob, no country.
