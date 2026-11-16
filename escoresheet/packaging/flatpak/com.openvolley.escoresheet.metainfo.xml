@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.3.0" date="2026-11-16">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.0</url>
+      <description>
+        <ul>
+          <li>Home: the game PIN sits in the match's card, under Delete match.</li>
+          <li>Scoresheet: the LIBERO box lists the registered liberos only; a re-designated libero is in the remarks.</li>
+          <li>LFP marks on the scoresheet only when LFP tracking is on.</li>
+          <li>Deciding set: no inverted T over the points before the change of courts.</li>
+          <li>Manager: out-of-date scoresheets and an admin Rebuild PDF.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.14" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.14</url>
       <description>
