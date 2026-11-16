@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom'
 
 /**
@@ -11,6 +11,11 @@ import ReactDOM from 'react-dom'
  * @param {number} strokeWidth - Ring thickness in pixels (default: 4)
  * @param {string} color - Color for the progress ring (default: 'var(--accent)')
  * @param {boolean} visible - Whether to show the indicator
+ * @param {number} [duration] - ms: the ring fills by itself in this time (an SVG
+ *   animation from the moment it appears); `progress` then only needs to be > 0
+ * @param {number} [delay] - ms before the ring shows at all (with `duration`): a
+ *   plain tap (shorter) never draws it. It flashed under the finger for a frame
+ *   on every tap that opened a player's menu (Point Hub board, 16.11.2026).
  */
 export default function LongPressProgressIndicator({
   progress,
@@ -18,9 +23,20 @@ export default function LongPressProgressIndicator({
   size = 80,
   strokeWidth = 4,
   color = 'var(--accent)',
-  visible = true
+  visible = true,
+  duration = 0,
+  delay = 0
 }) {
-  if (!visible || progress <= 0 || !position) return null
+  const active = !!(visible && progress > 0 && position)
+  const [shown, setShown] = useState(!delay)
+  useEffect(() => {
+    if (!delay) return undefined
+    setShown(false)
+    if (!active) return undefined
+    const timer = setTimeout(() => setShown(true), delay)
+    return () => clearTimeout(timer)
+  }, [active, delay])
+  if (!active || !shown) return null
 
   const radius = (size - strokeWidth) / 2
   const circumference = 2 * Math.PI * radius
@@ -63,11 +79,19 @@ export default function LongPressProgressIndicator({
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          style={{
-            transition: 'stroke-dashoffset 16ms linear'
-          }}
-        />
+          strokeDashoffset={duration ? 0 : offset}
+          style={duration ? undefined : { transition: 'stroke-dashoffset 16ms linear' }}
+        >
+          {duration > 0 && (
+            <animate
+              attributeName="stroke-dashoffset"
+              from={circumference * (1 - Math.min(delay, duration) / duration)}
+              to="0"
+              dur={`${Math.max(1, duration - delay)}ms`}
+              fill="freeze"
+            />
+          )}
+        </circle>
       </svg>
     </div>,
     document.body
