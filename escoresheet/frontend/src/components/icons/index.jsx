@@ -56,6 +56,7 @@ import { Volleyball } from '@phosphor-icons/react'
 const INLINE = { display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }
 
 function lucide(LucideIcon, name) {
+  /** @param {{ size?: number, style?: object, [prop: string]: any }} props */
   const Wrapped = ({ size = 16, style, ...rest }) => (
     <LucideIcon size={size} aria-hidden="true" focusable="false" style={{ ...INLINE, ...style }} {...rest} />
   )

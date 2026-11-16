@@ -4,6 +4,7 @@ import { BRAND } from '../../src/brand.js';
 import { formatTimeLocal } from '../../src/utils/timeUtils';
 import { formatSheetDate, gameNumberOf } from '../utils/sheetFormat';
 import { FitText } from './FitText';
+import { propsEqual } from '../utils/propsEqual';
 
 // The scoresheet window also loads the scorer app's styles.css, whose global
 // (unlayered) `input { background: #0f172a; border-radius; padding; color }`
@@ -82,7 +83,7 @@ const HEADER_DATE_WIDTH = '35mm';
 const LEVEL_BOXES = ['U23', 'U19', 'U17'];
 const HEADER_TIME_WIDTH = 'calc(16px + 93px)';
 
-export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinTossConfirmed }) => {
+const HeaderView: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinTossConfirmed }) => {
   // Determine if home team is "A" based on coin toss result
   const homeIsA = (match?.coinTossTeamA || 'home') === 'home';
 
@@ -220,3 +221,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
     </header>
   );
 };
+
+// Memoised (utils/propsEqual): a new sheet model with the same values for this
+// section does not re-render it (review 2026-11-16, F2/F3)
+export const Header = React.memo(HeaderView, propsEqual);

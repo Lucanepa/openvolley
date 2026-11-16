@@ -4,6 +4,7 @@ import { SanctionRecord, Player } from '../types_scoresheet';
 import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
 import { FitText } from './FitText';
 import { findOfficial, formatDob, formatPersonName, idHeadingOf, roleLabelOf, type SheetOfficial } from '../utils/sheetFormat';
+import { propsEqual } from '../utils/propsEqual';
 
 /** Sanction rows in the box; further sanctions continue in REMARKS (field-spec 7.2). */
 export const SANCTION_ROWS = 9;
@@ -24,7 +25,7 @@ const SanctionCode: React.FC<{ item?: SanctionRecord; type: SanctionRecord['type
     );
 };
 
-export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperRequests = { teamA: false, teamB: false } }) => {
+const SanctionsView: React.FC<SanctionsProps> = ({ items = [], improperRequests = { teamA: false, teamB: false } }) => {
     const rowCount = SANCTION_ROWS;
     const cell = 'border-r border-black flex items-center justify-center text-[10px] min-w-0';
 
@@ -159,7 +160,7 @@ export const REMARKS_MIN_PX = 6;
 /** The first line of a REMARKS box too small for its text: the PDF prints all of it on page 2. */
 export const REMARKS_CONTINUED = 'Remarks continue on page 2.';
 
-export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks = '', generated = [], onClipped, signatures = [] }) => {
+const RemarksView: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks = '', generated = [], onClipped, signatures = [] }) => {
     // One text (remarksText). It wraps and shrinks to fit the box: never a
     // scrollbar in the PDF. Still too long at the smallest size, it starts with
     // REMARKS_CONTINUED and the PDF prints the whole text on a second page.
@@ -262,7 +263,7 @@ const SetIntervalCountdown: React.FC<{ endTime?: string; duration?: string }> = 
   return <span>{duration || ''}</span>;
 };
 
-export const Results: React.FC<ResultsProps> = ({
+const ResultsView: React.FC<ResultsProps> = ({
   teamAShortName = '',
   teamBShortName = '',
   setResults = [],
@@ -496,7 +497,7 @@ const APPROVAL_COL = {
 };
 const APPROVAL_RULES_PX = [88, 208, 280, 352];
 
-export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home', lineJudges = [], sets = [] }) => {
+const ApprovalsView: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home', lineJudges = [], sets = [] }) => {
     const roles = ["1st Referee", "2nd Referee", "Scorer", "Assistant Scorer"];
 
     // Line judges are stored as one name, as typed: printed as entered (splitting it
@@ -719,7 +720,7 @@ interface RosterProps {
   idHeading?: string;
 }
 
-export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false, liberos: liberoList, idHeading = 'DoB' }) => {
+const RosterView: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false, liberos: liberoList, idHeading = 'DoB' }) => {
     // bench_home / bench_away may be null or an object in older rows
     const staff: any[] = Array.isArray(benchStaff) ? benchStaff : [];
 
@@ -899,3 +900,11 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
 };
 
 export const FooterSection: React.FC = () => <div />;
+
+// Memoised (utils/propsEqual): a new sheet model with the same values for this
+// section does not re-render it (review 2026-11-16, F2/F3)
+export const Sanctions = React.memo(SanctionsView, propsEqual);
+export const Remarks = React.memo(RemarksView, propsEqual);
+export const Results = React.memo(ResultsView, propsEqual);
+export const Approvals = React.memo(ApprovalsView, propsEqual);
+export const Roster = React.memo(RosterView, propsEqual);

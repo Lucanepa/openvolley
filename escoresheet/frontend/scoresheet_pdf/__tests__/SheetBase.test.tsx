@@ -1,4 +1,3 @@
-import React from 'react'
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup, act } from '@testing-library/react'
 import { readFileSync, existsSync } from 'fs'

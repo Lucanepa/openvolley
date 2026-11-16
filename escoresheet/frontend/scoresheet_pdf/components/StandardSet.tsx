@@ -5,6 +5,7 @@ import { SubRecord } from '../types_scoresheet';
 import { PointsColumn } from './PointsColumn';
 import { FitText } from './FitText';
 import { ServiceBox, SubstitutionCells } from './ServiceBox';
+import { propsEqual } from '../utils/propsEqual';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -159,7 +160,7 @@ export const TeamServiceGrid: React.FC<{
     );
 };
 
-export const StandardSet: React.FC<StandardSetProps> = ({ 
+const StandardSetView: React.FC<StandardSetProps> = ({ 
     setNumber, 
     isSwapped = false,
     firstServeTeamA,
@@ -272,3 +273,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     </div>
   );
 };
+
+// Memoised (utils/propsEqual): a new sheet model with the same values for this
+// section does not re-render it (review 2026-11-16, F2/F3)
+export const StandardSet = React.memo(StandardSetView, propsEqual);

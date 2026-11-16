@@ -6,7 +6,7 @@ import './sheet.css';
 import { remarksText } from './components/FooterSection';
 import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { SheetPage } from './components/SheetPage';
-import { Player, SanctionRecord } from './types_scoresheet';
+import type { SanctionRecord } from './types_scoresheet';
 import { buildScoresheetFilename, buildScoresheetTitle } from './utils/sheetFormat';
 import { drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, nextFrames, picturesReady, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
 import { matchLfpTracking, deviceLfpSetting } from '../src/domain/sheetInputs.js';
@@ -22,14 +22,15 @@ import { normalizeMatchData } from './utils/matchData';
 import { buildSheetModel } from './utils/sheetModel';
 
 interface AppScoresheetProps {
+  /** As any renderer hands it over: normalised first (utils/matchData), so lists may be missing or loose. */
   matchData: {
     match: any;
-    homeTeam: any;
-    awayTeam: any;
-    homePlayers: Player[];
-    awayPlayers: Player[];
-    sets: any[];
-    events: any[];
+    homeTeam?: any;
+    awayTeam?: any;
+    homePlayers?: any[];
+    awayPlayers?: any[];
+    sets?: any[];
+    events?: any[];
     sanctions?: SanctionRecord[];
   };
   autoAction?: 'preview' | 'print' | 'save' | 'getBlob';
@@ -473,7 +474,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       // (ov-download-finished); a browser keeps it in its download folder.
       pendingDownload.current = filename;
       downloadBlob(pdfBlob, filename);
-      setSaveOutcome(detectAppPlatform(window) === 'tauri' || getOpenerWindow() && detectAppPlatform(getOpenerWindow() as Window) === 'tauri'
+      setSaveOutcome(detectAppPlatform(window) === 'tauri' || getOpenerWindow() && detectAppPlatform(getOpenerWindow() as Window & typeof globalThis) === 'tauri'
         ? { kind: 'desktop-pending', fileName: filename }
         : { kind: 'web', fileName: filename });
     } catch (error) {

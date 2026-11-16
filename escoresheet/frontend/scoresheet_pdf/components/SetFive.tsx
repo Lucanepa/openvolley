@@ -5,6 +5,7 @@ import { PointsColumn5, PointsColumn30 } from './PointsColumn';
 import { FitText } from './FitText';
 import { ServiceBox, SubstitutionCells } from './ServiceBox';
 import { LINEUP_NUMBER_PT, MARK_STROKE } from './Marks';
+import { propsEqual } from '../utils/propsEqual';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -168,7 +169,7 @@ const TeamServiceGridSet5: React.FC<{
  */
 export const COURT_CHANGE_W = '48px';
 
-export const SetFive: React.FC<SetFiveProps> = ({
+const SetFiveView: React.FC<SetFiveProps> = ({
     teamNameA,
     teamNameB,
     teamALabel = 'A',
@@ -311,3 +312,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
     </div>
   );
 };
+
+// Memoised (utils/propsEqual): a new sheet model with the same values for this
+// section does not re-render it (review 2026-11-16, F2/F3)
+export const SetFive = React.memo(SetFiveView, propsEqual);

@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { propsEqual } from '../utils/propsEqual';
 
 /**
  * Text that always fits its box on the fixed A3 sheet: the font shrinks
@@ -20,7 +21,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
  * the minimum): it draws what the smaller font would have drawn. Where nothing
  * holds the font up, there is no inner box: the sheet is the same as before.
  */
-export const FitText: React.FC<{
+const FitTextView: React.FC<{
     max: number;
     min?: number;
     multiline?: boolean;
@@ -41,7 +42,11 @@ export const FitText: React.FC<{
     const [box, setBox] = useState<{ font: number; k: number; w: number; h: number } | null>(null);
     // The sheet's font (sheet.css) arrives after the first fit, which measured
     // the fallback font: fit again once a font has loaded
-    const [, setFontsLoaded] = useState(0);
+    const [fontsLoaded, setFontsLoaded] = useState(0);
+    // What the last completed fit saw: the same text, limits and box size again
+    // (a re-render that changed nothing here) need no new fit, which forced a
+    // layout per 0.5 px step on every render (review 2026-11-16, F3)
+    const lastFit = useRef('');
     useEffect(() => {
         const fonts = typeof document !== 'undefined' ? (document as any).fonts : null;
         if (!fonts?.addEventListener) return;
@@ -54,6 +59,8 @@ export const FitText: React.FC<{
         const el = ref.current;
         if (!el) return;
         const inner = innerRef.current;
+        const fitKey = () => [el.textContent, max, min, multiline ? 1 : 0, className, JSON.stringify(style || null), fontsLoaded, floored ? 1 : 0, inner ? 1 : 0, el.clientWidth, el.clientHeight].join('|');
+        if (lastFit.current && lastFit.current === fitKey()) return;
         const win = el.ownerDocument.defaultView;
         // the size the browser really draws (its minimum font size may hold it higher)
         const used = (node: HTMLElement) => parseFloat(win?.getComputedStyle(node).fontSize || '') || 0;
@@ -109,6 +116,7 @@ export const FitText: React.FC<{
             return;
         }
         onClipped?.(clipped);
+        lastFit.current = fitKey();
     });
 
     const scaled = !!box && box.k < 1;
@@ -154,3 +162,7 @@ export const FitText: React.FC<{
         </div>
     );
 };
+
+// Memoised (utils/propsEqual): a new sheet model with the same values for this
+// section does not re-render it (review 2026-11-16, F2/F3)
+export const FitText = React.memo(FitTextView, propsEqual);
