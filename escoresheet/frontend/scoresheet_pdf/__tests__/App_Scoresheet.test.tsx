@@ -266,7 +266,7 @@ describe('App_Scoresheet rosters', () => {
     Array.from(container.querySelectorAll(`[data-testid="roster-${side}"] [data-testid="roster-libero-row"]`))
       .map(r => (r.textContent || '').trim())
 
-  it('LIBERO box: the registered liberos after a re-designation, the re-designated one noted', () => {
+  it('LIBERO box: the registered liberos after a re-designation, the re-designated one not in it (Genius)', () => {
     const data = buildMatch()
     data.homePlayers = [
       ...[2, 3, 4, 5, 6, 9].map(n => ({ number: n, firstName: 'H', lastName: `${n}` })),
@@ -285,8 +285,29 @@ describe('App_Scoresheet rosters', () => {
     expect(rows[0]).toContain('One')
     expect(rows[1]).toContain('10')
     expect(rows[1]).toContain('Ten')
-    // never cut silently: the re-designated libero #7 is named on the box
-    expect(container.querySelector('[data-testid="roster-home"] [data-testid="roster-libero-extra"]')?.textContent).toContain('7')
+    // as Genius: the re-designated #7 is not in the box (remarks name him)
+    expect(container.querySelector('[data-testid="roster-home"] [data-testid="roster-libero-extra"]')).toBeNull()
+    expect(rows.join(' ')).not.toContain('Seven')
+  })
+
+  it('LFP marks only with LFP tracking on (owner 2026-11-16)', () => {
+    const lfpRoster = () => {
+      const data = buildMatch()
+      data.homePlayers = [1, 2, 3, 4, 5, 6].map(n => ({ number: n, firstName: 'H', lastName: `L${n}`, isLfp: true })) as any
+      return data
+    }
+    const count = (c: HTMLElement) => (c.querySelector('[data-testid="roster-home"]')?.textContent || '').split('LFP').length - 1
+    localStorage.removeItem('lfpTrackingEnabled')
+    const off = render(<App matchData={lfpRoster()} autoAction="preview" />)
+    expect(count(off.container)).toBe(0)
+    off.unmount()
+    localStorage.setItem('lfpTrackingEnabled', 'true')
+    try {
+      const on = render(<App matchData={lfpRoster()} autoAction="preview" />)
+      expect(count(on.container)).toBe(6)
+    } finally {
+      localStorage.removeItem('lfpTrackingEnabled')
+    }
   })
 
   it('signature boxes without a coin-toss signature are read-only on the sheet (no pad, nothing unsaved)', () => {

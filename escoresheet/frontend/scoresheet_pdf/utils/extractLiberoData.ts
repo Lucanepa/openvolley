@@ -42,29 +42,21 @@ export function getHeaderLiberos(
 /**
  * The roster's LIBERO box: the registered liberos (libero 1, libero 2) in their
  * slots, also once unable (registered type recovered as for the LCS header),
- * then an unable libero whose type is unknown (older events), then the players
- * re-designated as libero (the one playing now first), marked `redesignated`.
- * Nothing is cut: the box prints the first two rows and names the rest.
+ * then an unable libero whose type is unknown (older events). A player
+ * re-designated as libero is not listed here: he stays in the player list and
+ * the re-designation is in the remarks, as the Genius eScoresheet prints it
+ * (owner 2026-11-16, Diktat check; it showed "+9 R" in this box before).
  */
 export function rosterLiberos(
   players: Player[],
   events: any[],
   teamKey: 'home' | 'away'
-): Array<Player & { redesignated?: boolean }> {
+): Player[] {
   const byNumber = new Map(players.map(p => [Number(p.number), p]));
   const header = getHeaderLiberos(players, events, teamKey);
   const registered = header.filter(h => h.type in LIBERO_RANK).map(h => h.number);
   const unknown = header.filter(h => h.type === 'unable').map(h => h.number);
-  const formerRedesignated = header.filter(h => !(h.type in LIBERO_RANK) && h.type !== 'unable').map(h => h.number);
-  const currentRedesignated = players.filter(p => p.libero === 'redesignated').map(p => Number(p.number));
-  const pick = (numbers: number[], redesignated: boolean) =>
-    numbers.map(n => byNumber.get(n)).filter(Boolean).map(p => (redesignated ? { ...p!, redesignated: true } : p!));
-  return [
-    ...pick(registered, false),
-    ...pick(unknown, false),
-    ...pick(currentRedesignated, true),
-    ...pick(formerRedesignated, true)
-  ];
+  return [...registered, ...unknown].map(n => byNumber.get(n)).filter(Boolean) as Player[];
 }
 
 export function extractLiberoData(

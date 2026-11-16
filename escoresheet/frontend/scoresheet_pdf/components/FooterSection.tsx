@@ -696,9 +696,10 @@ interface RosterProps {
   readOnly?: boolean;
   /**
    * The LIBERO box (utils/extractLiberoData rosterLiberos): the registered
-   * liberos, then the re-designated ones. Without it, the players flagged libero.
+   * liberos only (a re-designated one is in the remarks). Without it, the
+   * players flagged libero, re-designated ones left out.
    */
-  liberos?: Array<Player & { redesignated?: boolean }>;
+  liberos?: Player[];
   /** The heading beside the numbers: DoB, ID or Info (idHeadingOf). */
   idHeading?: string;
 }
@@ -730,11 +731,12 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
     // without a trace.
     const regularPlayers = players.slice(0, 14);
     const extraPlayers = players.slice(14);
-    // The libero section: the registered liberos (re-designations recovered, see
-    // rosterLiberos), else the players flagged libero by jersey number. Two rows;
-    // any further one is named in the last row, never dropped without a trace.
-    const allLiberos: Array<Player & { redesignated?: boolean }> = liberoList ?? players
-        .filter(p => p.libero)
+    // The libero section: the registered liberos (see rosterLiberos), else the
+    // players flagged libero by jersey number; a re-designated libero is not
+    // listed (remarks, as Genius). Two rows; a further one is named in the last
+    // row, never dropped without a trace.
+    const allLiberos: Player[] = liberoList ?? players
+        .filter(p => p.libero && p.libero !== 'redesignated')
         .sort((a, b) => parseInt(String(a.number || '0')) - parseInt(String(b.number || '0')));
     const liberos = allLiberos.slice(0, 2);
     const extraLiberos = allLiberos.slice(2);
@@ -795,10 +797,9 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                             <div className="border-r border-black font-bold bg-white text-center flex items-center justify-center">{libero?.number || ''}</div>
                             <div className="text-left px-1 font-medium flex items-center justify-between min-w-0">
                                 <FitText max={9} min={5} className="flex-1">{liberoName}</FitText>
-                                {libero?.redesignated && <span className="text-[7px] font-bold ml-1 shrink-0" title="Re-designated libero">R</span>}
                                 {libero?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
                                 {i === 1 && extraLiberos.length > 0 && (
-                                    <span className="text-[6px] ml-1 shrink-0" data-testid="roster-libero-extra">+{extraLiberos.map(p => `${p.number}${p.redesignated ? ' R' : ''}`).join(', ')}</span>
+                                    <span className="text-[6px] ml-1 shrink-0" data-testid="roster-libero-extra">+{extraLiberos.map(p => p.number).join(', ')}</span>
                                 )}
                             </div>
                         </div>
