@@ -161,6 +161,22 @@ describe('the generated sheet', () => {
     expect(text).toContain('02.03.19982Away2, X.')
     expect(text).not.toContain('Lic.')
   })
+
+  it('LFP marks only with LFP tracking on (default off; owner 2026-11-16)', () => {
+    const base = fixture()
+    const data = { ...base, homePlayers: base.homePlayers.map((p: any) => ({ ...p, isLfp: true })) }
+    try {
+      localStorage.removeItem('lfpTrackingEnabled')
+      const off = render(<App matchData={data} autoAction="preview" />)
+      expect(sheetText(off.container)).not.toContain('LFP')
+      off.unmount()
+      localStorage.setItem('lfpTrackingEnabled', 'true')
+      const on = render(<App matchData={data} autoAction="preview" />)
+      expect(sheetText(on.container)).toContain('LFP')
+    } finally {
+      localStorage.removeItem('lfpTrackingEnabled')
+    }
+  })
 })
 
 describe('Save PDF', () => {
@@ -270,20 +286,16 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(container.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(0)
   })
 
-  it('at the change: the points then in the box; panel 3 has them under the reverse T (owner 2026-10-13)', () => {
+  it('at the change: the points then in the box; panel 3 prints them plain, no reverse T (owner 2026-11-16)', () => {
     // home (left) 5, then away reaches 8: the change at 5:8
     const { getByTestId, container } = render(<App matchData={set5('hhhhh' + 'aaaaaaaa' + 'h')} autoAction="preview" />)
     expect(getByTestId('set5-points-at-change').textContent).toBe('5')
-    // no "T" through unused numbers anywhere (owner 2026-10-07); one reverse T, in panel 3
+    // no "T" through unused numbers anywhere (owner 2026-10-07), no reverse T in panel 3 (owner 2026-11-16)
     expect(container.querySelectorAll('[data-mark="T"]')).toHaveLength(0)
     const grids = container.querySelectorAll('[data-testid="points-grid"]')
     const panel3 = grids[grids.length - 1]
-    expect(container.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(1)
-    expect(panel3.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(1)
-    // its stem ends under the 5th of 10 rows, with the bar there
-    const lines = panel3.querySelectorAll('[data-mark="reverseT"] line')
-    expect([...lines].map(l => l.getAttribute('y2'))).toEqual(['50', '50'])
-    // 1-5 stay plain numbers under the T, the 6th point is ticked
+    expect(container.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(0)
+    // 1-5 stay plain numbers, the 6th point is ticked
     const mark = (n: number) => panel3.querySelector(`[data-point="${n}"]`)?.getAttribute('data-mark')
     expect([1, 2, 3, 4, 5].map(mark)).toEqual(['', '', '', '', ''])
     expect(mark(6)).toBe('tick')
