@@ -49,6 +49,16 @@ if FAKE_ASSETS=$'App_1.0.0_x64-setup.exe\nApp_1.0.0_universal.dmg' run 3; then
   grep -qx 'count=0' "$T/out.txt" && [[ -z "$(ls -A "$T/up3")" ]] && ok "complete release: nothing replaced" || bad "complete release: $(ls "$T/up3")"
 else bad "complete release failed: $(cat "$T/log3")"; fi
 
+# a name with a space: GitHub lists it with a dot, and it counts as published
+mkdir -p "$T/b"
+printf 'win' > "$T/b/Open App_1.0.0_x64-setup.exe"
+printf 'dmg' > "$T/b/Open App_1.0.0_universal.dmg"
+: > "$T/out.txt"
+if FAKE_ASSETS='Open.App_1.0.0_x64-setup.exe' GITHUB_OUTPUT="$T/out.txt" "$HERE/release-files.sh" v1 "$T/up6" "$T/sums6.md" "$T"/b/* > "$T/log6" 2>&1; then
+  [[ ! -e "$T/up6/Open App_1.0.0_x64-setup.exe" && -f "$T/up6/Open App_1.0.0_universal.dmg" ]] && ok "space in the name: the published one kept, the missing one added" || bad "space in the name: $(ls "$T/up6")"
+  grep -qx 'count=1' "$T/out.txt" && ok "space in the name: outputs" || bad "space in the name: outputs $(cat "$T/out.txt")"
+else bad "space in the name failed: $(cat "$T/log6")"; fi
+
 # GitHub cannot be asked: fail, never take it for a new release
 if FAKE_ERROR='HTTP 502' run 4; then bad "an API error passed"; else ok "an API error fails"; fi
 
