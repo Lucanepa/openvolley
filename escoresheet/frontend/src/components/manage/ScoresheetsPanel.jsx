@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, Eye, RotateCcw } from 'lucide-react'
+import { Download, Eye, RefreshCw, RotateCcw } from 'lucide-react'
 import { admin, scoresheetsApi } from '../../lib/accountApi'
 import { openAppWindow, openPendingTab } from '../../utils/openAppWindow'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, ReasonModal, useErrorText } from './common'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
+import RebuildScoresheet, { blobToBase64 } from './RebuildScoresheet'
+import { rebuildRemark } from '../../../scoresheet_pdf/utils/sheetRemarks'
 
 // A viewed PDF stays readable (and saveable from the browser's viewer) this long
 // (the server keeps a view link as long: lib/scoresheets.js VIEW_LINK_TTL_MS)
@@ -34,8 +36,13 @@ const pdfOf = (blob) => (blob.type === 'application/pdf' ? blob : new Blob([blob
  * managers as well as the admin (owner, 2026-10-21; the server checks the
  * match's sport, lib/accounts.js reopenMatch). OpenVolley keeps reopening in
  * the admins' Matches tab.
+ * "Out of date" (owner 2026-11-16): the match's data changed after its newest
+ * PDF (Corrections, the Data or SQL tab; lib/scoresheets.js pdf_stale).
+ * `canRebuild` (admins): "Rebuild PDF" draws the sheet again from the
+ * server's data, with a "Rebuilt after the match" remark and the stored
+ * signatures, and stores it as the match's newest, a closed match too.
  */
-export default function ScoresheetsPanel({ app = 'indoor' }) {
+export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -44,6 +51,9 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(null) // `${id}:view` | `${id}:download`
   const [reopenFor, setReopenFor] = useState(null)
+  const [rebuildFor, setRebuildFor] = useState(null)
+  // the sheet being drawn again: { m, matchData, reason, remark }
+  const [rebuilding, setRebuilding] = useState(null)
   const canReopen = app === 'beach'
   const { data, error, loading, reload } = usePanelData(
     () => scoresheetsApi.list({ app, state, q: query || undefined, limit: 200 }),
@@ -102,6 +112,49 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
     setTimeout(() => URL.revokeObjectURL(url), VIEW_URL_TTL_MS)
   }
 
+  // Rebuild, step 1 (the reason given): the match's whole record from the
+  // server, as the sheet takes it; then RebuildScoresheet draws it
+  const startRebuild = async (reason) => {
+    const m = rebuildFor
+    const res = await scoresheetsApi.matchRecord(m.id)
+    if (res.error) return errorText(res.error)
+    let matchData
+    try {
+      const { scoresheetDataFromCloud } = await import('../../utils/scoresheetFromCloud')
+      matchData = scoresheetDataFromCloud(res.data)
+    } catch (err) {
+      console.warn('[Scoresheets] rebuild: the match data could not be read', err)
+      return t('manage.scoresheets.rebuildFailed')
+    }
+    setRebuildFor(null)
+    setRebuilding({ m, matchData, reason, remark: rebuildRemark(reason) })
+    return null
+  }
+
+  // Rebuild, step 2: the PDF made, stored as the match's newest
+  const finishRebuild = async (out) => {
+    const job = rebuilding
+    if (!job) return
+    if (!out?.blob) {
+      setRebuilding(null)
+      toast.error(t('manage.scoresheets.rebuildFailed'))
+      return
+    }
+    let res
+    try {
+      res = await scoresheetsApi.rebuild(job.m.id, { reason: job.reason, fileBase64: await blobToBase64(out.blob) })
+    } catch (err) {
+      res = { error: err }
+    }
+    setRebuilding(null)
+    if (res.error) {
+      toast.error(errorText(res.error))
+      return
+    }
+    toast.success(t('manage.scoresheets.rebuilt'))
+    reload()
+  }
+
   return (
     <section data-testid="manage-scoresheets">
       <PanelHead title={t('manage.tabs.scoresheets')} />
@@ -150,11 +203,18 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
                 chips={(() => {
                   const stored = noPdf
                     ? <Chip>{t('manage.scoresheets.noPdfYet')}</Chip>
-                    : m.pdf_updated_at && <span className="text-xs text-stone-600">{t('manage.scoresheets.storedAt', { date: dayTimeLabel(m.pdf_updated_at) })}</span>
+                    : m.pdf_updated_at && <>
+                      {m.pdf_stale && (
+                        <Chip tone="amber" title={m.data_changed_at ? t('manage.scoresheets.staleTitle', { date: dayTimeLabel(m.data_changed_at) }) : undefined}>
+                          <span data-testid="scoresheet-stale">{t('manage.scoresheets.stale')}</span>
+                        </Chip>
+                      )}
+                      <span className="text-xs text-stone-600">{t('manage.scoresheets.storedAt', { date: dayTimeLabel(m.pdf_updated_at) })}</span>
+                    </>
                   // an admin released its game (a duplicate): not the game's official match, not mailed as final
                   return m.released ? <><Chip>{t('manage.games.releaseGame')}</Chip>{stored}</> : stored
                 })()}
-                tools={(!noPdf || (canReopen && m.closed_at)) && <>
+                tools={(!noPdf || (canReopen && m.closed_at) || (canRebuild && m.closed_at)) && <>
                   {!noPdf && <>
                     <RowTool primary className={TOOL_OFF} disabled={!online || !!busy} onClick={() => open(m, false)} aria-busy={busy === `${m.id}:view` || undefined}>
                       <Eye size={13} aria-hidden />{t('manage.scoresheets.view')}
@@ -163,6 +223,11 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
                       <Download size={13} aria-hidden />{t('manage.scoresheets.download')}
                     </RowTool>
                   </>}
+                  {canRebuild && (!noPdf || m.closed_at) && (
+                    <RowTool className={TOOL_OFF} disabled={!online || !!busy || !!rebuilding} onClick={() => setRebuildFor(m)} data-testid="scoresheet-rebuild">
+                      <RefreshCw size={13} aria-hidden />{t('manage.scoresheets.rebuild')}
+                    </RowTool>
+                  )}
                   {canReopen && m.closed_at && (
                     <RowTool className={TOOL_OFF} disabled={!online || !!busy} onClick={() => setReopenFor(m)}>
                       <RotateCcw size={13} aria-hidden />{t('manage.matches.reopen')}
@@ -173,6 +238,26 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
             )
           })}
         </RowList>
+      )}
+      <ReasonModal
+        open={!!rebuildFor}
+        tone="dark"
+        maxLength={300}
+        title={t('manage.scoresheets.rebuildTitle', { game: rebuildFor?.game_n ?? '' })}
+        body={t('manage.scoresheets.rebuildBody')}
+        label={t('manage.scoresheets.rebuildReason')}
+        confirmLabel={t('manage.scoresheets.rebuild')}
+        onClose={() => setRebuildFor(null)}
+        onSubmit={startRebuild}
+      />
+      {rebuilding && (
+        <RebuildScoresheet
+          matchData={rebuilding.matchData}
+          remark={rebuilding.remark}
+          title={t('manage.scoresheets.rebuildTitle', { game: rebuilding.m.game_n ?? '' })}
+          onDone={finishRebuild}
+          onCancel={() => setRebuilding(null)}
+        />
       )}
       <ReasonModal
         open={!!reopenFor}

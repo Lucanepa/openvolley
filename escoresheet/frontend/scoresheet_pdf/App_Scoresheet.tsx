@@ -71,6 +71,17 @@ interface AppScoresheetProps {
    */
   embedded?: boolean;
   reservedTop?: number;
+  /**
+   * Remarks the caller adds after the sheet's own (an admin's "Rebuild PDF":
+   * "Rebuilt after the match: <date> - <reason>", owner 2026-11-16).
+   */
+  extraRemarks?: string[];
+  /**
+   * With autoAction 'getBlob': the PDF (or null when it could not be made)
+   * goes to this callback instead of the window that opened the page (the
+   * manager draws the sheet on its own page to rebuild it).
+   */
+  onBlob?: (out: { blob: Blob; filename: string } | null) => void;
 }
 
 // The space between the boxes below set 5 and between the rosters (owner
@@ -83,7 +94,7 @@ const SHEET_H_PX = (287 * 96) / 25.4;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 3;
 
-const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false, readOnly = false, embedded = false, reservedTop = 0 }) => {
+const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false, readOnly = false, embedded = false, reservedTop = 0, extraRemarks, onBlob }) => {
   const { t } = useTranslation();
   // Normalised once: a JSON import or an older row may miss lists or hold null
   const match: any = matchData?.match || {};
@@ -1005,7 +1016,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   // Remarks the sheet writes itself: a default / an incomplete team (field-spec 8, 11),
   // and every change made after the match ("Corrected after the match: ...")
-  const autoRemarks = [...generatedRemarks({ sets, events, teamAKey, bestOf }), ...correctionRemarks(match?.manualChanges)];
+  const autoRemarks = [
+    ...generatedRemarks({ sets, events, teamAKey, bestOf }),
+    ...correctionRemarks(match?.manualChanges),
+    ...(Array.isArray(extraRemarks) ? extraRemarks.filter((r) => typeof r === 'string' && r.trim()) : [])
+  ];
   // Consistency checks (field-spec 12.2): listed above the sheet, never printed
   const sheetWarnings = useMemo(
     () => consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers, bestOf }),
@@ -1661,6 +1676,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // Automatic action (?action=print|save|getBlob): once every query has answered
   // (dataReady), never on the first render with half the data; once only.
   const autoActionDone = useRef(false);
+  // the caller's own receiver of the getBlob PDF (latest one), else the opener
+  const onBlobRef = useRef(onBlob);
+  onBlobRef.current = onBlob;
   // true while the approval (getBlob) still waits for this window's PDF
   const approvalBusyRef = useRef(autoAction === 'getBlob');
   useEffect(() => {
@@ -1678,7 +1696,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         const out = matchMissing ? null : await handleSavePdfRef.current(true);
         // delivered (or failed): closing this window from now on cancels nothing
         approvalBusyRef.current = false;
-        await deliverPdfToOpener(out || null);
+        if (onBlobRef.current) onBlobRef.current(out || null);
+        else await deliverPdfToOpener(out || null);
       }
     }, 500);
 
@@ -1690,7 +1709,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // while it works, and closing the window tells MatchEnd at once
   // (scoresheetPdfRequest.js), which then asks the scorer what to do.
   useEffect(() => {
-    if (autoAction !== 'getBlob') return undefined;
+    // no opener waits for a PDF the caller takes itself (onBlob)
+    if (autoAction !== 'getBlob' || onBlobRef.current) return undefined;
     const stopWatch = watchPdfWindowClose(() => approvalBusyRef.current);
     const beat = () => { if (approvalBusyRef.current) reportPdfProgress({ step: generatingRef.current ? 'capture' : 'loading' }); };
     beat();

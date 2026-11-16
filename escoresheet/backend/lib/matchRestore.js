@@ -921,6 +921,60 @@ export function createMatchRestore (db, options = {}) {
     }
   }
 
+  /**
+   * The sets (by index), events (by seq; voided ones left out by pgQuery),
+   * live state and id floor of the match `matchUuid` (key `matchKey`), as
+   * restore-by-pin answers them.
+   */
+  async function readChildren (cat, matchUuid, matchKey) {
+    const byMatch = [{ type: 'eq', column: cfg.childFk, value: matchUuid }]
+    const childOrder = (table, cols) => {
+      const t = cat.tables.get(table)
+      const col = t && cols.find(c => t.columns.has(c))
+      return col ? [{ column: col, ascending: true }] : undefined
+    }
+    const read = async (table, params) => {
+      if (!cat.tables.has(table) || !db.config.allowedTables.includes(table)) return { body: { data: params.maybeSingle ? null : [] } }
+      const r = await db.runQuery({ table, action: 'select', params: { columns: '*', filters: byMatch, ...params } }, { maxRows: cfg.childRowCap })
+      if (r.body.error) throw Object.assign(new Error('child read failed'), { result: r })
+      return r
+    }
+    return Promise.all([
+      read(cfg.setsTable, { order: childOrder(cfg.setsTable, ['index']) }),
+      read(cfg.eventsTable, { order: childOrder(cfg.eventsTable, ['seq', 'ts', 'id']) }),
+      read(cfg.liveStateTable, { maybeSingle: true }),
+      idFloor(cat, matchUuid, matchKey)
+    ])
+  }
+
+  /**
+   * The whole record of the match `matchUuid` for trusted server code (an
+   * admin's "Rebuild PDF", lib/scoresheets.js): { match, sets, events,
+   * liveState }, the match without its secret columns (PINs) and the
+   * restore-by-pin hidden ones; null when there is no such match. No PIN, no
+   * limiter, no editor: the caller has checked the right to read it.
+   */
+  async function readWhole (matchUuid) {
+    if (typeof matchUuid !== 'string' || !UUID_RE.test(matchUuid)) return null
+    const cat = await db.ensureCatalog()
+    if (!cat.tables.get(cfg.matchTable)) return null
+    const found = await db.runQuery({
+      table: cfg.matchTable,
+      action: 'select',
+      params: { columns: '*', filters: [{ type: 'eq', column: cfg.matchId, value: matchUuid }], limit: 1 }
+    }, { internal: true })
+    if (found.body.error) throw Object.assign(new Error('match read failed'), { result: found })
+    const row = found.body.data[0]
+    if (!row) return null
+    const match = { ...row }
+    for (const k of db.secretColumnsOf(cfg.matchTable)) {
+      for (const key of Object.keys(match)) if (key.toLowerCase() === k) delete match[key]
+    }
+    for (const k of cfg.restoreByPinHidden) delete match[k]
+    const [s, e, l] = await readChildren(cat, matchUuid, row[cfg.matchKey])
+    return { match, sets: s.body.data, events: e.body.data, liveState: l.body.data }
+  }
+
   async function restoreByPin (input, { limitKey = 'anon', editorUserId = null, takeOver = null } = {}) {
     if (!isPlainObject(input)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
     const gameN = typeof input.gameN === 'string' && /^\d+$/.test(input.gameN.trim()) ? Number(input.gameN.trim()) : input.gameN
@@ -1004,24 +1058,7 @@ export function createMatchRestore (db, options = {}) {
           log.warn?.(`[matchRestore] scoring-device take-over failed: ${err?.code || err?.message}`)
         }
       }
-      const byMatch = [{ type: 'eq', column: cfg.childFk, value: matchUuid }]
-      const childOrder = (table, cols) => {
-        const t = cat.tables.get(table)
-        const col = t && cols.find(c => t.columns.has(c))
-        return col ? [{ column: col, ascending: true }] : undefined
-      }
-      const read = async (table, params) => {
-        if (!cat.tables.has(table) || !db.config.allowedTables.includes(table)) return { body: { data: params.maybeSingle ? null : [] } }
-        const r = await db.runQuery({ table, action: 'select', params: { columns: '*', filters: byMatch, ...params } }, { maxRows: cfg.childRowCap })
-        if (r.body.error) throw Object.assign(new Error('child read failed'), { result: r })
-        return r
-      }
-      const [s, e, l, floor] = await Promise.all([
-        read(cfg.setsTable, { order: childOrder(cfg.setsTable, ['index']) }),
-        read(cfg.eventsTable, { order: childOrder(cfg.eventsTable, ['seq', 'ts', 'id']) }),
-        read(cfg.liveStateTable, { maybeSingle: true }),
-        idFloor(cat, matchUuid, row[cfg.matchKey])
-      ])
+      const [s, e, l, floor] = await readChildren(cat, matchUuid, row[cfg.matchKey])
       if (anonymous) {
         const pub = (table, rows) => projectAnonDbRows(table, rows)
         const pubMatch = { ...pub(cfg.matchTable, match), [cfg.closedColumn]: row[cfg.closedColumn] }
@@ -1035,5 +1072,5 @@ export function createMatchRestore (db, options = {}) {
     }
   }
 
-  return { restoreMatch, restoreByPin, claimMatch, addEditor, pinLimiter, callerLimiter }
+  return { restoreMatch, restoreByPin, readWhole, claimMatch, addEditor, pinLimiter, callerLimiter }
 }

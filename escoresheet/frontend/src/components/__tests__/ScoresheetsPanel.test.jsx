@@ -5,16 +5,25 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
 }))
 
-const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn(), reopen: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn(), reopen: vi.fn(), matchRecord: vi.fn(), rebuild: vi.fn() }))
 vi.mock('../../lib/accountApi', async (orig) => {
   const real = await orig()
-  return { ...real, admin: { ...real.admin, reopenMatch: (...a) => api.reopen(...a) }, scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a) } }
+  return { ...real, admin: { ...real.admin, reopenMatch: (...a) => api.reopen(...a) }, scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a), matchRecord: (...a) => api.matchRecord(...a), rebuild: (...a) => api.rebuild(...a) } }
 })
-const toasts = vi.hoisted(() => ({ error: [] }))
+const toasts = vi.hoisted(() => ({ error: [], success: [] }))
 vi.mock('../../ui', async (orig) => {
   const real = await orig()
-  return { ...real, toast: { ...real.toast, error: (m) => toasts.error.push(m) } }
+  return { ...real, toast: { ...real.toast, error: (m) => toasts.error.push(m), success: (m) => toasts.success.push(m) } }
 })
+// "Rebuild PDF": the sheet's drawing is the scoresheet's own (its tests); here
+// the panel's steps: the record read, the remark, the PDF handed back, stored
+const rebuildView = vi.hoisted(() => ({ props: null }))
+vi.mock('../manage/RebuildScoresheet', () => ({
+  default: (props) => { rebuildView.props = props; return <div data-testid="rebuild-scoresheet">{props.remark}</div> },
+  blobToBase64: async () => 'JVBERi0xLjQ='
+}))
+const fromCloud = vi.hoisted(() => ({ fn: vi.fn() }))
+vi.mock('../../utils/scoresheetFromCloud', () => ({ scoresheetDataFromCloud: (...a) => fromCloud.fn(...a) }))
 
 import ScoresheetsPanel from '../manage/ScoresheetsPanel'
 
@@ -33,6 +42,8 @@ describe('ScoresheetsPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     toasts.error = []
+    toasts.success = []
+    rebuildView.props = null
     api.list.mockResolvedValue({ data: { matches: MATCHES }, error: null, status: 200 })
     // a server before the view links (404): View falls back to the file
     api.viewLink.mockResolvedValue({ error: { code: 'OV_NOT_FOUND' }, status: 404 })
@@ -153,5 +164,65 @@ describe('ScoresheetsPanel', () => {
     render(<ScoresheetsPanel app="indoor" />)
     await screen.findByText('Voléro vs Smash')
     expect(screen.queryByRole('button', { name: 'manage.matches.reopen' })).toBeNull()
+  })
+
+  it('an out-of-date PDF is marked (the match data changed after it)', async () => {
+    api.list.mockResolvedValue({ data: { matches: [{ ...MATCHES[0], pdf_stale: true, data_changed_at: '2026-11-16T10:00:00Z' }, MATCHES[1]] }, error: null, status: 200 })
+    render(<ScoresheetsPanel />)
+    await screen.findByText('Voléro vs Smash')
+    expect(within(rowOf('Voléro vs Smash')).getByTestId('scoresheet-stale')).toHaveTextContent('manage.scoresheets.stale')
+    expect(within(rowOf('Musterdorf vs Züri')).queryByTestId('scoresheet-stale')).toBeNull()
+  })
+
+  it('Rebuild PDF: admins only; it asks why, draws the sheet from the server\'s data with the remark, and stores it', async () => {
+    const closed = { ...MATCHES[0], closed_at: '2026-10-10T16:40:00Z', pdf_stale: true }
+    api.list.mockResolvedValue({ data: { matches: [closed, MATCHES[1]] }, error: null, status: 200 })
+    const record = { match: { id: 'm-1', game_n: 402397 }, sets: [], events: [], liveState: null }
+    api.matchRecord.mockResolvedValue({ data: record, error: null, status: 200 })
+    const drawn = { match: { id: 1 }, homeTeam: null, awayTeam: null, homePlayers: [], awayPlayers: [], sets: [], events: [] }
+    fromCloud.fn.mockReturnValue(drawn)
+    api.rebuild.mockResolvedValue({ data: { stored_at: '2026-11-16T10:05:00Z' }, error: null, status: 200 })
+
+    // a competition manager: no Rebuild
+    const { unmount } = render(<ScoresheetsPanel />)
+    await screen.findByText('Voléro vs Smash')
+    expect(screen.queryByTestId('scoresheet-rebuild')).toBeNull()
+    unmount()
+
+    render(<ScoresheetsPanel canRebuild />)
+    await screen.findByText('Voléro vs Smash')
+    // an open match without a PDF: nothing to rebuild
+    expect(within(rowOf('Musterdorf vs Züri')).queryByTestId('scoresheet-rebuild')).toBeNull()
+    fireEvent.click(within(rowOf('Voléro vs Smash')).getByTestId('scoresheet-rebuild'))
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Set start times corrected' } })
+    fireEvent.click(screen.getByTestId('reason-confirm'))
+    await waitFor(() => expect(api.matchRecord).toHaveBeenCalledWith('m-1'))
+    expect(fromCloud.fn).toHaveBeenCalledWith(record)
+    // drawn with the match's data and the remark: when and why
+    const view = await screen.findByTestId('rebuild-scoresheet')
+    expect(rebuildView.props.matchData).toBe(drawn)
+    expect(view.textContent).toMatch(/^Rebuilt after the match: \d{2}\.\d{2}\.\d{4}, \d{2}:\d{2} - Set start times corrected$/)
+    // the PDF made: stored with the reason, the list read again
+    const listed = api.list.mock.calls.length
+    rebuildView.props.onDone({ blob: pdfBlob, filename: 'game402397_1L_2026-10-10.pdf' })
+    await waitFor(() => expect(api.rebuild).toHaveBeenCalledWith('m-1', { reason: 'Set start times corrected', fileBase64: 'JVBERi0xLjQ=' }))
+    await waitFor(() => expect(toasts.success).toEqual(['manage.scoresheets.rebuilt']))
+    await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(listed))
+    expect(screen.queryByTestId('rebuild-scoresheet')).toBeNull()
+  })
+
+  it('Rebuild PDF: a sheet that could not be made stores nothing and says so', async () => {
+    api.list.mockResolvedValue({ data: { matches: [{ ...MATCHES[0], closed_at: '2026-10-10T16:40:00Z' }] }, error: null, status: 200 })
+    api.matchRecord.mockResolvedValue({ data: { match: { id: 'm-1' }, sets: [], events: [] }, error: null, status: 200 })
+    fromCloud.fn.mockReturnValue({ match: {}, homePlayers: [], awayPlayers: [], sets: [], events: [] })
+    render(<ScoresheetsPanel canRebuild />)
+    await screen.findByText('Voléro vs Smash')
+    fireEvent.click(screen.getByTestId('scoresheet-rebuild'))
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Times' } })
+    fireEvent.click(screen.getByTestId('reason-confirm'))
+    await screen.findByTestId('rebuild-scoresheet')
+    rebuildView.props.onDone(null)
+    await waitFor(() => expect(toasts.error).toEqual(['manage.scoresheets.rebuildFailed']))
+    expect(api.rebuild).not.toHaveBeenCalled()
   })
 })

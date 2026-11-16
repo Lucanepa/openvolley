@@ -4141,6 +4141,7 @@
         "match_approval_revoke": "Approbation par compte annulée",
         "match_approval_void": "Approbations par compte invalidées",
         "scoresheet_read": "Feuille de match ouverte",
+        "scoresheet_rebuild": "Feuille de match recréée",
         "activity_delete": "Entrées d’activité supprimées",
         "activity_read": "Activité consultée",
         "activity_export": "Activité exportée",
@@ -4279,7 +4280,16 @@
       "download": "Télécharger le PDF",
       "noPdfYet": "Pas encore de feuille de match enregistrée",
       "noPdf": "Aucun PDF de feuille de match n’est enregistré pour ce match.",
-      "storedAt": "Feuille de match enregistrée {{date}}"
+      "storedAt": "Feuille de match enregistrée {{date}}",
+      "stale": "Pas à jour",
+      "staleTitle": "Les données du match ont changé le {{date}}, après ce PDF",
+      "rebuild": "Recréer le PDF",
+      "rebuildTitle": "Recréer le PDF du match {{game}}",
+      "rebuildBody": "La feuille de match est redessinée à partir des données du match sur le serveur et enregistrée comme PDF le plus récent du match, même si le match est clôturé. Les signatures restent telles quelles ; la feuille reçoit la remarque « Rebuilt after the match » avec la date et ta raison. Les anciens PDF sont conservés.",
+      "rebuildReason": "Pourquoi le recrées-tu ?",
+      "rebuilding": "Le nouveau PDF est créé à partir des données du match…",
+      "rebuilt": "Nouveau PDF enregistré",
+      "rebuildFailed": "Le nouveau PDF n’a pas pu être créé. Réessaie."
     },
     "clubs": {
       "new": "Nouveau club",

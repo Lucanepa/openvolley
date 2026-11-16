@@ -119,6 +119,10 @@
  *                                                    competition managers; no app = indoor)
  *   GET    /api/scoresheets/:id/pdf[?download=1]     canManageTeams of the match's sport: the stored
  *                                                    PDF (binary, audited; lib/scoresheets.js)
+ *   GET    /api/scoresheets/:id/match                admin: the match's whole record to draw its
+ *                                                    sheet again ("Rebuild PDF"; audited)
+ *   POST   /api/scoresheets/:id/rebuild              admin { reason, fileBase64 }: that PDF stored
+ *                                                    as the match's newest, also closed (audited)
  *   POST   /api/scoresheets/:id/view                 the same check and audit: a short-lived
  *                                                    link to that PDF for the browser's viewer
  *                                                    (served by server.js, /api/scoresheet-view/)
@@ -422,7 +426,10 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     // { status, file } (server.js sends it as is), every other answer JSON.
     ['GET', /^\/api\/scoresheets$/, manageSheetsOfApp, (m, c) => sheets((s) => s.list({ app: q(c.query, 'app'), state: q(c.query, 'state') || 'all', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit') }))],
     ['GET', new RegExp(`^/api/scoresheets/${ID}/pdf$`), manageTeamsOf((m) => (scoresheets ? scoresheets.sportOf(m[1]) : { sport: null })), (m, c) => sheets((s) => s.readPdf({ actorId: c.user.id, matchId: m[1], download: q(c.query, 'download') === '1' }))],
-    ['POST', new RegExp(`^/api/scoresheets/${ID}/view$`), manageTeamsOf((m) => (scoresheets ? scoresheets.sportOf(m[1]) : { sport: null })), (m, c) => sheets((s) => s.createViewLink({ actorId: c.user.id, matchId: m[1] }))]
+    ['POST', new RegExp(`^/api/scoresheets/${ID}/view$`), manageTeamsOf((m) => (scoresheets ? scoresheets.sportOf(m[1]) : { sport: null })), (m, c) => sheets((s) => s.createViewLink({ actorId: c.user.id, matchId: m[1] }))],
+    // "Rebuild PDF" (owner 2026-11-16): admins only, also of a closed match
+    ['GET', new RegExp(`^/api/scoresheets/${ID}/match$`), 'admin', (m, c) => sheets((s) => s.matchForRebuild({ actorId: c.user.id, matchId: m[1] }))],
+    ['POST', new RegExp(`^/api/scoresheets/${ID}/rebuild$`), 'admin', (m, c) => sheets((s) => s.rebuildPdf({ actorId: c.user.id, matchId: m[1], reason: isPlainObject(c.body) ? c.body.reason : undefined, fileBase64: isPlainObject(c.body) ? c.body.fileBase64 : undefined }))]
   ]
 
   // The Data tab (lib/dataAdmin.js): super admins only. A generic editor can

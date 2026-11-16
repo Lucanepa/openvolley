@@ -1479,9 +1479,20 @@ export async function fetchMatchByPin(gamePin, gameN, { claim = false, externalI
     throw Object.assign(new Error(error.message || 'Match lookup failed'), { code: error.code, status: error.status })
   }
   if (!data?.match) throw new Error('Match not found with this ID and PIN')
-
   // The server never returns the PINs; the caller just proved the game PIN.
-  let matchData = { ...data.match, game_pin: pin }
+  return cloudDataFromServer(data, { pin })
+}
+
+/**
+ * The server's record of a match ({ match, sets, events, liveState, idFloor?,
+ * scorer? }: restore-by-pin, or an admin's GET /api/scoresheets/:id/match)
+ * as importMatchFromSupabase and scoresheetDataFromCloud take it: Team A
+ * from the live row where it is the scorer's latest, the line-ups the log
+ * lacks made up from the live state, the court sides. Pure. `pin`: the game
+ * PIN the caller proved (kept on the match), none for an admin's read.
+ */
+export function cloudDataFromServer(data, { pin = null } = {}) {
+  let matchData = pin != null ? { ...data.match, game_pin: pin } : { ...data.match }
   const setsResult = { data: data.sets || [] }
   let events = data.events || []
   const liveState = data.liveState || null
@@ -1873,6 +1884,120 @@ export function rosterWithRedesignations(players, events, team) {
   return rows
 }
 
+/**
+ * The local match row (Dexie db.matches) of the server's record `cloudData`
+ * (cloudDataFromServer): what importMatchFromSupabase stores, and what an
+ * admin's "Rebuild PDF" draws the sheet from (scoresheetDataFromCloud). Pure.
+ */
+export function localMatchRowFromCloud(cloudData, { homeTeamId = null, awayTeamId = null } = {}) {
+  const { match, events } = cloudData
+  const courtSides = cloudData.courtSides || {}
+  const homeTeamData = match.home_team || {}
+  const awayTeamData = match.away_team || {}
+  // Extract JSONB data with fallback to legacy columns
+  const matchInfo = match.match_info || {}
+  const coinToss = match.coin_toss || {}
+  const signatures = match.signatures || {}
+  const results = match.results || {}
+  const approval = match.approval || {}
+  const connections = match.connections || {}
+  const connectionPins = match.connection_pins || {}
+  // Team A's serve; the cloud keeps no B flag (B serves when A does not):
+  // without it the sheet of a continued match had no S/R for Team B
+  const coinTossServeA = coinToss.serve_a !== undefined ? coinToss.serve_a : match.coin_toss_serve_a
+  // A roster uploaded for the match waits for the scorer's Accept in Match
+  // setup only. The server may still hold it once the match has started
+  // (nothing cleared it): copied then, it sent the continued match back
+  // to Match setup at every return
+  const inSetup = match.status == null || match.status === 'setup'
+
+  // Create match with all JSONB data (prefer JSONB, fallback to legacy)
+  return {
+    homeTeamId,
+    awayTeamId,
+    status: match.status,
+    scheduledAt: match.scheduled_at,
+    // Match info: prefer JSONB, fallback to legacy. All of it: the match
+    // type, gender and level too (they were left out, and the sheet of a
+    // match taken over on another device had only "Regional" X'd)
+    ...localFromMatchInfo(matchInfo, match),
+    bestOf: cloudBestOf(match),
+    refereePin: match.referee_pin,
+    gamePin: match.game_pin,
+    gameN: match.game_n,
+    gameNumber: match.game_n ? String(match.game_n) : null, // Also set gameNumber
+    test: match.test || false,
+    seed_key: match.external_id,
+    // Its live states are stamped after the last one in the cloud, also
+    // when this device's clock is behind the previous one's
+    // (serverDataSync.liveClockOffset)
+    liveClockOffsetMs: liveClockOffsetAfter(cloudData.liveState),
+    // Short names at match level (for easy access)
+    homeShortName: homeTeamData.short_name || null,
+    awayShortName: awayTeamData.short_name || null,
+    // JSONB data stored locally
+    officials: officialsFromCloud(match.officials),
+    bench_home: benchFromCloud(match.bench_home),
+    bench_away: benchFromCloud(match.bench_away),
+    // Signatures: prefer JSONB, fallback to legacy
+    homeCoachSignature: signatures.home_coach || match.home_coach_signature,
+    homeCaptainSignature: signatures.home_captain || match.home_captain_signature,
+    awayCoachSignature: signatures.away_coach || match.away_coach_signature,
+    awayCaptainSignature: signatures.away_captain || match.away_captain_signature,
+    // The closing ones (captains, assistant scorer, scorer, referees) in
+    // the fields Match end and the sheet read: a slot missing here would
+    // show "Tap to sign" again, and the next signature drawn on this
+    // device sends the whole object back, which erased it on the server
+    ...postMatchSignaturesFromServer(signatures),
+    // Where they were made ("Signed on phone"), kept only by an approval
+    signatureSources: signatureSourcesFromApproval(approval, coinToss.team_a || match.coin_toss_team_a),
+    // Coin toss: prefer JSONB, fallback to legacy
+    coinTossConfirmed: coinToss.confirmed !== undefined ? coinToss.confirmed : match.coin_toss_confirmed,
+    coinTossTeamA: coinToss.team_a || match.coin_toss_team_a,
+    coinTossTeamB: coinToss.team_b || match.coin_toss_team_b,
+    coinTossServeA,
+    coinTossServeB: typeof coinTossServeA === 'boolean' ? !coinTossServeA : undefined,
+    firstServe: coinToss.first_serve || match.first_serve,
+    // Court sides (domain/rules getSideAForSet): without them the court
+    // showed the set number's sides whatever the court was
+    ...(courtSides.setLeftTeamOverrides ? { setLeftTeamOverrides: { ...courtSides.setLeftTeamOverrides } } : {}),
+    ...(isAB(courtSides.set5LeftTeam) ? { set5LeftTeam: courtSides.set5LeftTeam } : {}),
+    ...(typeof courtSides.set5CourtSwitched === 'boolean' ? { set5CourtSwitched: courtSides.set5CourtSwitched } : {}),
+    // Set 5's first server (its coin toss, the set 5 setup's confirmation):
+    // that event hides the setup panel, so without it set 5 was served
+    // by set 1's first server
+    ...set5TossFromEvents(events, coinToss.team_a || match.coin_toss_team_a),
+    // Match result: prefer JSONB, fallback to legacy
+    setResults: results.set_results || match.set_results,
+    winner: results.winner || match.winner,
+    finalScore: results.final_score || match.final_score,
+    sanctions: results.sanctions || match.sanctions,
+    // Scoresheet remarks (db/017; '' when the server has none)
+    remarks: typeof match.remarks === 'string' ? match.remarks : '',
+    // Approval: prefer JSONB, fallback to legacy
+    approved: approval.approved !== undefined ? approval.approved : match.approved,
+    approvedAt: approval.approved_at || match.approved_at,
+    // Connection settings: prefer JSONB, fallback to legacy
+    refereeConnectionEnabled: connections.referee_enabled !== undefined ? connections.referee_enabled : match.referee_connection_enabled,
+    homeTeamConnectionEnabled: connections.home_bench_enabled !== undefined ? connections.home_bench_enabled : match.home_team_connection_enabled,
+    awayTeamConnectionEnabled: connections.away_bench_enabled !== undefined ? connections.away_bench_enabled : match.away_team_connection_enabled,
+    homeTeamPin: connectionPins.bench_home || match.bench_home_pin,
+    awayTeamPin: connectionPins.bench_away || match.bench_away_pin,
+    refereePin: connectionPins.referee || match.referee_pin,
+    homeTeamUploadPin: connectionPins.upload_home || match.home_team_upload_pin,
+    awayTeamUploadPin: connectionPins.upload_away || match.away_team_upload_pin,
+    // Pending rosters: prefer JSONB, fallback to legacy (Match setup only)
+    pendingHomeRoster: inSetup ? (connections.pending_home_roster || match.pending_home_roster) : null,
+    pendingAwayRoster: inSetup ? (connections.pending_away_roster || match.pending_away_roster) : null,
+    // Import metadata
+    importedFrom: 'supabase',
+    importedAt: new Date().toISOString(),
+    createdAt: match.created_at || new Date().toISOString(),
+    // Mark match info as confirmed since we're restoring an existing match
+    matchInfoConfirmedAt: match.created_at || new Date().toISOString()
+  }
+}
+
 export async function importMatchFromSupabase(cloudData, { replaceNewer = false } = {}) {
   const { match, sets, events } = cloudData
   const courtSides = cloudData.courtSides || {}
@@ -1924,108 +2049,7 @@ export async function importMatchFromSupabase(cloudData, { replaceNewer = false 
       })
     }
 
-    // Extract JSONB data with fallback to legacy columns
-    const matchInfo = match.match_info || {}
-    const coinToss = match.coin_toss || {}
-    const signatures = match.signatures || {}
-    const results = match.results || {}
-    const approval = match.approval || {}
-    const connections = match.connections || {}
-    const connectionPins = match.connection_pins || {}
-    // Team A's serve; the cloud keeps no B flag (B serves when A does not):
-    // without it the sheet of a continued match had no S/R for Team B
-    const coinTossServeA = coinToss.serve_a !== undefined ? coinToss.serve_a : match.coin_toss_serve_a
-    // A roster uploaded for the match waits for the scorer's Accept in Match
-    // setup only. The server may still hold it once the match has started
-    // (nothing cleared it): copied then, it sent the continued match back
-    // to Match setup at every return
-    const inSetup = match.status == null || match.status === 'setup'
-
-    // Create match with all JSONB data (prefer JSONB, fallback to legacy)
-    const localMatchRow = {
-      homeTeamId,
-      awayTeamId,
-      status: match.status,
-      scheduledAt: match.scheduled_at,
-      // Match info: prefer JSONB, fallback to legacy. All of it: the match
-      // type, gender and level too (they were left out, and the sheet of a
-      // match taken over on another device had only "Regional" X'd)
-      ...localFromMatchInfo(matchInfo, match),
-      bestOf: cloudBestOf(match),
-      refereePin: match.referee_pin,
-      gamePin: match.game_pin,
-      gameN: match.game_n,
-      gameNumber: match.game_n ? String(match.game_n) : null, // Also set gameNumber
-      test: match.test || false,
-      seed_key: match.external_id,
-      // Its live states are stamped after the last one in the cloud, also
-      // when this device's clock is behind the previous one's
-      // (serverDataSync.liveClockOffset)
-      liveClockOffsetMs: liveClockOffsetAfter(cloudData.liveState),
-      // Short names at match level (for easy access)
-      homeShortName: homeTeamData.short_name || null,
-      awayShortName: awayTeamData.short_name || null,
-      // JSONB data stored locally
-      officials: officialsFromCloud(match.officials),
-      bench_home: benchFromCloud(match.bench_home),
-      bench_away: benchFromCloud(match.bench_away),
-      // Signatures: prefer JSONB, fallback to legacy
-      homeCoachSignature: signatures.home_coach || match.home_coach_signature,
-      homeCaptainSignature: signatures.home_captain || match.home_captain_signature,
-      awayCoachSignature: signatures.away_coach || match.away_coach_signature,
-      awayCaptainSignature: signatures.away_captain || match.away_captain_signature,
-      // The closing ones (captains, assistant scorer, scorer, referees) in
-      // the fields Match end and the sheet read: a slot missing here would
-      // show "Tap to sign" again, and the next signature drawn on this
-      // device sends the whole object back, which erased it on the server
-      ...postMatchSignaturesFromServer(signatures),
-      // Where they were made ("Signed on phone"), kept only by an approval
-      signatureSources: signatureSourcesFromApproval(approval, coinToss.team_a || match.coin_toss_team_a),
-      // Coin toss: prefer JSONB, fallback to legacy
-      coinTossConfirmed: coinToss.confirmed !== undefined ? coinToss.confirmed : match.coin_toss_confirmed,
-      coinTossTeamA: coinToss.team_a || match.coin_toss_team_a,
-      coinTossTeamB: coinToss.team_b || match.coin_toss_team_b,
-      coinTossServeA,
-      coinTossServeB: typeof coinTossServeA === 'boolean' ? !coinTossServeA : undefined,
-      firstServe: coinToss.first_serve || match.first_serve,
-      // Court sides (domain/rules getSideAForSet): without them the court
-      // showed the set number's sides whatever the court was
-      ...(courtSides.setLeftTeamOverrides ? { setLeftTeamOverrides: { ...courtSides.setLeftTeamOverrides } } : {}),
-      ...(isAB(courtSides.set5LeftTeam) ? { set5LeftTeam: courtSides.set5LeftTeam } : {}),
-      ...(typeof courtSides.set5CourtSwitched === 'boolean' ? { set5CourtSwitched: courtSides.set5CourtSwitched } : {}),
-      // Set 5's first server (its coin toss, the set 5 setup's confirmation):
-      // that event hides the setup panel, so without it set 5 was served
-      // by set 1's first server
-      ...set5TossFromEvents(events, coinToss.team_a || match.coin_toss_team_a),
-      // Match result: prefer JSONB, fallback to legacy
-      setResults: results.set_results || match.set_results,
-      winner: results.winner || match.winner,
-      finalScore: results.final_score || match.final_score,
-      sanctions: results.sanctions || match.sanctions,
-      // Scoresheet remarks (db/017; '' when the server has none)
-      remarks: typeof match.remarks === 'string' ? match.remarks : '',
-      // Approval: prefer JSONB, fallback to legacy
-      approved: approval.approved !== undefined ? approval.approved : match.approved,
-      approvedAt: approval.approved_at || match.approved_at,
-      // Connection settings: prefer JSONB, fallback to legacy
-      refereeConnectionEnabled: connections.referee_enabled !== undefined ? connections.referee_enabled : match.referee_connection_enabled,
-      homeTeamConnectionEnabled: connections.home_bench_enabled !== undefined ? connections.home_bench_enabled : match.home_team_connection_enabled,
-      awayTeamConnectionEnabled: connections.away_bench_enabled !== undefined ? connections.away_bench_enabled : match.away_team_connection_enabled,
-      homeTeamPin: connectionPins.bench_home || match.bench_home_pin,
-      awayTeamPin: connectionPins.bench_away || match.bench_away_pin,
-      refereePin: connectionPins.referee || match.referee_pin,
-      homeTeamUploadPin: connectionPins.upload_home || match.home_team_upload_pin,
-      awayTeamUploadPin: connectionPins.upload_away || match.away_team_upload_pin,
-      // Pending rosters: prefer JSONB, fallback to legacy (Match setup only)
-      pendingHomeRoster: inSetup ? (connections.pending_home_roster || match.pending_home_roster) : null,
-      pendingAwayRoster: inSetup ? (connections.pending_away_roster || match.pending_away_roster) : null,
-      // Import metadata
-      importedFrom: 'supabase',
-      importedAt: new Date().toISOString(),
-      createdAt: match.created_at || new Date().toISOString(),
-      // Mark match info as confirmed since we're restoring an existing match
-      matchInfoConfirmedAt: match.created_at || new Date().toISOString()
-    }
+    const localMatchRow = localMatchRowFromCloud(cloudData, { homeTeamId, awayTeamId })
     const localMatchId = await db.matches.add(localMatchRow)
 
     importedMatchId = localMatchId

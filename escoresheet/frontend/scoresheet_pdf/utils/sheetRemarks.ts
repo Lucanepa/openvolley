@@ -140,3 +140,19 @@ export function correctionRemarks(manualChanges: unknown): string[] {
   }
   return lines
 }
+
+/** The prefix of the remark a sheet drawn again after the match carries (an admin's "Rebuild PDF"). */
+export const REBUILT_AFTER_MATCH = 'Rebuilt after the match'
+
+const zurichStamp = new Intl.DateTimeFormat('de-CH', { timeZone: 'Europe/Zurich', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+/**
+ * The remark of a rebuilt sheet (owner 2026-11-16: the signatures stay as
+ * they were; the sheet says it was drawn again, when and why):
+ * "Rebuilt after the match: 16.11.2026, 21:05 - <reason>".
+ */
+export function rebuildRemark(reason: unknown, at: Date = new Date()): string {
+  const why = typeof reason === 'string' ? reason.replace(/\s+/g, ' ').trim() : ''
+  const when = zurichStamp.format(at)
+  return why ? `${REBUILT_AFTER_MATCH}: ${when} - ${why}` : `${REBUILT_AFTER_MATCH}: ${when}`
+}
