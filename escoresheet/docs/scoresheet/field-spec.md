@@ -993,3 +993,36 @@ These override sections 4-7 and 16 wherever they differ.
      voided an event or approved (ON DELETE SET NULL).
    Existing matches start from the value the list computed before, without a game
    release's own write.
+20. **The official PDF as a vector PDF, made on the server** (owner 2026-11-16: "a true
+    vector PDF instead of a picture inside a PDF").
+   - **Design.** The stored scoresheet is printed by headless Chromium on the server
+     (`escoresheet/render`, compose `ov-render`) with `page.pdf()`: text, lines and the sheet's
+     font (OV Sheet Inter) in the file, selectable and searchable, exact at any zoom. The page
+     it prints is the web app's own scoresheet (`frontend/render`: `App_Scoresheet` fed by
+     `scoresheetDataFromCloud`, the builder Rebuild PDF uses, with `scoresheet.css` +
+     `sheet.css` as on the standalone page), printed under the SCREEN media, so the layout is
+     what the standalone `/scoresheet/` page shows; only its toolbar is hidden. A3 landscape,
+     5 mm margins: the 410 x 287 mm sheet fills the page box where the raster PDF placed its
+     picture. REMARKS that do not fit the box go on further pages as text
+     ("REMARKS (continued from the scoresheet)" and the sheet's title), as the raster PDF's
+     page 2. The match-level LFP tracking and clock zone (18.) make it print what the
+     scorer's sheet printed.
+   - **Not printed in the vector PDF:** the boxes' faint screen shadow (`shadow-sm`; Chromium's
+     PDF writer paints a shadow as a picture). Nothing else differs; a test requires every
+     word the page shows to be text in the PDF (`escoresheet/render/tests`).
+   - **Where it is used.** (a) After the approval's PDF of an indoor match is stored, the
+     server prints its own copy once the match is closed, its data has been quiet for 60 s and
+     10 min have passed since that PDF (the window in which a corrected approval PDF may still
+     replace it), and stores it as the match's newest: the view link, the manager and the final
+     mail serve the vector sheet; the device's raster PDF stays as a record. A record whose
+     finished sets do not end on their last point's score (points still on their way, a
+     correction the check cannot follow) keeps the device's PDF. The final mail waits for a
+     pending copy at most 25 min after the close. (b) The manager's Rebuild PDF asks the server
+     first (`POST /api/scoresheets/:id/rebuild-vector`); without the service, busy or failed,
+     the manager draws and captures the sheet itself as before. (c) The device's own offline
+     "Save PDF" stays the raster capture (it needs no network).
+   - **Fonts in the file.** Chromium embeds the variable Inter as Type 3 fonts (text extractable,
+     drawn exactly). A static Inter would embed as TrueType and make the file smaller; not
+     done (the sheet's font is the variable one everywhere else).
+   - **Off unless set up** (`OV_RENDER_URL` + `OV_RENDER_TOKEN` on the backend): every PDF is
+     then the raster capture, as before.

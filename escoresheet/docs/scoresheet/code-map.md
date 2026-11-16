@@ -448,6 +448,26 @@ browser print, which no button triggers.
 
 ---
 
+### 6.x The vector PDF on the server (field-spec 17.19)
+
+- `frontend/render/index.html` + `render/main.tsx` (built by `vite.render.config.js` into
+  `dist-render/`): the page headless Chromium prints. `window.ovRender({ record, rebuildReason,
+  rebuiltAt })` draws `App_Scoresheet` from `scoresheetDataFromCloud(record)`, waits for fonts,
+  pictures (`picturesReady`) and FitText to settle, adds the REMARKS continuation pages, and
+  returns the file name. `App_Scoresheet`'s `onSheetInfo` prop hands it the name, title and
+  the full REMARKS text.
+- `escoresheet/render/` (`server.mjs`, `lib/renderPdf.mjs`, `lib/queue.mjs`): the service.
+  Serves `dist-render/` under a made-up origin by request interception (nothing else
+  reachable), one Chromium page at a time, `page.pdf()` A3 landscape with 5 mm margins under
+  the screen media. `tests/render.integration.test.mjs` renders a fixture with real Chromium
+  and checks the text (pdftotext) and that there is no page-sized picture (pdfimages).
+- Backend: `lib/vectorPdf.js` (client, one request at a time), `lib/scoresheets.js`
+  `rebuildVector` (admin, `POST /api/scoresheets/:id/rebuild-vector`), `queueVectorCopy`
+  (after the approval's PDF; `scoresheet.vector` in the audit log), `vectorPending` (the
+  final mail waits), `lib/approvals.js` `recordsForMatch` (the stamps).
+- Deploy: `deploy/Dockerfile.render`, `deploy/build-render-image.sh`, compose `ov-render`
+  (profile `render`, network `ov-render-net`), deploy README "Vector PDF".
+
 ## 7. File name
 
 ### 7.1 Today
