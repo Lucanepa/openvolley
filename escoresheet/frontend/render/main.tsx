@@ -1,6 +1,6 @@
 /**
  * The page the server prints the official vector PDF from (escoresheet/render,
- * field-spec 17.19). Headless Chromium opens it, calls window.ovRender with a
+ * field-spec 17.20). Headless Chromium opens it, calls window.ovRender with a
  * match record as the manager's Rebuild PDF reads it (GET
  * /api/scoresheets/:id/match plus the account approvals), and prints it with
  * page.pdf(). The sheet is the same App_Scoresheet the scorer's device and

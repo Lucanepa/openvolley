@@ -1,5 +1,5 @@
 /**
- * The vector scoresheet PDF (field-spec 17.19): headless Chromium opens the
+ * The vector scoresheet PDF (field-spec 17.20): headless Chromium opens the
  * scoresheet page built from the web app's own code (frontend/render, built
  * into dist-render/), hands it the match record and prints it with page.pdf()
  * under the SCREEN media, so the sheet is laid out exactly as the standalone

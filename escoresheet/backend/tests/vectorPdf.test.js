@@ -1,6 +1,6 @@
 /**
  * lib/vectorPdf.js: the backend's client of the render service (field-spec
- * 17.19). Off without its settings; one request at a time; every failure an
+ * 17.20). Off without its settings; one request at a time; every failure an
  * answer, never a throw.
  */
 import { describe, it } from 'node:test'

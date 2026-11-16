@@ -1412,7 +1412,7 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     }
   }
 
-  // ---- the vector PDF (field-spec 17.19) -----------------------------------
+  // ---- the vector PDF (field-spec 17.20) -----------------------------------
 
   /**
    * What the render service draws match `matchId` from: the whole record as

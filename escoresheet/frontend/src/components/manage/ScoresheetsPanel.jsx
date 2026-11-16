@@ -124,7 +124,7 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
   // server, as the sheet takes it; then RebuildScoresheet draws it
   const startRebuild = async (reason) => {
     const m = rebuildFor
-    // The server prints it as a vector PDF (field-spec 17.19); where it cannot
+    // The server prints it as a vector PDF (field-spec 17.20); where it cannot
     // (no render service, busy, failed) this page draws and captures the sheet
     // as before. A refusal about the request itself (reason, rights, match) is shown.
     const vec = await scoresheetsApi.rebuildVector(m.id, { reason })

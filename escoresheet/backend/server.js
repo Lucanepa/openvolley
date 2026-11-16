@@ -482,7 +482,7 @@ function getDataLayer() {
     const activity = act.createActivityLog({ pool: db.pool, accounts })
     // The manager's Scoresheets tab: stored PDFs for admins and competition managers (audited);
     // a PDF is stored only for a match its uploader may write (db/033)
-    // The official sheet as a vector PDF (lib/vectorPdf.js, escoresheet/render; field-spec 17.19):
+    // The official sheet as a vector PDF (lib/vectorPdf.js, escoresheet/render; field-spec 17.20):
     // off unless OV_RENDER_URL and OV_RENDER_TOKEN are set (the raster PDFs stay as before)
     const vector = createVectorPdf({ url: process.env.OV_RENDER_URL, token: process.env.OV_RENDER_TOKEN })
     const scoresheets = ss.createScoresheets({

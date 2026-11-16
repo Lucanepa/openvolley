@@ -1,5 +1,5 @@
 /**
- * The official scoresheet as a vector PDF (field-spec 17.19): the backend
+ * The official scoresheet as a vector PDF (field-spec 17.20): the backend
  * hands a match record to the render service (escoresheet/render, compose
  * ov-render on a private network) and gets the PDF back. The service prints
  * the same scoresheet code the scorer's device and the manager draw, with

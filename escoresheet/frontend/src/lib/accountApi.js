@@ -610,7 +610,7 @@ export const scoresheetsApi = {
   },
   /**
    * POST /api/scoresheets/:id/rebuild-vector (admins): the server prints the
-   * match as a vector PDF and stores it as the newest (field-spec 17.19).
+   * match as a vector PDF and stores it as the newest (field-spec 17.20).
    * 503 OV_RENDER_UNAVAILABLE / busy / failed: the manager draws and
    * captures it itself (rebuild above). `signal`: Cancel (a PDF the server
    * already printed and stored stays stored).

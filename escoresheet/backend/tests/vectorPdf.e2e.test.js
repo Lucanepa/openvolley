@@ -1,6 +1,6 @@
 /**
  * The vector scoresheet PDF end to end (lib/vectorPdf.js, lib/scoresheets.js
- * rebuildVector / queueVectorCopy; field-spec 17.19), against a stand-in for
+ * rebuildVector / queueVectorCopy; field-spec 17.20), against a stand-in for
  * the render service (escoresheet/render) that answers a small PDF and keeps
  * what it was sent:
  *  - an admin's Rebuild PDF on the server: admins only, audited, stored as

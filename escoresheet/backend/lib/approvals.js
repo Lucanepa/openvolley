@@ -918,7 +918,7 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
   /**
    * The match's non-revoked approval records as a writer of the match sees
    * them (listForMatch), for trusted server code only: the vector PDF draws
-   * the stamps from them (lib/scoresheets.js renderRecord, field-spec 17.19).
+   * the stamps from them (lib/scoresheets.js renderRecord, field-spec 17.20).
    * [] without the feature, for a beach match it refuses, or none.
    */
   async function recordsForMatch (matchId) {

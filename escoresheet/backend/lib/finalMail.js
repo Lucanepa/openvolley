@@ -375,7 +375,7 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     const t = now()
     const late = m.outcome === 'sent_no_pdf' // mailed without the PDF: the PDF is what is still to go
     // The server's vector copy of the sheet is on its way (lib/scoresheets.js
-    // queueVectorCopy, field-spec 17.19): the mail carries it, not the device's
+    // queueVectorCopy, field-spec 17.20): the mail carries it, not the device's
     // picture of the sheet. At most VECTOR_HOLD_MS after the close.
     if (!manual && !late && typeof scoresheets.vectorPending === 'function' && scoresheets.vectorPending(m.id) &&
         t - new Date(m.closed_at).getTime() < VECTOR_HOLD_MS) {

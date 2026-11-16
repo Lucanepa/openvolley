@@ -207,7 +207,7 @@ cannot freeze official matches. Refusals (`relay-full`) show in the `[WS]` summa
 
 ## Vector PDF (ov-render)
 
-The official scoresheet as a vector PDF (field-spec 17.19): text, lines and
+The official scoresheet as a vector PDF (field-spec 17.20): text, lines and
 the font in the file, not the device's 3100 x 2170 picture of the sheet.
 
 - **What:** `ov-render` (Dockerfile.render, `escoresheet/render`) runs headless

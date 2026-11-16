@@ -1,6 +1,6 @@
 /**
  * openvolley-render: the backend's vector scoresheet PDF service (field-spec
- * 17.19, escoresheet/deploy/Dockerfile.render). It listens on the backend's
+ * 17.20, escoresheet/deploy/Dockerfile.render). It listens on the backend's
  * private network only (compose ov-render-net, internal: true: no egress).
  *
  *   POST /render  { record, rebuildReason?, rebuiltAt? }  ->  application/pdf

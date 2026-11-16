@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# openvolley-render: the backend's vector scoresheet PDF (field-spec 17.19).
+# openvolley-render: the backend's vector scoresheet PDF (field-spec 17.20).
 # Headless Chromium prints the scoresheet page built from the web app's own
 # code (frontend/render) with page.pdf(). Built by build-render-image.sh from
 # a context holding the COMMITTED frontend/ and render/ trees:

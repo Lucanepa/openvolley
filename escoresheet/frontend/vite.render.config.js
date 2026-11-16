@@ -1,4 +1,4 @@
-// The server's vector-PDF page (render/index.html, field-spec 17.19): the
+// The server's vector-PDF page (render/index.html, field-spec 17.20): the
 // scoresheet alone, built into dist-render/ with relative asset paths. The
 // renderer image (escoresheet/deploy/Dockerfile.render) serves it from its
 // own disk to headless Chromium; nothing else of the web app goes in.

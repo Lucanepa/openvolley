@@ -268,7 +268,7 @@ services:
       # OV_BACKEND_MEM in .env: raise them together (about half of the memory
       # limit for the heap).
       NODE_OPTIONS: --max-old-space-size=${OV_NODE_HEAP_MB:-256}
-      # The vector PDF (ov-render, profile "render"; field-spec 17.19): both
+      # The vector PDF (ov-render, profile "render"; field-spec 17.20): both
       # set = on. Empty = off, every PDF the raster capture as before.
       OV_RENDER_URL: ${OV_RENDER_URL:-}
       OV_RENDER_TOKEN: ${OV_RENDER_TOKEN:-}
@@ -319,7 +319,7 @@ services:
     labels:
       traefik.enable: "false"
 
-  # The official scoresheet as a vector PDF (field-spec 17.19,
+  # The official scoresheet as a vector PDF (field-spec 17.20,
   # Dockerfile.render, build-render-image.sh): headless Chromium prints the
   # sheet the backend hands it. Started only with the profile "render"
   # (COMPOSE_PROFILES=tunnel,render) and OV_RENDER_IMAGE / OV_RENDER_TOKEN in

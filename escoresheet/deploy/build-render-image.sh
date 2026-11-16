@@ -2,7 +2,7 @@
 # build-render-image.sh [--ship <ssh-host>] [--allow-dirty]
 #
 # Builds openvolley-render:<git-sha> (the vector scoresheet PDF service,
-# Dockerfile.render, field-spec 17.19) from the COMMITTED escoresheet/frontend
+# Dockerfile.render, field-spec 17.20) from the COMMITTED escoresheet/frontend
 # and escoresheet/render trees (git archive HEAD), like build-image.sh does
 # for the backend. --ship <ssh-host> streams it to the host, keeps a gzipped
 # copy in /opt/openvolley/images/ and `docker load`s it there; deploying is

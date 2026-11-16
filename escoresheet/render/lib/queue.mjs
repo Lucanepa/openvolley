@@ -1,5 +1,5 @@
 /**
- * One job at a time, at most `max` waiting (field-spec 17.19): a 2-CPU / 4 GB
+ * One job at a time, at most `max` waiting (field-spec 17.20): a 2-CPU / 4 GB
  * host never runs two Chromium pages at once, and a burst of approvals waits
  * its turn instead of stacking up pages. A job past the limit is refused at
  * once (the backend keeps the device's raster PDF and tries later).

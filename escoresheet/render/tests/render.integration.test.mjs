@@ -1,5 +1,5 @@
 // Renders the fixture match to a vector PDF with real Chromium (field-spec
-// 17.19) and checks it: a PDF, one A3 landscape page, the sheet's words as
+// 17.20) and checks it: a PDF, one A3 landscape page, the sheet's words as
 // TEXT (pdftotext), no full-page picture (pdfimages), the same words the page
 // shows. Needs a Chromium (CHROMIUM_PATH, or Playwright's cache) and the
 // built page (frontend: npx vite build --config vite.render.config.js, or

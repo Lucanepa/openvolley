@@ -448,7 +448,7 @@ browser print, which no button triggers.
 
 ---
 
-### 6.x The vector PDF on the server (field-spec 17.19)
+### 6.x The vector PDF on the server (field-spec 17.20)
 
 - `frontend/render/index.html` + `render/main.tsx` (built by `vite.render.config.js` into
   `dist-render/`): the page headless Chromium prints. `window.ovRender({ record, rebuildReason,
