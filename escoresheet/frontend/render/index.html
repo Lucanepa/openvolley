@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" class="ov-render">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1700, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <title>OpenVolley scoresheet (vector PDF)</title>
+  <!--
+    The server's vector PDF (escoresheet/render): headless Chromium opens this
+    page, hands it a match record (window.ovRender) and prints it with
+    page.pdf() under the SCREEN media, so the layout is exactly what the
+    standalone /scoresheet/ page shows (same App_Scoresheet, same
+    scoresheet.css + sheet.css). Only the toolbar and the page chrome go.
+    A3 landscape, 5 mm margins: the 410 x 287 mm sheet fills the page box, as
+    the raster PDF places it (field-spec 17.19).
+  -->
+  <style>
+    html.ov-render, html.ov-render body { margin: 0; padding: 0; background: #fff; }
+    html.ov-render body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* the sheet's toolbar, warnings and buttons (their print: classes do not apply under screen media) */
+    html.ov-render .print\:hidden { display: none !important; }
+    html.ov-render .scoresheet-scroll-container {
+      display: block !important; padding: 0 !important; margin: 0 !important; min-height: 0 !important;
+      width: 410mm !important; height: 287mm !important; overflow: hidden !important;
+      background: #fff !important; break-after: auto;
+    }
+    html.ov-render [data-testid="sheet-turn-box"] { display: contents !important; }
+    html.ov-render .scoresheet-container { transform: none !important; box-shadow: none !important; margin: 0 !important; }
+    /* the boxes' faint screen shadow (shadow-sm): Chromium's PDF writer paints a
+       shadow as a picture, ten greyscale images for nothing on paper */
+    html.ov-render .scoresheet-container * { box-shadow: none !important; }
+    /* REMARKS that do not fit the box: further pages, as the raster PDF's page 2 */
+    html.ov-render .ov-remarks-pages {
+      break-before: page; width: 410mm; box-sizing: border-box; padding: 10mm 10mm 0 10mm;
+      font-family: 'OV Sheet Inter', Arial, sans-serif; color: #111827;
+    }
+    html.ov-render .ov-remarks-pages h1 { font-size: 14pt; font-weight: 700; margin: 0 0 2mm 0; }
+    html.ov-render .ov-remarks-pages h2 { font-size: 10pt; font-weight: 400; margin: 0 0 6mm 0; }
+    html.ov-render .ov-remarks-pages pre { font: inherit; font-size: 11pt; line-height: 1.35; white-space: pre-wrap; margin: 0; }
+  </style>
+</head>
+<body class="text-gray-900 antialiased text-[10px]">
+  <div id="root"></div>
+  <script type="module" src="./main.tsx"></script>
+</body>
+</html>
