@@ -1008,8 +1008,12 @@ export default function MainHeader({
                     {isCompactBar ? (
                       actionsMenuOpen ? <X size={16} aria-hidden="true" /> : <Menu size={16} aria-hidden="true" />
                     ) : (
+                      // The menu, named as one: it said "Fullscreen" (or "Exit"),
+                      // so a tap on "Fullscreen" opened a menu instead (owner's
+                      // tablet, 16.11.2026). Fullscreen is the menu's first row.
                       <>
-                        <span>{isFullscreen ? t('header.exit') : t('header.fullscreen')}</span>
+                        <Menu size={14} aria-hidden="true" />
+                        <span>{t('header.menu', 'Menu')}</span>
                         <ChevronDown size={12} aria-hidden="true" className={cn('transition-transform', actionsMenuOpen && 'rotate-180')} />
                       </>
                     )}

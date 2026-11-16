@@ -876,6 +876,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const touchStartPositionRef = useRef(null) // Track initial touch position to detect movement
   const touchDragDataRef = useRef(null) // Store player data during touch drag
   const touchMoveFrameRef = useRef(0) // requestAnimationFrame of the next drag position
+  const touchTapTargetRef = useRef(null) // the element a held finger came down on (its tap = a click)
+  const touchClaimedRef = useRef(false) // that touch was taken from the browser (no click of its own)
   const touchMovePendingRef = useRef(null) // latest finger position while dragging
 
   // Header collapse state
@@ -10535,6 +10537,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Cancel touch drag and reset all state
   const cancelTouchDrag = useCallback(() => {
+    touchTapTargetRef.current = null
+    touchClaimedRef.current = false
     if (touchMoveFrameRef.current) {
       cancelAnimationFrame(touchMoveFrameRef.current)
       touchMoveFrameRef.current = 0
@@ -10709,6 +10713,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     touchStartPositionRef.current = startPos
     touchDragDataRef.current = playerData
+    touchTapTargetRef.current = e.target
 
     setTouchDragState(prev => ({
       ...prev,
@@ -10820,8 +10825,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const touchState = touchDragState
 
     if (touchState.isLongPressing) {
-      // Long-press not completed - cancel
+      // Long-press not completed: a tap. The browser's own click was
+      // suppressed with the touch (the touchstart guard below), so the
+      // player's menu opens from here
+      const target = touchTapTargetRef.current
+      const claimed = touchClaimedRef.current
       cancelTouchDrag()
+      // only when the touch was claimed: else the browser clicks as well
+      if (claimed && target?.isConnected && typeof target.click === 'function') target.click()
       return
     }
 
@@ -10858,12 +10869,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     cancelTouchDrag()
   }, [touchDragState, draggedPlayer, cancelTouchDrag, getDropInfoFromElement, isValidDropTarget, handleCourtDrop, handleBenchDrop])
 
-  // While a finger holds or drags a player, the long-press menu stays shut
-  // (it fired touchcancel and dropped the drag on Android)
+  // A finger that comes down on a draggable player belongs to the drag. The
+  // Android WebView otherwise takes it as a long press after about 500 ms:
+  // contextmenu, then pointercancel / touchcancel, and the drag, already
+  // under way, died there (emulator trace, 16.11.2026; a blocked
+  // contextmenu alone did not stop the cancel). React's touchstart listener
+  // is passive, so this one, on the document and after React's (bubble),
+  // takes the touch once handleTouchDragStart has begun a hold. That also
+  // drops the browser's click: a short tap clicks the player itself
+  // (handleTouchEnd).
   useEffect(() => {
+    const claim = (e) => {
+      if (!touchDragDataRef.current || !e.cancelable) return
+      e.preventDefault()
+      touchClaimedRef.current = true
+    }
     const block = (e) => { if (touchDragDataRef.current) e.preventDefault() }
+    document.addEventListener('touchstart', claim, { passive: false })
     document.addEventListener('contextmenu', block, { capture: true })
-    return () => document.removeEventListener('contextmenu', block, { capture: true })
+    return () => {
+      document.removeEventListener('touchstart', claim, { passive: false })
+      document.removeEventListener('contextmenu', block, { capture: true })
+    }
   }, [])
 
   // Handle touch cancel - fires when touch is interrupted (browser context menu, scroll gesture, etc.)
