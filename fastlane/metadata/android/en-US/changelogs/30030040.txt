@@ -1,0 +1,6 @@
+OpenVolley 3.3.4
+- Scoresheet on screen: zooming and new points redraw only what changed, much faster.
+- The official PDF is printed on the server as real text (vector): sharp at any zoom, searchable.
+- Rebuild PDF: Cancel stops the upload and says if it had already arrived.
+- "Out of date" shows only when the sheet's data changed (a game release no longer counts).
+- Password fields: new eye button to show or hide what you type.
