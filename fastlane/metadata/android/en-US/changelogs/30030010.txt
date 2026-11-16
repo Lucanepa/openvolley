@@ -1,2 +1,7 @@
 OpenVolley 3.3.1
-- First Google Play build. Installed from Play, the app takes its updates from Play and never checks for them itself.
+- Scoresheet PDF: every line kept at any zoom, the same sheet everywhere, real font sizes, saved in about 2 s instead of 10.
+- LIBERO box by shirt number; centred A/B, cleaner SANCTIONS heading.
+- Long names fit on Android; long remarks continue on more pages.
+- LFP tracking and the time zone are saved with the match.
+- Rebuild PDF keeps the approval stamps and the confirmed set starts; Cancel cancels.
+- First Google Play build: Play installs update from Play.
