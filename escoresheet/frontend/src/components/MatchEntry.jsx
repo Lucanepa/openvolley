@@ -865,7 +865,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           aspectRatio: '1 / 1',
           // half the disc (.court-player is 22cqh), as on the referee discs
           // (discSizing DISC.number)
-          fontSize: '11cqh'
+          fontSize: 'calc(11cqh * var(--cqf, 1))'
         }}
       >
         {shouldShowBall && (
@@ -888,7 +888,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             minWidth: '5.5cqh', height: '5.5cqh', padding: '0 0.6cqh', boxSizing: 'border-box', background: '#FFF8E7',
             border: '2px solid rgba(0,0,0,0.2)', borderRadius: '1cqh',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '3.2cqh', fontWeight: 700, color: '#000', zIndex: 6
+            fontSize: 'calc(3.2cqh * var(--cqf, 1))', fontWeight: 700, color: '#000', zIndex: 6
           }}>{player.substitutedPlayerNumber}</span>
         )}
         <span className="court-player-position">{player.position}</span>
@@ -901,7 +901,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             minWidth: '6.5cqh', height: '5cqh', padding: '0 0.6cqh', boxSizing: 'border-box', background: liberoMarkOn(true),
             border: '2px solid rgba(255,255,255,0.4)', borderRadius: '1cqh',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '3cqh', fontWeight: 700, color: '#fff', zIndex: 5
+            fontSize: 'calc(3cqh * var(--cqf, 1))', fontWeight: 700, color: '#fff', zIndex: 5
           }}>{liberoLabel}</span>
         )}
         {player.number || '—'}

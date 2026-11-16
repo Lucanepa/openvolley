@@ -29,7 +29,7 @@ describe('PhoneScoreboard: the score cards on a narrow phone', () => {
     const { readFileSync } = await import('node:fs')
     const { resolve } = await import('node:path')
     const src = readFileSync(resolve(__dirname, '../scoreboard/PhoneScoreboard.jsx'), 'utf8')
-    expect(src).toMatch(/data-testid=\{`phone-score-\$\{team\.side\}`\} style=\{\{ flex: 'none', fontSize: 'clamp\(40px, 12cqw, 52px\)'/)
+    expect(src).toMatch(/data-testid=\{`phone-score-\$\{team\.side\}`\} style=\{\{ flex: 'none', fontSize: 'clamp\(40px, calc\(12cqw \* var\(--cqf, 1\)\), 52px\)'/)
   })
 
   it('the info column clips rather than running into the score', () => {
