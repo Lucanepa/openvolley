@@ -14,7 +14,7 @@ import { Player, SanctionRecord } from './types_scoresheet';
 import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, idHeadingOf, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData, rosterLiberos } from './utils/extractLiberoData';
-import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
+import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, picturesReady, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
 import {
   getStartingLineup,
   assignSubsToColumns,
@@ -31,6 +31,7 @@ import {
 import { trackServiceRounds, courtChangeIndex, splitSet5Rounds, type ServiceRound } from './utils/serviceRounds';
 import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
 import { isMatchOverStatus } from '../src/domain/matchEnd.js';
+import { courtSwitchPointOf, setTargetsOf } from '../src/domain/rules.js';
 import { sponsorsOf, withSponsorMark } from '../src/domain/sponsors.js';
 import { generatedRemarks, correctionRemarks } from './utils/sheetRemarks';
 import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
@@ -38,9 +39,10 @@ import { BRAND } from '../src/brand.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
 import { onPointHubBoard } from '../src/utils/pointHubBoard';
-import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, A3_LANDSCAPE_MM, type SaveOutcome } from './utils/pdfOutput';
+import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, type SaveOutcome } from './utils/pdfOutput';
 import { usePinchZoom } from './usePinchZoom';
 import { applyTextFont } from './utils/pdfFont';
+import { writeRemarksPages } from './utils/remarksPages';
 
 interface AppScoresheetProps {
   matchData: {
@@ -202,10 +204,15 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         ? match.firstServe === teamAKey
         : undefined;
 
+  // Where the teams change courts in the deciding set: 8 of 15, or half of the
+  // match's own deciding target rounded up (a Global match's setTargets, the
+  // Scoreboard's rules.courtSwitchPointOf)
+  const set5SwitchAt: number = courtSwitchPointOf(setTargetsOf(match));
+
   // Compute Libero Control Sheet data from events
   const lcsData = useMemo(() => {
-    return extractLiberoData(events || [], sets || [], teamAKey as 'home' | 'away', teamAPlayers, teamBPlayers);
-  }, [events, sets, teamAKey, teamAPlayers, teamBPlayers]);
+    return extractLiberoData(events || [], sets || [], teamAKey as 'home' | 'away', teamAPlayers, teamBPlayers, set5SwitchAt);
+  }, [events, sets, teamAKey, teamAPlayers, teamBPlayers, set5SwitchAt]);
 
   // Check if LCS button should be visible: at least one team has a libero AND there is libero activity
   const hasLiberoActivity = useMemo(() => {
@@ -337,9 +344,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     });
     const leftServiceRounds: ServiceRound[] = trackedRounds[leftTeamKey];
     const rightServiceRounds: ServiceRound[] = trackedRounds[rightTeamKey];
-    // Set 5: index of the point after which a team reached 8 (change of courts)
+    // Set 5: index of the point after which a team reached the change of courts
     const set5ChangeAt = setNumber === 5
-      ? courtChangeIndex(rallyTeams, 8, rallyCounted)
+      ? courtChangeIndex(rallyTeams, set5SwitchAt, rallyCounted)
       : null;
 
     // Identify points scored due to sanctions
@@ -481,7 +488,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     let currentHomeScore = 0;
     let currentAwayScore = 0;
 
-    // For Set 5, track when court change happens (when any team reaches 8 points)
+    // For Set 5, track when court change happens (when any team reaches set5SwitchAt points)
     const isSet5 = setNumber === 5;
     let courtChangeHappened = false;
     let leftScoreAtCourtChange = 0; // Track left team's score at the moment of court change
@@ -526,8 +533,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           currentAwayScore++;
         }
 
-        // Check if court change has happened (Set 5: when any team reaches 8 points)
-        if (isSet5 && !courtChangeHappened && (currentHomeScore >= 8 || currentAwayScore >= 8)) {
+        // Check if court change has happened (Set 5: when any team reaches set5SwitchAt points)
+        if (isSet5 && !courtChangeHappened && (currentHomeScore >= set5SwitchAt || currentAwayScore >= set5SwitchAt)) {
           courtChangeHappened = true;
           // Store scores at the moment of court change
           leftScoreAtCourtChange = leftTeamKey === 'home' ? currentHomeScore : currentAwayScore;
@@ -1265,7 +1272,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     : '';
 
   // Set 5: three panels (field-spec 6). Panel 1 = the left team until the change of
-  // courts (points 1-8), panel 2 = the right team, panel 3 = the left team after the
+  // courts (points 1-8, or 1 to set5SwitchAt), panel 2 = the right team, panel 3 = the left team after the
   // change. Everything comes from getSetData(5): the same points, circles and the
   // same service-round tracker as sets 1-4, split at the change.
   const set5Changed = set5Data?.set5ChangeAt !== null && set5Data?.set5ChangeAt !== undefined;
@@ -1541,6 +1548,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
       const sheet = containerRef.current;
       assertVisibleSheet(sheet);
+      // every logo and signature loaded and decoded (at most 3 s), else the PDF
+      // came out without it and nobody knew (utils/pdfCapture.ts)
+      await picturesReady(sheet!, 3000);
+      stillShown();
+      const missing = missingPictures(sheet!);
+      if (missing.length > 0) {
+        console.warn(`[Scoresheet] ${missing.length} picture(s) did not load and are not in the PDF:`, missing.map(img => img.alt || img.getAttribute('data-testid') || 'picture').join(', '));
+      }
 
       // Lazy-load PDF libraries (only needed when generating PDF)
       const [htmlToImage, { jsPDF }] = await Promise.all([
@@ -1628,14 +1643,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       } catch { /* text layer is optional */ }
       if (remarksClipped) {
         const all = remarksText({ overflowSanctions, remarks: typeof match?.remarks === 'string' ? match.remarks : '', generated: autoRemarks });
-        pdf.addPage('a3', 'landscape');
         await applyTextFont(pdf, `${title}\n${all}`);
-        pdf.setFontSize(14);
-        pdf.text('REMARKS (continued from the scoresheet)', 15, 20);
-        pdf.setFontSize(10);
-        pdf.text(title, 15, 27);
-        pdf.setFontSize(11);
-        pdf.text(pdf.splitTextToSize(all, A3_LANDSCAPE_MM.width - 30), 15, 38);
+        // as many pages as the text needs (utils/remarksPages)
+        writeRemarksPages(pdf, title, all);
       }
 
       stillShown();
@@ -2251,7 +2261,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       pointsA_Left={set5Shown ? (() => {
                         if (!set5Info || (!set5Info.homePoints && !set5Info.awayPoints && !set5Info.startTime)) return 0;
                         const leftTeamPoints = set5TeamOnLeft === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
-                        return Math.min(leftTeamPoints, 8);
+                        return Math.min(leftTeamPoints, set5SwitchAt);
                       })() : 0}
                       markedPointsA_Left={set5Shown ? markedPointsA_Left : []}
                       circledPointsA_Left={set5Shown ? circledPointsA_Left : []}
@@ -2267,12 +2277,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       pointsA_Right={set5Shown ? (() => {
                         if (!set5Info || (!set5Info.homePoints && !set5Info.awayPoints && !set5Info.startTime)) return 0;
                         const leftTeamPoints = set5TeamOnLeft === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
-                        return Math.max(leftTeamPoints - 8, 0);
+                        return Math.max(leftTeamPoints - set5SwitchAt, 0);
                       })() : 0}
                       markedPointsA_Right={set5Shown ? markedPointsA_Right : []}
                       circledPointsA_Right={set5Shown ? circledPointsA_Right : []}
                       serviceRoundsA_Right={set5Shown ? set5ServiceRoundsLeftTeam_After : []}
                       pointsAtChangeA={set5Shown ? (set5Data.leftScoreAtCourtChange ?? null) : null}
+                      switchAt={set5SwitchAt}
                       positionBoxRef={positionBoxSet5Ref}
                     />
                   </div>

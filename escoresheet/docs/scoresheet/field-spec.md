@@ -325,7 +325,11 @@ Other differences from sets 1 to 4:
 - Copy panel 1's line-up into panel 3 as well.
 - Panel 3 stays unused until the change of courts.
 
-**Change of courts at 8** (when either team reaches 8 points, FIVB 18.2.2):
+**Change of courts at 8** (when either team reaches 8 points, FIVB 18.2.2). A Global match that
+plays the deciding set to another target (`match.setTargets.deciding`) changes courts at half of
+it, rounded up, as the Scoreboard does (`rules.courtSwitchPointOf`: 3 for a set to 5, 5 for 10,
+13 for 25); the generated sheet splits the panels there, and panel 1 then prints 1 to that point
+(never fewer than 1-8). See 17.15.
 
 1. Write the **left team's points at the change** (only the left team's points) in the
    "Pte. beim Seitenwechsel" box of panel 3.
@@ -437,6 +441,12 @@ records only what was imposed.
 
 There are 4 ruled lines. If more space is needed, the text keeps flowing (OV decision: wrap, and
 continue on an overflow page if needed, never truncate).
+
+On the generated sheet the text shrinks to fit the box down to **6px** (about 1.6 mm, 4.5 pt on
+the A3 print; `FooterSection REMARKS_MIN_PX`, was 4px, about 3 pt, unreadable on paper). Text
+that does not fit at 6px starts with "Remarks continue on page 2." and the PDF prints the whole
+text after the sheet, on as many pages as it needs (`utils/remarksPages.ts`; each further page
+says "REMARKS (continued, page n of m)"). See 17.15.
 
 Every remark states **Team A/B, the set number and the result** (concerned team first). Time
 problems also state the times and the duration (SC p.71).
@@ -862,3 +872,27 @@ These override sections 4-7 and 16 wherever they differ.
    - Not changed: the LFP marks (LFP tracking option, owner 2026-11-16) and the clock zone
      (Global tool mode) still follow the device that draws the sheet, so a rebuild on another
      device can differ there from the approved sheet.
+15. **Text on the sheet, more pages, pictures** (2026-11-16, review of the PDF, group C).
+   - **The browser's minimum font size.** Android's WebView draws any font below 8px at 8px
+     (its default minimum), and so does a browser whose user set a minimum font size (Chrome,
+     Safari, Firefox). FitText shrank long names to 5-7px and only checked the text's width,
+     so on a scorer tablet those names were cut off, without a word (in Chromium with an 8px
+     minimum: every long roster name lost its initials, the bench officials, the RESULT
+     names, the league). FitText now reads the size the browser really used; when it is held
+     at a floor and the text does not fit there, the text is drawn at the floor size in an
+     inner box 1/k as large, scaled by k (a transform is not subject to the minimum), which is
+     what the smaller font would have drawn, in the PDF too. Where nothing holds the font up
+     there is no inner box: the sheet is unchanged.
+   - **Team names on two lines** in RESULT's head row and in the rosters' headers, when one
+     line is not enough. With no short name stored the full name is printed there, and the
+     single line cut its end: "Damen 1" against "Damen 2" and the sponsor mark (+) / (-).
+   - **REMARKS** shrinks to 6px at most, then goes to the pages after the sheet, as many as
+     the text needs (section 8). jsPDF does not paginate a text call: everything past about
+     58 lines was lost.
+   - **The deciding set follows the match's target** (section 6): the panels, the time-outs,
+     the substitutions, the service rounds, the libero entries and "points at change" split
+     where the Scoreboard changed courts, not always at 8.
+   - **Pictures before the capture.** The PDF waits until every logo and signature has loaded
+     and decoded (at most 3 s; it waited fixed delays only, so a picture still loading was
+     missing from the PDF), and the console names any picture that did not load
+     (`pdfCapture picturesReady`, `missingPictures`).

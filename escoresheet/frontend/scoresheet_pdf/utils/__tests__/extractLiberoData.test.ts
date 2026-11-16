@@ -83,4 +83,22 @@ describe('extractLiberoData', () => {
       ['A', 3, 9, 5]
     ])
   })
+
+  it('splits the deciding set at the match\'s own change of courts (a Global set to 10: at 5)', () => {
+    const teamA = players([[7, 'libero1']])
+    const teamB = players([[10, 'libero1']])
+    let seq = 0
+    const e = (type: string, payload: Record<string, unknown>) => ({ type, setIndex: 5, seq: ++seq, payload })
+    const events = [
+      ...Array.from({ length: 5 }, () => e('point', { team: 'home' })),
+      // 5:0: past the change at 5 (set to 10), still before 8
+      e('libero_entry', { team: 'home', liberoIn: 7, playerOut: 4 })
+    ]
+    const at = (switchAt?: number) => {
+      const set5 = extractLiberoData(events, [], 'home', teamA as any, teamB as any, switchAt).sets.find(s => s.setNumber === 5)!
+      return [set5.teamAReplacements.length, (set5.teamAReplacements_After || []).length]
+    }
+    expect(at()).toEqual([1, 0])
+    expect(at(5)).toEqual([0, 1])
+  })
 })

@@ -55,6 +55,8 @@ interface SetFiveProps {
     pointsAtChangeA?: number | null;
     /** Not printed (the box holds the left team's points only, field-spec 6 step 1). */
     pointsAtChangeB?: number | null;
+    /** The change of courts (rules.courtSwitchPointOf: 8 of 15): panel 1 prints 1..switchAt (at least 8). */
+    switchAt?: number;
 
     // Ref for measuring position box width
     positionBoxRef?: React.RefObject<HTMLDivElement>;
@@ -200,9 +202,10 @@ export const SetFive: React.FC<SetFiveProps> = ({
     circledPointsA_Right = [],
     serviceRoundsA_Right = [],
     pointsAtChangeA = null,
+    switchAt = 8,
     positionBoxRef
 }) => {
-  // Left (panel 1/3) team's full score: panel 1 holds 1-8, panel 3 the rest (pointsA_Right = score - 8)
+  // Left (panel 1/3) team's full score: panel 1 holds 1-switchAt, panel 3 the rest (pointsA_Right = score - switchAt)
   const finalScoreA = (pointsA_Left || 0) + (pointsA_Right || 0);
   const finalScoreB = pointsB || 0;
   // Calculate max score for dynamic points column sizing (Panel 2 and 3 use PointsColumn30;
@@ -285,7 +288,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
             {/* Panel 1: Team A */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={firstServeTeamA === false} positionBoxRef={positionBoxRef} serviceRounds={serviceRoundsA_Left} />
-                 <PointsColumn5 ruleRight timeouts={timeoutsA || ["", ""]} markedPoints={markedPointsA_Left || []} circledPoints={circledPointsA_Left || []} setFinished={setFinished} unused={unused} finalScore={finalScoreA} pointsAtChange={pointsAtChangeA} />
+                 <PointsColumn5 ruleRight rows={switchAt} timeouts={timeoutsA || ["", ""]} markedPoints={markedPointsA_Left || []} circledPoints={circledPointsA_Left || []} setFinished={setFinished} unused={unused} finalScore={finalScoreA} pointsAtChange={pointsAtChangeA} />
             </div>
 
             {/* Panel 2: Team B (no rule of its own on the left: panel 1's points column draws it) */}
