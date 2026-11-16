@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * Text that always fits its box on the fixed A3 sheet: the font shrinks
@@ -25,6 +25,16 @@ export const FitText: React.FC<{
 }> = ({ max, min = 5, multiline = false, className = '', style, title, children, onClipped, ...rest }) => {
     const ref = useRef<HTMLDivElement>(null);
     const [size, setSize] = useState(max);
+    // The sheet's font (sheet.css) arrives after the first fit, which measured
+    // the fallback font: fit again once a font has loaded
+    const [, setFontsLoaded] = useState(0);
+    useEffect(() => {
+        const fonts = typeof document !== 'undefined' ? (document as any).fonts : null;
+        if (!fonts?.addEventListener) return;
+        const refit = () => setFontsLoaded(n => n + 1);
+        fonts.addEventListener('loadingdone', refit);
+        return () => fonts.removeEventListener('loadingdone', refit);
+    }, []);
 
     useLayoutEffect(() => {
         const el = ref.current;

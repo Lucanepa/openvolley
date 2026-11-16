@@ -1,5 +1,8 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+// The sheet's own base styles (font, line height, preflight, .ss-rule): the same
+// sheet wherever it is mounted (standalone page, Rebuild PDF, referee view)
+import './sheet.css';
 import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
 import { COURT_CHANGE_W, SetFive } from './components/SetFive';
@@ -1519,6 +1522,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       setZoomLevel(1);
       await new Promise(resolve => setTimeout(resolve, 250));
       await (document as any).fonts?.ready;
+      // FitText fits its text again once a font has loaded: let that render land
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       const sheet = containerRef.current;
       assertVisibleSheet(sheet);
@@ -1958,7 +1963,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         {/* LCS View */}
         {showLCS && (
           <div
-            className="flex flex-col items-center gap-4"
+            className="ss-sheet flex flex-col items-center gap-4"
             style={{
               transform: `scale(${zoomLevel})`,
               transformOrigin: 'top center',

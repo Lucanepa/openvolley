@@ -800,3 +800,37 @@ These override sections 4-7 and 16 wherever they differ.
    - File names: an indoor league code loses its spaces, `1L D` → `1LD`
      (`compactLeagueCode`: every word at most 3 characters; a name such as "Mobiliar Volley
      Cup" keeps its words apart). Beach leagues are unchanged.
+13. **The PDF draws the sheet as the screen shows it, wherever it is made** (2026-11-16,
+   after a Rebuild PDF made in Brave on a Linux laptop lost the rule under the LIBERO "No"
+   column and the bottom borders of the rosters and of every box on the bottom line).
+   - **Own base styles.** `scoresheet_pdf/sheet.css`, imported by `App_Scoresheet`
+     itself: the sheet's text is 10px, line height 1.5, letter spacing normal, Tailwind
+     gray-900, in one bundled font (Inter, variable weight, text cut, as the family
+     `OV Sheet Inter`, so it never replaces the app's Inter Display on the host page), and
+     Tailwind's preflight applies inside the sheet only (`.scoresheet-container`, the libero
+     control sheet `.ss-sheet`). The inner rules' grey hairline (`.ss-rule`, #6b6b6b) is
+     defined there too. Before, only the standalone page loaded these:
+     the manager's Rebuild PDF, the referee view and the scoresheet subdomain drew the
+     sheet in the app's 13px / line height 1.3 / Inter Display with near-black inner rules,
+     inline signature pictures and 0.2px letter spacing, so a rebuilt PDF did not look like
+     the approved one (the LIBERO block 7px higher). Every computed style of every element
+     of the sheet is now the same on the standalone page and in the manager.
+   - **One font on every device.** The standalone page asked for `Inter` but never loaded
+     it: each device printed its own system font (Segoe UI, Roboto, Helvetica, DejaVu), and
+     FitText fitted the names differently. FitText fits again once a font has loaded; the
+     capture waits for the fonts and that render. Sizes chosen by the owner (sections 16-17)
+     are unchanged.
+   - **Font sizes printed as set.** html-to-image copied every font size as
+     `floor(px) - 0.1` (8.5px DoB printed at 7.9px, a 5.5px FitText name at 4.9px). The Vite
+     plugin `vite-plugin-html-to-image-font-size.js` turns that off in every build (a
+     postinstall patch would not run in the F-Droid build, `npm ci --ignore-scripts`); a test
+     fails if an html-to-image update brings it back in another form.
+   - **Rules never covered.** In WebKit at a fractional device pixel ratio (page zoom,
+     fractional display scaling) the capture rounds sub-pixel borders up, children overflow
+     their box by a fraction of a pixel and any child with a background painted over the
+     rule. Cells inside a box that is already white have no background of their own (the
+     LIBERO and BENCH OFFICIALS cells, the signatures, the roster headers, the winner band),
+     and every bordered box and row of the footer clips what overflows at its border
+     (`overflow-clip`: rosters, their rows and blocks, REMARKS, APPROVAL and its rows,
+     RESULT). The RESULT table keeps its white cells on the black grid (its rules are the
+     gaps). APPROVAL's role labels never wrap.

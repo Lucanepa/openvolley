@@ -58,7 +58,12 @@ browser popup; desktop: `window.open`, turned into an app window labelled
   `popups.rs:181-183`).
 - The old dev page `scoresheet_pdf/index_scoresheet.html` (not a build input; it loaded
   React through an `aistudiocdn.com` import map) was removed in 2026-11.
-- Styles: `scoresheet_pdf/scoresheet.css` (full Tailwind with preflight, compiled).
+- Styles: `scoresheet_pdf/scoresheet.css` (full Tailwind with preflight, compiled) for
+  the page; the sheet's own base (`scoresheet_pdf/sheet.css`: bundled Inter as
+  `OV Sheet Inter`, 10px / line height 1.5, a preflight scoped to
+  `.scoresheet-container` and `.ss-sheet`, `.ss-rule`) is imported by `App_Scoresheet`
+  itself, so the Rebuild PDF, the referee view and the subdomain draw the same sheet
+  (field-spec 17.13).
 
 ### 1.3 Data source priority (`index_scoresheet.tsx:878-971`)
 
@@ -310,6 +315,10 @@ output runs for every finished set on every render (l. 429-443, 624-637).
 2. File name (7.4), computed from the closure's `match` / `homeTeam`.
 3. `setZoomLevel(1)`, wait 200 ms, `document.fonts.ready`.
 4. Lazy `import('html-to-image')` (1.11.13) and `import('jspdf')` (4.2.1); chunk `pdf-vendor`.
+   html-to-image's clone copied every `font-size` as `floor(px) - 0.1`; the Vite plugin
+   `vite-plugin-html-to-image-font-size.js` turns that branch off in every build, the dev
+   server (html-to-image is excluded from `optimizeDeps`) and the tests
+   (`__tests__/htmlToImageFontSize.test.ts`).
 5. `htmlToImage.toCanvas(sheet, { pixelRatio: 2, backgroundColor: '#fff', style: { transform: 'none' }, includeStyleProperties })`.
    - Not WebKitGTK: all computed properties; on failure retry with `usedStyleProperties`.
    - WebKitGTK (Linux desktop, `isWebKitGtk()`): `usedStyleProperties(sheet)` only

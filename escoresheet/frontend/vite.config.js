@@ -10,6 +10,7 @@ import { BUILD_TARGET } from './build-target.js'
 import { themeBoot } from './theme-boot.js'
 import { buildChannelPlugin } from './build-channel.js'
 import { cspMeta } from './csp.js'
+import { htmlToImageFontSize } from './vite-plugin-html-to-image-font-size.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
@@ -74,7 +75,9 @@ export default defineConfig({
   // not end up in the bundle.
   envDir: isCapacitor ? false : undefined,
   optimizeDeps: {
-    include: ['pdfjs-dist', 'react', 'react-dom', 'dexie', 'dexie-react-hooks']
+    include: ['pdfjs-dist', 'react', 'react-dom', 'dexie', 'dexie-react-hooks'],
+    // served as is, so htmlToImageFontSize (below) reaches it in dev too
+    exclude: ['html-to-image']
   },
   resolve: {
     dedupe: ['react', 'react-dom', 'dexie'],
@@ -94,6 +97,9 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // html-to-image copies every font-size as floor(px) - 0.1: the PDF printed
+    // the sheet's text smaller than it is (vite-plugin-html-to-image-font-size.js)
+    htmlToImageFontSize(),
     // Colour theme (src/utils/theme.js): <html data-theme> set before the
     // first paint on every page but the scoresheet and the manager consoles
     themeBoot(),
