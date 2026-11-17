@@ -106,6 +106,7 @@ import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import { setSummaryFit } from './scoreboard/setSummaryFit'
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
 import { useBenchRequestBridge, lineupAcceptBlock } from './scoreboard/useBenchRequestBridge'
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
@@ -17751,35 +17752,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                     const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
 
+                    // The same box all match long: everything in it gets smaller as sets are added (scoreboard/setSummaryFit.js)
+                    const fit = setSummaryFit(visibleSets.length)
                     return (
                       <div className="set-summary-card"
+                        data-set-summary={'left'}
                         onClick={() => setSummaryTableZoom({ side: 'left', teamKey: currentLeftTeamKey })}
                         style={{
                           background: 'var(--panel)',
                           border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
-                          padding: `calc(12px * var(--scale-factor)) var(--set-card-pad-x, calc(12px * var(--scale-factor)))`,
-                          fontSize: `calc(15px * var(--scale-factor))`,
+                          paddingLeft: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          paddingRight: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          ...fit.card,
                           width: '100%',
                           cursor: 'pointer'
                         }}>
-                        <h4 style={{ margin: `0 0 calc(8px * var(--scale-factor))`, fontSize: `calc(18px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
+                        <h4 style={{ ...fit.heading, fontWeight: 600, textAlign: 'center' }}>
                           <span style={{
-                            padding: `calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor))`,
+                            ...fit.badge,
                             borderRadius: `calc(4px * var(--scale-factor))`,
-                            fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
                             ...teamBoxStyle(leftTeamColor)
                           }}>{leftTeamLabel}</span>
                         </h4>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
+                        <div style={fit.tableBox}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', ...fit.table }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>S</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>T</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>Set</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>P</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>W</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>S</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>T</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -17806,16 +17811,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderBottom: '1px solid var(--border)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{leftPoints}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{won}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{substitutions}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{timeouts}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{leftPoints}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{timeouts}</td>
                                 </tr>
                               )
                             })}
                           </tbody>
                         </table>
+                        </div>
                       </div>
                     )
                   })()}
@@ -18265,35 +18271,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                     const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
 
+                    // The same box all match long: everything in it gets smaller as sets are added (scoreboard/setSummaryFit.js)
+                    const fit = setSummaryFit(visibleSets.length)
                     return (
                       <div className="set-summary-card"
+                        data-set-summary={'right'}
                         onClick={() => setSummaryTableZoom({ side: 'right', teamKey: currentRightTeamKey })}
                         style={{
                           background: 'var(--panel)',
                           border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
-                          padding: `calc(12px * var(--scale-factor)) var(--set-card-pad-x, calc(12px * var(--scale-factor)))`,
-                          fontSize: `calc(15px * var(--scale-factor))`,
+                          paddingLeft: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          paddingRight: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          ...fit.card,
                           width: '100%',
                           cursor: 'pointer'
                         }}>
-                        <h4 style={{ margin: `0 0 calc(8px * var(--scale-factor))`, fontSize: `calc(18px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
+                        <h4 style={{ ...fit.heading, fontWeight: 600, textAlign: 'center' }}>
                           <span style={{
-                            padding: `calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor))`,
+                            ...fit.badge,
                             borderRadius: `calc(4px * var(--scale-factor))`,
-                            fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
                             ...teamBoxStyle(rightTeamColor)
                           }}>{rightTeamLabel}</span>
                         </h4>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
+                        <div style={fit.tableBox}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', ...fit.table }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>S</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>T</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>Set</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>P</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>W</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>S</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>T</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -18320,16 +18330,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderBottom: '1px solid var(--border)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{rightPoints}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{won}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{substitutions}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{timeouts}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{rightPoints}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{timeouts}</td>
                                 </tr>
                               )
                             })}
                           </tbody>
                         </table>
+                        </div>
                       </div>
                     )
                   })()}

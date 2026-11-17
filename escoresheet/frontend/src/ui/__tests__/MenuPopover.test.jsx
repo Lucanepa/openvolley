@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import { useRef, useState } from 'react'
 import { MenuPopover } from '../MenuPopover.jsx'
 import { menusAsModal, MENU_MODAL_BELOW } from '../menuLayout.js'
+import { setSummaryFit } from '../../components/scoreboard/setSummaryFit.js'
 
 const setWindow = (width, height) => {
   window.innerWidth = width
@@ -171,5 +172,34 @@ describe('MenuPopover as a centred modal (phone, small tablet)', () => {
     })
     expect(document.querySelector('[data-menu-popover="modal"]')).toBeNull()
     expect(document.querySelector('[data-menu-popover="popover"]')).not.toBeNull()
+  })
+})
+
+describe('setSummaryFit (scoring screen set tables)', () => {
+  // A row's height for a table box of `box` px (scale factor 1), as the CSS computes it
+  const rowHeight = (box, rows, usual, ratio, border) => {
+    const share = box / rows
+    const font = Math.min(usual, share * ratio)
+    const pad = Math.min(4, share * 0.08)
+    return font * 1.2 + 2 * pad + border
+  }
+
+  it('the header and all five set rows fit the same box, down to a 40px table box', () => {
+    for (const box of [40, 60, 80, 100, 128, 160]) {
+      for (let sets = 1; sets <= 5; sets++) {
+        const { rows } = setSummaryFit(sets)
+        expect(rows).toBe(sets + 1)
+        const total = rowHeight(box, rows, 13, 0.5, 2) + sets * rowHeight(box, rows, 15, 0.56, 1)
+        expect(total, `${sets} sets in ${box}px`).toBeLessThanOrEqual(box)
+      }
+    }
+  })
+
+  it('keeps the usual sizes while there is room (set 1 on a 128px box)', () => {
+    const fit = setSummaryFit(1)
+    expect(fit.td.fontSize).toBe('min(calc(15px * var(--scale-factor)), calc((100cqh / 2) * 0.56))')
+    expect(fit.th.fontSize).toBe('min(calc(13px * var(--scale-factor)), calc((100cqh / 2) * 0.5))')
+    expect(fit.tableBox.containerType).toBe('size')
+    expect(rowHeight(128 - 0, 2, 15, 0.56, 1)).toBeCloseTo(15 * 1.2 + 8 + 1)
   })
 })
