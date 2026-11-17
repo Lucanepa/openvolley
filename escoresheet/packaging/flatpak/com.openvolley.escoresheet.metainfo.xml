@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="3.3.6" date="2026-11-17">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.6</url>
+      <description>
+        <ul>
+          <li>Live screen: set this device's court, so a TV can show one court alone (openvolley.app/tv/CODE/2).</li>
+          <li>TV page: openvolley.app/tv asks for the code or a league game number; a game number shows that game.</li>
+          <li>Desktop app: the TV page also works on the laptop's own Wi-Fi without internet.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.3.5" date="2026-11-17">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.5</url>
       <description>
