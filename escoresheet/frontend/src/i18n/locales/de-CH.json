@@ -6479,6 +6479,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Global-Spiil uf livescore.openvolley.app zeige (nur de Spielstand, wie uf de TVs)",
+    "list": {
+      "title": "Global-Spiil",
+      "open": "Live-Screen öffne"
+    },
     "title": "Live-Bildschirm",
     "intro": "Zeigt den Spielstand aller Felder deines Anlasses auf TVs oder einem Beamer, für jedes Spiel. Starte ihn auf einem Schreibergerät und gib den Code auf den anderen ein. Online geht nur der Spielstand (Teamnamen, Punkte, Sätze), nie Spielerinnen und Spieler.",
     "codeLabel": "Live-Bildschirm-Code",

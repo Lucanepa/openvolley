@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
 import { Button } from '../../ui'
 import { copyToClipboard } from '../../utils/networkInfo'
-import { formatLiveCode, liveCodeUrl, liveCourtUrl, localTvUrl, newLiveCode, normalizeLiveCode, setLiveCode, setLiveCourt, useLiveCode, useLiveCourt } from '../../utils/globalLive'
+import { formatLiveCode, liveCodeUrl, liveCourtUrl, localTvUrl, newLiveCode, normalizeLiveCode, setLiveCode, setLiveCourt, setLiveListed, useLiveCode, useLiveCourt, useLiveListed } from '../../utils/globalLive'
 import { getBackendOverride, isStaticDeployment } from '../../utils/backendConfig'
 import { detectAppPlatform } from '../../utils/openAppWindow'
 
@@ -21,6 +21,7 @@ export default function GlobalLivePanel({ bare = false }) {
   const [copied, setCopied] = useState(false)
   const url = liveCodeUrl(code)
   const court = useLiveCourt()
+  const listed = useLiveListed()
   const courtUrl = liveCourtUrl(code, court)
   const venueUrl = code ? venueTvUrl(code) : null
 
@@ -61,6 +62,16 @@ export default function GlobalLivePanel({ bare = false }) {
               />
             </label>
             {courtUrl && <p className="mt-1 break-all text-xs text-stone-500" data-testid="global-live-court-url">{t('globalLive.courtUrl', { url: courtUrl.replace(/^https:\/\//, '') })}</p>}
+            <label className="mt-2 flex items-start gap-2 text-xs text-stone-600">
+              <input
+                type="checkbox"
+                checked={listed}
+                onChange={(e) => setLiveListed(e.target.checked)}
+                data-testid="global-live-listed"
+                className="mt-0.5 h-4 w-4"
+              />
+              <span>{t('globalLive.listedLabel')}</span>
+            </label>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button variant="secondary" size="md" onClick={async () => { setCopied((await copyToClipboard(url))?.success === true) }}>
                 {copied ? t('globalLive.copied') : t('globalLive.copyLink')}

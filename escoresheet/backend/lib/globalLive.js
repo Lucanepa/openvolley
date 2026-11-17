@@ -18,7 +18,14 @@
  *   GET /api/global/live/<code> -> { data: { code, updatedAt, courts: [...] }, error: null }
  *
  * The code (8 characters from an alphabet without look-alikes, about 40
- * bits) is the only way to a page; nothing lists the codes. Bounded: maxCodes
+ * bits) is the way to a page. Nothing lists a code unless a scorer device
+ * opted in to the public livescore as well ("Show on livescore", owner
+ * 2026-11-17): only those courts are in
+ *
+ *   GET /api/global/live -> { data: { updatedAt, events: [{ code, updatedAt, courts }] }, error: null }
+ *
+ * (the livescore site's list; a court that stops saying so leaves it with
+ * its next update). Bounded: maxCodes
  * codes, maxCourtsPerCode courts per code (the oldest court gives way), a
  * court is dropped endedKeepMs after its match ended and idleMs after its
  * last update, a code with no court left is dropped.
@@ -150,8 +157,11 @@ export function createGlobalLive({ maxCodes = 1000, maxCourtsPerCode = 24, idleM
    * The scorer's live state for one room. False: not taken (bad code, store
    * full). The caller has checked that the room is a Global match.
    */
-  /** screen: the court number the scorer device set (1-99) for /tv/<code>/<n>, or null. */
-  function update(code, roomKey, liveState, entry, screen = null) {
+  /**
+   * screen: the court number the scorer device set (1-99) for /tv/<code>/<n>, or null.
+   * listed: the scorer device opted in to the public livescore list (list()).
+   */
+  function update(code, roomKey, liveState, entry, screen = null, listed = false) {
     if (!isLiveCode(code) || !roomKey || !liveState || typeof liveState !== 'object') return false
     sweep()
     let courts = codes.get(code)
@@ -170,7 +180,7 @@ export function createGlobalLive({ maxCodes = 1000, maxCourtsPerCode = 24, idleM
       for (const [k, c] of courts) if (!oldest || c.at < oldest[1].at) oldest = [k, c]
       if (oldest) courts.delete(oldest[0])
     }
-    courts.set(id, { summary, at: t, endedAt: summary.ended ? (prev?.endedAt || t) : null })
+    courts.set(id, { summary, at: t, endedAt: summary.ended ? (prev?.endedAt || t) : null, listed: listed === true })
     return true
   }
 
@@ -189,7 +199,27 @@ export function createGlobalLive({ maxCodes = 1000, maxCourtsPerCode = 24, idleM
     return { code, updatedAt, courts: list }
   }
 
-  return { update, get, sweep, size: () => codes.size }
+  /**
+   * The public livescore's list: the codes with at least one court whose
+   * scorer opted in, with those courts only; running events first, at most
+   * maxEvents.
+   */
+  function list({ maxEvents = 50 } = {}) {
+    sweep()
+    const events = []
+    for (const [code, courts] of codes) {
+      const shown = [...courts.values()].filter((c) => c.listed).map((c) => c.summary)
+      if (shown.length === 0) continue
+      shown.sort((a, b) => (a.ended - b.ended) || String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')) || String(a.hall || '').localeCompare(String(b.hall || '')))
+      const updatedAt = shown.reduce((m, c) => (c.updatedAt > m ? c.updatedAt : m), '')
+      events.push({ code, updatedAt, live: shown.some((c) => !c.ended), courts: shown })
+    }
+    events.sort((a, b) => (b.live - a.live) || b.updatedAt.localeCompare(a.updatedAt))
+    const out = events.slice(0, maxEvents).map(({ live, ...e }) => e)
+    return { updatedAt: out.reduce((m, e) => (e.updatedAt > m ? e.updatedAt : m), '') || null, events: out }
+  }
+
+  return { update, get, list, sweep, size: () => codes.size }
 }
 
 /**
