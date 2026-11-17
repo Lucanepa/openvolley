@@ -547,6 +547,9 @@ export default function UploadRosterApp() {
     if (selectedMatch && activeConnection === 'supabase') {
       return
     }
+    // Test mode's mock game (id -1) is on no server: looking it up would
+    // throw it away again half a second later
+    if (selectedMatch?.id === -1) return
 
     const timeoutId = setTimeout(() => {
       if (gameNumber) {
@@ -1094,7 +1097,7 @@ export default function UploadRosterApp() {
                 ))}
               </RowList>
             ) : (
-              <div onClick={handleTestModeClick} className="cursor-default select-none">
+              <div onClick={handleTestModeClick} className="cursor-default select-none" data-testid="roster-no-games">
                 <EmptyState icon={CalendarX2}>{t('uploadRoster.noActiveGames')}</EmptyState>
               </div>
             )}
@@ -1133,6 +1136,7 @@ export default function UploadRosterApp() {
                         variant={team === side ? 'dark' : 'secondary'}
                         size="xl"
                         aria-pressed={team === side}
+                        data-testid={`roster-team-${side}`}
                         className="h-auto min-h-11 flex-1 py-2 font-medium whitespace-normal"
                         onClick={() => {
                           setTeam(side)
@@ -1160,6 +1164,7 @@ export default function UploadRosterApp() {
                       }}
                       placeholder={t('uploadRoster.enterPin')}
                       aria-label={t('uploadRoster.uploadPin')}
+                      data-testid="roster-pin"
                       maxLength={6}
                       invalid={!!(validationError && uploadPin.length === 6)}
                       className={cn('placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:tracking-normal', isValid && 'border-emerald-500')}
@@ -1207,6 +1212,7 @@ export default function UploadRosterApp() {
               accept=".pdf"
               onChange={handleFileSelect}
               aria-label={t('uploadRoster.selectPdfFile')}
+              data-testid="roster-pdf-input"
               style={{ display: 'none' }}
             />
             <Button
@@ -1225,7 +1231,7 @@ export default function UploadRosterApp() {
                 <p className="truncate rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-center text-sm text-stone-700">
                   Selected: {pdfFile.name}
                 </p>
-                <Button size="xl" block onClick={handleUpload} disabled={pdfLoading} loading={pdfLoading}>
+                <Button size="xl" block onClick={handleUpload} disabled={pdfLoading} loading={pdfLoading} data-testid="roster-pdf-parse">
                   {pdfLoading ? t('uploadRoster.parsing') : t('uploadRoster.confirm')}
                 </Button>
               </>
@@ -1450,7 +1456,7 @@ export default function UploadRosterApp() {
 
             <FormError size="md" className="text-center">{saveError}</FormError>
             <div className="flex justify-center pt-2">
-              <Button size="xl" className="min-w-48" onClick={handleConfirm}>
+              <Button size="xl" className="min-w-48" onClick={handleConfirm} data-testid="roster-confirm">
                 {t('common.confirm')}
               </Button>
             </div>

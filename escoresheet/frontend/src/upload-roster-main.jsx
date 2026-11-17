@@ -18,6 +18,10 @@ setAppEntry('upload_roster')
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
 stripCacheBustParam()
 
+// The roster page scrolls as a document (styles.css: html.ov-page-scroll); the
+// scoring screens keep their locked, full-window frame
+document.documentElement.classList.add('ov-page-scroll')
+
 initTheme()
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

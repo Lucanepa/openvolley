@@ -47,3 +47,4 @@ localhost-key.pem
 .env
 .env.*
 sheet-pixels-out/
+roster-scroll-out/
