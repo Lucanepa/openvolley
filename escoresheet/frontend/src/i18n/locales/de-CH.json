@@ -225,6 +225,7 @@
     "close": "Schliesse"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Das löscht alli Sätz, Aktione, Spieler und Teamdate vo däm Spiil uf däm Grät.",
     "cancel": "Abbräche",
     "delete": "Lösche",
     "lossTitle": "Die Kopie hät, was de Server nöd hät:",

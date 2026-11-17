@@ -5,6 +5,7 @@ const store = vi.hoisted(() => ({ files: new Map() }))
 vi.mock('../backendConfig', async (orig) => ({ ...(await orig()), getCloudApiUrl: (p) => `https://api.test${p}` }))
 
 import { uploadGlobalBackup, uploadGlobalFinal, loadGlobal, globalRestoreData } from '../globalCloud'
+import { isLocalOnly } from '../../domain/matchKind'
 import { openWithKnownPins } from '../backupFile'
 import { isEncryptedBackup } from '../backupCrypto/envelope'
 
@@ -94,9 +95,14 @@ describe('the Global store copy is an app backup file (utils/backupFile)', () =>
 // an official (Swiss) match, or one that says test: false, would queue a
 // restore job against the league's server (backupManager.restoreMatchFromJson)
 describe('globalRestoreData (restore by backup code)', () => {
-  it('takes a Global match, and keeps it a test-flagged one (never synced)', () => {
+  it('takes a Global match as a real match that stays local (never synced)', () => {
     const d = globalRestoreData({ match: { id: 1, global: true, test: false, seedKey: 'x' }, sets: [] })
-    expect(d.match).toMatchObject({ global: true, test: true, seedKey: 'x' })
+    expect(d.match).toMatchObject({ global: true, test: false, seedKey: 'x' })
+    expect(isLocalOnly(d.match)).toBe(true)
+  })
+  it('drops the test flag of a backup made before 2026-11-17', () => {
+    const d = globalRestoreData({ match: { id: 1, global: true, test: true, seedKey: 'x' }, sets: [] })
+    expect(d.match.test).toBe(false)
   })
   it('refuses anything else', () => {
     for (const d of [null, {}, { match: null }, { match: { global: false, test: false } }, { match: { test: true } }, { match: { global: 'true' } }]) {

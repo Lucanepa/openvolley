@@ -11,6 +11,7 @@ import { SYNC } from './writer'
 import { currentAccountId } from '../identity'
 import { apiPostActivity } from '../../lib/apiClient'
 import { sanitizeActivityData } from '../../domain/activitySummary'
+import { isLocalOnly } from '../../domain/matchKind'
 
 export const UPLOAD_BATCH = 500
 export const FLUSH_DEBOUNCE_MS = 10000
@@ -87,7 +88,7 @@ export async function uploadActivityBatch(db, { post = apiPostActivity, accountI
         try { matchCache.set(r.matchId, await db.matches.get(r.matchId)) } catch { matchCache.set(r.matchId, null) }
       }
       const m = matchCache.get(r.matchId)
-      if (m?.test === true) {
+      if (isLocalOnly(m)) {
         local.push(r.lid)
         continue
       }

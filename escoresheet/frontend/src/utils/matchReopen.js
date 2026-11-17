@@ -24,6 +24,7 @@
  */
 
 import { jobMatchKey } from './syncIds'
+import { isLocalOnly } from '../domain/matchKind'
 
 export const CLOSING_STATUSES = ['approved', 'final']
 
@@ -44,7 +45,7 @@ export function isClosingSyncJob(job) {
  * keeps the status 'ended' and sets approved). Never a test match.
  */
 export function isKnownClosedOnServer(match) {
-  if (!match || match.test === true) return false
+  if (!match || isLocalOnly(match)) return false
   if (match.closed_at) return true
   const block = match.cloudBlock
   if (block?.code === 'OV_MATCH_CLOSED') return true
@@ -61,7 +62,7 @@ export function isKnownClosedOnServer(match) {
  * this device's copy. Never a test match.
  */
 export function wasClosedOnServer(match) {
-  if (!match || match.test === true) return false
+  if (!match || isLocalOnly(match)) return false
   return isKnownClosedOnServer(match) || match.everClosed === true || !!match.first_closed_at
 }
 
@@ -76,7 +77,7 @@ export function wasClosedOnServer(match) {
  * the closed view of a copy that ended or was approved here.
  */
 export function isStaleClosedCopy(match) {
-  if (!match || match.test === true) return false
+  if (!match || isLocalOnly(match)) return false
   if (match.cloudBlock?.code === 'OV_SCORER_MOVED') return false
   if (['ended', 'approved', 'final'].includes(match.status)) return false
   return !!match.closed_at || match.cloudBlock?.code === 'OV_MATCH_CLOSED'
@@ -95,7 +96,7 @@ export function isStaleClosedCopy(match) {
  * Reads only local evidence.
  */
 export function isContinuedElsewhere(match) {
-  if (!match || match.test === true) return false
+  if (!match || isLocalOnly(match)) return false
   if (match.approved === true || match.status === 'ended') return false
   return match.cloudBlock?.code === 'OV_SCORER_MOVED' || isStaleClosedCopy(match)
 }
@@ -124,7 +125,7 @@ export function serverRowClosed(row) {
  * @returns {Promise<{kind: string, row?: object, supersedeIds?: number[]}>}
  */
 export async function planReopen({ match, queue, online, access, readServerMatch }) {
-  if (!match || match.test || !match.seed_key) return { kind: 'local' }
+  if (!match || isLocalOnly(match) || !match.seed_key) return { kind: 'local' }
 
   const closingJobs = (queue || []).filter(j => isClosingSyncJob(j) && jobMatchKey(j) === match.seed_key)
   const reached = closingJobs.some(j => j.status === 'sent' || j.status === 'sending')

@@ -180,7 +180,7 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
   })
 
   it('the history knows the match key, so its jobs are queued in the action\'s transaction', () => {
-    expect(src).toContain('rememberSeedKey(matchId, data.match.seed_key ?? null, data.match.test === true)')
+    expect(src).toContain('rememberSeedKey(matchId, data.match.seed_key ?? null, isLocalOnly(data.match))')
   })
 
   it('the line-up dialog never gives out a voided seq again (as getNextSeq)', () => {

@@ -17,6 +17,7 @@ import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies, setAsideClosedJobs, setAsideClosedCopies } from '../utils/matchHandover'
 import { RESTORE_REFUSED, partsMayHelp } from '../utils/refusedRestore'
 import { UPDATE_NEEDED_SERVER, noteAppUpdateNeeded, clearAppUpdateNeeded } from '../utils/appUpdate'
+import { isLocalOnly } from '../domain/matchKind'
 
 /**
  * ============================================================================
@@ -489,6 +490,16 @@ async function findLocalMatchBySeed(seedKey) {
   }
 }
 
+/** The local match a job names: by its cloud seed_key, its relay room key (seedKey) or its Dexie id. */
+async function findLocalMatchByAnyKey(key) {
+  if (!key) return null
+  try {
+    return await db.matches.filter(m => m.seed_key === key || m.seedKey === key || String(m.id) === String(key)).first()
+  } catch {
+    return null
+  }
+}
+
 // Replace a partial connection_pins with the full object from the local match
 async function withFullConnectionPins(seedKey, payload) {
   if (!payload || payload.connection_pins === undefined) return payload
@@ -736,7 +747,7 @@ export function resetCloudBlockCache() {
 // the official version. Either way its unsent writes are set aside
 // (recordCloudBlock).
 const FINISHED_HERE = ['ended', 'approved']
-export const closesLocalCopy = (local, code) => code === 'OV_MATCH_CLOSED' && local?.test !== true && FINISHED_HERE.includes(local?.status)
+export const closesLocalCopy = (local, code) => code === 'OV_MATCH_CLOSED' && !isLocalOnly(local) && FINISHED_HERE.includes(local?.status)
 
 /**
  * @param {object|null} job the refused job (none: the self-check read the
@@ -795,7 +806,7 @@ async function recordCloudBlock(job, error, { local: given = null } = {}) {
     // match are set aside (utils/matchHandover), whatever the local status.
     // The server refuses each of them; 2026-10-23 (match 406970) a refused
     // restore stayed 'failed' and held back every newer write of the match.
-    const closed = error.code === MATCH_CLOSED && local.test !== true
+    const closed = error.code === MATCH_CLOSED && !isLocalOnly(local)
     if (closed) {
       const n = await setAsideClosed(job, seedKey)
       safeLog.log(`[SyncQueue] Match ${seedKey} is closed on the server: ${n} unsent write(s) of this device set aside`)
@@ -825,7 +836,7 @@ async function recordCloudBlock(job, error, { local: given = null } = {}) {
 export async function noteMatchClosedOnServer(localId) {
   try {
     const local = localId == null ? null : await db.matches.get(localId)
-    if (!local?.seed_key || local.test === true) return false
+    if (!local?.seed_key || isLocalOnly(local)) return false
     const { setAside } = await recordCloudBlock(null, { code: MATCH_CLOSED }, { local })
     return setAside === true
   } catch (err) {
@@ -942,7 +953,7 @@ async function recordRestoreRefused(job, error) {
   if (!seedKey) return
   try {
     const local = await findLocalMatchBySeed(seedKey)
-    if (!local || local.test === true || (local.cloudBlock && local.cloudBlock.code !== RESTORE_REFUSED)) return
+    if (!local || isLocalOnly(local) || (local.cloudBlock && local.cloudBlock.code !== RESTORE_REFUSED)) return
     const reason = typeof error?.code === 'string' ? error.code.slice(0, 40) : null
     await db.matches.update(local.id, { cloudBlock: { code: RESTORE_REFUSED, reason, parts: partsMayHelp(error, job.payload), claim: null, at: Date.now() } })
     ;(await getBlockedSeeds()).add(seedKey)
@@ -1092,7 +1103,7 @@ export async function processJob(job, pass = {}) {
 // A match that is closed here: approved on this device (the local status
 // stays 'ended' until Close Match), final, or already known to be closed on
 // the server (an earlier refusal).
-export const isClosedHere = (local) => !!local && local.test !== true &&
+export const isClosedHere = (local) => !!local && !isLocalOnly(local) &&
   (local.approved === true || CLOSING_STATUSES.includes(local.status) || local.cloudBlock?.code === 'OV_MATCH_CLOSED')
 
 /**
@@ -1107,7 +1118,7 @@ export const isClosedHere = (local) => !!local && local.test !== true &&
  * @param {object} payload the update about to be queued
  */
 export function matchEndUpdateNeeded(match, pendingJobs, payload) {
-  if (!match?.seed_key || match.test === true || isClosedHere(match)) return false
+  if (!match?.seed_key || isLocalOnly(match) || isClosedHere(match)) return false
   return !(pendingJobs || []).some(j =>
     ['queued', 'sending', 'error'].includes(j.status) && j.resource === 'match' && j.action === 'update' &&
     j.payload?.id === match.seed_key && j.payload?.status === 'ended' &&
@@ -1272,12 +1283,13 @@ function eventInsertRow(payload, matchUuid) {
 
 async function processJobInner(job, ctx) {
   try {
-    // A test match never reaches the cloud, whoever queued the job (MatchSetup
-    // once queued its insert as test: false) and even when it waited for a
-    // sign-in
+    // A test or Global match never reaches the cloud (domain/matchKind),
+    // whoever queued the job (MatchSetup once queued its insert as test:
+    // false) and even when it waited for a sign-in. Its jobs carry the cloud
+    // seed_key, or the room key / Dexie id when it has none
     const testKey = jobMatchKey(job)
-    if (testKey && (await findLocalMatchBySeed(testKey))?.test === true) {
-      safeLog.log('[SyncQueue] Dropping a job of a test match:', job.resource, job.action)
+    if (testKey && isLocalOnly(await findLocalMatchByAnyKey(testKey))) {
+      safeLog.log('[SyncQueue] Dropping a job of a local-only match:', job.resource, job.action)
       return DROP_JOB
     }
 
@@ -1960,7 +1972,7 @@ async function sendEventBatch(jobs, ctx) {
   }
   try {
     const seedKey = jobs[0].payload.match_id
-    if ((await findLocalMatchBySeed(seedKey))?.test === true) return null
+    if (isLocalOnly(await findLocalMatchBySeed(seedKey))) return null
     const { id: matchUuid, error: lookupError } = await cloudMatchId(seedKey, ctx)
     if (lookupError) return answerOf(lookupError)
     // not in the cloud yet: the first job waits, and with it the match's others
@@ -2973,7 +2985,7 @@ export function hasStoredSessionToken() {
  */
 export async function queueUserMatchLinks(match) {
   const seedKey = match?.seed_key
-  if (!seedKey || match.test === true) return 0
+  if (!seedKey || isLocalOnly(match)) return 0
   const userId = storedSessionUserId()
   if (!userId) return 0
   const cached = readStoredJson('cachedProfile')
@@ -3005,7 +3017,7 @@ export function useUserMatchLink(matchId) {
     if (matchId == null) return ''
     try {
       const m = await db.matches.get(matchId)
-      if (!m?.seed_key || m.test === true) return ''
+      if (!m?.seed_key || isLocalOnly(m)) return ''
       return JSON.stringify([m.seed_key, m.officials || null])
     } catch {
       return ''

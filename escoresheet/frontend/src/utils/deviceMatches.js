@@ -9,6 +9,7 @@
  * Continue and Delete, and flags two matches of the same game.
  */
 import { jobMatchKey } from './syncIds'
+import { isLocalOnly } from '../domain/matchKind'
 
 /** An open official match: confirmed in setup ("Create match"), not final, not a test. */
 export const isOpenOfficialMatch = (m) => !!m && m.test !== true && m.status !== 'final' && !!m.matchInfoConfirmedAt
@@ -37,7 +38,7 @@ export function matchGameNumber(m) {
 export function deviceMatchRows(matches, teamNames = new Map(), { duplicateIds = [], stateOf = null } = {}) {
   const name = (id) => (id == null ? null : (teamNames instanceof Map ? teamNames.get(id) : teamNames[id]) || null)
   const copies = new Set(duplicateIds)
-  const copy = (m) => copies.has(m.id) && m.test !== true && m.status !== 'final'
+  const copy = (m) => copies.has(m.id) && !isLocalOnly(m) && m.status !== 'final'
   return (matches || [])
     .filter(m => isOpenOfficialMatch(m) || copy(m))
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))

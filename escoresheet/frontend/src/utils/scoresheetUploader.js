@@ -2,6 +2,7 @@ import { apiStorage } from '../lib/apiClient'
 import { scoresheetGameId, scoresheetObjectPath, redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
 import { getScoresheetKey } from './scoresheetKey'
 import { SCORESHEET_UPLOAD_RESOURCE } from './syncIds'
+import { isLocalOnly } from '../domain/matchKind'
 
 /**
  * Where a match's scoresheet file goes in the 'scoresheets' bucket:
@@ -168,7 +169,7 @@ export async function uploadScoresheet({
   }
 
   // Skip test matches
-  if (match.test) {
+  if (isLocalOnly(match)) {
     console.log('[scoresheetUploader] Skipping test match')
     return { success: false, error: 'Test match' }
   }

@@ -224,6 +224,7 @@
     "close": "Fermer"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Cela supprime tous les sets, actions, joueurs et données d'équipe de ce match sur cet appareil.",
     "cancel": "Annuler",
     "delete": "Supprimer",
     "lossTitle": "Cette copie contient ce que le serveur n'a pas :",
