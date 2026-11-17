@@ -119,8 +119,9 @@ export function listedGames(games, shown = new Set(), now = Date.now(), seen = n
 
 /**
  * Per-set results [{set, home, away}], Team A = home. The live-state row's own
- * set_results wins when filled; otherwise the joined matches.set_results from
- * the initial select (written by the scorer at match end).
+ * set_results wins when filled (scorer apps after 3.3.6 write it at every
+ * push: domain/livePublicFields); otherwise the joined matches.set_results
+ * from the initial select (written by the scorer at every set end).
  * @param {object} game
  * @returns {{set:number, home:number, away:number}[]}
  */

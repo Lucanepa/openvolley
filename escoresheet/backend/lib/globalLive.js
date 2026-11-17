@@ -239,6 +239,9 @@ export function gameSummary(row, nowIso = new Date().toISOString()) {
   const sets = (Array.isArray(j(row.set_results)) ? j(row.set_results) : [])
     .filter((x) => x && typeof x === 'object')
     .map((x) => {
+      // the scorer's live state (frontend domain/livePublicFields): { set, home, away, a, b }
+      if (x.home != null || x.away != null) return { index: x.set ?? x.index, homePoints: x.home, awayPoints: x.away, finished: true }
+      // an older shape by team A / B
       const a = x.pointsA ?? x.home_points
       const b = x.pointsB ?? x.away_points
       return { index: x.index, homePoints: aIsHome ? a : b, awayPoints: aIsHome ? b : a, finished: true }

@@ -431,6 +431,25 @@ describe('lanRelayCore protocol', () => {
     expect(relay.hasMatch(99)).toBe(false)
   })
 
+  it('a board without a PIN gets the substitution counts and the finished sets (domain/livePublicFields) as the scorer pushed them', () => {
+    const relay = createLanRelay()
+    const scoreboard = connect(relay)
+    const board = connect(relay, '192.168.1.40')
+    msg(relay, scoreboard, syncMessage())
+    msg(relay, board, { type: 'subscribe-match', matchId: '7' })
+    expect(board.last('match-full-data').access).toBe('summary')
+    const liveState = { current_set: 3, points_a: 0, points_b: 0, subs_count_a: 4, subs_count_b: 2,
+      set_results: [{ set: 1, home: 27, away: 25, a: 27, b: 25 }, { set: 2, home: 25, away: 12, a: 25, b: 12 }] }
+    msg(relay, scoreboard, { type: 'live-state-update', matchId: 7, liveState })
+    expect(board.last('live-state-update').liveState).toEqual(liveState)
+    msg(relay, scoreboard, syncMessage())
+    expect(board.last('match-data-update')).toMatchObject({ access: 'summary', liveState, data: { liveState } })
+    // one that subscribes later gets it with the summary
+    const late = connect(relay, '192.168.1.41')
+    msg(relay, late, { type: 'subscribe-match', matchId: '7' })
+    expect(late.last('match-full-data').liveState).toEqual(liveState)
+  })
+
   it('keeps the scoreboard live-state across syncs and forwards it (also as data.liveState for the LedBox bridge)', () => {
     const relay = createLanRelay()
     const scoreboard = connect(relay)

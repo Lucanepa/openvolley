@@ -152,6 +152,15 @@ describe('one court and one game', () => {
     assert.equal(JSON.stringify(s).includes('lineup'), false)
     assert.equal(gameSummary(null), null)
   })
+
+  it('a league game with the scorer\'s set_results ({ set, home, away, a, b }): home / away as written', () => {
+    const s = gameSummary({
+      game_n: 4243, status: 'live', match_status: 'interval', home_team: { name: 'VBC Zürich' }, away_team: { name: 'Volley Luzern' },
+      team_a_name: 'Volley Luzern', team_b_name: 'VBC Zürich', points_a: 0, points_b: 0, sets_won_a: 1, sets_won_b: 1, current_set: 3,
+      set_results: [{ set: 2, home: 12, away: 25, a: 25, b: 12 }, { set: 1, home: 27, away: 25, a: 25, b: 27 }]
+    }, 'T')
+    assert.deepEqual(s.sets, [{ home: 27, away: 25 }, { home: 12, away: 25 }])
+  })
 })
 
 describe('screenOf', () => {

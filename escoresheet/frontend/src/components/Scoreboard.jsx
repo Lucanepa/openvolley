@@ -97,6 +97,7 @@ import PreMatchSignDialog, { SignaturesMissingModal, MissingSignatureButton } fr
 import { savedSidesOfRegularSets } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot, correctionAfter } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
+import { livePublicFields } from '../domain/livePublicFields'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
@@ -2657,11 +2658,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Only when the snapshot does not count that set yet: a fresh snapshot
       // after the finish (manual change, undo, court switch) already does.
       const setWinner = eventData?.winner
+      // The match's sets now: the finished ones go out as set_results
+      // (domain/livePublicFields), read again at every push so an undone set
+      // end or a corrected score is gone from the next push too
+      const matchSets = await db.sets.where({ matchId }).toArray()
       let countFinishedSet = false
       if (isSetInterval || isMatchEnd) {
         const finishedSetCount = eventType === 'set_end'
           ? 0
-          : (await db.sets.where({ matchId }).toArray()).filter(s => s.finished).length
+          : matchSets.filter(s => s.finished).length
         countFinishedSet = finishedSetMissingFromSnapshot(snapshot, finishedSetCount, eventType)
       }
       const { a: updatedSetScoreA, b: updatedSetScoreB } = setsWonWithFinishedSet(snapshot, setWinner, countFinishedSet)
@@ -2825,6 +2830,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         timeouts_b: snapshot.timeoutsB,
         subs_a: snapshot.subsA?.length > 0 ? snapshot.subsA : null,
         subs_b: snapshot.subsB?.length > 0 ? snapshot.subsB : null,
+        // For every viewer, PIN or not (subs_a / subs_b are PIN-only): the
+        // regular substitutions of the set current_set names, and the
+        // finished sets' scores (domain/livePublicFields)
+        ...livePublicFields({ snapshot, sets: matchSets, pushedSetIndex: finalSetIndex, countFinishedSet }),
         // All sanctions (team, players, bench officials) - match-wide, persist across sets
         sanctions_a: snapshot.matchTeamSanctionsA?.length > 0 ? snapshot.matchTeamSanctionsA : null,
         sanctions_b: snapshot.matchTeamSanctionsB?.length > 0 ? snapshot.matchTeamSanctionsB : null,

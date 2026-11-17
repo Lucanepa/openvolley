@@ -296,7 +296,7 @@ app pointed at one) reads that relay instead of the cloud's live table
 `subscribe-match { device: 'livescore' }` per match and never a PIN. The
 relay answers such a socket with the public summary only (team names and
 colours, status, set scores, the scorer's live state: score, serve, sides,
-timeouts) and every `live-state-update`; PINs, rosters, officials, dates of
+timeouts, substitution counts, finished sets) and every `live-state-update`; PINs, rosters, officials, dates of
 birth, events and match actions go only to a socket that proved a PIN. The
 page keeps only the fields it shows. A rehearsal (test) match is shown with
 a "Test match" chip; the cloud livescore never lists one. Online (the Server

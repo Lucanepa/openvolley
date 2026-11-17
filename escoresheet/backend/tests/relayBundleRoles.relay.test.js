@@ -380,6 +380,41 @@ describe('cloud relay: the bundle by role', () => {
 
     for (const c of [scoreboard, viewer, away, home, referee]) c.ws.close()
   })
+
+  it('a socket without a PIN (a scoreboard such as Point Hub) gets the substitution counts and the finished sets, not who came in for whom', async () => {
+    const seed = 'match_1791215210106_roles6'
+    const scoreboard = await publish(seed, {})
+    const { c: viewer } = await subscriber(seed, null)
+    const { c: referee } = await subscriber(seed, PINS.refereePin)
+    const setResults = [{ set: 1, home: 27, away: 25, a: 27, b: 25 }]
+    const liveState = {
+      current_set: 2, points_a: 5, points_b: 3, sets_won_a: 1, sets_won_b: 0,
+      subs_a: [{ playerIn: 17, playerOut: 14, position: 'II', exceptional: false }], subs_b: null,
+      subs_count_a: 1, subs_count_b: 0, set_results: setResults,
+      lineup_a: { I: { number: 14 } }, lineup_b: { I: { number: 31 } }
+    }
+    scoreboard.send({ type: 'live-state-update', matchId: seed, liveState })
+    const update = unstamped((await viewer.waitFor((m) => m.type === 'live-state-update')).liveState)
+    assert.equal(update.subs_count_a, 1)
+    assert.equal(update.subs_count_b, 0)
+    assert.deepEqual(update.set_results, setResults)
+    for (const c of ['subs_a', 'subs_b', 'lineup_a', 'lineup_b']) assert.equal(c in update, false, c)
+    // the PIN holder as it came
+    assert.deepEqual(unstamped((await referee.waitFor((m) => m.type === 'live-state-update')).liveState), liveState)
+    // the stored summary (GET /api/match/:id without a PIN, the next sync's update)
+    const summary = await (await fetch(`http://127.0.0.1:${port}/api/match/${seed}`)).json()
+    assert.equal(summary.access, 'summary')
+    assert.equal(summary.liveState.subs_count_a, 1)
+    assert.deepEqual(summary.liveState.set_results, setResults)
+    assert.equal(summary.liveState.subs_a, undefined)
+    scoreboard.send(scorerSync(seed, {}))
+    const next = await viewer.waitFor((m) => m.type === 'match-data-update')
+    assert.equal(next.liveState.subs_count_a, 1)
+    assert.equal(next.data.liveState.subs_count_a, 1, 'the LedBox copy')
+    assert.equal(next.liveState.subs_a, undefined)
+    assert.equal(viewer.raw.join('\n').includes('"playerIn":17'), false)
+    for (const c of [scoreboard, viewer, referee]) c.ws.close()
+  })
 })
 
 describe('relayBundleView', () => {

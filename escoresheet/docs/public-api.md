@@ -17,7 +17,7 @@ Base: `https://backend.openvolley.app/api/public/v1`. A match id is the match's
 |---|---|
 | `GET /matches?from=&to=&status=&limit=&club=` | Match infos (no rosters) in a window (default: yesterday to +7 days, max 62 days; `status` = `scheduled,live,finished`; limit ≤ 200); `club=<club id>`: only that club's matches |
 | `GET /matches/:id` | Match info: teams, league, venue, best of, `officials` (roles only), rosters (numbers, captain, libero), staff (roles), result |
-| `GET /matches/:id/live` | Livescore snapshot: sets, points, serving team and server's number, timeouts, challenges, set results, timeout / interval flags. No line-ups, substitutions or sanctions: like every anonymous live read (`LIVE_STATE_PRIVATE_COLUMNS` in `lib/publicColumns.js`) they need the match PIN |
+| `GET /matches/:id/live` | Livescore snapshot: sets, points, serving team and server's number, timeouts, the number of regular substitutions of the current set (`teams.A.substitutions`, `null` from a scorer app up to 3.3.6), challenges, set results (`setResults: [{ set, pointsA, pointsB, winner }]`, by Team A / B), timeout / interval flags. No line-ups, no substitution details (who for whom) and no sanctions: like every anonymous live read (`LIVE_STATE_PRIVATE_COLUMNS` in `lib/publicColumns.js`) they need the match PIN |
 | `GET /matches/:id/stream` | The same snapshot as Server-Sent Events (`event: live`), a frame on every change, a keep-alive comment every 20 s (every 30 s once the match is finished). `EventSource` reconnects by itself |
 | `GET /matches/:id/stats` | After the match (`409` before): everything of `/matches/:id` plus `stats` |
 

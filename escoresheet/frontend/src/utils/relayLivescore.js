@@ -36,7 +36,7 @@ export const LIVESCORE_LIVE_FIELDS = Object.freeze([
   'current_set', 'best_of', 'match_status', 'sport_type',
   'team_a_name', 'team_a_short', 'team_a_color', 'team_b_name', 'team_b_short', 'team_b_color',
   'sets_won_a', 'sets_won_b', 'points_a', 'points_b', 'side_a', 'serving_team',
-  'timeouts_a', 'timeouts_b', 'timeout_active', 'set_interval_active',
+  'timeouts_a', 'timeouts_b', 'subs_count_a', 'subs_count_b', 'timeout_active', 'set_interval_active',
   'last_event_type', 'last_event_ts', 'updated_at', 'game_n', 'league', 'gender', 'set_results',
   '_seq', '_session'
 ])
