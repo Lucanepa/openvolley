@@ -66,3 +66,18 @@ describe('TV links and court tokens', () => {
     expect(await courtTokenFor({})).toBe(null)
   })
 })
+
+describe('the court of this device', () => {
+  it('is optional, 1-99, and gives a TV address for that court alone', async () => {
+    const { getLiveCourt, setLiveCourt, liveCourtUrl } = await import('../globalLive.js')
+    expect(getLiveCourt()).toBe(null)
+    setLiveCourt('3')
+    expect(getLiveCourt()).toBe(3)
+    expect(liveCourtUrl('ABCD2345', 3)).toBe('https://openvolley.app/tv/ABCD2345/3')
+    setLiveCourt(0)
+    expect(getLiveCourt()).toBe(3) // refused, kept
+    setLiveCourt(null)
+    expect(getLiveCourt()).toBe(null)
+    expect(liveCourtUrl('ABCD2345', null)).toBe(null)
+  })
+})

@@ -108,6 +108,31 @@ export function useLiveCode() {
   return useSyncExternalStore(subscribe, getLiveCode, () => null)
 }
 
+// The court this device scores (optional, 1-99): a TV can show that court
+// alone at /tv/<code>/<court> (backend screenNumber)
+const COURT_KEY = 'ov.liveScreen.court'
+export const isCourtNumber = (n) => Number.isInteger(n) && n >= 1 && n <= 99
+export function getLiveCourt() {
+  try {
+    const n = Number(localStorage.getItem(COURT_KEY))
+    return isCourtNumber(n) ? n : null
+  } catch { return null }
+}
+/** null: no court number on this device. */
+export function setLiveCourt(n) {
+  try {
+    if (n == null || n === '') localStorage.removeItem(COURT_KEY)
+    else if (isCourtNumber(Number(n))) localStorage.setItem(COURT_KEY, String(Number(n)))
+    else return
+  } catch { /* private window */ }
+  try { window.dispatchEvent(new Event(EVENT)) } catch { /* no window */ }
+}
+export function useLiveCourt() {
+  return useSyncExternalStore(subscribe, getLiveCourt, () => null)
+}
+/** The TV address of one court of a code. */
+export const liveCourtUrl = (code, court) => (isLiveCode(code) && isCourtNumber(court) ? `${TV_SITE}${code}/${court}` : null)
+
 /** The code a match's live push carries: any match on a device that opted in. */
 export const liveCodeForMatch = (match) => (match ? getLiveCode() : null)
 

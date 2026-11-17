@@ -28,8 +28,9 @@ describe('tvPage', () => {
     }
   })
 
-  it('the script reads its data from the same origin only', () => {
-    assert.match(TV_JS, /x\.open\('GET', '\/api\/global\/live\/' \+ code/)
+  it('the script reads its data from the same origin only, from what the page names', () => {
+    assert.match(TV_JS, /x\.open\('GET', src \+/)
+    assert.match(TV_JS, /getAttribute\('data-src'\)/)
     assert.equal(/https?:\/\//.test(TV_JS), false)
   })
 })
@@ -43,5 +44,21 @@ describe('tvEntryHtml', () => {
     assert.equal(html.includes('{{ERROR}}'), false)
     assert.equal(html.includes('class="err"'), false)
     assert.match(tvEntryHtml({ wrong: true }), /class="err"/)
+  })
+})
+
+describe('tvPageHtml: one court, one game', () => {
+  it('names what to poll and what to show', () => {
+    assert.match(tvPageHtml({ code: 'ABCD2345', screen: 2 }), /data-src="\/api\/global\/live\/ABCD2345\?screen=2" data-label="ABCD 2345 \u00b7 2"/)
+    assert.match(tvPageHtml({ game: '4242' }), /data-src="\/api\/global\/live\/game\/4242" data-label="#4242"/)
+    assert.match(tvPageHtml('ABCD2345'), /data-src="\/api\/global\/live\/ABCD2345" data-label="ABCD 2345"/)
+    assert.equal(tvPageHtml({ game: '42"><x' }).includes('"><x'), false)
+    assert.equal(/\{\{[A-Z]+\}\}/.test(tvPageHtml({ code: 'ABCD2345' })), false)
+  })
+
+  it('the entry form also takes a game number and an optional court', () => {
+    const html = tvEntryHtml()
+    assert.match(html, /<input name="court"/)
+    assert.match(html, /game number/)
   })
 })

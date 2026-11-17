@@ -399,6 +399,22 @@ export function createPublicApi({ pool, logger = console } = {}) {
     })
   }
 
+  /**
+   * The live row of the official match with game number `n` closest to now
+   * (the TV page's /tv/<game number>, lib/globalLive.js gameSummary), or null.
+   * Test rows never: a game number is public league data only.
+   */
+  async function gameLiveRow(n) {
+    if (!/^[0-9]{1,7}$/.test(String(n))) return null
+    const { rows } = await pool.query(
+      `SELECT l.*, m.external_id, m.home_team, m.away_team, m.team1_data, m.team2_data, m.sport_type AS match_sport,
+              m.status, m.game_n, m.scheduled_at, m.match_info
+         FROM public.matches m LEFT JOIN public.match_live_state l ON l.match_id = m.id
+        WHERE m.game_n::text = $1 AND coalesce(m.test, false) = false
+        ORDER BY abs(extract(epoch FROM (coalesce(m.scheduled_at, now()) - now()))) LIMIT 1`, [String(n)])
+    return rows[0] || null
+  }
+
   /** The raw snapshot (also what the stream polls). */
   async function liveSnapshot(id) {
     const { rows } = await pool.query(
@@ -448,7 +464,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
     })
   }
 
-  return { list, info, live, liveSnapshot, stats, involves }
+  return { list, info, live, liveSnapshot, stats, involves, gameLiveRow }
 }
 
 /**

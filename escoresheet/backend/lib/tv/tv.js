@@ -8,11 +8,15 @@
   var lang = String(navigator.language || 'en').slice(0, 2).toLowerCase();
   var T = L[lang] || L.en;
   var code = document.body.getAttribute('data-code') || '';
+  // what to poll and what to show at the top: the page says it (a live screen,
+  // one court of it, or one league game); older pages only had the code
+  var src = document.body.getAttribute('data-src') || ('/api/global/live/' + code);
+  var label = document.body.getAttribute('data-label') || (code.slice(0, 4) + ' ' + code.slice(4));
   var box = document.getElementById('courts');
   var state = document.getElementById('state');
   document.getElementById('title').appendChild(document.createTextNode(''));
   document.getElementById('title').firstChild.nodeValue = T.live;
-  document.getElementById('code').appendChild(document.createTextNode(code.slice(0, 4) + ' ' + code.slice(4)));
+  document.getElementById('code').appendChild(document.createTextNode(label));
   var last = null;
 
   function el(tag, cls, text) {
@@ -89,7 +93,7 @@
 
   function load() {
     var x = new XMLHttpRequest();
-    x.open('GET', '/api/global/live/' + code + '?_=' + new Date().getTime(), true);
+    x.open('GET', src + (src.indexOf('?') < 0 ? '?' : '&') + '_=' + new Date().getTime(), true);
     x.timeout = 10000;
     x.onreadystatechange = function () {
       if (x.readyState !== 4) return;

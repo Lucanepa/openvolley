@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
 import { Button } from '../../ui'
 import { copyToClipboard } from '../../utils/networkInfo'
-import { formatLiveCode, liveCodeUrl, localTvUrl, newLiveCode, normalizeLiveCode, setLiveCode, useLiveCode } from '../../utils/globalLive'
+import { formatLiveCode, liveCodeUrl, liveCourtUrl, localTvUrl, newLiveCode, normalizeLiveCode, setLiveCode, setLiveCourt, useLiveCode, useLiveCourt } from '../../utils/globalLive'
 import { getBackendOverride, isStaticDeployment } from '../../utils/backendConfig'
 import { detectAppPlatform } from '../../utils/openAppWindow'
 
@@ -20,6 +20,8 @@ export default function GlobalLivePanel({ bare = false }) {
   const [error, setError] = useState(false)
   const [copied, setCopied] = useState(false)
   const url = liveCodeUrl(code)
+  const court = useLiveCourt()
+  const courtUrl = liveCourtUrl(code, court)
   const venueUrl = code ? venueTvUrl(code) : null
 
   const join = () => {
@@ -44,6 +46,21 @@ export default function GlobalLivePanel({ bare = false }) {
             <p className="mt-1 text-xs text-stone-500">{t('globalLive.smartTv', { url: url.replace(/^https:\/\//, '') })}</p>
             {venueUrl && <p className="mt-1 break-all text-xs text-stone-500" data-testid="global-live-venue-url">{t('globalLive.venueUrl', { url: venueUrl })}</p>}
             <p className="mt-1 text-xs text-stone-500">{t('globalLive.otherDevices')}</p>
+            <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-stone-600">
+              <span>{t('globalLive.courtLabel')}</span>
+              <input
+                type="number"
+                min="1"
+                max="99"
+                inputMode="numeric"
+                value={court ?? ''}
+                onChange={(e) => setLiveCourt(e.target.value === '' ? null : e.target.value)}
+                placeholder="–"
+                data-testid="global-live-court"
+                className="h-9 w-16 rounded-lg border border-stone-300 px-2 text-sm"
+              />
+            </label>
+            {courtUrl && <p className="mt-1 break-all text-xs text-stone-500" data-testid="global-live-court-url">{t('globalLive.courtUrl', { url: courtUrl.replace(/^https:\/\//, '') })}</p>}
             <div className="mt-2 flex flex-wrap gap-2">
               <Button variant="secondary" size="md" onClick={async () => { setCopied((await copyToClipboard(url))?.success === true) }}>
                 {copied ? t('globalLive.copied') : t('globalLive.copyLink')}

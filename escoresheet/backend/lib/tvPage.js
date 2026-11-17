@@ -14,7 +14,8 @@
  *     so it works from the cloud (openvolley.app/tv/<code> redirects there)
  *     and from any venue relay or desktop app (http://<relay>/tv/<code>);
  *   - no inline script (the backend's CSP allows scripts from 'self' only);
- *   - `{{CODE}}` in tv.html is the only placeholder.
+ *   - placeholders in tv.html: `{{CODE}}`, `{{SRC}}` (what the script polls)
+ *     and `{{LABEL}}` (shown at the top), each once.
  */
 import { readFileSync } from 'node:fs'
 
@@ -29,8 +30,26 @@ export function tvEntryHtml({ wrong = false } = {}) {
   return TV_ENTRY_HTML.replace('{{ERROR}}', wrong ? '<div class="err">ABCD 2345 &middot; 8 letters and digits &middot; 8 Buchstaben und Ziffern &middot; 8 lettres et chiffres &middot; 8 lettere e cifre</div>' : '')
 }
 
-/** The page for one code (the caller has checked it: isLiveCode). */
-export function tvPageHtml(code) {
-  const c = String(code).replace(/[^A-Z0-9]/g, '')
-  return TV_HTML.replace('{{CODE}}', c)
+/**
+ * The page for a live screen code, one court of it (`screen`), or one league
+ * game (`game`). The caller has checked them (isLiveCode, screenNumber, the
+ * game number's digits); only A-Z and 0-9 go into the page. A bare string is
+ * a code (the first version's call).
+ */
+export function tvPageHtml(arg) {
+  const o = typeof arg === 'string' ? { code: arg } : (arg || {})
+  const clean = (v) => String(v ?? '').replace(/[^A-Z0-9]/g, '')
+  let code = clean(o.code), src, label
+  if (o.game != null) {
+    const g = clean(o.game)
+    code = ''
+    src = `/api/global/live/game/${g}`
+    label = `#${g}`
+  } else {
+    const n = Number(o.screen)
+    const screen = Number.isInteger(n) && n >= 1 && n <= 99 ? n : null
+    src = `/api/global/live/${code}${screen ? `?screen=${screen}` : ''}`
+    label = `${code.slice(0, 4)} ${code.slice(4)}${screen ? ` \u00b7 ${screen}` : ''}`
+  }
+  return TV_HTML.replace('{{CODE}}', code).replace('{{SRC}}', src).replace('{{LABEL}}', label)
 }

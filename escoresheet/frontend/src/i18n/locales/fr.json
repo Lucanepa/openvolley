@@ -6482,6 +6482,8 @@
     "codeLabel": "Code de l’écran en direct",
     "smartTv": "Sur une Smart TV : ouvre le navigateur web de la TV et tape {{url}}.",
     "venueUrl": "Sans internet dans la salle, les TV sur le Wi-Fi de la salle ouvrent : {{url}}",
+    "courtLabel": "Terrain de cet appareil (facultatif) :",
+    "courtUrl": "Une TV pour ce terrain seulement : {{url}}",
     "otherDevices": "Sur les autres appareils de marque de l’événement, saisis ce code sous Options › Écran en direct.",
     "copyLink": "Copier le lien",
     "copied": "Copié",

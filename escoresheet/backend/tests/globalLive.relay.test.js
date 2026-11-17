@@ -202,4 +202,37 @@ describe('Global live page through the relay', () => {
     const back = await fetch(`${srv.base}/tv/?wrong=1`, { signal: AbortSignal.timeout(5000) })
     assert.match(await back.text(), /class="err"/)
   })
+
+  it('one court of a live screen (/tv/<code>/<court>) and one game by its number (/tv/<game number>) on a venue relay', async () => {
+    const code = 'CRTS2345'
+    const roomA = `match_${hex()}`
+    const roomB = `match_${hex()}`
+    const a = await open()
+    a.send(sync(roomA, { test: false, gameN: 8801 }))
+    await settle(a)
+    a.send({ type: 'live-state-update', matchId: roomA, liveState: liveState({ points_a: 11 }), globalLive: code, globalLiveScreen: 1 })
+    await settle(a)
+    const b = await open()
+    b.send(sync(roomB, { test: false, gameN: 8802 }))
+    await settle(b)
+    b.send({ type: 'live-state-update', matchId: roomB, liveState: liveState({ points_a: 22 }), globalLive: code, globalLiveScreen: 2 })
+    await settle(b)
+    const get = async (path) => (await fetch(`${srv.base}${path}`, { signal: AbortSignal.timeout(5000) })).json()
+    assert.equal((await get(`/api/global/live/${code}`)).data.courts.length, 2)
+    assert.deepEqual((await get(`/api/global/live/${code}?screen=2`)).data.courts.map(c => c.points.home), [22])
+    // a game number, from the relay's own room
+    const g = await get('/api/global/live/game/8801')
+    assert.equal(g.data.courts.length, 1)
+    assert.equal(g.data.courts[0].points.home, 11)
+    assert.deepEqual((await get('/api/global/live/game/9999')).data.courts, [])
+    // the pages and the form
+    const page = await (await fetch(`${srv.base}/tv/${code.toLowerCase()}/2`, { signal: AbortSignal.timeout(5000) })).text()
+    assert.match(page, /data-src="\/api\/global\/live\/CRTS2345\?screen=2"/)
+    const gamePage = await (await fetch(`${srv.base}/tv/8801`, { signal: AbortSignal.timeout(5000) })).text()
+    assert.match(gamePage, /data-src="\/api\/global\/live\/game\/8801"/)
+    const go = async (q) => (await fetch(`${srv.base}/tv/go?${q}`, { redirect: 'manual', signal: AbortSignal.timeout(5000) })).headers.get('location')
+    assert.equal(await go('code=crts2345&court=2'), '/tv/CRTS2345/2')
+    assert.equal(await go('code=crts2345&court='), '/tv/CRTS2345')
+    assert.equal(await go('code=8801'), '/tv/8801')
+  })
 })

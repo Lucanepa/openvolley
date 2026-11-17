@@ -80,10 +80,65 @@ fn court_id_of(code: &str, room_key: &str) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(d)[..10].to_string()
 }
 
+/// Now as an ISO time (the updatedAt of a summary made outside the store).
+pub fn iso_now() -> String {
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    iso_of_ms(ms)
+}
+
+/// A court number a scorer device set for its screen (1-99), from a number or
+/// a digit string (backend screenNumber), else None.
+pub fn screen_number(v: Option<&Value>) -> Option<u64> {
+    let n = match v? {
+        Value::Number(n) => n.as_f64()?,
+        Value::String(s) => s.trim().parse::<f64>().ok()?,
+        _ => return None,
+    };
+    (n.fract() == 0.0 && (1.0..=99.0).contains(&n)).then_some(n as u64)
+}
+
+/// The court number for /tv/<code>/<n>: the one the scorer device set, else
+/// the number at the end of the match's court (OpenBeach: "Court 3" -> 3).
+pub fn screen_of(explicit: Option<&Value>, entry: &Value) -> Option<u64> {
+    if let Some(n) = screen_number(explicit) {
+        return Some(n);
+    }
+    match entry.get("match").and_then(|m| m.get("court")) {
+        Some(Value::String(c)) => {
+            let t = c.trim_end();
+            let digits: String = t.chars().rev().take_while(|c| c.is_ascii_digit()).collect::<Vec<_>>().into_iter().rev().collect();
+            if digits.is_empty() || digits.len() > 2 { None } else { screen_number(Some(&Value::String(digits))) }
+        }
+        Some(v @ Value::Number(_)) => screen_number(Some(v)),
+        _ => None,
+    }
+}
+
+/// The TV page for a live screen code, one court of it, or one league game
+/// (backend tvPageHtml): only A-Z and 0-9 go into the page.
+pub fn tv_page_html_for(code: &str, screen: Option<u64>, game: Option<&str>) -> String {
+    let clean = |v: &str| -> String { v.chars().filter(|c| c.is_ascii_uppercase() || c.is_ascii_digit()).collect() };
+    let (code, src, label) = match game {
+        Some(g) => {
+            let g = clean(g);
+            (String::new(), format!("/api/global/live/game/{g}"), format!("#{g}"))
+        }
+        None => {
+            let c = clean(code);
+            let screen = screen.filter(|n| (1..=99).contains(n));
+            let src = match screen { Some(n) => format!("/api/global/live/{c}?screen={n}"), None => format!("/api/global/live/{c}") };
+            let head: String = c.chars().take(4).collect();
+            let tail: String = c.chars().skip(4).collect();
+            let label = match screen { Some(n) => format!("{head} {tail} \u{00b7} {n}"), None => format!("{head} {tail}") };
+            (c, src, label)
+        }
+    };
+    TV_HTML.replacen("{{CODE}}", &code, 1).replacen("{{SRC}}", &src, 1).replacen("{{LABEL}}", &label, 1)
+}
+
 /// The TV page for a code: only A-Z and 0-9 of it go into the page.
 pub fn tv_page_html(code: &str) -> String {
-    let c: String = code.chars().filter(|c| c.is_ascii_uppercase() || c.is_ascii_digit()).collect();
-    TV_HTML.replacen("{{CODE}}", &c, 1)
+    tv_page_html_for(code, None, None)
 }
 
 /// The code of a /tv/<code> address as Node reads it: upper case, without
@@ -426,7 +481,8 @@ impl GlobalLive {
 
     /// The scorer's live state for one room. False: not taken (bad code,
     /// store full). The caller has checked that the sender owns the room.
-    pub fn update(&mut self, code: &str, room_key: &str, live: &Value, entry: &Value, now: u64) -> bool {
+    /// `screen`: the court number the scorer device set (1-99) for /tv/<code>/<n>.
+    pub fn update(&mut self, code: &str, room_key: &str, live: &Value, entry: &Value, now: u64, screen: Option<u64>) -> bool {
         if !is_live_code(code) || room_key.is_empty() || !live.is_object() {
             return false;
         }
@@ -442,6 +498,7 @@ impl GlobalLive {
         let id = court_id_of(code, room_key);
         let mut summary = court_summary(live, entry, &iso_of_ms(now));
         summary["id"] = json!(id);
+        summary["screen"] = json!(screen);
         let ended = summary["ended"] == Value::Bool(true);
         let prev = courts.iter().position(|c| c.id == id);
         if prev.is_none() && courts.len() >= max_courts {
@@ -473,13 +530,14 @@ impl GlobalLive {
     }
 
     /// The page's data for a code, or None when nothing is live under it.
-    pub fn get(&mut self, code: &str, now: u64) -> Option<Value> {
+    /// The page's data for a code (only court `screen` when given).
+    pub fn get(&mut self, code: &str, now: u64, screen: Option<u64>) -> Option<Value> {
         if !is_live_code(code) {
             return None;
         }
         self.sweep(now);
         let courts = self.codes.get(code).filter(|c| !c.is_empty())?;
-        let mut list: Vec<&Value> = courts.iter().map(|c| &c.summary).collect();
+        let mut list: Vec<&Value> = courts.iter().map(|c| &c.summary).filter(|c| screen.map_or(true, |n| c["screen"] == json!(n))).collect();
         let s = |v: &Value, k: &str| v[k].as_str().unwrap_or("").to_string();
         // running matches first, then by the scheduled time, then by hall
         list.sort_by(|a, b| {
@@ -501,8 +559,8 @@ impl GlobalLive {
 
 /// `{ data: { code, updatedAt, courts }, error: null }` for GET /api/global/live/<code>
 /// (an empty page while nothing is live: the TV waits for the first rally).
-pub fn page_body(store: &mut GlobalLive, code: &str, now: u64) -> Value {
-    let data = store.get(code, now).unwrap_or_else(|| json!({ "code": code, "updatedAt": null, "courts": [] }));
+pub fn page_body(store: &mut GlobalLive, code: &str, now: u64, screen: Option<u64>) -> Value {
+    let data = store.get(code, now, screen).unwrap_or_else(|| json!({ "code": code, "updatedAt": null, "courts": [] }));
     json!({ "data": data, "error": null })
 }
 
@@ -538,6 +596,36 @@ mod tests {
             v[k] = x.clone();
         }
         v
+    }
+
+    #[test]
+    fn screen_of_takes_the_device_number_else_the_match_court() {
+        assert_eq!(screen_of(Some(&json!(2)), &json!({ "match": { "court": "Court 5" } })), Some(2));
+        assert_eq!(screen_of(None, &json!({ "match": { "court": "Court 5" } })), Some(5));
+        assert_eq!(screen_of(None, &json!({ "match": { "court": "Terrain 12" } })), Some(12));
+        assert_eq!(screen_of(None, &json!({ "match": { "court": 3 } })), Some(3));
+        assert_eq!(screen_of(None, &json!({ "match": { "court": "Centre Court" } })), None);
+        assert_eq!(screen_of(None, &json!({})), None);
+    }
+
+    #[test]
+    fn one_court_by_its_screen_number_and_the_page_variants() {
+        let mut store = GlobalLive::new(10, 10, IDLE_MS, ENDED_KEEP_MS);
+        store.update(CODE, "r1", &live(json!({ "points_a": 1 })), &entry(json!({})), 1, Some(1));
+        store.update(CODE, "r2", &live(json!({ "points_a": 2 })), &entry(json!({})), 1, Some(2));
+        assert_eq!(store.get(CODE, 1, None).unwrap()["courts"].as_array().unwrap().len(), 2);
+        let only = store.get(CODE, 1, Some(2)).unwrap();
+        assert_eq!(only["courts"].as_array().unwrap().len(), 1);
+        assert_eq!(only["courts"][0]["points"]["home"], json!(2));
+        assert_eq!(screen_number(Some(&json!("7"))), Some(7));
+        for bad in [json!(0), json!(100), json!(1.5), json!("x"), Value::Null] {
+            assert_eq!(screen_number(Some(&bad)), None);
+        }
+        let h = tv_page_html_for("ABCD2345", Some(2), None);
+        assert!(h.contains("data-src=\"/api/global/live/ABCD2345?screen=2\" data-label=\"ABCD 2345 \u{00b7} 2\""));
+        let g = tv_page_html_for("", None, Some("4242"));
+        assert!(g.contains("data-src=\"/api/global/live/game/4242\" data-label=\"#4242\""));
+        assert!(!tv_page_html("ABCD2345").contains("{{"));
     }
 
     #[test]
@@ -612,9 +700,9 @@ mod tests {
     #[test]
     fn lists_the_courts_of_a_code_nothing_for_another_code() {
         let mut store = GlobalLive::default();
-        assert!(store.update(CODE, "room-1", &live(json!({})), &entry(json!({})), 1000));
-        assert!(store.update(CODE, "room-2", &live(json!({ "match_status": "final" })), &entry(json!({ "match": { "hall": "Hall 2" } })), 1000));
-        let page = store.get(CODE, 1000).unwrap();
+        assert!(store.update(CODE, "room-1", &live(json!({})), &entry(json!({})), 1000, None));
+        assert!(store.update(CODE, "room-2", &live(json!({ "match_status": "final" })), &entry(json!({ "match": { "hall": "Hall 2" } })), 1000, None));
+        let page = store.get(CODE, 1000, None).unwrap();
         assert_eq!(page["courts"].as_array().unwrap().len(), 2);
         assert_eq!(page["courts"][0]["ended"], false); // running first
         let text = page.to_string();
@@ -622,20 +710,20 @@ mod tests {
             assert!(!text.contains(leak), "{leak}");
         }
         assert_eq!(page["updatedAt"], "1970-01-01T00:00:01.000Z");
-        assert!(store.get("ZZZZ2345", 1000).is_none());
-        assert!(store.get("bad", 1000).is_none());
-        assert!(!store.update("bad", "room-1", &live(json!({})), &entry(json!({})), 1000));
-        assert!(!store.update(CODE, "", &live(json!({})), &entry(json!({})), 1000));
-        assert!(!store.update(CODE, "room-1", &json!("x"), &entry(json!({})), 1000));
-        assert_eq!(page_body(&mut store, "ZZZZ2345", 1000), json!({ "data": { "code": "ZZZZ2345", "updatedAt": null, "courts": [] }, "error": null }));
+        assert!(store.get("ZZZZ2345", 1000, None).is_none());
+        assert!(store.get("bad", 1000, None).is_none());
+        assert!(!store.update("bad", "room-1", &live(json!({})), &entry(json!({})), 1000, None));
+        assert!(!store.update(CODE, "", &live(json!({})), &entry(json!({})), 1000, None));
+        assert!(!store.update(CODE, "room-1", &json!("x"), &entry(json!({})), 1000, None));
+        assert_eq!(page_body(&mut store, "ZZZZ2345", 1000, None), json!({ "data": { "code": "ZZZZ2345", "updatedAt": null, "courts": [] }, "error": null }));
     }
 
     #[test]
     fn one_court_per_room_a_new_state_replaces_the_old_one() {
         let mut store = GlobalLive::default();
-        store.update(CODE, "room-1", &live(json!({ "points_a": 1 })), &entry(json!({})), 1);
-        store.update(CODE, "room-1", &live(json!({ "points_a": 2 })), &entry(json!({})), 2);
-        let page = store.get(CODE, 2).unwrap();
+        store.update(CODE, "room-1", &live(json!({ "points_a": 1 })), &entry(json!({})), 1, None);
+        store.update(CODE, "room-1", &live(json!({ "points_a": 2 })), &entry(json!({})), 2, None);
+        let page = store.get(CODE, 2, None).unwrap();
         assert_eq!(page["courts"].as_array().unwrap().len(), 1);
         assert_eq!(page["courts"][0]["points"]["home"], 2);
     }
@@ -644,13 +732,13 @@ mod tests {
     fn drops_ended_courts_after_ended_keep_and_idle_ones_after_idle() {
         let mut t = 1_000_000;
         let mut store = GlobalLive::new(MAX_CODES, MAX_COURTS_PER_CODE, 10_000, 1_000);
-        store.update(CODE, "done", &live(json!({ "match_status": "final" })), &entry(json!({})), t);
-        store.update(CODE, "running", &live(json!({})), &entry(json!({})), t);
+        store.update(CODE, "done", &live(json!({ "match_status": "final" })), &entry(json!({})), t, None);
+        store.update(CODE, "running", &live(json!({})), &entry(json!({})), t, None);
         t += 2_000;
-        let ended: Vec<Value> = store.get(CODE, t).unwrap()["courts"].as_array().unwrap().iter().map(|c| c["ended"].clone()).collect();
+        let ended: Vec<Value> = store.get(CODE, t, None).unwrap()["courts"].as_array().unwrap().iter().map(|c| c["ended"].clone()).collect();
         assert_eq!(ended, vec![json!(false)]);
         t += 20_000;
-        assert!(store.get(CODE, t).is_none());
+        assert!(store.get(CODE, t, None).is_none());
         assert_eq!(store.size(), 0);
     }
 
@@ -658,10 +746,10 @@ mod tests {
     fn an_ended_court_keeps_its_first_ended_time() {
         let mut store = GlobalLive::new(MAX_CODES, MAX_COURTS_PER_CODE, 1_000_000, 1_000);
         let fin = live(json!({ "match_status": "final" }));
-        store.update(CODE, "done", &fin, &entry(json!({})), 10_000);
-        store.update(CODE, "done", &fin, &entry(json!({})), 10_900); // still ended: the clock does not restart
-        assert!(store.get(CODE, 10_999).is_some());
-        assert!(store.get(CODE, 11_001).is_none());
+        store.update(CODE, "done", &fin, &entry(json!({})), 10_000, None);
+        store.update(CODE, "done", &fin, &entry(json!({})), 10_900, None); // still ended: the clock does not restart
+        assert!(store.get(CODE, 10_999, None).is_some());
+        assert!(store.get(CODE, 11_001, None).is_none());
     }
 
     #[test]
@@ -673,13 +761,13 @@ mod tests {
         };
         let mut store = GlobalLive::new(2, 2, IDLE_MS, ENDED_KEEP_MS);
         let (l, e) = (live(json!({})), entry(json!({})));
-        assert!(store.update("AAAA2345", "r", &l, &e, tick()));
-        assert!(store.update("BBBB2345", "r", &l, &e, tick()));
-        assert!(!store.update("CCCC2345", "r", &l, &e, tick()));
-        store.update("AAAA2345", "r2", &l, &e, tick());
-        store.update("AAAA2345", "r3", &l, &e, tick());
+        assert!(store.update("AAAA2345", "r", &l, &e, tick(), None));
+        assert!(store.update("BBBB2345", "r", &l, &e, tick(), None));
+        assert!(!store.update("CCCC2345", "r", &l, &e, tick(), None));
+        store.update("AAAA2345", "r2", &l, &e, tick(), None);
+        store.update("AAAA2345", "r3", &l, &e, tick(), None);
         let n = tick();
-        let page = store.get("AAAA2345", n).unwrap();
+        let page = store.get("AAAA2345", n, None).unwrap();
         let ids: Vec<&str> = page["courts"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
         // the court updated longest ago ("r") gave way
         assert_eq!(ids.len(), 2);
