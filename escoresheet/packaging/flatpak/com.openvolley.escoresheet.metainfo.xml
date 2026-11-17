@@ -71,6 +71,17 @@
   </screenshots>
 
   <releases>
+    <release version="3.4.0" date="2026-11-17">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.4.0</url>
+      <description>
+        <ul>
+          <li>Global: a match is a real match now (referee and bench tablets, livescore and TV list it as one), with a game PIN.</li>
+          <li>Global: optional "Save in the cloud" in Match setup, no account: share link, tournament list for the organizer, continue on another device.</li>
+          <li>Global matches with a live screen code appear on livescore.openvolley.app (can be switched off in Options, Live screen).</li>
+          <li>Android: the approval PDF no longer fails on slow tablets.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.3.6" date="2026-11-17">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.6</url>
       <description>
