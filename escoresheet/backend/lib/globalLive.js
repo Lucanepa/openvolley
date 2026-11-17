@@ -31,6 +31,21 @@ import crypto from 'node:crypto'
 export const LIVE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const CODE_RE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/
 
+/** A court token: a hex hash of a match's own secret key (frontend utils/globalLive.js courtToken). */
+export const isCourtToken = (t) => typeof t === 'string' && /^[0-9a-f]{32}$/.test(t)
+
+/** A court token for a relay room that sent none (an older scorer app): a hash of the room key. */
+export const courtTokenOf = (roomKey) => crypto.createHash('sha256').update(`room\0${roomKey}`).digest('hex').slice(0, 32)
+
+const LIVE_SUMMARY_FIELDS = ['team_a_name', 'team_a_short', 'team_a_color', 'team_b_name', 'team_b_short', 'team_b_color', 'sets_won_a', 'sets_won_b', 'points_a', 'points_b', 'current_set', 'best_of', 'side_a', 'serving_team', 'match_status', 'timeout_active', 'set_interval_active']
+/** Only the live-state fields courtSummary reads (what a forward or a push carries). */
+export function pickLiveSummaryFields(liveState) {
+  const out = {}
+  if (!liveState || typeof liveState !== 'object') return out
+  for (const k of LIVE_SUMMARY_FIELDS) if (k in liveState) out[k] = liveState[k]
+  return out
+}
+
 /** A tournament code as the app makes it (utils/globalLive.js). */
 export const isLiveCode = (code) => typeof code === 'string' && CODE_RE.test(code)
 

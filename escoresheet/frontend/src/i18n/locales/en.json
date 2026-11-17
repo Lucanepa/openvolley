@@ -6485,6 +6485,8 @@
     "title": "Live page for TVs",
     "intro": "Shows the score of every court of your tournament on a TV or a beamer. Only the score goes online (team names, points, sets), never players.",
     "codeLabel": "Tournament code",
+    "smartTv": "On a smart TV: open the TV's web browser and type {{url}}.",
+    "venueUrl": "Without internet at the venue, TVs on the venue Wi-Fi open: {{url}}",
     "otherDevices": "On the other scorer devices of the tournament, enter this code here.",
     "copyLink": "Copy link",
     "copied": "Copied",

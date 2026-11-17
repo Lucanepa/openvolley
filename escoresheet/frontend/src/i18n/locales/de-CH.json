@@ -6479,6 +6479,8 @@
     "title": "Live-Seite für TVs",
     "intro": "Zeigt den Spielstand aller Felder deines Turniers auf einem TV oder Beamer. Online geht nur der Spielstand (Teamnamen, Punkte, Sätze), nie Spielerinnen und Spieler.",
     "codeLabel": "Turniercode",
+    "smartTv": "Auf einem Smart-TV: den Webbrowser des TVs öffnen und {{url}} eingeben.",
+    "venueUrl": "Ohne Internet in der Halle öffnen TVs im Hallen-WLAN: {{url}}",
     "otherDevices": "Gib diesen Code auf den anderen Schreibergeräten des Turniers hier ein.",
     "copyLink": "Link kopieren",
     "copied": "Kopiert",

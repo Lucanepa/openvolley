@@ -6484,6 +6484,8 @@
     "title": "Pagina live per TV",
     "intro": "Mostra il punteggio di tutti i campi del tuo torneo su una TV o un proiettore. Online va solo il punteggio (nomi delle squadre, punti, set), mai i giocatori.",
     "codeLabel": "Codice torneo",
+    "smartTv": "Su una smart TV: apri il browser web della TV e digita {{url}}.",
+    "venueUrl": "Senza internet in palestra, le TV sul Wi-Fi della palestra aprono: {{url}}",
     "otherDevices": "Sugli altri dispositivi segnapunti del torneo, inserisci qui questo codice.",
     "copyLink": "Copia link",
     "copied": "Copiato",
