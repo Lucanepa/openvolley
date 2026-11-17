@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.18 · Aggiornata al 17 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.19 · Aggiornata al 17 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -17,13 +17,17 @@ la versione inglese.
 - Lo strumento Global di OpenVolley non richiede un account. Le sue partite
   restano sul tuo dispositivo. Sul server si trovano solo un backup della
   partita e, alla fine, il referto in PDF, sotto un codice di backup casuale e
-  senza account; vengono cancellati 180 giorni dopo l'ultima modifica
+  senza account; vengono cancellati 180 giorni dopo l'ultima modifica. Se il
+  segnapunti attiva «Salva nel cloud» per una partita (disattivato di
+  default), questa è conservata anche leggibile sul server, senza PIN né
+  immagini delle firme, fino a 180 giorni dopo l'ultimo salvataggio
   (sezione 7).
 - Schermo live (facoltativo, in OpenVolley e OpenBeach): se i dispositivi
   segnapunti di un evento lo attivano, anche il punteggio di ognuna delle loro
   partite (nomi delle squadre, punti e set, nessun giocatore) va al server; è
   conservato solo in memoria ed è visibile a chiunque abbia il codice dello
-  schermo live (sezione 7).
+  schermo live, e per le partite Global anche a chiunque su
+  livescore.openvolley.app, a meno che sia disattivato (sezione 7).
 - Un referto elettronico contiene dati di giocatrici e giocatori, staff e
   ufficiali di gara: nomi, numeri di maglia, date di nascita e firme. Sono
   pubblici solo i nomi delle squadre, il punteggio e i numeri di maglia; nel
@@ -435,9 +439,11 @@ dispositivo la partita di prova viene cancellata alla chiusura.
 partita sul dispositivo) registri le partite di un torneo qualsiasi senza
 account. Le rose, gli ufficiali di gara e le partite che digiti o carichi da un
 file Excel o CSV restano sul tuo dispositivo; l'app legge il file sul
-dispositivo e non lo carica. Una partita Global non viene sincronizzata con il
-database: non compare in alcun record di partita, squadra o giocatore, né nel
-manager né nelle visualizzazioni pubbliche. Per ogni partita sul server si
+dispositivo e non lo carica. Una partita Global non compare mai nei record di
+partita, squadra o giocatore della lega, né nel manager né nelle
+visualizzazioni pubbliche della lega; solo con «Salva nel cloud» (sotto) è
+conservata sul server, in una tabella separata tutta sua. Per ogni partita sul
+server si
 trovano due file, senza account: il backup della partita (il contenuto di un
 file di backup: squadre, rose con nomi, numeri di maglia e date di nascita,
 ufficiali di gara, firme, andamento della partita) e, una volta approvata la
@@ -453,6 +459,38 @@ cancellati 180 giorni dopo l'ultima modifica; i backup del server (sezione 18)
 ne conservano ancora una copia per un certo tempo. L'organizzatrice o
 l'organizzatore del torneo è responsabile di poter registrare i dati e di
 informare le giocatrici, i giocatori e i loro genitori (sezione 17).
+
+**Salva nel cloud (strumento Global, facoltativo):** nella preparazione della
+partita il segnapunti può attivare «Salva nel cloud» per una partita Global;
+di default è disattivato. Allora la partita, oltre al backup e al PDF di cui
+sopra, è conservata anche leggibile (non cifrata) nel database del server,
+senza account: il contenuto del referto (squadre, rose con nomi, numeri di
+maglia e date di nascita, staff delle squadre, ufficiali di gara, andamento
+della partita, set, osservazioni), senza i PIN, le immagini delle firme, il
+codice di backup e il codice torneo; un riepilogo (nomi, nomi brevi e colori
+delle squadre, set e punti, stato, palestra, lega, orario previsto, numero
+della partita); e, una volta approvata la partita, il referto in PDF, sul
+quale figurano le firme e le date di nascita. La partita viene trovata tramite
+un hash del suo codice di backup e protetta da un hash del suo PIN arbitro; il
+server non conserva né il codice né il PIN. A scelta:
+
+- **Link di condivisione:** un link in sola lettura con un token casuale, che
+  il segnapunti attiva e disattiva. Chiunque abbia il link vede il risultato,
+  i set e il referto in PDF su livescore.openvolley.app.
+- **Codice torneo:** un codice di 10 caratteri, inserito sui dispositivi
+  segnapunti di un torneo. Chiunque abbia il codice vede l'elenco di tutte le
+  partite salvate con esso, con i loro riepiloghi e PDF, su
+  livescore.openvolley.app. Il server conserva il codice solo come hash.
+- **Un altro dispositivo:** per continuare lì, ripristini la partita con il
+  codice di backup e il PIN arbitro, come sopra.
+
+La copia leggibile, il link di condivisione e il codice torneo vengono
+cancellati 180 giorni dopo l'ultimo salvataggio, o subito quando il
+segnapunti sceglie «Elimina dal cloud»; i backup del server (sezione 18) ne
+conservano ancora una copia per un certo tempo. Senza «Salva nel cloud» niente
+di tutto ciò viene conservato. Anche qui l'organizzatrice o l'organizzatore
+del torneo è responsabile di poter registrare i dati e di informare le
+giocatrici, i giocatori e i loro genitori (sezione 17).
 
 **Schermo live per TV (facoltativo, qualsiasi partita, anche OpenBeach):** i
 dispositivi segnapunti di un evento possono attivare uno schermo live con un
@@ -472,8 +510,14 @@ server, mai in un database o in un file, e viene rimosso 45 minuti dopo la
 fine della partita, dopo 3 ore senza aggiornamenti o al riavvio del server.
 Chiunque conosca il codice può vedere i riepiloghi delle sue partite su
 openvolley.app/tv e livescore.openvolley.app o leggerli tramite l'interfaccia
-del server; un relay di palestra li mostra anche nella sua rete. Disattiva lo
-schermo live nelle Opzioni per interrompere l'invio.
+del server; un relay di palestra li mostra anche nella sua rete. Un
+dispositivo segnapunti con un codice dello schermo live elenca inoltre i
+riepiloghi delle sue partite Global su livescore.openvolley.app, per chiunque
+e senza il codice, a meno che «Mostra le partite Global su
+livescore.openvolley.app» sia disattivato su di esso in Opzioni, Schermo live
+(di default è attivo). Le partite di campionato sono comunque nel livescore;
+le partite di prova e semplici non vi compaiono mai. Disattiva lo schermo live
+nelle Opzioni per interrompere l'invio.
 
 **Approvazione con PIN:** gli ufficiali di gara possono confermare il
 risultato, oltre che con la firma, con un PIN di approvazione personale.
@@ -537,7 +581,8 @@ giocatrici e giocatori.
 
 **Mai pubblici:** date di nascita, numeri di licenza, firme, approvazioni,
 indirizzi e-mail e PIN. Le liste squadra con i nomi sono visibili solo a chi
-conosce il PIN della partita.
+conosce il PIN della partita o, per una partita Global salvata nel cloud, il
+suo link di condivisione o codice torneo (sezione 7).
 
 ## 9. Tablet e modalità palestra (LAN)
 
@@ -865,6 +910,7 @@ ricevi una copia di queste garanzie.
 | Invio del referto finale (momento, numero di destinatari, senza indirizzi) | Con la partita |
 | Referto di una partita di prova per e-mail | Non conservato sul server |
 | Strumento Global: backup e referto PDF di una partita (sotto il codice di backup) | 180 giorni dopo l'ultima modifica |
+| Strumento Global, «Salva nel cloud»: copia leggibile di una partita, link di condivisione, codice torneo (come hash) | 180 giorni dopo l'ultimo salvataggio, o all'eliminazione dal cloud |
 | Schermo live: riepilogo del punteggio di una partita il cui dispositivo segnapunti lo ha attivato (nomi delle squadre, punti, set; nessun giocatore) | Solo nella memoria del server; rimosso 45 minuti dopo la fine della partita, dopo 3 ore senza aggiornamenti o al riavvio del server |
 | Copie di sicurezza caricate | 30 giorni |
 | Registri dell'app caricati | 30 giorni; cancellati con il tuo account |
@@ -893,7 +939,8 @@ pubblica.
 
 Nello strumento Global è responsabile allo stesso modo l'organizzatrice o
 l'organizzatore del torneo, ovvero la persona che registra i dati. I genitori
-possono chiedere la cancellazione del backup di una partita; mi servono allora
+possono chiedere la cancellazione del backup o della copia nel cloud di una
+partita; mi servono allora
 il codice di backup o i dati della partita (sezione 19).
 
 I genitori o altri rappresentanti legali possono esercitare i diritti della
@@ -961,7 +1008,7 @@ SEE, anche all'autorità di protezione dei dati del tuo paese.
 Se si applica il RGPD, mi baso su:
 
 - **contratto** (art. 6 par. 1 lett. b RGPD): account, sincronizzazione,
-  e-mail legate all'account, supporto, funzioni che utilizzi, il backup online dello strumento Global;
+  e-mail legate all'account, supporto, funzioni che utilizzi, il backup online e la copia nel cloud dello strumento Global;
 - **interesse legittimo** (art. 6 par. 1 lett. f RGPD): verbali ufficiali
   delle partite corretti e verificabili per società, federazione e ufficiali
   di gara (liste squadra, date di nascita per il controllo dell'idoneità,

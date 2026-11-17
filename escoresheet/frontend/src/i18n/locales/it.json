@@ -6515,5 +6515,39 @@
       "set": "Set {{n}}",
       "serving": "Al servizio"
     }
+  },
+  "globalCloud": {
+    "title": "Salva nel cloud",
+    "intro": "Tiene questa partita leggibile anche online, senza account: per un link di condivisione, l'elenco dell'organizzatore e per continuare su un altro dispositivo. Trovata con il suo codice di backup, protetta dal PIN dell'arbitro, eliminata 180 giorni dopo l'ultimo salvataggio.",
+    "needsPin": "La partita ha prima bisogno del PIN dell'arbitro.",
+    "offline": "Nessuna connessione: salvata con la prossima azione.",
+    "pinRefused": "Questo codice di backup è salvato con un altro PIN dell'arbitro.",
+    "failed": "Salvataggio nel cloud non riuscito. Riprova più tardi.",
+    "share": "Link di condivisione (sola lettura)",
+    "shareHint": "Chi ha il link vede il risultato, i set e il referto PDF. Disattivalo per fermare il link.",
+    "copy": "Copia",
+    "copied": "Copiato",
+    "organizer": "Codice torneo (facoltativo)",
+    "newOrganizer": "Nuovo codice torneo",
+    "join": "Usa",
+    "removeOrganizer": "Rimuovi",
+    "copyOrganizerLink": "Copia link organizzatore",
+    "badOrganizer": "Questo non è un codice torneo (10 lettere e cifre).",
+    "organizerHint": "Inserisci lo stesso codice su ogni dispositivo del segnapunti del torneo: il link organizzatore elenca tutte le sue partite, con risultati e PDF.",
+    "otherDevice": "Continuare su un altro dispositivo: lì scegli Ripristina partita nella pagina iniziale e inserisci il codice di backup e il PIN dell'arbitro (Backup sopra).",
+    "delete": "Elimina dal cloud",
+    "page": {
+      "sharedTitle": "Partita",
+      "organizerTitle": "Torneo",
+      "final": "Finale",
+      "ended": "Terminata",
+      "live": "In diretta",
+      "scheduled": "Prevista",
+      "pdf": "Referto (PDF)",
+      "notShared": "Questa partita non è (più) condivisa.",
+      "offline": "Connessione persa, nuovo tentativo…",
+      "loading": "Caricamento…",
+      "noMatches": "Nessuna partita è ancora salvata con questo codice."
+    }
   }
 }
