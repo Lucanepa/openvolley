@@ -12,6 +12,21 @@
  * on a slow device its handler runs long after the press (a render in
  * between).
  *
+ * One physical tap is one press. WebKitGTK (the desktop app on Linux, the
+ * Point Hub board) sends a touch tap as pointerdown/up of type 'touch' and
+ * then, at the release, its compatibility mouse events WITH their own
+ * pointer events: pointerdown/up of type 'mouse' (another pointerId), then
+ * the one click (measured on the board, 17.11.2026: touch pointerdown,
+ * ~80 ms later touch pointerup, mouse pointerdown + click 0-2 ms around it).
+ * Recorded as two presses, that mouse press looked like the second tap of a
+ * double tap at the same place 80 ms later, and the rally guard dropped
+ * every tap ("Not counted: taken as a double tap" on Start set). A 'mouse'
+ * pointerdown at the place of the touch (or pen) press just before it, while
+ * that is still down or right after its release, is that echo: not a press.
+ * Browsers that follow the Pointer Events spec (Chromium, Android WebView,
+ * Safari) fire no pointer events for compatibility mouse events, so nothing
+ * changes there; a desktop mouse alone never follows a touch.
+ *
  *   trackPresses()                       once (idempotent)
  *   const { press, previous } = pressOfClick(clickEvent)
  *   samePlace(press, previous)
@@ -29,8 +44,14 @@ export const TAP_SLOP_PX = 40
 const PRESS_MAX_AGE_MS = 5000
 const KEEP = 3
 
+// A 'mouse' pointerdown at most this long after the release of the touch/pen
+// press at its place is that tap's compatibility echo (WebKitGTK: 0-2 ms)
+export const TOUCH_ECHO_MS = 800
+
 let presses = []
 let trackedWindow = null
+// The last touch or pen press: { t, x, y, pointerId, upT } (upT: its release)
+let lastTouch = null
 
 const perfNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
@@ -50,22 +71,53 @@ function point(event) {
   return typeof x === 'number' && typeof y === 'number' ? { x, y } : { x: null, y: null }
 }
 
+const isTouchLike = (type) => type === 'touch' || type === 'pen'
+
+/**
+ * Is this pointerdown the compatibility mouse echo of the touch/pen tap just
+ * before it (WebKitGTK), not a press of its own?
+ */
+export function isTouchEcho(event, t = eventTime(event)) {
+  if (event?.pointerType !== 'mouse' || !lastTouch) return false
+  if (t < lastTouch.t || t - lastTouch.t > PRESS_MAX_AGE_MS) return false
+  // still down, or released at most TOUCH_ECHO_MS before (the echo can be
+  // stamped a ms or two before the touch's own pointerup)
+  if (lastTouch.upT != null && t - lastTouch.upT > TOUCH_ECHO_MS) return false
+  return samePlace(point(event), lastTouch)
+}
+
 /** Record a pointer press (the window listener; tests call it directly). */
 export function notePress(event) {
-  presses.push({ t: eventTime(event), ...point(event), target: event?.target ?? null })
+  const t = eventTime(event)
+  if (isTouchEcho(event, t)) return
+  const where = point(event)
+  if (isTouchLike(event?.pointerType)) {
+    lastTouch = { t, ...where, pointerId: event.pointerId ?? null, upT: null }
+  }
+  presses.push({ t, ...where, target: event?.target ?? null })
   if (presses.length > KEEP) presses.shift()
 }
 
-/** Start recording the presses on `win` (once per window; never removed: one passive listener). */
+/** Record a pointer release: the end of the last touch/pen press (the window listener; tests call it directly). */
+export function noteRelease(event) {
+  if (!lastTouch || !isTouchLike(event?.pointerType)) return
+  if (event.pointerId != null && lastTouch.pointerId != null && event.pointerId !== lastTouch.pointerId) return
+  lastTouch.upT = eventTime(event)
+}
+
+/** Start recording the presses on `win` (once per window; never removed: passive listeners). */
 export function trackPresses(win = typeof window !== 'undefined' ? window : null) {
   if (!win || trackedWindow === win) return
   win.addEventListener('pointerdown', notePress, { capture: true, passive: true })
+  win.addEventListener('pointerup', noteRelease, { capture: true, passive: true })
+  win.addEventListener('pointercancel', noteRelease, { capture: true, passive: true })
   trackedWindow = win
 }
 
 /** Tests only: forget the presses. */
 export function resetPresses() {
   presses = []
+  lastTouch = null
 }
 
 /**

@@ -1,8 +1,8 @@
 // The pointer presses the tap guards judge a tap by (useRallyTapGuard,
 // useConfirmAction): the press of a click, the press before it, and whether
 // two presses are at the same place.
-import { describe, it, expect, beforeEach } from 'vitest'
-import { TAP_SLOP_PX, eventTime, notePress, pressOfClick, pressDistance, resetPresses, samePlace, trackPresses } from '../pointerPresses'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { TAP_SLOP_PX, TOUCH_ECHO_MS, eventTime, isTouchEcho, notePress, noteRelease, pressOfClick, pressDistance, resetPresses, samePlace, trackPresses } from '../pointerPresses'
 
 beforeEach(() => resetPresses())
 
@@ -58,6 +58,90 @@ describe('pressOfClick', () => {
     button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 30, clientY: 40 }))
     const { press } = pressOfClick({ type: 'click', detail: 1, timeStamp: performance.now() })
     expect(press).toMatchObject({ x: 30, y: 40, target: button })
+    button.remove()
+  })
+})
+
+// One touch tap in WebKitGTK (Point Hub board, 17.11.2026, event.timeStamp):
+// pointerdown touch id 3 at 1136941, pointerup touch at 1137031, then
+// pointerdown mouse id 1 at 1137029 and the click (pointerType mouse) at 1137029
+const touchDown = (t, x = 640, y = 657, target = 'start') => ({ type: 'pointerdown', pointerType: 'touch', pointerId: 3, timeStamp: t, clientX: x, clientY: y, target })
+const touchUp = (t, x = 640, y = 657) => ({ type: 'pointerup', pointerType: 'touch', pointerId: 3, timeStamp: t, clientX: x, clientY: y })
+const mouseDown = (t, x = 640, y = 657, target = 'start') => ({ type: 'pointerdown', pointerType: 'mouse', pointerId: 1, timeStamp: t, clientX: x, clientY: y, target })
+const webkitTap = (t0, x, y, target) => {
+  notePress(touchDown(t0, x, y, target))
+  noteRelease(touchUp(t0 + 90, x, y))
+  notePress(mouseDown(t0 + 88, x, y, target))
+}
+
+describe('one touch tap is one press (WebKitGTK compatibility mouse pointer events)', () => {
+  // the stamps below are on the performance clock: keep "now" after them
+  let clock
+  beforeEach(() => {
+    const real = performance.now.bind(performance)
+    clock = vi.spyOn(performance, 'now').mockImplementation(() => 1e7 + real())
+  })
+  afterEach(() => clock.mockRestore())
+
+  it("the 'mouse' pointerdown at the touch's place is not a second press", () => {
+    notePress({ timeStamp: 500, clientX: 100, clientY: 100, target: 'elsewhere', pointerType: 'touch', pointerId: 2 })
+    noteRelease({ timeStamp: 580, pointerType: 'touch', pointerId: 2 })
+    webkitTap(941, 640, 657, 'start')
+    const { press, previous } = pressOfClick({ type: 'click', pointerType: 'mouse', detail: 1, timeStamp: 1029 }, at(1100))
+    expect(press).toMatchObject({ t: 941, x: 640, y: 657, target: 'start' })
+    expect(previous).toMatchObject({ t: 500, x: 100, target: 'elsewhere' })
+  })
+
+  it('also when the echo is stamped before the touch release, or the touch was held', () => {
+    notePress(touchDown(100))
+    expect(isTouchEcho(mouseDown(150))).toBe(true) // still down
+    noteRelease(touchUp(2100)) // a long press
+    expect(isTouchEcho(mouseDown(2099))).toBe(true)
+    expect(isTouchEcho(mouseDown(2100 + TOUCH_ECHO_MS))).toBe(true)
+  })
+
+  it('a real second tap still counts as a second press (a double tap stays a double tap)', () => {
+    webkitTap(100)
+    webkitTap(220)
+    const { press, previous } = pressOfClick({ type: 'click', pointerType: 'mouse', detail: 1, timeStamp: 308 }, at(320))
+    expect(press.t).toBe(220)
+    expect(previous.t).toBe(100)
+  })
+
+  it('a mouse press elsewhere, later, or with no touch before is a press', () => {
+    expect(isTouchEcho(mouseDown(100))).toBe(false) // a desktop mouse alone
+    notePress(touchDown(100))
+    noteRelease(touchUp(180))
+    expect(isTouchEcho(mouseDown(181, 640 + TAP_SLOP_PX + 1, 657))).toBe(false)
+    expect(isTouchEcho(mouseDown(181 + TOUCH_ECHO_MS))).toBe(false)
+    expect(isTouchEcho({ ...mouseDown(181), pointerType: 'touch' })).toBe(false)
+    notePress(mouseDown(2000))
+    const { press } = pressOfClick({ type: 'click', detail: 1, timeStamp: 2050 }, at(2060))
+    expect(press.t).toBe(2000)
+  })
+
+  it('a mouse double click still records two presses', () => {
+    notePress(mouseDown(100))
+    notePress(mouseDown(220))
+    const { press, previous } = pressOfClick({ type: 'click', detail: 2, timeStamp: 260 }, at(270))
+    expect(press.t).toBe(220)
+    expect(previous.t).toBe(100)
+  })
+
+  it('the window listener drops the echo too', () => {
+    trackPresses(window)
+    const button = document.createElement('button')
+    document.body.appendChild(button)
+    const t = performance.now()
+    const opts = (pointerType, pointerId) => ({ bubbles: true, clientX: 30, clientY: 40, pointerType, pointerId })
+    button.dispatchEvent(new PointerEvent('pointerdown', opts('touch', 3)))
+    button.dispatchEvent(new PointerEvent('pointerup', opts('touch', 3)))
+    button.dispatchEvent(new PointerEvent('pointerdown', opts('mouse', 1)))
+    const { press, previous } = pressOfClick({ type: 'click', detail: 1, timeStamp: performance.now() })
+    expect(press).toMatchObject({ x: 30, y: 40, target: button })
+    expect(press.t).toBeGreaterThanOrEqual(t - 1)
+    // the press before is not this tap's echo
+    expect(previous === null || previous.target !== button || previous.t < t - 1).toBe(true)
     button.remove()
   })
 })

@@ -139,6 +139,27 @@ describe('useRallyTapGuard', () => {
     }
   })
 
+  it('one touch tap on Start set counts on WebKitGTK (touch pointer events, then mouse ones; Point Hub board 17.11.2026)', () => {
+    const { result } = renderHook(({ status }) => useRallyTapGuard(status), { initialProps: { status: 'idle' } })
+    const start = document.createElement('button')
+    start.setAttribute('data-help-id', 'scoreboard-start-rally')
+    document.body.appendChild(start)
+    try {
+      const at = { bubbles: true, clientX: 640, clientY: 657 }
+      start.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'touch', pointerId: 3 }))
+      start.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'touch', pointerId: 3 }))
+      start.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse', pointerId: 1 }))
+      start.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'mouse', pointerId: 1 }))
+      const e = new PointerEvent('click', { ...at, detail: 1, pointerType: 'mouse', pointerId: 1 })
+      start.dispatchEvent(e)
+      const check = result.current(e)
+      expect(check.verdict).toBe(null)
+      expect(check.sincePreviousMs).toBe(null)
+    } finally {
+      start.remove()
+    }
+  })
+
   it('takes a click without its press (a key, a synthetic click) as the same place', () => {
     const { result, rerender } = renderHook(({ status }) => useRallyTapGuard(status), { initialProps: { status: 'idle' } })
     rerender({ status: 'in_play' })
