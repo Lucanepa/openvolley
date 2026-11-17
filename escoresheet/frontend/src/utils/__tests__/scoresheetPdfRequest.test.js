@@ -204,3 +204,106 @@ describe('answers from an earlier attempt\'s window', () => {
     for (const m of sent) expect(m.req).toBe('r42')
   })
 })
+
+// League match 2026-11-17, Android tablet (Galaxy Tab A7 Lite): "The
+// scoresheet window stopped answering", then Approve without PDF. The
+// in-app view is an iframe of the app: ONE main thread for both. The
+// sheet's capture held it longer than the stall limit; once free, the
+// expired stall timer ran before the page's next heartbeat and threw the
+// PDF away (emulator, CPU 20x slower: one 48 s block, failed after 58 s).
+// A blocked thread runs nothing, then every due timer once (an interval
+// too, not once per missed tick): `block()` below; `run()` is a free thread.
+describe('a thread shared with the in-app view (Android)', () => {
+  function manualClock () {
+    let t = 0
+    let seq = 0
+    const timers = new Map()
+    const add = (fn, ms, repeat) => { const id = ++seq; timers.set(id, { fn, ms: Math.max(1, ms | 0), at: t + Math.max(1, ms | 0), repeat }); return id }
+    const fire = async (id, x) => {
+      if (x.repeat) x.at = t + x.ms
+      else timers.delete(id)
+      x.fn()
+      await Promise.resolve()
+    }
+    return {
+      now: () => t,
+      install () {
+        vi.stubGlobal('setTimeout', (fn, ms) => add(fn, ms, false))
+        vi.stubGlobal('setInterval', (fn, ms) => add(fn, ms, true))
+        vi.stubGlobal('clearTimeout', (id) => timers.delete(id))
+        vi.stubGlobal('clearInterval', (id) => timers.delete(id))
+      },
+      // the thread is free for ms: every timer at its time
+      async run (ms) {
+        const end = t + ms
+        for (;;) {
+          const next = [...timers.entries()].filter(([, x]) => x.at <= end).sort((a, b) => a[1].at - b[1].at)[0]
+          if (!next) break
+          t = next[1].at
+          await fire(...next)
+        }
+        t = end
+      },
+      // the thread is blocked for ms (the page captures its sheet): nothing
+      // runs, then each due timer once
+      async block (ms) {
+        t += ms
+        const due = [...timers.entries()].filter(([, x]) => x.at <= t).sort((a, b) => a[1].at - b[1].at)
+        for (const [id, x] of due) if (timers.has(id)) await fire(id, x)
+      }
+    }
+  }
+
+  let clock
+  beforeEach(() => { clock = manualClock(); clock.install() })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  const opened = (close = vi.fn()) => () => ({ ok: true, mode: 'in-app', window: { closed: false }, isClosed: () => false, close })
+
+  it('a 48 s capture that holds the shared thread is not taken for a stalled window', async () => {
+    const close = vi.fn()
+    let e = null
+    const p = waitForScoresheetPdf(opened(close), { now: clock.now })
+    p.catch(x => { e = x })
+    post({ type: MSG_PDF_PROGRESS, step: 'loading' })
+    await clock.run(1000)
+    post({ type: MSG_PDF_PROGRESS, step: 'capture' })
+    await clock.block(48000)
+    // free again: the page's next heartbeat and its PDF come after this window's timers
+    expect(e).toBe(null)
+    expect(close).not.toHaveBeenCalled()
+    post({ type: MSG_PDF_PROGRESS, step: 'capture' })
+    post({ type: MSG_PDF_BLOB, arrayBuffer: new ArrayBuffer(4), filename: 'slow.pdf' })
+    expect((await p).filename).toBe('slow.pdf')
+  })
+
+  it('blocked time does not count toward the hard timeout either', async () => {
+    const p = waitForScoresheetPdf(opened(), { now: clock.now })
+    post({ type: MSG_PDF_PROGRESS, step: 'loading' })
+    await clock.block(70000)
+    for (let i = 0; i < 5; i++) { post({ type: MSG_PDF_PROGRESS, step: 'capture' }); await clock.run(1000) }
+    await clock.block(40000) // 115 s since the start
+    post({ type: MSG_PDF_BLOB, arrayBuffer: new ArrayBuffer(4), filename: 'slower.pdf' })
+    expect((await p).filename).toBe('slower.pdf')
+  })
+
+  it('a page that stays silent while this thread is free still stalls', async () => {
+    const close = vi.fn()
+    const caught = waitForScoresheetPdf(opened(close), { now: clock.now }).catch(x => x)
+    post({ type: MSG_PDF_PROGRESS, step: 'capture' })
+    await clock.block(30000) // counts as one tick
+    await clock.run(19000)
+    expect(close).not.toHaveBeenCalled()
+    await clock.run(1000)
+    expect((await caught).reason).toBe(PDF_FAIL.STALLED)
+    expect(close).toHaveBeenCalled()
+  })
+
+  it('a page that keeps answering but never finishes still times out', async () => {
+    const caught = waitForScoresheetPdf(opened(), { now: clock.now }).catch(x => x)
+    let e = null
+    caught.then(x => { e = x })
+    for (let s = 0; s < 95 && !e; s++) { post({ type: MSG_PDF_PROGRESS, step: 'capture' }); await clock.run(1000) }
+    expect(e?.reason).toBe(PDF_FAIL.TIMEOUT)
+  })
+})

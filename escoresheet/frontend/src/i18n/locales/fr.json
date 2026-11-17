@@ -224,6 +224,7 @@
     "close": "Fermer"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Cela supprime tous les sets, actions, joueurs et données d'équipe de ce match sur cet appareil.",
     "cancel": "Annuler",
     "delete": "Supprimer",
     "lossTitle": "Cette copie contient ce que le serveur n'a pas :",
@@ -6477,6 +6478,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Afficher les matchs Global sur livescore.openvolley.app (le score seulement, comme sur les TV)",
+    "list": {
+      "title": "Matchs Global",
+      "open": "Ouvrir l'écran live"
+    },
     "title": "Écran en direct",
     "intro": "Affiche le score de tous les terrains de ton événement sur des TV ou un beamer, pour n’importe quel match. Lance-le sur un appareil de marque et saisis son code sur les autres. Seul le score est en ligne (noms d’équipes, points, sets), jamais les joueurs.",
     "codeLabel": "Code de l’écran en direct",

@@ -104,14 +104,24 @@ async function globalBackupText(matchId, backupData) {
 
 /**
  * A backup read by its code, as Global mode restores it: only a Global match,
- * kept test-flagged (the sync queue and the restore never send a test match
- * to the league's server). null for anything else: a code that holds an
+ * a real match that stays local (domain/matchKind isLocalOnly: the sync queue
+ * and the restore never send it to the league's server). A backup made
+ * before 2026-11-17 holds test: true, dropped here. null for anything else: a code that holds an
  * official match, or a file someone with the code replaced, is not restored
  * into this device's official matches.
  */
 export function globalRestoreData(data) {
   if (!data || typeof data !== 'object' || !data.match || data.match.global !== true) return null
-  return { ...data, match: { ...data.match, global: true, test: true } }
+  return { ...data, match: { ...data.match, global: true, test: false } }
+}
+
+/**
+ * A Global match made before 2026-11-17 was stored test-flagged, so its
+ * tablets, livescore and TV took it for practice. It is a real match that
+ * stays local (domain/matchKind): the flag goes. Returns how many changed.
+ */
+export async function upgradeGlobalMatches(database) {
+  return database.matches.filter(m => m?.global === true && m.test === true).modify({ test: false })
 }
 
 /** The every-action / set-end backup of a Global match (the newest copy replaces the last). */

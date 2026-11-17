@@ -36,6 +36,7 @@ import { setPlayerDragImage } from '../utils/dragImage'
 import { teamShortLabels } from '../utils/teamShortLabels'
 import { LOG_REWRITE_EVENTS, liveStateLastAction } from '../utils/refereeLastEvent.js'
 import ballFallback from '../ball_fallback.png'
+import { isLocalOnly } from '../domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -47,7 +48,7 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
-import { liveCodeForMatch, cachedCourtToken, getLiveCourt } from '../utils/globalLive'
+import { liveCodeForMatch, cachedCourtToken, getLiveCourt, liveListedForMatch } from '../utils/globalLive'
 import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
@@ -189,7 +190,7 @@ async function queueTeamRoster(matchId, teamKey, columns = {}) {
   const teamId = teamKey === 'home' ? m?.homeTeamId : teamKey === 'away' ? m?.awayTeamId : null
   if (teamId == null || !m?.seed_key) return null
   const roster = await db.players.where('teamId').equals(teamId).sortBy('number')
-  return queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster), ...columns }, { test: m.test === true })
+  return queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster), ...columns }, { test: isLocalOnly(m) })
 }
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
@@ -1434,7 +1435,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!m?.id) return
     db.matches.update(m.id, { lfpTracking: on })
       .then(() => db.matches.get(m.id))
-      .then((fresh) => fresh && queueMatchUpdate(db, fresh.seed_key, { match_info: matchInfoFromLocal(fresh) }, { test: fresh.test === true }))
+      .then((fresh) => fresh && queueMatchUpdate(db, fresh.seed_key, { match_info: matchInfoFromLocal(fresh) }, { test: isLocalOnly(fresh) }))
       .catch((err) => console.warn('[Scoreboard] LFP setting not kept with the match:', err))
   }, [data?.match])
   scorerMovedRef.current = isScorerMoved(data?.match)
@@ -1953,7 +1954,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // the match's seed_key; told here, the job commits (or rolls back) with the
   // action instead of being queued after it
   useEffect(() => {
-    if (matchId != null && data?.match) rememberSeedKey(matchId, data.match.seed_key ?? null, data.match.test === true)
+    if (matchId != null && data?.match) rememberSeedKey(matchId, data.match.seed_key ?? null, isLocalOnly(data.match))
   }, [matchId, data?.match?.seed_key, data?.match?.test]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore match state from a snapshot (used by undo)
@@ -2547,7 +2548,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // the cloud (relay or database), so the LedBox can be rehearsed
       const match = await db.matches.get(matchId)
       if (!match) return
-      const isTest = match.test === true
+      const isTest = isLocalOnly(match)
       const routeOf = () => liveStateTargets({ isTest, relayKey: relayKeyRef.current, relayUrl: scorerRelay.url })
       if (isTest && !routeOf().relay) return
       console.log(`[PERF:liveState] After match.get: +${(performance.now() - _tl).toFixed(0)}ms`)
@@ -2887,7 +2888,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session },
             ...(liveCode ? { globalLive: liveCode } : {}),
             ...(liveCourt ? { globalLiveCourt: liveCourt } : {}),
-            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {})
+            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {}),
+            ...(liveCode && liveListedForMatch(match) ? { globalLiveListed: true } : {})
           })
           // the desktop app's relay feeds no cloud page: it sends the court itself
           if (liveCode && pushesGlobalLive()) pushGlobalLive({ code: liveCode, match, liveState: liveStateData, db, matchId })
@@ -3220,7 +3222,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
 
     // Use match from guard check above (already fetched)
-    const isTest = match?.test || false
+    const isTest = isLocalOnly(match)
 
     // Only sync official matches (not test matches)
     if (!isTest) {
@@ -4808,7 +4810,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // To the cloud through the sync queue (kept while offline, retried); a
       // Dexie write, so inside an action it is part of its transaction
-      trackWrite(queueMatchUpdate(db, data.match?.seed_key, { manual_changes: updatedChanges }, { test: data.match?.test === true }).catch((err) => {
+      trackWrite(queueMatchUpdate(db, data.match?.seed_key, { manual_changes: updatedChanges }, { test: isLocalOnly(data.match) }).catch((err) => {
         console.warn('[ManualChange] Could not queue the cloud update:', err?.message)
       }))
     } else {
@@ -4953,7 +4955,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const fresh = await db.matches.get(matchId)
       const manualChanges = [...(fresh?.manualChanges || []), ...entries]
       await db.matches.update(matchId, { manualChanges })
-      await queueMatchUpdate(db, fresh?.seed_key, { manual_changes: manualChanges }, { test: fresh?.test === true })
+      await queueMatchUpdate(db, fresh?.seed_key, { manual_changes: manualChanges }, { test: isLocalOnly(fresh) })
       deferUi(() => setManualChangesLog(prev => [...prev, ...entries]))
     }
 
@@ -5239,7 +5241,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Reuse match from snapshot or fetch fresh (lightweight events need it for isTest check)
     const match = snapshotMatch || await db.matches.get(matchId)
-    const isTest = match?.test || false
+    const isTest = isLocalOnly(match)
     console.log(`[PERF] After match.get: +${(performance.now() - _t0).toFixed(0)}ms`)
 
     // Only sync official matches to Supabase, not test matches
@@ -7078,7 +7080,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const matchRecord = await db.matches.get(matchId)
       console.log('[SET_END_DEBUG] STEP 7: Match info:', JSON.stringify({
         matchId,
-        isTest: matchRecord?.test,
+        isTest: isLocalOnly(matchRecord),
         seed_key: matchRecord?.seed_key,
         currentStatus: matchRecord?.status
       }))
@@ -7088,7 +7090,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // STEP 8: IMMEDIATE SYNC TO SUPABASE (if not a test match)
       // Sync happens FIRST before any UI operations to ensure data is saved
-      if (matchRecord?.test !== true && matchRecord?.seed_key) {
+      if (!isLocalOnly(matchRecord) && matchRecord?.seed_key) {
         setSetTransitionLoading({ step: 'Syncing to cloud...' })
         console.log('[SET_END_DEBUG] STEP 8: Starting IMMEDIATE sync to Supabase')
 
@@ -7441,7 +7443,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
           // Sync new set to cloud (if not test match)
           const matchRecordForNewSet = await db.matches.get(matchId)
-          const isTest = matchRecordForNewSet?.test || false
+          const isTest = isLocalOnly(matchRecordForNewSet)
           if (!isTest && !existingSet) {
             await db.sync_queue.add({
               resource: 'set',
@@ -7578,7 +7580,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Get match to check if it's a test match
       const match = await db.matches.get(matchId)
-      const isTest = match?.test || false
+      const isTest = isLocalOnly(match)
 
       // Only add to sync queue if set was newly created and it's an official match
       if (!existingSet5 && !isTest) {
@@ -7838,7 +7840,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!setRow) return
     await db.sets.update(setRow.id, { homePoints, awayPoints })
     const match = await db.matches.get(matchId)
-    if (match && !match.test && match.seed_key) {
+    if (match && !isLocalOnly(match) && match.seed_key) {
       await db.sync_queue.add({
         resource: 'set',
         action: 'update',
@@ -7947,7 +7949,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // result the approval checks); the reopened one is corrected
     const match = await db.matches.get(matchId)
     await queueSetDeletes(db, match, plan.deleteSetIds)
-    if (match && !match.test && match.seed_key) {
+    if (match && !isLocalOnly(match) && match.seed_key) {
       for (const r of plan.restoreSets) {
         await db.sync_queue.add(setUpdateJob(match, r.id, restoredSetWrites(r).cloud))
       }
@@ -11244,7 +11246,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     try {
       const matchRecord = await db.matches.get(matchId)
       if (isMatchOverStatus(matchRecord?.status)) return
-      const isTest = matchRecord?.test === true
+      const isTest = isLocalOnly(matchRecord)
       const allSets = await db.sets.where({ matchId }).sortBy('index')
       const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf, setOnly, inDefault, targets: setTargetsOf(matchRecord) })
       // Score of the existing sets the forfeit touches, for a later reversal
@@ -23076,7 +23078,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       ...clearedPostMatchSignatures()
                     })
                   }
-                  if (matchRecord && !matchRecord.test && matchRecord.seed_key) {
+                  if (matchRecord && !isLocalOnly(matchRecord) && matchRecord.seed_key) {
                     await db.sync_queue.add(setUpdateJob(matchRecord, reopenSetId, { finished: false, end_time: null }))
                     if (isMatchOverStatus(matchRecord.status)) {
                       await db.sync_queue.add({

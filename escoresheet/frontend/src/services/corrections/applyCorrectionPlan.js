@@ -51,6 +51,7 @@ import { toCloudPlayers, filterMatchPayload } from '../../db/matchRepository'
 import { setExtId } from '../../utils/syncIds'
 import { withActivityContext, EVENT_HISTORY_SCOPE, rememberSeedKey } from '../../db/eventHistory'
 import { randomUuid } from '../../utils/deviceId'
+import { isLocalOnly } from '../../domain/matchKind'
 
 /** The event history reason of every row a correction removes or edits. */
 export const CORRECTION_REASON = 'correction'
@@ -125,7 +126,7 @@ export async function writeSignedSheetChange(db, matchId, patch, log, now = new 
     const entry = logEntryFor({ log: { before: null, after: null, ...log } }, now, { afterMatch: true })
     const write = { ...patch, ...clearedPostMatchSignatures(), manualChanges: [...(match.manualChanges || []), entry] }
     await db.matches.update(matchId, write)
-    if (match.seed_key && !match.test) {
+    if (match.seed_key && !isLocalOnly(match)) {
       await db.sync_queue.add({
         resource: 'match',
         action: 'update',
@@ -174,7 +175,7 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
     const match = await db.matches.get(matchId)
     if (!match) throw new Error('Match not found')
     // the history hooks queue the revision jobs in this transaction when they know the match's key
-    rememberSeedKey(matchId, match.seed_key ?? null, match.test === true)
+    rememberSeedKey(matchId, match.seed_key ?? null, isLocalOnly(match))
     const before = await db.events.where('matchId').equals(matchId).toArray()
     const byId = new Map(before.map(e => [e.id, e]))
 
@@ -259,7 +260,7 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
     }
 
     // 6-7. sync jobs (official matches only)
-    if (match.seed_key && !match.test) {
+    if (match.seed_key && !isLocalOnly(match)) {
       const ts = now.toISOString()
       if (removeIds.length) {
         // An insert still waiting for a removed row is dropped; the void job

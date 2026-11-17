@@ -19,6 +19,7 @@ import { liveStateNow } from './serverDataSync'
 import { isLiveStateRefusal } from './eventSync'
 import { isMatchFinished } from './matchFormat'
 import { liveSetResultsOf } from '../domain/livePublicFields'
+import { isLocalOnly } from '../domain/matchKind'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -67,7 +68,7 @@ export function matchEndLiveStatePatch(match, sets, now = Date.now()) {
  *   (offline, the match not in the cloud yet)
  */
 export async function publishMatchEndLiveState(match, sets) {
-  if (!match?.seed_key || match.test === true) return true
+  if (!match?.seed_key || isLocalOnly(match)) return true
   const patch = matchEndLiveStatePatch(match, sets)
   if (!patch) return true
   try {
@@ -120,7 +121,7 @@ export function endedOnThisDevice(match, sets) {
  *   (offline, signed out, not in the cloud yet)
  */
 export async function publishEndedLiveStates(database, { publish = publishMatchEndLiveState, done = new Set() } = {}) {
-  const candidates = (await database.matches.toArray()).filter(m => m && m.test !== true && !!m.seed_key &&
+  const candidates = (await database.matches.toArray()).filter(m => m && !isLocalOnly(m) && !!m.seed_key &&
     (m.status === 'ended' || m.status === 'live') && !m.cloudBlock && !m.closed_at && !done.has(m.id))
   let pending = 0
   let tried = 0

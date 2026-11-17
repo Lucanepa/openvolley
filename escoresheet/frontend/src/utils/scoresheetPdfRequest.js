@@ -16,6 +16,22 @@
  * its heartbeat, on the scorer's Cancel (an AbortSignal) or after a hard
  * timeout, and the error says which (`error.reason`, one of PDF_FAIL).
  *
+ * The stall and the hard timeout count only the time this window could
+ * have heard the page. The Android app's in-app view (openAppWindow.js) is
+ * an iframe of this page: same origin, same renderer, ONE main thread. While
+ * the scoresheet captures its sheet (html-to-image's style copy, toDataURL)
+ * that thread runs nothing else: no heartbeat leaves the page and no timer
+ * runs here. On a slow tablet (Galaxy Tab A7 Lite, league match 2026-11-17)
+ * the capture held it longer than PDF_STALL_MS; once free, the expired stall
+ * timer ran before the page's next heartbeat, closed the view and threw the
+ * almost finished PDF away ("The scoresheet window stopped answering", then
+ * "Approve without PDF"). Reproduced on the emulator with the CPU slowed
+ * 20x: one 48 s block, failed as stalled after 58 s. So a watchdog ticks
+ * every PDF_CLOSED_POLL_MS and a tick that comes more than PDF_BLOCKED_TICK_MS
+ * late (the thread was busy: the page is working, or the tablet slept)
+ * counts as one tick only. A popup or desktop window (its own thread) is
+ * timed as before: every tick comes on time.
+ *
  * Each wait has a request id: `open(requestId)` puts it in the window's URL
  * (`pdfReq`, PDF_REQUEST_PARAM) and the page echoes it as `req`. An answer
  * for another request (a window of an earlier attempt, closed by Cancel or a
@@ -53,6 +69,12 @@ export const PDF_CLOSED_POLL_MS = 500
  * is made still fails at once: its page says so on pagehide.
  */
 export const PDF_CLOSED_GRACE_MS = 2000
+/**
+ * A watchdog tick this much later than due: this window's main thread was
+ * blocked meanwhile (the in-app view's page shares it), so that time does
+ * not count toward the stall or the hard timeout.
+ */
+export const PDF_BLOCKED_TICK_MS = 2000
 
 /** Why no PDF came. */
 export const PDF_FAIL = Object.freeze({
@@ -95,7 +117,7 @@ function closeOpened(opened) {
  * closed, so none is left behind.
  * @param {(requestId: string) => ({ ok?: boolean, window?: Window|null, close?: () => void, isClosed?: () => boolean } | undefined)} open
  *   opens the page with `pdfReq=<requestId>` in its URL
- * @param {{ win?: Window, timeoutMs?: number, stallMs?: number, pollMs?: number, closedGraceMs?: number, signal?: AbortSignal, onProgress?: (p: { step: string|null }) => void, requestId?: string }} [opts]
+ * @param {{ win?: Window, timeoutMs?: number, stallMs?: number, pollMs?: number, closedGraceMs?: number, blockedTickMs?: number, now?: () => number, signal?: AbortSignal, onProgress?: (p: { step: string|null }) => void, requestId?: string }} [opts]
  */
 export function waitForScoresheetPdf(open, {
   win = window,
@@ -103,24 +125,31 @@ export function waitForScoresheetPdf(open, {
   stallMs = PDF_STALL_MS,
   pollMs = PDF_CLOSED_POLL_MS,
   closedGraceMs = PDF_CLOSED_GRACE_MS,
+  blockedTickMs = PDF_BLOCKED_TICK_MS,
+  now = () => Date.now(),
   signal,
   onProgress,
   requestId = newRequestId()
 } = {}) {
   let opened
   let settled = false
-  let timer = null
-  let stallTimer = null
-  let pollTimer = null
+  let watchdog = null
   let closedTimer = null
   let onAbort = null
+  // Time this window could have heard the page (see the header): since the
+  // start (hard timeout) and since the last heartbeat (stall; null until the
+  // first one: the page's load time does not count, the hard timeout and the
+  // closed-window check cover a page that never loads)
+  let waited = 0
+  let silent = null
+  let lastTick = now()
+  let watching = false // the window is open: check whether it closes
+  let closedSeen = false
 
   return new Promise((resolve, reject) => {
     const done = () => {
       settled = true
-      clearTimeout(timer)
-      clearTimeout(stallTimer)
-      clearInterval(pollTimer)
+      clearInterval(watchdog)
       clearTimeout(closedTimer)
       win.removeEventListener('message', handler)
       if (onAbort) signal?.removeEventListener?.('abort', onAbort)
@@ -131,11 +160,24 @@ export function waitForScoresheetPdf(open, {
       if (close) closeOpened(opened)
       reject(pdfError(reason, message))
     }
-    // Armed by the page's first heartbeat: its load time does not count (the
-    // hard timeout and the closed-window check cover a page that never loads)
-    const armStall = () => {
-      clearTimeout(stallTimer)
-      stallTimer = setTimeout(() => fail(PDF_FAIL.STALLED, 'The scoresheet window stopped answering'), stallMs)
+    const armStall = () => { silent = 0 }
+    const tick = () => {
+      if (settled) return
+      const t = now()
+      const late = t - lastTick
+      lastTick = t
+      // Late: this thread was blocked (the page capturing in the in-app view,
+      // or the tablet asleep): one tick, not the whole gap
+      const counted = late > blockedTickMs ? pollMs : Math.max(0, late)
+      waited += counted
+      if (silent != null) silent += counted
+      if (waited >= timeoutMs) return fail(PDF_FAIL.TIMEOUT, 'PDF generation timed out')
+      if (silent != null && silent >= stallMs) return fail(PDF_FAIL.STALLED, 'The scoresheet window stopped answering')
+      if (!watching || closedSeen || !openedWindowClosed(opened)) return
+      // Its PDF may still be on the way (PDF_CLOSED_GRACE_MS): the listener
+      // stays, and the wait fails only if nothing comes
+      closedSeen = true
+      closedTimer = setTimeout(() => fail(PDF_FAIL.CLOSED, 'The scoresheet window was closed before the PDF was ready', { close: false }), closedGraceMs)
     }
 
     function handler(event) {
@@ -169,7 +211,8 @@ export function waitForScoresheetPdf(open, {
       onAbort = () => fail(PDF_FAIL.CANCELLED, 'Cancelled')
       signal.addEventListener('abort', onAbort, { once: true })
     }
-    timer = setTimeout(() => fail(PDF_FAIL.TIMEOUT, 'PDF generation timed out'), timeoutMs)
+    // one watchdog: hard timeout, stall, closed window
+    watchdog = setInterval(tick, pollMs)
 
     try {
       opened = open(requestId)
@@ -183,12 +226,8 @@ export function waitForScoresheetPdf(open, {
       fail(PDF_FAIL.BLOCKED, 'The scoresheet window could not be opened', { close: false })
       return
     }
-    pollTimer = setInterval(() => {
-      if (!openedWindowClosed(opened)) return
-      // Its PDF may still be on the way (PDF_CLOSED_GRACE_MS): the listener
-      // stays, and the wait fails only if nothing comes
-      clearInterval(pollTimer)
-      closedTimer = setTimeout(() => fail(PDF_FAIL.CLOSED, 'The scoresheet window was closed before the PDF was ready', { close: false }), closedGraceMs)
-    }, pollMs)
+    // (open() itself may have held the thread: that is not the page's time)
+    lastTick = now()
+    watching = true
   })
 }

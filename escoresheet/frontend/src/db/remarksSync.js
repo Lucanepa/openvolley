@@ -27,6 +27,7 @@
  * prints a length for it.
  */
 import { remarksForServer } from './matchRepository'
+import { isLocalOnly } from '../domain/matchKind'
 
 const textOf = (v) => (typeof v === 'string' ? v : '')
 
@@ -39,7 +40,7 @@ const textOf = (v) => (typeof v === 'string' ? v : '')
  */
 export function remarksSyncJob(before, after, { now = new Date() } = {}) {
   const seedKey = after?.seed_key
-  if (!seedKey || after?.test === true) return null
+  if (!seedKey || isLocalOnly(after)) return null
   const next = textOf(after.remarks)
   if (next === textOf(before?.remarks)) return null
   return {
@@ -61,7 +62,7 @@ export function remarksSyncJob(before, after, { now = new Date() } = {}) {
  * @param {{ now?: Date }} [opts]
  */
 export function remarksSnapshotJob(match, { now = new Date() } = {}) {
-  if (!match?.seed_key || match.test === true) return null
+  if (!match?.seed_key || isLocalOnly(match)) return null
   return {
     resource: 'match',
     action: 'update',

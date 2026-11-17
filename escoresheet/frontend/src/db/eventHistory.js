@@ -29,6 +29,7 @@ import {
   editOf, applyMods, withoutSnapshot, serverColumnsOfEdit, revisionSyncJob, normalizeReason,
   plainCopy
 } from '../domain/eventRevisions'
+import { isLocalOnly } from '../domain/matchKind'
 
 /** Tables an action's transaction must include for the history to be written atomically. */
 export const EVENT_HISTORY_SCOPE = Object.freeze(['event_history', 'sync_queue', 'activity_log'])
@@ -119,8 +120,8 @@ export function rememberSeedKey(matchId, seedKey, test) {
 async function matchInfo(database, matchId) {
   try {
     const m = await database.matches.get(matchId)
-    if (m) rememberSeedKey(matchId, m.seed_key ?? null, m.test === true)
-    return m ? { seedKey: m.seed_key || null, test: m.test === true } : seedCache.get(matchId) || null
+    if (m) rememberSeedKey(matchId, m.seed_key ?? null, isLocalOnly(m))
+    return m ? { seedKey: m.seed_key || null, test: isLocalOnly(m) } : seedCache.get(matchId) || null
   } catch {
     return seedCache.get(matchId) || null
   }
@@ -413,14 +414,14 @@ export function installEventHistoryHooks(database) {
   // seed_key cache for in-transaction sync jobs
   if (database.matches?.hook) {
     database.matches.hook('creating', function (primKey, obj, tx) {
-      const remember = (key) => rememberSeedKey(key, obj?.seed_key ?? null, obj?.test === true)
+      const remember = (key) => rememberSeedKey(key, obj?.seed_key ?? null, isLocalOnly(obj))
       if (primKey != null) remember(primKey)
       else this.onsuccess = (key) => remember(key)
       void tx
     })
     database.matches.hook('updating', function (mods, primKey, obj) {
-      if (mods && ('seed_key' in mods || 'test' in mods)) {
-        rememberSeedKey(primKey, 'seed_key' in mods ? mods.seed_key : obj?.seed_key, 'test' in mods ? mods.test === true : obj?.test === true)
+      if (mods && ('seed_key' in mods || 'test' in mods || 'global' in mods)) {
+        rememberSeedKey(primKey, 'seed_key' in mods ? mods.seed_key : obj?.seed_key, isLocalOnly({ ...obj, ...mods }))
       }
     })
   }
