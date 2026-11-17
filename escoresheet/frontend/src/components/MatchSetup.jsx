@@ -6886,9 +6886,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   )
 
   // Sync status indicator for cards - green=synced, yellow=syncing, red=error, gray=not synced
-  // Hidden if offline mode. A kit status pill: tinted round pill, dot + word.
+  // Hidden if offline mode, and for a match that never syncs (a test, Easy or
+  // Global match: domain/matchKind; a Global match showed "Not synced" once it
+  // stopped being test-flagged). A kit status pill: tinted round pill, dot + word.
   const SyncStatusIndicator = ({ status, onRetry }) => {
-    if (offlineMode) return null
+    if (offlineMode || isLocalOnly(match)) return null
     // not checked yet: the pill's room, empty, so nothing moves when it comes
     if (status == null) return <span aria-hidden="true" className="inline-block h-6 w-0 shrink-0" data-testid="sync-pill-pending" />
 
