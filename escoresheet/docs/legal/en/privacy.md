@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.17 · As of 17 November 2026
+**OpenVolley and OpenBeach** · Version 1.18 · As of 17 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -18,9 +18,10 @@ version is binding.
   device. Only a backup of the match and, at the end, the scoresheet as a PDF
   are stored on the server, under a random backup code and without any
   account, and deleted 180 days after the last change (section 7).
-  If the organiser switches on the live page for TVs, the score of each match
-  (team names, points and sets, no players) also goes to the server, is kept
-  in memory only and can be seen by anyone who has the tournament code.
+- Live screen (optional, in OpenVolley and OpenBeach): if the scorer devices
+  of an event switch it on, the score of each of their matches (team names,
+  points and sets, no players) also goes to the server, is kept in memory only
+  and can be seen by anyone who has the live screen code (section 7).
 - An electronic scoresheet contains data about players, team staff and
   officials: names, shirt numbers, dates of birth and signatures. Only team
   names, the score and shirt numbers are public, for beach volleyball also the
@@ -417,19 +418,24 @@ files are deleted 180 days after the last change; the server backups
 responsible for being allowed to record the data and for informing the players
 and their parents (section 17).
 
-**Live page for TVs (Global tool, optional):** the scorer devices of a
-tournament can switch on a live page with a shared tournament code (Options,
-Tool). While it is on, each live update of a Global match also sends the code
-to my server with a summary of the score: the team names, short names and
-colours, the points, the sets won and the points of the finished sets, which
-team serves, the match status (for example timeout, set break, finished), the
-hall and the scheduled time. Players, team staff, officials, line-ups,
-sanctions, remarks, signatures and PINs are not sent. The summary is kept in
-the server's memory only, never in a database or a file, and is removed 45
-minutes after the match has ended, after 3 hours without an update, or when
-the server restarts. Anyone who knows the tournament code can see the
-summaries of its matches on livescore.openvolley.app or read them from the
-server's interface. Switch the live page off in Options to stop sending.
+**Live screen for TVs (optional, any match, also OpenBeach):** the scorer
+devices of an event can switch on a live screen with a shared live screen code
+(Options, Live screen), for league, test, Easy and Global matches alike. While
+it is on, each live update of their matches also sends the code to my server
+with a summary of the score: the team names, short names and colours, the
+points, the sets won and the points of the finished sets, which team serves,
+the match status (for example timeout, set break, finished), the hall or court
+and the scheduled time. A scorer device that scores through a venue relay or
+the desktop app sends the same summary through it. Players, team staff,
+officials, line-ups, sanctions, remarks, signatures and PINs are not sent; in
+OpenBeach, however, a team's name is usually its players' names, and it then
+appears on the screen. The summary is kept in the server's memory only, never
+in a database or a file, and is removed 45 minutes after the match has ended,
+after 3 hours without an update, or when the server restarts. Anyone who knows
+the code can see the summaries of its matches on openvolley.app/tv, on
+livescore.openvolley.app or read them from the server's interface; a venue
+relay shows them on its own network too. Switch the live screen off in Options
+to stop sending.
 
 **Approval with a PIN:** officials can confirm the result with a personal
 approval PIN in addition to their signature. Stored are: the PIN as a
@@ -790,7 +796,7 @@ copy of these safeguards.
 | Sending of the final scoresheet (time, number of recipients, no addresses) | With the match |
 | Scoresheet of a test match by email | Not stored on the server |
 | Global tool: backup and scoresheet PDF of a match (under the backup code) | 180 days after the last change |
-| Global tool: score summary for the live page for TVs (team names, points, sets; no players) | In the server's memory only; removed 45 minutes after the end of the match, after 3 hours without an update or at a server restart |
+| Live screen: score summary of a match whose scorer switched it on (team names, points, sets; no players) | In the server's memory only; removed 45 minutes after the end of the match, after 3 hours without an update or at a server restart |
 | Uploaded backup copies | 30 days |
 | Uploaded app logs | 30 days; deleted with your account |
 | Activity log of a match (server) | 24 months, at the latest until the match is deleted; earlier on request |

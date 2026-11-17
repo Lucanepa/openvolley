@@ -47,7 +47,8 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
-import { liveCodeForMatch } from '../utils/globalLive'
+import { liveCodeForMatch, cachedCourtToken } from '../utils/globalLive'
+import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -2870,12 +2871,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // a Global match on a device that opted in to the live page for
           // TVs: the tournament code (utils/globalLive.js)
           const liveCode = liveCodeForMatch(match)
+          const liveCourt = liveCode ? cachedCourtToken(match) : null
           sendRelayMessage({
             type: 'live-state-update',
             matchId: relayKeyRef.current,
             liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session },
-            ...(liveCode ? { globalLive: liveCode } : {})
+            ...(liveCode ? { globalLive: liveCode } : {}),
+            ...(liveCourt ? { globalLiveCourt: liveCourt } : {})
           })
+          // the desktop app's relay feeds no cloud page: it sends the court itself
+          if (liveCode && pushesGlobalLive()) pushGlobalLive({ code: liveCode, match, liveState: liveStateData, db, matchId })
         },
         toCloud: async () => {
           // The cloud wants a sign-in (the sync queue got a 401): no lookup and no
