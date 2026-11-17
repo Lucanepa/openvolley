@@ -1,0 +1,1804 @@
+{
+ "about": "Pair a phone (docs/phone-keyboard-spec.md): shared vectors for electron/pairSessionCore.cjs, its generated backend copy and src-tauri/src/pair.rs. {\"$repeat\": [s, n]} is s repeated n times. \"$token\", \"$watch\", \"$code\", \"$codeDashed\" (the code as ABCD-EFGH) come from the last start, \"$phone\" from the last join. Default owner 'local', ip 192.0.2.1, clock 0; the runners hold a long-poll 0 ms, so a wait or poll with nothing new answers its current state.",
+ "context": [
+  {
+   "name": "minimal",
+   "in": {
+    "home": "A",
+    "away": "B"
+   },
+   "out": {
+    "home": "A",
+    "away": "B"
+   }
+  },
+  {
+   "name": "every key, unknown dropped",
+   "in": {
+    "matchNo": "4711",
+    "home": " VBC  ",
+    "away": "Volley 05",
+    "when": "12.10.2026 20:15",
+    "lang": "fr",
+    "name": "x",
+    "extra": 1
+   },
+   "out": {
+    "matchNo": "4711",
+    "home": "VBC",
+    "away": "Volley 05",
+    "when": "12.10.2026 20:15",
+    "lang": "fr"
+   }
+  },
+  {
+   "name": "controls and bidi removed",
+   "in": {
+    "home": "A‮\u0000B",
+    "away": "C"
+   },
+   "out": {
+    "home": "AB",
+    "away": "C"
+   }
+  },
+  {
+   "name": "unknown language dropped",
+   "in": {
+    "home": "A",
+    "away": "B",
+    "lang": "es"
+   },
+   "out": {
+    "home": "A",
+    "away": "B"
+   }
+  },
+  {
+   "name": "home capped at 60",
+   "in": {
+    "home": {
+     "$repeat": [
+      "h",
+      70
+     ]
+    },
+    "away": "B"
+   },
+   "out": {
+    "home": {
+     "$repeat": [
+      "h",
+      60
+     ]
+    },
+    "away": "B"
+   }
+  },
+  {
+   "name": "no home",
+   "in": {
+    "away": "B"
+   },
+   "error": "OV_PAIR_CONTEXT"
+  },
+  {
+   "name": "blank away",
+   "in": {
+    "home": "A",
+    "away": " ⁦ "
+   },
+   "error": "OV_PAIR_CONTEXT"
+  },
+  {
+   "name": "a number",
+   "in": {
+    "home": "A",
+    "away": 5
+   },
+   "error": "OV_PAIR_BAD_REQUEST"
+  },
+  {
+   "name": "lang not a string",
+   "in": {
+    "home": "A",
+    "away": "B",
+    "lang": 1
+   },
+   "error": "OV_PAIR_BAD_REQUEST"
+  },
+  {
+   "name": "not an object",
+   "in": "A",
+   "error": "OV_PAIR_BAD_REQUEST"
+  }
+ ],
+ "fields": [
+  {
+   "name": "null: nothing focused",
+   "in": null,
+   "out": null
+  },
+  {
+   "name": "defaults",
+   "in": {
+    "id": "f1"
+   },
+   "out": {
+    "id": "f1",
+    "label": "",
+    "kind": "line",
+    "text": "",
+    "maxLength": 8000
+   }
+  },
+  {
+   "name": "multi-line text kept as typed, not trimmed",
+   "in": {
+    "id": "ov-remarks",
+    "label": " Remarks ",
+    "kind": "multiline",
+    "text": " a\r\nb\t\u0000c\n",
+    "maxLength": 8000
+   },
+   "out": {
+    "id": "ov-remarks",
+    "label": "Remarks",
+    "kind": "multiline",
+    "text": " a\nb c\n",
+    "maxLength": 8000
+   }
+  },
+  {
+   "name": "one line: line feeds are spaces",
+   "in": {
+    "id": "f.2",
+    "kind": "line",
+    "text": "a\nb c"
+   },
+   "out": {
+    "id": "f.2",
+    "label": "",
+    "kind": "line",
+    "text": "a b c",
+    "maxLength": 8000
+   }
+  },
+  {
+   "name": "text cut to the field's cap, cap to 8000",
+   "in": {
+    "id": "f:3",
+    "text": {
+     "$repeat": [
+      "x",
+      30
+     ]
+    },
+    "maxLength": 20
+   },
+   "out": {
+    "id": "f:3",
+    "label": "",
+    "kind": "line",
+    "text": {
+     "$repeat": [
+      "x",
+      20
+     ]
+    },
+    "maxLength": 20
+   }
+  },
+  {
+   "name": "cap over 8000 is 8000",
+   "in": {
+    "id": "f",
+    "maxLength": 100000
+   },
+   "out": {
+    "id": "f",
+    "label": "",
+    "kind": "line",
+    "text": "",
+    "maxLength": 8000
+   }
+  },
+  {
+   "name": "label capped at 80, controls out",
+   "in": {
+    "id": "f",
+    "label": "‮Lllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll"
+   },
+   "out": {
+    "id": "f",
+    "label": "Llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll",
+    "kind": "line",
+    "text": "",
+    "maxLength": 8000
+   }
+  },
+  {
+   "name": "bad id",
+   "in": {
+    "id": "has space"
+   },
+   "error": "OV_PAIR_FIELD"
+  },
+  {
+   "name": "id too long",
+   "in": {
+    "id": {
+     "$repeat": [
+      "i",
+      65
+     ]
+    }
+   },
+   "error": "OV_PAIR_FIELD"
+  },
+  {
+   "name": "no id",
+   "in": {
+    "label": "x"
+   },
+   "error": "OV_PAIR_FIELD"
+  },
+  {
+   "name": "unknown kind",
+   "in": {
+    "id": "f",
+    "kind": "rich"
+   },
+   "error": "OV_PAIR_FIELD"
+  },
+  {
+   "name": "cap zero",
+   "in": {
+    "id": "f",
+    "maxLength": 0
+   },
+   "error": "OV_PAIR_FIELD"
+  },
+  {
+   "name": "cap a fraction",
+   "in": {
+    "id": "f",
+    "maxLength": 2.5
+   },
+   "error": "OV_PAIR_FIELD"
+  },
+  {
+   "name": "text a number",
+   "in": {
+    "id": "f",
+    "text": 5
+   },
+   "error": "OV_PAIR_BAD_REQUEST"
+  },
+  {
+   "name": "an array",
+   "in": [
+    "f"
+   ],
+   "error": "OV_PAIR_FIELD"
+  }
+ ],
+ "codes": [
+  {
+   "in": "ABCD-EFGH",
+   "out": "ABCDEFGH"
+  },
+  {
+   "in": " abcd efgh ",
+   "out": "ABCDEFGH"
+  },
+  {
+   "in": "23456789",
+   "out": "23456789"
+  },
+  {
+   "in": "ABCDEFG0",
+   "out": null
+  },
+  {
+   "in": "ABCDEFGI",
+   "out": null
+  },
+  {
+   "in": "ABCDEFG",
+   "out": null
+  },
+  {
+   "in": "ABCDEFGHJ",
+   "out": null
+  },
+  {
+   "in": 5,
+   "out": null
+  }
+ ],
+ "flows": [
+  {
+   "name": "pair with the QR link, type, next, unpair",
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "matchKey": "m1",
+      "context": {
+       "home": "A",
+       "away": "B",
+       "matchNo": "4711"
+      }
+     },
+     "expect": {
+      "status": 201,
+      "has": [
+       "token",
+       "code",
+       "watch"
+      ],
+      "joinBy": 600000,
+      "endsAt": 21600000,
+      "path": "/pair"
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch"
+     },
+     "expect": {
+      "status": 200,
+      "state": "pending",
+      "seq": 0,
+      "inputs": [],
+      "phone": {
+       "connected": false
+      },
+      "joinBy": 600000
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "at": 1000,
+     "expect": {
+      "status": 200,
+      "state": "paired",
+      "context": {
+       "matchNo": "4711",
+       "home": "A",
+       "away": "B"
+      },
+      "endsAt": 21600000,
+      "has": [
+       "phone"
+      ]
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "expect": {
+      "status": 409,
+      "code": "OV_PAIR_USED"
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "$code"
+     },
+     "expect": {
+      "status": 409,
+      "code": "OV_PAIR_USED"
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "pending"
+     },
+     "expect": {
+      "status": 200,
+      "state": "paired",
+      "pairedAt": 1000,
+      "phone": {
+       "connected": true
+      }
+     }
+    },
+    {
+     "op": "poll",
+     "body": {
+      "phone": "$phone"
+     },
+     "expect": {
+      "status": 200,
+      "state": "paired",
+      "v": 0,
+      "field": null,
+      "applied": 0
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 1,
+      "field": "ov-remarks",
+      "text": "x"
+     },
+     "expect": {
+      "status": 409,
+      "code": "OV_PAIR_NO_FIELD"
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": {
+       "id": "ov-remarks",
+       "label": "Remarks",
+       "kind": "multiline",
+       "text": "Old\n",
+       "maxLength": 8000
+      }
+     },
+     "expect": {
+      "status": 200,
+      "v": 1
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": {
+       "id": "ov-remarks",
+       "label": "Remarks",
+       "kind": "multiline",
+       "text": "Old\n",
+       "maxLength": 8000
+      }
+     },
+     "expect": {
+      "status": 200,
+      "v": 1
+     }
+    },
+    {
+     "op": "poll",
+     "body": {
+      "phone": "$phone",
+      "known": 0
+     },
+     "expect": {
+      "status": 200,
+      "v": 1,
+      "field": {
+       "id": "ov-remarks",
+       "label": "Remarks",
+       "kind": "multiline",
+       "text": "Old\n",
+       "maxLength": 8000
+      }
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 1,
+      "field": "ov-remarks",
+      "text": "Old\nN"
+     },
+     "expect": {
+      "status": 200,
+      "seq": 1
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2,
+      "field": "ov-remarks",
+      "text": "Old\nNew\r\n"
+     },
+     "expect": {
+      "status": 200,
+      "seq": 2
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2,
+      "field": "ov-remarks",
+      "text": "Old\nNew\r\n"
+     },
+     "expect": {
+      "status": 200,
+      "duplicate": true
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 3,
+      "field": "ov-remarks",
+      "action": "next"
+     },
+     "expect": {
+      "status": 200,
+      "seq": 3
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "paired",
+      "after": 0,
+      "knownPhone": true
+     },
+     "expect": {
+      "status": 200,
+      "seq": 3,
+      "inputs": [
+       {
+        "seq": 2,
+        "n": 2,
+        "field": "ov-remarks",
+        "text": "Old\nNew\n"
+       },
+       {
+        "seq": 3,
+        "n": 3,
+        "field": "ov-remarks",
+        "action": "next"
+       }
+      ]
+     }
+    },
+    {
+     "op": "poll",
+     "body": {
+      "phone": "$phone",
+      "known": 1
+     },
+     "expect": {
+      "status": 200,
+      "v": 1,
+      "field": {
+       "id": "ov-remarks",
+       "label": "Remarks",
+       "kind": "multiline",
+       "text": "Old\nNew\n",
+       "maxLength": 8000
+      }
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": {
+       "id": "f2",
+       "label": "Hall"
+      },
+      "applied": 3
+     },
+     "expect": {
+      "status": 200,
+      "v": 2
+     }
+    },
+    {
+     "op": "poll",
+     "body": {
+      "phone": "$phone",
+      "known": 1
+     },
+     "expect": {
+      "status": 200,
+      "v": 2,
+      "applied": 3,
+      "field": {
+       "id": "f2",
+       "label": "Hall",
+       "kind": "line",
+       "text": "",
+       "maxLength": 8000
+      }
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 4,
+      "field": "ov-remarks",
+      "text": "late"
+     },
+     "expect": {
+      "status": 409,
+      "code": "OV_PAIR_STALE"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 5,
+      "field": "f2",
+      "text": "Hall 1\nB"
+     },
+     "expect": {
+      "status": 200,
+      "seq": 4
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "paired",
+      "after": 3,
+      "knownPhone": true
+     },
+     "expect": {
+      "status": 200,
+      "inputs": [
+       {
+        "seq": 4,
+        "n": 5,
+        "field": "f2",
+        "text": "Hall 1 B"
+       }
+      ]
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "paired",
+      "after": 4,
+      "knownPhone": true
+     },
+     "expect": {
+      "status": 200,
+      "inputs": []
+     }
+    },
+    {
+     "op": "close",
+     "body": {
+      "watch": "$watch"
+     },
+     "expect": {
+      "status": 200
+     }
+    },
+    {
+     "op": "poll",
+     "body": {
+      "phone": "$phone",
+      "known": 2
+     },
+     "expect": {
+      "status": 200,
+      "state": "closed",
+      "lacks": [
+       "field"
+      ]
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 6,
+      "field": "f2",
+      "text": "x"
+     },
+     "expect": {
+      "status": 409,
+      "code": "OV_PAIR_CANCELLED"
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch"
+     },
+     "expect": {
+      "status": 200,
+      "state": "closed"
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": null
+     },
+     "expect": {
+      "status": 409,
+      "code": "OV_PAIR_CANCELLED"
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "expect": {
+      "status": 409,
+      "code": "OV_PAIR_CANCELLED"
+     }
+    },
+    {
+     "op": "close",
+     "body": {
+      "watch": "$watch"
+     },
+     "expect": {
+      "status": 200
+     }
+    }
+   ]
+  },
+  {
+   "name": "pair with the short code",
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "$codeDashed"
+     },
+     "expect": {
+      "status": 200,
+      "state": "paired"
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "$code"
+     },
+     "expect": {
+      "status": 409,
+      "code": "OV_PAIR_USED"
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "ZZZZ-ZZZZ"
+     },
+     "expect": {
+      "status": 404,
+      "code": "OV_PAIR_NOT_FOUND"
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "ZZZZ-ZZZ0"
+     },
+     "expect": {
+      "status": 404,
+      "code": "OV_PAIR_NOT_FOUND"
+     }
+    },
+    {
+     "op": "join",
+     "body": {},
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "short"
+     },
+     "expect": {
+      "status": 404,
+      "code": "OV_PAIR_NOT_FOUND"
+     }
+    }
+   ]
+  },
+  {
+   "name": "code guesses limited per address",
+   "caps": {
+    "codePerIp": 2
+   },
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "ZZZZZZZZ"
+     },
+     "expect": {
+      "status": 404
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "YYYYYYYY"
+     },
+     "expect": {
+      "status": 404
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "$code"
+     },
+     "expect": {
+      "status": 429,
+      "code": "OV_PAIR_RATE_LIMITED",
+      "retryAfter": true
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "$code"
+     },
+     "ip": "192.0.2.9",
+     "expect": {
+      "status": 200
+     }
+    }
+   ]
+  },
+  {
+   "name": "the link joins within 10 minutes",
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "at": 0,
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "pending"
+     },
+     "at": 299000,
+     "expect": {
+      "status": 200,
+      "state": "pending"
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "pending"
+     },
+     "at": 598000,
+     "expect": {
+      "status": 200,
+      "state": "pending"
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "at": 600000,
+     "expect": {
+      "status": 410,
+      "code": "OV_PAIR_EXPIRED"
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch"
+     },
+     "at": 600000,
+     "expect": {
+      "status": 200,
+      "state": "expired"
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "code": "$code"
+     },
+     "at": 659999,
+     "expect": {
+      "status": 410,
+      "code": "OV_PAIR_EXPIRED"
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "at": 660000,
+     "expect": {
+      "status": 404,
+      "code": "OV_PAIR_NOT_FOUND"
+     }
+    }
+   ]
+  },
+  {
+   "name": "a pairing ends 5 minutes after the scoring device last called",
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "at": 0,
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "expect": {
+      "status": 200,
+      "state": "paired",
+      "has": [
+       "phone",
+       "endsAt"
+      ]
+     }
+    },
+    {
+     "op": "poll",
+     "body": {
+      "phone": "$phone"
+     },
+     "at": 299999,
+     "expect": {
+      "status": 200,
+      "state": "paired"
+     }
+    },
+    {
+     "op": "poll",
+     "body": {
+      "phone": "$phone"
+     },
+     "at": 300000,
+     "expect": {
+      "status": 200,
+      "state": "expired"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 1,
+      "field": "f",
+      "text": "x"
+     },
+     "at": 300001,
+     "expect": {
+      "status": 410,
+      "code": "OV_PAIR_EXPIRED"
+     }
+    }
+   ]
+  },
+  {
+   "name": "phone input rules",
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "expect": {
+      "status": 200,
+      "state": "paired",
+      "has": [
+       "phone",
+       "endsAt"
+      ]
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": {
+       "id": "f",
+       "kind": "line",
+       "maxLength": 5
+      }
+     },
+     "expect": {
+      "status": 200,
+      "v": 1
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 1,
+      "field": "f",
+      "text": "123456"
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_TEXT_TOO_LONG"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 1,
+      "field": "f",
+      "text": "👍👍👍👍👍"
+     },
+     "expect": {
+      "status": 200,
+      "seq": 1
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2,
+      "field": "f"
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2,
+      "field": "f",
+      "action": "click"
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 0,
+      "field": "f",
+      "text": "a"
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2.5,
+      "field": "f",
+      "text": "a"
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2,
+      "field": "f",
+      "text": 5
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2,
+      "field": "f",
+      "text": "ab",
+      "base": "ABCDEF12"
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2,
+      "field": "f",
+      "text": "ab",
+      "base": "0badc0de1"
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2,
+      "field": "f",
+      "text": "ab",
+      "action": "enter",
+      "base": "0badc0de"
+     },
+     "expect": {
+      "status": 200,
+      "seq": 2
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 3,
+      "field": "f",
+      "text": "abc"
+     },
+     "expect": {
+      "status": 200,
+      "seq": 3
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "paired",
+      "after": 0,
+      "knownPhone": true
+     },
+     "expect": {
+      "status": 200,
+      "inputs": [
+       {
+        "seq": 1,
+        "n": 1,
+        "field": "f",
+        "text": "👍👍👍👍👍"
+       },
+       {
+        "seq": 2,
+        "n": 2,
+        "field": "f",
+        "text": "ab",
+        "action": "enter",
+        "base": "0badc0de"
+       },
+       {
+        "seq": 3,
+        "n": 3,
+        "field": "f",
+        "text": "abc"
+       }
+      ]
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "n": 9,
+      "field": "f",
+      "text": "x"
+     },
+     "expect": {
+      "status": 404,
+      "code": "OV_PAIR_NOT_FOUND"
+     }
+    },
+    {
+     "op": "poll",
+     "body": {
+      "phone": "$watch"
+     },
+     "expect": {
+      "status": 404,
+      "code": "OV_PAIR_NOT_FOUND"
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$phone"
+     },
+     "expect": {
+      "status": 404,
+      "code": "OV_PAIR_NOT_FOUND"
+     }
+    }
+   ]
+  },
+  {
+   "name": "inputs per second limited",
+   "caps": {
+    "inputBurst": 3
+   },
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "expect": {
+      "status": 200,
+      "state": "paired",
+      "has": [
+       "phone",
+       "endsAt"
+      ]
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": {
+       "id": "f"
+      }
+     },
+     "expect": {
+      "status": 200
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 1,
+      "field": "f",
+      "text": "a"
+     },
+     "at": 1000,
+     "expect": {
+      "status": 200
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 2,
+      "field": "f",
+      "text": "ab"
+     },
+     "at": 1100,
+     "expect": {
+      "status": 200
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 3,
+      "field": "f",
+      "text": "abc"
+     },
+     "at": 1200,
+     "expect": {
+      "status": 200
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 4,
+      "field": "f",
+      "text": "abcd"
+     },
+     "at": 1300,
+     "expect": {
+      "status": 429,
+      "code": "OV_PAIR_RATE_LIMITED",
+      "retryAfter": true
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 4,
+      "field": "f",
+      "text": "abcd"
+     },
+     "at": 2000,
+     "expect": {
+      "status": 200
+     }
+    }
+   ]
+  },
+  {
+   "name": "a new field drops what was queued for the old one",
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "expect": {
+      "status": 200,
+      "state": "paired",
+      "has": [
+       "phone",
+       "endsAt"
+      ]
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": {
+       "id": "a"
+      }
+     },
+     "expect": {
+      "status": 200,
+      "v": 1
+     }
+    },
+    {
+     "op": "input",
+     "body": {
+      "phone": "$phone",
+      "n": 1,
+      "field": "a",
+      "text": "x"
+     },
+     "expect": {
+      "status": 200,
+      "seq": 1
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": null
+     },
+     "expect": {
+      "status": 200,
+      "v": 2
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "paired",
+      "after": 0,
+      "knownPhone": true
+     },
+     "expect": {
+      "status": 200,
+      "seq": 1,
+      "inputs": []
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": null,
+      "applied": -1
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch"
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "focus",
+     "body": {
+      "watch": "$watch",
+      "field": {
+       "id": "a b"
+      }
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_FIELD"
+     }
+    }
+   ]
+  },
+  {
+   "name": "starts limited per owner, live pairings per owner and the host's reserve",
+   "caps": {
+    "total": 4,
+    "perOwner": 2,
+    "localReserve": 1,
+    "startPerOwner": 3
+   },
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:a",
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:a",
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:a",
+     "expect": {
+      "status": 429,
+      "code": "OV_PAIR_RATE_LIMITED"
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:a",
+     "expect": {
+      "status": 429,
+      "code": "OV_PAIR_RATE_LIMITED",
+      "retryAfter": true
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:b",
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:c",
+     "expect": {
+      "status": 503,
+      "code": "OV_PAIR_BUSY",
+      "retryAfter": true
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "local",
+     "expect": {
+      "status": 201
+     }
+    }
+   ]
+  },
+  {
+   "name": "start bodies",
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A"
+      }
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_CONTEXT"
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      },
+      "matchKey": 5
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      },
+      "matchKey": {
+       "$repeat": [
+        "m",
+        129
+       ]
+      }
+     },
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "start",
+     "body": "x",
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    },
+    {
+     "op": "start",
+     "body": {},
+     "expect": {
+      "status": 400,
+      "code": "OV_PAIR_BAD_REQUEST"
+     }
+    }
+   ]
+  },
+  {
+   "name": "the phone's presence wakes the scoring device",
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "at": 0,
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "join",
+     "body": {
+      "k": "$token"
+     },
+     "expect": {
+      "status": 200,
+      "state": "paired",
+      "has": [
+       "phone",
+       "endsAt"
+      ]
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "paired",
+      "after": 0,
+      "knownPhone": true
+     },
+     "at": 20000,
+     "expect": {
+      "status": 200,
+      "phone": {
+       "connected": true
+      }
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "paired",
+      "after": 0,
+      "knownPhone": true
+     },
+     "at": 40000,
+     "expect": {
+      "status": 200,
+      "phone": {
+       "connected": false
+      }
+     }
+    },
+    {
+     "op": "poll",
+     "body": {
+      "phone": "$phone"
+     },
+     "at": 41000,
+     "expect": {
+      "status": 200
+     }
+    },
+    {
+     "op": "wait",
+     "body": {
+      "watch": "$watch",
+      "knownState": "paired",
+      "after": 0,
+      "knownPhone": false
+     },
+     "at": 41000,
+     "expect": {
+      "status": 200,
+      "phone": {
+       "connected": true
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
