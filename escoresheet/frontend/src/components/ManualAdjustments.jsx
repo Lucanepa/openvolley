@@ -20,10 +20,15 @@ import { formatDateTimeLocal, parseLocalToISO } from '../utils/timeUtils'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { DialogHelpButton } from './help/HelpButton.jsx'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
-import { TEAM_COLOUR_MARK, discRing, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
+import { TEAM_COLOUR_MARK, coloursTooClose, discRing, effectiveTeamColour, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
 import { Checkbox } from '../ui/Checkbox.jsx'
 import { showsSponsorBoxes, sponsorsOf, sponsorsPatch, SPONSOR_MARK_NO, SPONSOR_MARK_YES } from '../domain/sponsors'
 import { useSponsorsOption } from '../hooks/useSponsorsOption'
+import { cleanShortName, SHORT_NAME_MAX, teamMirrorPatch } from '../domain/teamIdentity'
+import { setLiveStateDirty } from '../utils/eventSync'
+import TeamColourPicker, { CloseColourNote, customColourKey, recallCustomColour, rememberCustomColour } from './TeamColourPicker'
+import TeamShirt from './TeamShirt'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -144,6 +149,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
 
   // Players to delete (marked for deletion)
   const [deletedPlayerIds, setDeletedPlayerIds] = useState([])
+  // The shirt colour picker of the match info tab: 'home' | 'away' | null
+  const [colourPickerFor, setColourPickerFor] = useState(null)
 
   // Load match data
   const data = useLiveQuery(async () => {
@@ -444,6 +451,10 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       // match" (scoresheet_pdf/utils/sheetRemarks correctionRemarks)
       const afterMatch = isMatchOverStatus(signedMatch?.status)
       const logged = changes.map(({ inPlace, ...c }) => (afterMatch ? { ...c, afterMatch: true } : c))
+      // the team edits on the match row too (homeShortName, homeColor, ...):
+      // the scoring screen's live state, the scoresheet and the relay copy
+      // read the match's short name first (domain/teamIdentity)
+      const teamPatch = teamMirrorPatch({ home: data?.homeTeam, away: data?.awayTeam }, { home: editedHomeTeam, away: editedAwayTeam })
 
       // Update teams in IndexedDB (including bench officials)
       if (editedHomeTeam?.id) {
@@ -474,6 +485,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
           : {}
         if (designationPatch.coinTossTeamA) designationSaved = designationPatch
         await db.matches.update(matchId, {
+          ...teamPatch,
           hall: editedMatch.hall,
           city: editedMatch.city,
           league: editedMatch.league,
@@ -543,6 +555,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       if (editedMatch?.seed_key) {
         await syncToSupabase(designationSaved, { signaturesCleared: sheetChanged })
       }
+
+      // A short name or a colour changed: the scoring screen sends its live
+      // state again when it opens (the referee and bench tablets, the
+      // livescore and Point Hub read team_a_short / team_a_color from it)
+      if (Object.keys(teamPatch).length > 0) setLiveStateDirty(matchId, true)
 
       // Notify scoresheet window (and any other listeners) about the changes
       try {
@@ -653,6 +670,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
     .filter(tab => !tabIds || tabIds.includes(tab.id))
   // An approved / final match is read-only here: reopen it at the match end first
   const closed = ['approved', 'final'].includes(data.match?.status)
+  // Without the Teams tab (Match › Edit match info during the match), the
+  // match info tab holds each team's short name and shirt colour; the team
+  // names stay as on the scoresheet (they are its official data)
+  const teamLabelsOnInfo = !tabs.some(tab => tab.id === 'teams')
+  const teamOf = (side) => (side === 'home' ? editedHomeTeam : editedAwayTeam)
+  const colourOf = (side) => teamOf(side)?.color || effectiveTeamColour(side, side === 'home' ? data.homeTeam : data.awayTeam, data.match)
+  const teamNameOf = (side) => teamOf(side)?.name || (side === 'home' ? data.match?.homeName : data.match?.awayName) || t(side === 'home' ? 'common.home' : 'common.away')
   // The game number and the date are fixed after the match: the official
   // PDF is filed under the date the server has, which this editor does not send
   const matchOver = isMatchOverStatus(data.match?.status)
@@ -865,7 +889,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                         type="text"
                         maxLength={8}
                         value={editedHomeTeam?.shortName || ''}
-                        onChange={(e) => updateTeam('shortName', e.target.value.toUpperCase(), true)}
+                        onChange={(e) => updateTeam('shortName', cleanShortName(e.target.value), true)}
                         aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
@@ -929,7 +953,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                         type="text"
                         maxLength={8}
                         value={editedAwayTeam?.shortName || ''}
-                        onChange={(e) => updateTeam('shortName', e.target.value.toUpperCase(), false)}
+                        onChange={(e) => updateTeam('shortName', cleanShortName(e.target.value), false)}
                         aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
@@ -968,6 +992,58 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
         {/* ==================== MATCH INFO TAB ==================== */}
         {activeTab === 'info' && editedMatch && (
           <div style={{ display: 'grid', gridTemplateColumns: pairCols, gap: '24px' }}>
+            {/* Teams: short name and shirt colour (Edit match info during
+                the match; the names are fixed after the coin toss) */}
+            {teamLabelsOnInfo && (editedHomeTeam || editedAwayTeam) && (
+              <div style={{ ...cardStyle, gridColumn: '1 / -1' }} data-testid="edit-team-labels">
+                <h2 style={cardTitleStyle}>
+                  {t('manualAdjustmentsEditor.tabTeams', 'Teams')}
+                </h2>
+                <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--ov-text-muted)' }}>
+                  {t('manualAdjustmentsEditor.teamLabelsHint')}
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: pairCols, gap: '16px' }}>
+                  {['home', 'away'].filter(side => teamOf(side)).map(side => (
+                    <div key={side} data-testid={`edit-team-labels-${side}`}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', minWidth: 0 }}>
+                        <span style={teamDotStyle(colourOf(side))} />
+                        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--ov-text)', overflowWrap: 'anywhere', minWidth: 0 }}>{teamNameOf(side)}</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <label style={labelStyle}>{t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}</label>
+                          <input
+                            type="text"
+                            maxLength={SHORT_NAME_MAX}
+                            autoComplete="off"
+                            value={teamOf(side)?.shortName || ''}
+                            onChange={(e) => updateTeam('shortName', cleanShortName(e.target.value), side === 'home')}
+                            disabled={closed}
+                            aria-label={`${teamNameOf(side)} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}`}
+                            style={{ ...inputStyle, width: '100%' }}
+                          />
+                        </div>
+                        <div>
+                          <span style={labelStyle}>{t('manualAdjustmentsEditor.shirtColour')}</span>
+                          <button
+                            type="button"
+                            onClick={() => setColourPickerFor(side)}
+                            disabled={closed}
+                            aria-label={t('matchSetup.chooseTeamColor', { team: teamNameOf(side) })}
+                            data-testid={`edit-team-colour-${side}`}
+                            className="flex h-11 min-w-[64px] items-center justify-center rounded-lg border border-stone-300 bg-white px-2 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <TeamShirt color={colourOf(side)} style={{ transform: 'scale(0.7)' }} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {coloursTooClose(colourOf('home'), colourOf('away')) && <CloseColourNote className="mt-3" />}
+              </div>
+            )}
+
             {/* Match Details */}
             <div style={cardStyle}>
               <h2 style={cardTitleStyle}>
@@ -1309,6 +1385,42 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
           </div>
         )}
       </div>
+      {/* The shirt colour picker of the match info tab: the same picker,
+          palette and custom-colour memory as Match setup; the colour is
+          saved with "Save changes" */}
+      {colourPickerFor && (
+        <>
+          <div
+            className="fixed inset-0 z-[1100] bg-stone-900/50"
+            {...backdropDismiss(() => setColourPickerFor(null))}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('matchSetup.chooseTeamColor', { team: teamNameOf(colourPickerFor) })}
+            className="fixed left-1/2 top-1/2 z-[1101] max-h-[90vh] w-[min(420px,calc(100vw-32px))] overflow-y-auto rounded-2xl border border-stone-200/70 bg-white p-4 shadow-2xl"
+            style={{ transform: 'translate(-50%, -50%)' }}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => { if (e.key === 'Escape') setColourPickerFor(null) }}
+            data-testid="edit-team-colour-dialog"
+          >
+            <div className="mb-3 text-sm leading-[1.3] font-semibold text-stone-900">
+              {t('matchSetup.chooseTeamColor', { team: teamNameOf(colourPickerFor) })}
+            </div>
+            <TeamColourPicker
+              value={colourOf(colourPickerFor)}
+              otherColour={colourOf(colourPickerFor === 'home' ? 'away' : 'home')}
+              lastCustom={recallCustomColour(customColourKey(teamOf(colourPickerFor)?.name, colourPickerFor))}
+              onPick={(color) => {
+                const side = colourPickerFor
+                if (isCustomColour(color)) rememberCustomColour(customColourKey(teamOf(side)?.name, side), color)
+                updateTeam('color', color, side === 'home')
+                setColourPickerFor(null)
+              }}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -73,7 +73,7 @@ import { Users, Save as SaveIcon, Trash2, ListChecks, UserPlus } from 'lucide-re
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
-import TeamColourPicker, { CloseColourNote, recallCustomColour, rememberCustomColour } from './TeamColourPicker'
+import TeamColourPicker, { CloseColourNote, customColourKey as teamCustomColourKey, recallCustomColour, rememberCustomColour } from './TeamColourPicker'
 import { useFormStack } from '../hooks/useFormStack'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { askText } from '../utils/askText.js'
@@ -1143,6 +1143,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // change through the match menu's Edit roster (logged as manual changes,
   // signatures checked), the format or game number through Corrections
   const setupLocked = isSetupLocked(match)
+  // The shirt colours stay open after the coin toss (not on the official
+  // scoresheet), until the match is approved or final
+  const coloursClosed = match?.approved === true || ['final', 'approved'].includes(match?.status)
 
   // db/023, offline first: the rosters teams sent ahead for this official
   // game, read from the device's copy (downloaded while online; AuthContext).
@@ -2307,8 +2310,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Where the picker keeps a team's last custom colour: the team name, or
   // the side while the team has none
   function customColourKey(isHome) {
-    const name = (isHome ? home : away)?.trim().toLowerCase()
-    return name ? `team:${name}` : (isHome ? 'home' : 'away')
+    return teamCustomColourKey(isHome ? home : away, isHome ? 'home' : 'away')
   }
 
   // Validate and set date with immediate feedback
@@ -7436,9 +7438,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <TeamShirt
               color={homeColor}
               numberColor={getContrastColor(homeColor)}
-              style={{ cursor: setupLocked ? 'default' : 'pointer', transform: `scale(${scaleFactor})` }}
+              style={{ cursor: coloursClosed ? 'default' : 'pointer', transform: `scale(${scaleFactor})` }}
+              // The colour stays open after the coin toss: it is not on the
+              // official scoresheet (the shirt is the only unlocked control)
               onClick={(e) => {
-                if (setupLocked) return
+                if (coloursClosed) return
                 const rect = e.currentTarget.getBoundingClientRect()
                 const centerX = rect.left + rect.width / 2
                 setColorPickerModal({
@@ -7497,9 +7501,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <TeamShirt
               color={awayColor}
               numberColor={getContrastColor(awayColor)}
-              style={{ cursor: setupLocked ? 'default' : 'pointer', transform: `scale(${scaleFactor})` }}
+              style={{ cursor: coloursClosed ? 'default' : 'pointer', transform: `scale(${scaleFactor})` }}
+              // The colour stays open after the coin toss: it is not on the
+              // official scoresheet (the shirt is the only unlocked control)
               onClick={(e) => {
-                if (setupLocked) return
+                if (coloursClosed) return
                 const rect = e.currentTarget.getBoundingClientRect()
                 const centerX = rect.left + rect.width / 2
                 setColorPickerModal({
