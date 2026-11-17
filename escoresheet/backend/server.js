@@ -57,6 +57,7 @@ import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIV
 import { admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
 import { checkUploadedRoster, signaturesAfterUpload, uploadedRosterProblemText, withPendingRostersCleared } from './lib/uploadedRoster.js'
+import { DISPLAY_DEVICE, displaySettingsUrl, displayPresenceMessage, displayStateOf, displayStateKey } from './lib/displayPresence.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -1137,8 +1138,9 @@ function rememberKey(set, key, max) {
 
 // subscribe-match { device, team }: a label for /api/server/connections (the
 // scorer's tablet status). Grants nothing; 'referee'/'bench' as `role` still
-// need the PIN.
-const DEVICE_LABELS = ['referee', 'bench', 'livescore']
+// need the PIN. 'display': a scoreboard display following the match
+// (display-presence, lib/displayPresence.js).
+const DEVICE_LABELS = ['referee', 'bench', 'livescore', DISPLAY_DEVICE]
 
 // The match's game PIN as a comparable string, or null (test matches have
 // none). Text or a number only, like the other PINs (lib/matchAccess.js).
@@ -5547,8 +5549,11 @@ wss.on('connection', (ws, req) => {
     // offered (subscribe-match). Full bundles and match actions only with one
     // that grants the match (hasRelayAccess); the summary otherwise.
     matchAccess: new Map(),
-    device: null, // subscribe-match label: 'referee' | 'bench' | 'livescore'
+    device: null, // subscribe-match label: 'referee' | 'bench' | 'livescore' | 'display'
     deviceTeam: null,
+    // A display's announcement (subscribe-match device 'display'):
+    // { settingsUrl, at }, settingsUrl already checked (displaySettingsUrl)
+    display: null,
     // The installation a scoreboard names in sync-match-data (db/019, the
     // scoring device): its claims are checked against match_scorer_devices
     scorerDevice: null,
@@ -5772,6 +5777,7 @@ function handleSocketMessage(clientInfo, data) {
         clientInfo.deviceTeam = VALID_TEAMS.includes(message.team) ? message.team : clientInfo.deviceTeam
         sendBenchRequestsOnJoin(clientInfo, normalizeMatchId(message.matchId))
         sendScorerPresence(clientInfo, normalizeMatchId(message.matchId))
+        if (message.device === DISPLAY_DEVICE) noteDisplay(clientInfo, message.settingsUrl)
         break
 
       case 'unsubscribe-match': {
@@ -5962,6 +5968,50 @@ function updateScorerPresence(matchId) {
     const c = connections.get(id)
     if (c && c.ws.readyState === 1 && !c.ownedMatches.has(matchId)) sendToRoomMember(c, data)
   }
+}
+
+// --- Scoreboard displays (display-presence, lib/displayPresence.js) ---------
+// A display (an LED board's controller) subscribes with device 'display' and
+// may name its settings page (settingsUrl, private-LAN http(s) only). The
+// match's scorer, and only the scorer (the sockets that proved the match),
+// is told whether a display follows and that page: as the answer to its
+// first accepted sync on a socket, and when it changes (a display in, out,
+// or naming another page). Same message as the LAN relays.
+let displaySeq = 0
+
+/** A display's subscribe-match: its announcement, for every room it follows. */
+function noteDisplay(clientInfo, rawUrl) {
+  clientInfo.display = { settingsUrl: displaySettingsUrl(rawUrl), at: ++displaySeq }
+  for (const id of clientInfo.rooms) updateDisplayPresence(id)
+}
+
+/** The room's display state: its open display sockets (in it or waiting for it). */
+function displayStateIn(matchId) {
+  const displays = []
+  for (const c of connections.values()) {
+    if (c.display && c.device === DISPLAY_DEVICE && c.ws.readyState === 1 && c.rooms.has(matchId)) displays.push(c.display)
+  }
+  return displayStateOf(displays)
+}
+
+/** display-presence to one socket that has just proved the match. */
+function sendDisplayPresence(clientInfo, matchId) {
+  const state = displayStateIn(matchId)
+  const room = rooms.get(matchId)
+  if (room) room.displayTold = displayStateKey(state)
+  sendToClient(clientInfo, displayPresenceMessage(matchId, state))
+}
+
+/** Tell the room's scorer sockets when its display state changed; nothing when it did not. */
+function updateDisplayPresence(matchId) {
+  const room = matchId ? rooms.get(matchId) : null
+  if (!room) return
+  const state = displayStateIn(matchId)
+  const key = displayStateKey(state)
+  if (key === (room.displayTold ?? '0')) return
+  room.displayTold = key
+  const data = JSON.stringify(displayPresenceMessage(matchId, state))
+  for (const c of matchOwners(matchId)) sendToRoomMember(c, data)
 }
 
 /**
@@ -6249,6 +6299,8 @@ function leaveRoom(clientInfo, matchId) {
 
   // The scorer's last socket out: its tablets are told (scorer-presence)
   if (room.clients.size > 0) updateScorerPresence(matchId)
+  // A display out: the scorer is told (display-presence)
+  if (clientInfo.display) updateDisplayPresence(matchId)
 
   // Clean up empty room
   if (room.clients.size === 0) {
@@ -7236,6 +7288,8 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   // Once the claim is made: a take-over within this sync (claimMatch,
   // venueScorerAfter) never reads as the scorer gone
   updateScorerPresence(matchId)
+  // A socket that has just proved the match hears whether a display follows it
+  if (newlyOwned) sendDisplayPresence(clientInfo, matchId)
 
   if (LOG_EACH_CONNECTION) console.log(`📤 Match data synced for ${logValue(matchId)} (Game #${logValue(match?.gameN || 'unknown')})`)
   else relaySummary.count('match bundles synced')
