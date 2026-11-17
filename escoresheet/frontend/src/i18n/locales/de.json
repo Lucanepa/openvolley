@@ -6498,5 +6498,39 @@
       "set": "Satz {{n}}",
       "serving": "Aufschlag"
     }
+  },
+  "globalCloud": {
+    "title": "In der Cloud speichern",
+    "intro": "Hält dieses Spiel zusätzlich online lesbar, ohne Konto: für einen Teilen-Link, die Liste des Veranstalters und das Weiterführen auf einem anderen Gerät. Gefunden über den Backup-Code, geschützt durch den Schiedsrichter-PIN, gelöscht 180 Tage nach dem letzten Speichern.",
+    "needsPin": "Das Spiel braucht zuerst seinen Schiedsrichter-PIN.",
+    "offline": "Keine Verbindung: wird mit der nächsten Aktion gespeichert.",
+    "pinRefused": "Dieser Backup-Code ist mit einem anderen Schiedsrichter-PIN gespeichert.",
+    "failed": "Speichern in der Cloud fehlgeschlagen. Versuche es später nochmals.",
+    "share": "Teilen-Link (nur lesen)",
+    "shareHint": "Wer den Link hat, sieht das Resultat, die Sätze und das PDF-Matchblatt. Ausschalten beendet den Link.",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "organizer": "Turniercode (optional)",
+    "newOrganizer": "Neuer Turniercode",
+    "join": "Verwenden",
+    "removeOrganizer": "Entfernen",
+    "copyOrganizerLink": "Veranstalter-Link kopieren",
+    "badOrganizer": "Das ist kein Turniercode (10 Buchstaben und Ziffern).",
+    "organizerHint": "Gib auf jedem Schreibergerät des Turniers denselben Code ein: Der Veranstalter-Link listet alle seine Spiele mit Resultaten und PDFs.",
+    "otherDevice": "Auf einem anderen Gerät weiterführen: Dort auf der Startseite Spiel wiederherstellen wählen und Backup-Code und Schiedsrichter-PIN eingeben (Backups oben).",
+    "delete": "Aus der Cloud löschen",
+    "page": {
+      "sharedTitle": "Spiel",
+      "organizerTitle": "Turnier",
+      "final": "Schluss",
+      "ended": "Beendet",
+      "live": "Live",
+      "scheduled": "Geplant",
+      "pdf": "Matchblatt (PDF)",
+      "notShared": "Dieses Spiel ist nicht (mehr) geteilt.",
+      "offline": "Verbindung verloren, neuer Versuch…",
+      "loading": "Laden…",
+      "noMatches": "Mit diesem Code ist noch kein Spiel gespeichert."
+    }
   }
 }
