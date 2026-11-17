@@ -99,7 +99,7 @@ const teamPartOf = (route) => {
 // all"): the first is the default. The filter is part of the URL as
 // #<tab>/@<filter>[/<page>], so a page of a tab keeps it and a link opens it.
 const FILTER_CHILDREN = {
-  accounts: { options: ['pending', 'all'], label: (t, id) => t(id === 'pending' ? 'manage.accounts.filterPending' : 'manage.accounts.filterAll') },
+  accounts: { options: ['pending', 'all'], label: (t, id, extra) => id === 'pending' && extra?.pending ? `${t('manage.accounts.filterPending')} (${extra.pending})` : t(id === 'pending' ? 'manage.accounts.filterPending' : 'manage.accounts.filterAll') },
   matches: { options: ['closed', 'open', 'all'], label: (t, id) => t(`manage.matches.filter${id[0].toUpperCase()}${id.slice(1)}`) },
   scoresheets: { options: ['all', 'closed', 'open'], label: (t, id) => t(`manage.matches.filter${id[0].toUpperCase()}${id.slice(1)}`) },
   // the sport switch of Saved teams (OpenBeach's console has no indoor)
@@ -141,6 +141,8 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
   const { t } = useTranslation()
   const { user, access } = useAuth()
   const brand = useManagerBrand()
+  // waiting sign-ups, reported by the accounts panel, for the tree's Pending label
+  const [pendingAccounts, setPendingAccounts] = useState(null)
   // the account lists, invites, audit and saved teams of this brand's app
   // (OpenVolley: ?app=indoor, OpenBeach: ?app=beach; saved teams only narrow for beach)
   const scope = brand.scope || undefined
@@ -226,7 +228,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
     ...(x.id === 'myclub' ? { children: MYCLUB_PARTS.map((part) => ({ id: part, label: t(`manage.myClub.nav.${part}`) })) } : {}),
     ...(x.id === 'myteams' ? { children: MYTEAMS_PARTS.map((part) => ({ id: part, label: t(`manage.myTeams.nav.${part}`) })) } : {}),
     ...(FILTER_CHILDREN[x.id] && (FILTER_CHILDREN[x.id].when?.(brand) ?? true) && !(x.id === 'teams' && scope === 'beach')
-      ? { children: FILTER_CHILDREN[x.id].options.map((id) => ({ id, label: FILTER_CHILDREN[x.id].label(t, id) })) }
+      ? { children: FILTER_CHILDREN[x.id].options.map((id) => ({ id, label: FILTER_CHILDREN[x.id].label(t, id, { pending: pendingAccounts }) })) }
       : {})
   }))
   const currentFilter = current && FILTER_CHILDREN[current] ? filterOf(current) : ''
@@ -281,7 +283,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {phoneTop && <div className="mb-3 sm:hidden">{phoneTop}</div>}
         {/* every list of the console: one card per item (owner 2026-11-10) */}
         <RowListCards.Provider value>
-        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><PanelGate><AccountsPanel filter={filterOf('accounts')} selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} {...pageProps('accounts')} /></PanelGate></ConsolePanel>}
+        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><PanelGate><AccountsPanel onPendingCount={setPendingAccounts} filter={filterOf('accounts')} selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} {...pageProps('accounts')} /></PanelGate></ConsolePanel>}
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><PanelGate><InvitesPanel app={scope} /></PanelGate></ConsolePanel>}
         {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><PanelGate><ClubsPanel {...pageProps('clubs')} /></PanelGate></ConsolePanel>}
         {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><PanelGate><MyClubPanel clubs={access.managedClubs} {...pageProps('myclub')} /></PanelGate></ConsolePanel>}
