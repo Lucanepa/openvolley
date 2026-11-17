@@ -385,7 +385,7 @@ const officialName = (official) => `${official.lastName || ''} ${official.firstN
 const SB_OFFICIAL_CHIP = {
   padding: '1.6cqw 3.1cqw', minWidth: '44px', minHeight: '44px', justifyContent: 'center',
   background: 'var(--panel-2)', border: '1px solid var(--ov-hairline)', borderRadius: '1.25cqw',
-  fontSize: 'max(15px, 6.6cqw)', display: 'flex', alignItems: 'center', gap: '1.25cqw', position: 'relative'
+  fontSize: 'max(15px, calc(6.6cqw * var(--cqf, 1)))', display: 'flex', alignItems: 'center', gap: '1.25cqw', position: 'relative'
 }
 
 const SB_BENCH_CAPTAIN_PAD = '0.3em'
