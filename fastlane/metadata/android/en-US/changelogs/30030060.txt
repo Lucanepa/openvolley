@@ -1,0 +1,4 @@
+OpenVolley 3.3.6
+- Live screen: set this device's court, so a TV can show one court alone (openvolley.app/tv/CODE/2).
+- TV page: openvolley.app/tv asks for the code or a league game number; a game number shows that game.
+- Desktop app: the TV page also works on the laptop's own Wi-Fi without internet.
