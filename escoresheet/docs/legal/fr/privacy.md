@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.16 · État au 15 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.17 · État au 17 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -20,6 +20,10 @@ version anglaise fait foi.
   match en PDF sont conservées sur le serveur, sous un code de sauvegarde
   aléatoire et sans compte, et supprimées 180 jours après la dernière
   modification (section 7).
+  Si l'organisatrice ou l'organisateur active la page en direct pour TV, le
+  score de chaque match (noms des équipes, points et sets, aucun joueur) est
+  aussi envoyé au serveur ; il est gardé uniquement en mémoire et visible par
+  toute personne qui a le code du tournoi.
 - Une feuille de match électronique contient des données sur les joueuses et
   joueurs, l'encadrement et les officiels : noms, numéros de maillot, dates de
   naissance et signatures. Seuls les noms des équipes, le score et les numéros
@@ -480,6 +484,22 @@ L'organisatrice ou l'organisateur du tournoi est responsable d'avoir le droit
 d'enregistrer les données et d'informer les joueuses et joueurs et leurs
 parents (section 17).
 
+**Page en direct pour TV (outil Global, facultative) :** les appareils de
+marque d'un tournoi peuvent activer une page en direct avec un code de tournoi
+commun (Options, Outil). Tant qu'elle est active, chaque mise à jour en direct
+d'un match Global envoie aussi le code à mon serveur, avec un résumé du score
+: les noms des équipes, leurs noms courts et leurs couleurs, les points, les
+sets gagnés et les points des sets terminés, l'équipe au service, l'état du
+match (par exemple temps mort, pause entre les sets, terminé), la salle et
+l'heure prévue. Les joueurs, le staff des équipes, les officiels, les
+alignements, les sanctions, les remarques, les signatures et les PIN ne sont
+pas envoyés. Le résumé est gardé uniquement dans la mémoire du serveur, jamais
+dans une base de données ni dans un fichier, et il est supprimé 45 minutes
+après la fin du match, après 3 heures sans mise à jour ou au redémarrage du
+serveur. Toute personne qui connaît le code du tournoi peut voir les résumés
+de ses matchs sur livescore.openvolley.app ou les lire via l'interface du
+serveur. Désactive la page en direct dans les Options pour arrêter l'envoi.
+
 **Validation avec NIP :** les officiels peuvent confirmer le résultat, en plus
 de leur signature, avec un NIP de validation personnel. Sont enregistrés : le
 NIP sous forme de hachage cryptographique (jamais en clair), les tentatives
@@ -886,6 +906,7 @@ prestataires. Tu peux me demander une copie de ces garanties.
 | Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
 | Feuille d'un match de test par e-mail | Non conservée sur le serveur |
 | Outil Global : sauvegarde et feuille de match PDF d'un match (sous le code de sauvegarde) | 180 jours après la dernière modification |
+| Outil Global : résumé du score pour la page en direct pour TV (noms des équipes, points, sets ; aucun joueur) | Uniquement dans la mémoire du serveur ; supprimé 45 minutes après la fin du match, après 3 heures sans mise à jour ou au redémarrage du serveur |
 | Copies de sauvegarde téléversées | 30 jours |
 | Journaux de l'application téléversés | 30 jours ; effacés avec ton compte |
 | Journal d'activité d'un match (serveur) | 24 mois, au plus tard jusqu'à la suppression du match ; plus tôt sur demande |

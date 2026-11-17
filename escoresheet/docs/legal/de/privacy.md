@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.16 · Stand: 15. November 2026
+**OpenVolley und OpenBeach** · Version 1.17 · Stand: 17. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -18,6 +18,11 @@ Massgebend ist die englische Fassung.
   auf deinem Gerät. Nur eine Sicherung des Spiels und am Ende der Spielbericht
   als PDF liegen auf dem Server, unter einem zufälligen Sicherungscode und ohne
   Konto, und werden 180 Tage nach der letzten Änderung gelöscht (Abschnitt 7).
+  Schaltet die Turnierveranstalterin oder der Turnierveranstalter die
+  Live-Seite für TVs ein, geht zusätzlich der Spielstand jedes Spiels
+  (Teamnamen, Punkte und Sätze, keine Spielerinnen und Spieler) an den Server;
+  er liegt nur im Arbeitsspeicher und ist für alle sichtbar, die den
+  Turniercode haben.
 - Ein elektronischer Spielbericht enthält Daten von Spielerinnen und Spielern,
   Betreuungspersonen und Offiziellen: Namen, Rückennummern, Geburtsdaten und
   Unterschriften. Öffentlich sind nur Teamnamen, Spielstand und Rückennummern,
@@ -462,6 +467,23 @@ oder der Turnierveranstalter ist dafür verantwortlich, dass die Daten erfasst
 werden dürfen und dass die Spielerinnen und Spieler und ihre Eltern informiert
 sind (Abschnitt 17).
 
+**Live-Seite für TVs (Global-Werkzeug, freiwillig):** Die Schreibergeräte
+eines Turniers können mit einem gemeinsamen Turniercode eine Live-Seite
+einschalten (Optionen, Werkzeug). Solange sie eingeschaltet ist, schickt jede
+Live-Aktualisierung eines Global-Spiels den Code und eine Zusammenfassung des
+Spielstands an meinen Server: die Teamnamen, Kurznamen und Farben, die Punkte,
+die gewonnenen Sätze und die Punkte der beendeten Sätze, welches Team
+aufschlägt, den Spielstatus (zum Beispiel Auszeit, Satzpause, beendet), die
+Halle und die geplante Zeit. Spielerinnen und Spieler, Teamoffizielle,
+Schiedsrichterinnen und Schiedsrichter, Aufstellungen, Sanktionen,
+Bemerkungen, Unterschriften und PINs werden nicht gesendet. Die
+Zusammenfassung liegt nur im Arbeitsspeicher des Servers, nie in einer
+Datenbank oder Datei, und wird 45 Minuten nach Spielende, nach 3 Stunden ohne
+Aktualisierung oder beim Neustart des Servers entfernt. Wer den Turniercode
+kennt, kann die Zusammenfassungen seiner Spiele auf livescore.openvolley.app
+sehen oder über die Schnittstelle des Servers abrufen. Schalte die Live-Seite
+in den Optionen aus, um das Senden zu beenden.
+
 **Freigabe mit PIN:** Offizielle können das Resultat zusätzlich zur
 Unterschrift mit einem persönlichen Freigabe-PIN bestätigen. Gespeichert
 werden: der PIN als kryptografischer Hash (nie im Klartext), Fehlversuche und
@@ -857,6 +879,7 @@ Anfrage erhältst du eine Kopie dieser Garantien.
 | Versand des fertigen Spielberichts (Zeitpunkt, Anzahl Empfänger, ohne Adressen) | Mit dem Spiel |
 | Spielbericht eines Testspiels per E-Mail | Auf dem Server nicht gespeichert |
 | Global-Werkzeug: Sicherung und Spielbericht-PDF eines Spiels (unter dem Sicherungscode) | 180 Tage nach der letzten Änderung |
+| Global-Werkzeug: Spielstand-Zusammenfassung für die Live-Seite für TVs (Teamnamen, Punkte, Sätze; keine Spielerinnen und Spieler) | Nur im Arbeitsspeicher des Servers; entfernt 45 Minuten nach Spielende, nach 3 Stunden ohne Aktualisierung oder beim Neustart des Servers |
 | Hochgeladene Sicherungskopien | 30 Tage |
 | Hochgeladene App-Protokolle | 30 Tage; mit deinem Konto gelöscht |
 | Aktivitätsprotokoll eines Spiels (Server) | 24 Monate, längstens bis das Spiel gelöscht wird; auf Anfrage früher |

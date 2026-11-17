@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.16 · Aggiornata al 15 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.17 · Aggiornata al 17 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -19,6 +19,10 @@ la versione inglese.
   partita e, alla fine, il referto in PDF, sotto un codice di backup casuale e
   senza account; vengono cancellati 180 giorni dopo l'ultima modifica
   (sezione 7).
+  Se l'organizzatrice o l'organizzatore attiva la pagina live per TV, anche il
+  punteggio di ogni partita (nomi delle squadre, punti e set, nessun
+  giocatore) va al server; è conservato solo in memoria ed è visibile a
+  chiunque abbia il codice del torneo.
 - Un referto elettronico contiene dati di giocatrici e giocatori, staff e
   ufficiali di gara: nomi, numeri di maglia, date di nascita e firme. Sono
   pubblici solo i nomi delle squadre, il punteggio e i numeri di maglia; nel
@@ -449,6 +453,22 @@ ne conservano ancora una copia per un certo tempo. L'organizzatrice o
 l'organizzatore del torneo è responsabile di poter registrare i dati e di
 informare le giocatrici, i giocatori e i loro genitori (sezione 17).
 
+**Pagina live per TV (strumento Global, facoltativa):** i dispositivi
+segnapunti di un torneo possono attivare una pagina live con un codice torneo
+comune (Opzioni, Strumento). Finché è attiva, ogni aggiornamento live di una
+partita Global invia al mio server anche il codice, con un riepilogo del
+punteggio: i nomi delle squadre, i nomi brevi e i colori, i punti, i set vinti
+e i punti dei set conclusi, quale squadra è al servizio, lo stato della
+partita (per esempio time-out, pausa tra i set, terminata), la palestra e
+l'orario previsto. Giocatori, staff delle squadre, ufficiali di gara,
+formazioni, sanzioni, osservazioni, firme e PIN non vengono inviati. Il
+riepilogo è conservato solo nella memoria del server, mai in un database o in
+un file, e viene rimosso 45 minuti dopo la fine della partita, dopo 3 ore
+senza aggiornamenti o al riavvio del server. Chiunque conosca il codice del
+torneo può vedere i riepiloghi delle sue partite su livescore.openvolley.app o
+leggerli tramite l'interfaccia del server. Disattiva la pagina live nelle
+Opzioni per interrompere l'invio.
+
 **Approvazione con PIN:** gli ufficiali di gara possono confermare il
 risultato, oltre che con la firma, con un PIN di approvazione personale.
 Vengono salvati: il PIN come hash crittografico (mai in chiaro), i tentativi
@@ -839,6 +859,7 @@ ricevi una copia di queste garanzie.
 | Invio del referto finale (momento, numero di destinatari, senza indirizzi) | Con la partita |
 | Referto di una partita di prova per e-mail | Non conservato sul server |
 | Strumento Global: backup e referto PDF di una partita (sotto il codice di backup) | 180 giorni dopo l'ultima modifica |
+| Strumento Global: riepilogo del punteggio per la pagina live per TV (nomi delle squadre, punti, set; nessun giocatore) | Solo nella memoria del server; rimosso 45 minuti dopo la fine della partita, dopo 3 ore senza aggiornamenti o al riavvio del server |
 | Copie di sicurezza caricate | 30 giorni |
 | Registri dell'app caricati | 30 giorni; cancellati con il tuo account |
 | Registro attività di una partita (server) | 24 mesi, al più tardi fino alla cancellazione della partita; prima su richiesta |
