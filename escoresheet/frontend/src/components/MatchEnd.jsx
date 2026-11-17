@@ -41,6 +41,7 @@ const ballImage = ballFallback
 import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
+import { prefersShare, shareFile } from '../utils/shareFile'
 import { waitForScoresheetPdf, PDF_FAIL, PDF_REQUEST_PARAM } from '../utils/scoresheetPdfRequest'
 import { logScoresheetPdf } from '../utils/scoresheetPdfLog'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal, matchForfeitOf, restoredSetWrites, resultIssues } from '../domain/matchEnd'
@@ -62,7 +63,7 @@ import { askConfirm } from '../utils/askConfirm.js'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { syncJobsForEvents } from '../domain/corrections'
 import { queueSetDeletes, setUpdateJob } from '../utils/eventSync'
-import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
+import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ShareIcon, ChartIcon } from './icons'
 import { X, Check, AlertTriangle, ShieldCheck, PenLine, Eraser, Info, Smartphone } from 'lucide-react'
 import { approvalSignatureSources, phoneSignContext, signatureUpdate, signedOnPhone, SLOT_OF_ROLE } from '../domain/phoneSignature'
 import { Button } from '../ui/Button.jsx'
@@ -437,6 +438,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const closedOnServer = serverClosed || isKnownClosedOnServer(data?.match)
   const finalActions = isApproved || closedOnServer
   const [isSaving, setIsSaving] = useState(false)
+  // iOS / iPadOS: the approval's files wait here for the Scoresheet menu's Share items (a hidden download is not usable there)
+  const [exportFiles, setExportFiles] = useState(null)
   // showCloseConfirm modal removed - now using direct post-approval buttons
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState(null) // { json: boolean, pdf: boolean }
@@ -1301,6 +1304,17 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     if (!opened.ok) showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
   }
 
+  // iOS / iPadOS: the share sheet (Mail, AirDrop, Save to Files) for a file made at approval
+  const handleShareFile = async (file) => {
+    cLogger.logHandler('handleShareFile', { matchId, filename: file?.filename })
+    try {
+      await shareFile(file.blob, file.filename)
+    } catch (err) {
+      console.error('[MatchEnd] Share failed:', err)
+      showAlert(t('matchEnd.shareFailed', 'The file could not be shared: {{error}}', { error: err?.message || String(err) }), 'error')
+    }
+  }
+
   // Handle downloading comprehensive interaction logs
   const handleDownloadLogs = async () => {
     cLogger.logHandler('handleDownloadLogs', { matchId })
@@ -1624,11 +1638,21 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       const zipBlob = await zip.generateAsync({ type: 'blob' })
       const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.zip`
 
-      // Download ZIP
-      const zipLink = document.createElement('a')
-      zipLink.download = zipFilename
-      zipLink.href = URL.createObjectURL(zipBlob)
-      zipLink.click()
+      // Download the ZIP. On iOS / iPadOS (browser or app) a hidden download
+      // is not usable (the app does nothing, Safari hides the folder): the
+      // files wait for the Scoresheet menu's Share items instead.
+      const shareInstead = prefersShare()
+      if (shareInstead) {
+        setExportFiles({
+          zip: { blob: zipBlob, filename: zipFilename },
+          pdf: pdfResult?.blob ? { blob: pdfResult.blob, filename: pdfResult.filename || zipFilename.replace(/\.zip$/, '.pdf') } : null
+        })
+      } else {
+        const zipLink = document.createElement('a')
+        zipLink.download = zipFilename
+        zipLink.href = URL.createObjectURL(zipBlob)
+        zipLink.click()
+      }
 
       // The approval and its sync job in one transaction: approved and
       // queued, or neither
@@ -1684,6 +1708,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       setDownloadProgress(null)
       setIsSaving(false)
       setIsApproved(true)
+      if (shareInstead) showAlert(t('matchEnd.approvedShareHint'), 'info')
 
       // The cloud copies of the PDF and the final JSON go up after the
       // approval, through the sync queue, which retries them until they are
@@ -2404,6 +2429,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 { key: 'preview', icon: <SearchIcon />, label: t('matchEnd.preview', 'Preview'), onClick: () => handleShowScoresheet('preview') },
                 { key: 'print', icon: <PrinterIcon />, label: t('matchEnd.print', 'Print'), onClick: () => handleShowScoresheet('print') },
                 { key: 'save', icon: <SaveIcon />, label: t('matchEnd.savePdf', 'Save PDF'), onClick: () => handleShowScoresheet('save') },
+                ...(exportFiles?.pdf ? [{ key: 'share-pdf', icon: <ShareIcon />, label: t('matchEnd.sharePdf', 'Share PDF'), onClick: () => handleShareFile(exportFiles.pdf) }] : []),
+                ...(exportFiles?.zip ? [{ key: 'share-zip', icon: <ShareIcon />, label: t('matchEnd.shareAllFiles', 'Share all files (ZIP)'), onClick: () => handleShareFile(exportFiles.zip) }] : []),
                 { key: 'logs', icon: <ChartIcon />, label: t('matchEnd.downloadLogs', 'Download logs'), onClick: handleDownloadLogs }
               ]}
             />

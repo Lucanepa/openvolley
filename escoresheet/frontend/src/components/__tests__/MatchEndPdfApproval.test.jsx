@@ -401,6 +401,49 @@ describe('MatchEnd: the approval PDF', () => {
     }
   })
 
+  // Jana Rost (2026-11): on a school iPad the approval only left a ZIP in a
+  // Downloads folder she could not reach, and the native app's hidden
+  // download does nothing at all. On iOS the files wait for Share items.
+  describe('the files after the approval', () => {
+    const IPAD = 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    const original = {}
+    const setNav = (props) => {
+      for (const [k, v] of Object.entries(props)) {
+        if (!(k in original)) original[k] = Object.getOwnPropertyDescriptor(window.navigator, k) || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window.navigator), k)
+        Object.defineProperty(window.navigator, k, { configurable: true, get: () => v })
+      }
+    }
+    afterEach(() => {
+      for (const [k, d] of Object.entries(original)) { try { Object.defineProperty(window.navigator, k, d) } catch { /* jsdom */ } }
+    })
+
+    it('a desktop browser downloads the ZIP at once', async () => {
+      const clicked = []
+      HTMLAnchorElement.prototype.click = function () { clicked.push(this.download) }
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      expect(clicked.filter(n => /\.zip$/.test(n))).toHaveLength(1)
+      expect(alerts.showAlert).not.toHaveBeenCalledWith(en.matchEnd.approvedShareHint, 'info')
+    })
+
+    it('an iPad downloads nothing, says where the files are, and the Scoresheet menu shares them', async () => {
+      setNav({ userAgent: IPAD, platform: 'iPad', maxTouchPoints: 5 })
+      const clicked = []
+      HTMLAnchorElement.prototype.click = function () { clicked.push(this.download) }
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      expect(clicked.filter(n => /\.zip$/.test(n))).toHaveLength(0)
+      expect(alerts.showAlert).toHaveBeenCalledWith(en.matchEnd.approvedShareHint, 'info')
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(en.matchEnd.scoresheet) }))
+      expect(await screen.findByText(en.matchEnd.sharePdf)).toBeTruthy()
+      expect(await screen.findByText(en.matchEnd.shareAllFiles)).toBeTruthy()
+    })
+  })
+
   it('the export modal sits above the header (z 1000) and its open menu', async () => {
     render(<MatchEnd matchId={1} />)
     await approve()

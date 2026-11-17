@@ -47,7 +47,8 @@ import {
   NotebookPen,
   Speech,
   ArrowLeftRight,
-  RectangleVertical
+  RectangleVertical,
+  Share2,
 } from 'lucide-react'
 import { Volleyball } from '@phosphor-icons/react'
 
@@ -78,6 +79,7 @@ export const HomeIcon = lucide(House, 'HomeIcon')
 export const FileTextIcon = lucide(FileText, 'FileTextIcon')
 export const PrinterIcon = lucide(Printer, 'PrinterIcon')
 export const SaveIcon = lucide(Save, 'SaveIcon')
+export const ShareIcon = lucide(Share2, 'ShareIcon')
 export const DownloadIcon = lucide(Download, 'DownloadIcon')
 export const SettingsIcon = lucide(Settings, 'SettingsIcon')
 export const WarningIcon = lucide(TriangleAlert, 'WarningIcon')
