@@ -48,7 +48,7 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
-import { liveCodeForMatch, cachedCourtToken, getLiveCourt } from '../utils/globalLive'
+import { liveCodeForMatch, cachedCourtToken, getLiveCourt, liveListedForMatch } from '../utils/globalLive'
 import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
@@ -2879,7 +2879,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session },
             ...(liveCode ? { globalLive: liveCode } : {}),
             ...(liveCourt ? { globalLiveCourt: liveCourt } : {}),
-            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {})
+            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {}),
+            ...(liveCode && liveListedForMatch(match) ? { globalLiveListed: true } : {})
           })
           // the desktop app's relay feeds no cloud page: it sends the court itself
           if (liveCode && pushesGlobalLive()) pushGlobalLive({ code: liveCode, match, liveState: liveStateData, db, matchId })

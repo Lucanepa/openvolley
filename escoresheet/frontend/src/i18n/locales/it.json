@@ -6484,6 +6484,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Mostra le partite Global su livescore.openvolley.app (solo il punteggio, come sui TV)",
+    "list": {
+      "title": "Partite Global",
+      "open": "Apri lo schermo live"
+    },
     "title": "Schermo live",
     "intro": "Mostra il punteggio di tutti i campi del tuo evento su TV o un proiettore, per qualsiasi partita. Avvialo su un dispositivo segnapunti e inserisci il suo codice sugli altri. Online va solo il punteggio (nomi delle squadre, punti, set), mai i giocatori.",
     "codeLabel": "Codice schermo live",
