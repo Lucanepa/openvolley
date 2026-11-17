@@ -2,7 +2,7 @@
 // useConfirmAction): the press of a click, the press before it, and whether
 // two presses are at the same place.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { TAP_SLOP_PX, TOUCH_ECHO_MS, eventTime, isTouchEcho, notePress, noteRelease, pressOfClick, pressDistance, resetPresses, samePlace, trackPresses } from '../pointerPresses'
+import { TAP_SLOP_PX, TOUCH_ECHO_MS, eventTime, forgetOwnTapClick, isOwnTapClickEcho, isTouchEcho, noteOwnTapClick, notePress, noteRelease, pressOfClick, pressDistance, resetPresses, samePlace, trackPresses } from '../pointerPresses'
 
 beforeEach(() => resetPresses())
 
@@ -157,5 +157,39 @@ describe('samePlace / pressDistance', () => {
     expect(samePlace({ x: null, y: null }, { x: 500, y: 500 })).toBe(true)
     expect(samePlace(null, { x: 1, y: 1 })).toBe(true)
     expect(pressDistance({ x: null, y: null }, { x: 1, y: 1 })).toBe(null)
+  })
+})
+
+describe('isOwnTapClickEcho (the browser click after a tap the app clicked itself)', () => {
+  const touchEnd = (t, x = 640, y = 650) => ({ type: 'touchend', timeStamp: t, changedTouches: [{ clientX: x, clientY: y }] })
+  const click = (t, detail = 1, x = 641, y = 652) => ({ type: 'click', timeStamp: t, detail, clientX: x, clientY: y })
+  const real = (fn) => (e) => fn(e, e.timeStamp)
+
+  it("WebKitGTK's compatibility click right after the touchend is the echo", () => {
+    noteOwnTapClick(touchEnd(1000), 1000)
+    expect(real(isOwnTapClickEcho)(click(1001))).toBe(true)
+    expect(real(isOwnTapClickEcho)(click(999))).toBe(true) // stamped a ms before
+    expect(real(isOwnTapClickEcho)(click(1000 + TOUCH_ECHO_MS))).toBe(true)
+  })
+
+  it("the app's own click (detail 0), a click elsewhere or later, and no tap are not", () => {
+    expect(real(isOwnTapClickEcho)(click(1001))).toBe(false) // no tap clicked by the app
+    noteOwnTapClick(touchEnd(1000), 1000)
+    expect(real(isOwnTapClickEcho)(click(1001, 0))).toBe(false)
+    expect(real(isOwnTapClickEcho)(click(1001, 1, 640 + TAP_SLOP_PX + 5, 650))).toBe(false)
+    expect(real(isOwnTapClickEcho)(click(1001 + TOUCH_ECHO_MS))).toBe(false)
+    expect(real(isOwnTapClickEcho)(click(900))).toBe(false)
+  })
+
+  it('a new touch forgets the tap (its own click comes from its own touchend)', () => {
+    noteOwnTapClick(touchEnd(1000), 1000)
+    forgetOwnTapClick()
+    expect(real(isOwnTapClickEcho)(click(1001))).toBe(false)
+  })
+
+  it('resetPresses forgets it too', () => {
+    noteOwnTapClick(touchEnd(1000), 1000)
+    resetPresses()
+    expect(real(isOwnTapClickEcho)(click(1001))).toBe(false)
   })
 })

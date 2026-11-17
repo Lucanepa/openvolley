@@ -118,6 +118,7 @@ export function trackPresses(win = typeof window !== 'undefined' ? window : null
 export function resetPresses() {
   presses = []
   lastTouch = null
+  ownTapClick = null
 }
 
 /**
@@ -148,4 +149,66 @@ export function samePlace(a, b, slop = TAP_SLOP_PX) {
 export function pressDistance(a, b) {
   if (!a || !b || a.x == null || b.x == null) return null
   return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+// ---------------------------------------------------------------------------
+// The browser's click after a tap the app clicked itself.
+//
+// A short tap on a court or bench player is clicked by the scoring screen
+// itself at touchend (Scoreboard handleTouchEnd: target.click(), detail 0):
+// its touchstart was claimed (preventDefault) for the hold-to-drag, and that
+// drops the browser's own click in Chromium, the Android WebView and Safari.
+// WebKitGTK (the desktop app on Linux, the Point Hub board) still sends its
+// compatibility mouse events and the click (detail 1) at the place of the
+// touch, 0-2 ms after the touchend (owner's video, 17.11.2026): a second
+// click that closed the menu the first one had just opened (on the player
+// it toggles the menu; on the menu's full-screen backdrop it dismisses it),
+// so the menu flickered open, shut, open. That click is the echo of a tap
+// already clicked: swallowed before any handler sees it.
+//
+//   noteOwnTapClick(touchEndEvent)   right before target.click()
+//   isOwnTapClickEcho(clickEvent)    the browser's click of that same tap?
+//   trackOwnTapClicks()              once: drops those clicks (window, capture)
+
+let ownTapClick = null // { t, x, y }: the last tap the app clicked itself
+let trackedClickWindow = null
+
+/** The app clicks this tap itself (its touchend): the browser's own click of it is an echo. */
+export function noteOwnTapClick(touchEnd, t = eventTime(touchEnd)) {
+  const lifted = touchEnd?.changedTouches?.[0]
+  const where = lifted ? point(lifted) : point(touchEnd)
+  ownTapClick = { t, ...where }
+}
+
+/** A new touch begins: the last own tap click has no echo left to come. */
+export function forgetOwnTapClick() {
+  ownTapClick = null
+}
+
+/**
+ * Is this click the browser's own click of the tap the app clicked itself
+ * (WebKitGTK's compatibility click)? A pointer's click (detail > 0; the
+ * app's own click has detail 0) at the place of that tap, at most
+ * TOUCH_ECHO_MS after its touchend. One echo per tap.
+ */
+export function isOwnTapClickEcho(click, t = eventTime(click)) {
+  if (!ownTapClick || !click || !(click.detail > 0)) return false
+  // stamped a ms or two before the touchend, at most
+  if (t < ownTapClick.t - 50 || t - ownTapClick.t > TOUCH_ECHO_MS) return false
+  return samePlace(point(click), ownTapClick)
+}
+
+function dropOwnTapClickEcho(e) {
+  if (!isOwnTapClickEcho(e)) return
+  ownTapClick = null
+  e.preventDefault()
+  e.stopImmediatePropagation()
+}
+
+/** Drop the echo clicks on `win` (once per window, capture: before React and any other handler). */
+export function trackOwnTapClicks(win = typeof window !== 'undefined' ? window : null) {
+  if (!win || trackedClickWindow === win) return
+  win.addEventListener('click', dropOwnTapClickEcho, { capture: true })
+  win.addEventListener('touchstart', forgetOwnTapClick, { capture: true, passive: true })
+  trackedClickWindow = win
 }

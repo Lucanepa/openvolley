@@ -33,6 +33,7 @@ import { phoneSignContext, signatureUpdate } from '../domain/phoneSignature'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
+import { noteOwnTapClick, trackOwnTapClicks } from '../utils/pointerPresses'
 import { teamShortLabels } from '../utils/teamShortLabels'
 import { LOG_REWRITE_EVENTS, liveStateLastAction } from '../utils/refereeLastEvent.js'
 import ballFallback from '../ball_fallback.png'
@@ -10852,8 +10853,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const target = touchTapTargetRef.current
       const claimed = touchClaimedRef.current
       cancelTouchDrag()
-      // only when the touch was claimed: else the browser clicks as well
-      if (claimed && target?.isConnected && typeof target.click === 'function') target.click()
+      // only when the touch was claimed: else the browser clicks as well.
+      // WebKitGTK clicks anyway (its compatibility click, right after this
+      // touchend): that one is dropped as the echo of this tap
+      // (pointerPresses: trackOwnTapClicks), else it shut the menu again.
+      if (claimed && target?.isConnected && typeof target.click === 'function') {
+        noteOwnTapClick(e)
+        target.click()
+      }
       return
     }
 
@@ -10900,6 +10907,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // drops the browser's click: a short tap clicks the player itself
   // (handleTouchEnd).
   useEffect(() => {
+    trackOwnTapClicks()
     const claim = (e) => {
       if (!touchDragDataRef.current || !e.cancelable) return
       e.preventDefault()
