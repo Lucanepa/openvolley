@@ -17,6 +17,7 @@ import { useScorerActions, pickLiveStateSnapshot, isReportedActionError, markAct
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import { matchMenuSections, toMenuListSections } from './matchMenu'
+import { useScoreboardDisplay } from './scoreboard/useScoreboardDisplay'
 import SanctionsResultsModal from './SanctionsResultsModal'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
@@ -9553,6 +9554,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // scorer's own dialog for it, with every check; the request is answered when
   // the event is recorded (useBenchRequestBridge)
   const benchBridge = useBenchRequestBridge({ relayKey: data?.match ? relayMatchKey(data.match) : null, events: data?.events, setIndex: data?.set?.index })
+  // A scoreboard display following this match (an LED board) and its settings page: the menu's "Scoreboard settings"
+  const scoreboardDisplay = useScoreboardDisplay(data?.match ? relayMatchKey(data.match) : null)
   const benchActions = {
     onAcceptLineup: (entry) => {
       // only the set being scored, and only while the team has no line-up in it
@@ -14212,6 +14215,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     editRosterHome: () => setReopenRosterConfirm('home'),
     editRosterAway: () => setReopenRosterConfirm('away'),
     showPins: () => setShowPinsModal(true),
+    scoreboardSettings: scoreboardDisplay.open,
     downloadGameData: () => { downloadGameData() },
     options: () => setShowOptionsInMenu(true),
     stopMatch: () => setStopMatchModal('select')
