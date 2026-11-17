@@ -1,0 +1,400 @@
+[
+  {
+    "name": "home is team A, home serves",
+    "liveState": {
+      "team_a_name": "Munich IS",
+      "team_a_short": "MIS",
+      "team_a_color": "#1d4ed8",
+      "team_b_name": "Zurich IS",
+      "team_b_short": "ZIS",
+      "team_b_color": "#dc2626",
+      "sets_won_a": 1,
+      "sets_won_b": 0,
+      "points_a": 12,
+      "points_b": 9,
+      "current_set": 2,
+      "best_of": 5,
+      "side_a": "left",
+      "serving_team": "left",
+      "match_status": "live",
+      "timeout_active": false,
+      "set_interval_active": false,
+      "lineup_a": {
+        "I": 7
+      }
+    },
+    "entry": {
+      "match": {
+        "coinTossTeamA": "home",
+        "hall": "Hall 1",
+        "scheduledAt": "2027-11-05T09:00:00Z",
+        "gameN": 3,
+        "refereePin": "123456"
+      },
+      "homeTeam": {
+        "name": "Munich IS"
+      },
+      "awayTeam": {
+        "name": "Zurich IS"
+      },
+      "sets": [
+        {
+          "index": 1,
+          "homePoints": 25,
+          "awayPoints": 20,
+          "finished": true
+        },
+        {
+          "index": 2,
+          "homePoints": 12,
+          "awayPoints": 9,
+          "finished": false
+        }
+      ]
+    },
+    "expected": {
+      "home": {
+        "name": "Munich IS",
+        "short": "MIS",
+        "color": "#1d4ed8"
+      },
+      "away": {
+        "name": "Zurich IS",
+        "short": "ZIS",
+        "color": "#dc2626"
+      },
+      "setsWon": {
+        "home": 1,
+        "away": 0
+      },
+      "points": {
+        "home": 12,
+        "away": 9
+      },
+      "sets": [
+        {
+          "home": 25,
+          "away": 20
+        }
+      ],
+      "currentSet": 2,
+      "bestOf": 5,
+      "serving": "home",
+      "status": "live",
+      "ended": false,
+      "timeout": false,
+      "interval": false,
+      "hall": "Hall 1",
+      "scheduledAt": "2027-11-05T09:00:00Z",
+      "gameNumber": "3"
+    }
+  },
+  {
+    "name": "coin toss gave A to away; B serves from the left",
+    "liveState": {
+      "team_a_name": "Zurich IS",
+      "team_a_short": "MIS",
+      "team_a_color": "#1d4ed8",
+      "team_b_name": "Munich IS",
+      "team_b_short": "ZIS",
+      "team_b_color": "#dc2626",
+      "sets_won_a": 1,
+      "sets_won_b": 0,
+      "points_a": 5,
+      "points_b": 8,
+      "current_set": 2,
+      "best_of": 5,
+      "side_a": "right",
+      "serving_team": "left",
+      "match_status": "live",
+      "timeout_active": false,
+      "set_interval_active": false,
+      "lineup_a": {
+        "I": 7
+      }
+    },
+    "entry": {
+      "match": {
+        "coinTossTeamA": "away"
+      },
+      "homeTeam": {
+        "name": "Munich IS"
+      },
+      "awayTeam": {
+        "name": "Zurich IS"
+      },
+      "sets": [
+        {
+          "index": 1,
+          "homePoints": 25,
+          "awayPoints": 20,
+          "finished": true
+        },
+        {
+          "index": 2,
+          "homePoints": 12,
+          "awayPoints": 9,
+          "finished": false
+        }
+      ]
+    },
+    "expected": {
+      "home": {
+        "name": "Munich IS",
+        "short": "ZIS",
+        "color": "#dc2626"
+      },
+      "away": {
+        "name": "Zurich IS",
+        "short": "MIS",
+        "color": "#1d4ed8"
+      },
+      "setsWon": {
+        "home": 0,
+        "away": 1
+      },
+      "points": {
+        "home": 8,
+        "away": 5
+      },
+      "sets": [
+        {
+          "home": 25,
+          "away": 20
+        }
+      ],
+      "currentSet": 2,
+      "bestOf": 5,
+      "serving": "home",
+      "status": "live",
+      "ended": false,
+      "timeout": false,
+      "interval": false,
+      "hall": null,
+      "scheduledAt": null,
+      "gameNumber": null
+    }
+  },
+  {
+    "name": "ended match, best of 3, timeout and interval flags",
+    "liveState": {
+      "team_a_name": "Munich IS",
+      "team_a_short": "MIS",
+      "team_a_color": "#1d4ed8",
+      "team_b_name": "Zurich IS",
+      "team_b_short": "ZIS",
+      "team_b_color": "#dc2626",
+      "sets_won_a": 1,
+      "sets_won_b": 0,
+      "points_a": 12,
+      "points_b": 9,
+      "current_set": 2,
+      "best_of": 3,
+      "side_a": "left",
+      "serving_team": "left",
+      "match_status": "final",
+      "timeout_active": true,
+      "set_interval_active": true,
+      "lineup_a": {
+        "I": 7
+      }
+    },
+    "entry": {
+      "match": {
+        "coinTossTeamA": "home",
+        "hall": "Hall 1",
+        "scheduledAt": "2027-11-05T09:00:00Z",
+        "gameN": 3,
+        "refereePin": "123456"
+      },
+      "homeTeam": {
+        "name": "Munich IS"
+      },
+      "awayTeam": {
+        "name": "Zurich IS"
+      },
+      "sets": [
+        {
+          "index": 1,
+          "homePoints": 25,
+          "awayPoints": 20,
+          "finished": true
+        },
+        {
+          "index": 2,
+          "homePoints": 12,
+          "awayPoints": 9,
+          "finished": false
+        }
+      ]
+    },
+    "expected": {
+      "home": {
+        "name": "Munich IS",
+        "short": "MIS",
+        "color": "#1d4ed8"
+      },
+      "away": {
+        "name": "Zurich IS",
+        "short": "ZIS",
+        "color": "#dc2626"
+      },
+      "setsWon": {
+        "home": 1,
+        "away": 0
+      },
+      "points": {
+        "home": 12,
+        "away": 9
+      },
+      "sets": [
+        {
+          "home": 25,
+          "away": 20
+        }
+      ],
+      "currentSet": 2,
+      "bestOf": 3,
+      "serving": "home",
+      "status": "final",
+      "ended": true,
+      "timeout": true,
+      "interval": true,
+      "hall": "Hall 1",
+      "scheduledAt": "2027-11-05T09:00:00Z",
+      "gameNumber": "3"
+    }
+  },
+  {
+    "name": "odd values are refused, not passed on",
+    "liveState": {
+      "team_a_name": "Munich IS",
+      "team_a_short": "MIS",
+      "team_a_color": "red;x",
+      "team_b_name": "Zurich IS",
+      "team_b_short": "ZIS",
+      "team_b_color": "#dc2626",
+      "sets_won_a": 1,
+      "sets_won_b": 0,
+      "points_a": "x",
+      "points_b": 9,
+      "current_set": 2,
+      "best_of": 7,
+      "side_a": "left",
+      "serving_team": "left",
+      "match_status": {
+        "a": 1
+      },
+      "timeout_active": false,
+      "set_interval_active": false,
+      "lineup_a": {
+        "I": 7
+      }
+    },
+    "entry": {},
+    "expected": {
+      "home": {
+        "name": "Munich IS",
+        "short": "MIS",
+        "color": null
+      },
+      "away": {
+        "name": "Zurich IS",
+        "short": "ZIS",
+        "color": "#dc2626"
+      },
+      "setsWon": {
+        "home": 1,
+        "away": 0
+      },
+      "points": {
+        "home": 0,
+        "away": 9
+      },
+      "sets": [],
+      "currentSet": 2,
+      "bestOf": 5,
+      "serving": "home",
+      "status": null,
+      "ended": false,
+      "timeout": false,
+      "interval": false,
+      "hall": null,
+      "scheduledAt": null,
+      "gameNumber": null
+    }
+  },
+  {
+    "name": "a beach match: no hall, team names only",
+    "liveState": {
+      "team_a_name": "Muster/Beispiel",
+      "team_b_name": "Meier/Keller",
+      "sets_won_a": 0,
+      "sets_won_b": 1,
+      "points_a": 3,
+      "points_b": 7,
+      "current_set": 2,
+      "best_of": 3,
+      "side_a": "right",
+      "serving_team": "right",
+      "match_status": "live",
+      "sport_type": "beach"
+    },
+    "entry": {
+      "match": {
+        "coinTossTeamA": "home",
+        "court": "Court 2"
+      },
+      "homeTeam": {
+        "name": "Muster/Beispiel"
+      },
+      "awayTeam": {
+        "name": "Meier/Keller"
+      },
+      "sets": [
+        {
+          "index": 1,
+          "homePoints": 18,
+          "awayPoints": 21,
+          "finished": true
+        }
+      ]
+    },
+    "expected": {
+      "home": {
+        "name": "Muster/Beispiel",
+        "short": null,
+        "color": null
+      },
+      "away": {
+        "name": "Meier/Keller",
+        "short": null,
+        "color": null
+      },
+      "setsWon": {
+        "home": 0,
+        "away": 1
+      },
+      "points": {
+        "home": 3,
+        "away": 7
+      },
+      "sets": [
+        {
+          "home": 18,
+          "away": 21
+        }
+      ],
+      "currentSet": 2,
+      "bestOf": 3,
+      "serving": "home",
+      "status": "live",
+      "ended": false,
+      "timeout": false,
+      "interval": false,
+      "hall": "Court 2",
+      "scheduledAt": null,
+      "gameNumber": null
+    }
+  }
+]

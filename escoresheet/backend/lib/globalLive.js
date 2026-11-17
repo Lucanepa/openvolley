@@ -101,7 +101,7 @@ export function courtSummary(liveState, entry = {}, nowIso = new Date().toISOStr
     ended: status === 'final' || status === 'ended' || status === 'approved',
     timeout: ls.timeout_active === true,
     interval: ls.set_interval_active === true,
-    hall: str(match.hall) || str(match.venue),
+    hall: str(match.hall) || str(match.venue) || str(match.court),
     scheduledAt: str(match.scheduledAt, 40),
     gameNumber: str(match.gameN != null ? String(match.gameN) : null, 20),
     updatedAt: nowIso
