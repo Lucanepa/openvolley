@@ -14,7 +14,7 @@
 // and the next deliberate tap still count.
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
-import { render, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, fireEvent, createEvent, waitFor, cleanup } from '@testing-library/react'
 import '../../i18n'
 import { AlertProvider } from '../../contexts/AlertContext'
 import { ScaleProvider } from '../../contexts/ScaleContext'
@@ -198,11 +198,32 @@ const Y = 400
 const backdrop = (menu) => menu.closest('.modal-wrapper-roll-down')?.previousElementSibling
 const benchMenu = () => document.querySelector('[data-bench-player-action-menu]')
 
-// A short tap: touchstart, touchend 80 ms later (the screen clicks the player)
+// A short tap: touchstart, touchend 80 ms later (the screen clicks the
+// player). Returns the touchend's time (performance.now())
 async function touchTap(el) {
   fireEvent.touchStart(el, { touches: [{ clientX: X, clientY: Y }] })
   await wait(80)
+  const t = performance.now()
   fireEvent.touchEnd(el, { touches: [], changedTouches: [{ clientX: X, clientY: Y }] })
+  return t
+}
+
+// WebKitGTK on a busy main thread (bench, 17.11.2026): the compatibility
+// sequence ARRIVES after the touchend, but stamped with the earlier hardware
+// time, `before` ms BEFORE the touchend (79 ms with the thread blocked
+// 100 ms, ~330 ms at 400 ms)
+function stampedCompatibilityClick(el, timeStamp) {
+  const at = { clientX: X, clientY: Y }
+  const send = (kind, init) => {
+    const ev = createEvent[kind](el, { ...at, button: 0, ...init })
+    Object.defineProperty(ev, 'timeStamp', { value: timeStamp })
+    fireEvent(el, ev)
+  }
+  send('pointerDown', { pointerType: 'mouse', pointerId: 1 })
+  send('mouseDown', { detail: 1 })
+  send('pointerUp', { pointerType: 'mouse', pointerId: 1 })
+  send('mouseUp', { detail: 1 })
+  send('click', { detail: 1 })
 }
 
 // WebKitGTK's compatibility sequence after the touchend, on whatever is at
@@ -246,6 +267,58 @@ describe('one finger tap on a player: one menu action (WebKitGTK compatibility c
     expect(playerMenu()).toBeTruthy()
   }, 60000)
 
+  for (const [before, blocked] of [[80, 100], [330, 400]]) {
+    it(`busy main thread: the compatibility click stamped ${before} ms BEFORE the touchend, on the backdrop, does not shut the menu`, async () => {
+      const matchId = await setUp()
+      await openScreen(matchId, 2)
+      const touchEndT = await touchTap(court(2))
+      expect(playerMenu()).toBeTruthy()
+      await wait(blocked) // the thread was busy: the sequence arrives late
+      stampedCompatibilityClick(backdrop(playerMenu()), touchEndT - before)
+      await wait(300)
+      expect(playerMenu()).toBeTruthy()
+    }, 60000)
+
+    it(`busy main thread: the compatibility click stamped ${before} ms BEFORE the touchend, on the player, does not toggle the menu shut`, async () => {
+      const matchId = await setUp()
+      await openScreen(matchId, 2)
+      const touchEndT = await touchTap(court(2))
+      expect(playerMenu()).toBeTruthy()
+      await wait(blocked)
+      stampedCompatibilityClick(court(2), touchEndT - before)
+      await wait(300)
+      expect(playerMenu()).toBeTruthy()
+    }, 60000)
+  }
+
+  it('busy main thread, bench player: the early-stamped compatibility click on the backdrop is dropped', async () => {
+    const matchId = await setUp()
+    await openScreen(matchId, 2)
+    const touchEndT = await touchTap(benchPlayer(7))
+    await waitFor(() => expect(benchMenu()).toBeTruthy())
+    await wait(400)
+    stampedCompatibilityClick(backdrop(benchMenu()), touchEndT - 330)
+    await wait(300)
+    expect(benchMenu()).toBeTruthy()
+  }, 60000)
+
+  it('a deliberate second tap right after the first one still closes the menu (its touchstart ends the echo wait)', async () => {
+    const matchId = await setUp()
+    await openScreen(matchId, 2)
+    await touchTap(court(2))
+    expect(playerMenu()).toBeTruthy()
+    const bd = backdrop(playerMenu())
+    await wait(150)
+    // the second finger tap lands on the backdrop; WebKitGTK sends its
+    // compatibility sequence there (no own click: the touch is not on a player)
+    fireEvent.touchStart(bd, { touches: [{ clientX: X, clientY: Y }] })
+    fireEvent.pointerDown(bd, { clientX: X, clientY: Y, pointerType: 'touch', pointerId: 2 })
+    fireEvent.pointerUp(bd, { clientX: X, clientY: Y, pointerType: 'touch', pointerId: 2 })
+    fireEvent.touchEnd(bd, { touches: [], changedTouches: [{ clientX: X, clientY: Y }] })
+    compatibilityClick(bd)
+    await waitFor(() => expect(playerMenu()).toBeFalsy())
+  }, 60000)
+
   it('Chromium / Android / Safari (no compatibility click): the tap opens the menu, the next tap closes it', async () => {
     const matchId = await setUp()
     await openScreen(matchId, 3)
@@ -266,7 +339,7 @@ describe('one finger tap on a player: one menu action (WebKitGTK compatibility c
     await waitFor(() => expect(playerMenu()).toBeFalsy())
     await touchTap(court(4))
     expect(playerMenu()).toBeTruthy()
-    await wait(1000)
+    await wait(1100)
     fireEvent.click(court(4), { clientX: X, clientY: Y, detail: 1 })
     await waitFor(() => expect(playerMenu()).toBeFalsy())
   }, 60000)

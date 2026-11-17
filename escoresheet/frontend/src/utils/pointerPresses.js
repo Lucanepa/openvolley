@@ -160,24 +160,42 @@ export function pressDistance(a, b) {
 // drops the browser's own click in Chromium, the Android WebView and Safari.
 // WebKitGTK (the desktop app on Linux, the Point Hub board) still sends its
 // compatibility mouse events and the click (detail 1) at the place of the
-// touch, 0-2 ms after the touchend (owner's video, 17.11.2026): a second
+// touch, right after the touchend (owner's video, 17.11.2026): a second
 // click that closed the menu the first one had just opened (on the player
 // it toggles the menu; on the menu's full-screen backdrop it dismisses it),
 // so the menu flickered open, shut, open. That click is the echo of a tap
 // already clicked: swallowed before any handler sees it.
 //
+// Its timeStamp says nothing: WebKitGTK stamps the touch events when it
+// dispatches them but the compatibility mouse events with the earlier
+// hardware time, so on a busy main thread the echo click is stamped BEFORE
+// the touchend (bench, 17.11.2026: 79 ms before with the thread blocked
+// 100 ms, ~330 ms before at 400 ms). The echo is told apart by when it
+// ARRIVES (performance.now() in the listener): the first pointer click
+// (detail > 0) at the place of the tap within OWN_TAP_ECHO_MS after the
+// app's own click. The next touch (touchstart, or a touch/pen pointerdown)
+// ends the wait: a deliberate second tap is never dropped.
+//
 //   noteOwnTapClick(touchEndEvent)   right before target.click()
 //   isOwnTapClickEcho(clickEvent)    the browser's click of that same tap?
+//   isOwnTapMouseEcho(event)         a compatibility press/release of it?
 //   trackOwnTapClicks()              once: drops those clicks (window, capture)
 
-let ownTapClick = null // { t, x, y }: the last tap the app clicked itself
+// How long after the app's own click the browser's echo click may still
+// arrive (arrival time, not timeStamp; a blocked main thread delays it)
+export const OWN_TAP_ECHO_MS = 1000
+
+let ownTapClick = null // { at, x, y, touchT }: the last tap the app clicked itself
 let trackedClickWindow = null
 
-/** The app clicks this tap itself (its touchend): the browser's own click of it is an echo. */
-export function noteOwnTapClick(touchEnd, t = eventTime(touchEnd)) {
+/**
+ * The app clicks this tap itself (its touchend): the browser's own click of
+ * it is an echo. `now`: the moment of the app's click (performance.now()).
+ */
+export function noteOwnTapClick(touchEnd, now = perfNow()) {
   const lifted = touchEnd?.changedTouches?.[0]
   const where = lifted ? point(lifted) : point(touchEnd)
-  ownTapClick = { t, ...where }
+  ownTapClick = { at: now, ...where, touchT: lastTouch ? lastTouch.t : null }
 }
 
 /** A new touch begins: the last own tap click has no echo left to come. */
@@ -185,17 +203,48 @@ export function forgetOwnTapClick() {
   ownTapClick = null
 }
 
+// The record, while its echo can still arrive (else forgotten)
+function pendingOwnTap(now) {
+  if (!ownTapClick) return null
+  if (now < ownTapClick.at - 1 || now - ownTapClick.at > OWN_TAP_ECHO_MS) {
+    ownTapClick = null
+    return null
+  }
+  return ownTapClick
+}
+
+// A mouse-like event: a mouse pointer event, or a mouse/click event without a
+// pointer type (WebKitGTK's click and jsdom's MouseEvent carry none)
+const isMouseLike = (event) => {
+  const type = event?.pointerType
+  return type == null || type === '' || type === 'mouse'
+}
+
 /**
  * Is this click the browser's own click of the tap the app clicked itself
  * (WebKitGTK's compatibility click)? A pointer's click (detail > 0; the
- * app's own click has detail 0) at the place of that tap, at most
- * TOUCH_ECHO_MS after its touchend. One echo per tap.
+ * app's own click has detail 0) of the mouse kind, at the place of that tap,
+ * ARRIVING at most OWN_TAP_ECHO_MS after the app's click, whatever its
+ * timeStamp. One echo per tap. `now`: its arrival (performance.now()).
  */
-export function isOwnTapClickEcho(click, t = eventTime(click)) {
-  if (!ownTapClick || !click || !(click.detail > 0)) return false
-  // stamped a ms or two before the touchend, at most
-  if (t < ownTapClick.t - 50 || t - ownTapClick.t > TOUCH_ECHO_MS) return false
-  return samePlace(point(click), ownTapClick)
+export function isOwnTapClickEcho(click, now = perfNow()) {
+  if (!click || !(click.detail > 0) || !isMouseLike(click)) return false
+  const tap = pendingOwnTap(now)
+  if (!tap) return false
+  return samePlace(point(click), tap)
+}
+
+/**
+ * Is this mouse press/release (pointerdown/up of type mouse, mousedown/up)
+ * part of the compatibility sequence of the tap the app clicked itself? It
+ * arrives before the echo click; an overlay's backdrop (backdropDismiss)
+ * must not take it as a press of its own.
+ */
+export function isOwnTapMouseEcho(event, now = perfNow()) {
+  if (!event || !isMouseLike(event)) return false
+  const tap = pendingOwnTap(now)
+  if (!tap) return false
+  return samePlace(point(event), tap)
 }
 
 function dropOwnTapClickEcho(e) {
@@ -205,10 +254,15 @@ function dropOwnTapClickEcho(e) {
   e.stopImmediatePropagation()
 }
 
+function forgetOnTouchPointer(e) {
+  if (isTouchLike(e?.pointerType)) ownTapClick = null
+}
+
 /** Drop the echo clicks on `win` (once per window, capture: before React and any other handler). */
 export function trackOwnTapClicks(win = typeof window !== 'undefined' ? window : null) {
   if (!win || trackedClickWindow === win) return
   win.addEventListener('click', dropOwnTapClickEcho, { capture: true })
   win.addEventListener('touchstart', forgetOwnTapClick, { capture: true, passive: true })
+  win.addEventListener('pointerdown', forgetOnTouchPointer, { capture: true, passive: true })
   trackedClickWindow = win
 }

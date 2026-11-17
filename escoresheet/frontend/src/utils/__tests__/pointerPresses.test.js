@@ -2,7 +2,7 @@
 // useConfirmAction): the press of a click, the press before it, and whether
 // two presses are at the same place.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { TAP_SLOP_PX, TOUCH_ECHO_MS, eventTime, forgetOwnTapClick, isOwnTapClickEcho, isTouchEcho, noteOwnTapClick, notePress, noteRelease, pressOfClick, pressDistance, resetPresses, samePlace, trackPresses } from '../pointerPresses'
+import { OWN_TAP_ECHO_MS, TAP_SLOP_PX, TOUCH_ECHO_MS, eventTime, forgetOwnTapClick, isOwnTapClickEcho, isOwnTapMouseEcho, trackOwnTapClicks, isTouchEcho, noteOwnTapClick, notePress, noteRelease, pressOfClick, pressDistance, resetPresses, samePlace, trackPresses } from '../pointerPresses'
 
 beforeEach(() => resetPresses())
 
@@ -162,34 +162,78 @@ describe('samePlace / pressDistance', () => {
 
 describe('isOwnTapClickEcho (the browser click after a tap the app clicked itself)', () => {
   const touchEnd = (t, x = 640, y = 650) => ({ type: 'touchend', timeStamp: t, changedTouches: [{ clientX: x, clientY: y }] })
-  const click = (t, detail = 1, x = 641, y = 652) => ({ type: 'click', timeStamp: t, detail, clientX: x, clientY: y })
-  const real = (fn) => (e) => fn(e, e.timeStamp)
+  const click = (t, detail = 1, x = 641, y = 652, extra = {}) => ({ type: 'click', timeStamp: t, detail, clientX: x, clientY: y, ...extra })
 
-  it("WebKitGTK's compatibility click right after the touchend is the echo", () => {
+  it("WebKitGTK's compatibility click arriving right after the app's click is the echo", () => {
     noteOwnTapClick(touchEnd(1000), 1000)
-    expect(real(isOwnTapClickEcho)(click(1001))).toBe(true)
-    expect(real(isOwnTapClickEcho)(click(999))).toBe(true) // stamped a ms before
-    expect(real(isOwnTapClickEcho)(click(1000 + TOUCH_ECHO_MS))).toBe(true)
+    expect(isOwnTapClickEcho(click(1001), 1001)).toBe(true)
+    noteOwnTapClick(touchEnd(1000), 1000)
+    expect(isOwnTapClickEcho(click(1000, 1, 641, 652, { pointerType: 'mouse' }), 1000 + OWN_TAP_ECHO_MS)).toBe(true)
   })
 
-  it("the app's own click (detail 0), a click elsewhere or later, and no tap are not", () => {
-    expect(real(isOwnTapClickEcho)(click(1001))).toBe(false) // no tap clicked by the app
+  it('the timeStamp does not matter: stamped 80 ms or 330 ms BEFORE the touchend (busy main thread, bench 17.11.2026)', () => {
+    // pointerdown(touch) 92966, touchstart 93115, touchend 93123, own click
+    // 93124, compatibility click stamped 93044 and arriving after the own click
+    noteOwnTapClick(touchEnd(93123), 93124)
+    expect(isOwnTapClickEcho(click(93044), 93140)).toBe(true)
+    noteOwnTapClick(touchEnd(93123), 93124)
+    expect(isOwnTapClickEcho(click(93123 - 330), 93124 + 420)).toBe(true)
+    // its compatibility press and release too
+    noteOwnTapClick(touchEnd(93123), 93124)
+    expect(isOwnTapMouseEcho({ type: 'pointerdown', pointerType: 'mouse', timeStamp: 92800, clientX: 641, clientY: 652 }, 93130)).toBe(true)
+    expect(isOwnTapMouseEcho({ type: 'mouseup', timeStamp: 92800, clientX: 641, clientY: 652 }, 93131)).toBe(true)
+    expect(isOwnTapMouseEcho({ type: 'pointerdown', pointerType: 'touch', clientX: 641, clientY: 652 }, 93131)).toBe(false)
+    expect(isOwnTapMouseEcho({ type: 'mousedown', clientX: 900, clientY: 652 }, 93131)).toBe(false)
+  })
+
+  it("the app's own click (detail 0), a touch/pen click, a click elsewhere, a late arrival and no tap are not", () => {
+    expect(isOwnTapClickEcho(click(1001), 1001)).toBe(false) // no tap clicked by the app
     noteOwnTapClick(touchEnd(1000), 1000)
-    expect(real(isOwnTapClickEcho)(click(1001, 0))).toBe(false)
-    expect(real(isOwnTapClickEcho)(click(1001, 1, 640 + TAP_SLOP_PX + 5, 650))).toBe(false)
-    expect(real(isOwnTapClickEcho)(click(1001 + TOUCH_ECHO_MS))).toBe(false)
-    expect(real(isOwnTapClickEcho)(click(900))).toBe(false)
+    expect(isOwnTapClickEcho(click(1001, 0), 1001)).toBe(false)
+    expect(isOwnTapClickEcho(click(1001, 1, 641, 652, { pointerType: 'touch' }), 1001)).toBe(false)
+    expect(isOwnTapClickEcho(click(1001, 1, 640 + TAP_SLOP_PX + 5, 650), 1001)).toBe(false)
+    expect(isOwnTapClickEcho(click(1001), 1001 + OWN_TAP_ECHO_MS)).toBe(false) // arrived too late
+    expect(isOwnTapClickEcho(click(1001), 1002)).toBe(false) // forgotten at the deadline
+    expect(isOwnTapMouseEcho({ type: 'mousedown', clientX: 641, clientY: 652 }, 1002)).toBe(false)
   })
 
   it('a new touch forgets the tap (its own click comes from its own touchend)', () => {
     noteOwnTapClick(touchEnd(1000), 1000)
     forgetOwnTapClick()
-    expect(real(isOwnTapClickEcho)(click(1001))).toBe(false)
+    expect(isOwnTapClickEcho(click(1001), 1001)).toBe(false)
+  })
+
+  it('on the window: the echo is dropped once; a touchstart or a touch pointerdown ends the wait', () => {
+    const win = new EventTarget()
+    trackOwnTapClicks(win)
+    const fire = (type, init = {}) => {
+      const e = new Event(type, { cancelable: true })
+      Object.assign(e, init)
+      let reached = false
+      const l = () => { reached = true }
+      win.addEventListener(type, l)
+      win.dispatchEvent(e)
+      win.removeEventListener(type, l)
+      return reached
+    }
+    const at = { clientX: 641, clientY: 652 }
+    noteOwnTapClick(touchEnd(1000))
+    expect(fire('click', { detail: 1, ...at })).toBe(false) // dropped
+    expect(fire('click', { detail: 1, ...at })).toBe(true) // one echo per tap
+    noteOwnTapClick(touchEnd(1000))
+    fire('touchstart')
+    expect(fire('click', { detail: 1, ...at })).toBe(true)
+    noteOwnTapClick(touchEnd(1000))
+    fire('pointerdown', { pointerType: 'pen', ...at })
+    expect(fire('click', { detail: 1, ...at })).toBe(true)
+    noteOwnTapClick(touchEnd(1000))
+    fire('pointerdown', { pointerType: 'mouse', ...at }) // the compatibility press keeps it
+    expect(fire('click', { detail: 1, ...at })).toBe(false)
   })
 
   it('resetPresses forgets it too', () => {
     noteOwnTapClick(touchEnd(1000), 1000)
     resetPresses()
-    expect(real(isOwnTapClickEcho)(click(1001))).toBe(false)
+    expect(isOwnTapClickEcho(click(1001), 1001)).toBe(false)
   })
 })
