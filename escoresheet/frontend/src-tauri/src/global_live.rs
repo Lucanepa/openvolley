@@ -281,7 +281,8 @@ pub fn court_summary(live: &Value, entry: &Value, now_iso: &str) -> Value {
     let a_is_home = if names_say_away {
         false
     } else if truthy(m("coinTossTeamA")) {
-        m("coinTossTeamA").and_then(|v| v.as_str()) != Some("away")
+        // (indoor says home/away, OpenBeach team1/team2)
+        !matches!(m("coinTossTeamA").and_then(|v| v.as_str()), Some("away") | Some("team2"))
     } else {
         true
     };
@@ -328,6 +329,13 @@ pub fn court_summary(live: &Value, entry: &Value, now_iso: &str) -> Value {
     let ended = matches!(status.as_deref(), Some("final" | "ended" | "approved"));
     let current_set = int(ls("current_set"));
     let game_n = m("gameN").filter(|v| !v.is_null()).map(|v| Value::String(js_text(v)));
+    // the hall or venue, and the court when there is one (OpenBeach: the
+    // same venue on every court, the court number tells them apart)
+    let hall_parts: Vec<String> = [text(m("hall"), 80).or_else(|| text(m("venue"), 80)), text(m("court"), 80)]
+        .into_iter()
+        .flatten()
+        .collect();
+    let hall_label = if hall_parts.is_empty() { None } else { Some(hall_parts.join(" \u{00b7} ")) };
     json!({
         "home": home,
         "away": away,
@@ -341,7 +349,7 @@ pub fn court_summary(live: &Value, entry: &Value, now_iso: &str) -> Value {
         "ended": ended,
         "timeout": ls("timeout_active") == Some(&Value::Bool(true)),
         "interval": ls("set_interval_active") == Some(&Value::Bool(true)),
-        "hall": text(m("hall"), 80).or_else(|| text(m("venue"), 80)).or_else(|| text(m("court"), 80)),
+        "hall": hall_label,
         "scheduledAt": text(m("scheduledAt"), 40),
         "gameNumber": text(game_n.as_ref(), 20),
         "updatedAt": now_iso,
