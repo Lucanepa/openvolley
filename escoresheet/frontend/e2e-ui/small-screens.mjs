@@ -101,6 +101,8 @@ async function measureMenu (page) {
 }
 
 async function checkMenu (page, vp, name, opener, { kitMenu = true } = {}) {
+  // under 900 px wide with touch the scoring screen offers tablet mode in a banner over the toolbar
+  if (await clickTopButton(page, /^Not now$/)) await sleep(400)
   const button = typeof opener === 'function' ? await opener() : opener
   if (!(await button.count()) || !(await visible(button.first()))) { record(vp, `menu ${name}`, false, 'button not found'); return }
   await button.first().click()
