@@ -600,7 +600,7 @@ stay PIN-only. Every relay passes both fields: the cloud relay's PIN-less
 summary and room broadcast (`publicLiveState`, a denylist), the realtime
 hub's `match_live_state` changes (`LIVE_COLUMNS`) and its summary channels,
 anonymous `/api/db` (`ANON_DB_COLUMNS`), and the LAN relays, which forward
-the live state as it came. The columns are `db/046_live_state_public_counts.sql`;
+the live state as it came. The columns are `db/047_live_state_public_counts.sql`;
 before it runs, `/api/db` writes the live state without them (pgQuery drops
 unknown columns), so the order of deploy and app release does not matter.
 

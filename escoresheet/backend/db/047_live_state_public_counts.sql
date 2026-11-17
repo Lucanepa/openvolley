@@ -1,4 +1,4 @@
--- 046_live_state_public_counts.sql: match_live_state.subs_count_a / subs_count_b
+-- 047_live_state_public_counts.sql: match_live_state.subs_count_a / subs_count_b
 --
 -- A scoreboard that follows a match without its PIN (Point Hub, the LedBox,
 -- a TV page) gets no subs_a / subs_b: they name shirt numbers and stay

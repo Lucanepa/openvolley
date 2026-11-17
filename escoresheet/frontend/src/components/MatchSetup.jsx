@@ -62,6 +62,7 @@ import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rowToPendingRoster } from '../db/gameRosters'
 import SentRosterCard from './SentRosterCard'
 import BackupTargetsPanel from './BackupTargetsPanel'
+import GlobalCloudPanel from './GlobalCloudPanel'
 import ClubPlayerPickerModal from './ClubPlayerPickerModal'
 import ClubGenderNotice from './ClubGenderNotice'
 import JanuaryDobNotice from './JanuaryDobNotice'
@@ -7244,6 +7245,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       <div className="setup-section">
         {/* Cloud / this device / removable drive: where this match is backed up */}
         {backup && <div className="ov-kit mb-3"><BackupTargetsPanel backup={backup} test={match?.test === true} globalKey={match?.global === true ? (match.globalKey || null) : null} globalPin={match?.global === true ? (match.refereePin || null) : null} /></div>}
+        {/* A Global match: the opt-in readable copy in the cloud (share link, organizer list) */}
+        {match?.global === true && <GlobalCloudPanel match={match} />}
         {/* Why this match does not sync, if the server refused it for good */}
         {match?.cloudBlock && <CloudBlockNotice match={match} className="mb-3" />}
 

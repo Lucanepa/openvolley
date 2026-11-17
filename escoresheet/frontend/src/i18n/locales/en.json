@@ -6516,5 +6516,39 @@
       "set": "Set {{n}}",
       "serving": "Serving"
     }
+  },
+  "globalCloud": {
+    "title": "Save in the cloud",
+    "intro": "Also keeps this match readable online, without an account: for a share link, the organizer's list and continuing on another device. Found by its backup code, guarded by its referee PIN, deleted 180 days after the last save.",
+    "needsPin": "The match needs its referee PIN first.",
+    "offline": "No connection: saved with the next action.",
+    "pinRefused": "This backup code is saved with another referee PIN.",
+    "failed": "Could not save in the cloud. Try again later.",
+    "share": "Share link (read-only)",
+    "shareHint": "Anyone with the link sees the result, the sets and the PDF scoresheet. Turn it off to stop the link.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "organizer": "Tournament code (optional)",
+    "newOrganizer": "New tournament code",
+    "join": "Use",
+    "removeOrganizer": "Remove",
+    "copyOrganizerLink": "Copy organizer link",
+    "badOrganizer": "This is not a tournament code (10 letters and digits).",
+    "organizerHint": "Enter the same code on every scorer device of the tournament: the organizer link lists all its matches, with results and PDFs.",
+    "otherDevice": "Continue on another device: there, choose Restore match on Home and enter the backup code and the referee PIN (Backups above).",
+    "delete": "Delete from the cloud",
+    "page": {
+      "sharedTitle": "Match",
+      "organizerTitle": "Tournament",
+      "final": "Final",
+      "ended": "Ended",
+      "live": "Live",
+      "scheduled": "Scheduled",
+      "pdf": "Scoresheet (PDF)",
+      "notShared": "This match is not shared (any more).",
+      "offline": "Connection lost, retrying…",
+      "loading": "Loading…",
+      "noMatches": "No match is saved with this code yet."
+    }
   }
 }

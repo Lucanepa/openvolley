@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.18 · Stand: 17. November 2026
+**OpenVolley und OpenBeach** · Version 1.19 · Stand: 17. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -17,12 +17,17 @@ Massgebend ist die englische Fassung.
 - Das Global-Werkzeug von OpenVolley braucht kein Konto. Seine Spiele bleiben
   auf deinem Gerät. Nur eine Sicherung des Spiels und am Ende der Spielbericht
   als PDF liegen auf dem Server, unter einem zufälligen Sicherungscode und ohne
-  Konto, und werden 180 Tage nach der letzten Änderung gelöscht (Abschnitt 7).
+  Konto, und werden 180 Tage nach der letzten Änderung gelöscht. Schaltet die
+  Schreiberin oder der Schreiber für ein Spiel «In der Cloud speichern» ein
+  (standardmässig aus), liegt es zusätzlich lesbar auf dem Server, ohne PINs
+  und ohne Unterschriftsbilder, bis 180 Tage nach dem letzten Speichern
+  (Abschnitt 7).
 - Live-Bildschirm (freiwillig, in OpenVolley und OpenBeach): Schalten ihn die
   Schreibergeräte eines Anlasses ein, geht zusätzlich der Spielstand jedes
   ihrer Spiele (Teamnamen, Punkte und Sätze, keine Spielerinnen und Spieler)
   an den Server; er liegt nur im Arbeitsspeicher und ist für alle sichtbar,
-  die den Live-Bildschirm-Code haben (Abschnitt 7).
+  die den Live-Bildschirm-Code haben, bei Global-Spielen auch für alle auf
+  livescore.openvolley.app, ausser es ist ausgeschaltet (Abschnitt 7).
 - Ein elektronischer Spielbericht enthält Daten von Spielerinnen und Spielern,
   Betreuungspersonen und Offiziellen: Namen, Rückennummern, Geburtsdaten und
   Unterschriften. Öffentlich sind nur Teamnamen, Spielstand und Rückennummern,
@@ -447,9 +452,10 @@ Start der App gewählt, in den Optionen änderbar, solange kein Spiel auf dem
 Gerät ist) erfasst du die Spiele eines beliebigen Turniers ohne Konto. Die
 Kader, Offiziellen und Spiele, die du eintippst oder aus einer Excel- oder
 CSV-Datei lädst, bleiben auf deinem Gerät; die App liest die Datei auf dem Gerät
-und lädt sie nicht hoch. Ein Global-Spiel wird nicht mit der Datenbank
-synchronisiert: Es steht in keinem Spiel-, Team- oder Spielerdatensatz und
-weder im Manager noch in den öffentlichen Anzeigen. Zwei Dateien pro Spiel
+und lädt sie nicht hoch. Ein Global-Spiel steht nie in den Spiel-, Team- oder
+Spielerdatensätzen der Liga und weder im Manager noch in den öffentlichen
+Anzeigen der Liga; nur mit «In der Cloud speichern» (unten) liegt es auf dem
+Server, in einer eigenen, separaten Tabelle. Zwei Dateien pro Spiel
 liegen ohne Konto auf dem Server: die Sicherung des Spiels (der Inhalt einer
 Sicherungsdatei: Teams, Kader mit Namen, Rückennummern und Geburtsdaten,
 Offizielle, Unterschriften, Spielverlauf) und, sobald das Spiel freigegeben
@@ -466,6 +472,42 @@ beide daher wie ein Passwort auf. Eine neue Sicherung ersetzt die vorherige. Die
 oder der Turnierveranstalter ist dafür verantwortlich, dass die Daten erfasst
 werden dürfen und dass die Spielerinnen und Spieler und ihre Eltern informiert
 sind (Abschnitt 17).
+
+**In der Cloud speichern (Global-Werkzeug, freiwillig):** Im Match-Setup kann
+die Schreiberin oder der Schreiber für ein Global-Spiel «In der Cloud
+speichern» einschalten; standardmässig ist es aus. Dann liegt das Spiel neben
+der Sicherung und dem PDF oben zusätzlich lesbar (nicht verschlüsselt) in der
+Datenbank des Servers, ohne Konto: der Inhalt des Spielberichts (Teams, Kader
+mit Namen, Rückennummern und Geburtsdaten, Teamoffizielle, Offizielle,
+Spielverlauf, Sätze, Bemerkungen), ohne die PINs, die Unterschriftsbilder, den
+Sicherungscode und den Turniercode; eine Zusammenfassung (Teamnamen, Kurznamen
+und Farben, Sätze und Punkte, Status, Halle, Liga, geplante Zeit,
+Spielnummer); und, sobald das Spiel freigegeben ist, der Spielbericht als PDF,
+auf dem die Unterschriften und die Geburtsdaten stehen. Das Spiel wird über
+einen Hash seines Sicherungscodes gefunden und mit einem Hash seiner
+Schiedsrichter-PIN geschützt; der Server speichert weder den Code noch die
+PIN. Auf Wunsch:
+
+- **Teilen-Link:** ein Link nur zum Lesen mit einem zufälligen Token, den die
+  Schreiberin oder der Schreiber ein- und ausschaltet. Wer den Link hat, sieht
+  auf livescore.openvolley.app das Resultat, die Sätze und den Spielbericht
+  als PDF.
+- **Turniercode:** ein Code mit 10 Zeichen, der auf den Schreibergeräten eines
+  Turniers eingegeben wird. Wer den Code hat, sieht auf
+  livescore.openvolley.app die Liste aller damit gespeicherten Spiele, mit
+  ihren Zusammenfassungen und PDFs. Der Server speichert den Code nur als
+  Hash.
+- **Anderes Gerät:** Um dort weiterzuschreiben, stellst du das Spiel wie oben
+  mit dem Sicherungscode und der Schiedsrichter-PIN wieder her.
+
+Die lesbare Kopie, der Teilen-Link und der Turniercode werden 180 Tage nach
+dem letzten Speichern gelöscht, oder sofort, wenn die Schreiberin oder der
+Schreiber «Aus der Cloud löschen» wählt; die Serversicherungen (Abschnitt 18)
+behalten noch eine Weile eine Kopie. Ohne «In der Cloud speichern» wird
+nichts davon gespeichert. Auch hier ist die Turnierveranstalterin oder der
+Turnierveranstalter dafür verantwortlich, dass die Daten erfasst werden dürfen
+und dass die Spielerinnen und Spieler und ihre Eltern informiert sind
+(Abschnitt 17).
 
 **Live-Bildschirm für TVs (freiwillig, jedes Spiel, auch OpenBeach):** Die
 Schreibergeräte eines Anlasses können mit einem gemeinsamen
@@ -487,8 +529,14 @@ in einer Datenbank oder Datei, und wird 45 Minuten nach Spielende, nach 3
 Stunden ohne Aktualisierung oder beim Neustart des Servers entfernt. Wer den
 Code kennt, kann die Zusammenfassungen seiner Spiele auf openvolley.app/tv und
 livescore.openvolley.app sehen oder über die Schnittstelle des Servers
-abrufen; ein Hallen-Relais zeigt sie auch in seinem eigenen Netz. Schalte den
-Live-Bildschirm in den Optionen aus, um das Senden zu beenden.
+abrufen; ein Hallen-Relais zeigt sie auch in seinem eigenen Netz. Ein
+Schreibergerät mit Live-Bildschirm-Code listet die Zusammenfassungen seiner
+Global-Spiele zudem auf livescore.openvolley.app, für alle und ohne den Code,
+ausser «Global-Spiele auf livescore.openvolley.app zeigen» ist auf ihm in
+Optionen, Live-Bildschirm ausgeschaltet (standardmässig ist es eingeschaltet).
+Meisterschaftsspiele sind ohnehin im Livescore; Test- und Einfach-Spiele werden
+nie gelistet. Schalte den Live-Bildschirm in den Optionen aus, um das Senden zu
+beenden.
 
 **Freigabe mit PIN:** Offizielle können das Resultat zusätzlich zur
 Unterschrift mit einem persönlichen Freigabe-PIN bestätigen. Gespeichert
@@ -553,7 +601,8 @@ Spielern.
 
 **Nie öffentlich:** Geburtsdaten, Lizenznummern, Unterschriften, Freigaben,
 E-Mail-Adressen und PINs. Kaderlisten mit Namen sieht nur, wer den PIN des
-Spiels kennt.
+Spiels kennt oder, bei einem in der Cloud gespeicherten Global-Spiel, dessen
+Teilen-Link oder Turniercode (Abschnitt 7).
 
 ## 9. Tablets und Hallen-Modus (LAN)
 
@@ -885,6 +934,7 @@ Anfrage erhältst du eine Kopie dieser Garantien.
 | Versand des fertigen Spielberichts (Zeitpunkt, Anzahl Empfänger, ohne Adressen) | Mit dem Spiel |
 | Spielbericht eines Testspiels per E-Mail | Auf dem Server nicht gespeichert |
 | Global-Werkzeug: Sicherung und Spielbericht-PDF eines Spiels (unter dem Sicherungscode) | 180 Tage nach der letzten Änderung |
+| Global-Werkzeug, «In der Cloud speichern»: lesbare Kopie eines Spiels, Teilen-Link, Turniercode (als Hash) | 180 Tage nach dem letzten Speichern oder beim Löschen aus der Cloud |
 | Live-Bildschirm: Spielstand-Zusammenfassung eines Spiels, dessen Schreibergerät ihn eingeschaltet hat (Teamnamen, Punkte, Sätze; keine Spielerinnen und Spieler) | Nur im Arbeitsspeicher des Servers; entfernt 45 Minuten nach Spielende, nach 3 Stunden ohne Aktualisierung oder beim Neustart des Servers |
 | Hochgeladene Sicherungskopien | 30 Tage |
 | Hochgeladene App-Protokolle | 30 Tage; mit deinem Konto gelöscht |
@@ -913,7 +963,8 @@ Spielbericht und ist nie öffentlich.
 
 Im Global-Werkzeug ist die Turnierveranstalterin oder der Turnierveranstalter
 bzw. die Person, die die Daten erfasst, in gleicher Weise verantwortlich. Eltern
-können verlangen, dass die Sicherung eines Spiels gelöscht wird; dafür brauche
+können verlangen, dass die Sicherung oder die Cloud-Kopie eines Spiels gelöscht
+wird; dafür brauche
 ich den Sicherungscode oder die Angaben zum Spiel (Abschnitt 19).
 
 Eltern oder andere gesetzliche Vertreter können die Rechte nach Abschnitt 19
@@ -986,7 +1037,7 @@ Soweit die DSGVO gilt, stütze ich mich auf:
 
 - **Vertrag** (Art. 6 Abs. 1 lit. b DSGVO): Konto, Synchronisierung,
   E-Mails zum Konto, Support, die Funktionen, die du nutzt, die
-  Online-Sicherung des Global-Werkzeugs.
+  Online-Sicherung und die Cloud-Kopie des Global-Werkzeugs.
 - **Berechtigtes Interesse** (Art. 6 Abs. 1 lit. f DSGVO): korrekte und
   überprüfbare offizielle Spielaufzeichnungen für Vereine, Verband und
   Offizielle (Kaderlisten, Geburtsdaten zur Kontrolle der Spielberechtigung,

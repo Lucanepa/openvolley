@@ -137,7 +137,19 @@ export async function uploadGlobalBackup(backupData, matchId = null) {
   }
   const r = await saveGlobal(m.globalKey, 'backup', text, 'application/json')
   if (!r.ok && r.reason !== 'offline') console.warn('[Global] Backup not stored:', r.reason)
+  // "Save in the cloud" on: the readable copy too (utils/globalCloudDb), not awaited
+  saveCloudCopy(backupData, matchId)
   return r.ok ? `global/${m.globalKey}/backup` : null
+}
+
+/** The opt-in readable copy in the database (utils/globalCloudDb), best effort. */
+function saveCloudCopy(backupData, matchId, pdfBlob = null) {
+  const m = backupData?.match
+  if (m?.global !== true || m.cloud !== true) return Promise.resolve(null)
+  const data = matchId != null && m.id == null ? { ...backupData, match: { ...m, id: matchId } } : backupData
+  return import('./globalCloudDb')
+    .then(({ saveGlobalCloud }) => saveGlobalCloud(data, { pdfBlob, database: db }))
+    .catch(() => null)
 }
 
 /** The closed match: its PDF and its final backup, retried a few times (never queued: nothing of a Global match goes through the sync queue). */
@@ -155,6 +167,8 @@ export async function uploadGlobalFinal({ match, matchId = null, pdfBlob, backup
     }
   }
   allOk = allOk && jobs.length > 0
+  // the cloud copy with the final PDF (not part of allOk: the store above is the scorer's safety net)
+  if (backupData) saveCloudCopy(backupData, matchId ?? match.id, pdfBlob)
   for (const [kind, body, type] of jobs) {
     let r
     for (let i = 0; i <= retries; i++) {
