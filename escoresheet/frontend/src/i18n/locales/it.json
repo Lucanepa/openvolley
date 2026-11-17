@@ -6479,5 +6479,29 @@
       "timeout": "La panchina chiede un time-out",
       "substitution": "La panchina prepara una sostituzione: {{pairs}}"
     }
+  },
+  "globalLive": {
+    "title": "Pagina live per TV",
+    "intro": "Mostra il punteggio di tutti i campi del tuo torneo su una TV o un proiettore. Online va solo il punteggio (nomi delle squadre, punti, set), mai i giocatori.",
+    "codeLabel": "Codice torneo",
+    "otherDevices": "Sugli altri dispositivi segnapunti del torneo, inserisci qui questo codice.",
+    "copyLink": "Copia link",
+    "copied": "Copiato",
+    "turnOff": "Disattiva su questo dispositivo",
+    "start": "Avvia una pagina live",
+    "enterCode": "Codice torneo",
+    "join": "Partecipa",
+    "badCode": "Questo non è un codice torneo (8 lettere e cifre).",
+    "page": {
+      "title": "Live",
+      "offline": "Connessione persa, nuovo tentativo…",
+      "empty": "Nessuna partita in corso. I punteggi appaiono qui appena inizia una partita.",
+      "loading": "Caricamento…",
+      "final": "Finita",
+      "timeout": "Time-out",
+      "interval": "Pausa tra i set",
+      "set": "Set {{n}}",
+      "serving": "Al servizio"
+    }
   }
 }

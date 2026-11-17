@@ -22,6 +22,7 @@ import { exportNativeFilesToDocuments } from '../../utils/nativeBackup'
 import { configuredRecoveryKey } from '../../utils/backupCrypto/recovery'
 import { useToolMode } from '../../utils/toolMode'
 import { downloadGlobalTemplate } from '../../utils/globalTemplates'
+import GlobalLivePanel from './GlobalLivePanel'
 import { useSponsorsOption } from '../../hooks/useSponsorsOption'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
@@ -499,6 +500,7 @@ export default function HomeOptionsModal({
                     <button type="button" className={BTN_OUTLINE} data-testid="options-template-rosters" onClick={() => downloadGlobalTemplate('rosters')}>{t('globalImport.templateRosters', 'Rosters template (Excel)')}</button>
                   </div>
                 )}
+                {toolMode.mode === 'global' && <GlobalLivePanel />}
               </div>
             </Row>
           </Section>

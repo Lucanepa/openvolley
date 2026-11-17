@@ -1,0 +1,73 @@
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { QRCodeSVG } from 'qrcode.react'
+import { Button } from '../../ui'
+import { copyToClipboard } from '../../utils/networkInfo'
+import { formatLiveCode, liveCodeUrl, newLiveCode, normalizeLiveCode, setLiveCode, useLiveCode } from '../../utils/globalLive'
+
+/**
+ * Options › Tool (Global): the live page for TVs (utils/globalLive.js). One
+ * scorer device starts it and gets a tournament code; the other scorer
+ * devices of the tournament enter the same code. The TVs open the link or
+ * scan the QR code. Only the score goes to the page, never players.
+ */
+export default function GlobalLivePanel() {
+  const { t } = useTranslation()
+  const code = useLiveCode()
+  const [typed, setTyped] = useState('')
+  const [error, setError] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const url = liveCodeUrl(code)
+
+  const join = () => {
+    const c = normalizeLiveCode(typed)
+    if (!c) { setError(true); return }
+    setError(false)
+    setTyped('')
+    setLiveCode(c)
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-stone-200 p-3" data-testid="global-live-panel">
+      <div className="text-sm font-semibold text-stone-900">{t('globalLive.title')}</div>
+      <p className="mt-0.5 text-xs leading-relaxed text-stone-500">{t('globalLive.intro')}</p>
+      {code ? (
+        <div className="mt-3 flex flex-wrap items-start gap-4">
+          <div className="rounded-lg bg-white p-2 ring-1 ring-stone-200"><QRCodeSVG value={url} size={112} /></div>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-stone-500">{t('globalLive.codeLabel')}</div>
+            <div className="font-mono text-2xl font-semibold tracking-wider text-stone-900" data-testid="global-live-code">{formatLiveCode(code)}</div>
+            <div className="mt-1 break-all text-xs text-stone-600" data-testid="global-live-url">{url}</div>
+            <p className="mt-1 text-xs text-stone-500">{t('globalLive.otherDevices')}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button variant="secondary" size="md" onClick={async () => { setCopied((await copyToClipboard(url))?.success === true) }}>
+                {copied ? t('globalLive.copied') : t('globalLive.copyLink')}
+              </Button>
+              <Button variant="secondary" size="md" data-testid="global-live-off" onClick={() => setLiveCode(null)}>{t('globalLive.turnOff')}</Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-col gap-2">
+          <Button variant="secondary" size="md" className="self-start" data-testid="global-live-start" onClick={() => setLiveCode(newLiveCode())}>{t('globalLive.start')}</Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={typed}
+              onChange={(e) => { setTyped(e.target.value); setError(false) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') join() }}
+              placeholder="ABCD 2345"
+              aria-label={t('globalLive.enterCode')}
+              data-testid="global-live-input"
+              className="h-10 w-36 rounded-lg border border-stone-300 px-3 font-mono uppercase tracking-wider"
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <Button variant="secondary" size="md" data-testid="global-live-join" onClick={join}>{t('globalLive.join')}</Button>
+          </div>
+          {error && <p role="alert" className="text-xs text-red-600">{t('globalLive.badCode')}</p>}
+        </div>
+      )}
+    </div>
+  )
+}

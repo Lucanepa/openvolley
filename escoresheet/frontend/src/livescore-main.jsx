@@ -1,6 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import LivescoreApp from './LivescoreApp'
+import TournamentLive from './components/TournamentLive'
+import { liveCodeFromUrl } from './utils/globalLive'
 import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
 import './utils/cqFontScale' // undoes WebKitGTK's double page zoom on font sizes in container units
 import './i18n'  // Initialize i18n for localization
@@ -30,12 +32,14 @@ stripCacheBustParam()
 installErrorTrail()
 
 initTheme()
+const tournamentCode = liveCodeFromUrl()
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary name="livescore">
       <AuthProvider>
         <AlertProvider>
-          <LivescoreApp />
+          {/* ?t=<code>: the Global tool's live page for TVs (utils/globalLive.js) */}
+          {tournamentCode ? <TournamentLive code={tournamentCode} /> : <LivescoreApp />}
         </AlertProvider>
       </AuthProvider>
       <div className="ov-kit ov-kit-host"><UiHost /></div>

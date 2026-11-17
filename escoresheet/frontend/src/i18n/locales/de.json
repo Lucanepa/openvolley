@@ -6462,5 +6462,29 @@
       "timeout": "Bank fragt nach einem Time-out",
       "substitution": "Bank bereitet einen Wechsel vor: {{pairs}}"
     }
+  },
+  "globalLive": {
+    "title": "Live-Seite für TVs",
+    "intro": "Zeigt den Spielstand aller Felder deines Turniers auf einem TV oder Beamer. Online geht nur der Spielstand (Teamnamen, Punkte, Sätze), nie Spielerinnen und Spieler.",
+    "codeLabel": "Turniercode",
+    "otherDevices": "Gib diesen Code auf den anderen Schreibergeräten des Turniers hier ein.",
+    "copyLink": "Link kopieren",
+    "copied": "Kopiert",
+    "turnOff": "Auf diesem Gerät ausschalten",
+    "start": "Live-Seite starten",
+    "enterCode": "Turniercode",
+    "join": "Beitreten",
+    "badCode": "Das ist kein Turniercode (8 Buchstaben und Ziffern).",
+    "page": {
+      "title": "Live",
+      "offline": "Verbindung unterbrochen, neuer Versuch…",
+      "empty": "Noch kein Spiel läuft. Die Spielstände erscheinen hier, sobald ein Spiel beginnt.",
+      "loading": "Wird geladen…",
+      "final": "Beendet",
+      "timeout": "Auszeit",
+      "interval": "Satzpause",
+      "set": "Satz {{n}}",
+      "serving": "Aufschlag"
+    }
   }
 }
