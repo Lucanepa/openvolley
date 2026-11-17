@@ -22,7 +22,7 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
-import { parseRosterPdf } from '../utils/parseRosterPdf'
+import { parseRosterPdf, rosterPdfErrorText } from '../utils/parseRosterPdf'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { sendMatchInfoMail } from '../utils/matchInfoMail'
 import { exportMatchData, officialsFromCloud } from '../utils/backupManager'
@@ -3891,7 +3891,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
     } catch (err) {
       console.error('Error parsing PDF:', err)
-      setHomePdfError(`Failed to parse PDF: ${err.message}`)
+      setHomePdfError(rosterPdfErrorText(err, t))
       // Clear file state on error too
       setHomePdfFile(null)
       if (homeFileInputRef.current) {
@@ -3973,7 +3973,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
     } catch (err) {
       console.error('Error parsing PDF:', err)
-      setAwayPdfError(`Failed to parse PDF: ${err.message}`)
+      setAwayPdfError(rosterPdfErrorText(err, t))
       // Clear file state on error too
       setAwayPdfFile(null)
       if (awayFileInputRef.current) {

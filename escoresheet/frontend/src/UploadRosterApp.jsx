@@ -5,7 +5,7 @@ import { rosterGoesToRelay } from './utils/remoteRoster'
 import { listRosterUploadMatches } from './utils/rosterUploadMatches'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
-import { parseRosterPdf } from './utils/parseRosterPdf'
+import { parseRosterPdf, rosterPdfErrorText } from './utils/parseRosterPdf'
 import { shirtNumberDigits } from './domain/roster'
 import { BENCH_ROLES, checkUploadedRoster, UPLOADED_NAME_MAX, UPLOADED_ROSTER_MAX_PLAYERS } from './domain/uploadedRoster'
 import Modal from './components/Modal'
@@ -761,7 +761,7 @@ export default function UploadRosterApp() {
       }
     } catch (err) {
       console.error('Error parsing PDF:', err)
-      setPdfError(`Failed to parse PDF: ${err.message}`)
+      setPdfError(rosterPdfErrorText(err, t))
     } finally {
       setPdfLoading(false)
     }

@@ -6492,5 +6492,9 @@
       "set": "Satz {{n}}",
       "serving": "Aufschlag"
     }
+  },
+  "rosterPdf": {
+    "tooSlow": "Dieses Gerät konnte das PDF nicht lesen: Es dauerte zu lange. Versuch es nochmals oder gib die Spieler von Hand ein.",
+    "failed": "Das PDF konnte nicht gelesen werden: {{reason}}"
   }
 }

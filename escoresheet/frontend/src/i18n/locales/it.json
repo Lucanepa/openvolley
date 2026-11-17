@@ -6509,5 +6509,9 @@
       "set": "Set {{n}}",
       "serving": "Al servizio"
     }
+  },
+  "rosterPdf": {
+    "tooSlow": "Questo dispositivo non è riuscito a leggere il PDF: ci è voluto troppo. Riprova o inserisci i giocatori a mano.",
+    "failed": "Non è stato possibile leggere il PDF: {{reason}}"
   }
 }

@@ -6504,5 +6504,9 @@
       "set": "Satz {{n}}",
       "serving": "Aufschlag"
     }
+  },
+  "rosterPdf": {
+    "tooSlow": "Das Grät hät s PDF nöd chönne läse: Es hät z lang gange. Probier s nomal oder gib d Spieler vo Hand ii.",
+    "failed": "S PDF hät nöd chönne gläse werde: {{reason}}"
   }
 }

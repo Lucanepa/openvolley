@@ -7,8 +7,16 @@
 // precached by the service worker), NOT loaded from a CDN: roster import must
 // work offline and on a LAN-only venue box, and the backend CSP is script-src 'self'.
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+// pdf.js 5's modern build needs a recent engine: Uint8Array.prototype.toHex
+// (Chrome 140) for every document's fingerprint, Promise.withResolvers (119),
+// Promise.try (128), URL.parse (126). The app's build target is Chrome 107
+// (build-target.js), and Android tablets keep an old system WebView for years:
+// there the modern build fails or never answers. Its legacy build carries the
+// polyfills; it is used where the engine lacks any of them (pdfReaderPlan).
+import pdfLegacyWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 
 export const PDF_WORKER_URL = pdfWorkerUrl
+export const PDF_LEGACY_WORKER_URL = pdfLegacyWorkerUrl
 
 // A roster PDF is a page or two (an Einsatzliste, a club's list): a file far
 // bigger, or with many pages or much text, is not one, and reading it would
@@ -17,21 +25,107 @@ export const PDF_WORKER_URL = pdfWorkerUrl
 export const ROSTER_PDF_MAX_BYTES = 5 * 1024 * 1024
 export const ROSTER_PDF_MAX_PAGES = 10
 export const ROSTER_TEXT_MAX_CHARS = 100000
-const tooBig = (what) => new Error(`This PDF is not a roster (${what})`)
+// (notRoster: a file error, not the engine's: never read a second time)
+const tooBig = (what) => Object.assign(new Error(`This PDF is not a roster (${what})`), { notRoster: true })
 
-export async function parseRosterPdf(file) {
-  let loadingTask = null
+// How long one reading may take before it is given up (17.11.2026: on a
+// Galaxy Tab A7 Lite the import spun for ever). A roster reads in well under
+// a second on a desktop and in a few on a slow tablet. Past the worker's
+// time the same file is read once more on the main thread; past that the
+// scorer gets a clear message, never an endless spinner.
+export const PDF_WORKER_TIMEOUT_MS = 15000
+export const PDF_MAIN_THREAD_TIMEOUT_MS = 30000
+export const PDF_TIMEOUT_CODE = 'pdf-timeout'
+
+// What pdf.js 5's modern build uses without a fallback of its own
+const MODERN_PDF_FEATURES = [
+  ['Promise.withResolvers', (g) => typeof g.Promise?.withResolvers === 'function'],
+  ['Promise.try', (g) => typeof g.Promise?.try === 'function'],
+  ['URL.parse', (g) => typeof g.URL?.parse === 'function'],
+  ['Uint8Array.prototype.toHex', (g) => typeof g.Uint8Array?.prototype?.toHex === 'function'],
+  ['Uint8Array.fromBase64', (g) => typeof g.Uint8Array?.fromBase64 === 'function'],
+  ['Map.prototype.getOrInsertComputed', (g) => typeof g.Map?.prototype?.getOrInsertComputed === 'function']
+]
+
+/** The features of the modern build the engine lacks (names; none: it can run it). */
+export function missingModernPdfFeatures(g = globalThis) {
+  return MODERN_PDF_FEATURES.filter(([, has]) => { try { return !has(g) } catch { return true } }).map(([name]) => name)
+}
+
+/**
+ * Whether the engine starts module workers (pdf.js's worker is an ES module):
+ * Chrome 80+, Safari 15+, Firefox 114+. Older engines never read the `type`
+ * option (they start a classic worker, which cannot run the module). No
+ * worker is started: about:blank is refused after the options are read.
+ */
+export function supportsModuleWorker(WorkerCtor = globalThis.Worker) {
+  if (typeof WorkerCtor !== 'function') return false
+  let read = false
   try {
-    if (typeof file?.size === 'number' && file.size > ROSTER_PDF_MAX_BYTES) throw tooBig('more than 5 MB')
+    const w = new WorkerCtor('about:blank', { get type() { read = true; return 'module' } })
+    try { w?.terminate?.() } catch { /* never started */ }
+  } catch { /* refused: what we wanted, the options were read first */ }
+  return read
+}
 
-    // Dynamic import of pdfjs-dist
-    const pdfjsLib = await import('pdfjs-dist')
+/**
+ * How this engine reads a roster PDF: { build: 'modern'|'legacy', worker:
+ * 'module'|'main-thread', missing } (missing: the modern build's features
+ * the engine lacks). Without module workers it reads on the main thread,
+ * with the legacy build (it runs on every engine the app does).
+ */
+export function pdfReaderPlan({ globalObject = globalThis, WorkerCtor = globalObject?.Worker } = {}) {
+  const missing = missingModernPdfFeatures(globalObject)
+  if (!supportsModuleWorker(WorkerCtor)) return { build: 'legacy', worker: 'main-thread', missing }
+  return { build: missing.length ? 'legacy' : 'modern', worker: 'module', missing }
+}
 
-    pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
+// After a reading that failed or never answered in a worker: the rest of the
+// session reads on the main thread (pdf.js keeps that choice anyway)
+const MAIN_THREAD_PLAN = { build: 'legacy', worker: 'main-thread', missing: [] }
+let fallbackPlan = null
 
-    const arrayBuffer = await file.arrayBuffer()
-    if (arrayBuffer.byteLength > ROSTER_PDF_MAX_BYTES) throw tooBig('more than 5 MB')
-    loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+/** For tests: forget the main-thread fallback of an earlier reading. */
+export function resetPdfReaderFallback() {
+  fallbackPlan = null
+}
+
+/** The error a reading that took too long ends with (code PDF_TIMEOUT_CODE). */
+export function pdfTimeoutError(ms) {
+  const err = new Error(`Reading the PDF took longer than ${Math.round(ms / 1000)} s`)
+  err.code = PDF_TIMEOUT_CODE
+  return err
+}
+
+// Errors about the file itself: reading it again elsewhere changes nothing
+const FILE_ERRORS = new Set(['InvalidPDFException', 'PasswordException', 'MissingPDFException', 'ResponseException'])
+/** Whether a failed reading is worth a second try on the main thread. */
+export function retryOnMainThread(err, plan) {
+  if (!plan || plan.worker === 'main-thread') return false
+  if (err?.code === PDF_TIMEOUT_CODE) return true
+  if (err?.notRoster || FILE_ERRORS.has(err?.name)) return false
+  return true
+}
+
+async function loadPdfjs(plan) {
+  const pdfjsLib = plan.build === 'legacy'
+    ? await import('pdfjs-dist/legacy/build/pdf.mjs')
+    : await import('pdfjs-dist')
+  const workerUrl = plan.build === 'legacy' ? PDF_LEGACY_WORKER_URL : PDF_WORKER_URL
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+  if (plan.worker === 'main-thread' && !globalThis.pdfjsWorker?.WorkerMessageHandler) {
+    // pdf.js then runs its worker's code on this thread (its "fake worker")
+    globalThis.pdfjsWorker = await import(/* @vite-ignore */ workerUrl)
+  }
+  return pdfjsLib
+}
+
+/** The PDF's text and positioned items, read with `plan`; gives up after `timeoutMs`. */
+async function readPdfText(bytes, plan, timeoutMs) {
+  let loadingTask = null
+  const read = (async () => {
+    const pdfjsLib = await loadPdfjs(plan)
+    loadingTask = pdfjsLib.getDocument({ data: bytes })
     const pdf = await loadingTask.promise
     if (pdf.numPages > ROSTER_PDF_MAX_PAGES) throw tooBig(`more than ${ROSTER_PDF_MAX_PAGES} pages`)
 
@@ -60,15 +154,69 @@ export async function parseRosterPdf(file) {
         }
       }
     }
-
-    return parseRosterContent(fullText, allPositionedItems)
-  } catch (error) {
-    console.error('Error parsing PDF:', error)
-    // Callers prefix "Failed to parse PDF:" themselves
-    throw error
+    return { fullText, allPositionedItems }
+  })()
+  try {
+    return await withTimeout(read, timeoutMs)
   } finally {
     try { loadingTask?.destroy?.() } catch { /* already gone */ }
   }
+}
+
+/** `promise`, or an error of code PDF_TIMEOUT_CODE once `ms` have passed. */
+export async function withTimeout(promise, ms) {
+  let timer = null
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(pdfTimeoutError(ms)), ms) })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    clearTimeout(timer)
+    Promise.resolve(promise).catch(() => { /* given up: its late failure is not ours */ })
+  }
+}
+
+/**
+ * The roster in a PDF (players, coach, assistants). Never waits for ever: a
+ * worker that fails or does not answer is retried once on the main thread,
+ * and a reading past its time ends with an error of code PDF_TIMEOUT_CODE.
+ * @param {File|Blob} file
+ * @param {{ plan?: object, workerTimeoutMs?: number, mainThreadTimeoutMs?: number }} [options]
+ */
+export async function parseRosterPdf(file, { plan, workerTimeoutMs = PDF_WORKER_TIMEOUT_MS, mainThreadTimeoutMs = PDF_MAIN_THREAD_TIMEOUT_MS } = {}) {
+  try {
+    if (typeof file?.size === 'number' && file.size > ROSTER_PDF_MAX_BYTES) throw tooBig('more than 5 MB')
+
+    // (a file a cloud drive has not downloaded yet can keep this waiting)
+    const arrayBuffer = await withTimeout(file.arrayBuffer(), mainThreadTimeoutMs)
+    if (arrayBuffer.byteLength > ROSTER_PDF_MAX_BYTES) throw tooBig('more than 5 MB')
+
+    const first = plan || fallbackPlan || pdfReaderPlan()
+    const timeoutOf = (p) => (p.worker === 'main-thread' ? mainThreadTimeoutMs : workerTimeoutMs)
+    let read
+    try {
+      // a copy: pdf.js hands the bytes to its worker (the buffer is detached)
+      read = await readPdfText(new Uint8Array(arrayBuffer.slice(0)), first, timeoutOf(first))
+    } catch (err) {
+      if (!retryOnMainThread(err, first)) throw err
+      console.warn(`[parseRosterPdf] reading in a worker failed (${err?.message}); reading on the main thread`)
+      fallbackPlan = MAIN_THREAD_PLAN
+      read = await readPdfText(new Uint8Array(arrayBuffer.slice(0)), MAIN_THREAD_PLAN, timeoutOf(MAIN_THREAD_PLAN))
+    }
+    return parseRosterContent(read.fullText, read.allPositionedItems)
+  } catch (error) {
+    console.error('Error parsing PDF:', error)
+    // Callers show rosterPdfErrorText (a reading past its time) or prefix the message
+    throw error
+  }
+}
+
+/**
+ * The text a caller shows for a failed roster PDF import: the reading took
+ * too long (PDF_TIMEOUT_CODE), or the PDF could not be read and why.
+ */
+export function rosterPdfErrorText(err, t) {
+  if (err?.code === PDF_TIMEOUT_CODE) return t('rosterPdf.tooSlow')
+  return t('rosterPdf.failed', { reason: err?.message || String(err) })
 }
 
 /**

@@ -6510,5 +6510,9 @@
       "set": "Set {{n}}",
       "serving": "Serving"
     }
+  },
+  "rosterPdf": {
+    "tooSlow": "This device could not read the PDF: it took too long. Try again, or enter the players by hand.",
+    "failed": "The PDF could not be read: {{reason}}"
   }
 }

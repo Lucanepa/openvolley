@@ -418,7 +418,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
       toast.success(t('manage.myTeams.pdfImportedGame', { count: imported.players.length }))
     } catch (err) {
       console.warn('[MyTeams] Einsatzliste import failed:', err?.message)
-      setSaveError(t('manage.myTeams.pdfFailed'))
+      setSaveError(err?.code === 'pdf-timeout' /* parseRosterPdf PDF_TIMEOUT_CODE */ ? t('rosterPdf.tooSlow') : t('manage.myTeams.pdfFailed'))
     } finally {
       setImporting(false)
       if (pdfInput.current) pdfInput.current.value = ''

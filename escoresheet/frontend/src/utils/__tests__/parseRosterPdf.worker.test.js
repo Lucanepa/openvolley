@@ -12,9 +12,16 @@ vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '/assets/pd
 const pdfjsMock = vi.hoisted(() => ({
   GlobalWorkerOptions: { workerSrc: '' },
   version: '5.0.0',
-  getDocument: () => ({ promise: Promise.reject(new Error('stop after worker setup')) })
+  // the worker source of each reading (the modern build, then the main-thread retry)
+  sources: [],
+  getDocument () {
+    pdfjsMock.sources.push(pdfjsMock.GlobalWorkerOptions.workerSrc)
+    return { promise: Promise.reject(new Error('stop after worker setup')) }
+  }
 }))
 vi.mock('pdfjs-dist', () => pdfjsMock)
+vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({ default: '/assets/pdf.worker.legacy-TEST.mjs' }))
+vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => pdfjsMock)
 
 import { parseRosterPdf } from '../parseRosterPdf'
 
@@ -22,13 +29,16 @@ describe('parseRosterPdf worker source', () => {
   it('points pdf.js at the bundled worker, never a CDN URL', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const file = { arrayBuffer: async () => new ArrayBuffer(0) }
-    await expect(parseRosterPdf(file)).rejects.toThrow('stop after worker setup')
-    expect(pdfjsMock.GlobalWorkerOptions.workerSrc).toBe('/assets/pdf.worker.min-TEST.mjs')
+    globalThis.pdfjsWorker = { WorkerMessageHandler: {} } // the main thread's worker code, "loaded"
+    await expect(parseRosterPdf(file, { plan: { build: 'modern', worker: 'module' } })).rejects.toThrow('stop after worker setup')
+    // the bundled worker, then the bundled legacy one (read again on the main thread)
+    expect(pdfjsMock.sources).toEqual(['/assets/pdf.worker.min-TEST.mjs', '/assets/pdf.worker.legacy-TEST.mjs'])
   })
 
   it('imports the worker as a bundled asset and has no CDN URL left', () => {
     const src = readFileSync(resolve(__dirname, '../parseRosterPdf.js'), 'utf8')
     expect(src).toMatch(/from 'pdfjs-dist\/build\/pdf\.worker\.min\.mjs\?url'/)
+    expect(src).toMatch(/from 'pdfjs-dist\/legacy\/build\/pdf\.worker\.min\.mjs\?url'/)
     expect(src).not.toMatch(/unpkg\.com|cdn\.jsdelivr\.net/)
   })
 

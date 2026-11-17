@@ -13,7 +13,11 @@ const pdfjsMock = vi.hoisted(() => ({
   }))
 }))
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '/assets/pdf.worker.min-TEST.mjs' }))
+vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({ default: '/assets/pdf.worker.legacy-TEST.mjs' }))
 vi.mock('pdfjs-dist', () => pdfjsMock)
+// jsdom has no Worker: the legacy build on the main thread, its worker code "loaded" already
+vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => pdfjsMock)
+globalThis.pdfjsWorker = { WorkerMessageHandler: {} }
 
 import { parseRosterContent, parseRosterPdf, parseRosterText, playersFromColumns, ROSTER_PDF_MAX_BYTES, ROSTER_PDF_MAX_PAGES } from '../parseRosterPdf'
 
