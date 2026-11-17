@@ -103,6 +103,7 @@ export function MenuPopover({
     if (!panel || asModal) return;
     const vw = window.innerWidth || document.documentElement.clientWidth || 0;
     const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    const scrolled = panel.scrollTop;
     panel.style.maxHeight = '';
     const h = panel.offsetHeight;
     const w = panel.offsetWidth;
@@ -128,6 +129,8 @@ export function MenuPopover({
     panel.style.top = `${Math.round(top)}px`;
     panel.style.left = `${Math.round(left)}px`;
     panel.style.opacity = '1';
+    // measuring without the max height scrolled the panel back to its top
+    if (scrolled) panel.scrollTop = scrolled;
   }, [anchorRef, asModal, align, side]);
 
   // Modal: never taller than the visible window (innerHeight, see above).
@@ -149,12 +152,14 @@ export function MenuPopover({
       ro.observe(panel);
       if (panel.firstElementChild) ro.observe(panel.firstElementChild);
     }
+    // the page scrolls under the popover: follow the button (not the popover's own scrolling)
+    const onScroll = (e) => { if (!(panelRef.current && e.target instanceof Node && panelRef.current.contains(e.target))) update(); };
     window.addEventListener('resize', update);
-    if (!asModal) window.addEventListener('scroll', update, true);
+    if (!asModal) window.addEventListener('scroll', onScroll, true);
     return () => {
       if (ro) ro.disconnect();
       window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [open, asModal, place, fitModal]);
 
