@@ -371,7 +371,7 @@ function forwardGlobalLive(code, court, liveState, entry) {
   const payload = {
     court,
     liveState: pickLiveSummaryFields(liveState),
-    match: { coinTossTeamA: m.coinTossTeamA ?? null, hall: m.hall ?? m.venue ?? null, scheduledAt: m.scheduledAt ?? null, gameN: m.gameN ?? null },
+    match: { coinTossTeamA: m.coinTossTeamA ?? null, hall: m.hall ?? m.venue ?? null, court: m.court ?? null, scheduledAt: m.scheduledAt ?? null, gameN: m.gameN ?? null },
     homeTeam: { name: entry?.homeTeam?.name ?? null },
     awayTeam: { name: entry?.awayTeam?.name ?? null },
     sets: (Array.isArray(entry?.sets) ? entry.sets : []).filter((x) => x?.finished === true).slice(0, 5).map((x) => ({ index: x.index, homePoints: x.homePoints, awayPoints: x.awayPoints, finished: true }))

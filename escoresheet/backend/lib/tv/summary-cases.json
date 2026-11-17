@@ -396,5 +396,79 @@
       "scheduledAt": null,
       "gameNumber": null
     }
+  },
+  {
+    "name": "OpenBeach: venue plus court, coin toss team2 (team A is away)",
+    "liveState": {
+      "team_a_name": "Meier/Keller",
+      "team_b_name": "Muster/Beispiel",
+      "sets_won_a": 1,
+      "sets_won_b": 0,
+      "points_a": 10,
+      "points_b": 12,
+      "current_set": 2,
+      "best_of": 3,
+      "side_a": "left",
+      "serving_team": "left",
+      "match_status": "live",
+      "sport_type": "beach"
+    },
+    "entry": {
+      "match": {
+        "coinTossTeamA": "team2",
+        "hall": "Strandbad Mythenquai",
+        "court": "Court 3"
+      },
+      "homeTeam": {
+        "name": "Muster/Beispiel"
+      },
+      "awayTeam": {
+        "name": "Meier/Keller"
+      },
+      "sets": [
+        {
+          "index": 1,
+          "homePoints": 19,
+          "awayPoints": 21,
+          "finished": true
+        }
+      ]
+    },
+    "expected": {
+      "home": {
+        "name": "Muster/Beispiel",
+        "short": null,
+        "color": null
+      },
+      "away": {
+        "name": "Meier/Keller",
+        "short": null,
+        "color": null
+      },
+      "setsWon": {
+        "home": 0,
+        "away": 1
+      },
+      "points": {
+        "home": 12,
+        "away": 10
+      },
+      "sets": [
+        {
+          "home": 19,
+          "away": 21
+        }
+      ],
+      "currentSet": 2,
+      "bestOf": 3,
+      "serving": "away",
+      "status": "live",
+      "ended": false,
+      "timeout": false,
+      "interval": false,
+      "hall": "Strandbad Mythenquai · Court 3",
+      "scheduledAt": null,
+      "gameNumber": null
+    }
   }
 ]

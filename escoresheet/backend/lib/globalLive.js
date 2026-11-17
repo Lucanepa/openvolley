@@ -67,7 +67,8 @@ export function courtSummary(liveState, entry = {}, nowIso = new Date().toISOStr
   // A is home unless the names say otherwise, or the coin toss gave A to away
   const aIsHome = aName && awayName && aName === awayName && aName !== homeName
     ? false
-    : (match.coinTossTeamA ? match.coinTossTeamA !== 'away' : true)
+    // (indoor says home/away, OpenBeach team1/team2)
+    : (match.coinTossTeamA ? match.coinTossTeamA !== 'away' && match.coinTossTeamA !== 'team2' : true)
   const side = (a, b) => (aIsHome ? { home: a, away: b } : { home: b, away: a })
   const team = (prefix) => ({ name: str(ls[`team_${prefix}_name`]), short: str(ls[`team_${prefix}_short`], 12), color: color(ls[`team_${prefix}_color`]) })
   const teams = side(team('a'), team('b'))
@@ -101,7 +102,9 @@ export function courtSummary(liveState, entry = {}, nowIso = new Date().toISOStr
     ended: status === 'final' || status === 'ended' || status === 'approved',
     timeout: ls.timeout_active === true,
     interval: ls.set_interval_active === true,
-    hall: str(match.hall) || str(match.venue) || str(match.court),
+    // the hall or venue, and the court when there is one (OpenBeach: the same
+    // venue on every court, the court number tells them apart)
+    hall: [str(match.hall) || str(match.venue), str(match.court)].filter(Boolean).join(' \u00b7 ') || null,
     scheduledAt: str(match.scheduledAt, 40),
     gameNumber: str(match.gameN != null ? String(match.gameN) : null, 20),
     updatedAt: nowIso
