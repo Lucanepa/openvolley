@@ -249,6 +249,9 @@ const VALIDATE_PIN_FAILURES: u32 = 10;
 const MATCH_REQUEST_LIMIT: u32 = 30;
 const PATCH_LIMIT: u32 = 10;
 const MISS_CACHE: Duration = Duration::from_secs(10);
+/// GET /api/global/live/<code> per address and minute (server.js
+/// GLOBAL_LIVE_RATE_LIMIT_MAX): a TV polls about every 5 s.
+const GLOBAL_LIVE_LIMIT: u32 = 600;
 
 /// A connection's outgoing queue: unbounded channel with a byte count; over
 /// MAX_QUEUED_BYTES the message is refused and the connection is cut.
@@ -382,6 +385,9 @@ pub struct AppState {
     claims: std::sync::Mutex<ClaimFile>,
     /// Sign on phone sessions (memory only; the sweeper starts with the first one)
     sign: Arc<crate::sign::SignSessions>,
+    /// The Global tool's live page for TVs: a court summary per tournament
+    /// code (global_live.rs), memory only
+    global_live: std::sync::Mutex<crate::global_live::GlobalLive>,
     pub http_port: u16,
     pub ws_port: u16,
 }
@@ -410,6 +416,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         misses: Mutex::new(HashMap::new()),
         claims: std::sync::Mutex::new(ClaimFile::load(claim_file_path(http_port))),
         sign: crate::sign::SignSessions::lan(),
+        global_live: std::sync::Mutex::new(crate::global_live::GlobalLive::default()),
         http_port,
         ws_port,
     })
@@ -1222,6 +1229,10 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/sign/submit", post(sign_api))
         .route("/api/sign/wait", post(sign_api))
         .route("/api/sign/close", post(sign_api))
+        .route("/api/global/live/{code}", get(global_live_page))
+        .route("/tv/tv.js", get(tv_script))
+        .route("/tv/{code}", get(tv_page))
+        .route("/tv/{code}/", get(tv_page))
         .fallback(static_handler)
         .layer(middleware::from_fn(add_headers))
         .with_state(state)
@@ -1270,7 +1281,8 @@ async fn add_headers(req: Request<Body>, next: Next) -> Response {
             HeaderValue::from_static("strict-origin-when-cross-origin"),
         );
     }
-    if let Some(o) = origin {
+    // A route that answers any page (Access-Control-Allow-Origin: *) keeps it
+    if let Some(o) = origin.filter(|_| !h.contains_key("Access-Control-Allow-Origin")) {
         if is_trusted_relay_origin(Some(&o), host.as_deref()) {
             if let Ok(val) = HeaderValue::from_str(&o) {
                 h.insert("Access-Control-Allow-Origin", val);
@@ -1988,6 +2000,79 @@ async fn static_handler(
         h.insert("Cache-Control", HeaderValue::from_static("no-cache"));
     }
     res
+}
+
+// ---------------------------------------------------------------------------
+// The Global tool's live page for TVs (global_live.rs, server.js the same
+// routes): a laptop without internet drives the TVs on its own Wi-Fi
+// ---------------------------------------------------------------------------
+
+/// The `<code>` of `/<prefix><code>` or `/<prefix><code>/` as the raw path has
+/// it (not percent-decoded, like Node's url.pathname), 1..=40 bytes.
+fn raw_segment<'a>(uri: &'a Uri, prefix: &str, slash: bool) -> Option<&'a str> {
+    let rest = uri.path().strip_prefix(prefix)?;
+    let rest = if slash { rest.strip_suffix('/').unwrap_or(rest) } else { rest };
+    (!rest.is_empty() && rest.len() <= 40 && !rest.contains('/')).then_some(rest)
+}
+
+/// GET /api/global/live/<code>: the courts of a tournament code, score
+/// summaries only, for any page (CORS *).
+async fn global_live_page(ConnectInfo(addr): ConnectInfo<SocketAddr>, State(state): State<Arc<AppState>>, uri: Uri) -> Response {
+    let Some(code) = raw_segment(&uri, "/api/global/live/", false) else {
+        // longer than a code: server.js answers it from /api/global/* (POST only)
+        return json_response(StatusCode::METHOD_NOT_ALLOWED, json!({ "data": null, "error": { "message": "Method not allowed", "code": "OV_METHOD" } }));
+    };
+    let mut res = if http_rate_limited(&state, "global-live", &addr, GLOBAL_LIVE_LIMIT).await {
+        let mut r = json_response(StatusCode::TOO_MANY_REQUESTS, json!({ "data": null, "error": { "message": "Too many requests", "code": "OV_RATE_LIMITED" } }));
+        r.headers_mut().insert("Retry-After", HeaderValue::from_static("60"));
+        r
+    } else if !crate::global_live::is_live_code(code) {
+        let mut r = json_response(StatusCode::NOT_FOUND, json!({ "data": null, "error": { "message": "Not found", "code": "OV_NOT_FOUND" } }));
+        r.headers_mut().insert("Cache-Control", HeaderValue::from_static("no-store"));
+        r
+    } else {
+        let body = {
+            let mut store = state.global_live.lock().unwrap_or_else(|e| e.into_inner());
+            crate::global_live::page_body(&mut store, code, now_ms())
+        };
+        let mut r = json_response(StatusCode::OK, body);
+        r.headers_mut().insert("Cache-Control", HeaderValue::from_static("no-store"));
+        r
+    };
+    let h = res.headers_mut();
+    h.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    h.insert("Cross-Origin-Resource-Policy", HeaderValue::from_static("cross-origin"));
+    res
+}
+
+/// GET /tv/tv.js: the TV page's script (backend/lib/tv/tv.js).
+async fn tv_script() -> Response {
+    (
+        StatusCode::OK,
+        [("content-type", "text/javascript; charset=utf-8"), ("cache-control", "public, max-age=300")],
+        crate::global_live::TV_JS,
+    )
+        .into_response()
+}
+
+/// GET /tv/<code>: the live page for any screen, smart TVs included; the code
+/// upper-cased, dashes and spaces left out.
+async fn tv_page(uri: Uri) -> Response {
+    let code = raw_segment(&uri, "/tv/", true).map(crate::global_live::tv_code_of).unwrap_or_default();
+    if !crate::global_live::is_live_code(&code) {
+        return (
+            StatusCode::NOT_FOUND,
+            [("content-type", "text/plain; charset=utf-8"), ("cache-control", "no-store")],
+            "Not a tournament code",
+        )
+            .into_response();
+    }
+    (
+        StatusCode::OK,
+        [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store"), ("referrer-policy", "no-referrer")],
+        crate::global_live::tv_page_html(&code),
+    )
+        .into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -3102,6 +3187,22 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                     let Some(live) = data.get("liveState").filter(|v| v.is_object()).cloned() else { return };
                     if let Some(bundle) = state.matches.lock().await.get_mut(&match_id) {
                         bundle["liveState"] = live.clone();
+                        // The Global tool's live page for TVs (global_live.rs): a
+                        // scorer that opted in with a tournament code, any match
+                        // type; the summary only, from the state just taken from
+                        // the room's owner (checked above). One court per match
+                        // whichever way it comes (relay or the webview's push to
+                        // the cloud): the match's court token, else the room.
+                        if let Some(code) = data.get("globalLive").and_then(|v| v.as_str()) {
+                            let court = data
+                                .get("globalLiveCourt")
+                                .and_then(|v| v.as_str())
+                                .filter(|t| crate::global_live::is_court_token(t))
+                                .map(str::to_string)
+                                .unwrap_or_else(|| crate::global_live::court_token_of(&match_id));
+                            let mut store = state.global_live.lock().unwrap_or_else(|e| e.into_inner());
+                            store.update(code, &court, &bundle["liveState"], bundle, now_ms());
+                        }
                     }
                     let msg = json!({ "type": "live-state-update", "matchId": match_id, "liveState": live });
                     notify_subscribers(state, &match_id, &msg, Some(conn_id)).await;
@@ -4807,6 +4908,128 @@ mod tests {
         let res = http_router(state).oneshot(req).await.unwrap();
         assert!(res.headers().get("content-security-policy").is_none());
         assert_eq!(res.headers().get("referrer-policy").unwrap(), "strict-origin-when-cross-origin");
+    }
+
+    // The Global tool's live page for TVs (global_live.rs), the scenarios of
+    // backend/tests/globalLive.relay.test.js
+
+    async fn get_path(state: &Arc<AppState>, path: &str, headers: &[(&str, &str)]) -> (StatusCode, HeaderMap, String) {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let mut b = Request::builder().uri(path);
+        for (k, v) in headers {
+            b = b.header(*k, *v);
+        }
+        let mut req = b.body(Body::empty()).unwrap();
+        req.extensions_mut().insert(ConnectInfo("192.168.1.80:1".parse::<SocketAddr>().unwrap()));
+        let res = http_router(state.clone()).oneshot(req).await.unwrap();
+        let (status, h) = (res.status(), res.headers().clone());
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        (status, h, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    fn global_bundle(id: u64, pin: &str) -> Value {
+        json!({
+            "match": { "id": id, "status": "live", "gamePin": pin, "refereePin": "316271", "coinTossTeamA": "home", "hall": "Hall 1", "scheduledAt": "2027-11-05T09:00:00Z", "gameN": 3 },
+            "homeTeam": { "name": "Munich IS" }, "awayTeam": { "name": "Zurich IS" },
+            "homePlayers": [{ "firstName": "Anna", "lastName": "Muster" }], "awayPlayers": [],
+            "sets": [{ "index": 1, "homePoints": 25, "awayPoints": 20, "finished": true }, { "index": 2, "homePoints": 3, "awayPoints": 1, "finished": false }],
+            "events": [],
+        })
+    }
+
+    fn live_msg(room: &str, extra: Value) -> String {
+        let mut m = json!({
+            "type": "live-state-update", "matchId": room,
+            "liveState": { "team_a_name": "Munich IS", "team_b_name": "Zurich IS", "points_a": 3, "points_b": 1, "sets_won_a": 1, "sets_won_b": 0,
+                           "current_set": 2, "side_a": "left", "serving_team": "left", "match_status": "live", "lineup_a": { "I": 7 } },
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            m[k] = v.clone();
+        }
+        m.to_string()
+    }
+
+    #[tokio::test]
+    async fn a_scorer_with_a_code_shows_its_court_summary_only_cors_star() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        sync(&state, 1, "41", global_bundle(41, "515253")).await.unwrap();
+        let (tx, _rx) = tx_pair();
+        // any match type: the owner of the room and a valid code are enough
+        handle_ws_message(&state, 1, &tx, &live_msg("41", json!({ "globalLive": "ABCD2345" }))).await;
+        let (status, h, body) = get_path(&state, "/api/global/live/ABCD2345", &[("origin", "http://192.168.1.10:5173")]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(h.get("access-control-allow-origin").unwrap(), "*");
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        assert_eq!(h.get("cross-origin-resource-policy").unwrap(), "cross-origin");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["error"], Value::Null);
+        assert_eq!(v["data"]["code"], "ABCD2345");
+        let courts = v["data"]["courts"].as_array().unwrap();
+        assert_eq!(courts.len(), 1);
+        assert_eq!(courts[0]["points"], json!({ "home": 3, "away": 1 }));
+        assert_eq!(courts[0]["sets"], json!([{ "home": 25, "away": 20 }]));
+        assert_eq!(courts[0]["home"]["name"], "Munich IS");
+        assert_eq!(courts[0]["hall"], "Hall 1");
+        assert_eq!(courts[0]["serving"], "home");
+        for leak in ["Anna", "Muster", "515253", "316271", "lineup", "\"41\""] {
+            assert!(!body.contains(leak), "{leak}");
+        }
+        // the same court whichever way it comes: the room's token is the default court
+        handle_ws_message(&state, 1, &tx, &live_msg("41", json!({ "globalLive": "ABCD2345", "globalLiveCourt": crate::global_live::court_token_of("41") }))).await;
+        let v: Value = serde_json::from_str(&get_path(&state, "/api/global/live/ABCD2345", &[]).await.2).unwrap();
+        assert_eq!(v["data"]["courts"].as_array().unwrap().len(), 1);
+        // a match's own court token is another court
+        handle_ws_message(&state, 1, &tx, &live_msg("41", json!({ "globalLive": "ABCD2345", "globalLiveCourt": "a".repeat(32) }))).await;
+        let v: Value = serde_json::from_str(&get_path(&state, "/api/global/live/ABCD2345", &[]).await.2).unwrap();
+        assert_eq!(v["data"]["courts"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn nothing_from_a_socket_that_does_not_own_the_room_without_a_code_or_with_a_bad_code() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.66").await;
+        sync(&state, 1, "42", global_bundle(42, "515253")).await.unwrap();
+        let (tx, _rx) = tx_pair();
+        handle_ws_message(&state, 2, &tx, &live_msg("42", json!({ "globalLive": "NNNN2345", "liveState": { "team_a_name": "FAKE" } }))).await;
+        handle_ws_message(&state, 1, &tx, &live_msg("42", json!({ "globalLive": "bad-code" }))).await;
+        handle_ws_message(&state, 1, &tx, &live_msg("42", json!({ "globalLive": 12345678 }))).await;
+        handle_ws_message(&state, 1, &tx, &live_msg("42", json!({}))).await;
+        let (status, _, body) = get_path(&state, "/api/global/live/NNNN2345", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v, json!({ "data": { "code": "NNNN2345", "updatedAt": null, "courts": [] }, "error": null }));
+        assert_eq!(state.global_live.lock().unwrap().size(), 0);
+        let (status, h, body) = get_path(&state, "/api/global/live/bad-code", &[]).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(h.get("access-control-allow-origin").unwrap(), "*");
+        assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["error"]["code"], "OV_NOT_FOUND");
+        // percent-encoding is not decoded, like Node's url.pathname
+        assert_eq!(get_path(&state, "/api/global/live/%41BCD2345", &[]).await.0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn the_tv_page_and_its_script_are_the_backend_s_files() {
+        let state = new_state(0, 0);
+        let (status, h, body) = get_path(&state, "/tv/tvpg-2345", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(h.get("content-type").unwrap().to_str().unwrap().starts_with("text/html"));
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        assert_eq!(h.get("referrer-policy").unwrap(), "no-referrer");
+        assert!(body.contains("data-code=\"TVPG2345\""));
+        assert_eq!(body, crate::global_live::tv_page_html("TVPG2345"));
+        assert_eq!(get_path(&state, "/tv/ABCD2345/", &[]).await.0, StatusCode::OK);
+        let (status, h, js) = get_path(&state, "/tv/tv.js", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(h.get("content-type").unwrap().to_str().unwrap().contains("javascript"));
+        assert_eq!(h.get("cache-control").unwrap(), "public, max-age=300");
+        assert_eq!(js, include_str!("../../../backend/lib/tv/tv.js"));
+        let (status, h, body) = get_path(&state, "/tv/nope", &[]).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(h.get("content-type").unwrap().to_str().unwrap().starts_with("text/plain"));
+        assert_eq!(body, "Not a tournament code");
     }
 }
 
