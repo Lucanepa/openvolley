@@ -1073,6 +1073,10 @@
       "applyDelayWarning": "Enregistrer un avertissement pour retard pour {{team}} ?",
       "applyDelayPenalty": "Enregistrer une pénalité pour retard pour {{team}} ?",
       "repeatedImproperRequest": "L'équipe a déjà une demande irrégulière : celle-ci compte comme un retard.",
+      "whatRequested": "Qu'a demandé l'équipe ?",
+      "kindImproper": "Demande irrégulière",
+      "kindIllegalSubstitution": "Remplacement illégal",
+      "illegalSubstitution": "Demander un remplacement illégal est un retard : la demande est refusée.",
       "repeatedDelay": "L'équipe a déjà un avertissement pour retard : ce retard est une pénalité.",
       "pointToOpponent": "Point et service pour {{opponent}}."
     },

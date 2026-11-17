@@ -2,6 +2,19 @@
 // OPENVOLLEY_POINTHUB_BOARD, and src-tauri/src/main.rs sets this flag before the page loads.
 export const onPointHubBoard = () => typeof window !== 'undefined' && window.__OV_POINTHUB_BOARD__ === true
 
+// On <html> on the board (main.jsx): the scoring screen's menus open without
+// their roll-in (styles.css). WebKitGTK there composites in software, and the
+// 0.15 s fade put the menu on a layer of its own: it faded in slowly, then
+// flashed once when the layer was dropped at the end (owner 17.11).
+export const POPOVER_NO_MOTION_CLASS = 'no-popover-motion'
+
+/** On the board only: menus without their roll-in. @returns {boolean} whether it applied */
+export function stillPopoversOnBoard(doc = typeof document !== 'undefined' ? document : null) {
+  if (!doc || !onPointHubBoard()) return false
+  doc.documentElement.classList.add(POPOVER_NO_MOTION_CLASS)
+  return true
+}
+
 const NOT_TYPED_IN = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'])
 
 export function isTextField(el) {

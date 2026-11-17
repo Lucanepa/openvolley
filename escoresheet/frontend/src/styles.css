@@ -3512,6 +3512,14 @@ button.start-rally-button {
   }
 }
 
+/* The Point Hub board (<html class="no-popover-motion">, main.jsx): menus just
+   appear. Its webview composites in software, and there the roll-in faded in
+   slowly and then flickered once as the menu's own layer was dropped. */
+.no-popover-motion .modal-wrapper-roll-down>div,
+.no-popover-motion .modal-wrapper-roll-up>div {
+  animation: none;
+}
+
 /* Phone layout (PhoneScoreboard): the two point buttons (and the slots that
    keep their place between rallies) are squares as wide as their column, and
    the court is 2:1, as the mockup. When the screen is too short for the whole

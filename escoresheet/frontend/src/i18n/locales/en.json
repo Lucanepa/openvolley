@@ -1075,6 +1075,10 @@
       "applyDelayWarning": "Record a delay warning for {{team}}?",
       "applyDelayPenalty": "Record a delay penalty for {{team}}?",
       "repeatedImproperRequest": "The team already has an improper request on record, so this one counts as a delay.",
+      "whatRequested": "What did the team request?",
+      "kindImproper": "Improper request",
+      "kindIllegalSubstitution": "Illegal substitution",
+      "illegalSubstitution": "Requesting an illegal substitution is a delay: the request is rejected.",
       "repeatedDelay": "The team already has a delay warning, so this delay is a penalty.",
       "pointToOpponent": "Point and service to {{opponent}}."
     },

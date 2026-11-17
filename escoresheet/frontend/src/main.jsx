@@ -16,7 +16,7 @@ import { readOpenMatch } from './utils/deviceSelfCheck'
 import { isDesktopScoretable, resolveDesktopWindow } from './utils/appLifecycle'
 import { setAppEntry } from './utils/appEntry'
 import { watchFormStack } from './utils/formLayout'
-import { blockPagePinch, installOnScreenKeyboardHelp, onPointHubBoard } from './utils/pointHubBoard'
+import { blockPagePinch, installOnScreenKeyboardHelp, onPointHubBoard, stillPopoversOnBoard } from './utils/pointHubBoard'
 import { db } from './db/db'
 import { startActivityLog } from './utils/activity'
 import { installDiagnostics } from './diagnostics'
@@ -69,6 +69,10 @@ startNativeFileHousekeeping()
 watchFormStack(document.body)
 
 if (onPointHubBoard()) {
+  // The board's webview composites in software: an animated menu fades in
+  // slowly, then flickers once as it settles (owner 17.11). Menus there just
+  // appear (styles.css .no-popover-motion).
+  stillPopoversOnBoard()
   installOnScreenKeyboardHelp()
   blockPagePinch()
 }
