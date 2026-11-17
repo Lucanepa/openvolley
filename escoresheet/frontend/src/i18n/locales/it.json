@@ -6509,5 +6509,36 @@
       "set": "Set {{n}}",
       "serving": "Al servizio"
     }
+  },
+  "phonePair": {
+    "menu": "Collega un telefono (tastiera)",
+    "title": "Collega un telefono",
+    "intro": "Scrivi sul tuo telefono: quello che digiti appare subito nel campo di testo scelto su questo dispositivo.",
+    "scanHint": "Scansiona il codice QR con la fotocamera del telefono.",
+    "orCode": "Oppure apri {{url}} sul telefono e digita questo codice:",
+    "code": "Codice",
+    "validFor": "Codice valido ancora {{time}}",
+    "waiting": "In attesa del telefono…",
+    "paired": "Telefono collegato",
+    "pairedHint": "Tocca un campo di testo su questo dispositivo, poi scrivi sul telefono. Campo successivo e Invio funzionano anche dal telefono.",
+    "phoneAway": "Telefono non raggiungibile",
+    "hideKeyboard": "Nascondi la tastiera di questo dispositivo finché il telefono è collegato",
+    "unpair": "Scollega",
+    "done": "Fatto",
+    "ended": "Il telefono è scollegato.",
+    "expired": "Il collegamento è terminato.",
+    "newPairing": "Collega di nuovo",
+    "startFailed": "Non è stato possibile avviare il collegamento. Riprova.",
+    "notOnServer": "Questa partita non è ancora sul server (o è una partita di prova): usa la rete della palestra, o collega quando la partita è sincronizzata.",
+    "reasonNone": "Per collegare un telefono serve Internet o la rete della palestra. Qui non c’è né l’uno né l’altra.",
+    "reasonSignIn": "Accedi per collegare un telefono via Internet.",
+    "reasonRole": "Il tuo account non può ancora collegare un telefono.",
+    "reasonNoNetwork": "Nessuna rete per i telefoni: collega questo dispositivo al Wi-Fi della palestra o attiva il suo Wi-Fi (Collega tablet).",
+    "indicator": "Tastiera del telefono",
+    "indicatorAway": "Tastiera del telefono · non raggiungibile",
+    "indicatorWaiting": "Tastiera del telefono · in attesa",
+    "arrived": "Dal telefono in «{{field}}»",
+    "matchClosed": "La partita è chiusa: il telefono è stato scollegato.",
+    "textField": "Campo di testo"
   }
 }

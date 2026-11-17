@@ -17,6 +17,7 @@ import { useScorerActions, pickLiveStateSnapshot, isReportedActionError, markAct
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import { matchMenuSections, toMenuListSections } from './matchMenu'
+import { openPhonePair, phonePairMatchOf } from './phonePair/phonePairStore'
 import SanctionsResultsModal from './SanctionsResultsModal'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
@@ -14210,6 +14211,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     editRosterHome: () => setReopenRosterConfirm('home'),
     editRosterAway: () => setReopenRosterConfirm('away'),
     showPins: () => setShowPinsModal(true),
+    pairPhone: data?.match ? () => openPhonePair(phonePairMatchOf(data, { lang: i18n.language, fallbackHome: t('common.home'), fallbackAway: t('common.away') })) : undefined,
     downloadGameData: () => { downloadGameData() },
     options: () => setShowOptionsInMenu(true),
     stopMatch: () => setStopMatchModal('select')
@@ -20448,6 +20450,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <h3 className="m-0 mb-2 text-sm font-semibold text-stone-700">{t('scoreboard.remarks.title')}</h3>
               <textarea
                 ref={remarksTextareaRef}
+                aria-label={t('scoreboard.remarks.title')}
+                // the official sheet's remarks: a paired phone's text is shown as it arrives (Pair a phone)
+                data-ov-phone="official"
                 placeholder={t('scoreboard.remarks.placeholder')}
                 value={remarksText}
                 onChange={e => {

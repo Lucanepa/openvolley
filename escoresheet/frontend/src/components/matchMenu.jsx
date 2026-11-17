@@ -1,6 +1,6 @@
 import {
   Users, RectangleVertical, ScrollText, NotebookPen, ClipboardList,
-  Wrench, UserPen, KeyRound, Download, Settings, OctagonX, History, FilePen
+  Wrench, UserPen, KeyRound, Download, Settings, OctagonX, History, FilePen, Keyboard
 } from 'lucide-react'
 
 /**
@@ -13,7 +13,7 @@ import {
  *   Corrections     go back (the rules' going back to a score: points
  *                   cancelled, point and service, then everything editable),
  *                   manual changes, edit home / away roster
- *   Devices & data  PINs, download game data
+ *   Devices & data  PINs, pair a phone (its keyboard types on this device), download game data
  *   Settings        options
  *   End of match    stop the match (red; it opens its own confirmation)
  *
@@ -60,6 +60,7 @@ export function matchMenuSections(t, actions) {
       title: t('scoreboard.menu.sections.devicesData', 'Devices and data'),
       items: [
         ...row('pins', KeyRound, t('scoreboard.menu.showPins', 'Show PINs'), actions.showPins),
+        ...row('pair-phone', Keyboard, t('phonePair.menu', 'Pair a phone (keyboard)'), actions.pairPhone),
         ...row('export', Download, t('scoreboard.menu.downloadGameData', 'Download game data (JSON)'), actions.downloadGameData)
       ]
     },

@@ -55,6 +55,12 @@ describe('match menu sections', () => {
     sections.flatMap(s => s.items).forEach(i => expect(i.Icon).toBeTruthy())
   })
 
+  it('"Pair a phone" sits with the devices when the scoreboard offers it', () => {
+    const sections = matchMenuSections(keyT, { ...allActions(), pairPhone: vi.fn() })
+    expect(sections.find(s => s.key === 'devices').items.map(i => i.key)).toEqual(['pins', 'pair-phone', 'export'])
+    expect(en.phonePair.menu).toBe('Pair a phone (keyboard)')
+  })
+
   it('drops a row without a handler (no match setup page) and an empty section', () => {
     const actions = allActions()
     delete actions.openMatchSetup
