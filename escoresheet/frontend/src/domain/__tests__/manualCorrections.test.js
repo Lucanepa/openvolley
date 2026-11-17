@@ -454,6 +454,13 @@ describe('set times, rotation, advanced removal', () => {
     const p4 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 45), scheduledAt: sched, remarks: 'Actual game start: 12:45' }, review)
     expect(p4.remarkAdd).toEqual([])
     expect(p4.remarkRemove).toEqual([])
+    // a corrected start keeps the scorer's reason (owner 2026-11-17)
+    const p5 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 50), scheduledAt: sched, remarks: 'Actual game start: 12:45 (Bus late)' }, review)
+    expect(p5.remarkRemove).toEqual(['Actual game start: 12:45 (Bus late)'])
+    expect(p5.remarkAdd).toEqual(['Actual game start: 12:50 (Bus late)'])
+    const p6 = planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 45), scheduledAt: sched, remarks: 'Actual game start: 12:45 (Bus late)' }, review)
+    expect(p6.remarkAdd).toEqual([])
+    expect(p6.remarkRemove).toEqual([])
     // no schedule, or a later set: no actual-start remark
     expect(planSetTimes(events, s1, { setIndex: 1, startTime: localOn(12, 45), scheduledAt: null }, review).remarkAdd).toEqual([])
     const start2 = new Date(Date.parse(sets[0].endTime) + 9 * 60000).toISOString()

@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { defaultSetStartTime, scheduledStartOnDay, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../setStartTime'
-import { setActualStartRemark } from '../../domain/remarks'
+import { setActualStartRemark, actualStartReason, actualStartLines, remarkClock } from '../../domain/remarks'
+import { getNextTestMatchStartTime } from '../../constants/testSeeds'
 import { setDurationMinutes, matchTimes } from '../../../scoresheet_pdf/utils/matchTimes'
 
 const at = (iso) => new Date(iso)
@@ -70,39 +71,27 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
     }
   })
 
-  it('a test match (made-up 20:00 kickoff) has no schedule: set 1 now, no remark', () => {
+  it('a test match proposes its scheduled time too, however far from now (owner 2026-11-17)', () => {
     const testMatch = { test: true, scheduledAt: iso(2026, 10, 8, 20, 0) }
-    expect(startScheduleOf(testMatch, today)).toBeNull()
-    expect(defaultSetStartTime({ setIndex: 1, now: today, scheduledAt: startScheduleOf(testMatch, today) })).toBe(iso(2026, 10, 8, 12, 41))
-    expect(startsFromSchedule({ setIndex: 1, scheduledAt: startScheduleOf(testMatch, today) })).toBe(false)
-    expect(actualStartRemark({ setIndex: 1, scheduledAt: startScheduleOf(testMatch, today), startTime: iso(2026, 10, 8, 12, 41) })).toBeNull()
+    expect(startScheduleOf(testMatch)).toBe(testMatch.scheduledAt)
+    expect(defaultSetStartTime({ setIndex: 1, now: today, scheduledAt: startScheduleOf(testMatch) })).toBe(iso(2026, 10, 8, 20, 0))
+    expect(startsFromSchedule({ setIndex: 1, scheduledAt: startScheduleOf(testMatch) })).toBe(true)
+    expect(actualStartRemark({ setIndex: 1, scheduledAt: startScheduleOf(testMatch), startTime: iso(2026, 10, 8, 12, 41), reason: 'Rehearsal' }))
+      .toBe('Actual game start: 12:41 (Rehearsal)')
+    // near now as well (owner 2026-11-15: 14:00 scheduled, first rally 14:06: 14:00)
+    const near = { test: true, scheduledAt: iso(2026, 11, 15, 14, 0) }
+    expect(defaultSetStartTime({ setIndex: 1, now: local(2026, 11, 15, 14, 6, 30), scheduledAt: startScheduleOf(near) })).toBe(iso(2026, 11, 15, 14, 0))
     expect(startScheduleOf({ scheduledAt })).toBe(scheduledAt)
     expect(startScheduleOf({ test: false, scheduledAt })).toBe(scheduledAt)
     expect(startScheduleOf(null)).toBeNull()
-  })
-
-  it('a test match with a real time near now (a real game scored as a test) proposes it (owner 2026-11-15)', () => {
-    // scheduled 14:00, first rally 14:06:30: 14:00, not 14:06
-    const testMatch = { test: true, scheduledAt: iso(2026, 11, 15, 14, 0) }
-    const now = local(2026, 11, 15, 14, 6, 30)
-    const scheduled = startScheduleOf(testMatch, now)
-    expect(scheduled).toBe(testMatch.scheduledAt)
-    expect(defaultSetStartTime({ setIndex: 1, now, scheduledAt: scheduled })).toBe(iso(2026, 11, 15, 14, 0))
-    expect(actualStartRemark({ setIndex: 1, scheduledAt: scheduled, startTime: iso(2026, 11, 15, 14, 0) })).toBeNull()
-    // 30 minutes either side; further away the made-up kickoff rule holds
-    expect(startScheduleOf(testMatch, local(2026, 11, 15, 13, 30))).toBe(testMatch.scheduledAt)
-    expect(startScheduleOf(testMatch, local(2026, 11, 15, 14, 30))).toBe(testMatch.scheduledAt)
-    expect(startScheduleOf(testMatch, local(2026, 11, 15, 14, 31))).toBeNull()
-    expect(startScheduleOf(testMatch, local(2026, 11, 15, 13, 29))).toBeNull()
-    // a real match: the scheduled time whenever it starts (owner 2026-10-08)
-    expect(startScheduleOf({ scheduledAt: testMatch.scheduledAt }, local(2026, 11, 15, 16, 0))).toBe(testMatch.scheduledAt)
+    expect(startScheduleOf({ test: true, scheduledAt: null })).toBeNull()
   })
 
   it('an Easy match has no schedule (its scheduledAt is its creation time): set 1 now', () => {
     const now = local(2026, 11, 15, 13, 50, 10)
     const easy = { test: true, easy: true, scheduledAt: local(2026, 11, 15, 13, 41, 23).toISOString() }
-    expect(startScheduleOf(easy, now)).toBeNull()
-    expect(defaultSetStartTime({ setIndex: 1, now, scheduledAt: startScheduleOf(easy, now) })).toBe(iso(2026, 11, 15, 13, 50))
+    expect(startScheduleOf(easy)).toBeNull()
+    expect(defaultSetStartTime({ setIndex: 1, now, scheduledAt: startScheduleOf(easy) })).toBe(iso(2026, 11, 15, 13, 50))
   })
 
   it('later sets are proposed as previous end + 3 min, without a remark', () => {
@@ -223,5 +212,126 @@ describe('set 1 start on a device outside Europe/Zurich', () => {
     process.env.TZ = 'UTC'
     expect(actualStartRemark({ setIndex: 1, scheduledAt: '2026-10-26T09:20:00.000Z', startTime: '2026-10-26T09:33:00.000Z' }))
       .toBe('Actual game start: 10:33')
+  })
+})
+
+// Owner 2026-11-17 ("super important"): a test match scheduled 21:00 was
+// started at 16:21 on a board whose system zone was Europe/London (header
+// clock 15:21); the dialog proposed 16:21. Set 1 must ALWAYS be proposed at
+// the scheduled time, on the hall's clock, whatever the device zone.
+describe('set 1 is always proposed at the scheduled time (owner 2026-11-17)', () => {
+  const deviceTz = process.env.TZ
+  afterEach(() => {
+    if (deviceTz === undefined) delete process.env.TZ
+    else process.env.TZ = deviceTz
+  })
+  // 17.11.2026 is winter time: Zürich = UTC+1
+  const scheduled21 = '2026-11-17T20:00:00.000Z' // 21:00 Zürich
+  const now1621 = new Date('2026-11-17T15:21:00.000Z') // 16:21 Zürich, 15:21 London
+  const zurichClock = (isoString) => remarkClock(new Date(isoString))
+
+  it.each(['Europe/London', 'Europe/Zurich', 'UTC', 'America/New_York'])('scheduled 21:00, now 16:21, device zone %s: 21:00', (tz) => {
+    process.env.TZ = tz
+    for (const match of [{ test: true, scheduledAt: scheduled21 }, { scheduledAt: scheduled21 }]) {
+      const scheduledAt = startScheduleOf(match)
+      const proposed = defaultSetStartTime({ setIndex: 1, sets: [{ index: 1 }], now: now1621, scheduledAt })
+      expect(proposed).toBe(scheduled21)
+      expect(zurichClock(proposed)).toBe('21:00')
+      expect(startsFromSchedule({ setIndex: 1, scheduledAt })).toBe(true)
+      // kept: no remark
+      expect(actualStartRemark({ setIndex: 1, scheduledAt, startTime: proposed })).toBeNull()
+    }
+  })
+
+  it('scheduled earlier than now: the scheduled time, not now', () => {
+    const scheduledAt = '2026-11-17T13:00:00.000Z' // 14:00 Zürich
+    expect(defaultSetStartTime({ setIndex: 1, now: now1621, scheduledAt })).toBe(scheduledAt)
+  })
+
+  it('scheduled tomorrow or yesterday: the scheduled time of day, today', () => {
+    expect(defaultSetStartTime({ setIndex: 1, now: now1621, scheduledAt: '2026-11-18T20:00:00.000Z' })).toBe(scheduled21)
+    expect(defaultSetStartTime({ setIndex: 1, now: now1621, scheduledAt: '2026-11-16T20:00:00.000Z' })).toBe(scheduled21)
+    // a past season's date: the time of day, never the date
+    expect(defaultSetStartTime({ setIndex: 1, now: now1621, scheduledAt: '2025-03-12T20:00:00.000Z' })).toBe(scheduled21)
+  })
+
+  it('a 23:30 match started after midnight: 23:30 of the evening before', () => {
+    const proposed = defaultSetStartTime({ setIndex: 1, now: new Date('2026-11-17T23:05:00.000Z'), scheduledAt: '2026-11-17T22:30:00.000Z' })
+    expect(proposed).toBe('2026-11-17T22:30:00.000Z')
+    expect(zurichClock(proposed)).toBe('23:30')
+  })
+
+  it('no scheduled time at all: now (the dialog says so)', () => {
+    process.env.TZ = 'Europe/London'
+    for (const scheduledAt of [null, undefined, '', 'garbage', '2026-11-17']) {
+      expect(defaultSetStartTime({ setIndex: 1, now: now1621, scheduledAt })).toBe('2026-11-17T15:21:00.000Z')
+      expect(startsFromSchedule({ setIndex: 1, scheduledAt })).toBe(false)
+    }
+    // an Easy match has none either
+    expect(startScheduleOf({ easy: true, scheduledAt: scheduled21 })).toBeNull()
+  })
+
+  it('a changed time writes "Actual game start: HH:MM (reason)", in Zürich time', () => {
+    process.env.TZ = 'Europe/London'
+    const started = typedStartNear(scheduled21, '16:21')
+    expect(started).toBe('2026-11-17T15:21:00.000Z')
+    const line = actualStartRemark({ setIndex: 1, scheduledAt: scheduled21, startTime: started, reason: '  Test match,\nstarted early ' })
+    expect(line).toBe('Actual game start: 16:21 (Test match, started early)')
+    const remarks = setActualStartRemark('Ball pressure checked', line)
+    expect(remarks).toBe('Ball pressure checked\nActual game start: 16:21 (Test match, started early)')
+    // confirmed again with another time and reason: one line, replaced
+    const again = setActualStartRemark(remarks, actualStartRemark({ setIndex: 1, scheduledAt: scheduled21, startTime: '2026-11-17T15:30:00.000Z', reason: 'Bus late' }))
+    expect(again).toBe('Ball pressure checked\nActual game start: 16:30 (Bus late)')
+    // back to the scheduled time: removed
+    expect(setActualStartRemark(again, actualStartRemark({ setIndex: 1, scheduledAt: scheduled21, startTime: scheduled21 }))).toBe('Ball pressure checked')
+    expect(actualStartReason('Actual game start: 16:30 (Bus late (again))')).toBe('Bus late (again)')
+    expect(actualStartReason('Actual game start: 16:30')).toBe('')
+    // older lines are still found
+    expect(actualStartLines('Actual start time: 16:20\nActual game start: 16:25\nOther')).toHaveLength(2)
+  })
+
+  it('sets 2-5: the previous set\'s end + 3 minutes, also across midnight', () => {
+    const sets = [
+      { index: 1, endTime: '2026-11-17T20:31:20.000Z' },
+      { index: 2, endTime: '2026-11-17T21:00:00.000Z' },
+      { index: 3, endTime: '2026-11-17T22:58:10.000Z' }, // 23:58 Zürich
+      { index: 4, endTime: null }
+    ]
+    process.env.TZ = 'Europe/London'
+    expect(defaultSetStartTime({ setIndex: 2, sets: sets.slice(0, 1), now: new Date('2026-11-17T20:40:00.000Z'), scheduledAt: scheduled21 })).toBe('2026-11-17T20:34:00.000Z')
+    expect(defaultSetStartTime({ setIndex: 3, sets: sets.slice(0, 2), now: new Date('2026-11-17T21:01:00.000Z'), scheduledAt: scheduled21 })).toBe('2026-11-17T21:03:00.000Z')
+    const set4 = defaultSetStartTime({ setIndex: 4, sets, now: new Date('2026-11-17T23:05:00.000Z'), scheduledAt: scheduled21 })
+    expect(set4).toBe('2026-11-17T23:01:00.000Z')
+    expect(zurichClock(set4)).toBe('00:01') // the next day on the hall's clock
+    expect(startsFromSchedule({ setIndex: 4, scheduledAt: scheduled21 })).toBe(false)
+    expect(actualStartRemark({ setIndex: 4, scheduledAt: scheduled21, startTime: set4, reason: 'x' })).toBeNull()
+    // a typed 00:02 under the 00:01 proposal stays after midnight
+    expect(typedStartNear(set4, '00:02')).toBe('2026-11-17T23:02:00.000Z')
+    expect(typedStartNear(set4, '23:59')).toBe('2026-11-17T22:59:00.000Z')
+  })
+
+  it('the confirmed start is what the sheet prints', () => {
+    const confirmed = '2026-11-17T15:21:00.000Z'
+    const set1 = { index: 1, startTime: confirmed, endTime: '2026-11-17T15:45:00.000Z', finished: true }
+    const events = [
+      { type: 'set_start', setIndex: 1, seq: 1, ts: confirmed, payload: { startTime: confirmed, firstRallyAt: '2026-11-17T15:21:40.000Z' } },
+      { type: 'rally_start', setIndex: 1, seq: 2, ts: '2026-11-17T15:21:40.000Z' }
+    ]
+    expect(matchTimes([set1], events).startMs).toBe(Date.parse(confirmed))
+    expect(setDurationMinutes(set1, events)).toBe(24)
+  })
+})
+
+describe('a test match is seeded at 20:00 on the hall\'s clock (owner 2026-11-17)', () => {
+  const deviceTz = process.env.TZ
+  afterEach(() => {
+    if (deviceTz === undefined) delete process.env.TZ
+    else process.env.TZ = deviceTz
+  })
+  it.each(['Europe/London', 'Europe/Zurich', 'America/New_York'])('device zone %s', (tz) => {
+    process.env.TZ = tz
+    expect(getNextTestMatchStartTime(new Date('2026-11-17T15:21:00.000Z'))).toBe('2026-11-17T19:00:00.000Z')
+    // after 20:00 Zürich: tomorrow 20:00
+    expect(getNextTestMatchStartTime(new Date('2026-11-17T19:30:00.000Z'))).toBe('2026-11-18T19:00:00.000Z')
   })
 })

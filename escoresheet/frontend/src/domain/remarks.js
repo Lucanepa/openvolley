@@ -90,16 +90,34 @@ export function liberoUnableText(liberoNumber, reason) {
  * found again (replaced / removed) whatever the app language.
  */
 export const ACTUAL_START_LABEL = 'Actual game start'
-// the earlier wording "Actual start time" is still recognised (replaced / removed)
-const ACTUAL_START_RE = /^Actual (?:game start|start time): \d{1,2}:\d{2}$/
+// the earlier wording "Actual start time" and the line without a reason are
+// still recognised (replaced / removed)
+const ACTUAL_START_RE = /^Actual (?:game start|start time): \d{1,2}:\d{2}(?: \((.*)\))?$/
 
-/** The remark line for a set 1 that started at `at` (Zürich HH:MM). */
-export function actualStartLine(at) {
-  const clock = remarkClock(at)
-  return clock ? `${ACTUAL_START_LABEL}: ${clock}` : ''
+/** The scorer's reason as one line (no line breaks: one remark is one line). */
+export function cleanStartReason(reason) {
+  return String(reason ?? '').replace(/\s+/g, ' ').trim()
 }
 
-/** The "Actual start time: HH:MM" lines of the remarks text. */
+/**
+ * The remark line for a set 1 that started at `at` (Zürich HH:MM), with the
+ * scorer's reason (owner 2026-11-17): "Actual game start: 16:21 (Team bus
+ * late)". The label stays English; the reason is what the scorer typed.
+ */
+export function actualStartLine(at, reason = null) {
+  const clock = remarkClock(at)
+  if (!clock) return ''
+  const why = cleanStartReason(reason)
+  return why ? `${ACTUAL_START_LABEL}: ${clock} (${why})` : `${ACTUAL_START_LABEL}: ${clock}`
+}
+
+/** The reason of an actual-start line ("" without one). */
+export function actualStartReason(line) {
+  const m = ACTUAL_START_RE.exec(String(line || '').trim())
+  return m && m[1] ? m[1].trim() : ''
+}
+
+/** The "Actual game start: HH:MM" lines of the remarks text (old wording and reason included). */
 export function actualStartLines(remarks) {
   if (!remarks) return []
   return remarks.split('\n').filter(l => ACTUAL_START_RE.test(l.trim()))

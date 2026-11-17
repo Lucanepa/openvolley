@@ -1,3 +1,5 @@
+import { zonedParts, zurichWallTimeMs } from '../ui/format'
+
 // Test Match Constants
 export const TEST_MATCH_SEED_KEY = 'test-match-default'
 
@@ -59,14 +61,17 @@ export const TEST_AWAY_BENCH = [
   { role: 'Physiotherapist', firstName: 'Mia', lastName: 'Schmid', dob: '14/04/1987' }
 ]
 
-export function getNextTestMatchStartTime() {
-  const now = new Date()
-  const kickoff = new Date(now)
-  kickoff.setHours(20, 0, 0, 0)
-  if (kickoff <= now) {
-    kickoff.setDate(kickoff.getDate() + 1)
-  }
-  return kickoff.toISOString()
+/**
+ * A test match's kickoff: the next 20:00 on the hall's clock (the match's
+ * zone, else Europe/Zurich), whatever zone the device is in. The device's
+ * setHours(20) made it 21:00 Zürich on a board left on Europe/London
+ * (owner 2026-11-17).
+ */
+export function getNextTestMatchStartTime(now = new Date()) {
+  const p = zonedParts(now)
+  let kickoff = zurichWallTimeMs(p.year, p.month, p.day, 20, 0)
+  if (kickoff <= now.getTime()) kickoff = zurichWallTimeMs(p.year, p.month, p.day + 1, 20, 0)
+  return new Date(kickoff).toISOString()
 }
 
 // Test Team Seed Data

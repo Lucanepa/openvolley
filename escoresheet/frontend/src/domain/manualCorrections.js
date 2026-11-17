@@ -46,7 +46,7 @@ import {
 import { getSetResult, scoreFromPointEvents, getFirstServeForSet, setTargetsOf, pointsToWinFor } from './rules'
 import { rotateLineup, pointSubEventsForTeam } from './rotation'
 import { swapTeamDesignation as swapTeamDesignationPatch, regularSetIndexes } from './coinToss'
-import { actualStartLines, remarkClock } from './remarks'
+import { actualStartLines, actualStartReason, remarkClock } from './remarks'
 import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { validateManualTimeout, validateManualSubstitution, classifySubstitutionRequest } from './substitutions'
 import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
@@ -1300,8 +1300,9 @@ export function planSetTimes(events, sets, { setIndex, startTime, endTime, sched
   if (end) plan.update = [{ id: end.id, changes: { payload: { ...end.payload, ...changes } } }]
 
   if (changes.startTime) {
-    const line = actualStartRemark({ setIndex, scheduledAt, startTime: changes.startTime })
     const existing = actualStartLines(remarks)
+    // a corrected start keeps the reason the scorer gave for the first one
+    const line = actualStartRemark({ setIndex, scheduledAt, startTime: changes.startTime, reason: existing.length === 1 ? actualStartReason(existing[0]) : null })
     if (setIndex === 1 && scheduledStartOnDay(scheduledAt) && !(line && existing.length === 1 && existing[0] === line)) {
       plan.remarkRemove = existing
       plan.remarkAdd = line ? [line] : []
