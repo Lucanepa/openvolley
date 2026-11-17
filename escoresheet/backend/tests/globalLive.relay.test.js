@@ -127,7 +127,7 @@ describe('Global live page through the relay', () => {
     assert.equal((await page(srv.base, 'bad-code')).status, 404)
   })
 
-  it('the TV page and its script are served for a code, case and spaces forgiven; a bad code is 404', async () => {
+  it('the TV page and its script are served for a code, case and spaces forgiven; a bad code goes back to the form', async () => {
     const r = await fetch(`${srv.base}/tv/tvpg-2345`, { signal: AbortSignal.timeout(5000) })
     assert.equal(r.status, 200)
     assert.match(r.headers.get('content-type'), /text\/html/)
@@ -135,7 +135,9 @@ describe('Global live page through the relay', () => {
     const js = await fetch(`${srv.base}/tv/tv.js`, { signal: AbortSignal.timeout(5000) })
     assert.equal(js.status, 200)
     assert.match(js.headers.get('content-type'), /javascript/)
-    assert.equal((await fetch(`${srv.base}/tv/nope`, { signal: AbortSignal.timeout(5000) })).status, 404)
+    const bad = await fetch(`${srv.base}/tv/nope`, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
+    assert.equal(bad.status, 302)
+    assert.equal(bad.headers.get('location'), '/tv/?wrong=1')
   })
 
   it('a scorer whose relay is not this server pushes its court over HTTP; with the same court token the relay path updates the same court', async () => {
@@ -183,5 +185,21 @@ describe('Global live page through the relay', () => {
     assert.deepEqual(f.body.sets, [{ index: 1, homePoints: 25, awayPoints: 20, finished: true }])
     const text = JSON.stringify(f.body)
     for (const leak of ['Anna', 'Muster', '515253', '316271', room]) assert.equal(text.includes(leak), false, leak)
+  })
+
+  it('/tv without a code asks for it; /tv/go sends a good code to its page and a bad one back', async () => {
+    for (const path of ['/tv', '/tv/']) {
+      const r = await fetch(`${srv.base}${path}`, { signal: AbortSignal.timeout(5000) })
+      assert.equal(r.status, 200, path)
+      assert.match(await r.text(), /action="\/tv\/go"/)
+    }
+    const go = (code) => fetch(`${srv.base}/tv/go?code=${encodeURIComponent(code)}`, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
+    let r = await go('tvpg 2345')
+    assert.equal(r.status, 302)
+    assert.equal(r.headers.get('location'), '/tv/TVPG2345')
+    r = await go('nope')
+    assert.equal(r.headers.get('location'), '/tv/?wrong=1')
+    const back = await fetch(`${srv.base}/tv/?wrong=1`, { signal: AbortSignal.timeout(5000) })
+    assert.match(await back.text(), /class="err"/)
   })
 })

@@ -1230,6 +1230,9 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/sign/wait", post(sign_api))
         .route("/api/sign/close", post(sign_api))
         .route("/api/global/live/{code}", get(global_live_page))
+        .route("/tv", get(tv_entry))
+        .route("/tv/", get(tv_entry))
+        .route("/tv/go", get(tv_go))
         .route("/tv/tv.js", get(tv_script))
         .route("/tv/{code}", get(tv_page))
         .route("/tv/{code}/", get(tv_page))
@@ -2045,6 +2048,48 @@ async fn global_live_page(ConnectInfo(addr): ConnectInfo<SocketAddr>, State(stat
     res
 }
 
+/// GET /tv and /tv/: the code entry form (backend/lib/tv/entry.html), with a
+/// hint after a wrong code (?wrong=1).
+async fn tv_entry(uri: Uri) -> Response {
+    let wrong = uri.query().map(|q| q.split('&').any(|p| p == "wrong=1")).unwrap_or(false);
+    (
+        StatusCode::OK,
+        [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store"), ("referrer-policy", "no-referrer")],
+        crate::global_live::tv_entry_html(wrong),
+    )
+        .into_response()
+}
+
+/// GET /tv/go?code=…: the form's answer, to /tv/<code> or back to the form.
+async fn tv_go(uri: Uri) -> Response {
+    let raw = uri
+        .query()
+        .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("code=")))
+        .map(|v| percent_decode_plus(v))
+        .unwrap_or_default();
+    let code = crate::global_live::tv_code_of(&raw);
+    let to = if crate::global_live::is_live_code(&code) { format!("/tv/{code}") } else { "/tv/?wrong=1".to_string() };
+    (StatusCode::FOUND, [("location", to), ("cache-control", "no-store".to_string())]).into_response()
+}
+
+/// A form value as a browser sends it: '+' for a space, %XX escapes.
+fn percent_decode_plus(v: &str) -> String {
+    let bytes = v.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => { out.push(b' '); i += 1 }
+            b'%' if i + 2 < bytes.len() => {
+                let h = std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|s| u8::from_str_radix(s, 16).ok());
+                match h { Some(b) => { out.push(b); i += 3 } None => { out.push(b'%'); i += 1 } }
+            }
+            b => { out.push(b); i += 1 }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// GET /tv/tv.js: the TV page's script (backend/lib/tv/tv.js).
 async fn tv_script() -> Response {
     (
@@ -2060,12 +2105,8 @@ async fn tv_script() -> Response {
 async fn tv_page(uri: Uri) -> Response {
     let code = raw_segment(&uri, "/tv/", true).map(crate::global_live::tv_code_of).unwrap_or_default();
     if !crate::global_live::is_live_code(&code) {
-        return (
-            StatusCode::NOT_FOUND,
-            [("content-type", "text/plain; charset=utf-8"), ("cache-control", "no-store")],
-            "Not a tournament code",
-        )
-            .into_response();
+        // back to the form, with a hint (a TV user typed it with a remote)
+        return (StatusCode::FOUND, [("location", "/tv/?wrong=1"), ("cache-control", "no-store")]).into_response();
     }
     (
         StatusCode::OK,
@@ -5026,10 +5067,30 @@ mod tests {
         assert!(h.get("content-type").unwrap().to_str().unwrap().contains("javascript"));
         assert_eq!(h.get("cache-control").unwrap(), "public, max-age=300");
         assert_eq!(js, include_str!("../../../backend/lib/tv/tv.js"));
-        let (status, h, body) = get_path(&state, "/tv/nope", &[]).await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
-        assert!(h.get("content-type").unwrap().to_str().unwrap().starts_with("text/plain"));
-        assert_eq!(body, "Not a tournament code");
+        let (status, h, _) = get_path(&state, "/tv/nope", &[]).await;
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(h.get("location").unwrap(), "/tv/?wrong=1");
+    }
+
+    #[tokio::test]
+    async fn tv_without_a_code_asks_for_it_and_the_form_answer_redirects() {
+        let state = new_state(0, 0);
+        for path in ["/tv", "/tv/"] {
+            let (status, _, body) = get_path(&state, path, &[]).await;
+            assert_eq!(status, StatusCode::OK, "{path}");
+            assert!(body.contains("action=\"/tv/go\""));
+            assert!(!body.contains("class=\"err\""));
+        }
+        let (_, _, body) = get_path(&state, "/tv/?wrong=1", &[]).await;
+        assert!(body.contains("class=\"err\""));
+        let (status, h, _) = get_path(&state, "/tv/go?code=tvpg+2345", &[]).await;
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(h.get("location").unwrap(), "/tv/TVPG2345");
+        let (_, h, _) = get_path(&state, "/tv/go?code=tvpg%202345", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/TVPG2345");
+        let (_, h, _) = get_path(&state, "/tv/go?code=nope", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/?wrong=1");
+        assert_eq!(crate::global_live::tv_entry_html(false), crate::global_live::TV_ENTRY_HTML.replacen("{{ERROR}}", "", 1));
     }
 }
 

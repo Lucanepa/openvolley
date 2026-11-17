@@ -20,6 +20,14 @@ import { readFileSync } from 'node:fs'
 
 const TV_HTML = readFileSync(new URL('./tv/tv.html', import.meta.url), 'utf8')
 export const TV_JS = readFileSync(new URL('./tv/tv.js', import.meta.url), 'utf8')
+// /tv without a code: a form to type it with a TV remote. No script at all:
+// a GET form to /tv/go, which redirects to /tv/<code> (every TV browser can)
+const TV_ENTRY_HTML = readFileSync(new URL('./tv/entry.html', import.meta.url), 'utf8')
+
+/** The code entry page; `wrong`: the last code typed was not a code. */
+export function tvEntryHtml({ wrong = false } = {}) {
+  return TV_ENTRY_HTML.replace('{{ERROR}}', wrong ? '<div class="err">ABCD 2345 &middot; 8 letters and digits &middot; 8 Buchstaben und Ziffern &middot; 8 lettres et chiffres &middot; 8 lettere e cifre</div>' : '')
+}
 
 /** The page for one code (the caller has checked it: isLiveCode). */
 export function tvPageHtml(code) {

@@ -40,6 +40,17 @@ pub const ENDED_KEEP_MS: u64 = 45 * 60 * 1000;
 pub const TV_HTML: &str = include_str!("../../../backend/lib/tv/tv.html");
 /// Its script (ES5, same-origin polling of /api/global/live/<code>).
 pub const TV_JS: &str = include_str!("../../../backend/lib/tv/tv.js");
+/// /tv without a code: a GET form to /tv/go, no script (backend/lib/tv/entry.html).
+pub const TV_ENTRY_HTML: &str = include_str!("../../../backend/lib/tv/entry.html");
+
+/// The code entry page; `wrong`: the last code typed was not a code (backend tvEntryHtml).
+pub fn tv_entry_html(wrong: bool) -> String {
+    TV_ENTRY_HTML.replacen(
+        "{{ERROR}}",
+        if wrong { "<div class=\"err\">ABCD 2345 &middot; 8 letters and digits &middot; 8 Buchstaben und Ziffern &middot; 8 lettres et chiffres &middot; 8 lettere e cifre</div>" } else { "" },
+        1,
+    )
+}
 
 const LIVE_CODE_ALPHABET: &str = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 

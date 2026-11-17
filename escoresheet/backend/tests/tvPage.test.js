@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import vm from 'node:vm'
-import { tvPageHtml, TV_JS } from '../lib/tvPage.js'
+import { tvPageHtml, tvEntryHtml, TV_JS } from '../lib/tvPage.js'
 
 describe('tvPage', () => {
   it('the page names its code, loads only /tv/tv.js and has no inline script (CSP script-src self)', () => {
@@ -31,5 +31,17 @@ describe('tvPage', () => {
   it('the script reads its data from the same origin only', () => {
     assert.match(TV_JS, /x\.open\('GET', '\/api\/global\/live\/' \+ code/)
     assert.equal(/https?:\/\//.test(TV_JS), false)
+  })
+})
+
+describe('tvEntryHtml', () => {
+  it('is a plain GET form to /tv/go: no script at all (any TV browser)', () => {
+    const html = tvEntryHtml()
+    assert.match(html, /<form action="\/tv\/go" method="get">/)
+    assert.match(html, /<input name="code"/)
+    assert.equal(/<script/.test(html), false)
+    assert.equal(html.includes('{{ERROR}}'), false)
+    assert.equal(html.includes('class="err"'), false)
+    assert.match(tvEntryHtml({ wrong: true }), /class="err"/)
   })
 })
