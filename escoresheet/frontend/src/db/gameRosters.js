@@ -126,6 +126,33 @@ export function offeredSentRosters(rows, match, userId) {
 }
 
 /**
+ * What Match Setup's "Search for roster" found for `side`. It looks in both
+ * places a team's roster can come from: the upload made with the upload PIN
+ * (`remote`, from the match's server row; `remoteFailed` when that could not
+ * be asked) and the roster sent from the manager site (`sentRows`: the
+ * device's rows for the game, after asking the server when online;
+ * `sentChecked` false when this account cannot see sent rosters).
+ * - { kind: 'remote' }: the upload, shown as its card
+ * - { kind: 'sent', row, restore }: a sent roster, shown as its card;
+ *   `restore` when it had been put aside ("Not now"): searching for it is
+ *   asking for it, so it comes back. A used one never does.
+ * - { kind: 'error' }: the upload could not be asked and nothing was sent
+ * - { kind: 'none', sentChecked }: neither has a roster
+ */
+export function rosterSearchOutcome({ side, remote, remoteFailed = false, sentRows = [], match, userId, sentChecked = true }) {
+  if (remote) return { kind: 'remote' }
+  const offered = offeredSentRosters(sentRows, match, userId)[side]
+  if (offered) return { kind: 'sent', row: offered, restore: false }
+  if (match?.sentRosterDismissed?.[side]) {
+    const asked = { ...match, sentRosterDismissed: { ...match.sentRosterDismissed, [side]: null } }
+    const row = offeredSentRosters(sentRows, asked, userId)[side]
+    if (row) return { kind: 'sent', row, restore: true }
+  }
+  if (remoteFailed) return { kind: 'error' }
+  return { kind: 'none', sentChecked }
+}
+
+/**
  * Store an answer of GET /api/game-rosters: the rosters it has, and for every
  * game it covers (answer.games) drop a cached side it no longer has (the team
  * deleted it). Other games' rows stay (another download covered them).
