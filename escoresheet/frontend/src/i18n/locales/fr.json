@@ -6473,5 +6473,29 @@
       "timeout": "Le banc demande un temps mort",
       "substitution": "Le banc prépare un remplacement : {{pairs}}"
     }
+  },
+  "globalLive": {
+    "title": "Page en direct pour TV",
+    "intro": "Affiche le score de tous les terrains de ton tournoi sur une TV ou un beamer. Seul le score est en ligne (noms d’équipes, points, sets), jamais les joueurs.",
+    "codeLabel": "Code du tournoi",
+    "otherDevices": "Sur les autres appareils de marque du tournoi, saisis ce code ici.",
+    "copyLink": "Copier le lien",
+    "copied": "Copié",
+    "turnOff": "Désactiver sur cet appareil",
+    "start": "Lancer une page en direct",
+    "enterCode": "Code du tournoi",
+    "join": "Rejoindre",
+    "badCode": "Ce n’est pas un code de tournoi (8 lettres et chiffres).",
+    "page": {
+      "title": "En direct",
+      "offline": "Connexion perdue, nouvel essai…",
+      "empty": "Aucun match en cours. Les scores apparaissent ici dès qu’un match commence.",
+      "loading": "Chargement…",
+      "final": "Terminé",
+      "timeout": "Temps mort",
+      "interval": "Pause entre les sets",
+      "set": "Set {{n}}",
+      "serving": "Au service"
+    }
   }
 }
