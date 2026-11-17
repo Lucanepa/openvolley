@@ -4004,3 +4004,10 @@ body.ios-fullscreen {
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* A popover's own eyebrow title (Connection status, Tablet status ...): as a
+   centred modal on a small screen the modal's title bar names it already
+   (ui/MenuPopover.jsx). */
+[data-menu-modal] .menu-own-title {
+  display: none;
+}

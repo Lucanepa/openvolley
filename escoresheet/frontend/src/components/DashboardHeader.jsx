@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronLeft, House, Maximize, Menu, X } from 'lucide-react'
 import i18n from '../i18n'
@@ -7,11 +7,11 @@ import { clearCachesAndReload } from '../hooks/useServiceWorker'
 import { cn } from '../ui/cn.js'
 import { toast } from '../ui/uiStore.js'
 import {
-  HEADER_BAR, HEADER_BAR_HEIGHT, HEADER_BTN, HEADER_BTN_ON, HEADER_HIT, HEADER_TITLE, HEADER_META, MENU_PANEL, MENU_SECTION, MENU_ROW,
+  HEADER_BAR, HEADER_BAR_HEIGHT, HEADER_BTN, HEADER_BTN_ON, HEADER_HIT, HEADER_TITLE, HEADER_META, MENU_SECTION, MENU_ROW,
   MENU_SUBROW, MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, toastLang
 } from './chromeClasses'
 import HeaderMenuItem from './HeaderMenuItem'
-import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { MenuPopover } from '../ui/MenuPopover.jsx'
 import LegalLinks from '../legal/LegalLinks'
 import { useTheme } from '../utils/theme'
 import { themeMenuItems } from './themeMenuItems'
@@ -133,24 +133,8 @@ export default function DashboardHeader({
     }
   }
 
-  // Close menu on outside click and on Escape
-  useEffect(() => {
-    if (!menuOpen) return
-    const handleClick = (e) => {
-      if (!e.target.closest('.dashboard-header-menu')) {
-        setMenuOpen(false)
-      }
-    }
-    const handleKey = (e) => {
-      if (e.key === 'Escape') setMenuOpen(false)
-    }
-    document.addEventListener('click', handleClick)
-    document.addEventListener('keydown', handleKey)
-    return () => {
-      document.removeEventListener('click', handleClick)
-      document.removeEventListener('keydown', handleKey)
-    }
-  }, [menuOpen])
+  // The menu closes on a press outside it and on Escape (ui/MenuPopover.jsx)
+  const menuButtonRef = useRef(null)
 
   // Build menu items based on props
   const menuItems = []
@@ -269,6 +253,7 @@ export default function DashboardHeader({
     <div className="dashboard-header-menu relative flex flex-none items-center justify-center">
       {/* Always show hamburger - at minimum has language, version, and clear cache */}
       <button
+        ref={menuButtonRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation()
@@ -285,19 +270,15 @@ export default function DashboardHeader({
       {/* Dropdown Menu */}
       {menuOpen && (
         <>
-          {/* Backdrop */}
-          <div
-            {...backdropDismiss(() => setMenuOpen(false))}
-            className="fixed inset-0"
-            style={{ zIndex: 998 }}
-          />
-          <div
-            className={cn(
-              'absolute top-full mt-1.5 flex w-max min-w-[220px] max-w-[280px] flex-col',
-              menuAlign === 'end' ? 'right-0' : 'left-1/2 -translate-x-1/2',
-              MENU_PANEL
-            )}
-            style={{ zIndex: 1000 }}
+          <MenuPopover
+            open
+            onClose={() => setMenuOpen(false)}
+            anchorRef={menuButtonRef}
+            label={t('header.menu')}
+            role="group"
+            align={menuAlign === 'end' ? 'end' : 'center'}
+            closeLabel={t('common.close', 'Close')}
+            className="min-w-[220px] max-w-[280px]"
           >
             {menuItems.map((item, index) => {
               // Divider
@@ -417,7 +398,7 @@ export default function DashboardHeader({
                 bench and livescore menus */}
             <div className={MENU_SEP} />
             <LegalLinks docs={['privacy', 'terms', 'impressum']} className="px-3 py-2 text-[11px]" />
-          </div>
+          </MenuPopover>
         </>
       )}
     </div>

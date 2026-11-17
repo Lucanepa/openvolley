@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
@@ -10,7 +10,7 @@ import RoleChips from './RoleChips'
 import { openManage } from '../../utils/manageNav'
 import { CalendarDays, ChevronDown, ChevronRight, KeyRound, LogOut, ShieldCheck, User, Users } from 'lucide-react'
 import { cn, FOCUS_RING } from '../../ui'
-import { backdropDismiss } from '../../ui/backdropDismiss.js'
+import { MenuPopover } from '../../ui/MenuPopover.jsx'
 
 // Kit recipes. Header-small button (svrz AdminConsole header) and the
 // anchored dropdown / sheet menu row (RESTYLE-SPEC 3.4).
@@ -42,6 +42,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
   const [showMatchHistory, setShowMatchHistory] = useState(false)
   const [showRedeem, setShowRedeem] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
+  const dropdownButtonRef = useRef(null)
 
   if (loading) {
     return null
@@ -210,6 +211,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
     <>
       <div className="ov-kit relative" style={style}>
         <button
+          ref={dropdownButtonRef}
           type="button"
           onClick={() => setShowDropdown(!showDropdown)}
           aria-label={userName}
@@ -234,20 +236,16 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
 
         {showDropdown && (
           <>
-            {/* Backdrop */}
-            <div
-              className="fixed inset-0"
-              style={{ zIndex: 999 }}
-              {...backdropDismiss(() => setShowDropdown(false))}
-            />
-
-            {/* Dropdown menu */}
-            <div
-              className={cn(
-                'absolute top-full mt-2 overflow-hidden rounded-xl border border-stone-200 bg-white p-1.5 shadow-card-lg',
-                fullWidth ? 'left-1/2 w-[300px] -translate-x-1/2' : 'right-0 w-[220px]'
-              )}
-              style={{ zIndex: 1000 }}
+            {/* Dropdown menu (ui/MenuPopover.jsx: a centred modal on a phone) */}
+            <MenuPopover
+              open
+              onClose={() => setShowDropdown(false)}
+              anchorRef={dropdownButtonRef}
+              label={userName}
+              role="group"
+              align={fullWidth ? 'center' : 'end'}
+              closeLabel={t('common.close', 'Close')}
+              className={fullWidth ? 'w-[300px]' : 'w-[220px]'}
             >
               {/* User info */}
               <div className="border-b border-stone-100 px-3 pt-2 pb-3">
@@ -297,7 +295,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
                   {t('auth.signOut', 'Sign out')}
                 </button>
               </div>
-            </div>
+            </MenuPopover>
           </>
         )}
       </div>

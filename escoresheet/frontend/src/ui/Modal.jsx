@@ -295,7 +295,7 @@ export function ActionSheet({ open, onClose, title, closeLabel = 'Schliessen', r
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="relative w-full max-w-md rounded-t-2xl lg:rounded-2xl border border-stone-200 bg-white p-2 shadow-xl max-h-[80vh] overflow-y-auto outline-none"
+        className="relative w-full max-w-md rounded-t-2xl lg:rounded-2xl border border-stone-200 bg-white p-2 shadow-xl max-h-[80dvh] overflow-y-auto outline-none"
         style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))' }}
       >
         <div className="flex items-center justify-between pl-4 pt-1">

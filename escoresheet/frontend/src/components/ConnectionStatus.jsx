@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../ui/cn.js'
+import { MenuPopover } from '../ui/MenuPopover.jsx'
 import { StatusPill } from '../ui/StatusPill.jsx'
 import { updatesByReload } from '../utils/appUpdate'
 import { applyServiceWorkerUpdate } from '../hooks/useServiceWorker'
-import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
+import { FOCUS_RING, KIT_SCOPE, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
 import { useConnectionSummary, statusColorOf, SYNCING_SHOW_AFTER_MS } from '../hooks/useConnectionSummary'
 
@@ -30,81 +31,18 @@ export default function ConnectionStatus({
 
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, maxHeight: 0 })
   const buttonRef = useRef(null)
-  const menuRef = useRef(null)
-
-  // Calculate menu position based on button position
-  const calculateMenuPosition = useCallback(() => {
-    if (!buttonRef.current) return
-
-    const buttonRect = buttonRef.current.getBoundingClientRect()
-    const viewportWidth = window.innerWidth
-    const viewportHeight = window.innerHeight
-    const menuMaxWidth = 300
-    const menuPadding = 12
-    const gap = 8 // Gap between button and menu
-
-    // Calculate horizontal position
-    let left = buttonRect.left
-
-    // Ensure menu doesn't go off the right edge
-    if (left + menuMaxWidth > viewportWidth - menuPadding) {
-      left = viewportWidth - menuMaxWidth - menuPadding
-    }
-
-    // Ensure menu doesn't go off the left edge
-    if (left < menuPadding) {
-      left = menuPadding
-    }
-
-    // Calculate vertical position and max height
-    const spaceBelow = viewportHeight - buttonRect.bottom - gap - menuPadding
-    const spaceAbove = buttonRect.top - gap - menuPadding
-    let top
-    let maxHeight
-
-    // Prefer positioning below, but if not enough space, position above
-    if (spaceBelow >= 200 || spaceBelow >= spaceAbove) {
-      // Position below the button
-      top = buttonRect.bottom + gap
-      maxHeight = Math.max(200, Math.min(spaceBelow, viewportHeight - top - menuPadding))
-    } else {
-      // Position above the button
-      const estimatedHeight = Math.min(400, spaceAbove)
-      top = buttonRect.top - estimatedHeight - gap
-      maxHeight = Math.max(200, Math.min(estimatedHeight, spaceAbove))
-    }
-
-    setMenuPosition({ top, left, maxHeight })
-  }, [])
-
-  // Recalculate menu position when menu is shown or window is resized
-  useEffect(() => {
-    if (showConnectionMenu) {
-      calculateMenuPosition()
-      const handleResize = () => calculateMenuPosition()
-      window.addEventListener('resize', handleResize)
-      window.addEventListener('scroll', handleResize, true)
-      return () => {
-        window.removeEventListener('resize', handleResize)
-        window.removeEventListener('scroll', handleResize, true)
-      }
-    }
-  }, [showConnectionMenu, calculateMenuPosition])
 
   // Close menus when clicking outside
   useEffect(() => {
+    // (the popover closes itself on a press outside it: ui/MenuPopover.jsx)
     const handleClickOutside = (e) => {
-      if (showConnectionMenu && !e.target.closest('[data-connection-menu]')) {
-        setShowConnectionMenu(false)
-      }
       if (showDebugMenu && !e.target.closest('[data-debug-menu]')) {
         setShowDebugMenu(null)
       }
     }
 
-    if (showConnectionMenu || showDebugMenu) {
+    if (showDebugMenu) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => {
         document.removeEventListener('mousedown', handleClickOutside)
@@ -147,9 +85,6 @@ export default function ConnectionStatus({
           aria-expanded={showConnectionMenu}
           onClick={(e) => {
             e.stopPropagation()
-            if (!showConnectionMenu) {
-              calculateMenuPosition()
-            }
             setShowConnectionMenu(!showConnectionMenu)
           }}
           aria-label={compact ? compactLabel : undefined}
@@ -176,18 +111,18 @@ export default function ConnectionStatus({
 
       {/* Connection Status Menu */}
       {showConnectionMenu && (
-        <div
-          ref={menuRef}
-          onClick={(e) => e.stopPropagation()}
-          className={cn('fixed w-max min-w-[220px] max-w-[300px] overflow-y-auto overflow-x-hidden', POPOVER_PANEL)}
-          style={{
-            top: `${menuPosition.top}px`,
-            left: `${menuPosition.left}px`,
-            maxHeight: `${menuPosition.maxHeight}px`,
-            zIndex: 1000
-          }}
+        <MenuPopover
+          open
+          onClose={() => setShowConnectionMenu(false)}
+          anchorRef={buttonRef}
+          label={t('connectionStatus.title', 'Connection status')}
+          role="dialog"
+          align="start"
+          closeLabel={t('common.close', 'Close')}
+          panelProps={{ 'data-connection-menu': '' }}
+          className="min-w-[220px] max-w-[300px] overflow-x-hidden p-3 text-stone-800"
         >
-          <div className="mb-1 border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+          <div className="menu-own-title mb-1 border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
             {t('connectionStatus.title', 'Connection status')}
           </div>
           {Object.entries(shownStatuses).map(([key, status]) => {
@@ -332,7 +267,7 @@ export default function ConnectionStatus({
               </div>
             )
           })}
-        </div>
+        </MenuPopover>
       )}
     </div>
   )

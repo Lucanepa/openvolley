@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bell } from 'lucide-react'
-import { cn, consoleHeaderBtn, FOCUS_RING, PickerPopover } from '../../ui'
+import { cn, consoleHeaderBtn, FOCUS_RING, MenuPopover } from '../../ui'
 import { notificationsApi } from '../../lib/accountApi'
 import { useOnline } from './common'
 import { dayTimeLabel } from '../../ui/format.js'
@@ -93,7 +93,7 @@ export default function NotificationsBell({ app, onOpen }) {
           </span>
         )}
       </button>
-      <PickerPopover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} label={t('manage.notifications.title')} className="w-[min(22rem,calc(100vw-16px))] p-0">
+      <MenuPopover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} label={t('manage.notifications.title')} role="dialog" align="end" closeLabel={t('common.close', 'Close')} className="w-[min(22rem,calc(100vw-16px))] p-0" bodyClassName="p-0">
         <div className="flex items-center justify-between gap-2 border-b border-stone-100 px-3 py-2">
           <h2 className="text-sm font-semibold text-stone-900">{t('manage.notifications.title')}</h2>
           {unread > 0 && (
@@ -107,7 +107,7 @@ export default function NotificationsBell({ app, onOpen }) {
             {state.known ? t('manage.notifications.empty') : t('manage.notifications.loading')}
           </p>
         ) : (
-          <ul className="max-h-[min(24rem,70vh)] divide-y divide-stone-100 overflow-y-auto" data-testid="notifications-list">
+          <ul className="max-h-[min(24rem,70dvh)] divide-y divide-stone-100 overflow-y-auto" data-testid="notifications-list">
             {list.map((n) => {
               const who = n.user?.name || n.user?.email || t('manage.notifications.deletedAccount')
               return (
@@ -142,7 +142,7 @@ export default function NotificationsBell({ app, onOpen }) {
             })}
           </ul>
         )}
-      </PickerPopover>
+      </MenuPopover>
     </>
   )
 }
