@@ -49,6 +49,8 @@ import { createLiveStreams, listParams, MATCH_ID_RE as PUBLIC_MATCH_ID_RE } from
 import { createVectorPdf } from './lib/vectorPdf.js'
 import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS, SLOTS as SIGN_SLOTS } from './lib/signSessions.js'
 import { signPageFile } from './lib/signPage.js'
+import { createPairSessions, pairEndpointOf, pairBodyLimit, pairError, isPairPagePath, PAIR_API_HEADERS } from './lib/pairSessions.js'
+import { pairPageFile } from './lib/pairPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
@@ -1865,9 +1867,13 @@ function mayStartPhoneSign(access) {
  * never reaches the server, a new one only once its insert synced: the app
  * takes the hall network then, or says so (PhoneSignPanel startFailureKey).
  */
-async function signMatchOf(layer, body, userId, access) {
+const SIGN_MATCH_ERRORS = {
+  match: () => signError(403, 'OV_SIGN_MATCH'),
+  unavailable: () => signError(503, 'OV_SIGN_UNAVAILABLE', { 'Retry-After': '5' })
+}
+async function signMatchOf(layer, body, userId, access, errors = SIGN_MATCH_ERRORS) {
   const key = typeof body?.matchKey === 'string' ? body.matchKey.trim() : ''
-  if (!key || key.length > 128) return { error: signError(403, 'OV_SIGN_MATCH') }
+  if (!key || key.length > 128) return { error: errors.match() }
   let m
   try {
     ({ rows: [m] } = await layer.db.pool.query(
@@ -1878,9 +1884,9 @@ async function signMatchOf(layer, body, userId, access) {
          FROM public.matches m WHERE m.external_id = $1 LIMIT 1`, [key, userId]))
   } catch (err) {
     console.warn('[Sign] match lookup failed:', err?.message)
-    return { error: signError(503, 'OV_SIGN_UNAVAILABLE', { 'Retry-After': '5' }) }
+    return { error: errors.unavailable() }
   }
-  if (!m || !(access?.isAdmin === true || m.created_by === userId || m.editor === true)) return { error: signError(403, 'OV_SIGN_MATCH') }
+  if (!m || !(access?.isAdmin === true || m.created_by === userId || m.editor === true)) return { error: errors.match() }
   const text = (v) => (typeof v === 'string' && v.trim() ? v : null)
   const ctx = body.context
   const context = ctx && typeof ctx === 'object' && !Array.isArray(ctx)
@@ -2005,6 +2011,111 @@ async function handleSignRequest(req, res, endpoint) {
   const onGone = () => { if (!res.writableEnded) ac.abort() }
   res.on('close', onGone)
   const r = await sessions.wait(body, { signal: ac.signal })
+  res.off('close', onGone)
+  if (r.status !== 499) send(r)
+}
+
+// --- Pair a phone (docs/phone-keyboard-spec.md; lib/pairSessions.js) --------
+// POST /api/pair/start|wait|focus|close (the scoring device: start with the
+// same auth as /api/sign/start, the rest with its watch secret) and
+// join|poll|input (the phone: the QR token or the short code once, then its
+// own secret), and the phone page at /pair. Memory only, created on the first
+// request. OV_PAIR_DISABLED=1: 503 OV_PAIR_UNAVAILABLE.
+const PAIR_DISABLED = process.env.OV_PAIR_DISABLED === '1'
+const PAIR_MATCH_ERRORS = {
+  match: () => pairError(403, 'OV_PAIR_MATCH'),
+  unavailable: () => pairError(503, 'OV_PAIR_UNAVAILABLE', { 'Retry-After': '5' })
+}
+let pairSessions = null
+function getPairSessions() {
+  pairSessions ??= createPairSessions({
+    via: DB_MODE ? 'cloud' : 'lan',
+    randomBytes: (n) => randomBytes(n),
+    sha256: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+    log: (line) => console.log(`[Pair] ${line}`)
+  })
+  return pairSessions
+}
+
+async function handlePairRequest(req, res, endpoint) {
+  const send = (r) => sendJson(res, r.status, r.body, {
+    ...PAIR_API_HEADERS,
+    ...(r.headers || {}),
+    ...(r.status === 413 ? { Connection: 'close' } : {})
+  })
+  const refuse = (r) => { req.resume(); send(r) }
+  if (PAIR_DISABLED) return refuse(pairError(503, 'OV_PAIR_UNAVAILABLE'))
+  if (!/^application\/json\b/i.test(String(req.headers['content-type'] || ''))) return refuse(pairError(400, 'OV_PAIR_BAD_REQUEST'))
+  const ipKey = ipBucketKey(getClientIp(req))
+  let owner = null
+  let layer = null
+  let access = null
+  let userId = null
+  if (endpoint === 'start' && DB_MODE) {
+    // The account first, before the body is read (the Sign on phone rule, D2)
+    const token = bearerFromHeaders(req.headers)
+    if (!token) return refuse(pairError(401, 'OV_AUTH_REQUIRED'))
+    let user = null
+    try {
+      layer = await getDataLayer()
+      const v = await layer.auth.verifyAccessToken(token)
+      user = v?.user || null
+      if (user) access = await layer.access.get(user.id)
+    } catch (err) {
+      console.warn('[Pair] account check failed:', err?.message)
+      return refuse(pairError(503, 'OV_PAIR_UNAVAILABLE', { 'Retry-After': '5' }))
+    }
+    if (!user) return refuse(pairError(401, 'OV_AUTH_REQUIRED'))
+    if (!mayStartPhoneSign(access)) return refuse(pairError(403, 'OV_PAIR_FORBIDDEN'))
+    userId = user.id
+    owner = `u:${user.id}`
+  }
+  let body
+  try {
+    body = await readJsonBody(req, pairBodyLimit(endpoint))
+  } catch (err) {
+    return send(err?.code === 'BODY_TOO_LARGE' ? pairError(413, 'OV_PAIR_TOO_LARGE') : pairError(400, 'OV_PAIR_BAD_REQUEST'))
+  }
+  if (endpoint === 'start' && !DB_MODE) {
+    if (isLocalCaller(req)) {
+      owner = 'local'
+    } else {
+      // the scoring device that holds the room, with its game PIN (as /api/sign/start)
+      const pin = String(req.headers['x-ov-match-pin'] || '').trim().slice(0, 32)
+      if (!pin) return send(pairError(403, 'OV_PAIR_FORBIDDEN'))
+      const matchKey = typeof body?.matchKey === 'string' ? normalizeMatchId(body.matchKey) : null
+      const stored = matchKey && roomHeldFrom(matchKey, ipKey) ? gamePinOf(activeMatches.get(matchKey)?.match) : null
+      if (!stored) return send(pairError(403, 'OV_PAIR_FORBIDDEN'))
+      const scope = pinScope.match(matchKey, 'game')
+      if (pinFailureLimiter.isLimited(ipKey, scope)) return send(pairError(429, 'OV_PAIR_RATE_LIMITED', { 'Retry-After': '600' }))
+      if (!safeEqualStr(stored, pin)) return send(pairError(403, 'OV_PAIR_PIN_INVALID'))
+      pinFailureLimiter.refund(ipKey, scope)
+      owner = `pin:${ipKey}`
+    }
+  }
+  const sessions = getPairSessions()
+  if (endpoint === 'start') {
+    // cloud: the match the account writes, its stored teams and its app
+    let app = null
+    if (DB_MODE && body && typeof body === 'object' && !Array.isArray(body)) {
+      const bound = await signMatchOf(layer, body, userId, access, PAIR_MATCH_ERRORS)
+      if (bound.error) return send(bound.error)
+      body = bound.body
+      app = bound.app
+    }
+    return send(sessions.start(body, { owner, app }))
+  }
+  if (endpoint === 'focus') return send(sessions.focus(body))
+  if (endpoint === 'close') return send(sessions.close(body))
+  if (endpoint === 'join') return send(sessions.join(body, { ipKey }))
+  if (endpoint === 'input') return send(sessions.input(body, { ipKey }))
+  // wait / poll: dropped when the caller goes away
+  const ac = new AbortController()
+  const onGone = () => { if (!res.writableEnded) ac.abort() }
+  res.on('close', onGone)
+  const r = endpoint === 'poll'
+    ? await sessions.poll(body, { ipKey, signal: ac.signal })
+    : await sessions.wait(body, { signal: ac.signal })
   res.off('close', onGone)
   if (r.status !== 499) send(r)
 }
@@ -2309,8 +2420,8 @@ const transportRefusals = { origin: 0, mediaType: 0, upgradeOrigin: 0, frames: 0
 //   without an Origin (a native app, a script, the board bridge) is no page;
 // - with a body type other than JSON (415): a browser then asks first
 //   (preflight), and the CORS answer refuses a foreign page. The support form
-//   (/api/contact) also takes multipart/form-data; the phone-sign API checks
-//   its own body type (handleSignRequest).
+//   (/api/contact) also takes multipart/form-data; the phone-sign and
+//   phone-pair APIs check their own body type (handleSignRequest, handlePairRequest).
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const JSON_TYPE_RE = /^\s*application\/json\s*(;|$)/i
 const MULTIPART_TYPE_RE = /^\s*multipart\/form-data\s*;/i
@@ -2323,7 +2434,7 @@ function apiWriteRefusal(req, pathname) {
     transportRefusals.origin++
     return { status: 403, code: 'OV_ORIGIN_REFUSED', message: 'This site may not call the OpenVolley server' }
   }
-  if (signEndpointOf(pathname)) return null
+  if (signEndpointOf(pathname) || pairEndpointOf(pathname)) return null
   const type = String(req.headers['content-type'] || '')
   if (JSON_TYPE_RE.test(type) || (pathname === '/api/contact' && MULTIPART_TYPE_RE.test(type))) return null
   transportRefusals.mediaType++
@@ -2679,6 +2790,23 @@ function handleHttpRequest(req, res) {
     handleSignRequest(req, res, signEndpoint).catch((err) => {
       console.error('[Sign] request failed:', err?.message)
       sendJson(res, 503, signError(503, 'OV_SIGN_UNAVAILABLE').body, SIGN_API_HEADERS)
+    })
+    return
+  }
+
+  // Pair a phone: the phone page (same-origin with its API, the /sign page's headers) ...
+  if ((req.method === 'GET' || req.method === 'HEAD') && isPairPagePath(url.pathname)) {
+    const file = pairPageFile(url.pathname)
+    res.writeHead(file ? 200 : 404, { 'Content-Type': file ? file.type : 'text/plain', ...SIGN_PAGE_HEADERS })
+    res.end(req.method === 'HEAD' ? undefined : (file ? file.body : 'Not Found'))
+    return
+  }
+  // ... and its API (start/wait/focus/close come from the app origins through the CORS above)
+  const pairEndpoint = req.method === 'POST' ? pairEndpointOf(url.pathname) : null
+  if (pairEndpoint) {
+    handlePairRequest(req, res, pairEndpoint).catch((err) => {
+      console.error('[Pair] request failed:', err?.message)
+      sendJson(res, 503, pairError(503, 'OV_PAIR_UNAVAILABLE').body, PAIR_API_HEADERS)
     })
     return
   }

@@ -162,6 +162,13 @@
  *                   from the relay host itself, or with X-OV-Match-Pin = the game PIN
  *                   of the body's matchKey (wrong PINs counted like GET
  *                   /api/match/:id). Bodies: 64 KB submit, 4 KB otherwise (413).
+ *
+ * Pair a phone (docs/phone-keyboard-spec.md): POST /api/pair/start|wait|focus|
+ *                   close (the scoring device) and join|poll|input (the phone),
+ *                   state machine in ./pairSessionCore.cjs (same protocol in
+ *                   backend/server.js and src-tauri/src/pair.rs). start has the
+ *                   /api/sign/start rule; the rest needs the session's secrets.
+ *                   Bodies: 64 KB focus and input, 4 KB otherwise (413).
  */
 
 // Secret fields on a match object that must never be returned to a client.
@@ -1110,6 +1117,7 @@ function createRateLimiter({ windowMs = 60 * 1000, max = 10 } = {}) {
 // --- Sign on phone (docs/qr-signing-spec.md 4): /api/sign/* -----------------
 
 const SIGN_ENDPOINT_RE = /^\/api\/sign\/(start|open|submit|wait|close)$/
+const PAIR_ENDPOINT_RE = /^\/api\/pair\/(start|wait|focus|close|join|poll|input)$/
 
 /**
  * Read at most `limit` bytes of a JSON body and stop: { body } or { error: status }.
@@ -1432,10 +1440,17 @@ function pinRoleOf(match, pin) {
  * `isLocal(addr)`: the relay host itself may start a session; anyone else
  * proves the match's game PIN (X-OV-Match-Pin). Defaults to loopback only.
  *
+ * Pair a phone (/api/pair/*): `pairCore` is ./pairSessionCore.cjs, passed the
+ * same way (`pairOptions.sha256` is required by that core; the ESM entry
+ * passes the sign core's). Without it every pair call answers 503
+ * OV_PAIR_UNAVAILABLE. Created lazily, disposed by close(), like the sign
+ * sessions.
+ *
  * `heartbeatMs`: the ping interval (HEARTBEAT_MS; 0 turns it off).
  *
  * @param {{ log?: Console, requestTimeoutMs?: number, isRateLimited?: Function,
- *   signCore?: object, isLocal?: (addr: string) => boolean, signOptions?: object }} [options]
+ *   signCore?: object, isLocal?: (addr: string) => boolean, signOptions?: object,
+ *   pairCore?: object, pairOptions?: object }} [options]
  */
 function createLanRelay(options = {}) {
   const log = options.log || console
@@ -1458,6 +1473,7 @@ function createLanRelay(options = {}) {
   const validatePinFailures = createFailureCounter({ windowMs: VALIDATE_PIN_FAILURE_WINDOW_MS, max: VALIDATE_PIN_FAILURES })
   const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
   const signCore = options.signCore || null
+  const pairCore = options.pairCore || null
   const isLocalAddr = options.isLocal || isLoopbackAddress
   // Wrong PINs per match from every address (MATCH_PIN_FAILURE_LIMIT)
   const matchPinFailures = createFailureCounter({ windowMs: MATCH_PIN_WINDOW_MS, max: options.matchPinFailureLimit ?? MATCH_PIN_FAILURE_LIMIT })
@@ -1492,6 +1508,7 @@ function createLanRelay(options = {}) {
   const roomIdleMs = options.roomIdleMs ?? ROOM_IDLE_EVICT_MS
   const allowedHosts = (options.allowedHosts || []).map((h) => String(h).toLowerCase())
   let signSessions = null // created on the first /api/sign/* request
+  let pairSessions = null // created on the first /api/pair/* request
 
   const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
   const subscriptions = new Map() // matchId -> Set<ws>
@@ -2830,6 +2847,63 @@ function createLanRelay(options = {}) {
     if (r.status !== 499) sendSign(res, r)
   }
 
+  // --- Pair a phone -----------------------------------------------------------
+
+  function getPairSessions() {
+    if (!pairSessions) {
+      pairSessions = pairCore.createPairSessions({
+        via: 'lan',
+        sha256: signCore ? signCore.sha256Hex : undefined,
+        log: (line) => log.log(`[Pair] ${line}`),
+        ...(options.pairOptions || {}),
+      })
+    }
+    return pairSessions
+  }
+
+  const pairFail = (status, code, headers) => (pairCore
+    ? pairCore.pairError(status, code, headers)
+    : { status, body: { ok: false, code, message: code }, ...(headers ? { headers } : {}) })
+
+  /** Who may start a pairing: the /api/sign/start rule, in OV_PAIR_* codes. */
+  function pairOwner(req, body, ip) {
+    const who = signOwner(req, body, ip)
+    if (!who.error) return who
+    const code = String(who.error.body && who.error.body.code || '').replace(/^OV_SIGN_/, 'OV_PAIR_')
+    return { error: pairFail(who.error.status, code, who.error.headers) }
+  }
+
+  /** POST /api/pair/<endpoint>. */
+  async function handlePair(req, res, endpoint, ip) {
+    if (!pairCore) return sendSign(res, pairFail(503, 'OV_PAIR_UNAVAILABLE'))
+    if (!isJsonRequest(req)) {
+      req.resume()
+      return sendSign(res, pairFail(400, 'OV_PAIR_BAD_REQUEST'))
+    }
+    const read = await readSignBody(req, pairCore.pairBodyLimit(endpoint))
+    if (read.error === 413) return sendSign(res, pairFail(413, 'OV_PAIR_TOO_LARGE'))
+    if (read.error) return sendSign(res, pairFail(400, 'OV_PAIR_BAD_REQUEST'))
+    const body = read.body
+    const sessions = getPairSessions()
+    const ipKey = stripV4Prefix(ip)
+    if (endpoint === 'start') {
+      const who = pairOwner(req, body, ip)
+      return sendSign(res, who.error || sessions.start(body, { owner: who.owner }))
+    }
+    if (endpoint === 'focus') return sendSign(res, sessions.focus(body))
+    if (endpoint === 'close') return sendSign(res, sessions.close(body))
+    if (endpoint === 'join') return sendSign(res, sessions.join(body, { ipKey }))
+    if (endpoint === 'input') return sendSign(res, sessions.input(body, { ipKey }))
+    // wait / poll: dropped when the caller goes away
+    const ac = typeof AbortController === 'function' ? new AbortController() : null
+    const onGone = () => { if (ac && !res.writableEnded) ac.abort() }
+    res.on('close', onGone)
+    const opts = ac ? { signal: ac.signal } : {}
+    const r = endpoint === 'poll' ? await sessions.poll(body, { ipKey, ...opts }) : await sessions.wait(body, opts)
+    res.off('close', onGone)
+    if (r.status !== 499) sendSign(res, r)
+  }
+
   /**
    * Serve the relay-owned endpoints. `url` is the full '/api/...' path with
    * query (the Vite middleware strips '/api', so it passes '/api' + req.url).
@@ -2854,6 +2928,15 @@ function createLanRelay(options = {}) {
     const reply = (p) => Promise.resolve().then(typeof p === 'function' ? p : () => p)
       .then((r) => sendJson(res, r.status, r.body))
       .catch((err) => sendJson(res, err.status || 500, { success: false, error: err.message || 'Internal error' }))
+
+    const pair = PAIR_ENDPOINT_RE.exec(path)
+    if (pair && method === 'POST') {
+      handlePair(req, res, pair[1], ip).catch((err) => {
+        log.error('[Pair] request failed:', err && err.message)
+        sendSign(res, pairFail(500, 'OV_PAIR_BAD_REQUEST'))
+      })
+      return true
+    }
 
     const sign = SIGN_ENDPOINT_RE.exec(path)
     if (sign && method === 'POST') {
@@ -2951,6 +3034,8 @@ function createLanRelay(options = {}) {
     heartbeat,
     /** Sign session counts (tests): null before the first sign request. */
     signStats: () => (signSessions ? signSessions.stats() : null),
+    /** Pair session counts (tests): null before the first pair request. */
+    pairStats: () => (pairSessions ? pairSessions.stats() : null),
     /**
      * Stop the relay's timers: the sign sessions (sweeper, held waits) and the
      * rate limiters it created. A later sign request starts fresh sessions.
@@ -2958,6 +3043,8 @@ function createLanRelay(options = {}) {
     close() {
       if (signSessions) signSessions.dispose()
       signSessions = null
+      if (pairSessions) pairSessions.dispose()
+      pairSessions = null
       for (const limiter of ownLimiters) limiter.dispose()
       for (const p of pending.values()) clearTimeout(p.timer)
       if (heartbeatTimer) clearInterval(heartbeatTimer)
