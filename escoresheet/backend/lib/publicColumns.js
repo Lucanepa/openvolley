@@ -44,7 +44,10 @@ const MATCH_INFO_KEYS = Object.freeze([
   'sponsors_home', 'sponsors_away', 'sponsors_marked',
   // The match's LFP tracking and the zone its clocks read (owner 2026-11-16,
   // frontend/src/domain/sheetInputs.js): every device draws the same sheet
-  'lfp_tracking', 'tz'
+  'lfp_tracking', 'tz',
+  // The 10-minute interval after set 2 (owner 2026-11-17,
+  // frontend/src/domain/setInterval.js): the referee's break countdown
+  'long_interval_after_set2'
 ])
 const COIN_TOSS_KEYS = Object.freeze(['team_a', 'team_b', 'confirmed', 'first_serve', 'serve_a'])
 // Roster entries as the referee/bench render them. No dob, no country.

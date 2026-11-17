@@ -332,6 +332,8 @@
     "senior": "Senior",
     "otherLevel": "Other level",
     "matchFormat": "Match format",
+    "longIntervalAfterSet2": "10-minute interval after set 2",
+    "longIntervalAfterSet2Hint": "The break after set 2 lasts 10 minutes instead of 3, when the competent body extends it. The next set is proposed 10 minutes after set 2 ends.",
     "chooseMatchFormat": "Choose…",
     "matchFormatRequired": "Choose the match format (best of 3 or best of 5) first.",
     "lockedAfterCoinToss": "The coin toss is done: the match setup is read-only, except the shirt colours (tap a shirt). Change a roster from the match menu (Edit home roster, Edit away roster), and the hall, game number, officials, short names and other match details with Edit match info.",

@@ -1,6 +1,7 @@
 import { roundToMinute } from './timeUtils'
 import { zonedParts, zurichWallTimeMs } from '../ui/format'
 import { actualStartLine, remarkClock } from '../domain/remarks'
+import { INTERVAL_MINUTES, intervalMinutesAfter } from '../domain/setInterval'
 
 const HOUR = 3600 * 1000
 
@@ -61,7 +62,7 @@ export function startsFromSchedule({ setIndex, scheduledAt }) {
 }
 
 /** Minutes between a set's end and the next set's proposed start (the interval). */
-export const INTERVAL_MINUTES = 3
+export { INTERVAL_MINUTES }
 
 /**
  * Default time offered by the "Set N start time" dialog (owner 2026-11-15).
@@ -76,28 +77,35 @@ export const INTERVAL_MINUTES = 3
  * Easy match): now, and the dialog says so.
  *
  * Sets 2..5: the end of the last set already played + 3 minutes (now when no
- * set has an end).
+ * set has an end); + 10 minutes when that set is set 2 and the match has the
+ * 10-minute interval after set 2 (longIntervalAfterSet2, domain/setInterval:
+ * set 3, or set 5 in a best-of-3).
  *
  * The confirmed time is the start printed on the scoresheet and the result
  * card (matchTimes), whatever the clock of the first rally said.
  *
- * @param {{ setIndex: number, sets?: Array<{index: number, endTime?: string}>, now?: Date, scheduledAt?: string|null }} args
+ * @param {{ setIndex: number, sets?: Array<{index: number, endTime?: string}>, now?: Date, scheduledAt?: string|null, longIntervalAfterSet2?: boolean }} args
  * @returns {string} ISO timestamp with zeroed seconds
  */
-export function defaultSetStartTime({ setIndex, sets = [], now = new Date(), scheduledAt = null }) {
+export function defaultSetStartTime({ setIndex, sets = [], now = new Date(), scheduledAt = null, longIntervalAfterSet2 = false }) {
   if (setIndex === 1) {
     const scheduled = scheduledStartOnDay(scheduledAt, now)
     if (scheduled) return scheduled
     return roundToMinute(now.toISOString())
   }
   let lastEnd = null
+  let lastEndIndex = null
   for (const s of sets) {
     if (!s || !(s.index < setIndex) || !s.endTime) continue
     const end = new Date(s.endTime).getTime()
-    if (Number.isFinite(end) && (lastEnd === null || end > lastEnd)) lastEnd = end
+    if (Number.isFinite(end) && (lastEnd === null || end > lastEnd)) {
+      lastEnd = end
+      lastEndIndex = s.index
+    }
   }
   if (lastEnd === null) return roundToMinute(now.toISOString())
-  return roundToMinute(new Date(lastEnd + INTERVAL_MINUTES * 60000).toISOString())
+  const minutes = intervalMinutesAfter({ longIntervalAfterSet2: longIntervalAfterSet2 === true }, lastEndIndex)
+  return roundToMinute(new Date(lastEnd + minutes * 60000).toISOString())
 }
 
 /**

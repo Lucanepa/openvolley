@@ -29,6 +29,8 @@ import { setLiveStateDirty } from '../utils/eventSync'
 import TeamColourPicker, { CloseColourNote, customColourKey, recallCustomColour, rememberCustomColour } from './TeamColourPicker'
 import TeamShirt from './TeamShirt'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import LongIntervalSwitch from './LongIntervalSwitch'
+import { longIntervalChanged } from '../domain/setInterval'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -418,6 +420,19 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
     })
   }, [recordFieldChange, t, editedHomeTeam?.name, editedAwayTeam?.name])
 
+  // The 10-minute interval after set 2 (domain/setInterval.js): editable
+  // after the coin toss too; logged as Yes / No
+  const updateLongInterval = useCallback((on) => {
+    setEditedMatch(prev => {
+      if (!prev) return prev
+      const before = prev.longIntervalAfterSet2 === true
+      if (before !== on) {
+        recordFieldChange('match', 'longIntervalAfterSet2', t(before ? 'common.yes' : 'common.no'), t(on ? 'common.yes' : 'common.no'), t('matchSetup.longIntervalAfterSet2'))
+      }
+      return { ...prev, longIntervalAfterSet2: on }
+    })
+  }, [recordFieldChange, t])
+
   // ==================== SAVE FUNCTION ====================
   // Every event deleted or edited by the save is recorded as a manual
   // adjustment in the event history (db/eventHistory)
@@ -500,6 +515,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
           homeSponsors: sponsorsOf(editedMatch).home,
           awaySponsors: sponsorsOf(editedMatch).away,
           sponsorsMarked: sponsorsOf(editedMatch).marked,
+          // The 10-minute interval after set 2 (domain/setInterval.js)
+          longIntervalAfterSet2: editedMatch.longIntervalAfterSet2 === true,
           // Swap A/B: the designation and every A/B-labelled field with it,
           // from the match as stored now (a correction made on this page
           // since it opened, e.g. a set reopened, is kept)
@@ -559,7 +576,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       // A short name or a colour changed: the scoring screen sends its live
       // state again when it opens (the referee and bench tablets, the
       // livescore and Point Hub read team_a_short / team_a_color from it)
-      if (Object.keys(teamPatch).length > 0) setLiveStateDirty(matchId, true)
+      // The interval switch too: the tablets time the break after set 2 by it
+      if (Object.keys(teamPatch).length > 0 || longIntervalChanged(data?.match, editedMatch)) setLiveStateDirty(matchId, true)
 
       // Notify scoresheet window (and any other listeners) about the changes
       try {
@@ -1163,6 +1181,12 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                   />
                 </div>
               </div>
+              <LongIntervalSwitch
+                className="mt-4"
+                checked={editedMatch.longIntervalAfterSet2 === true}
+                onChange={updateLongInterval}
+                disabled={closed}
+              />
             </div>
 
             {/* Team contacts: they get the final scoresheet by email (owner 15.11) */}

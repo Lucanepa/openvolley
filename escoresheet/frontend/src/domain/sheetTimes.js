@@ -14,7 +14,8 @@
  * Owner decisions (field-spec 16, 2026-10-07 and 2026-11-15):
  *  - Set start: the time the scorer confirmed in the "Set n start time" dialog
  *    (its set_start event; the dialog proposes the scheduled time for set 1 and
- *    the last set's end + 3 min for the others). A start corrected later
+ *    the last set's end + 3 min for the others, + 10 after set 2 when the match
+ *    has the 10-minute interval after set 2). A start corrected later
  *    (set.startTime other than the one the set_start event recorded) is the
  *    scorer's word and wins. Without a set_start event (older records): the
  *    first rally (rally_start events on the scoring device, set_start's

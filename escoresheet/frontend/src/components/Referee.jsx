@@ -57,6 +57,7 @@ import { liveRowTeamA } from '../domain/coinToss'
 import { BRAND } from '../brand'
 import { monotonicNow, elapsedWhenSent, countdownAnchor, secondsLeft, keepCountdown, elapsedAfterTheFact, liveStatePushedAt } from '../utils/countdownClock'
 import { matchLfpTracking } from '../domain/sheetInputs'
+import { breakSecondsAfter, endedSetBefore } from '../domain/setInterval'
 import { useMatchTz } from '../ui/useMatchTz'
 
 // A lineup position: the rich format's { number, ... } or the legacy plain number
@@ -1211,12 +1212,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               const currentInterval = betweenSetsCountdownRef.current
               if (!intervalDismissedRef.current &&
                   (!currentInterval || Math.abs(currentInterval.startTimestamp - serverStartTs) > 2000)) {
+                // 10 minutes after set 2 when the match says so (domain/setInterval)
+                const breakSeconds = breakSecondsAfter(data?.match, endedSetBefore(state.current_set, data?.sets, state.last_event_data?.setIndex), 180)
                 setBetweenSetsCountdown({
-                  countdown: 180,
+                  countdown: breakSeconds,
                   startTimestamp: serverStartTs,
                   // (the push time on the scorer's own clock, as the time-out's)
-                  anchor: countdownAnchor(elapsedWhenSent(state.set_interval_started_at, liveStatePushedAt(state), 180 * 1000)),
-                  initialCountdown: 180,
+                  anchor: countdownAnchor(elapsedWhenSent(state.set_interval_started_at, liveStatePushedAt(state), breakSeconds * 1000)),
+                  initialCountdown: breakSeconds,
                   started: true,
                   setIndex: state.last_event_data?.setIndex || state.current_set,
                   winner: state.last_event_data?.winner
@@ -2203,12 +2206,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // Only start countdown if between sets AND countdown hasn't been started yet (null means never started)
     // AND it wasn't manually dismissed
     if (isBetweenSets && betweenSetsCountdown === null && !intervalDismissedRef.current) {
+      const breakSeconds = breakSecondsAfter(data?.match, endedSetBefore(data?.currentSet?.index, data?.sets), 180)
       setBetweenSetsCountdown({
-        countdown: 180,
+        countdown: breakSeconds,
         started: true,
         startTimestamp: Date.now(),
         anchor: countdownAnchor(0),
-        initialCountdown: 180
+        initialCountdown: breakSeconds
       })
       setShowIntervalModal(true)
     } else if (!isBetweenSets) {
@@ -2299,14 +2303,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     }
     if (state.set_interval_active && !isMatchEnded && !betweenSetsCountdownRef.current && !intervalDismissedRef.current) {
       const start = Date.parse(state.set_interval_started_at ?? '')
-      const elapsed = elapsedAfterTheFact(`${matchId}:interval`, start, 180)
-      if (Number.isFinite(start) && elapsed < 180 * 1000) {
+      const breakSeconds = breakSecondsAfter(data?.match, endedSetBefore(state.current_set, data?.sets, state.last_event_data?.setIndex), 180)
+      const elapsed = elapsedAfterTheFact(`${matchId}:interval`, start, breakSeconds)
+      if (Number.isFinite(start) && elapsed < breakSeconds * 1000) {
         const anchor = countdownAnchor(elapsed)
         setBetweenSetsCountdown({
-          countdown: secondsLeft(anchor, 180),
+          countdown: secondsLeft(anchor, breakSeconds),
           startTimestamp: start,
           anchor,
-          initialCountdown: 180,
+          initialCountdown: breakSeconds,
           started: true,
           setIndex: state.last_event_data?.setIndex || state.current_set,
           winner: state.last_event_data?.winner
@@ -3814,7 +3819,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>INTERVAL</div>
-              <DonutCountdown current={betweenSetsCountdown.countdown} total={setIntervalDuration} size={90} strokeWidth={5}>
+              <DonutCountdown current={betweenSetsCountdown.countdown} total={betweenSetsCountdown.initialCountdown || setIntervalDuration} size={90} strokeWidth={5}>
                 <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontFamily: getScoreFont(), fontWeight: 800, color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#22c55e', lineHeight: 1 }}>
                   {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
                 </div>

@@ -374,7 +374,7 @@ const PUBLIC_MATCH_FIELDS = [
   'intervalChoices', 'intervalStartedAt', 'lastAwayTeamHeartbeat', 'lastHomeTeamHeartbeat',
   'lastReferee1Heartbeat', 'lastReferee2Heartbeat', 'lastTeam1Heartbeat', 'lastTeam2Heartbeat',
   'league', 'lfpTracking', 'leftTeam', 'license_number', 'linesman1', 'linesman2', 'listSource',
-  'liveClockOffsetMs', 'matchGender', 'matchInfo', 'matchInfoConfirmedAt', 'matchNumber',
+  'liveClockOffsetMs', 'longIntervalAfterSet2', 'matchGender', 'matchInfo', 'matchInfoConfirmedAt', 'matchNumber',
   'matchPhase', 'matchRound', 'match_external_id', 'match_info', 'match_type_1',
   'match_type_1_other', 'match_type_2', 'match_type_3', 'match_type_3_other', 'phase',
   'players_away', 'players_home', 'players_team1', 'players_team2', 'referee', 'referee1First',

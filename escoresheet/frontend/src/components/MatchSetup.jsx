@@ -45,6 +45,7 @@ import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, cn, confirmDialog, toast } from '../ui'
 import { sponsorsOf, sponsorsToMatchInfo } from '../domain/sponsors'
 import { sheetInputsToMatchInfo } from '../domain/sheetInputs'
+import LongIntervalSwitch from './LongIntervalSwitch'
 import { useSponsorsOption } from '../hooks/useSponsorsOption'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
@@ -263,7 +264,7 @@ const INFO_DRAFT_KEYS = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 
   'ref1First', 'ref1Last', 'ref1Country', 'ref1Dob', 'ref1Email', 'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob', 'ref2Email',
   'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob', 'scorerLicence', 'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
   'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4', 'homeContactEmail', 'awayContactEmail',
-  'homeSponsors', 'awaySponsors', 'sponsorsMarked']
+  'homeSponsors', 'awaySponsors', 'sponsorsMarked', 'longIntervalAfterSet2']
 
 /**
  * The side-bound fields of a stored match with home and away swapped (a
@@ -299,7 +300,7 @@ function hasMatchInfoChanged(original, current) {
   if (!original) return true // No original, consider it changed
   const keys = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
     'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
-    'homeSponsors', 'awaySponsors', 'sponsorsMarked']
+    'homeSponsors', 'awaySponsors', 'sponsorsMarked', 'longIntervalAfterSet2']
   for (const key of keys) {
     if (!isEqual(original[key], current[key])) return true
   }
@@ -700,6 +701,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [homeSponsors, setHomeSponsors] = useState(false)
   const [awaySponsors, setAwaySponsors] = useState(false)
   const [sponsorsMarked, setSponsorsMarked] = useState(false)
+  // The 10-minute interval after set 2 (domain/setInterval.js), off by default
+  const [longIntervalAfterSet2, setLongIntervalAfterSet2] = useState(false)
   const [sponsorsOption] = useSponsorsOption()
   const showSponsors = sponsorsOption || sponsorsMarked
   const tickSponsors = (team, ticked) => {
@@ -1323,7 +1326,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       originalMatchInfoRef.current = {
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
         type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
-        homeSponsors, awaySponsors, sponsorsMarked
+        homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2
       }
       originalOfficialsRef.current = {
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail,
@@ -1608,6 +1611,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setHome(o.home); setAway(o.away); setHomeColor(o.homeColor); setAwayColor(o.awayColor)
     setHomeShortName(o.homeShortName); setAwayShortName(o.awayShortName)
     setHomeSponsors(!!o.homeSponsors); setAwaySponsors(!!o.awaySponsors); setSponsorsMarked(!!o.sponsorsMarked)
+    setLongIntervalAfterSet2(o.longIntervalAfterSet2 === true)
   }
 
   const restoreOfficials = () => {
@@ -1750,6 +1754,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           const s = sponsorsOf(match)
           setHomeSponsors(s.home); setAwaySponsors(s.away); setSponsorsMarked(s.marked)
         }
+        setLongIntervalAfterSet2(match.longIntervalAfterSet2 === true)
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
 
@@ -2096,7 +2101,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           city,
           homeShortName: homeShortName || home.substring(0, 8).toUpperCase(),
           awayShortName: awayShortName || away.substring(0, 8).toUpperCase(),
-          homeSponsors, awaySponsors, sponsorsMarked,
+          homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2,
           game_n: gameN ? Number(gameN) : null,
           gameNumber: gameN ? gameN : null,
           league,
@@ -2205,7 +2210,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
         scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence, asstFirst, asstLast, asstCountry, asstDob,
-        lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeSponsors, awaySponsors, sponsorsMarked
+        lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2
       }
       return { ...values, swapRosters: rosterSwapRef.current }
     }
@@ -2230,7 +2235,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeContactEmail, awayContactEmail, homeSponsors, awaySponsors, sponsorsMarked, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
+  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeContactEmail, awayContactEmail, homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
 
   // Back on the main view (Save, Back, a roster confirmed): no draft left
   useEffect(() => {
@@ -2418,7 +2423,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const currentMatchInfo = {
       date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
       type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
-      homeSponsors, awaySponsors, sponsorsMarked
+      homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2
     }
     const currentOfficials = {
       ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail,
@@ -2548,7 +2553,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         awayName: away.trim(),
         homeShortName: homeShortName || generateShortName(home.trim()),
         awayShortName: awayShortName || generateShortName(away.trim()),
-        homeSponsors, awaySponsors, sponsorsMarked,
+        homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2,
         homeColor,
         awayColor,
         scheduledAt,
@@ -2613,8 +2618,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           match_type_3_other: type3Other || '',
           best_of: bestOf,
           ...sponsorsToMatchInfo({ homeSponsors, awaySponsors, sponsorsMarked }),
-          // every key: the server replaces match_info whole (domain/sheetInputs)
-          ...sheetInputsToMatchInfo(localMatch)
+          // every key: the server replaces match_info whole (domain/sheetInputs);
+          // the interval switch as just saved (localMatch is the record before)
+          ...sheetInputsToMatchInfo({ ...localMatch, longIntervalAfterSet2 })
         },
         home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
         away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
@@ -3501,6 +3507,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         ref1First: setRef1First, ref1Last: setRef1Last, ref1Country: setRef1Country, ref1Dob: setRef1Dob, ref1Email: setRef1Email,
         homeContactEmail: setHomeContactEmail, awayContactEmail: setAwayContactEmail,
         homeSponsors: setHomeSponsors, awaySponsors: setAwaySponsors, sponsorsMarked: setSponsorsMarked,
+        longIntervalAfterSet2: (v) => setLongIntervalAfterSet2(v === true),
         ref2First: setRef2First, ref2Last: setRef2Last, ref2Country: setRef2Country, ref2Dob: setRef2Dob, ref2Email: setRef2Email,
         scorerFirst: setScorerFirst, scorerLast: setScorerLast, scorerCountry: setScorerCountry, scorerDob: setScorerDob, scorerLicence: setScorerLicence,
         asstFirst: setAsstFirst, asstLast: setAsstLast, asstCountry: setAsstCountry, asstDob: setAsstDob,
@@ -4178,6 +4185,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <option value={3}>{t('matchSetup.bestOf3')}</option>
                 </Select>
               </Field>
+              <LongIntervalSwitch checked={longIntervalAfterSet2} onChange={setLongIntervalAfterSet2} />
               {match?.global === true && (
                 <Field tone="compact" className={FIELD} label={t('idMode.title', 'Next to each name')}>
                   <Select aria-label={t('idMode.title', 'Next to each name')} block value={idMode} data-testid="global-id-mode" onChange={e => setIdMode(e.target.value)}>
@@ -7684,7 +7692,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     match_type_3_other: type3 === 'other' ? type3Other : null,
                     homeShortName: homeShortName || home.substring(0, 10).toUpperCase(),
                     awayShortName: awayShortName || away.substring(0, 10).toUpperCase(),
-                    homeSponsors, awaySponsors, sponsorsMarked,
+                    homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2,
                     game_n: gameN ? Number(gameN) : null,
                     gameNumber: gameN ? gameN : null,
                     league,

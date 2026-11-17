@@ -325,6 +325,8 @@
     "senior": "Senior",
     "otherLevel": "Andere Stufe",
     "matchFormat": "Spielformat",
+    "longIntervalAfterSet2": "10-Minuten-Pause nach Satz 2",
+    "longIntervalAfterSet2Hint": "Die Pause nach Satz 2 dauert 10 statt 3 Minuten, wenn der zuständige Verband sie verlängert. Der nächste Satz wird 10 Minuten nach dem Ende von Satz 2 vorgeschlagen.",
     "chooseMatchFormat": "Auswählen…",
     "matchFormatRequired": "Zuerst das Spielformat wählen (Best of 3 oder Best of 5).",
     "lockedAfterCoinToss": "Die Auslosung ist erfolgt: Die Spieleinrichtung ist schreibgeschützt, ausser den Trikotfarben (tippe auf ein Trikot). Einen Kader im Spielmenü ändern (Heim-Aufstellung bearbeiten, Gast-Aufstellung bearbeiten), Halle, Spielnummer, Schiedsrichter, Kurznamen und andere Spielangaben mit Spielinfo bearbeiten.",

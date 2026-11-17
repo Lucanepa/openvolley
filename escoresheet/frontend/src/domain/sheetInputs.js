@@ -10,6 +10,12 @@
  *    own in the Global tool (ui/format currentTz). Every clock on the sheet,
  *    the Match complete card and the referee view reads it (ui/useMatchTz).
  * On the server both travel in match_info (lfp_tracking, tz).
+ *
+ * Also the 10-minute interval after set 2 (longIntervalAfterSet2, owner
+ * 2026-11-17, domain/setInterval.js): a per-match switch, in match_info as
+ * long_interval_after_set2. A false travels too (switched off after the coin
+ * toss): the server replaces match_info whole and a missing key never
+ * overwrites a device's value.
  */
 
 /** An IANA time zone this engine knows (a string Intl accepts). */
@@ -49,6 +55,7 @@ export function sheetInputsToMatchInfo(m) {
   const out = {}
   if (typeof m?.lfpTracking === 'boolean') out.lfp_tracking = m.lfpTracking
   if (validTz(m?.tz)) out.tz = m.tz
+  if (typeof m?.longIntervalAfterSet2 === 'boolean') out.long_interval_after_set2 = m.longIntervalAfterSet2
   return out
 }
 
@@ -57,5 +64,6 @@ export function sheetInputsFromMatchInfo(info) {
   const out = {}
   if (typeof info?.lfp_tracking === 'boolean') out.lfpTracking = info.lfp_tracking
   if (validTz(info?.tz)) out.tz = info.tz
+  if (typeof info?.long_interval_after_set2 === 'boolean') out.longIntervalAfterSet2 = info.long_interval_after_set2
   return out
 }
