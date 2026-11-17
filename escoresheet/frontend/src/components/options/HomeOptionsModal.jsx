@@ -500,11 +500,16 @@ export default function HomeOptionsModal({
                     <button type="button" className={BTN_OUTLINE} data-testid="options-template-rosters" onClick={() => downloadGlobalTemplate('rosters')}>{t('globalImport.templateRosters', 'Rosters template (Excel)')}</button>
                   </div>
                 )}
-                {toolMode.mode === 'global' && <GlobalLivePanel />}
               </div>
             </Row>
           </Section>
         )}
+        {/* the live screen for TVs: every mode, every match type (utils/globalLive.js) */}
+        <Section title={t('globalLive.title')}>
+          <Row style={{ alignItems: 'flex-start' }}>
+            <div className="min-w-0 flex-1"><GlobalLivePanel bare /></div>
+          </Row>
+        </Section>
         <Section title={null}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div className="min-w-0 flex-1">

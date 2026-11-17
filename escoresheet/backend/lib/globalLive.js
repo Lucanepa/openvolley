@@ -31,6 +31,21 @@ import crypto from 'node:crypto'
 export const LIVE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const CODE_RE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/
 
+/** A court token: a hex hash of a match's own secret key (frontend utils/globalLive.js courtToken). */
+export const isCourtToken = (t) => typeof t === 'string' && /^[0-9a-f]{32}$/.test(t)
+
+/** A court token for a relay room that sent none (an older scorer app): a hash of the room key. */
+export const courtTokenOf = (roomKey) => crypto.createHash('sha256').update(`room\0${roomKey}`).digest('hex').slice(0, 32)
+
+const LIVE_SUMMARY_FIELDS = ['team_a_name', 'team_a_short', 'team_a_color', 'team_b_name', 'team_b_short', 'team_b_color', 'sets_won_a', 'sets_won_b', 'points_a', 'points_b', 'current_set', 'best_of', 'side_a', 'serving_team', 'match_status', 'timeout_active', 'set_interval_active']
+/** Only the live-state fields courtSummary reads (what a forward or a push carries). */
+export function pickLiveSummaryFields(liveState) {
+  const out = {}
+  if (!liveState || typeof liveState !== 'object') return out
+  for (const k of LIVE_SUMMARY_FIELDS) if (k in liveState) out[k] = liveState[k]
+  return out
+}
+
 /** A tournament code as the app makes it (utils/globalLive.js). */
 export const isLiveCode = (code) => typeof code === 'string' && CODE_RE.test(code)
 
@@ -52,7 +67,8 @@ export function courtSummary(liveState, entry = {}, nowIso = new Date().toISOStr
   // A is home unless the names say otherwise, or the coin toss gave A to away
   const aIsHome = aName && awayName && aName === awayName && aName !== homeName
     ? false
-    : (match.coinTossTeamA ? match.coinTossTeamA !== 'away' : true)
+    // (indoor says home/away, OpenBeach team1/team2)
+    : (match.coinTossTeamA ? match.coinTossTeamA !== 'away' && match.coinTossTeamA !== 'team2' : true)
   const side = (a, b) => (aIsHome ? { home: a, away: b } : { home: b, away: a })
   const team = (prefix) => ({ name: str(ls[`team_${prefix}_name`]), short: str(ls[`team_${prefix}_short`], 12), color: color(ls[`team_${prefix}_color`]) })
   const teams = side(team('a'), team('b'))
@@ -86,7 +102,9 @@ export function courtSummary(liveState, entry = {}, nowIso = new Date().toISOStr
     ended: status === 'final' || status === 'ended' || status === 'approved',
     timeout: ls.timeout_active === true,
     interval: ls.set_interval_active === true,
-    hall: str(match.hall) || str(match.venue),
+    // the hall or venue, and the court when there is one (OpenBeach: the same
+    // venue on every court, the court number tells them apart)
+    hall: [str(match.hall) || str(match.venue), str(match.court)].filter(Boolean).join(' \u00b7 ') || null,
     scheduledAt: str(match.scheduledAt, 40),
     gameNumber: str(match.gameN != null ? String(match.gameN) : null, 20),
     updatedAt: nowIso

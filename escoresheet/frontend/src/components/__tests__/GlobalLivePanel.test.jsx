@@ -18,7 +18,7 @@ describe('GlobalLivePanel', () => {
     const code = getLiveCode()
     expect(code).toMatch(/^[A-Z2-9]{8}$/)
     expect(screen.getByTestId('global-live-code').textContent).toBe(`${code.slice(0, 4)} ${code.slice(4)}`)
-    expect(screen.getByTestId('global-live-url').textContent).toBe(`https://livescore.openvolley.app/?t=${code}`)
+    expect(screen.getByTestId('global-live-url').textContent).toBe(`https://openvolley.app/tv/${code}`)
     fireEvent.click(screen.getByTestId('global-live-off'))
     expect(getLiveCode()).toBe(null)
     expect(screen.getByTestId('global-live-start')).toBeTruthy()

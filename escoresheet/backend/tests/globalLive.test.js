@@ -105,3 +105,17 @@ describe('createGlobalLive', () => {
     assert.equal(store.get('AAAA2345').courts.length, 2)
   })
 })
+
+// The cases the desktop app's relay (src-tauri relay.rs) must answer the same
+// way: one file, read by both test suites
+import { readFileSync } from 'node:fs'
+describe('courtSummary: shared cases (lib/tv/summary-cases.json)', () => {
+  const cases = JSON.parse(readFileSync(new URL('../lib/tv/summary-cases.json', import.meta.url), 'utf8'))
+  for (const c of cases) {
+    it(c.name, () => {
+      const s = courtSummary(c.liveState, c.entry, 'T')
+      delete s.updatedAt
+      assert.deepEqual(s, c.expected)
+    })
+  }
+})

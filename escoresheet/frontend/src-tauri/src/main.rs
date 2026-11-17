@@ -7,6 +7,7 @@ mod bench_requests;
 mod diagnostics;
 mod firewall;
 mod flavour;
+mod global_live;
 mod lifecycle;
 mod netifs;
 mod netshare;
