@@ -71,6 +71,17 @@
   </screenshots>
 
   <releases>
+    <release version="3.3.5" date="2026-11-17">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.5</url>
+      <description>
+        <ul>
+          <li>After the coin toss: change each team's short name and shirt colour (Match &gt; Edit match info).</li>
+          <li>Live screen: any screen, any match type, from every scorer device.</li>
+          <li>Scoreboard: serve number and names no longer too big on the Point Hub board; menus stay on screen.</li>
+          <li>iPad and iPhone: share the final PDF and ZIP.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.3.4" date="2026-11-16">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.3.4</url>
       <description>
