@@ -4444,6 +4444,11 @@
       "noMail": "Ce serveur ne peut pas encore envoyer d’e-mails (aucun serveur de messagerie configuré) : rien ne part, même avec l’interrupteur activé."
     },
     "myTeams": {
+      "nav": {
+        "requests": "Demandes",
+        "squad": "Effectif",
+        "games": "Matchs"
+      },
       "facts": {
         "when": "Quand",
         "where": "Où",

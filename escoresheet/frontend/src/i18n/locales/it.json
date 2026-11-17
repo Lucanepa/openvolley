@@ -4450,6 +4450,11 @@
       "noMail": "Questo server non può ancora inviare e-mail (nessun server di posta configurato): non parte nulla, anche con l’interruttore acceso."
     },
     "myTeams": {
+      "nav": {
+        "requests": "Richieste",
+        "squad": "Rosa",
+        "games": "Partite"
+      },
       "facts": {
         "when": "Quando",
         "where": "Dove",

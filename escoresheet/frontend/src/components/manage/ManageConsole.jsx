@@ -86,6 +86,33 @@ const partOf = (route) => {
   return kind === 'person' ? 'licences' : MYCLUB_PARTS.includes(kind) ? kind : ''
 }
 
+// My teams is a tree too: the team's own page shows everything, and each part
+// has its own page, #myteams/<team id>/<part> (a game's roster is
+// #myteams/<team id>/<game number>)
+export const MYTEAMS_PARTS = ['requests', 'squad', 'games']
+const teamPartOf = (route) => {
+  const kind = String(route || '').split('/')[1] || ''
+  return MYTEAMS_PARTS.includes(kind) ? kind : ''
+}
+
+// The list tabs are trees by their filter (owner 2026-11-17: "tree nav for
+// all"): the first is the default. The filter is part of the URL as
+// #<tab>/@<filter>[/<page>], so a page of a tab keeps it and a link opens it.
+const FILTER_CHILDREN = {
+  accounts: { options: ['pending', 'all'], label: (t, id) => t(id === 'pending' ? 'manage.accounts.filterPending' : 'manage.accounts.filterAll') },
+  matches: { options: ['closed', 'open', 'all'], label: (t, id) => t(`manage.matches.filter${id[0].toUpperCase()}${id.slice(1)}`) },
+  scoresheets: { options: ['all', 'closed', 'open'], label: (t, id) => t(`manage.matches.filter${id[0].toUpperCase()}${id.slice(1)}`) },
+  // the sport switch of Saved teams (OpenBeach's console has no indoor)
+  teams: { options: ['indoor', 'beach'], label: (t, id) => t(id === 'indoor' ? 'savedTeams.sportIndoor' : 'savedTeams.sportBeach'), when: (brand) => brand?.app !== 'beach' }
+}
+const filterSplit = (id, subRoute) => {
+  const spec = FILTER_CHILDREN[id]
+  if (!spec) return { filter: '', rest: subRoute }
+  const [first = '', ...more] = String(subRoute || '').split('/')
+  const name = first.startsWith('@') ? first.slice(1) : ''
+  return { filter: spec.options.includes(name) ? name : spec.options[0], rest: name ? more.join('/') : subRoute, explicit: !!name }
+}
+
 export function manageTabsFor(access, brand = null) {
   if (!access) return []
   const own = accessForApp(access, brand?.app)
@@ -132,8 +159,13 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
   // edits), and the tab's button opens it again
   const lastRoutes = useRef({})
   if (current) lastRoutes.current[current] = subRoute
-  const routeOf = (id) => (id === current ? subRoute : lastRoutes.current[id] || '')
-  const onRouteOf = (id) => (sub, opts) => onTab?.(sub ? `${id}/${sub}` : id, opts)
+  const routeOf = (id) => filterSplit(id, id === current ? subRoute : lastRoutes.current[id] || '').rest
+  const onRouteOf = (id) => (sub, opts) => {
+    // a list tab keeps its filter in the URL (FILTER_CHILDREN)
+    const f = id === current ? filterSplit(id, subRoute) : { explicit: false }
+    const base = f.explicit ? `${id}/@${f.filter}` : id
+    onTab?.(sub ? `${base}/${sub}` : base, opts)
+  }
   const selectTab = (id) => {
     const last = lastRoutes.current[id]
     // the open tab's own button is its own page: My club's first page, not the part it was on
@@ -144,10 +176,14 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
     }
     onTab?.(last && id !== current ? `${id}/${last}` : id)
   }
+  const filterOf = (id) => filterSplit(id, id === current ? subRoute : lastRoutes.current[id] || '').filter
   const myClubId = () => subRoute.split('/')[0] || access.managedClubs?.[0]?.id || ''
   const selectChild = (id, child) => {
-    if (id !== 'myclub') return
-    onTab?.(`myclub/${encodeURIComponent(myClubId())}/${child}`)
+    if (id === 'myclub') onTab?.(`myclub/${encodeURIComponent(myClubId())}/${child}`)
+    else if (id === 'myteams') {
+      const team = subRoute.split('/')[0] || access.managedTeams?.[0]?.id || ''
+      onTab?.(`myteams/${encodeURIComponent(team)}/${child}`)
+    } else if (FILTER_CHILDREN[id]) onTab?.(`${id}/@${child}`)
   }
   // a page of another tab (a team of My club in My teams, say); null when this account has no such tab
   const navigate = (path, opts = { push: true }) => {
@@ -187,8 +223,13 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
     id: x.id,
     label: t(`manage.tabs.${x.id}`),
     icon: <x.icon size={15} aria-hidden />,
-    ...(x.id === 'myclub' ? { children: MYCLUB_PARTS.map((part) => ({ id: part, label: t(`manage.myClub.nav.${part}`) })) } : {})
+    ...(x.id === 'myclub' ? { children: MYCLUB_PARTS.map((part) => ({ id: part, label: t(`manage.myClub.nav.${part}`) })) } : {}),
+    ...(x.id === 'myteams' ? { children: MYTEAMS_PARTS.map((part) => ({ id: part, label: t(`manage.myTeams.nav.${part}`) })) } : {}),
+    ...(FILTER_CHILDREN[x.id] && (FILTER_CHILDREN[x.id].when?.(brand) ?? true) && !(x.id === 'teams' && scope === 'beach')
+      ? { children: FILTER_CHILDREN[x.id].options.map((id) => ({ id, label: FILTER_CHILDREN[x.id].label(t, id) })) }
+      : {})
   }))
+  const currentFilter = current && FILTER_CHILDREN[current] ? filterOf(current) : ''
 
   // Above the scorer app's header (MainHeader, z 1000): at 900 it covered the
   // console's own header row, logo and "Back to the app" (owner 2026-10-24,
@@ -232,7 +273,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         tabs={tabs}
         current={current}
         onSelect={selectTab}
-        currentChild={current === 'myclub' ? partOf(subRoute) : ''}
+        currentChild={current === 'myclub' ? partOf(subRoute) : current === 'myteams' ? teamPartOf(subRoute) : currentFilter}
         onSelectChild={selectChild}
         navLabel={t('manage.nav')}
         footer={<LegalLinks className="text-[11px] text-stone-400" />}
@@ -240,18 +281,18 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {phoneTop && <div className="mb-3 sm:hidden">{phoneTop}</div>}
         {/* every list of the console: one card per item (owner 2026-11-10) */}
         <RowListCards.Provider value>
-        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><PanelGate><AccountsPanel selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} {...pageProps('accounts')} /></PanelGate></ConsolePanel>}
+        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><PanelGate><AccountsPanel filter={filterOf('accounts')} selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} {...pageProps('accounts')} /></PanelGate></ConsolePanel>}
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><PanelGate><InvitesPanel app={scope} /></PanelGate></ConsolePanel>}
         {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><PanelGate><ClubsPanel {...pageProps('clubs')} /></PanelGate></ConsolePanel>}
         {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><PanelGate><MyClubPanel clubs={access.managedClubs} {...pageProps('myclub')} /></PanelGate></ConsolePanel>}
         {visited.has('myteams') && <ConsolePanel id="myteams" current={current}><PanelGate><MyTeamsPanel teams={access.managedTeams} {...pageProps('myteams')} /></PanelGate></ConsolePanel>}
         {visited.has('settings') && <ConsolePanel id="settings" current={current}><PanelGate><SettingsPanel /></PanelGate></ConsolePanel>}
         {visited.has('games') && <ConsolePanel id="games" current={current}><PanelGate><OfficialGamesPanel {...pageProps('games')} /></PanelGate></ConsolePanel>}
-        {visited.has('matches') && <ConsolePanel id="matches" current={current}><PanelGate><ClosedMatchesPanel onShowActivity={showActivity} {...pageProps('matches')} /></PanelGate></ConsolePanel>}
-        {visited.has('scoresheets') && <ConsolePanel id="scoresheets" current={current}><PanelGate><ScoresheetsPanel app={brand.app} canRebuild={accessForApp(access, brand?.app).isAdmin === true} /></PanelGate></ConsolePanel>}
+        {visited.has('matches') && <ConsolePanel id="matches" current={current}><PanelGate><ClosedMatchesPanel state={filterOf('matches')} onShowActivity={showActivity} {...pageProps('matches')} /></PanelGate></ConsolePanel>}
+        {visited.has('scoresheets') && <ConsolePanel id="scoresheets" current={current}><PanelGate><ScoresheetsPanel state={filterOf('scoresheets')} app={brand.app} canRebuild={accessForApp(access, brand?.app).isAdmin === true} /></PanelGate></ConsolePanel>}
         {visited.has('audit') && <ConsolePanel id="audit" current={current}><PanelGate><AuditPanel app={scope} /></PanelGate></ConsolePanel>}
         {visited.has('activity') && <ConsolePanel id="activity" current={current}><PanelGate><ActivityPanel app={scope} initialMatch={(() => { try { return decodeURIComponent(routeOf('activity')) } catch { return routeOf('activity') } })()} /></PanelGate></ConsolePanel>}
-        {visited.has('teams') && <ConsolePanel id="teams" current={current}><PanelGate><SavedTeamsPanel userId={user.id} sport={scope} {...pageProps('teams')} /></PanelGate></ConsolePanel>}
+        {visited.has('teams') && <ConsolePanel id="teams" current={current}><PanelGate><SavedTeamsPanel sportFilter={scope === 'beach' ? null : filterOf('teams')} userId={user.id} sport={scope} {...pageProps('teams')} /></PanelGate></ConsolePanel>}
         {visited.has('data') && <ConsolePanel id="data" current={current}><PanelGate><DataPanel {...pageProps('data')} /></PanelGate></ConsolePanel>}
         {visited.has('sql') && <ConsolePanel id="sql" current={current}><Suspense fallback={<PageSpinner />}><SqlPanel /></Suspense></ConsolePanel>}
         {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><PanelGate><TournamentsPanel {...pageProps('tournaments')} /></PanelGate></ConsolePanel>}

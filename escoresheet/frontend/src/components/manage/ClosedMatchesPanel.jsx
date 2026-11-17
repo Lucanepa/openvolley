@@ -28,11 +28,12 @@ export async function findMatch(id) {
  * gets their own page"): #matches/<match id>, with what its row says, Reopen,
  * Activity and its corrections (usePanelRoute).
  */
-export default function ClosedMatchesPanel({ onShowActivity = null, route = '', onRoute = null }) {
+export default function ClosedMatchesPanel({ onShowActivity = null, state: stateProp = null, route = '', onRoute = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
-  const [state, setState] = useState('closed')
+  const [ownState, setState] = useState('closed')
+  const state = stateProp || ownState
   const [q, setQ] = useState('')
   const [query, setQuery] = useState('')
   const [reopenFor, setReopenFor] = useState(null)
@@ -97,16 +98,18 @@ export default function ClosedMatchesPanel({ onShowActivity = null, route = '', 
       {/* The "ID" on a PDF approval stamp, or a game number */}
       <ApprovalLookup online={online} />
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <SegmentedControl
-          ariaLabel={t('manage.tabs.matches')}
-          value={state}
-          onChange={setState}
-          options={[
-            { value: 'closed', label: t('manage.matches.filterClosed') },
-            { value: 'open', label: t('manage.matches.filterOpen') },
-            { value: 'all', label: t('manage.matches.filterAll') }
-          ]}
-        />
+{!stateProp && (
+          <SegmentedControl
+            ariaLabel={t('manage.tabs.matches')}
+            value={state}
+            onChange={setState}
+            options={[
+              { value: 'closed', label: t('manage.matches.filterClosed') },
+              { value: 'open', label: t('manage.matches.filterOpen') },
+              { value: 'all', label: t('manage.matches.filterAll') }
+            ]}
+          />
+        )}
         <form className="sm:ml-auto sm:w-80" onSubmit={e => { e.preventDefault(); setQuery(q.trim()) }}>
           <SearchInput size="md" value={q} onChange={e => { setQ(e.target.value); if (!e.target.value) setQuery('') }} placeholder={t('manage.matches.search')} aria-label={t('manage.matches.search')} />
         </form>

@@ -61,7 +61,7 @@ describe('ManageConsole', () => {
     asUser(['admin'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
     const nav = screen.getAllByRole('navigation')[0]
-    expect(within(nav).getAllByRole('button')).toHaveLength(10) // with Settings (db/021)
+    expect(within(nav).getAllByRole('button')).toHaveLength(12) // with Settings (db/021) and the open tab's two filters (Pending, All)
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 
@@ -103,9 +103,20 @@ describe('ManageConsole', () => {
     asUser(['competition_manager'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
     const nav = screen.getAllByRole('navigation')[0]
-    expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.settings'])
+    expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.matches.filterAll', 'manage.matches.filterClosed', 'manage.matches.filterOpen', 'manage.tabs.teams', 'manage.tabs.settings'])
     await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
     expect(api.admin.listAccounts).not.toHaveBeenCalled()
+  })
+
+  it('a list tab is a tree by its filter: the child sits in the URL and drives the list', async () => {
+    asUser(['admin'])
+    const onTab = vi.fn()
+    const { rerender } = render(<ManageConsole tab="accounts" onTab={onTab} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith(expect.objectContaining({ filter: 'pending' })))
+    fireEvent.click(within(screen.getAllByRole('navigation')[0]).getByText('manage.accounts.filterAll'))
+    expect(onTab).toHaveBeenCalledWith('accounts/@all')
+    rerender(<ManageConsole tab="accounts/@all" onTab={onTab} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith(expect.objectContaining({ filter: 'all' })))
   })
 
   it('without a role it shows the forbidden note and a way back', () => {

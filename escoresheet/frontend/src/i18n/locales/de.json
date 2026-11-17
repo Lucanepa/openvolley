@@ -4429,6 +4429,11 @@
       "noMail": "Dieser Server kann noch keine E-Mails senden (kein Mailserver eingerichtet): Es geht nichts raus, auch wenn der Schalter an ist."
     },
     "myTeams": {
+      "nav": {
+        "requests": "Anfragen",
+        "squad": "Kader",
+        "games": "Spiele"
+      },
       "facts": {
         "when": "Wann",
         "where": "Wo",
