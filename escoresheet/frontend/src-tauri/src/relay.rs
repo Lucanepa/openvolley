@@ -1229,10 +1229,16 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/sign/submit", post(sign_api))
         .route("/api/sign/wait", post(sign_api))
         .route("/api/sign/close", post(sign_api))
+        .route("/api/global/live/game/{n}", get(global_live_game))
         .route("/api/global/live/{code}", get(global_live_page))
+        .route("/tv", get(tv_entry))
+        .route("/tv/", get(tv_entry))
+        .route("/tv/go", get(tv_go))
         .route("/tv/tv.js", get(tv_script))
         .route("/tv/{code}", get(tv_page))
         .route("/tv/{code}/", get(tv_page))
+        .route("/tv/{code}/{screen}", get(tv_screen_page))
+        .route("/tv/{code}/{screen}/", get(tv_screen_page))
         .fallback(static_handler)
         .layer(middleware::from_fn(add_headers))
         .with_state(state)
@@ -2033,9 +2039,124 @@ async fn global_live_page(ConnectInfo(addr): ConnectInfo<SocketAddr>, State(stat
     } else {
         let body = {
             let mut store = state.global_live.lock().unwrap_or_else(|e| e.into_inner());
-            crate::global_live::page_body(&mut store, code, now_ms())
+            let screen = uri.query().and_then(|q| q.split('&').find_map(|p| p.strip_prefix("screen="))).and_then(|v| crate::global_live::screen_number(Some(&Value::String(v.to_string()))));
+            crate::global_live::page_body(&mut store, code, now_ms(), screen)
         };
         let mut r = json_response(StatusCode::OK, body);
+        r.headers_mut().insert("Cache-Control", HeaderValue::from_static("no-store"));
+        r
+    };
+    let h = res.headers_mut();
+    h.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    h.insert("Cross-Origin-Resource-Policy", HeaderValue::from_static("cross-origin"));
+    res
+}
+
+/// GET /tv and /tv/: the code entry form (backend/lib/tv/entry.html), with a
+/// hint after a wrong code (?wrong=1).
+async fn tv_entry(uri: Uri) -> Response {
+    let wrong = uri.query().map(|q| q.split('&').any(|p| p == "wrong=1")).unwrap_or(false);
+    (
+        StatusCode::OK,
+        [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store"), ("referrer-policy", "no-referrer")],
+        crate::global_live::tv_entry_html(wrong),
+    )
+        .into_response()
+}
+
+/// GET /tv/go?code=…: the form's answer, to /tv/<code> or back to the form.
+async fn tv_go(uri: Uri) -> Response {
+    let raw = uri
+        .query()
+        .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("code=")))
+        .map(|v| percent_decode_plus(v))
+        .unwrap_or_default();
+    let code = crate::global_live::tv_code_of(&raw);
+    let court = uri
+        .query()
+        .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("court=")))
+        .and_then(|v| crate::global_live::screen_number(Some(&Value::String(percent_decode_plus(v)))));
+    // a live screen code (with a court, if given), or a league game number
+    let to = if crate::global_live::is_live_code(&code) {
+        match court { Some(n) => format!("/tv/{code}/{n}"), None => format!("/tv/{code}") }
+    } else if !code.is_empty() && code.len() <= 7 && code.bytes().all(|b| b.is_ascii_digit()) {
+        format!("/tv/{code}")
+    } else {
+        "/tv/?wrong=1".to_string()
+    };
+    (StatusCode::FOUND, [("location", to), ("cache-control", "no-store".to_string())]).into_response()
+}
+
+/// A form value as a browser sends it: '+' for a space, %XX escapes.
+fn percent_decode_plus(v: &str) -> String {
+    let bytes = v.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => { out.push(b' '); i += 1 }
+            b'%' if i + 2 < bytes.len() => {
+                let h = std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|s| u8::from_str_radix(s, 16).ok());
+                match h { Some(b) => { out.push(b); i += 3 } None => { out.push(b'%'); i += 1 } }
+            }
+            b => { out.push(b); i += 1 }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// GET /tv/<code>/<court>: one court of a live screen (the court number its
+/// scorer device set), full screen.
+async fn tv_screen_page(uri: Uri) -> Response {
+    let path = uri.path().trim_start_matches("/tv/").trim_end_matches('/');
+    let mut parts = path.splitn(2, '/');
+    let code = crate::global_live::tv_code_of(parts.next().unwrap_or(""));
+    let screen = parts.next().and_then(|n| crate::global_live::screen_number(Some(&Value::String(n.to_string()))));
+    match screen {
+        Some(n) if crate::global_live::is_live_code(&code) => (
+            StatusCode::OK,
+            [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store"), ("referrer-policy", "no-referrer")],
+            crate::global_live::tv_page_html_for(&code, Some(n), None),
+        )
+            .into_response(),
+        _ => (StatusCode::FOUND, [("location", "/tv/?wrong=1"), ("cache-control", "no-store")]).into_response(),
+    }
+}
+
+/// GET /api/global/live/game/<n>: one league game from the relay's own room
+/// with that game number and a live state (backend: the public live row on
+/// the cloud, the room on a venue relay).
+async fn global_live_game(ConnectInfo(addr): ConnectInfo<SocketAddr>, State(state): State<Arc<AppState>>, uri: Uri) -> Response {
+    let n = uri.path().trim_start_matches("/api/global/live/game/").to_string();
+    let mut res = if http_rate_limited(&state, "global-live", &addr, GLOBAL_LIVE_LIMIT).await {
+        let mut r = json_response(StatusCode::TOO_MANY_REQUESTS, json!({ "data": null, "error": { "message": "Too many requests", "code": "OV_RATE_LIMITED" } }));
+        r.headers_mut().insert("Retry-After", HeaderValue::from_static("60"));
+        r
+    } else if n.is_empty() || n.len() > 7 || !n.bytes().all(|b| b.is_ascii_digit()) {
+        json_response(StatusCode::NOT_FOUND, json!({ "data": null, "error": { "message": "Not found", "code": "OV_NOT_FOUND" } }))
+    } else {
+        let text = |v: Option<&Value>| match v {
+            Some(Value::String(s)) => Some(s.trim().to_string()),
+            Some(Value::Number(x)) => Some(x.to_string()),
+            _ => None,
+        };
+        let court = {
+            let matches = state.matches.lock().await;
+            matches.values().find_map(|bundle| {
+                let m = bundle.get("match")?;
+                let hit = ["gameN", "gameNumber", "game_n"].iter().any(|k| text(m.get(*k)).as_deref() == Some(n.as_str()));
+                let live = bundle.get("liveState").filter(|v| v.is_object())?;
+                hit.then(|| {
+                    let mut c = crate::global_live::court_summary(live, bundle, &crate::global_live::iso_now());
+                    c["id"] = json!(format!("game-{n}"));
+                    c["screen"] = Value::Null;
+                    c
+                })
+            })
+        };
+        let updated = court.as_ref().map(|c| c["updatedAt"].clone()).unwrap_or(Value::Null);
+        let courts: Vec<Value> = court.into_iter().collect();
+        let mut r = json_response(StatusCode::OK, json!({ "data": { "code": format!("game/{n}"), "updatedAt": updated, "courts": courts }, "error": null }));
         r.headers_mut().insert("Cache-Control", HeaderValue::from_static("no-store"));
         r
     };
@@ -2058,14 +2179,20 @@ async fn tv_script() -> Response {
 /// GET /tv/<code>: the live page for any screen, smart TVs included; the code
 /// upper-cased, dashes and spaces left out.
 async fn tv_page(uri: Uri) -> Response {
-    let code = raw_segment(&uri, "/tv/", true).map(crate::global_live::tv_code_of).unwrap_or_default();
-    if !crate::global_live::is_live_code(&code) {
+    let raw = raw_segment(&uri, "/tv/", true).unwrap_or_default();
+    // 1-7 digits: a league game number (a code is always 8 characters)
+    if !raw.is_empty() && raw.len() <= 7 && raw.bytes().all(|b| b.is_ascii_digit()) {
         return (
-            StatusCode::NOT_FOUND,
-            [("content-type", "text/plain; charset=utf-8"), ("cache-control", "no-store")],
-            "Not a tournament code",
+            StatusCode::OK,
+            [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store"), ("referrer-policy", "no-referrer")],
+            crate::global_live::tv_page_html_for("", None, Some(raw)),
         )
             .into_response();
+    }
+    let code = crate::global_live::tv_code_of(raw);
+    if !crate::global_live::is_live_code(&code) {
+        // back to the form, with a hint (a TV user typed it with a remote)
+        return (StatusCode::FOUND, [("location", "/tv/?wrong=1"), ("cache-control", "no-store")]).into_response();
     }
     (
         StatusCode::OK,
@@ -3201,7 +3328,8 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                                 .map(str::to_string)
                                 .unwrap_or_else(|| crate::global_live::court_token_of(&match_id));
                             let mut store = state.global_live.lock().unwrap_or_else(|e| e.into_inner());
-                            store.update(code, &court, &bundle["liveState"], bundle, now_ms());
+                            let screen = crate::global_live::screen_of(data.get("globalLiveScreen"), bundle);
+                            store.update(code, &court, &bundle["liveState"], bundle, now_ms(), screen);
                         }
                     }
                     let msg = json!({ "type": "live-state-update", "matchId": match_id, "liveState": live });
@@ -5026,10 +5154,65 @@ mod tests {
         assert!(h.get("content-type").unwrap().to_str().unwrap().contains("javascript"));
         assert_eq!(h.get("cache-control").unwrap(), "public, max-age=300");
         assert_eq!(js, include_str!("../../../backend/lib/tv/tv.js"));
-        let (status, h, body) = get_path(&state, "/tv/nope", &[]).await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
-        assert!(h.get("content-type").unwrap().to_str().unwrap().starts_with("text/plain"));
-        assert_eq!(body, "Not a tournament code");
+        let (status, h, _) = get_path(&state, "/tv/nope", &[]).await;
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(h.get("location").unwrap(), "/tv/?wrong=1");
+    }
+
+    #[tokio::test]
+    async fn a_league_game_by_its_number_and_one_court_page() {
+        let state = new_state(0, 0);
+        state.matches.lock().await.insert(
+            "match_77".to_string(),
+            json!({
+                "match": { "gameN": 77, "coinTossTeamA": "home", "hall": "Hall 1" },
+                "homeTeam": { "name": "Home VC" }, "awayTeam": { "name": "Away VC" },
+                "sets": [], "liveState": { "team_a_name": "Home VC", "team_b_name": "Away VC", "points_a": 5, "points_b": 3, "match_status": "live" }
+            }),
+        );
+        let (status, h, body) = get_path(&state, "/api/global/live/game/77", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(h.get("access-control-allow-origin").unwrap(), "*");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["data"]["courts"][0]["points"]["home"], json!(5));
+        assert_eq!(v["data"]["courts"][0]["id"], json!("game-77"));
+        let (_, _, body) = get_path(&state, "/api/global/live/game/78", &[]).await;
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["data"]["courts"], json!([]));
+        let (status, _, page) = get_path(&state, "/tv/77", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(page.contains("data-src=\"/api/global/live/game/77\""));
+        let (status, _, page) = get_path(&state, "/tv/abcd2345/3", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(page.contains("data-src=\"/api/global/live/ABCD2345?screen=3\""));
+        let (status, h, _) = get_path(&state, "/tv/abcd2345/0", &[]).await;
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(h.get("location").unwrap(), "/tv/?wrong=1");
+        let (_, h, _) = get_path(&state, "/tv/go?code=abcd2345&court=3", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/ABCD2345/3");
+        let (_, h, _) = get_path(&state, "/tv/go?code=77", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/77");
+    }
+
+    #[tokio::test]
+    async fn tv_without_a_code_asks_for_it_and_the_form_answer_redirects() {
+        let state = new_state(0, 0);
+        for path in ["/tv", "/tv/"] {
+            let (status, _, body) = get_path(&state, path, &[]).await;
+            assert_eq!(status, StatusCode::OK, "{path}");
+            assert!(body.contains("action=\"/tv/go\""));
+            assert!(!body.contains("class=\"err\""));
+        }
+        let (_, _, body) = get_path(&state, "/tv/?wrong=1", &[]).await;
+        assert!(body.contains("class=\"err\""));
+        let (status, h, _) = get_path(&state, "/tv/go?code=tvpg+2345", &[]).await;
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(h.get("location").unwrap(), "/tv/TVPG2345");
+        let (_, h, _) = get_path(&state, "/tv/go?code=tvpg%202345", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/TVPG2345");
+        let (_, h, _) = get_path(&state, "/tv/go?code=nope", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/?wrong=1");
+        assert_eq!(crate::global_live::tv_entry_html(false), crate::global_live::TV_ENTRY_HTML.replacen("{{ERROR}}", "", 1));
     }
 }
 

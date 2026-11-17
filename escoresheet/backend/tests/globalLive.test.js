@@ -2,7 +2,7 @@
 //   cd escoresheet/backend && node --test tests/globalLive.test.js
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createGlobalLive, courtSummary, isLiveCode } from '../lib/globalLive.js'
+import { createGlobalLive, courtSummary, isLiveCode, gameSummary, screenNumber, screenOf } from '../lib/globalLive.js'
 
 const CODE = 'ABCD2345'
 const live = (over = {}) => ({
@@ -118,4 +118,49 @@ describe('courtSummary: shared cases (lib/tv/summary-cases.json)', () => {
       assert.deepEqual(s, c.expected)
     })
   }
+})
+
+describe('one court and one game', () => {
+  it('a court number set on the scorer device filters the page to that court', () => {
+    const store = createGlobalLive()
+    store.update(CODE, 'r1', live({ points_a: 1 }), entry(), 1)
+    store.update(CODE, 'r2', live({ points_a: 2 }), entry(), 2)
+    store.update(CODE, 'r3', live({ points_a: 3 }), entry(), 'x')
+    assert.equal(store.get(CODE).courts.length, 3)
+    assert.deepEqual(store.get(CODE, { screen: 2 }).courts.map(c => c.points.home), [2])
+    assert.deepEqual(store.get(CODE, { screen: 9 }).courts, [])
+    assert.equal(screenNumber('7'), 7)
+    for (const bad of [0, 100, 1.5, 'x', null]) assert.equal(screenNumber(bad), null)
+  })
+
+  it('a league game from its public live row: home and away from the match, the sets mapped', () => {
+    const s = gameSummary({
+      game_n: 4242, status: 'live', match_status: 'live', scheduled_at: new Date('2027-01-10T19:00:00Z'),
+      home_team: { name: 'VBC Zürich' }, away_team: JSON.stringify({ name: 'Volley Luzern' }), match_info: { hall: 'Saalsporthalle' },
+      team_a_name: 'Volley Luzern', team_b_name: 'VBC Zürich', points_a: 7, points_b: 10, sets_won_a: 0, sets_won_b: 1,
+      side_a: 'left', serving_team: 'right', current_set: 2, best_of: 5,
+      set_results: [{ index: 1, pointsA: 20, pointsB: 25 }], lineup_a: { I: 7 }
+    }, 'T')
+    assert.equal(s.id, 'game-4242')
+    assert.deepEqual(s.home, { name: 'VBC Zürich', short: null, color: null })
+    assert.deepEqual(s.points, { home: 10, away: 7 })
+    assert.deepEqual(s.setsWon, { home: 1, away: 0 })
+    assert.deepEqual(s.sets, [{ home: 25, away: 20 }])
+    assert.equal(s.serving, 'home')
+    assert.equal(s.hall, 'Saalsporthalle')
+    assert.equal(s.gameNumber, '4242')
+    assert.equal(JSON.stringify(s).includes('lineup'), false)
+    assert.equal(gameSummary(null), null)
+  })
+})
+
+describe('screenOf', () => {
+  it('the device\'s own court number first, else the number at the end of the match\'s court', () => {
+    assert.equal(screenOf(2, { match: { court: 'Court 5' } }), 2)
+    assert.equal(screenOf(null, { match: { court: 'Court 5' } }), 5)
+    assert.equal(screenOf(undefined, { match: { court: 'Terrain 12' } }), 12)
+    assert.equal(screenOf(null, { match: { court: 3 } }), 3)
+    assert.equal(screenOf(null, { match: { court: 'Centre Court' } }), null)
+    assert.equal(screenOf(null, {}), null)
+  })
 })

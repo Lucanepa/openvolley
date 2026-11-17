@@ -11,7 +11,7 @@
  */
 import { getCloudApiUrl } from './backendConfig'
 import { detectAppPlatform } from './openAppWindow'
-import { courtTokenFor } from './globalLive'
+import { courtTokenFor, getLiveCourt } from './globalLive'
 
 export const PUSH_MS = 2000
 const SUMMARY_FIELDS = ['team_a_name', 'team_a_short', 'team_a_color', 'team_b_name', 'team_b_short', 'team_b_color', 'sets_won_a', 'sets_won_b', 'points_a', 'points_b', 'current_set', 'best_of', 'side_a', 'serving_team', 'match_status', 'timeout_active', 'set_interval_active']
@@ -38,6 +38,7 @@ async function send({ code, match, liveState, db, matchId, fetchImpl }) {
   ])
   const body = {
     court,
+    screen: getLiveCourt(),
     liveState: pickSummary(liveState),
     match: { coinTossTeamA: match.coinTossTeamA ?? null, hall: match.hall ?? match.venue ?? null, scheduledAt: match.scheduledAt ?? null, gameN: match.gameN ?? null },
     homeTeam: { name: home?.name ?? null },

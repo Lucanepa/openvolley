@@ -6489,6 +6489,8 @@
     "codeLabel": "Live screen code",
     "smartTv": "On a smart TV: open the TV's web browser and type {{url}}.",
     "venueUrl": "Without internet at the venue, TVs on the venue Wi-Fi open: {{url}}",
+    "courtLabel": "Court of this device (optional):",
+    "courtUrl": "A TV for this court only: {{url}}",
     "otherDevices": "On the other scorer devices of the event, enter this code under Options › Live screen.",
     "copyLink": "Copy link",
     "copied": "Copied",

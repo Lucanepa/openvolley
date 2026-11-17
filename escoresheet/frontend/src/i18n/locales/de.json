@@ -6471,6 +6471,8 @@
     "codeLabel": "Live-Bildschirm-Code",
     "smartTv": "Auf einem Smart-TV: den Webbrowser des TVs öffnen und {{url}} eingeben.",
     "venueUrl": "Ohne Internet in der Halle öffnen TVs im Hallen-WLAN: {{url}}",
+    "courtLabel": "Feld dieses Geräts (freiwillig):",
+    "courtUrl": "Ein TV nur für dieses Feld: {{url}}",
     "otherDevices": "Gib diesen Code auf den anderen Schreibergeräten des Anlasses unter Optionen › Live-Bildschirm ein.",
     "copyLink": "Link kopieren",
     "copied": "Kopiert",

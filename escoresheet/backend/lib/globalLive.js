@@ -46,7 +46,25 @@ export function pickLiveSummaryFields(liveState) {
   return out
 }
 
-/** A tournament code as the app makes it (utils/globalLive.js). */
+/** A court number a scorer device set for its screen (1-99), else null. */
+export function screenNumber(v) {
+  const n = Number(v)
+  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null
+}
+
+/**
+ * The court number for /tv/<code>/<n>: the one the scorer device set, else
+ * the number at the end of the match's court (OpenBeach: 'Court 3' -> 3).
+ */
+export function screenOf(explicit, entry) {
+  const own = screenNumber(explicit)
+  if (own != null) return own
+  const court = entry?.match?.court
+  const m = typeof court === 'string' ? /([0-9]{1,2})\s*$/.exec(court) : (Number.isInteger(court) ? [null, String(court)] : null)
+  return m ? screenNumber(m[1]) : null
+}
+
+/** A live screen code as the app makes it (utils/globalLive.js). */
 export const isLiveCode = (code) => typeof code === 'string' && CODE_RE.test(code)
 
 const str = (v, max = 80) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
@@ -132,7 +150,8 @@ export function createGlobalLive({ maxCodes = 1000, maxCourtsPerCode = 24, idleM
    * The scorer's live state for one room. False: not taken (bad code, store
    * full). The caller has checked that the room is a Global match.
    */
-  function update(code, roomKey, liveState, entry) {
+  /** screen: the court number the scorer device set (1-99) for /tv/<code>/<n>, or null. */
+  function update(code, roomKey, liveState, entry, screen = null) {
     if (!isLiveCode(code) || !roomKey || !liveState || typeof liveState !== 'object') return false
     sweep()
     let courts = codes.get(code)
@@ -143,7 +162,7 @@ export function createGlobalLive({ maxCodes = 1000, maxCourtsPerCode = 24, idleM
     }
     const id = courtIdOf(code, String(roomKey))
     const t = now()
-    const summary = { id, ...courtSummary(liveState, entry, new Date(t).toISOString()) }
+    const summary = { id, ...courtSummary(liveState, entry, new Date(t).toISOString()), screen: screenNumber(screen) }
     const prev = courts.get(id)
     if (!prev && courts.size >= maxCourtsPerCode) {
       // the court updated longest ago gives way
@@ -156,12 +175,14 @@ export function createGlobalLive({ maxCodes = 1000, maxCourtsPerCode = 24, idleM
   }
 
   /** The page's data for a code, or null when nothing is live under it. */
-  function get(code) {
+  /** The page's data for a code (one court with `screen`), or null when nothing is live under it. */
+  function get(code, { screen = null } = {}) {
     if (!isLiveCode(code)) return null
     sweep()
     const courts = codes.get(code)
     if (!courts || courts.size === 0) return null
-    const list = [...courts.values()].map((c) => c.summary)
+    const only = screenNumber(screen)
+    const list = [...courts.values()].map((c) => c.summary).filter((c) => only == null || c.screen === only)
     // running matches first, then by the scheduled time, then by hall
     list.sort((a, b) => (a.ended - b.ended) || String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')) || String(a.hall || '').localeCompare(String(b.hall || '')))
     const updatedAt = list.reduce((m, c) => (c.updatedAt > m ? c.updatedAt : m), '')
@@ -169,4 +190,36 @@ export function createGlobalLive({ maxCodes = 1000, maxCourtsPerCode = 24, idleM
   }
 
   return { update, get, sweep, size: () => codes.size }
+}
+
+/**
+ * A league game's court summary from its public live row (publicApi
+ * gameLiveRow: match_live_state + the match row), for /tv/<game number>.
+ * The live row's columns are the scorer's live-state names, so courtSummary
+ * reads it as it is; home / away and the finished sets come from the match.
+ */
+export function gameSummary(row, nowIso = new Date().toISOString()) {
+  if (!row || typeof row !== 'object') return null
+  const j = (v) => { if (typeof v !== 'string') return v; try { return JSON.parse(v) } catch { return null } }
+  const beach = (row.match_sport || row.sport_type) === 'beach'
+  const home = j(beach ? row.team1_data : row.home_team) || {}
+  const away = j(beach ? row.team2_data : row.away_team) || {}
+  const info = j(row.match_info) || {}
+  const aIsHome = !(typeof row.team_a_name === 'string' && row.team_a_name === away.name && row.team_a_name !== home.name)
+  const sets = (Array.isArray(j(row.set_results)) ? j(row.set_results) : [])
+    .filter((x) => x && typeof x === 'object')
+    .map((x) => {
+      const a = x.pointsA ?? x.home_points
+      const b = x.pointsB ?? x.away_points
+      return { index: x.index, homePoints: aIsHome ? a : b, awayPoints: aIsHome ? b : a, finished: true }
+    })
+  const liveState = { ...row, match_status: row.match_status || row.status, points_a: row.points_a ?? 0, points_b: row.points_b ?? 0, sets_won_a: row.sets_won_a ?? 0, sets_won_b: row.sets_won_b ?? 0 }
+  const scheduledAt = row.scheduled_at instanceof Date ? row.scheduled_at.toISOString() : row.scheduled_at
+  const entry = {
+    match: { coinTossTeamA: aIsHome ? 'home' : 'away', hall: info.hall ?? null, scheduledAt: scheduledAt ?? null, gameN: row.game_n ?? null },
+    homeTeam: { name: home.name ?? null },
+    awayTeam: { name: away.name ?? null },
+    sets
+  }
+  return { id: `game-${row.game_n}`, ...courtSummary(liveState, entry, nowIso) }
 }

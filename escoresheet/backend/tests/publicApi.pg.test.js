@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import pg from 'pg'
 import { SKIP_PG, createTestDatabase } from './helpers/pgTestDb.js'
 import { createPublicApi } from '../lib/publicApi.js'
+import { gameSummary } from '../lib/globalLive.js'
 
 describe('public API on Postgres', { skip: SKIP_PG }, () => {
   let tdb, pool, api, mid
@@ -53,6 +54,18 @@ describe('public API on Postgres', { skip: SKIP_PG }, () => {
     assert.equal((await api.live('pub_live')).body.score.pointsA, 12)
     assert.equal((await api.live('pub_fin')).body.score.pointsA, 0)
     assert.equal((await api.live('pub_test')).status, 404)
+  })
+  // the TV page's /tv/<game number> (lib/globalLive.js gameSummary)
+  it('gameLiveRow: a league game by its number, with its live row; never a test row', async () => {
+    const row = await api.gameLiveRow(2) // pub_live
+    assert.equal(row.external_id, 'pub_live')
+    const s = gameSummary(row, 'T')
+    assert.deepEqual(s.points, { home: 12, away: 9 })
+    assert.equal(s.home.name, 'VBC Home')
+    assert.equal(await api.gameLiveRow(3), null) // pub_test
+    assert.equal(await api.gameLiveRow(999), null)
+    assert.equal(await api.gameLiveRow('2; drop table x'), null)
+    assert.deepEqual(gameSummary(await api.gameLiveRow(1)).points, { home: 0, away: 0 }) // no live row yet
   })
   it('stats: only finished, voided events left out', async () => {
     assert.equal((await api.stats('pub_live')).status, 409)
