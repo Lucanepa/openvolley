@@ -1,7 +1,7 @@
 // The 10-minute interval after set 2, per match (owner 2026-11-17)
 import { describe, it, expect } from 'vitest'
 import {
-  INTERVAL_MINUTES, LONG_INTERVAL_MINUTES, breakSecondsAfter, endedSetBefore,
+  INTERVAL_MINUTES, LONG_INTERVAL_MINUTES, breakSecondsAfter, endedSetBefore, retimedBreakLength,
   hasLongIntervalAfterSet2, intervalMinutesAfter, isLongInterval, longIntervalChanged
 } from '../setInterval'
 import { defaultSetStartTime } from '../../utils/setStartTime'
@@ -51,6 +51,28 @@ describe('the interval rule', () => {
     expect(endedSetBefore(3, [])).toBe(2)
     expect(endedSetBefore(1, [])).toBe(null)
     expect(breakSecondsAfter(ON, endedSetBefore(5, [{ index: 1 }, { index: 2 }, { index: 5 }]), 180)).toBe(600)
+  })
+
+  it('the set a break follows from an old copy of the sets (a referee that loaded before the toss)', () => {
+    // set 1 only on the tablet, the break before set 3: set 2 (sets 1-4 are in order)
+    expect(endedSetBefore(3, [{ index: 1 }], 2)).toBe(2)
+    expect(endedSetBefore(3, [{ index: 1 }])).toBe(2)
+    expect(breakSecondsAfter(ON, endedSetBefore(3, [{ index: 1 }], 2), 180)).toBe(600)
+    // before set 5: the format decides (best-of-3 decider after set 2)
+    expect(endedSetBefore(5, [{ index: 1 }], null, 3)).toBe(2)
+    expect(endedSetBefore(5, [{ index: 1 }], null, 5)).toBe(4)
+    // format unknown: the named set wins over an older sets list
+    expect(endedSetBefore(5, [{ index: 1 }], 2)).toBe(2)
+  })
+
+  it('a running break re-timed for the switch: same start, end = start + new length', () => {
+    // scorer: 170 s counted from its anchor, 3 -> 10 minutes: 7 minutes more
+    expect(retimedBreakLength(170, 180, 600)).toBe(590)
+    // 10 -> 3 minutes: 7 minutes less, never below 0 (over by now)
+    expect(retimedBreakLength(600, 600, 180)).toBe(180)
+    expect(retimedBreakLength(300, 600, 180)).toBe(0)
+    // the device's own break length is kept off
+    expect(retimedBreakLength(240, 240, 600)).toBe(600)
   })
 
   it('an edit that switches it is a change; the same value is not', () => {

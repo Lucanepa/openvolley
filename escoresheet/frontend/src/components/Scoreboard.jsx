@@ -61,7 +61,7 @@ import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from 
 import { sendsCloudBackup } from '../utils/globalCloud'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
-import { breakSecondsAfter, hasLongIntervalAfterSet2 } from '../domain/setInterval'
+import { breakSecondsAfter, hasLongIntervalAfterSet2, isLongInterval, retimedBreakLength } from '../domain/setInterval'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getToolMode } from '../utils/toolMode'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from '../domain/rules'
@@ -3712,6 +3712,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       intervalEndedByHandRef.current = false
     }
   }, [isBetweenSets, setIntervalDuration, data?.set?.index, data?.sets, data?.match?.longIntervalAfterSet2]) // Removed betweenSetsCountdown from deps to prevent restart loop
+
+  // The 10-minute switch changed (Edit match info) while the break after
+  // set 2 runs: the countdown keeps its start and ends at the start + the new
+  // length (domain/setInterval retimedBreakLength); a break over by then ends
+  // on the next tick. A break that ran out or was ended stays so. The tablets
+  // follow the match's switch themselves (Referee).
+  const longIntervalSeenRef = useRef(null)
+  const longIntervalOn = data?.match ? hasLongIntervalAfterSet2(data.match) : null
+  useEffect(() => {
+    if (longIntervalOn === null) return
+    const before = longIntervalSeenRef.current
+    longIntervalSeenRef.current = longIntervalOn
+    if (before === null || before === longIntervalOn) return
+    if (!betweenSetsCountdown?.started || !betweenSetsStartTimestampRef.current) return
+    const previousSet = findPreviousSet(data?.sets, data?.set?.index || 1)
+    if (!isLongInterval({ longIntervalAfterSet2: true }, previousSet?.index)) return
+    const oldLength = breakSecondsAfter({ longIntervalAfterSet2: before }, previousSet.index, setIntervalDuration)
+    const newLength = breakSecondsAfter({ longIntervalAfterSet2: longIntervalOn }, previousSet.index, setIntervalDuration)
+    betweenSetsInitialCountdownRef.current = retimedBreakLength(betweenSetsInitialCountdownRef.current, oldLength, newLength)
+    const remaining = secondsLeft(betweenSetsAnchorRef.current, betweenSetsInitialCountdownRef.current)
+    if (remaining <= 0) {
+      // over by now: ends as when its clock runs out
+      countdownDismissedRef.current = true
+      betweenSetsStartTimestampRef.current = null
+      setBetweenSetsCountdown(null)
+      return
+    }
+    setBetweenSetsCountdown(prev => (prev && prev.started ? { ...prev, countdown: remaining } : prev))
+  }, [longIntervalOn]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { longIntervalSeenRef.current = null }, [matchId])
 
   // Handle between-sets countdown timer
   useEffect(() => {

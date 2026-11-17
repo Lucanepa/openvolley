@@ -28,7 +28,9 @@ export default function LongIntervalSwitch({ checked, onChange, disabled = false
         aria-labelledby={labelId}
         aria-describedby={hintId}
         data-testid="long-interval-after-set2-switch"
-        className="mt-0.5 shrink-0"
+        // p-0: the global button padding (styles.css) squeezed the thumb
+        // off the track (as MatchSetup's ToggleSwitch)
+        className="mt-0.5 shrink-0 p-0"
       />
     </div>
   )
