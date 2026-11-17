@@ -5517,13 +5517,14 @@ function handleSocketMessage(clientInfo, data) {
         // A test (rehearsal) match stays in the relay's memory: never in the database
         const isTestRoom = activeMatches.get(resolveMatchKey(clientInfo, message.matchId))?.match?.test === true
         const liveTaken = handleLiveStateUpdate(clientInfo, message)
-        // The Global tool's live page for TVs (lib/globalLive.js): a Global
-        // match whose scorer opted in with a tournament code; the summary
-        // only, from the state the relay just took from the room's owner
-        if (liveTaken && isTestRoom && message.globalLive != null) {
+        // The live screen for TVs (lib/globalLive.js): any match (league,
+        // test, Easy, Global; OpenBeach too) whose scorer opted in with a live
+        // screen code; the summary only, from the state the relay just took
+        // from the room's owner
+        if (liveTaken && message.globalLive != null) {
           const liveKey = resolveMatchKey(clientInfo, message.matchId)
           const entry = activeMatches.get(liveKey)
-          if (entry?.match?.global === true && entry.liveState && clientInfo.ownedMatches?.has(liveKey)) {
+          if (entry?.liveState && clientInfo.ownedMatches?.has(liveKey)) {
             // one court per match whichever way it comes (relay or HTTP push): the
             // match's court token when it sends one, else the room
             const court = isCourtToken(message.globalLiveCourt) ? message.globalLiveCourt : courtTokenOf(liveKey)

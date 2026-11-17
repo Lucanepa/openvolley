@@ -23,17 +23,25 @@ describe('globalLive codes', () => {
     expect(liveCodeUrl('bad')).toBe(null)
   })
 
-  it('a Global match carries the device\'s code, a Swiss match never', () => {
+  it('every match carries the device\'s code once it opted in', () => {
     expect(liveCodeForMatch({ global: true })).toBe(null)
     setLiveCode('ABCD2345')
     expect(getLiveCode()).toBe('ABCD2345')
     expect(liveCodeForMatch({ global: true, test: true })).toBe('ABCD2345')
-    expect(liveCodeForMatch({ test: true })).toBe(null)
-    expect(liveCodeForMatch({})).toBe(null)
+    expect(liveCodeForMatch({ test: true })).toBe('ABCD2345')
+    expect(liveCodeForMatch({})).toBe('ABCD2345')
+    expect(liveCodeForMatch(null)).toBe(null)
     setLiveCode(null)
     expect(liveCodeForMatch({ global: true })).toBe(null)
     setLiveCode('not a code')
     expect(getLiveCode()).toBe(null)
+  })
+
+  it('a code saved by the first version (Global only) is moved over once', () => {
+    localStorage.setItem('ov.globalLive.code', 'WXYZ2345')
+    expect(getLiveCode()).toBe('WXYZ2345')
+    expect(localStorage.getItem('ov.liveScreen.code')).toBe('WXYZ2345')
+    expect(localStorage.getItem('ov.globalLive.code')).toBe(null)
   })
 
   it('reads the code a livescore URL asks for', () => {

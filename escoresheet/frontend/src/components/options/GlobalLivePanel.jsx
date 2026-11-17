@@ -8,12 +8,12 @@ import { getBackendOverride, isStaticDeployment } from '../../utils/backendConfi
 import { detectAppPlatform } from '../../utils/openAppWindow'
 
 /**
- * Options › Tool (Global): the live page for TVs (utils/globalLive.js). One
- * scorer device starts it and gets a tournament code; the other scorer
- * devices of the tournament enter the same code. The TVs open the link or
+ * Options › Live screen (every mode): the live screen for TVs
+ * (utils/globalLive.js). One scorer device starts it and gets a live screen
+ * code; the other scorer devices of the event enter the same code. The TVs open the link or
  * scan the QR code. Only the score goes to the page, never players.
  */
-export default function GlobalLivePanel() {
+export default function GlobalLivePanel({ bare = false }) {
   const { t } = useTranslation()
   const code = useLiveCode()
   const [typed, setTyped] = useState('')
@@ -31,8 +31,8 @@ export default function GlobalLivePanel() {
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-stone-200 p-3" data-testid="global-live-panel">
-      <div className="text-sm font-semibold text-stone-900">{t('globalLive.title')}</div>
+    <div className={bare ? '' : 'mt-4 rounded-xl border border-stone-200 p-3'} data-testid="global-live-panel">
+      {!bare && <div className="text-sm font-semibold text-stone-900">{t('globalLive.title')}</div>}
       <p className="mt-0.5 text-xs leading-relaxed text-stone-500">{t('globalLive.intro')}</p>
       {code ? (
         <div className="mt-3 flex flex-wrap items-start gap-4">

@@ -89,13 +89,26 @@ describe('Global live page through the relay', () => {
     for (const leak of ['Anna', 'Muster', '515253', '316271', room, 'lineup']) assert.equal(text.includes(leak), false, leak)
   })
 
-  it('nothing from a test match that is not Global, from a socket that does not own the room, or with a bad code', async () => {
+  it('any match type may opt in: a league match (not a test match) shows its court too', async () => {
+    const code = 'LEAG2345'
+    const room = `match_${hex()}`
+    const scorer = await open()
+    scorer.send(sync(room, { test: false }))
+    await settle(scorer)
+    scorer.send({ type: 'live-state-update', matchId: room, liveState: liveState({ points_a: 9 }), globalLive: code })
+    await settle(scorer)
+    const r = await page(srv.base, code)
+    assert.equal(r.json.data.courts.length, 1)
+    assert.equal(r.json.data.courts[0].points.home, 9)
+  })
+
+  it('nothing without a code, from a socket that does not own the room, or with a bad code', async () => {
     const code = 'NNNN2345'
     const room = `match_test_${hex()}`
     const scorer = await open()
-    scorer.send(sync(room)) // a test match, not Global
+    scorer.send(sync(room))
     await settle(scorer)
-    scorer.send({ type: 'live-state-update', matchId: room, liveState: liveState(), globalLive: code })
+    scorer.send({ type: 'live-state-update', matchId: room, liveState: liveState() }) // no code: not on any page
     await settle(scorer)
 
     const globalRoom = `match_test_${hex()}`

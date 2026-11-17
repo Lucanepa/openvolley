@@ -1,10 +1,11 @@
 /**
- * The Global tool's live page for TVs (backend lib/globalLive.js).
+ * The live screen for TVs (backend lib/globalLive.js), for any event and any
+ * match type (league, test, Easy, Global; OpenBeach has its own copy).
  *
- * A tournament opts in on its scorer devices with a shared tournament code:
- * one device makes it, the others type it in. While it is set, a Global
- * match's live updates to the relay carry it (Scoreboard live-state push),
- * and the livescore site shows every court of that code:
+ * An event opts in on its scorer devices with a shared live screen code: one
+ * device makes it, the others type it in. While it is set, every match's live
+ * updates to the relay carry it (Scoreboard live-state push), and every
+ * screen with the code shows all courts of that code:
  *
  *   https://openvolley.app/tv/<code>             (any screen, smart TVs included)
  *   http://<venue relay>/tv/<code>               (the same at a venue without internet)
@@ -12,14 +13,15 @@
  *   GET  <backend>/api/global/live/<code>          (the same data as JSON)
  *
  * Only a score summary leaves the device (team names and colours, points,
- * sets, who serves): no players, no officials. Swiss matches do not use it;
- * they have the public livescore already.
+ * sets, who serves): no players, no officials.
  */
 import { useSyncExternalStore } from 'react'
 
 export const LIVE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const CODE_RE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/
-const KEY = 'ov.globalLive.code'
+const KEY = 'ov.liveScreen.code'
+// the key of the first version (17.11, Global only): read once, moved to KEY
+const OLD_KEY = 'ov.globalLive.code'
 const EVENT = 'ov-global-live'
 export const LIVESCORE_SITE = 'https://livescore.openvolley.app/'
 // The TV page (backend lib/tvPage.js), short enough to type with a TV remote:
@@ -76,7 +78,12 @@ export function cachedCourtToken(match) {
 
 export function getLiveCode() {
   try {
-    const v = localStorage.getItem(KEY)
+    let v = localStorage.getItem(KEY)
+    if (v == null) {
+      const old = localStorage.getItem(OLD_KEY)
+      if (isLiveCode(old)) { localStorage.setItem(KEY, old); v = old }
+      localStorage.removeItem(OLD_KEY)
+    }
     return isLiveCode(v) ? v : null
   } catch { return null }
 }
@@ -101,8 +108,8 @@ export function useLiveCode() {
   return useSyncExternalStore(subscribe, getLiveCode, () => null)
 }
 
-/** The code a match's live push carries: a Global match on a device that opted in. */
-export const liveCodeForMatch = (match) => (match?.global === true ? getLiveCode() : null)
+/** The code a match's live push carries: any match on a device that opted in. */
+export const liveCodeForMatch = (match) => (match ? getLiveCode() : null)
 
 /** The tournament code a livescore URL asks for (?t=...), or null. */
 export function liveCodeFromUrl(search = typeof window !== 'undefined' ? window.location.search : '') {
