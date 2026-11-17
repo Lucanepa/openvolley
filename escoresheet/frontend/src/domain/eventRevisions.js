@@ -1,3 +1,4 @@
+import { isLocalOnly } from './matchKind'
 /**
  * Event history (undo, deletes and edits of logged events) — pure helpers, no
  * Dexie, no React. db/eventHistory.js builds the rows with these from its
@@ -216,7 +217,7 @@ export function serverColumnsOfEdit(before, after) {
  */
 export function revisionSyncJob(row, match, eventExtId) {
   const seed = match?.seedKey
-  if (!row || !seed || match?.test === true) return null
+  if (!row || !seed || isLocalOnly(match)) return null
   if (LOCAL_ONLY_EVENT_TYPES.includes(row.type)) return null
   if (!REVISION_OPS.includes(row.op)) return null
   const payload = {

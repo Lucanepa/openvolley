@@ -218,6 +218,7 @@
     "close": "Schliessen"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Das löscht alle Sätze, Aktionen, Spieler und Teamdaten dieses Spiels auf diesem Gerät.",
     "cancel": "Abbrechen",
     "delete": "Löschen",
     "lossTitle": "Diese Kopie enthält, was der Server nicht hat:",

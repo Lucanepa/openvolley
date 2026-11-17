@@ -226,6 +226,7 @@
     "cancel": "Cancel"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "This deletes all sets, events, players and team data of this match on this device.",
     "cancel": "Cancel",
     "delete": "Delete",
     "lossTitle": "This copy holds what the server does not have:",

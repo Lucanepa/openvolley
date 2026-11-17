@@ -423,7 +423,10 @@ export const MATCH_PRIVATE_FIELDS = Object.freeze([
   'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges', 'manual_changes',
   'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
   // openbeach's uploaded rosters waiting for the scorer (with dob)
-  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster'
+  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster',
+  // a Global match's key to its backup store (frontend utils/globalCloud);
+  // a scorer before 2026-11-17 sent it
+  'globalKey'
 ])
 /**
  * Match keys only the referee and the scorer's own devices get (relayBundleView):

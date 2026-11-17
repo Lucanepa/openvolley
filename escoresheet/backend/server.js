@@ -5587,8 +5587,11 @@ function handleSocketMessage(clientInfo, data) {
         // DATABASE_URL mode: also a match_live_state db-change for live
         // subscribers (livescore, scorer alarm), even when HTTP sync is down;
         // not one the relay refused (too large, relay memory full).
-        // A test (rehearsal) match stays in the relay's memory: never in the database
-        const isTestRoom = activeMatches.get(resolveMatchKey(clientInfo, message.matchId))?.match?.test === true
+        // A test (rehearsal) match stays in the relay's memory: never in the
+        // database. So does a Global match (no account, no row: a real match
+        // that stays local, frontend domain/matchKind)
+        const roomMatch = activeMatches.get(resolveMatchKey(clientInfo, message.matchId))?.match
+        const isTestRoom = roomMatch?.test === true || roomMatch?.global === true
         const liveTaken = handleLiveStateUpdate(clientInfo, message)
         // The live screen for TVs (lib/globalLive.js): any match (league,
         // test, Easy, Global; OpenBeach too) whose scorer opted in with a live

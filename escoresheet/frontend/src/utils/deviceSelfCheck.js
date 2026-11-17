@@ -77,6 +77,7 @@ import { isKnownClosedOnServer, isStaleClosedCopy, serverRowClosed } from './mat
 import { isScorerMoved, SCORER_MOVED_BY, SERVER_CLOSED_BY } from './matchHandover'
 import { wipeMatchEvents } from '../db/eventHistory'
 import { apiFrom } from '../lib/apiClient'
+import { isLocalOnly } from '../domain/matchKind'
 
 // The longest Continue waits for the server's answer before it opens a match
 export const SERVER_CHECK_TIMEOUT_MS = 3000
@@ -112,7 +113,7 @@ export const localMatchKey = (m) => m?.seed_key || m?.seedKey || m?.externalId |
  * match stayed 'approved' for good. A refusal of its approval (another device
  * closed it first) still marks it, through the sync queue.
  */
-export const isOpenOfficialCopy = (m) => !!m && m.test !== true && !!m.seed_key && m.status !== 'final' && m.approved !== true && !isKnownClosedOnServer(m)
+export const isOpenOfficialCopy = (m) => !!m && !isLocalOnly(m) && !!m.seed_key && m.status !== 'final' && m.approved !== true && !isKnownClosedOnServer(m)
 
 const timeOf = (v) => {
   const t = typeof v === 'number' ? v : (typeof v === 'string' ? Date.parse(v) : NaN)
@@ -144,7 +145,7 @@ const reportItem = (m, extra = {}) => ({ id: m.id, key: localMatchKey(m), gameN:
  * @returns {'closed'|'moved'|'here'|'unchecked'|null}
  */
 export function copyState(match, { checkedHere = false } = {}) {
-  if (!match || match.test === true) return null
+  if (!match || isLocalOnly(match)) return null
   if (isKnownClosedOnServer(match) || isStaleClosedCopy(match)) return 'closed'
   if (isScorerMoved(match)) return 'moved'
   // approved here: never asked about (isOpenOfficialCopy), Close match ends it
@@ -172,7 +173,7 @@ export function duplicateCopyIds(matches) {
   const byKey = new Map()
   for (const m of matches || []) {
     const key = localMatchKey(m)
-    if (!key || m.test === true || m.status === 'final') continue
+    if (!key || isLocalOnly(m) || m.status === 'final') continue
     byKey.set(key, [...(byKey.get(key) || []), m.id])
   }
   return [...byKey.values()].filter(ids => ids.length > 1).flat()
@@ -181,8 +182,8 @@ export function duplicateCopyIds(matches) {
 /** Is there another local copy of this official match? (Delete then removes this copy alone.) */
 export async function hasOtherLocalCopy(database, match) {
   const key = localMatchKey(match)
-  if (!key || match?.test === true) return false
-  return (await database.matches.filter(m => m.id !== match.id && m.test !== true && localMatchKey(m) === key).count()) > 0
+  if (!key || isLocalOnly(match)) return false
+  return (await database.matches.filter(m => m.id !== match.id && !isLocalOnly(m) && localMatchKey(m) === key).count()) > 0
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +288,7 @@ export async function findDuplicateCopies(database, { openMatchId = null, keys =
   const groups = new Map()
   for (const m of await database.matches.toArray()) {
     const key = localMatchKey(m)
-    if (!key || m.test === true || m.status === 'final' || (keys && !keys.includes(key))) continue
+    if (!key || isLocalOnly(m) || m.status === 'final' || (keys && !keys.includes(key))) continue
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(m)
   }

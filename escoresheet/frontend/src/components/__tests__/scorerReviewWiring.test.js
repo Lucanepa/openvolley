@@ -39,7 +39,7 @@ describe('MatchSetup', () => {
   })
 
   it('the "stays on this device" note shows for every account that cannot score, not only pending ones', () => {
-    expect(ms).toContain('access?.known && !access.canScore && !match?.test')
+    expect(ms).toContain('access?.known && !access.canScore && !isLocalOnly(match)')
   })
 })
 
