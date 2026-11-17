@@ -361,9 +361,26 @@ unchanged; Save PDF writes the full sheet (~790 KB) to
 `Documents/OpenVolley/scoresheets/` (before the app folder, see above) and the bar says so; `location.assign` of
 an https link opens Chrome and of a `mailto:` link opens Gmail, the app page
 staying where it was; an open request from inside the view replaces the page
-in the same view. Not checked on a device: the match-end approval PDF
-(`action=getBlob`). The match-end ZIP and log downloads (`MatchEnd.jsx`) are
+in the same view. The match-end ZIP and log downloads (`MatchEnd.jsx`) are
 still blob downloads and do nothing in the WebView.
+
+**The approval PDF (`action=getBlob`) on a slow tablet.** The view's iframe
+and the scorer app under it share ONE main thread (same origin, same
+renderer). The sheet's capture (html-to-image copying the styles, the JPEG
+encode) holds that thread in one piece: no heartbeat leaves the page and no
+timer of the approval runs meanwhile. On a Galaxy Tab A7 Lite (league match
+2026-11-17) that block outlasted the approval's 20 s stall limit; when the
+thread was free, the expired stall timer ran before the page's next
+heartbeat, closed the view and threw the PDF away ("The scoresheet window
+stopped answering", then "Approve without PDF"). Emulator (1340x800 at 213
+dpi, 3 GB, CPU slowed 20x through DevTools): one 48 s block, failed as stalled
+after 58 s; at 1x the whole PDF takes ~3 s. Now the approval's
+watchdog (`scoresheetPdfRequest.js`) counts only the time its thread was free:
+a tick that comes more than 2 s late counts as one tick, for the stall and
+the 90 s limit alike. The same emulator run then gets the PDF (64 s at 20x;
+"Create the PDF" for a match approved without it: 90 s). Popups and desktop
+app windows run on their own thread: their ticks come on time, timed as
+before.
 
 ## Servers in the app
 
