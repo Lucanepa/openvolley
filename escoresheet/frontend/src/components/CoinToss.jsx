@@ -1091,6 +1091,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               timeouts_b: 0,
               subs_a: 0,
               subs_b: 0,
+              // public: no substitution and no finished set yet (domain/livePublicFields)
+              subs_count_a: 0,
+              subs_count_b: 0,
+              set_results: [],
               match_status: 'starting',
               // Match metadata
               game_n: match.gameN || match.game_n || null,

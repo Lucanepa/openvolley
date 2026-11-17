@@ -33,6 +33,7 @@ const num = (v) => {
   const n = Number(v)
   return Number.isFinite(n) ? n : null
 }
+const numOrNull = (v) => (v == null ? null : num(v))
 const str = (v, max = 120) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
 const jsonOf = (v) => {
   if (typeof v !== 'string') return v
@@ -184,17 +185,26 @@ export function publicLive(input) {
     // The live row labels the teams A / B; `sideA` says which half A plays on.
     score: { setsA: num(row.sets_won_a), setsB: num(row.sets_won_b), pointsA: num(row.points_a), pointsB: num(row.points_b) },
     teams: {
-      A: { name: str(row.team_a_name) || 'A', shortName: str(row.team_a_short), color: str(row.team_a_color, 20), timeouts: num(row.timeouts_a), challenges: num(row.challenges_used_a) },
-      B: { name: str(row.team_b_name) || 'B', shortName: str(row.team_b_short), color: str(row.team_b_color, 20), timeouts: num(row.timeouts_b), challenges: num(row.challenges_used_b) }
+      // substitutions: the regular ones of the current set, a count (who for
+      // whom stays PIN-only); null from a scorer app older than the field
+      A: { name: str(row.team_a_name) || 'A', shortName: str(row.team_a_short), color: str(row.team_a_color, 20), timeouts: num(row.timeouts_a), substitutions: numOrNull(row.subs_count_a), challenges: num(row.challenges_used_a) },
+      B: { name: str(row.team_b_name) || 'B', shortName: str(row.team_b_short), color: str(row.team_b_color, 20), timeouts: num(row.timeouts_b), substitutions: numOrNull(row.subs_count_b), challenges: num(row.challenges_used_b) }
     },
     // the scoresheet's A / B are not always home / away: homeIs says which one is the home team
     homeIs: homeSide(row),
     sideA: str(row.side_a, 10),
     serving: str(row.serving_team, 10),
     serverNumber: num(row.server_number),
-    setResults: (Array.isArray(sets) ? sets : []).filter(isObj).map((s) => ({
-      set: num(s.index), pointsA: num(s.pointsA ?? s.home_points), pointsB: num(s.pointsB ?? s.away_points), winner: str(s.winner, 2)
-    })),
+    // The scorer's live state writes { set, home, away, a, b } (frontend
+    // domain/livePublicFields: a / b by Team A / B); older rows { index,
+    // pointsA, pointsB, winner }
+    setResults: (Array.isArray(sets) ? sets : []).filter(isObj).map((s) => {
+      const pointsA = num(s.a ?? s.pointsA ?? s.home_points)
+      const pointsB = num(s.b ?? s.pointsB ?? s.away_points)
+      const winner = str(s.winner, 2) ||
+        (pointsA != null && pointsB != null && pointsA !== pointsB ? (pointsA > pointsB ? 'A' : 'B') : null)
+      return { set: num(s.set ?? s.index), pointsA, pointsB, winner }
+    }),
     timeout: !!row.timeout_active,
     setInterval: !!row.set_interval_active,
     technicalTimeout: !!row.tto_active,

@@ -18,13 +18,15 @@ import { apiFrom } from '../lib/apiClient'
 import { liveStateNow } from './serverDataSync'
 import { isLiveStateRefusal } from './eventSync'
 import { isMatchFinished } from './matchFormat'
+import { liveSetResultsOf } from '../domain/livePublicFields'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * The live-state fields the match end sets, from the local match and its
  * sets: status ended, the sets won and the last set's points by team A/B (the
- * coin toss's team A, as the scoreboard's pushes), no interval, no time-out.
+ * coin toss's team A, as the scoreboard's pushes), the finished sets'
+ * scores (set_results), no interval, no time-out.
  * null when no set is finished.
  */
 export function matchEndLiveStatePatch(match, sets, now = Date.now()) {
@@ -42,6 +44,8 @@ export function matchEndLiveStatePatch(match, sets, now = Date.now()) {
     sets_won_b: won(teamB),
     points_a: pointsOf(teamA),
     points_b: pointsOf(teamB),
+    // every finished set's score, as the scoreboard's pushes (domain/livePublicFields)
+    set_results: liveSetResultsOf(finished, { teamAKey: teamA }),
     timeout_active: false,
     timeout_started_at: null,
     set_interval_active: false,
