@@ -183,6 +183,34 @@ describe('Match Setup after the coin toss is read-only', () => {
     })
   }
 
+  // The shirt colours are not on the official scoresheet: the shirt still
+  // opens the colour picker (owner, scoring a test match on the Point Hub board)
+  it('a live match: the shirt colour still changes, and only the colour is written', async () => {
+    storeMatch({ status: 'live', coinTossConfirmed: true })
+    render(<Setup matchId={1} />)
+    expect(await screen.findByTestId('setup-locked')).toBeInTheDocument()
+    const shirt = document.querySelector('.shirt[data-color]')
+    fireEvent.click(shirt)
+    const dialog = await screen.findByRole('dialog')
+    const preset = [...dialog.querySelectorAll('button[aria-pressed="false"]')].find(b => !b.hasAttribute('data-custom-tile'))
+    const colour = preset.getAttribute('aria-label').split(' ').pop()
+    fireEvent.click(preset)
+    await waitFor(() => expect(store.updates.some(([table, id, c]) => table === 'teams' && id === 11 && c.color === colour)).toBe(true))
+    await waitFor(() => expect(matchUpdates('homeColor').map(([, , c]) => c.homeColor)).toEqual([colour]))
+    await sleep(300)
+    expect(matchUpdates('hall')).toHaveLength(0)
+    expect(store.updates.filter(([table, , c]) => table === 'teams' && Object.keys(c).some(k => k !== 'color'))).toHaveLength(0)
+  })
+
+  it('an approved match: the shirt opens nothing', async () => {
+    storeMatch({ status: 'approved', approved: true, coinTossConfirmed: true })
+    render(<Setup matchId={1} />)
+    expect(await screen.findByTestId('setup-locked')).toBeInTheDocument()
+    fireEvent.click(document.querySelector('.shirt[data-color]'))
+    await sleep(200)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('before the coin toss the setup stays editable', async () => {
     storeMatch()
     render(<Setup matchId={1} />)

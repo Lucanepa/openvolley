@@ -43,6 +43,17 @@ export function rememberCustomColour(teamKey, hex) {
   } catch { /* storage unavailable */ }
 }
 
+/**
+ * Where a team's last custom colour is kept: its name, or its side while the
+ * team has none (Match setup and the Edit match info dialog share it).
+ * @param {string|null|undefined} name the team name
+ * @param {'home'|'away'} side
+ */
+export function customColourKey(name, side) {
+  const key = String(name ?? '').trim().toLowerCase()
+  return key ? `team:${key}` : side
+}
+
 /** "Close to the other team's colour": a gentle note, never a block */
 export function CloseColourNote({ className, id }) {
   const { t } = useTranslation()
