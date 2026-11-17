@@ -101,6 +101,8 @@ export function TeamPicker({ teams, team, onPick }) {
 export default function MyTeamsPanel({ teams = [], route = '', onRoute = null }) {
   const { t } = useTranslation()
   const [[routeTeam, routeGame], go] = usePanelRoute(route, onRoute)
+  // a part of the team's tree in the menu (requests, squad, games); a game number is a game's page
+  const part = ['requests', 'squad', 'games'].includes(routeGame) ? routeGame : ''
   const byRoute = routeTeam ? teams.find((x) => x.id === routeTeam) : null
   // without a route, the first team that plays this season (an older server sends no `active`)
   const team = byRoute || teams.find(playsThisSeason) || teams[0]
@@ -110,22 +112,23 @@ export default function MyTeamsPanel({ teams = [], route = '', onRoute = null })
   const gameNumber = byRoute && /^\d+$/.test(routeGame || '') ? routeGame : null
   return (
     <div className="space-y-8" data-testid="manage-my-teams">
-      {teams.length > 1 && !gameNumber && <TeamPicker teams={teams} team={team} onPick={(id) => go([id])} />}
+      {teams.length > 1 && !gameNumber && <TeamPicker teams={teams} team={team} onPick={(id) => go(part ? [id, part] : [id])} />}
       {/* keyed: another team starts its sections afresh, and appears whole
           (squad, games, the club's lists, the requests) */}
       <PageLoadGate key={team.id} className="space-y-8" fallback={<PageSpinner />}>
         <TeamSections
           team={team}
           gameNumber={gameNumber}
+          part={part}
           onOpenGame={(n) => go([team.id, n])}
-          onCloseGame={() => go([team.id])}
+          onCloseGame={() => go(part ? [team.id, part] : [team.id])}
         />
       </PageLoadGate>
     </div>
   )
 }
 
-function TeamSections({ team, gameNumber = null, onOpenGame, onCloseGame }) {
+function TeamSections({ team, gameNumber = null, part = '', onOpenGame, onCloseGame }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -207,9 +210,9 @@ function TeamSections({ team, gameNumber = null, onOpenGame, onCloseGame }) {
       </section>
 
       {/* db/025: who signed up as a manager or coach of this team */}
-      <RequestsSection team={team} />
+      {(!part || part === 'requests') && <RequestsSection team={team} />}
 
-      <section>
+      {(!part || part === 'squad') && <section>
         <PanelHead title={t('manage.myTeams.squad', { season: squad.data?.season || '' })} level={2} />
         <p className="mb-3 text-sm text-stone-500">{t('manage.myTeams.squadHint')}</p>
         {squad.error && <Notice className="mb-3">{errorText(squad.error)}</Notice>}
@@ -219,9 +222,9 @@ function TeamSections({ team, gameNumber = null, onOpenGame, onCloseGame }) {
         ) : squad.data && (
           <TeamEditor key={editorTeam.id} team={editorTeam} competition={null} online={online} fixedFields pdfImport saveRoster={saveSquad} clubPlayers={clubPlayers} onAddToClub={clubPlayers ? addToClub : null} clubName={team.club_name} />
         )}
-      </section>
+      </section>}
 
-      <TeamGames games={games} onOpen={onOpenGame} />
+      {(!part || part === 'games') && <TeamGames games={games} onOpen={onOpenGame} />}
     </>
   )
 }
