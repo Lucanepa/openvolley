@@ -30,6 +30,7 @@ import { recomputeMatch } from '../domain/recompute'
 import { queueEventSync } from './eventSync'
 import { officialsToArray } from '../domain/officials'
 import { unsentOfMatch } from './deviceSelfCheck'
+import { isLocalOnly } from '../domain/matchKind'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -609,6 +610,7 @@ function withLocalSecrets(match, local) {
     if (!(key in plain) && value != null && value !== '') out[key] = value
   }
   out.test = local.test === true
+  out.global = local.global === true
   return out
 }
 
@@ -757,7 +759,7 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
   if (localCopies.length) match = withLocalSecrets(match, localCopies[0])
 
   // Before anything is deleted, added or queued (test matches never sync)
-  const guarded = !!externalId && !match.test
+  const guarded = !!externalId && !isLocalOnly(match)
   // The cloud's last live state, read alongside: this device stamps its own
   // after it (the previous device's clock may be ahead of this one's)
   const cloudLive = guarded ? cloudLiveState(externalId).catch(() => null) : Promise.resolve(null)
@@ -908,7 +910,7 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
     // STEP C: Queue Supabase 'restore' sync job (DELETE first, then UPSERT)
     // Test matches never sync (same rule as logEvent/App): restoring a test backup
     // must not rewrite the shared cloud test match.
-    if (externalId && !match.test) {
+    if (externalId && !isLocalOnly(match)) {
       console.log('[Restore] Queuing Supabase restore job for match:', externalId)
 
       // Build match payload for Supabase (convert local field names to Supabase column names)
@@ -1076,7 +1078,7 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
   }
 
   // Before the open match is overwritten (test matches never sync)
-  const guarded = !!externalId && !match.test
+  const guarded = !!externalId && !isLocalOnly(match)
   if (guarded) {
     await refuseIfClosedOnServer(externalId, match, currentMatch ? [currentMatch] : [], checkServer)
   }
@@ -1140,7 +1142,7 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
     }
 
     // Queue Supabase 'restore' sync job (same as restoreMatchFromJson; never for test matches)
-    if (externalId && !match.test) {
+    if (externalId && !isLocalOnly(match)) {
       console.log('[RestoreInPlace] Queuing Supabase restore job for match:', externalId)
 
       // Pending set/event jobs of this match describe rows the restore replaces
@@ -2171,7 +2173,7 @@ export async function importMatchFromSupabase(cloudData, { replaceNewer = false 
         if (event.external_id == null) await db.events.add(eventRow(event))
       }
 
-      if (!keepIds && !match.test) {
+      if (!keepIds && !isLocalOnly(match)) {
         // Another local match holds one of the ids (or a cloud id is not this
         // match's own): the cloud rows move to this device's new ids instead,
         // in one server transaction (POST /api/match/restore, as a backup

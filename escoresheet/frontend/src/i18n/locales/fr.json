@@ -224,6 +224,7 @@
     "close": "Fermer"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Cela supprime tous les sets, actions, joueurs et données d'équipe de ce match sur cet appareil.",
     "cancel": "Annuler",
     "delete": "Supprimer",
     "lossTitle": "Cette copie contient ce que le serveur n'a pas :",
@@ -764,6 +765,7 @@
       "openRemarksRecording": "Ouvrir la saisie des remarques",
       "stopMatch": "Arrêter le match",
       "showPins": "Afficher les codes PIN",
+      "scoreboardSettings": "Réglages du tableau d’affichage",
       "showMatchSetup": "Configuration du match",
       "editMatchInfo": "Modifier les infos du match",
       "downloadGameData": "Télécharger les données du match (JSON)",
@@ -6480,6 +6482,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Afficher les matchs Global sur livescore.openvolley.app (le score seulement, comme sur les TV)",
+    "list": {
+      "title": "Matchs Global",
+      "open": "Ouvrir l'écran live"
+    },
     "title": "Écran en direct",
     "intro": "Affiche le score de tous les terrains de ton événement sur des TV ou un beamer, pour n’importe quel match. Lance-le sur un appareil de marque et saisis son code sur les autres. Seul le score est en ligne (noms d’équipes, points, sets), jamais les joueurs.",
     "codeLabel": "Code de l’écran en direct",
@@ -6510,5 +6517,39 @@
   "rosterPdf": {
     "tooSlow": "Cet appareil n'a pas pu lire le PDF : cela a pris trop de temps. Réessaie ou saisis les joueurs à la main.",
     "failed": "Le PDF n'a pas pu être lu : {{reason}}"
+  },
+  "globalCloud": {
+    "title": "Enregistrer dans le cloud",
+    "intro": "Garde aussi ce match lisible en ligne, sans compte : pour un lien de partage, la liste de l'organisateur et la reprise sur un autre appareil. Retrouvé par son code de sauvegarde, protégé par son PIN d'arbitre, supprimé 180 jours après le dernier enregistrement.",
+    "needsPin": "Le match a d'abord besoin de son PIN d'arbitre.",
+    "offline": "Pas de connexion : enregistré avec la prochaine action.",
+    "pinRefused": "Ce code de sauvegarde est enregistré avec un autre PIN d'arbitre.",
+    "failed": "Échec de l'enregistrement dans le cloud. Réessaie plus tard.",
+    "share": "Lien de partage (lecture seule)",
+    "shareHint": "Toute personne ayant le lien voit le résultat, les sets et la feuille de match PDF. Désactive-le pour arrêter le lien.",
+    "copy": "Copier",
+    "copied": "Copié",
+    "organizer": "Code du tournoi (facultatif)",
+    "newOrganizer": "Nouveau code de tournoi",
+    "join": "Utiliser",
+    "removeOrganizer": "Retirer",
+    "copyOrganizerLink": "Copier le lien organisateur",
+    "badOrganizer": "Ce n'est pas un code de tournoi (10 lettres et chiffres).",
+    "organizerHint": "Saisis le même code sur chaque appareil de marque du tournoi : le lien organisateur liste tous ses matchs, avec résultats et PDF.",
+    "otherDevice": "Reprendre sur un autre appareil : choisis-y Restaurer le match sur l'accueil et saisis le code de sauvegarde et le PIN d'arbitre (Sauvegardes ci-dessus).",
+    "delete": "Supprimer du cloud",
+    "page": {
+      "sharedTitle": "Match",
+      "organizerTitle": "Tournoi",
+      "final": "Final",
+      "ended": "Terminé",
+      "live": "En direct",
+      "scheduled": "Prévu",
+      "pdf": "Feuille de match (PDF)",
+      "notShared": "Ce match n'est pas (plus) partagé.",
+      "offline": "Connexion perdue, nouvelle tentative…",
+      "loading": "Chargement…",
+      "noMatches": "Aucun match n'est encore enregistré avec ce code."
+    }
   }
 }

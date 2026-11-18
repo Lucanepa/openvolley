@@ -17,6 +17,7 @@ import { setTargetsOf } from '../domain/rules'
 import { idModeOf, cleanIdValue, ID_LABEL_FALLBACK } from '../domain/idMode'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
+import { isLocalOnly } from '../domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -62,6 +63,7 @@ import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rosterS
 import { useSentRosterRefresh } from '../hooks/useSentRosterRefresh'
 import SentRosterCard from './SentRosterCard'
 import BackupTargetsPanel from './BackupTargetsPanel'
+import GlobalCloudPanel from './GlobalCloudPanel'
 import ClubPlayerPickerModal from './ClubPlayerPickerModal'
 import ClubGenderNotice from './ClubGenderNotice'
 import JanuaryDobNotice from './JanuaryDobNotice'
@@ -1151,7 +1153,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // db/023, offline first: the rosters teams sent ahead for this official
   // game, read from the device's copy (downloaded while online; AuthContext).
   // A version used or put aside ("Not now") is not offered again.
-  const sentGameNumber = match && !match.test ? String(match.game_n || match.gameNumber || gameN || '').trim() : ''
+  const sentGameNumber = match && !isLocalOnly(match) ? String(match.game_n || match.gameNumber || gameN || '').trim() : ''
   const sentRows = useLiveQuery(async () => {
     if (!/^[0-9]{1,12}$/.test(sentGameNumber) || !user?.id) return []
     try {
@@ -1162,7 +1164,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }, [sentGameNumber, user?.id])
   const sentRosters = useMemo(() => offeredSentRosters(sentRows, match, user?.id),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sentRows, user?.id, match?.test, match?.status, match?.sentRosterUsed, match?.sentRosterDismissed])
+    [sentRows, user?.id, match?.test, match?.global, match?.status, match?.sentRosterUsed, match?.sentRosterDismissed])
   // With a connection, ask for this game as well (a roster sent minutes ago,
   // another club's game), and again while the screen stays open: a roster
   // sent while the scorer waits shows up without reopening Match Setup
@@ -1187,7 +1189,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }, [user?.id])
   const clubTeams = useMemo(() => ({ home: clubOfTeam(clubRows, home, user?.id), away: clubOfTeam(clubRows, away, user?.id) }), [clubRows, home, away, user?.id])
-  const clubGender = matchGenderOf({ test: match?.test === true, type2 })
+  const clubGender = matchGenderOf({ test: isLocalOnly(match), type2 })
   // The scorer's date of birth is a Swiss coin-toss rule: not asked in a Global
   // match; a licence number does instead (owner 2026-11-15)
   const scorerDobMissing = match?.global !== true && !scorerIdentified(scorerDob, scorerLicence)
@@ -1536,7 +1538,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               scheduled_at: match.scheduledAt || null,
               game_n: match.gameN ? parseInt(match.gameN, 10) : null,
               game_pin: match.gamePin || null,
-              test: match.test || false,
+              test: isLocalOnly(match),
               match_info: {
                 hall: match.hall || '',
                 city: match.city || '',
@@ -2439,7 +2441,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // One cloud match per official game: say so before creating a second one
     // (the server refuses it with 409 OV_GAME_TAKEN either way)
     const gameChanged = isCreating || String(originalMatchInfoRef.current?.gameN ?? '') !== String(gameN ?? '')
-    if (gameChanged && !match?.test) {
+    if (gameChanged && !isLocalOnly(match)) {
       let claim = null
       serverClubRef.current = undefined
       try { claim = await checkOfficialGame({ gameNumber: gameN, dateValue: date, timeValue: time, timeoutMs: OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS }) } catch { claim = null }
@@ -2522,7 +2524,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       // seed_key is the stable unique identifier used for Supabase sync (stored as external_id)
       // It never includes modifiable fields like gameN or scheduled_at
       // A test match never reaches the cloud: no seed_key, no insert, no backup
-      const isTestMatch = match?.test === true
+      const isTestMatch = isLocalOnly(match)
       let matchSeedKey = match?.seed_key
       if (!matchSeedKey && !isTestMatch) {
         matchSeedKey = generateMatchSeedKey()
@@ -3211,7 +3213,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // it cannot be asked (no game number, not a scorer, offline, network error).
   const checkOfficialGame = async ({ gameNumber, dateValue, timeValue, timeoutMs }) => {
     const n = parseInt(gameNumber, 10)
-    if (!access?.canScore || match?.test || !Number.isInteger(n) || n <= 0) return null
+    if (!access?.canScore || isLocalOnly(match) || !Number.isInteger(n) || n <= 0) return null
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return null
     let scheduled = null
     try { scheduled = dateValue ? createScheduledAt(dateValue, timeValue, { allowEmpty: true }) : null } catch { scheduled = null }
@@ -3228,7 +3230,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     server: serverClubRef.current,
     homeTeam: homeName,
     scheduleHome: scheduleHomeRef.current,
-    isTest: !!match?.test
+    isTest: isLocalOnly(match)
   })
   const clubBlockText = (v) => v.code === 'OV_CLUB_REQUIRED'
     ? t('matchSetup.clubRequired')
@@ -3339,7 +3341,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const handleOfficialMatchSelect = async (matchData) => {
     if (setupLocked) return
     // db/018: a game of another club is never applied (the list leaves them out; ICAL fallback, stale list)
-    if (!match?.test) {
+    if (!isLocalOnly(match)) {
       const blocked = clubVerdict(access, matchData?.home)
       if (blocked) { showAlert(clubBlockText(blocked), 'error'); return }
     }
@@ -3435,7 +3437,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [pickedGamePhase, setPickedGamePhase] = useState(0)
   useEffect(() => {
     if (!initialOfficialGame || pickedGamePhase !== 0 || !matchId || storedAppliedFor !== matchId) return
-    if (match?.matchInfoConfirmedAt || match?.test) {
+    if (match?.matchInfoConfirmedAt || isLocalOnly(match)) {
       onInitialOfficialGameUsed?.()
       return
     }
@@ -4591,7 +4593,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {t('matchSetup.scorerDobForCoinToss')}
             </p>
           )}
-          {access?.known && !access.canScore && !match?.test && (
+          {access?.known && !access.canScore && !isLocalOnly(match) && (
             <p className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900" role="note" data-testid="pending-local-only">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
               {t('access.officialMatchLocalOnly')}
@@ -4665,7 +4667,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           open={loadOfficialMatchModal}
           onClose={() => setLoadOfficialMatchModal(false)}
           onSelectMatch={handleOfficialMatchSelect}
-          access={match?.test ? null : access}
+          access={isLocalOnly(match) ? null : access}
         />
       </MatchSetupInfoView>
     )
@@ -6888,9 +6890,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   )
 
   // Sync status indicator for cards - green=synced, yellow=syncing, red=error, gray=not synced
-  // Hidden if offline mode. A kit status pill: tinted round pill, dot + word.
+  // Hidden if offline mode, and for a match that never syncs (a test, Easy or
+  // Global match: domain/matchKind; a Global match showed "Not synced" once it
+  // stopped being test-flagged). A kit status pill: tinted round pill, dot + word.
   const SyncStatusIndicator = ({ status, onRetry }) => {
-    if (offlineMode) return null
+    if (offlineMode || isLocalOnly(match)) return null
     // not checked yet: the pill's room, empty, so nothing moves when it comes
     if (status == null) return <span aria-hidden="true" className="inline-block h-6 w-0 shrink-0" data-testid="sync-pill-pending" />
 
@@ -7247,11 +7251,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       <div className="setup-section">
         {/* Cloud / this device / removable drive: where this match is backed up */}
         {backup && <div className="ov-kit mb-3"><BackupTargetsPanel backup={backup} test={match?.test === true} globalKey={match?.global === true ? (match.globalKey || null) : null} globalPin={match?.global === true ? (match.refereePin || null) : null} /></div>}
+        {/* A Global match: the opt-in readable copy in the cloud (share link, organizer list) */}
+        {match?.global === true && <GlobalCloudPanel match={match} />}
         {/* Why this match does not sync, if the server refused it for good */}
         {match?.cloudBlock && <CloudBlockNotice match={match} className="mb-3" />}
 
         {/* db/018: not a home game of the account's clubs */}
-        {clubBlock && !match?.test && !match?.cloudBlock && (
+        {clubBlock && !isLocalOnly(match) && !match?.cloudBlock && (
           <div className="ov-kit mb-3">
             <div role="alert" data-testid="club-blocked-banner" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-red-900">
               <p className="text-sm font-semibold">{t('matchSetup.clubBlockedTitle')}</p>

@@ -225,6 +225,7 @@
     "close": "Schliesse"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Das löscht alli Sätz, Aktione, Spieler und Teamdate vo däm Spiil uf däm Grät.",
     "cancel": "Abbräche",
     "delete": "Lösche",
     "lossTitle": "Die Kopie hät, was de Server nöd hät:",
@@ -765,6 +766,7 @@
       "openRemarksRecording": "Bemerkige erfasse",
       "stopMatch": "Spiil abbräche",
       "showPins": "PINs aazeige",
+      "scoreboardSettings": "Iistellige vo de Aazeigetafle",
       "showMatchSetup": "Spiiliirichtig aazeige",
       "editMatchInfo": "Spiilinfo bearbeite",
       "downloadGameData": "Spiildate abelade (JSON)",
@@ -6481,6 +6483,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Global-Spiil uf livescore.openvolley.app zeige (nur de Spielstand, wie uf de TVs)",
+    "list": {
+      "title": "Global-Spiil",
+      "open": "Live-Screen öffne"
+    },
     "title": "Live-Bildschirm",
     "intro": "Zeigt den Spielstand aller Felder deines Anlasses auf TVs oder einem Beamer, für jedes Spiel. Starte ihn auf einem Schreibergerät und gib den Code auf den anderen ein. Online geht nur der Spielstand (Teamnamen, Punkte, Sätze), nie Spielerinnen und Spieler.",
     "codeLabel": "Live-Bildschirm-Code",
@@ -6511,5 +6518,39 @@
   "rosterPdf": {
     "tooSlow": "Das Grät hät s PDF nöd chönne läse: Es hät z lang gange. Probier s nomal oder gib d Spieler vo Hand ii.",
     "failed": "S PDF hät nöd chönne gläse werde: {{reason}}"
+  },
+  "globalCloud": {
+    "title": "I de Cloud speichere",
+    "intro": "Haltet das Spiil zuesätzlich online läsbar, ohni Konto: für en Teile-Link, d Liste vom Veranstalter und zum Wiiterfüere uf emene andere Grät. Gfunde über de Backup-Code, gschützt dur de Schiri-PIN, glöscht 180 Täg nach em letschte Speichere.",
+    "needsPin": "S Spiil bruucht zerscht sin Schiri-PIN.",
+    "offline": "Kei Verbindig: wird mit de nächschte Aktion gspeicheret.",
+    "pinRefused": "De Backup-Code isch mit emene andere Schiri-PIN gspeicheret.",
+    "failed": "Speichere i de Cloud hät nöd klappet. Probier s spöter nomal.",
+    "share": "Teile-Link (nur läse)",
+    "shareHint": "Wer de Link hät, gseht s Resultat, d Sätz und s PDF-Matchblatt. Uusschalte beändet de Link.",
+    "copy": "Kopiere",
+    "copied": "Kopiert",
+    "organizer": "Turniercode (optional)",
+    "newOrganizer": "Neue Turniercode",
+    "join": "Verwände",
+    "removeOrganizer": "Entferne",
+    "copyOrganizerLink": "Veranstalter-Link kopiere",
+    "badOrganizer": "Das isch kein Turniercode (10 Buechstabe und Ziffere).",
+    "organizerHint": "Gib uf jedem Schriiber-Grät vom Turnier dä gliich Code ii: De Veranstalter-Link listet alli sini Spiil mit Resultat und PDF.",
+    "otherDevice": "Uf emene andere Grät wiiterfüere: dört uf de Startsiite Spiil widerherstelle wähle und Backup-Code und Schiri-PIN iigäh (Backups obe).",
+    "delete": "Us de Cloud lösche",
+    "page": {
+      "sharedTitle": "Spiil",
+      "organizerTitle": "Turnier",
+      "final": "Schluss",
+      "ended": "Fertig",
+      "live": "Live",
+      "scheduled": "Planet",
+      "pdf": "Matchblatt (PDF)",
+      "notShared": "Das Spiil isch nöd (meh) teilt.",
+      "offline": "Verbindig verlore, neue Versuech…",
+      "loading": "Lade…",
+      "noMatches": "Mit dem Code isch no kei Spiil gspeicheret."
+    }
   }
 }

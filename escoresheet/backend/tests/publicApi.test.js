@@ -72,6 +72,19 @@ describe('livescore snapshot', () => {
     assert.equal(live.serving, 'A')
     assert.equal(live.timeout, true)
     assert.deepEqual(live.setResults, [{ set: 1, pointsA: 25, pointsB: 20, winner: 'A' }])
+    // a scorer app older than subs_count_a / _b: unknown, not 0
+    assert.equal(live.teams.A.substitutions, null)
+  })
+  it('the scorer\'s set_results ({ set, home, away, a, b }) by Team A / B, and the substitution counts', () => {
+    const l = publicLive({
+      external_id: 'match_2', match_status: 'live', current_set: 3, team_a_name: 'Away', team_b_name: 'Home', home_team: { name: 'Home' },
+      subs_a: [{ playerIn: 9, playerOut: 4 }], subs_count_a: 2, subs_count_b: 0,
+      set_results: [{ set: 1, home: 25, away: 27, a: 27, b: 25 }, { set: 2, home: 25, away: 12, a: 12, b: 25 }]
+    })
+    assert.deepEqual(l.setResults, [{ set: 1, pointsA: 27, pointsB: 25, winner: 'A' }, { set: 2, pointsA: 12, pointsB: 25, winner: 'B' }])
+    assert.equal(l.teams.A.substitutions, 2)
+    assert.equal(l.teams.B.substitutions, 0)
+    assert.equal(JSON.stringify(l).includes('playerIn'), false)
   })
 })
 

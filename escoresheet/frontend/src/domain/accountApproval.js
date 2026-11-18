@@ -15,6 +15,7 @@
  */
 import { OFFICIAL_ROLES, hasOfficial } from './officials.js'
 import { APPROVAL_RESOURCE } from '../utils/syncIds.js'
+import { isLocalOnly } from './matchKind'
 
 /** MatchEnd role -> server slot. */
 export const ROLE_TO_SLOT = Object.freeze({ ref1: 'referee1', ref2: 'referee2', scorer: 'scorer' })
@@ -432,7 +433,7 @@ export function pendingSyncJobsFor(jobs, seedKey) {
  * seed_key or one the server has closed (its approvals are frozen there).
  */
 export function approvalUndoJobs(match, now = new Date()) {
-  if (!match?.seed_key || match.test === true || match.closed_at) return []
+  if (!match?.seed_key || isLocalOnly(match) || match.closed_at) return []
   return Object.values(match.accountApprovals || {})
     .filter(r => r?.id)
     .map(r => ({

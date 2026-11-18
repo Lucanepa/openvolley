@@ -218,6 +218,7 @@
     "close": "Schliessen"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Das löscht alle Sätze, Aktionen, Spieler und Teamdaten dieses Spiels auf diesem Gerät.",
     "cancel": "Abbrechen",
     "delete": "Löschen",
     "lossTitle": "Diese Kopie enthält, was der Server nicht hat:",
@@ -758,6 +759,7 @@
       "openRemarksRecording": "Bemerkungen erfassen",
       "stopMatch": "Spiel abbrechen",
       "showPins": "PINs anzeigen",
+      "scoreboardSettings": "Einstellungen der Anzeigetafel",
       "showMatchSetup": "Spieleinrichtung anzeigen",
       "editMatchInfo": "Spielinfo bearbeiten",
       "downloadGameData": "Spieldaten herunterladen (JSON)",
@@ -6469,6 +6471,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Global-Spiele auf livescore.openvolley.app zeigen (nur der Spielstand, wie auf den TVs)",
+    "list": {
+      "title": "Global-Spiele",
+      "open": "Live-Screen öffnen"
+    },
     "title": "Live-Bildschirm",
     "intro": "Zeigt den Spielstand aller Felder deines Anlasses auf TVs oder einem Beamer, für jedes Spiel. Starte ihn auf einem Schreibergerät und gib den Code auf den anderen ein. Online geht nur der Spielstand (Teamnamen, Punkte, Sätze), nie Spielerinnen und Spieler.",
     "codeLabel": "Live-Bildschirm-Code",
@@ -6499,5 +6506,39 @@
   "rosterPdf": {
     "tooSlow": "Dieses Gerät konnte das PDF nicht lesen: Es dauerte zu lange. Versuch es nochmals oder gib die Spieler von Hand ein.",
     "failed": "Das PDF konnte nicht gelesen werden: {{reason}}"
+  },
+  "globalCloud": {
+    "title": "In der Cloud speichern",
+    "intro": "Hält dieses Spiel zusätzlich online lesbar, ohne Konto: für einen Teilen-Link, die Liste des Veranstalters und das Weiterführen auf einem anderen Gerät. Gefunden über den Backup-Code, geschützt durch den Schiedsrichter-PIN, gelöscht 180 Tage nach dem letzten Speichern.",
+    "needsPin": "Das Spiel braucht zuerst seinen Schiedsrichter-PIN.",
+    "offline": "Keine Verbindung: wird mit der nächsten Aktion gespeichert.",
+    "pinRefused": "Dieser Backup-Code ist mit einem anderen Schiedsrichter-PIN gespeichert.",
+    "failed": "Speichern in der Cloud fehlgeschlagen. Versuche es später nochmals.",
+    "share": "Teilen-Link (nur lesen)",
+    "shareHint": "Wer den Link hat, sieht das Resultat, die Sätze und das PDF-Matchblatt. Ausschalten beendet den Link.",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "organizer": "Turniercode (optional)",
+    "newOrganizer": "Neuer Turniercode",
+    "join": "Verwenden",
+    "removeOrganizer": "Entfernen",
+    "copyOrganizerLink": "Veranstalter-Link kopieren",
+    "badOrganizer": "Das ist kein Turniercode (10 Buchstaben und Ziffern).",
+    "organizerHint": "Gib auf jedem Schreibergerät des Turniers denselben Code ein: Der Veranstalter-Link listet alle seine Spiele mit Resultaten und PDFs.",
+    "otherDevice": "Auf einem anderen Gerät weiterführen: Dort auf der Startseite Spiel wiederherstellen wählen und Backup-Code und Schiedsrichter-PIN eingeben (Backups oben).",
+    "delete": "Aus der Cloud löschen",
+    "page": {
+      "sharedTitle": "Spiel",
+      "organizerTitle": "Turnier",
+      "final": "Schluss",
+      "ended": "Beendet",
+      "live": "Live",
+      "scheduled": "Geplant",
+      "pdf": "Matchblatt (PDF)",
+      "notShared": "Dieses Spiel ist nicht (mehr) geteilt.",
+      "offline": "Verbindung verloren, neuer Versuch…",
+      "loading": "Laden…",
+      "noMatches": "Mit diesem Code ist noch kein Spiel gespeichert."
+    }
   }
 }

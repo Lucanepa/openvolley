@@ -19,6 +19,7 @@ import { fetchGameRosters, markGameRosterUsed } from '../lib/accountApi'
 import { accessFromRoles } from '../lib/access'
 import { isoToDisplayDob } from '../domain/savedTeams'
 import { currentUserId } from './savedTeams'
+import { isLocalOnly } from '../domain/matchKind'
 
 export const GAME_ROSTERS_CHANGED_EVENT = 'ov-game-rosters-changed'
 // The background refresh while the app is open (AuthContext)
@@ -115,7 +116,7 @@ const ROSTER_LOCKED_STATUSES = new Set(['live', 'ended', 'approved', 'final', 'c
  */
 export function offeredSentRosters(rows, match, userId) {
   const out = { home: null, away: null }
-  if (!match || match.test || ROSTER_LOCKED_STATUSES.has(match.status)) return out
+  if (!match || isLocalOnly(match) || ROSTER_LOCKED_STATUSES.has(match.status)) return out
   for (const r of rows || []) {
     if (!r || r.usedPending || (r.side !== 'home' && r.side !== 'away') || (userId && r.userId !== userId)) continue
     const version = r.updatedAt || 'sent'

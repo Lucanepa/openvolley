@@ -38,8 +38,12 @@ describe('MatchSetup', () => {
     expect(ms).toContain('timeoutMs: OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS')
   })
 
+  it('no sync pill for a match that never syncs (test, Easy, Global)', () => {
+    expect(ms).toContain('if (offlineMode || isLocalOnly(match)) return null')
+  })
+
   it('the "stays on this device" note shows for every account that cannot score, not only pending ones', () => {
-    expect(ms).toContain('access?.known && !access.canScore && !match?.test')
+    expect(ms).toContain('access?.known && !access.canScore && !isLocalOnly(match)')
   })
 })
 

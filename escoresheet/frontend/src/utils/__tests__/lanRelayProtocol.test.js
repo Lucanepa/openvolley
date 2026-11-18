@@ -22,6 +22,9 @@ import { vitePluginApiRoutes } from '../../../vite-plugin-api-routes.js'
 import { readRelayBundle } from '../serverDataSync'
 import { runBeachVenueContract } from '../../../../backend/tests/helpers/beachVenueContract.js'
 import { runBenchRequestContract } from '../../../../backend/tests/helpers/benchRequestContract.js'
+import { runDisplayPresenceContract, SETTINGS_URL_CASES, BOARD_URL } from '../../../../backend/tests/helpers/displayPresenceContract.js'
+import { displaySettingsUrl as backendDisplaySettingsUrl } from '../../../../backend/lib/displayPresence.js'
+import lanCore from '../../../electron/lanRelayCore.cjs'
 import { TAURI_RELAY_BIN, startTauriRelay } from './tauriRelay.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -429,6 +432,25 @@ describe('lanRelayCore protocol', () => {
     // A forged answer from any client changes nothing
     msg(relay, bystander, { type: 'pin-validation-response', requestId: 'x', success: true, match: { id: 99 }, fullData: { match: { id: 99 } } })
     expect(relay.hasMatch(99)).toBe(false)
+  })
+
+  it('a board without a PIN gets the substitution counts and the finished sets (domain/livePublicFields) as the scorer pushed them', () => {
+    const relay = createLanRelay()
+    const scoreboard = connect(relay)
+    const board = connect(relay, '192.168.1.40')
+    msg(relay, scoreboard, syncMessage())
+    msg(relay, board, { type: 'subscribe-match', matchId: '7' })
+    expect(board.last('match-full-data').access).toBe('summary')
+    const liveState = { current_set: 3, points_a: 0, points_b: 0, subs_count_a: 4, subs_count_b: 2,
+      set_results: [{ set: 1, home: 27, away: 25, a: 27, b: 25 }, { set: 2, home: 25, away: 12, a: 25, b: 12 }] }
+    msg(relay, scoreboard, { type: 'live-state-update', matchId: 7, liveState })
+    expect(board.last('live-state-update').liveState).toEqual(liveState)
+    msg(relay, scoreboard, syncMessage())
+    expect(board.last('match-data-update')).toMatchObject({ access: 'summary', liveState, data: { liveState } })
+    // one that subscribes later gets it with the summary
+    const late = connect(relay, '192.168.1.41')
+    msg(relay, late, { type: 'subscribe-match', matchId: '7' })
+    expect(late.last('match-full-data').liveState).toEqual(liveState)
   })
 
   it('keeps the scoreboard live-state across syncs and forwards it (also as data.liveState for the LedBox bridge)', () => {
@@ -1165,6 +1187,45 @@ describe('lanRelayCore protocol', () => {
   })
 })
 
+describe('scoreboard displays (display-presence)', () => {
+  const displays = (ws) => ws.sent.filter((m) => m.type === 'display-presence').map((m) => [m.matchId, m.present, m.settingsUrl])
+
+  it('checks the settings page as the cloud relay does', () => {
+    for (const [raw, kept] of SETTINGS_URL_CASES.kept) {
+      expect(lanCore.displaySettingsUrl(raw)).toBe(kept)
+      expect(backendDisplaySettingsUrl(raw)).toBe(kept)
+    }
+    for (const raw of SETTINGS_URL_CASES.refused) {
+      expect(lanCore.displaySettingsUrl(raw)).toBeNull()
+      expect(backendDisplaySettingsUrl(raw)).toBeNull()
+    }
+  })
+
+  it('tells the scoreboard only, on its first sync and when a display comes or goes', () => {
+    const relay = createLanRelay()
+    const board = connect(relay, '192.168.1.60')
+    msg(relay, board, { type: 'subscribe-match', matchId: '7', device: 'display', settingsUrl: BOARD_URL })
+    const scoreboard = connect(relay)
+    msg(relay, scoreboard, syncMessage())
+    expect(displays(scoreboard)).toEqual([['7', true, BOARD_URL]])
+    // an owner's further sync: nothing
+    msg(relay, scoreboard, syncMessage())
+    expect(displays(scoreboard)).toHaveLength(1)
+    const referee = connect(relay)
+    msg(relay, referee, { type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
+    msg(relay, board, { type: 'unsubscribe-match', matchId: '7' })
+    expect(displays(scoreboard).at(-1)).toEqual(['7', false, null])
+    msg(relay, board, { type: 'subscribe-match', matchId: '7', device: 'display', settingsUrl: 'https://example.com/' })
+    expect(displays(scoreboard).at(-1)).toEqual(['7', true, null])
+    relay.removeClient(board)
+    expect(displays(scoreboard).at(-1)).toEqual(['7', false, null])
+    expect(displays(referee)).toEqual([])
+    expect(displays(board)).toEqual([])
+    // the display is no referee, bench or livescore in the tablet list
+    expect(relay.getConnections('7').clients.every((c) => c.role !== 'display')).toBe(true)
+  })
+})
+
 describe('main-instance lock (shared by every relay)', () => {
   const interfaces = () => ({ lo: [{ address: '127.0.0.1' }], wlan0: [{ address: '192.168.1.5' }] })
 
@@ -1609,6 +1670,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await scorerPresenceScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await runDisplayPresenceContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
@@ -1713,6 +1775,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await hallCrowdScenario({ wsUrl })
       await pinCheckBudgetScenario({ httpBase, wsUrl })
       await scorerPresenceScenario({ wsUrl })
+      await runDisplayPresenceContract({ wsUrl, openClient, tag: 'tauri' })
       const unknown = await fetch(`${httpBase}/api/nope`)
       expect(unknown.status).toBe(404)
     } finally {
@@ -1766,6 +1829,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await pinCheckBudgetScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await scorerPresenceScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await runDisplayPresenceContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'vite' })
     })
   })
 })
