@@ -2714,6 +2714,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               ref={remarksTextareaRef}
               placeholder={t('matchEnd.remarksPlaceholder', 'Record match remarks...')}
               aria-label={t('matchEnd.remarks', 'Remarks')}
+              // the official sheet's remarks: a paired phone's text is shown as it arrives (Pair a phone)
+              data-ov-phone="official"
               value={remarksText}
               onChange={e => setRemarksText(e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 bg-white text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500 resize-y"

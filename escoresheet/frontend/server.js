@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join, resolve, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces, homedir } from 'os'
-import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, isTrustedRelayOrigin, WS_MAX_PAYLOAD, WS_PER_MESSAGE_DEFLATE, signCore } from './lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, isTrustedRelayOrigin, WS_MAX_PAYLOAD, WS_PER_MESSAGE_DEFLATE, signCore, pairCore } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -375,8 +375,8 @@ function handleRequest(req, res) {
       'Cache-Control': ext === '.html' || ext === '.json' || basename(filePath) === 'sw.js' || ext === '.webmanifest'
         ? 'no-cache'
         : 'public, max-age=31536000',
-      // The phone signing page (/sign): strict CSP, no referrer, no-cache
-      ...(signCore.isSignPagePath(urlPath) ? signCore.SIGN_PAGE_HEADERS : {})
+      // The phone pages (/sign, /pair): strict CSP, no referrer, no-cache
+      ...(signCore.isSignPagePath(urlPath) || pairCore.isPairPagePath(urlPath) ? signCore.SIGN_PAGE_HEADERS : {})
     })
     res.end(content)
   } catch (err) {

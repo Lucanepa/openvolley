@@ -132,7 +132,7 @@ export function vitePluginApiRoutes(options = {}) {
       // Use a function to ensure it's called for every request
       const apiMiddleware = (req, res, next) => {
         // Early return if not an API request (shouldn't happen due to .use('/api'), but just in case)
-        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/') && !req.url.startsWith('/sign/') && req.url.split('?')[0] !== '/health') {
+        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/') && !req.url.startsWith('/sign/') && !req.url.startsWith('/pair/') && req.url.split('?')[0] !== '/health') {
           return next()
         }
         // Vite's connect middleware strips the prefix when using .use('/api', ...)
@@ -224,6 +224,13 @@ export function vitePluginApiRoutes(options = {}) {
       // headers; /sign and /sign/ open its index.html like on the relays.
       // connect strips the prefix ('/sign' -> '/') and puts it back in next().
       server.middlewares.use('/sign', (req, res, next) => {
+        const path = (req.url || '').split('?')[0]
+        if (path === '/' || path === '') req.url = '/index.html'
+        for (const [k, v] of Object.entries(signCore.SIGN_PAGE_HEADERS)) res.setHeader(k, v)
+        next()
+      })
+      // The Pair a phone page (public/pair/), the same way and headers
+      server.middlewares.use('/pair', (req, res, next) => {
         const path = (req.url || '').split('?')[0]
         if (path === '/' || path === '') req.url = '/index.html'
         for (const [k, v] of Object.entries(signCore.SIGN_PAGE_HEADERS)) res.setHeader(k, v)
