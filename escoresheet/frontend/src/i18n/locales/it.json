@@ -1079,6 +1079,10 @@
       "applyDelayWarning": "Registrare un avvertimento per ritardo per {{team}}?",
       "applyDelayPenalty": "Registrare una penalità per ritardo per {{team}}?",
       "repeatedImproperRequest": "La squadra ha già una richiesta impropria: questa conta come ritardo.",
+      "whatRequested": "Che cosa ha chiesto la squadra?",
+      "kindImproper": "Richiesta impropria",
+      "kindIllegalSubstitution": "Sostituzione irregolare",
+      "illegalSubstitution": "Richiedere una sostituzione irregolare è un ritardo: la richiesta viene respinta.",
       "repeatedDelay": "La squadra ha già un avvertimento per ritardo: questo ritardo è una penalità.",
       "pointToOpponent": "Punto e servizio a {{opponent}}."
     },

@@ -1072,6 +1072,10 @@
       "applyDelayWarning": "Verzögerungswarnung für {{team}} erfassen?",
       "applyDelayPenalty": "Verzögerungsstrafe für {{team}} erfassen?",
       "repeatedImproperRequest": "Die Mannschaft hat bereits einen nicht ordnungsgemässen Antrag, dieser zählt deshalb als Verzögerung.",
+      "whatRequested": "Was hat die Mannschaft beantragt?",
+      "kindImproper": "Nicht ordnungsgemässer Antrag",
+      "kindIllegalSubstitution": "Unerlaubte Auswechslung",
+      "illegalSubstitution": "Eine unerlaubte Auswechslung zu beantragen ist eine Verzögerung: das Gesuch wird abgelehnt.",
       "repeatedDelay": "Die Mannschaft hat bereits eine Verzögerungswarnung, diese Verzögerung ist deshalb eine Strafe.",
       "pointToOpponent": "Punkt und Aufschlag für {{opponent}}."
     },

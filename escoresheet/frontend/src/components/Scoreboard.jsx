@@ -35,6 +35,7 @@ import { phoneSignContext, signatureUpdate } from '../domain/phoneSignature'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
+import { noteOwnTapClick, trackOwnTapClicks } from '../utils/pointerPresses'
 import { teamShortLabels } from '../utils/teamShortLabels'
 import { LOG_REWRITE_EVENTS, liveStateLastAction } from '../utils/refereeLastEvent.js'
 import ballFallback from '../ball_fallback.png'
@@ -857,9 +858,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [summaryTableZoom, setSummaryTableZoom] = useState(null) // { side: 'left'|'right', teamKey: 'home'|'away' } | null
 
   const [benchSubExpanded, setBenchSubExpanded] = useState(false) // Track if substitution list is expanded in bench player menu
-  const [benchIllegalExpanded, setBenchIllegalExpanded] = useState(false) // the "Not allowed" court players in the bench player menu
   const [courtSubExpanded, setCourtSubExpanded] = useState(false) // Track if substitution list is expanded in court player menu
-  const [courtIllegalExpanded, setCourtIllegalExpanded] = useState(false) // the "Not allowed" candidates in the court player menu
   const [courtSanctionExpanded, setCourtSanctionExpanded] = useState(false) // Track if sanction list is expanded in court player menu
   const [courtLiberoExpanded, setCourtLiberoExpanded] = useState(false) // Track if libero list is expanded in court player menu
   const [courtLiberoUnableExpanded, setCourtLiberoUnableExpanded] = useState(false) // Track if "Unable to play" submenu is expanded
@@ -6681,11 +6680,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // improper-request escalation (FIVB 15.11 / 16.2; resolveSanction is pure and
   // unit-tested), and kept in the dialog state: the dialog shows what will be
   // recorded, and confirmSanction records exactly that.
+  //
+  // The team's Improper request button also records an illegal substitution
+  // request (owner 17.11, in place of the player menus' "Not allowed" list):
+  // the dialog asks which it was. An illegal substitution requested is
+  // rejected and is a delay (FIVB 16.1.3), on the delay ladder, as the
+  // request warning's "reject + delay sanction" (chooseRequestWarning).
   const openTeamSanctionConfirm = useCallback((side, requestedType, reason = null) => {
     const teamKey = mapSideToTeamKey(side)
     const resolved = resolveSanction(requestedType, teamSanctionCounts(data?.events, teamKey))
-    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason })
+    const askKind = requestedType === 'improper_request' && !reason
+    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason, ...(askKind ? { askKind: true, illegal: false } : {}) })
   }, [mapSideToTeamKey, data?.events])
+
+  // In that dialog: an improper request, or an illegal substitution requested
+  const chooseImproperKind = useCallback((illegal) => {
+    setSanctionConfirm(prev => {
+      if (!prev?.askKind) return prev
+      const counts = teamSanctionCounts(data?.events, prev.team)
+      return { ...prev, illegal, resolved: resolveSanction(illegal ? 'delay_warning' : 'improper_request', counts) }
+    })
+  }, [data?.events])
 
   // The request warning (domain/interruptionRequests.js): the first issue of
   // a time-out or substitution request. What each option records is resolved
@@ -10877,8 +10892,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const target = touchTapTargetRef.current
       const claimed = touchClaimedRef.current
       cancelTouchDrag()
-      // only when the touch was claimed: else the browser clicks as well
-      if (claimed && target?.isConnected && typeof target.click === 'function') target.click()
+      // only when the touch was claimed: else the browser clicks as well.
+      // WebKitGTK clicks anyway (its compatibility click, right after this
+      // touchend): that one is dropped as the echo of this tap
+      // (pointerPresses: trackOwnTapClicks), else it shut the menu again.
+      if (claimed && target?.isConnected && typeof target.click === 'function') {
+        noteOwnTapClick(e)
+        target.click()
+      }
       return
     }
 
@@ -10925,6 +10946,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // drops the browser's click: a short tap clicks the player itself
   // (handleTouchEnd).
   useEffect(() => {
+    trackOwnTapClicks()
     const claim = (e) => {
       if (!touchDragDataRef.current || !e.cancelable) return
       e.preventDefault()
@@ -20881,7 +20903,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Get available substitutes for this player
         const { team, position, playerNumber } = playerActionMenu
         const availableSubs = playerActionMenu.canSubstitute ? getAvailableSubstitutes(team, playerNumber) : []
-        const illegalSubs = playerActionMenu.canSubstitute && data?.match?.easy !== true ? getIllegalSubstitutes(team, playerNumber) : []
         // Easy match: a number that is no player yet can come in (domain/easyMatch.js)
         const easyNewSub = data?.match?.easy === true && playerActionMenu.canSubstitute && newPlayerMayEnter({
           substitutions: getSubstitutionHistory(team),
@@ -20942,7 +20963,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              {...backdropDismiss(() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false); setCourtIllegalExpanded(false) })}
+              {...backdropDismiss(() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false) })}
             />
             {/* Action Menu */}
             <div ref={playerMenuWrapRef} style={menuStyle} className="modal-wrapper-roll-down">
@@ -20998,36 +21019,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         available={availableSubs}
                         onPick={(number, newPlayer) => handleSubFromMenu({ number }, { newPlayer })}
                       />
-                    )}
-                  </div>
-                )}
-                {/* Bench players who may not come in for this player, greyed
-                    with why: a tap opens "Illegal substitution requested" */}
-                {playerActionMenu.canSubstitute && illegalSubs.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <SbMenuItem tone="neutral" className="text-stone-500" expanded={courtIllegalExpanded} onClick={() => setCourtIllegalExpanded(!courtIllegalExpanded)} data-testid="menu-illegal-toggle">
-                      {t('scoreboard.requestWarning.notAllowed')}
-                    </SbMenuItem>
-                    {courtIllegalExpanded && (
-                      <div className={SB_MENU_SUB}>
-                        {illegalSubs.map(c => (
-                          <SbMenuItem
-                            key={c.number}
-                            tone="neutral"
-                            data-testid={`menu-illegal-${c.number}`}
-                            className="border-dashed bg-stone-50 text-stone-500 hover:bg-stone-100"
-                            onClick={() => {
-                              setPlayerActionMenu(null)
-                              setCourtSubExpanded(false)
-                              setCourtIllegalExpanded(false)
-                              openIllegalSubstitution(team, position, playerNumber, c)
-                            }}
-                          >
-                            <span className="tabular-nums">{c.number}</span>
-                            <span className="font-medium"> · {t(`scoreboard.requestWarning.illegalShort.${c.reason}`)}</span>
-                          </SbMenuItem>
-                        ))}
-                      </div>
                     )}
                   </div>
                 )}
@@ -21796,16 +21787,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Filter out liberos - cannot substitute for a libero on court
         // A court player who came in as a substitute may only be replaced by
         // the starter he came in for (FIVB 15.6.2, the court player's menu's
-        // rule: domain/interruptionRequests substitutionIllegalReason): he is
-        // listed under "Not allowed" with why, a tap opens the request warning
-        // (not in an easy match, nor beyond the 6 substitutions: as there)
+        // rule: domain/interruptionRequests substitutionIllegalReason). The
+        // others are not offered: an illegal substitution request is recorded
+        // from the team's Improper request (owner 17.11)
         const availableCourtPlayers = []
-        const illegalCourtPlayers = []
         if (neverPlayed && canSubstitute) {
           const currentLineup = getCurrentLineup(team)
           const liberoOnCourt = getLiberoOnCourt(team)
           const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-          const showIllegal = data?.match?.easy !== true && (substitutionsUsed?.[team] || 0) < MAX_SUBSTITUTIONS_PER_SET
           if (currentLineup) {
             Object.entries(currentLineup).forEach(([pos, num]) => {
               if (num) {
@@ -21820,7 +21809,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 if (canBeSub && !isLibero && !isLiberoOnCourt) {
                   const reason = data?.set ? substitutionIllegalReason(data.events, data.set.index, team, { playerOut: num, playerIn: playerNumber }, { players: teamPlayers }) : null
                   if (!reason) availableCourtPlayers.push({ position: pos, number: num })
-                  else if (showIllegal) illegalCourtPlayers.push({ position: pos, number: num, reason })
                 }
               }
             })
@@ -21841,7 +21829,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchIllegalExpanded(false); setBenchSanctionExpanded(false) })}
+              {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchSanctionExpanded(false) })}
             />
             {/* Action Menu */}
             <div ref={benchMenuWrapRef} style={menuStyle} className="modal-wrapper-roll-down">
@@ -21899,7 +21887,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             onClick={() => {
                               setBenchPlayerActionMenu(null)
                               setBenchSubExpanded(false)
-                              setBenchIllegalExpanded(false)
                               // Go directly to substitution confirmation modal
                               setSubstitutionConfirm({
                                 team,
@@ -21910,36 +21897,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             {cp.number}
-                          </SbMenuItem>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {/* Court players this bench player may not replace, greyed
-                    with why: a tap opens "Illegal substitution requested" */}
-                {illegalCourtPlayers.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <SbMenuItem tone="neutral" className="text-stone-500" expanded={benchIllegalExpanded} onClick={() => setBenchIllegalExpanded(!benchIllegalExpanded)} data-testid="bench-menu-illegal-toggle">
-                      {t('scoreboard.requestWarning.notAllowed')}
-                    </SbMenuItem>
-                    {benchIllegalExpanded && (
-                      <div className={SB_MENU_SUB}>
-                        {illegalCourtPlayers.map(cp => (
-                          <SbMenuItem
-                            key={cp.position}
-                            tone="neutral"
-                            data-testid={`bench-menu-illegal-${cp.number}`}
-                            className="border-dashed bg-stone-50 text-stone-500 hover:bg-stone-100"
-                            onClick={() => {
-                              setBenchPlayerActionMenu(null)
-                              setBenchSubExpanded(false)
-                              setBenchIllegalExpanded(false)
-                              openIllegalSubstitution(team, cp.position, cp.number, { number: playerNumber, reason: cp.reason })
-                            }}
-                          >
-                            <span className="tabular-nums">{cp.number}</span>
-                            <span className="font-medium"> · {t(`scoreboard.requestWarning.illegalShort.${cp.reason}`)}</span>
                           </SbMenuItem>
                         ))}
                       </div>
@@ -21960,7 +21917,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   const showSanctionConfirmFromBenchMenu = (sanctionType) => {
                     setBenchPlayerActionMenu(null)
                     setBenchSubExpanded(false)
-                    setBenchIllegalExpanded(false)
                     setBenchSanctionExpanded(false)
                     setSanctionConfirmModal({
                       team,
@@ -23718,9 +23674,41 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             const team = `${teamKey === teamAKey ? 'A' : 'B'} (${nameOf(teamKey)})`
             const opponentKey = teamKey === 'home' ? 'away' : 'home'
             const opponent = `${opponentKey === teamAKey ? 'A' : 'B'} (${nameOf(opponentKey)})`
-            const { type: requested, resolved, reason } = sanctionConfirm
+            const { type: requested, resolved, reason, askKind, illegal } = sanctionConfirm
+            const kindButton = (isIllegal, label, testId) => (
+              <button
+                type="button"
+                data-testid={testId}
+                aria-pressed={illegal === isIllegal}
+                onClick={() => chooseImproperKind(isIllegal)}
+                className={`box-border flex-1 min-h-12 rounded-xl border px-3 py-2 text-sm font-semibold cursor-pointer ${illegal === isIllegal ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-50'}`}
+              >
+                {label}
+              </button>
+            )
             return (
-              <div style={{ padding: '4px 0', textAlign: 'center' }}>
+              <div style={{ padding: '4px 0', textAlign: 'center' }} data-testid="team-sanction-confirm">
+                {askKind && (
+                  <div style={{ marginBottom: '14px' }}>
+                    <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
+                      {t('scoreboard.teamSanctionConfirm.whatRequested')}
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {kindButton(false, t('scoreboard.teamSanctionConfirm.kindImproper'), 'ir-kind-improper')}
+                      {kindButton(true, t('scoreboard.teamSanctionConfirm.kindIllegalSubstitution'), 'ir-kind-illegal')}
+                    </div>
+                    {illegal && (
+                      <>
+                        <p style={{ marginTop: '10px', marginBottom: 0, fontSize: '14px' }}>
+                          {t('scoreboard.teamSanctionConfirm.illegalSubstitution')}
+                        </p>
+                        <p style={{ marginTop: '4px', marginBottom: 0, fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+                          {t('scoreboard.requestWarning.illegal_substitution.rule')}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
                 {reason === 'substitution_limit' && (
                   <p style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>
                     {t('scoreboard.modals.substitutionLimitImproperRequest', 'The team has used its 6 substitutions in this set: a further substitution request is an improper request.')}
@@ -23738,12 +23726,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       ? t('scoreboard.teamSanctionConfirm.applyDelayWarning', { team })
                       : t('scoreboard.teamSanctionConfirm.applyDelayPenalty', { team })}
                 </p>
-                {requested === 'improper_request' && resolved !== 'improper_request' && (
+                {requested === 'improper_request' && !illegal && resolved !== 'improper_request' && (
                   <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
                     {t('scoreboard.teamSanctionConfirm.repeatedImproperRequest')}
                   </p>
                 )}
-                {requested === 'delay_warning' && resolved === 'delay_penalty' && (
+                {(requested === 'delay_warning' || illegal) && resolved === 'delay_penalty' && (
                   <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
                     {t('scoreboard.teamSanctionConfirm.repeatedDelay')}
                   </p>

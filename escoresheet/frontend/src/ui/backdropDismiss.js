@@ -30,6 +30,8 @@
 // class components, inside .map() and in the long conditional JSX of the
 // scoring screens without new hooks.
 
+import { isOwnTapMouseEcho } from '../utils/pointerPresses.js';
+
 const presses = new WeakMap();
 
 function isOnBackdrop(e) {
@@ -57,10 +59,16 @@ function hasSelectionWithin(el) {
 export function backdropDismiss(onDismiss, options = {}) {
   const { enabled = true, stopPropagation = false } = options;
 
+  // WebKitGTK's compatibility mouse press/release of a finger tap the app
+  // clicked itself (a player tap that opened this overlay) is no press on the
+  // backdrop: its click is dropped (pointerPresses: trackOwnTapClicks), and
+  // a press recorded here must not let anything else complete it.
   const press = (e) => {
+    if (isOwnTapMouseEcho(e)) return;
     presses.set(e.currentTarget, { down: isOnBackdrop(e), up: false });
   };
   const release = (e) => {
+    if (isOwnTapMouseEcho(e)) return;
     const p = presses.get(e.currentTarget);
     if (p) p.up = isOnBackdrop(e);
   };

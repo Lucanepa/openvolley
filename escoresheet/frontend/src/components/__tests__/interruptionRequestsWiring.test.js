@@ -86,8 +86,12 @@ describe('the team sanction is written in one place', () => {
 describe('row 11: the improper request asks no reason', () => {
   it('the Improper request dialog has no reason picker', () => {
     const open = between('const openTeamSanctionConfirm = useCallback(', '\n  }, [')
-    expect(open).toContain('setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason })')
+    // It asks only which it was (owner 17.11): an improper request or an
+    // illegal substitution requested, a delay (16.1.3). That picks the ladder;
+    // no reason is written on the sanction (recordTeamSanction, above)
+    expect(open).toContain("setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason, ...(askKind ? { askKind: true, illegal: false } : {}) })")
     expect(open).not.toContain('improperReason')
+    expect(handler('chooseImproperKind')).toContain("resolved: resolveSanction(illegal ? 'delay_warning' : 'improper_request', counts)")
     const dialog = between('{sanctionConfirm && (', '</Modal>')
     expect(dialog).not.toContain('ImproperReasonPicker')
     expect(dialog).not.toContain('improperReason')

@@ -8,6 +8,7 @@ import { backdropDismiss } from '../backdropDismiss.js';
 import { ActionSheet, Modal } from '../Modal.jsx';
 import { ConfirmDialog } from '../ConfirmDialog.jsx';
 import { confirmDialog } from '../uiStore.js';
+import { noteOwnTapClick, resetPresses } from '../../utils/pointerPresses.js';
 
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({ signIn: vi.fn(), resetPassword: vi.fn() }),
@@ -328,5 +329,40 @@ describe('kit Modal and ConfirmDialog backdrops', () => {
     await act(async () => { tap(backdrop); });
     expect(result).toBe(false);
     Date.now.mockRestore();
+  });
+});
+
+describe('backdropDismiss and a finger tap the app clicked itself (WebKitGTK)', () => {
+  afterEach(() => resetPresses());
+  const at = { clientX: 300, clientY: 400 };
+
+  it('the compatibility press/release of that tap is no press on the backdrop', () => {
+    const onClose = vi.fn();
+    render(<Overlay onClose={onClose} />);
+    const bd = screen.getByTestId('backdrop');
+    noteOwnTapClick({ changedTouches: [at] });
+    // the click got through (not dropped here): with no press of its own it does not dismiss
+    fireEvent.pointerDown(bd, { ...at, pointerType: 'mouse' });
+    fireEvent.mouseDown(bd, { ...at, detail: 1 });
+    fireEvent.pointerUp(bd, { ...at, pointerType: 'mouse' });
+    fireEvent.mouseUp(bd, { ...at, detail: 1 });
+    fireEvent.click(bd, { ...at, detail: 1 });
+    expect(onClose).not.toHaveBeenCalled();
+    // a mouse click elsewhere on the backdrop still closes it
+    fireEvent.pointerDown(bd, { clientX: 5, clientY: 5, pointerType: 'mouse' });
+    fireEvent.pointerUp(bd, { clientX: 5, clientY: 5, pointerType: 'mouse' });
+    fireEvent.click(bd, { clientX: 5, clientY: 5, detail: 1 });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('a touch press on the backdrop is a press (a deliberate second tap)', () => {
+    const onClose = vi.fn();
+    render(<Overlay onClose={onClose} />);
+    const bd = screen.getByTestId('backdrop');
+    noteOwnTapClick({ changedTouches: [at] });
+    fireEvent.pointerDown(bd, { ...at, pointerType: 'touch' });
+    fireEvent.pointerUp(bd, { ...at, pointerType: 'touch' });
+    fireEvent.click(bd, { ...at, detail: 1 });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

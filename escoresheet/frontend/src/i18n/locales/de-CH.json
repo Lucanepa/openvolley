@@ -1079,6 +1079,10 @@
       "applyDelayWarning": "Verzögerigswarnig für {{team}} erfasse?",
       "applyDelayPenalty": "Verzögerigsstraaf für {{team}} erfasse?",
       "repeatedImproperRequest": "S Team hät scho en nicht ordnungsgemässe Antrag, dä zellt drum als Verzögerig.",
+      "whatRequested": "Was hät s Team beaatreit?",
+      "kindImproper": "Nicht ordnungsgemässe Antrag",
+      "kindIllegalSubstitution": "Unerlaubte Wächsel",
+      "illegalSubstitution": "En unerlaubte Wächsel z beaatreie isch e Verzögerig: de Aatrag wird abglehnt.",
       "repeatedDelay": "S Team hät scho e Verzögerigswarnig, die Verzögerig isch drum e Straaf.",
       "pointToOpponent": "Punkt und Ufschlag für {{opponent}}."
     },
