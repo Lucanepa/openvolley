@@ -6471,7 +6471,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
 
       // Show set start time confirmation: set 1 the scheduled time (on the day
-      // played), any other set now (its first rally)
+      // played, any match but an Easy one), sets 2-5 the last set's end + 3 min
       const allSets = await db.sets.where('matchId').equals(matchId).toArray()
       const scheduledAt = startScheduleOf(data?.match)
       const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt })
@@ -6768,7 +6768,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Confirm set start time
   // One action: the start time, set_start + its first rally_start and the
   // dialog closing appear together
-  const confirmSetStartTime = useCallback((time) => runAction('setStart', async () => {
+  const confirmSetStartTime = useCallback((time, reason = '') => runAction('setStart', async () => {
     if (!setStartTimeModal || !data?.set) return
     // The same gate as Start set (handleStartRally), against the database:
     // the set started already (a second set_start), or a line-up is missing
@@ -6794,11 +6794,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const timeDifferent = expectedMinutes !== confirmedMinutes
 
     // Set 1 proposed from the schedule: another time is the actual start, in
-    // the remarks as "Actual start time: HH:MM" (one line, replaced or removed
-    // when the start is confirmed again); undo takes it out (autoRemark)
+    // the remarks as "Actual game start: HH:MM (reason)" with the reason the
+    // dialog asked for (owner 2026-11-17; one line, replaced or removed when
+    // the start is confirmed again); undo takes it out (autoRemark)
     const fromSchedule = !!setStartTimeModal.fromSchedule
     const autoRemark = fromSchedule
-      ? actualStartRemark({ setIndex: setStartTimeModal.setIndex, scheduledAt: startScheduleOf(data.match), startTime: roundToMinute(time) })
+      ? actualStartRemark({ setIndex: setStartTimeModal.setIndex, scheduledAt: startScheduleOf(data.match), startTime: roundToMinute(time), reason })
       : null
     if (fromSchedule) {
       const freshMatch = await db.matches.get(matchId)
@@ -23519,7 +23520,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <SbButton variant="positive"
                 onClick={async () => {
                   // Show set start time confirmation: set 1 the scheduled time (on the
-                  // day played), any other set now (its first rally). The reminder
+                  // day played), sets 2-5 the last set's end + 3 min. The reminder
                   // closes in the change that opens it (no frame without a dialog).
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
                   const scheduledAt = startScheduleOf(data?.match)
@@ -25462,15 +25463,20 @@ function SetStartTimeModal({ setIndex, defaultTime, fromSchedule = false, onConf
     const { time: localTime } = splitLocalDateTime(defaultTime)
     return localTime
   })
-  // Set 1 proposed from the schedule: another time goes to the remarks
+  const [reason, setReason] = useState('')
+  // Set 1 proposed from the schedule: another time goes to the remarks, with
+  // the reason (owner 2026-11-17: a change must be explained)
   const scheduledClock = fromSchedule ? splitLocalDateTime(defaultTime).time : null
+  const changedFromSchedule = fromSchedule && !!time && time !== scheduledClock
+  const reasonMissing = changedFromSchedule && !reason.trim()
 
   const handleConfirm = () => {
+    if (reasonMissing) return
     // The entered time on the day nearest to the proposed time (a 00:12
     // typed under a proposed 23:30 of the day before is today)
     const { date } = splitLocalDateTime(defaultTime)
     const isoString = typedStartNear(defaultTime, time) ?? parseLocalDateTimeToISO(date, time)
-    onConfirm(isoString)
+    onConfirm(isoString, changedFromSchedule ? reason.trim() : '')
   }
 
   return (
@@ -25497,14 +25503,42 @@ function SetStartTimeModal({ setIndex, defaultTime, fromSchedule = false, onConf
           <TimeInput24 value={time} onChange={setTime} style={{ fontSize: '18px', fontWeight: 600 }} />
         </div>
         {fromSchedule && (
-          <p className="text-sm text-stone-600" style={{ marginTop: '-12px', marginBottom: '20px' }} aria-live="polite">
-            {time && time !== scheduledClock
-              ? t('scoreboard.actualStartRemarkHint', { label: t('scoreboard.actualStartTime'), time })
+          <p className="text-sm text-stone-600" style={{ marginTop: '-12px', marginBottom: changedFromSchedule ? '12px' : '20px' }} aria-live="polite">
+            {changedFromSchedule
+              ? t('scoreboard.actualStartRemarkHint', { label: t('scoreboard.actualStartTime'), time, scheduled: scheduledClock })
               : t('scoreboard.scheduledStartHint')}
           </p>
         )}
+        {changedFromSchedule && (
+          <div style={{ textAlign: 'left', marginBottom: '20px' }}>
+            <label htmlFor="set-start-reason" className="text-sm font-medium" style={{ display: 'block', marginBottom: '6px' }}>
+              {t('scoreboard.actualStartReasonLabel')}
+            </label>
+            <input
+              id="set-start-reason"
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleConfirm() }}
+              placeholder={t('scoreboard.actualStartReasonPlaceholder')}
+              maxLength={200}
+              aria-required="true"
+              aria-invalid={reasonMissing}
+              autoComplete="off"
+              style={{ width: '100%', minHeight: '44px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${reasonMissing ? 'var(--ov-danger-text)' : 'var(--border)'}`, background: 'var(--ov-card)', color: 'var(--text)', fontSize: '16px' }}
+            />
+            {reasonMissing && (
+              <p className="text-xs text-stone-500" style={{ marginTop: '4px' }}>{t('scoreboard.actualStartReasonRequired')}</p>
+            )}
+          </div>
+        )}
+        {!fromSchedule && setIndex === 1 && (
+          <p className="text-sm text-stone-600" style={{ marginTop: '-12px', marginBottom: '20px' }}>
+            {t('scoreboard.noScheduledStartHint')}
+          </p>
+        )}
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          <SbButton variant="positive" onClick={handleConfirm}>
+          <SbButton variant="positive" onClick={handleConfirm} disabled={reasonMissing}>
             {t('common.confirm')}
           </SbButton>
           <SbButton onClick={onCancel}>

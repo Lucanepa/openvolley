@@ -77,7 +77,22 @@ describe('Set 1 start from the schedule (owner 2026-10-08)', () => {
 
   it('the dialog puts the typed time on the day nearest to the proposal (typedStartNear)', () => {
     const start = src.indexOf('function SetStartTimeModal(')
-    const modal = src.slice(start, src.indexOf('onConfirm(isoString)', start))
+    const modal = src.slice(start, src.indexOf('onConfirm(isoString', start))
     expect(modal).toContain('typedStartNear(defaultTime, time)')
+  })
+
+  it('a set 1 start other than the scheduled time needs a reason, written to the remark (owner 2026-11-17)', () => {
+    const start = src.indexOf('function SetStartTimeModal(')
+    const modal = src.slice(start, src.indexOf('function ToSubDetailsModal(', start))
+    expect(modal).toMatch(/const changedFromSchedule = fromSchedule && !!time && time !== scheduledClock/)
+    expect(modal).toMatch(/const reasonMissing = changedFromSchedule && !reason\.trim\(\)/)
+    expect(modal).toMatch(/onConfirm\(isoString, changedFromSchedule \? reason\.trim\(\) : ''\)/)
+    expect(modal).toMatch(/disabled=\{reasonMissing\}/)
+    expect(modal).toContain("t('scoreboard.actualStartReasonLabel')")
+    // without a scheduled time the dialog says why it proposes now
+    expect(modal).toContain("t('scoreboard.noScheduledStartHint')")
+    const body = confirmSetStartTimeBody()
+    expect(body).toMatch(/useCallback\(\(time, reason = ''\) =>/)
+    expect(body).toMatch(/startTime: roundToMinute\(time\), reason \}\)/)
   })
 })

@@ -37,35 +37,22 @@ export function scheduledStartOnDay(scheduledAt, now = new Date()) {
 }
 
 /**
- * How near "now" a test match's scheduled time of day must be to count as its
- * schedule (either side). See startScheduleOf.
- */
-export const TEST_SCHEDULE_WINDOW_MS = 30 * 60 * 1000
-
-/**
- * The schedule set 1's start is proposed from: the match's scheduledAt.
+ * The schedule set 1's start is proposed from: the match's scheduledAt, for
+ * every match but an Easy one (its scheduledAt is the moment it was created).
  *
- * A test match's scheduledAt is a made-up next 20:00 kickoff (testSeeds
- * getNextTestMatchStartTime: a test scored at 15:00 was proposed 20:00, and
- * any real start became an "Actual start time" remark, 2026-10-08), unless the
- * scorer set a real one (a schedule game loaded, the time typed): a test
- * match used for a real 14:00 game started 14:06 was proposed 14:06 (owner
- * 2026-11-15: "not 14:00 as suggestion as = to scheduled time"). So a test
- * match's scheduled time counts only within 30 minutes of now; the made-up
- * kickoff hours away stays no schedule. An Easy match has none: its
- * scheduledAt is the moment it was created.
+ * A test match too (owner 2026-11-17, "super important": "when starting the
+ * game, the suggestion MUST always be the scheduled time"): a test match
+ * scheduled 21:00 and started at 16:21 is proposed 21:00, not 16:21. Before,
+ * a test match's schedule only counted within 30 minutes of now (2026-11-15)
+ * or never (2026-10-08), so its set 1 was proposed now. A different time the
+ * scorer confirms goes to the remarks with the reason, as for any match.
  *
  * @param {{ scheduledAt?: string|null, test?: boolean, easy?: boolean }|null|undefined} match
- * @param {Date} [now]
  * @returns {string|null}
  */
-export function startScheduleOf(match, now = new Date()) {
+export function startScheduleOf(match) {
   if (!match || match.easy === true) return null
-  const scheduledAt = match.scheduledAt || null
-  if (match.test !== true) return scheduledAt
-  const onDay = scheduledStartOnDay(scheduledAt, now)
-  if (!onDay) return null
-  return Math.abs(new Date(onDay).getTime() - now.getTime()) <= TEST_SCHEDULE_WINDOW_MS ? scheduledAt : null
+  return match.scheduledAt || null
 }
 
 /** True when the set's start is proposed from the schedule: set 1 of a match with a scheduled time. */
@@ -83,7 +70,10 @@ export const INTERVAL_MINUTES = 3
  * day played. A minor delay does not move it (the rules: a 15:02 start of a
  * 15:00 match is 15:00); a different time the scorer confirms has to be
  * explained, so it goes to the remarks ("Actual game start: HH:MM",
- * actualStartRemark). Without a schedule (test / Easy match): now.
+ * actualStartRemark), with the scorer's reason. How early or late the scorer
+ * starts does not matter (owner 2026-11-17: scheduled 21:00, started 16:21:
+ * proposed 21:00). Without a scheduled time (none, a date without a time, an
+ * Easy match): now, and the dialog says so.
  *
  * Sets 2..5: the end of the last set already played + 3 minutes (now when no
  * set has an end).
@@ -111,19 +101,21 @@ export function defaultSetStartTime({ setIndex, sets = [], now = new Date(), sch
 }
 
 /**
- * The remark for set 1's start: "Actual game start: HH:MM" when the scorer
- * confirmed a time of day other than the scheduled one, else null (the
- * scheduled time kept, a later set, or no schedule).
+ * The remark for set 1's start: "Actual game start: HH:MM (reason)" when the
+ * scorer confirmed a time of day other than the scheduled one, else null (the
+ * scheduled time kept, a later set, or no schedule). The reason is the
+ * scorer's explanation (owner 2026-11-17: a change must say why); without
+ * one the line is "Actual game start: HH:MM", as before.
  *
- * @param {{ setIndex: number, scheduledAt?: string|null, startTime?: string|null }} args
+ * @param {{ setIndex: number, scheduledAt?: string|null, startTime?: string|null, reason?: string|null }} args
  * @returns {string|null}
  */
-export function actualStartRemark({ setIndex, scheduledAt, startTime }) {
+export function actualStartRemark({ setIndex, scheduledAt, startTime, reason = null }) {
   if (setIndex !== 1 || !startTime || !scheduledStartOnDay(scheduledAt)) return null
   const confirmed = new Date(startTime)
   if (Number.isNaN(confirmed.getTime())) return null
   if (remarkClock(confirmed) === remarkClock(new Date(scheduledAt))) return null
-  return actualStartLine(confirmed) || null
+  return actualStartLine(confirmed, reason) || null
 }
 
 /**
