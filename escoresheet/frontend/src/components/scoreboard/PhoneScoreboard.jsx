@@ -9,6 +9,7 @@ import RallyTapNotice from './RallyTapNotice'
 import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
 import LineupSetOverlay from './LineupSetOverlay.jsx'
 import { lineupHiddenUntilBoth } from '../../domain/lineupPrivacy'
+import CountdownSeconds from './CountdownSeconds.jsx'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -351,7 +352,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     overlay = (
       <div style={countdownCard}>
         <div style={cardTitle} title={t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}>{t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}</div>
-        {countdown(centre, 10, 38)}
+        {centre.clock
+          ? <CountdownSeconds clock={centre.clock} fallback={centre.countdown}>{(seconds) => countdown({ ...centre, countdown: seconds, countdownText: String(seconds) }, 10, 38)}</CountdownSeconds>
+          : countdown(centre, 10, 38)}
         <button type="button" style={cardButton} onClick={() => actions.stopTimeout()}>{t('scoreboard.buttons.stopTimeout')}</button>
       </div>
     )

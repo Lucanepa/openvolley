@@ -5,7 +5,7 @@
 //   VITE_BACKEND_URL=http://127.0.0.1:9 VITE_CLOUD_API_URL=http://127.0.0.1:9 \
 //     WS_PORT=18731 npx vite --host 127.0.0.1 --port 5631 --strictPort
 //   OV_URL=http://127.0.0.1:5631/ node e2e-ui/small-screens.mjs [--only menus,sets,sub]
-//     [--viewports tab133,tab150,phone,desktop,laptop] [--shots DIR]
+//     [--viewports tab133,tab150,phone,desktop,laptop] [--shots DIR] [--throttle N]
 //
 // Checks, per viewport:
 //   menus  every dropdown / popover menu of Home, the coin toss and the
@@ -15,7 +15,9 @@
 //   sets   a test match played to the fifth set: after each set the rows of
 //          both set tables (Set P W S T) stay inside their box, the box and
 //          the rally buttons keep their size and place;
-//   sub    a substitution confirmed while a time-out countdown runs.
+//   sub    a substitution confirmed while a time-out countdown runs: by tap,
+//          and dragged in with the mouse and with a finger (--throttle N:
+//          the CPU N times slower from the time-out on, a small tablet).
 // --shots DIR saves screenshots at device scale 2 (for people).
 // Environment: PLAYWRIGHT_CORE (path to playwright-core), CHROME_PATH.
 import fs from 'node:fs'
@@ -47,6 +49,7 @@ const VPS = arg('viewports', 'tab133,tab150,phone,desktop,laptop').split(',').ma
   return VIEWPORTS[k]
 })
 const SHOTS = arg('shots', '')
+const THROTTLE = Number(arg('throttle', '1')) || 1
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true })
 
 const results = []
@@ -303,7 +306,19 @@ async function phoneRally (page) {
   if (await point.count()) { await point.click(); await sleep(260) }
 }
 
-async function runSubDuringTimeout (vp) {
+/**
+ * A substitution while a time-out countdown runs, three ways:
+ *   tap         court player -> Substitution -> bench player (phone: SUB sheet)
+ *   mouse-drag  a bench player dragged onto a court player (HTML5 drag)
+ *   touch-drag  the same with a finger: hold 0.7 s, move, lift (Chrome touch
+ *               events); "Yes" is tapped with a finger too
+ * The owner dragged one on the Tab A7 Lite (17.11.2026) and could confirm it
+ * only after the time-out: the countdown rendered the whole scoring screen
+ * ten times a second and held up the touches. --throttle N slows the CPU
+ * N times from the time-out on (a small tablet).
+ */
+async function runSubDuringTimeout (vp, method) {
+  const label = `substitution during a time-out (${method}${THROTTLE > 1 ? `, CPU /${THROTTLE}` : ''})`
   const { browser, page, errors } = await newPage(vp)
   try {
     await openCoinToss(page)
@@ -319,6 +334,7 @@ async function runSubDuringTimeout (vp) {
       if (vp.phone) await phoneRally(page)
       else await rallyFor(page, s0.teamA || 'home')
     }
+    if (await clickTopButton(page, /^Not now$/)) await sleep(400)
     if (vp.phone) {
       await page.locator('button:visible', { hasText: /^time-out/i }).first().click()
     } else {
@@ -326,9 +342,18 @@ async function runSubDuringTimeout (vp) {
     }
     await sleep(600)
     if (!(await clickTopButton(page, /^Confirm time-out$/))) throw new Error('no time-out confirmation')
+    const timeoutAt = Date.now()
     await sleep(900)
     const stop = page.getByRole('button', { name: 'Stop timeout', exact: true })
     if (!(await visible(stop))) throw new Error('time-out countdown not shown')
+    const cdp = await page.context().newCDPSession(page)
+    if (THROTTLE > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE })
+    const fingerTap = async ({ x, y }) => {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
+      await sleep(120)
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    }
+    let gestureEnd = Date.now()
     if (vp.phone) {
       await page.locator('button:visible', { hasText: /^sub/i }).first().click()
       await sleep(600)
@@ -337,40 +362,65 @@ async function runSubDuringTimeout (vp) {
       await sleep(600)
       const into = page.locator('[role=dialog]:visible').last().getByRole('button', { name: /^\d{1,2}$/ }).first()
       await into.click()
+      gestureEnd = Date.now()
     } else {
       const team = (await sideOf(page, 'home')) === 'left' ? 'home' : 'away'
-      const player = await page.evaluate((team) => {
-        const el = [...document.querySelectorAll(`.court-player[data-team="${team}"]`)].find((e) => e.getBoundingClientRect().width > 0)
-        const r = el.getBoundingClientRect()
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+      // a court player and a bench player (not a libero) of the team on the left
+      const at = await page.evaluate((team) => {
+        const centre = (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }
+        const court = [...document.querySelectorAll(`.court-player[data-team="${team}"]`)].find((e) => e.getBoundingClientRect().width > 0 && e.dataset.courtPosition === 'II')
+        const bench = [...document.querySelectorAll(`[data-bench-player][data-team="${team}"]`)].find((e) => e.getBoundingClientRect().width > 0 && e.dataset.isLibero !== 'true')
+        return { court: centre(court), courtNumber: court.dataset.playerNumber, bench: centre(bench), benchNumber: bench.dataset.benchPlayer }
       }, team)
-      await page.mouse.click(player.x, player.y)
-      await sleep(600)
-      await markNumberButtons(page)
-      await page.getByRole('button', { name: /^Substitution/ }).first().click()
-      await sleep(600)
-      if (!(await newNumberButton(page))) throw new Error('no substitute offered')
-      await page.locator('[data-e2e-pick]').click()
+      if (method === 'tap') {
+        await page.mouse.click(at.court.x, at.court.y)
+        await sleep(600)
+        await markNumberButtons(page)
+        await page.getByRole('button', { name: /^Substitution/ }).first().click()
+        await sleep(600)
+        if (!(await newNumberButton(page))) throw new Error('no substitute offered')
+        await page.locator('[data-e2e-pick]').click()
+      } else if (method === 'mouse-drag') {
+        await page.locator(`[data-bench-player="${at.benchNumber}"][data-team="${team}"]`).first()
+          .dragTo(page.locator(`.court-player[data-team="${team}"][data-court-position="II"]`).first())
+      } else {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at.bench] })
+        await sleep(700) // the hold that starts a drag (TOUCH_DRAG_HOLD_MS 350)
+        const steps = 12
+        for (let k = 1; k <= steps; k++) {
+          const x = at.bench.x + (at.court.x - at.bench.x) * k / steps
+          const y = at.bench.y + (at.court.y - at.bench.y) * k / steps
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] })
+          await sleep(40)
+        }
+        await sleep(150)
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      }
+      gestureEnd = Date.now()
     }
-    await sleep(700)
-    await shot(page, vp, 'sub-during-timeout-confirm')
     const yes = page.getByRole('button', { name: 'Yes', exact: true }).last()
-    if (!(await visible(yes))) throw new Error(`no substitution confirmation: ${JSON.stringify(await dialogs(page))}`)
+    await waitUntil(async () => visible(yes), { timeoutMs: 40000, intervalMs: 100, what: 'the substitution confirmation' })
+    const dialogAfter = Date.now() - gestureEnd
+    await shot(page, vp, `sub-during-timeout-${method}-confirm`)
     const box = await yes.boundingBox()
-    const top = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.innerText?.trim() || null, { x: box.x + box.width / 2, y: box.y + box.height / 2 })
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    const top = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.innerText?.trim() || null, centre)
     if (top !== 'Yes') throw new Error(`"Yes" is covered by: ${top}`)
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
-    await waitUntil(async () => (await dbState(page)).substitutions >= 1, { timeoutMs: 8000, what: 'substitution written' })
-    await sleep(500)
-    await shot(page, vp, 'sub-during-timeout-done')
-    const st = await dbState(page)
+    if (method === 'touch-drag') await fingerTap(centre)
+    else await page.mouse.click(centre.x, centre.y)
+    await waitUntil(async () => (await dbState(page)).substitutions >= 1, { timeoutMs: 40000, what: 'substitution written' })
+    const writtenAfter = Math.round((Date.now() - timeoutAt) / 100) / 10
     const stillRunning = await visible(stop)
-    record(vp, 'substitution confirmed during a time-out', st.substitutions === 1 && st.timeouts === 1 && stillRunning,
-      `substitutions ${st.substitutions}, time-outs ${st.timeouts}, countdown still running: ${stillRunning}`)
+    if (THROTTLE > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+    await sleep(500)
+    await shot(page, vp, `sub-during-timeout-${method}-done`)
+    const st = await dbState(page)
+    record(vp, label, st.substitutions === 1 && st.timeouts === 1 && stillRunning,
+      `substitutions ${st.substitutions}, time-outs ${st.timeouts}, written ${writtenAfter} s into the time-out, countdown still running: ${stillRunning}, confirmation shown ${dialogAfter} ms after the gesture`)
     if (errors.length) record(vp, 'sub: no page errors', false, errors[0])
   } catch (err) {
-    record(vp, 'substitution during a time-out', false, err.message)
-    await shot(page, vp, 'sub-error')
+    record(vp, label, false, err.message)
+    await shot(page, vp, `sub-${method}-error`)
   } finally {
     await browser.close()
   }
@@ -379,7 +429,10 @@ async function runSubDuringTimeout (vp) {
 for (const vp of VPS) {
   if (ONLY.has('menus')) await runMenus(vp)
   if (vp.menusOnly) continue
-  if (ONLY.has('sub')) await runSubDuringTimeout(vp)
+  if (ONLY.has('sub')) {
+    // the phone layout has no drag and drop (its SUB sheet)
+    for (const method of vp.phone ? ['tap'] : ['tap', 'mouse-drag', 'touch-drag']) await runSubDuringTimeout(vp, method)
+  }
   if (ONLY.has('sets')) await runSets(vp)
 }
 
