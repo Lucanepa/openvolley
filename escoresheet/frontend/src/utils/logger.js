@@ -31,6 +31,7 @@
 
 import { apiStorage, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
 import { isGlobalMatchId, peekGlobalMatch, uploadGlobalBackup } from './globalCloud'
+import { usesKeyStore } from '../domain/matchKind'
 
 // In-memory log buffer
 let logBuffer = []
@@ -574,8 +575,8 @@ export function resetLoggerForTests() {
  * stay connected. One that cannot be encrypted is not uploaded.
  */
 export async function uploadBackupToCloud(matchId, backupData) {
-  // A Global match has no account: its own store, by the match's key
-  if (backupData?.match?.global === true) return uploadGlobalBackup(backupData, matchId)
+  // A Global or guest match has no account: its own store, by the match's key
+  if (usesKeyStore(backupData?.match)) return uploadGlobalBackup(backupData, matchId)
   // Cloud storage needs an account: nothing to send while signed out
   if (!hasStoredSession()) return null
   const gameN = backupData?.match?.gameN || backupData?.match?.game_n || 1

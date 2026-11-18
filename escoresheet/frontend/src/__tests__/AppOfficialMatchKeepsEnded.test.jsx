@@ -28,7 +28,7 @@ beforeEach(async () => {
 })
 
 const menuOfficialMatch = () => [...document.querySelectorAll('button')]
-  .find(b => b.textContent.trim() === 'Official match' && !b.disabled)
+  .find(b => b.textContent.trim() === 'SV match' && !b.disabled)
 const dialogWith = (text) => text && [...document.querySelectorAll('[role="dialog"]')].find(d => d.textContent.includes(text))
 const unsentCount = (count) => en.home.modals[`officialMatchUnsentCount_${count === 1 ? 'one' : 'other'}`]?.replace('{{count}}', count)
 

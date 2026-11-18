@@ -24,9 +24,12 @@ const home = (props) => render(
 const btn = (name) => screen.queryByRole('button', { name })
 
 describe('Home by sign-in', () => {
-  it('signed out where sign-in exists: Test and Easy only, and a way to sign in', () => {
-    home({ signInAvailable: true, signedIn: false })
-    expect(btn('home.officialMatch')).toBeNull()
+  it('signed out where sign-in exists: New match (guest), Test and Easy, and a way to sign in', () => {
+    const onGuestMatch = vi.fn()
+    home({ signInAvailable: true, signedIn: false, onGuestMatch })
+    expect(btn('SV match')).toBeNull()
+    fireEvent.click(btn('New match'))
+    expect(onGuestMatch).toHaveBeenCalled()
     expect(btn('home.testMatch')).toBeInTheDocument()
     expect(btn('Easy match')).toBeInTheDocument()
     expect(btn('home.restoreMatch')).toBeInTheDocument() // a broken device's match comes back signed out too
@@ -34,18 +37,20 @@ describe('Home by sign-in', () => {
     expect(screen.getByTestId('login-modal')).toBeInTheDocument()
   })
 
-  it('signed in: Official game first, Test and Easy below', () => {
+  it('signed in: SV Match (the official game) first, Test and Easy below, no New match', () => {
     const onOfficialGame = vi.fn()
-    home({ signInAvailable: true, signedIn: true, onOfficialGame })
-    fireEvent.click(btn('home.officialMatch'))
+    home({ signInAvailable: true, signedIn: true, onOfficialGame, onGuestMatch: noop })
+    fireEvent.click(btn('SV match'))
     expect(onOfficialGame).toHaveBeenCalled()
+    expect(btn('New match')).toBeNull()
     expect(btn('home.testMatch')).toBeInTheDocument()
     expect(screen.queryByTestId('home-sign-in-note')).toBeNull()
   })
 
-  it('no sign-in at all (offline mode, no cloud): Official game as before', () => {
-    home({ signInAvailable: false, signedIn: false })
-    expect(btn('home.officialMatch')).toBeInTheDocument()
+  it('no sign-in at all (offline mode, no cloud): the official game as before, no New match', () => {
+    home({ signInAvailable: false, signedIn: false, onGuestMatch: noop })
+    expect(btn('SV match')).toBeInTheDocument()
+    expect(btn('New match')).toBeNull()
     expect(screen.queryByTestId('home-sign-in-note')).toBeNull()
   })
 

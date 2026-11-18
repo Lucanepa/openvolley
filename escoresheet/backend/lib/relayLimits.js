@@ -19,6 +19,15 @@
 import { Buffer } from 'node:buffer'
 
 /** Events of one bundle (a restore takes as many: lib/matchRestore.js maxEvents). */
+/**
+ * A relay room whose match never reaches the database (frontend
+ * domain/matchKind isLocalOnly): a test or easy match, a Global match, and a
+ * guest match (the Swiss "New match" signed out). Its live state stays in the
+ * relay's memory; nothing is published to match_live_state.
+ * @param {object|null|undefined} match the room's synced match
+ */
+export const relayRoomIsLocal = (match) => match?.test === true || match?.global === true || match?.guest === true
+
 export const MAX_RELAY_EVENTS = 20000
 /** Sets of one bundle (lib/matchRestore.js maxSets). */
 export const MAX_RELAY_SETS = 20

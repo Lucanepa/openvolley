@@ -10,8 +10,7 @@ import { fileURLToPath } from 'node:url'
 import {
   admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayMemoryBudget,
   MAX_RELAY_EVENTS, MAX_RELAY_SETS, MAX_RELAY_PLAYERS, MAX_RELAY_PIN_LENGTH, MAX_FRAME_VALUES, MAX_RELAY_BUNDLE_BYTES,
-  MAX_RELAY_CARRIED_PIN_BYTES, RELAY_HEAP_SHARE, NEW_ROOM_SHARE, RELAY_ANON_SHARE, FAST_PROPERTIES
-} from '../lib/relayLimits.js'
+  MAX_RELAY_CARRIED_PIN_BYTES, RELAY_HEAP_SHARE, NEW_ROOM_SHARE, RELAY_ANON_SHARE, FAST_PROPERTIES, relayRoomIsLocal } from '../lib/relayLimits.js'
 
 const HEAP_SHAPES = fileURLToPath(new URL('./helpers/heapShapes.js', import.meta.url))
 const PIN_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'gamePin', 'game_pin', 'team1Pin', 'team2Pin']
@@ -467,5 +466,17 @@ describe('admissionHeapPressure', () => {
   })
   it('is 0 without a heap limit', () => {
     assert.equal(admissionHeapPressure({ usedNow: 900, usedAfterMajorGc: 900, limit: 0 }), 0)
+  })
+})
+
+describe('relayRoomIsLocal (a room whose match never reaches the database)', () => {
+  it('test, easy, Global and guest matches stay in memory; an official match does not', () => {
+    assert.equal(relayRoomIsLocal({ test: true }), true)
+    assert.equal(relayRoomIsLocal({ test: true, easy: true }), true)
+    assert.equal(relayRoomIsLocal({ test: false, global: true }), true)
+    assert.equal(relayRoomIsLocal({ test: false, guest: true }), true)
+    assert.equal(relayRoomIsLocal({ test: false, game_n: 1234 }), false)
+    assert.equal(relayRoomIsLocal(null), false)
+    assert.equal(relayRoomIsLocal(undefined), false)
   })
 })

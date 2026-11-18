@@ -40,9 +40,10 @@ function isInsideDesktopApp() {
 /**
  * The home screen (owner plan 2026-10-29, step 3). What a new match can be
  * follows the sign-in:
- *   - signed out where sign-in exists: Test match and Easy match only (never
- *     on the cloud), and a way to sign in for official games;
- *   - signed in: Official game first (today's home games of the account's
+ *   - signed out where sign-in exists: New match (a guest match: Swiss
+ *     format, no account, no private data; owner 2026-11-18), Test match and
+ *     Easy match (never on the cloud database), and a way to sign in;
+ *   - signed in: SV match (the official game) first (today's home games of the account's
  *     clubs, or typed in: App's onOfficialGame), Test and Easy below;
  *   - no sign-in at all (offline mode, no cloud: the desktop app offline, a
  *     venue box): Official game typed in, as before, Test and Easy below.
@@ -58,6 +59,7 @@ export default function HomePage({
   createNewTestMatch,
   testMatchLoading,
   createEasyMatch,
+  onGuestMatch = null,
   easyMatchLoading = false,
   // Global tool: a full match kept on this device, no sign-in (App createGlobalMatch)
   onGlobalMatch = null,
@@ -166,8 +168,8 @@ export default function HomePage({
                 onClick={() => {
                   if (currentOfficialMatch) {
                     showDeleteMatchModal()
-                  } else if (currentTestMatch?.global === true) {
-                    // a Global match is a real one: the delete dialog with its game PIN
+                  } else if (currentTestMatch?.global === true || currentTestMatch?.guest === true) {
+                    // a Global or guest match is a real one: the delete dialog with its game PIN
                     showDeleteMatchModal(currentTestMatch.id)
                   } else if (currentTestMatch) {
                     restartTestMatch()
@@ -221,21 +223,39 @@ export default function HomePage({
                 variant="primary"
                 block
                 data-help-id="home-official-button"
+                data-testid="home-sv-match"
                 onClick={onOfficialGame}
                 className="h-14 rounded-xl text-base font-semibold"
               >
-                {t('home.officialMatch')}
+                {t('home.svMatch', 'SV match')}
+              </Button>
+            )}
+            {/* Signed out (owner 2026-11-18): a real match in the Swiss format
+                without an account, like the Global tool's Match (domain/
+                matchKind isGuestMatch): public schedule and Einsatzliste yes,
+                saved teams, club lists and the referee directory no */}
+            {testOnly && !globalMode && onGuestMatch && (
+              <Button
+                variant="primary"
+                block
+                data-help-id="home-new-match-guest"
+                data-testid="home-new-match"
+                onClick={onGuestMatch}
+                disabled={testMatchLoading || easyMatchLoading}
+                className="h-14 rounded-xl text-base font-semibold"
+              >
+                {t('home.newMatch', 'New match')}
               </Button>
             )}
             <div className={cn('grid gap-2', createEasyMatch && !globalMode && 'grid-cols-2')}>
               <Button
-                variant={testOnly && !globalMode ? 'primary' : 'secondary'}
+                variant={testOnly && !globalMode && !onGuestMatch ? 'primary' : 'secondary'}
                 block
                 data-help-id="home-test-button"
                 onClick={createNewTestMatch}
                 disabled={testMatchLoading}
                 aria-busy={testMatchLoading || undefined}
-                className={cn('rounded-xl text-base font-semibold', testOnly ? 'h-14' : 'h-12')}
+                className={cn('rounded-xl text-base font-semibold', testOnly && !onGuestMatch ? 'h-14' : 'h-12')}
               >
                 {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
                 {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
@@ -249,7 +269,7 @@ export default function HomePage({
                   disabled={easyMatchLoading || testMatchLoading}
                   aria-busy={easyMatchLoading || undefined}
                   title={t('home.easyMatchHint', 'Unofficial · no rosters or signatures')}
-                  className={cn('rounded-xl text-base font-semibold', testOnly ? 'h-14' : 'h-12')}
+                  className={cn('rounded-xl text-base font-semibold', testOnly && !onGuestMatch ? 'h-14' : 'h-12')}
                 >
                   {easyMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
                   {t('home.easyMatch', 'Easy match')}

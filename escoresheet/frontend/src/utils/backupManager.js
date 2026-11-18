@@ -611,6 +611,7 @@ function withLocalSecrets(match, local) {
   }
   out.test = local.test === true
   out.global = local.global === true
+  out.guest = local.guest === true
   return out
 }
 

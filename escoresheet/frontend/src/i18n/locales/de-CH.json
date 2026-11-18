@@ -250,6 +250,7 @@
     "pointsDeciding": "Entscheidungssatz",
     "loadingScheduleGame": "Spiel wird geladen…",
     "scorerDobForCoinToss": "Schriiber: Geburtsdatum oder Lizenznummer für d Usloosig nötig",
+    "guestNote": "Neus Spiil ohni Konto: Es bliibt uf däm Grät, mit ere Sicherig under sim Sicherigscode. Gspeicherti Teams, Vereinslischte und s Schiedsrichter-Verzeichnis bruuched e Aamäldig (SV-Spiil).",
     "dobRequiredForCoinToss": "Für d Usloosig: Gib es Geburtsdatum oder e Lizenznummer ii",
     "licenceNumber": "Lizenznummer",
     "title": "Spiiliirichtig",
@@ -1387,6 +1388,7 @@
     "openingMatch": "Spiel wird geöffnet…",
     "title": "eScoresheet",
     "newMatch": "Neus Spiil",
+    "svMatch": "SV-Spiil",
     "officialMatch": "Offiziells Spiil",
     "testMatch": "Testspiil",
     "preparing": "Vorbereitig...",
@@ -1478,7 +1480,7 @@
       "unchecked": "Nöd prüeft",
       "unsent": "Nöd gschickti Änderige"
     },
-    "signInForOfficial": "Mäld dich aa, zum offizielli Spiil schriibe. Test- und eifachi Spiil bliibed uf däm Grät.",
+    "signInForOfficial": "Mäld dich aa für SV-Spiil: gspeicherti Teams, Vereinslischte und s Schiedsrichter-Verzeichnis. Neui, Test- und eifachi Spiil gönd ohni Konto und bliibed uf däm Grät.",
     "todayGames": {
       "title": "Spiil vo hüt",
       "loading": "D Spiil vo hüt werded glade…",
@@ -2887,8 +2889,8 @@
     },
     "home": {
       "q_createMatch": "Wie erstell ich es neus Spiil?",
-      "a_createMatch": "Aagmäldet tippsch uf «Offiziells Spiil»: Wähl s hüttige Heimspiil vo dim Verein us de Lischte oder gib s Spiil sälber ii. Drunter sind «Testspiil» und «Eifachs Spiil»; abgmäldet häsch nur die zwei. Es offiziells Spiil hät Kader, Offizielli und Underschrifte. Es Testspiil isch zum Üebe. Es eifachs Spiil isch inoffiziell: kei Kader und kei Underschrifte. «Aazeigetafle» isch gar kes Spiil: nur d Pünkt und d Sätz vo zwei Teams uf em ganze Bildschirm, für es Fründschafts- oder Trainingsspiil. Si bliibt uf däm Grät. Im Global-Tool startet «Spiil» es volls Spiil ohni Aamälde.",
-      "tip_createMatch": "Da startisch es neus Spiil: offiziell (aagmäldet), Test oder eifach, oder machsch e Aazeigetafle uf.",
+      "a_createMatch": "Aagmäldet tippsch uf «SV-Spiil»: Wähl s hüttige Heimspiil vo dim Verein us de Lischte oder gib s Spiil sälber ii. Abgmäldet tippsch uf «Neus Spiil»: es volls Spiil ohni Konto. Du chasch s Spiil us em Spielplan wähle und d Iisatzlischte importiere; gspeicherti Teams, Vereinslischte und s Schiedsrichter-Verzeichnis bruuched e Aamäldig. S Spiil bliibt uf däm Grät, mit ere Sicherig under sim Sicherigscode. Drunter sind «Testspiil» und «Eifachs Spiil». Es offiziells Spiil hät Kader, Offizielli und Underschrifte. Es Testspiil isch zum Üebe. Es eifachs Spiil isch inoffiziell: kei Kader und kei Underschrifte. «Aazeigetafle» isch gar kes Spiil: nur d Pünkt und d Sätz vo zwei Teams uf em ganze Bildschirm, für es Fründschafts- oder Trainingsspiil. Si bliibt uf däm Grät. Im Global-Tool startet «Spiil» es volls Spiil ohni Aamälde.",
+      "tip_createMatch": "Da startisch es neus Spiil: SV-Spiil (aagmäldet), Neus Spiil (abgmäldet), Test oder eifach, oder machsch e Aazeigetafle uf.",
       "q_officialVsTest": "Was isch de Underschiid zwüsche offizielle Spiil und Testspiil?",
       "a_officialVsTest": "Es offiziells Spiil bruucht beidi Kader (je mindestens 6 Spieler), d Offizielle und, vor em erschte Ufschlag, d Underschrifte. Bisch aagmäldet, wird s uf em Server gspeicheret: für de Schiri, de Livescore und d Backups. Es Testspiil hät erfundeni Teams zum Üebe. Es wird nie uf em Server gspeicheret; s Schiri- und s Bank-Tablet chönd em trotzdem folge («Zu Testspielen wechseln» uf em Tablet).",
       "q_continueMatch": "Wie füehr ich es Spiil wiiter?",

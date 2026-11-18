@@ -22,6 +22,10 @@ Massgebend ist die englische Fassung.
   (standardmässig aus), liegt es zusätzlich lesbar auf dem Server, ohne PINs
   und ohne Unterschriftsbilder, bis 180 Tage nach dem letzten Speichern
   (Abschnitt 7).
+- «Neues Spiel» in der Schweizer Version (abgemeldet) funktioniert gleich:
+  kein Konto, das Spiel auf deinem Gerät, Sicherung und PDF unter seinem
+  Sicherungscode, und keine gespeicherten Teams, Vereinslisten oder das
+  Schiedsrichter-Verzeichnis.
 - Live-Bildschirm (freiwillig, in OpenVolley und OpenBeach): Schalten ihn die
   Schreibergeräte eines Anlasses ein, geht zusätzlich der Spielstand jedes
   ihrer Spiele (Teamnamen, Punkte und Sätze, keine Spielerinnen und Spieler)
@@ -472,6 +476,19 @@ beide daher wie ein Passwort auf. Eine neue Sicherung ersetzt die vorherige. Die
 oder der Turnierveranstalter ist dafür verantwortlich, dass die Daten erfasst
 werden dürfen und dass die Spielerinnen und Spieler und ihre Eltern informiert
 sind (Abschnitt 17).
+
+**Neues Spiel ohne Konto (Schweizer Version):** Abgemeldet startet «Neues
+Spiel» ein Spiel im Schweizer Format ohne Konto. Es wird wie ein Global-Spiel
+behandelt: Es bleibt auf deinem Gerät, steht nie in den Spiel-, Team- oder
+Spielerdaten der Liga, und seine Sicherung und das freigegebene Matchblatt als
+PDF liegen auf die gleiche Weise unter einem zufälligen Sicherungscode
+(verschlüsselt, gelöscht 180 Tage nach der letzten Änderung). Es kann die
+öffentlichen Spielangaben aus dem Spielplan von Swiss Volley (Teams, Halle,
+Liga, Spielnummer, Namen der Schiedsrichter, ohne Geburtsdaten) und eine auf
+dem Gerät gelesene Einsatzliste verwenden. Gespeicherte Teams, die
+Lizenzlisten der Vereine, von Teams gesendete Kader und das
+Schiedsrichter-Verzeichnis stehen darin nicht zur Verfügung, auch wenn sich
+später jemand auf dem Gerät anmeldet.
 
 **In der Cloud speichern (Global-Werkzeug, freiwillig):** Im Match-Setup kann
 die Schreiberin oder der Schreiber für ein Global-Spiel «In der Cloud

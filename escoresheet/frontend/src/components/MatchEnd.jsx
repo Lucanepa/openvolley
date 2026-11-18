@@ -33,7 +33,7 @@ import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 import { diagnosticLogQuery } from '../utils/activity/logQuery'
 import { listActivity } from '../utils/activity'
 import { preload, usePreloaded } from '../utils/preload'
-import { isLocalOnly } from '../domain/matchKind'
+import { isLocalOnly, usesKeyStore } from '../domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -1722,8 +1722,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         if (pdfQueued && match?.seed_key) await db.matches.update(matchId, { scoresheetPdfMissing: false })
         // (a match without a game number has no cloud copy: nothing to queue)
         if (pdfResult && !pdfQueued && match?.seed_key && scoresheetUploadPath(match, { ext: 'pdf' })) logScoresheetPdf('not_queued', { purpose: 'approval' }, { matchId })
-      } else if (match.global === true) {
-        // Global: the PDF and the final backup go to the Global store, by the
+      } else if (usesKeyStore(match)) {
+        // Global or guest: the PDF and the final backup go to the Global store, by the
         // match's own key (utils/globalCloud); it stays on the device if that fails
         // (not awaited: its retries must not hold the approval)
         exportMatchData(matchId).catch(() => null)

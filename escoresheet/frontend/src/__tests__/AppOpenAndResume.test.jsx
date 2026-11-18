@@ -46,7 +46,7 @@ const scoreboardShown = () => !homeShown() && !closedModal() && /Set 3|Start ral
 const matchSetupShown = () => !!document.querySelector('[data-help-id="setup-match-info-card"]')
 const dialogWith = (text) => [...document.querySelectorAll('[role="dialog"]')].find(d => d.textContent.includes(text))
 const dialogButton = (dialog, text) => [...dialog.querySelectorAll('button')].find(b => b.textContent.trim() === text && !b.disabled)
-const menuOfficialMatch = () => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Official match' && !b.disabled)
+const menuOfficialMatch = () => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'SV match' && !b.disabled)
 // (written before the strings existed: a missing one is its key)
 const str = (path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), en) ?? path
 const state = (key) => str(`home.matchState.${key}`)

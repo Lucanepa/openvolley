@@ -22,6 +22,10 @@ la versione inglese.
   default), questa è conservata anche leggibile sul server, senza PIN né
   immagini delle firme, fino a 180 giorni dopo l'ultimo salvataggio
   (sezione 7).
+- «Nuova partita» nella versione svizzera (senza accesso) funziona allo
+  stesso modo: nessun account, la partita sul tuo dispositivo, backup e PDF
+  sotto il suo codice di backup, e niente squadre salvate, liste del club o
+  elenco degli arbitri.
 - Schermo live (facoltativo, in OpenVolley e OpenBeach): se i dispositivi
   segnapunti di un evento lo attivano, anche il punteggio di ognuna delle loro
   partite (nomi delle squadre, punti e set, nessun giocatore) va al server; è
@@ -459,6 +463,18 @@ cancellati 180 giorni dopo l'ultima modifica; i backup del server (sezione 18)
 ne conservano ancora una copia per un certo tempo. L'organizzatrice o
 l'organizzatore del torneo è responsabile di poter registrare i dati e di
 informare le giocatrici, i giocatori e i loro genitori (sezione 17).
+
+**Nuova partita senza account (versione svizzera):** senza accesso, «Nuova
+partita» avvia una partita nel formato svizzero senza account. È trattata come
+una partita Global: resta sul tuo dispositivo, non è mai nei dati di partite,
+squadre o giocatori della lega, e il suo backup e il referto approvato in PDF
+sono salvati allo stesso modo sotto un codice di backup casuale (cifrati,
+cancellati 180 giorni dopo l'ultima modifica). Può usare i dati pubblici del
+calendario di Swiss Volley (squadre, palestra, lega, numero della partita,
+nomi degli arbitri, senza date di nascita) e un'Einsatzliste letta sul
+dispositivo. Le squadre salvate, le liste delle licenze dei club, i roster
+inviati dalle squadre e l'elenco degli arbitri non sono disponibili, anche se
+qualcuno accede più tardi sul dispositivo.
 
 **Salva nel cloud (strumento Global, facoltativo):** nella preparazione della
 partita il segnapunti può attivare «Salva nel cloud» per una partita Global;

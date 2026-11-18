@@ -17,7 +17,7 @@ import { setTargetsOf } from '../domain/rules'
 import { idModeOf, cleanIdValue, ID_LABEL_FALLBACK } from '../domain/idMode'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
-import { isLocalOnly } from '../domain/matchKind'
+import { isLocalOnly, isGuestMatch, usesKeyStore } from '../domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -1201,6 +1201,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // anyone else (backend/server.js REFEREE_DIRECTORY), and a test, easy or
   // Global match has no use for it.
   const refereeDatabase = !!match && !isLocalOnly(match) && access?.canScore === true
+  // A guest match (Home's "New match" signed out, domain/matchKind): no private
+  // data in this form, whoever signs in later on the device. Saved teams, the
+  // club's lists, other matches' rosters on the device and the referee
+  // directory stay out; the public schedule and the Einsatzliste import stay.
+  const guestMatch = isGuestMatch(match)
   // What the sheet carries beside a name (Global: birthdate, number or text), kept on the match
   useEffect(() => { if (match) setIdModeState(idModeOf(match)) }, [match?.idMode]) // eslint-disable-line react-hooks/exhaustive-deps
   const setIdMode = (mode) => {
@@ -2997,8 +3002,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // schedule suggestion) and earlier matches of the team on this device
   const buildPoolFor = async (side, { savedTeam = null, imported = null, includeCurrent = true } = {}) => {
     const name = side === 'home' ? home : away
-    const saved = savedTeam || savedSuggestion?.[side] || null
-    const names = [...new Set([name, saved?.name, saved?.svrzTeamName].filter(n => String(n || '').trim()))]
+    // A guest match: only what is in this form or was just imported
+    const saved = guestMatch ? null : (savedTeam || savedSuggestion?.[side] || null)
+    const names = guestMatch ? [] : [...new Set([name, saved?.name, saved?.svrzTeamName].filter(n => String(n || '').trim()))]
     const earlier = []
     for (const n of names) {
       for (const r of await rememberedRosters(n, { excludeTeamIds: [match?.homeTeamId, match?.awayTeamId] })) {
@@ -3274,6 +3280,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const token = {}
     scheduleLoadRef.current = token
     const current = () => scheduleLoadRef.current === token
+    // A guest match: the schedule's public data only; no saved teams, no
+    // rosters of earlier matches on the device, no club or game-taken check
+    // (those need an account, and the match never reaches the database)
+    if (guestMatch) return
     try {
       if (access?.canReadTeams) {
         const teams = await getSavedTeams({ userId: user?.id ?? null })
@@ -4715,7 +4725,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {t('roster.loadTestRoster')}
                 </Button>
                 )}
-                {access?.canReadTeams && (
+                {access?.canReadTeams && !guestMatch && (
                   <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('home')} data-testid="load-saved-team-home">
                     {t('savedTeams.load')}
                   </Button>
@@ -4723,12 +4733,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('home')} data-testid="choose-players-home">
                   {t('playerPool.open')}
                 </Button>
-                {clubTeams.home && (
+                {clubTeams.home && !guestMatch && (
                   <Button variant="secondary" size="xl" icon={<UserPlus size={16} aria-hidden />} onClick={() => setClubPicker('home')} data-testid="add-from-club-home">
                     {t('clubPlayers.add')}
                   </Button>
                 )}
-                {access?.canManageTeams && isNavigatorOnline() && (
+                {access?.canManageTeams && isNavigatorOnline() && !guestMatch && (
                   <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('home')}>
                     {t('savedTeams.saveToTeam')}
                   </Button>
@@ -4775,16 +4785,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {homeUploadMode === 'local' ? t('matchSetup.uploadPdf') : (homeRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
                   </Button>
                 {/* Local/Remote Toggle */}
-                <SegmentedControl
-                  ariaLabel={t('matchSetup.uploadPdf')}
-                  className="w-44 max-w-full shrink-0 grow [&_button]:p-0 stack:[&_button]:h-11"
-                  value={homeUploadMode}
-                  onChange={setHomeUploadMode}
-                  options={[
-                    { value: 'local', label: t('matchSetup.local') },
-                    { value: 'remote', label: t('matchSetup.remote') }
-                  ]}
-                />
+                {/* a guest match: the PDF on this device only (remote = sent and uploaded rosters, on the server) */}
+                {!guestMatch && (
+                  <SegmentedControl
+                    ariaLabel={t('matchSetup.uploadPdf')}
+                    className="w-44 max-w-full shrink-0 grow [&_button]:p-0 stack:[&_button]:h-11"
+                    value={homeUploadMode}
+                    onChange={setHomeUploadMode}
+                    options={[
+                      { value: 'local', label: t('matchSetup.local') },
+                      { value: 'remote', label: t('matchSetup.remote') }
+                    ]}
+                  />
+                )}
               </div>
               {/* Local upload - file selected */}
               {homeUploadMode === 'local' && homePdfFile && (
@@ -5813,7 +5826,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {t('roster.loadTestRoster')}
                 </Button>
                 )}
-                {access?.canReadTeams && (
+                {access?.canReadTeams && !guestMatch && (
                   <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('away')} data-testid="load-saved-team-away">
                     {t('savedTeams.load')}
                   </Button>
@@ -5821,12 +5834,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('away')} data-testid="choose-players-away">
                   {t('playerPool.open')}
                 </Button>
-                {clubTeams.away && (
+                {clubTeams.away && !guestMatch && (
                   <Button variant="secondary" size="xl" icon={<UserPlus size={16} aria-hidden />} onClick={() => setClubPicker('away')} data-testid="add-from-club-away">
                     {t('clubPlayers.add')}
                   </Button>
                 )}
-                {access?.canManageTeams && isNavigatorOnline() && (
+                {access?.canManageTeams && isNavigatorOnline() && !guestMatch && (
                   <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('away')}>
                     {t('savedTeams.saveToTeam')}
                   </Button>
@@ -5872,16 +5885,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {awayUploadMode === 'local' ? t('matchSetup.uploadPdf') : (awayRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
                   </Button>
                 {/* Local/Remote Toggle */}
-                <SegmentedControl
-                  ariaLabel={t('matchSetup.uploadPdf')}
-                  className="w-44 max-w-full shrink-0 grow [&_button]:p-0 stack:[&_button]:h-11"
-                  value={awayUploadMode}
-                  onChange={setAwayUploadMode}
-                  options={[
-                    { value: 'local', label: t('matchSetup.local') },
-                    { value: 'remote', label: t('matchSetup.remote') }
-                  ]}
-                />
+                {/* a guest match: the PDF on this device only (remote = sent and uploaded rosters, on the server) */}
+                {!guestMatch && (
+                  <SegmentedControl
+                    ariaLabel={t('matchSetup.uploadPdf')}
+                    className="w-44 max-w-full shrink-0 grow [&_button]:p-0 stack:[&_button]:h-11"
+                    value={awayUploadMode}
+                    onChange={setAwayUploadMode}
+                    options={[
+                      { value: 'local', label: t('matchSetup.local') },
+                      { value: 'remote', label: t('matchSetup.remote') }
+                    ]}
+                  />
+                )}
               </div>
               {/* Local upload - file selected */}
               {awayUploadMode === 'local' && awayPdfFile && (
@@ -7263,7 +7279,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       </div>
       <div className="setup-section">
         {/* Cloud / this device / removable drive: where this match is backed up */}
-        {backup && <div className="ov-kit mb-3"><BackupTargetsPanel backup={backup} test={match?.test === true} globalKey={match?.global === true ? (match.globalKey || null) : null} globalPin={match?.global === true ? (match.refereePin || null) : null} /></div>}
+        {guestMatch && (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900" role="note" data-testid="guest-match-note">
+            {t('matchSetup.guestNote', 'New match without an account: it stays on this device, with a backup under its backup code. Saved teams, club lists and the referee directory need a sign-in (SV match).')}
+          </p>
+        )}
+        {backup && <div className="ov-kit mb-3"><BackupTargetsPanel backup={backup} test={match?.test === true} globalKey={usesKeyStore(match) ? (match.globalKey || null) : null} globalPin={usesKeyStore(match) ? (match.refereePin || null) : null} /></div>}
         {/* A Global match: the opt-in readable copy in the cloud (share link, organizer list) */}
         {match?.global === true && <GlobalCloudPanel match={match} />}
         {/* Why this match does not sync, if the server refused it for good */}

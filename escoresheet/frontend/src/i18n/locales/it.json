@@ -250,6 +250,7 @@
     "pointsDeciding": "Set decisivo",
     "loadingScheduleGame": "Caricamento della partita…",
     "scorerDobForCoinToss": "Segnapunti: data di nascita o numero di licenza necessari per il sorteggio",
+    "guestNote": "Nuova partita senza account: resta su questo dispositivo, con un backup sotto il suo codice di backup. Le squadre salvate, le liste del club e l'elenco degli arbitri richiedono l'accesso (Partita SV).",
     "dobRequiredForCoinToss": "Per il sorteggio: inserisci una data di nascita o un numero di licenza",
     "licenceNumber": "Numero di licenza",
     "title": "Configurazione partita",
@@ -1387,6 +1388,7 @@
     "openingMatch": "Apertura della partita…",
     "title": "eScoresheet",
     "newMatch": "Nuova partita",
+    "svMatch": "Partita SV",
     "officialMatch": "Partita ufficiale",
     "testMatch": "Partita test",
     "preparing": "Preparazione...",
@@ -1478,7 +1480,7 @@
       "unchecked": "Non verificata",
       "unsent": "Modifiche non inviate"
     },
-    "signInForOfficial": "Accedi per refertare partite ufficiali. Le partite di prova e semplici restano su questo dispositivo.",
+    "signInForOfficial": "Accedi per le partite SV: squadre salvate, liste del club ed elenco degli arbitri. Le nuove partite, quelle di prova e semplici funzionano senza account e restano su questo dispositivo.",
     "todayGames": {
       "title": "Partite di oggi",
       "loading": "Caricamento delle partite di oggi…",
@@ -2892,8 +2894,8 @@
     },
     "home": {
       "q_createMatch": "Come creo una nuova partita?",
-      "a_createMatch": "Con l'accesso, tocca «Partita ufficiale»: scegli dalla lista la partita in casa di oggi del tuo club, o inserisci tu la partita. Sotto ci sono «Partita test» e «Partita semplice»; senza accesso hai solo queste due. Una partita ufficiale ha roster, ufficiali di gara e firme. Una partita test serve per esercitarsi. Una partita semplice non è ufficiale: niente roster e niente firme. «Tabellone» non è una partita: solo i punti e i set di due squadre a tutto schermo, per un'amichevole o un allenamento. Resta su questo dispositivo. Nello strumento Globale, «Partita» avvia una partita completa senza accesso.",
-      "tip_createMatch": "Inizia qui una nuova partita: ufficiale (con l'accesso), test o semplice, oppure apri un tabellone.",
+      "a_createMatch": "Con l'accesso, tocca «Partita SV»: scegli dalla lista la partita in casa di oggi del tuo club, o inserisci tu la partita. Senza accesso, tocca «Nuova partita»: una partita completa senza account. Puoi scegliere la partita dal calendario e importare l'Einsatzliste; le squadre salvate, le liste del club e l'elenco degli arbitri richiedono l'accesso. La partita resta su questo dispositivo, con un backup sotto il suo codice di backup. Sotto ci sono «Partita test» e «Partita semplice». Una partita ufficiale ha roster, ufficiali di gara e firme. Una partita test serve per esercitarsi. Una partita semplice non è ufficiale: niente roster e niente firme. «Tabellone» non è una partita: solo i punti e i set di due squadre a tutto schermo, per un'amichevole o un allenamento. Resta su questo dispositivo. Nello strumento Globale, «Partita» avvia una partita completa senza accesso.",
+      "tip_createMatch": "Inizia qui una nuova partita: Partita SV (con l'accesso), Nuova partita (senza accesso), test o semplice, oppure apri un tabellone.",
       "q_officialVsTest": "Qual è la differenza tra partite ufficiali e test?",
       "a_officialVsTest": "Una partita ufficiale richiede i due roster (almeno 6 giocatori ciascuno), gli ufficiali di gara e, prima del primo servizio, le firme. Se hai effettuato l'accesso, viene salvata sul server per l'arbitro, il livescore e i backup. Una partita test ha squadre inventate per esercitarsi. Non viene mai salvata sul server; i tablet dell'arbitro e delle panchine possono comunque seguirla («Passa alle partite di prova» sul tablet).",
       "q_continueMatch": "Come continuo una partita?",
