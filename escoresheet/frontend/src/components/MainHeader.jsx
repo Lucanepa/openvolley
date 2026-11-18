@@ -16,8 +16,9 @@ import { cn } from '../ui/cn.js'
 import { useCollapseTransition } from '../hooks/useCollapseTransition'
 import { SwitchTrack } from '../ui/Switch.jsx'
 import { FOCUS_RING_INSET } from '../ui/Button.jsx'
+import { MenuPopover } from '../ui/MenuPopover.jsx'
 import {
-  FOCUS_RING, KIT_SCOPE, HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, POPOVER_PANEL, MENU_PANEL, MENU_ROW, MENU_SUBROW, MENU_ROW_ON,
+  FOCUS_RING, KIT_SCOPE, HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, MENU_ROW, MENU_SUBROW, MENU_ROW_ON,
   MENU_NEST, MENU_SEP, MENU_ICON, MENU_COUNT, STATUS_PILL, STATUS_TONES, HEADER_SWITCH
 } from './chromeClasses'
 
@@ -113,21 +114,6 @@ const languages = [
   { code: 'fr', Flag: FlagFR, label: 'FR' }
 ]
 
-// The match info popover is centred on its button. The button sits between
-// the header's two groups, not always in the middle of the screen (a phone, a
-// long left group), so the popover is moved back inside the screen (8 px margin)
-function keepPopoverOnScreen(el) {
-  if (!el) return
-  el.style.left = ''
-  const r = el.getBoundingClientRect()
-  const vw = document.documentElement.clientWidth || window.innerWidth
-  const margin = 8
-  let shift = 0
-  if (r.right > vw - margin) shift = vw - margin - r.right
-  if (r.left + shift < margin) shift = margin - r.left
-  if (shift) el.style.left = `calc(50% + ${Math.round(shift)}px)`
-}
-
 // The match chip popover's first line names the header's connection state
 // (the pill's word), not a fixed "Not synced". Its own component, mounted only
 // while the popover is open: useConnectionSummary keeps a live sync-queue
@@ -183,7 +169,6 @@ export default function MainHeader({
   const [editingSize, setEditingSize] = useState({ width: '', height: '' })
   const [isEditing, setIsEditing] = useState(false)
   const [dashboardMenuOpen, setDashboardMenuOpen] = useState(false)
-  const [dashboardMenuPos, setDashboardMenuPos] = useState({ top: 0, right: 12 })
   const dashboardButtonRef = useRef(null)
   // WxH indicator hidden by default - can be toggled via settings if needed
   const [showViewportSize] = useState(() => {
@@ -200,6 +185,7 @@ export default function MainHeader({
   // A phone or tablet: Home's menu offers the referee and bench dashboards
   const [offerDashboards] = useState(() => canOfferDashboards())
   const actionsMenuRef = useRef(null)
+  const matchChipRef = useRef(null)
   const touchStartY = useRef(0)
   const headerRef = useRef(null)
   const rightGroupRef = useRef(null)
@@ -327,73 +313,20 @@ export default function MainHeader({
   }, [isEditing])
 
   // The header menu closes on Escape, on a press outside it (a dialog opened
-  // from it counts as outside) and when the screen changes (new match, setup,
-  // home): it stayed open over Match setup and covered 'Create match'.
-  useEffect(() => {
-    if (!actionsMenuOpen) return
-    const handlePointerDown = (e) => {
-      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target)) {
-        setActionsMenuOpen(false)
-      }
-    }
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') setActionsMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [actionsMenuOpen])
-
+  // from it counts as outside: ui/MenuPopover.jsx) and when the screen changes
+  // (new match, setup, home): it stayed open over Match setup and covered
+  // 'Create match'.
   useEffect(() => {
     setActionsMenuOpen(false)
   }, [matchId, showMatchSetup, currentPage])
 
   // The match chip's popover: one popup at a time. A press anywhere outside
-  // it closes it, also on a button that stops its click (the scoreboard's
-  // Match menu opened over it, UI tour 14.11); the menus close themselves on
-  // a press outside them, the chip included.
-  useEffect(() => {
-    if (!matchInfoMenuOpen) return
-    const handlePointerDown = (e) => {
-      if (!e.target?.closest?.('[data-match-info-menu]')) setMatchInfoMenuOpen?.(false)
-    }
-    document.addEventListener('pointerdown', handlePointerDown, true)
-    return () => document.removeEventListener('pointerdown', handlePointerDown, true)
-  }, [matchInfoMenuOpen, setMatchInfoMenuOpen])
+  // it closes it (ui/MenuPopover.jsx), also on a button that stops its click
+  // (the scoreboard's Match menu opened over it, UI tour 14.11); the menus
+  // close themselves on a press outside them, the chip included.
 
-  // Close dashboard menu when clicking outside
-  useEffect(() => {
-    if (!dashboardMenuOpen) return
-    const handleClickOutside = (e) => {
-      if (dashboardButtonRef.current && !dashboardButtonRef.current.contains(e.target)) {
-        setDashboardMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [dashboardMenuOpen])
-
-  // Calculate dashboard menu position
-  const openDashboardMenu = () => {
-    if (dashboardButtonRef.current) {
-      const rect = dashboardButtonRef.current.getBoundingClientRect()
-      const menuWidth = 280
-      // Calculate right position, ensuring menu stays within viewport
-      let rightPos = window.innerWidth - rect.right
-      // If menu would overflow left side, align to left edge with padding
-      if (rect.right - menuWidth < 12) {
-        rightPos = window.innerWidth - menuWidth - 12
-      }
-      setDashboardMenuPos({
-        top: rect.bottom + 8,
-        right: Math.max(12, rightPos)
-      })
-    }
-    setDashboardMenuOpen(!dashboardMenuOpen)
-  }
+  // The dashboard server popover opens under its pill (ui/MenuPopover.jsx)
+  const openDashboardMenu = () => setDashboardMenuOpen(!dashboardMenuOpen)
 
   // Handle viewport resize
   const handleResizeViewport = () => {
@@ -458,12 +391,17 @@ export default function MainHeader({
     if (!matchData) return null
 
     return (
-      <div
-        data-match-info-menu
-        ref={keepPopoverOnScreen}
-        onClick={(e) => e.stopPropagation()}
-        className={cn('absolute left-1/2 top-full mt-1.5 flex min-w-[280px] -translate-x-1/2 flex-col gap-2 text-center', POPOVER_PANEL)}
-        style={{ zIndex: 1000 }}
+      <MenuPopover
+        open
+        onClose={() => setMatchInfoMenuOpen?.(false)}
+        anchorRef={matchChipRef}
+        label={t('header.match')}
+        role="dialog"
+        align="center"
+        closeLabel={t('common.close', 'Close')}
+        panelProps={{ 'data-match-info-menu': '' }}
+        className="min-w-[280px] gap-2 p-3 text-center text-stone-800"
+        bodyClassName="flex flex-col gap-2 text-center"
       >
         {/* Match Number */}
         <MatchInfoConnectionLine offlineMode={offlineMode} connectionStatuses={connectionStatuses} queueStats={queueStats} t={t} />
@@ -507,7 +445,7 @@ export default function MainHeader({
             ? t('header.unofficial', 'Unofficial')
             : matchData.match.test ? t('header.test') : (matchData.match.gamePin || 'N/A')}
         </div>
-      </div>
+      </MenuPopover>
     )
   }
 
@@ -537,6 +475,7 @@ export default function MainHeader({
       <div className={cn('relative flex h-8 w-auto items-center justify-center', isCompactBar ? 'min-w-0 gap-1' : 'gap-1.5')}>
         <span className={KIT_SCOPE}>
           <button
+            ref={matchChipRef}
             type="button"
             data-match-info-menu
             aria-expanded={matchInfoMenuOpen}
@@ -844,16 +783,18 @@ export default function MainHeader({
 
               {/* Dashboard Connection Info Dropdown */}
               {dashboardMenuOpen && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className={cn('fixed w-[280px] max-w-[calc(100vw-24px)] space-y-3 text-sm', POPOVER_PANEL)}
-                  style={{
-                    top: `${dashboardMenuPos.top}px`,
-                    right: `${dashboardMenuPos.right}px`,
-                    zIndex: 1000
-                  }}
+                <MenuPopover
+                  open
+                  onClose={() => setDashboardMenuOpen(false)}
+                  anchorRef={dashboardButtonRef}
+                  label={t('header.dashboardConnectionInfo')}
+                  role="dialog"
+                  align="start"
+                  closeLabel={t('common.close', 'Close')}
+                  className="w-[280px] p-3 text-stone-800"
+                  bodyClassName="space-y-3 text-sm"
                 >
-                  <div className="border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  <div className="menu-own-title border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
                     {t('header.dashboardConnectionInfo')}
                   </div>
 
@@ -943,7 +884,7 @@ export default function MainHeader({
                   >
                     {t('header.moreOptions')}
                   </button>
-                </div>
+                </MenuPopover>
               )}
             </div>
           )}
@@ -1022,10 +963,15 @@ export default function MainHeader({
 
                 {/* Expanded Actions Menu */}
                 {actionsMenuOpen && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className={cn('absolute right-0 top-full mt-1.5 flex min-w-[220px] max-h-[calc(100vh-56px)] flex-col overflow-y-auto', MENU_PANEL)}
-                    style={{ zIndex: 1000 }}
+                  <MenuPopover
+                    open
+                    onClose={() => setActionsMenuOpen(false)}
+                    anchorRef={actionsMenuRef}
+                    label={t('header.menu', 'Menu')}
+                    role="group"
+                    align="end"
+                    closeLabel={t('common.close', 'Close')}
+                    className="min-w-[220px]"
                   >
                     {/* Fullscreen Action */}
                     <button
@@ -1115,7 +1061,7 @@ export default function MainHeader({
                     )}
 
                     {quitRow}
-                  </div>
+                  </MenuPopover>
                 )}
               </div>
             </>
@@ -1193,10 +1139,16 @@ export default function MainHeader({
                 {/* Unified Actions Menu */}
                 {/* Stays mounted while closed (hidden): the account dialogs opened from
                     it (login, profile, my matches) belong to its UserButton. */}
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className={cn('absolute right-0 top-full mt-1.5 min-w-[240px] max-h-[calc(100vh-56px)] flex-col overflow-y-auto', actionsMenuOpen ? 'flex' : 'hidden', MENU_PANEL)}
-                    style={{ zIndex: 1000 }}
+                  <MenuPopover
+                    open={actionsMenuOpen}
+                    keepMounted
+                    onClose={() => setActionsMenuOpen(false)}
+                    anchorRef={actionsMenuRef}
+                    label={t('header.menu', 'Menu')}
+                    role="group"
+                    align="end"
+                    closeLabel={t('common.close', 'Close')}
+                    className="min-w-[240px]"
                   >
                     {/* Home Action - only show when not on home screen */}
                     {matchId && onOpenSetup && (
@@ -1285,7 +1237,7 @@ export default function MainHeader({
                     {quitRow && <div className={MENU_SEP} />}
 
                     {quitRow}
-                  </div>
+                  </MenuPopover>
 
               </div>
             </>

@@ -2829,9 +2829,12 @@ button.start-rally-button {
    88 px at 800 px wide, narrower than a table with its usual padding (cut by
    8 px, device check 2026-10-14). A narrow column tightens the horizontal
    padding; a wider one keeps it (Scoreboard: --set-card-pad-x,
-   --set-cell-pad-x). */
+   --set-cell-pad-x).
+   A size container (not only inline-size): the column takes the height the
+   rally buttons give the row and its table adds none, so the box stays the
+   same as sets are added; the rows shrink to fit it (setSummaryFit.js). */
 .set-summary-col {
-  container-type: inline-size;
+  container-type: size;
 }
 
 @container (max-width: 127px) {
@@ -4003,4 +4006,11 @@ body.ios-fullscreen {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* A popover's own eyebrow title (Connection status, Tablet status ...): as a
+   centred modal on a small screen the modal's title bar names it already
+   (ui/MenuPopover.jsx). */
+[data-menu-modal] .menu-own-title {
+  display: none;
 }

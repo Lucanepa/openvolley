@@ -79,6 +79,15 @@ export {
   PickerPopover,
 } from './PickerPopover.jsx';
 export {
+  MENU_POPOVER_PANEL,
+  MenuPopover,
+} from './MenuPopover.jsx';
+export {
+  MENU_MODAL_BELOW,
+  menusAsModal,
+  useMenusAsModal,
+} from './menuLayout.js';
+export {
   Calendar,
 } from './Calendar.jsx';
 export {

@@ -106,6 +106,9 @@ import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import { setSummaryFit } from './scoreboard/setSummaryFit'
+import { dragPointer } from './scoreboard/dragPointer'
+import CountdownSeconds from './scoreboard/CountdownSeconds'
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
 import { useBenchRequestBridge, lineupAcceptBlock } from './scoreboard/useBenchRequestBridge'
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
@@ -893,7 +896,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     longPressProgress: 0,
     touchPosition: null,  // { x, y } for progress indicator
     isDragging: false,
-    dragPosition: null,   // { x, y } for floating player overlay
+    // the finger of a drag is not state: scoreboard/dragPointer.js
   })
   const [validDropTargets, setValidDropTargets] = useState([]) // [{ team, position, type: 'court'|'bench', playerNumber? }]
   const touchProgressIntervalRef = useRef(null)
@@ -3742,9 +3745,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Update every 100ms for smooth visuals (instead of 1000ms)
+    // Checked every 100 ms; the state changes only when the shown second does
+    // (a new object every 100 ms rendered the whole scoring screen ten times
+    // a second for the whole set interval, as the time-out countdown did)
     const timer = setInterval(() => {
       const remaining = secondsLeft(betweenSetsAnchorRef.current, betweenSetsInitialCountdownRef.current)
+      if (remaining === betweenSetsCountdown.countdown) return
 
       if (remaining <= 0) {
         // Auto-end the set interval when countdown reaches 0
@@ -3757,7 +3763,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           return { ...prev, countdown: remaining }
         })
       }
-    }, 100) // 100ms for smooth visual updates
+    }, 100)
 
     return () => clearInterval(timer)
   }, [betweenSetsCountdown])
@@ -8880,40 +8886,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     prevTimeoutModalRef.current = timeoutModal
   }, [timeoutModal, sendActionToReferee, syncLiveStateToSupabase])
 
-  useEffect(() => {
-    if (!timeoutModal || !timeoutModal.started) return
-
+  // The running time-out's clock: its start on the monotonic clock and its
+  // length. The digits tick in CountdownSeconds (scoreboard/), not in this
+  // screen's state: a state change each second (ten, before) rendered the
+  // whole scoring screen for the whole time-out, and on a small tablet a
+  // substitution dragged in then could not be confirmed until the time-out
+  // was over (owner, 17.11.2026). timeoutModal.countdown keeps the length
+  // the time-out started with.
+  const timeoutClock = useMemo(() => {
+    if (!timeoutModal?.started) return null
     // Use startedAt from state if available, otherwise fallback to ref or Date.now()
     const startTimestamp = timeoutModal.startedAt ? new Date(timeoutModal.startedAt).getTime() : (timeoutStartTimestampRef.current || Date.now())
-    const initialCountdown = timeoutInitialCountdownRef.current || 30
+    const duration = timeoutInitialCountdownRef.current || 30
     // On the monotonic clock (without its anchor: from the start, within the length)
-    const anchor = timeoutModal.anchor ?? countdownAnchor(Math.min(Math.max(0, Date.now() - startTimestamp), initialCountdown * 1000))
+    const anchor = timeoutModal.anchor ?? countdownAnchor(Math.min(Math.max(0, Date.now() - startTimestamp), duration * 1000))
+    return { anchor, duration, startTimestamp }
+  }, [timeoutModal?.started, timeoutModal?.startedAt, timeoutModal?.anchor]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The time-out ends when its clock reaches 0 (checked every 100 ms; no
+  // state change before that)
+  useEffect(() => {
+    if (!timeoutModal?.started || !timeoutClock) return
 
     // Sync refs for legacy support/internal tracking
-    if (!timeoutStartTimestampRef.current) timeoutStartTimestampRef.current = startTimestamp
+    if (!timeoutStartTimestampRef.current) timeoutStartTimestampRef.current = timeoutClock.startTimestamp
 
     if (timeoutModal.countdown <= 0) {
       return
     }
 
-    // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
-      const remaining = secondsLeft(anchor, initialCountdown)
-
-      if (remaining <= 0) {
-        setTimeoutModal(null)
-        timeoutStartTimestampRef.current = null
-      } else {
-        setTimeoutModal(prev => {
-          if (!prev || !prev.started) return null
-          if (prev.countdown === remaining) return prev
-          return { ...prev, countdown: remaining }
-        })
-      }
+      if (secondsLeft(timeoutClock.anchor, timeoutClock.duration) > 0) return
+      setTimeoutModal(prev => (prev?.started ? null : prev))
+      timeoutStartTimestampRef.current = null
     }, 100)
 
     return () => clearInterval(timer)
-  }, [timeoutModal?.started, timeoutModal?.startedAt, timeoutModal?.anchor])
+  }, [timeoutModal?.started, timeoutClock]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const getTimeoutsUsed = useCallback(
     side => {
@@ -10109,7 +10118,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    setDropTargetPosition({ team: teamKey, position })
+    // dragover fires every few ms: a new object each time rendered the whole screen
+    setDropTargetPosition(prev => (prev && prev.team === teamKey && prev.position === position ? prev : { team: teamKey, position }))
   }, [draggedPlayer, getCurrentServe, isLiberoUnable, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set?.index, substitutionsUsed, getAvailableSubstitutes])
 
   const handleCourtDragLeave = useCallback(() => {
@@ -10300,7 +10310,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
       // Allow the exchange
       e.dataTransfer.dropEffect = 'move'
-      setDropTargetBench({ team: teamKey, playerNumber, isLibero })
+      setDropTargetBench(prev => (prev && prev.team === teamKey && String(prev.playerNumber) === String(playerNumber) && !!prev.isLibero === !!isLibero ? prev : { team: teamKey, playerNumber, isLibero }))
       return
     }
 
@@ -10356,7 +10366,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     e.dataTransfer.dropEffect = 'move'
-    setDropTargetBench({ team: teamKey, playerNumber, isLibero })
+    setDropTargetBench(prev => (prev && prev.team === teamKey && String(prev.playerNumber) === String(playerNumber) && !!prev.isLibero === !!isLibero ? prev : { team: teamKey, playerNumber, isLibero }))
   }, [draggedPlayer, getLiberoOnCourt, getCurrentServe, hasPointSinceLastLiberoExchange, isLiberoUnable])
 
   const handleBenchDropLeave = useCallback(() => {
@@ -10593,10 +10603,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       longPressProgress: 0,
       touchPosition: null,
       isDragging: false,
-      dragPosition: null,
     })
     setDraggedPlayer(null)
     setValidDropTargets([])
+    dragPointer.set(null)
     touchDragDataRef.current = null
     touchStartPositionRef.current = null
   }, [])
@@ -10769,12 +10779,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (navigator.vibrate) {
         try { navigator.vibrate(30) } catch { /* not allowed */ }
       }
+      dragPointer.set(touchStartPositionRef.current)
       setTouchDragState(prev => ({
         ...prev,
         isLongPressing: false,
         longPressProgress: 1,
         isDragging: true,
-        dragPosition: touchStartPositionRef.current,
       }))
       setDraggedPlayer(playerData)
       computeValidDropTargets(playerData)
@@ -10803,14 +10813,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     if (touchState.isDragging) {
       if (e.cancelable) e.preventDefault() // Prevent scrolling while dragging
-      // one update per frame, not per touchmove: every update renders the
-      // whole scoring screen
+      // one update per frame, not per touchmove, and outside the screen's
+      // state: only the floating disc renders (scoreboard/dragPointer.js)
       touchMovePendingRef.current = pos
       if (!touchMoveFrameRef.current) {
         touchMoveFrameRef.current = requestAnimationFrame(() => {
           touchMoveFrameRef.current = 0
           const next = touchMovePendingRef.current
-          if (next) setTouchDragState(prev => (prev.isDragging ? { ...prev, dragPosition: next } : prev))
+          if (next) dragPointer.set(next)
         })
       }
     }
@@ -10875,7 +10885,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (touchState.isDragging && draggedPlayer) {
       // Find drop target under finger (the last move may still wait for its frame)
       const lifted = e?.changedTouches?.[0]
-      const pos = lifted ? { x: lifted.clientX, y: lifted.clientY } : (touchMovePendingRef.current || touchState.dragPosition)
+      const pos = lifted ? { x: lifted.clientX, y: lifted.clientY } : (touchMovePendingRef.current || dragPointer.get())
       if (pos) {
         const element = document.elementFromPoint(pos.x, pos.y)
         const dropInfo = getDropInfoFromElement(element)
@@ -14305,6 +14315,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         teamName: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')),
         countdown: timeoutModal.countdown,
         countdownText: formatTimeout(timeoutModal.countdown),
+        // the phone's digits tick by themselves (CountdownSeconds)
+        clock: timeoutClock,
         total: 30
       }
     } else if (data?.set?.index === 5 && !set5SetupConfirmed) {
@@ -17751,35 +17763,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                     const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
 
+                    // The same box all match long: everything in it gets smaller as sets are added (scoreboard/setSummaryFit.js)
+                    const fit = setSummaryFit(visibleSets.length)
                     return (
                       <div className="set-summary-card"
+                        data-set-summary={'left'}
                         onClick={() => setSummaryTableZoom({ side: 'left', teamKey: currentLeftTeamKey })}
                         style={{
                           background: 'var(--panel)',
                           border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
-                          padding: `calc(12px * var(--scale-factor)) var(--set-card-pad-x, calc(12px * var(--scale-factor)))`,
-                          fontSize: `calc(15px * var(--scale-factor))`,
+                          paddingLeft: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          paddingRight: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          ...fit.card,
                           width: '100%',
                           cursor: 'pointer'
                         }}>
-                        <h4 style={{ margin: `0 0 calc(8px * var(--scale-factor))`, fontSize: `calc(18px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
+                        <h4 style={{ ...fit.heading, fontWeight: 600, textAlign: 'center' }}>
                           <span style={{
-                            padding: `calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor))`,
+                            ...fit.badge,
                             borderRadius: `calc(4px * var(--scale-factor))`,
-                            fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
                             ...teamBoxStyle(leftTeamColor)
                           }}>{leftTeamLabel}</span>
                         </h4>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
+                        <div style={fit.tableBox}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', ...fit.table }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>S</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>T</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>Set</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>P</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>W</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>S</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>T</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -17806,16 +17822,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderBottom: '1px solid var(--border)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{leftPoints}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{won}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{substitutions}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{timeouts}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{leftPoints}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{timeouts}</td>
                                 </tr>
                               )
                             })}
                           </tbody>
                         </table>
+                        </div>
                       </div>
                     )
                   })()}
@@ -18051,15 +18068,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}>
                       {t('scoreboard.phone.timeoutRunning', { team: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
                     </div>
+                    {/* the digits and the bar tick by themselves (CountdownSeconds) */}
+                    <CountdownSeconds clock={timeoutClock} fallback={timeoutModal.countdown}>{(seconds) => (<>
                     <div style={{
                       fontSize: '48px',
                       lineHeight: 1.1,
                       fontWeight: 700,
-                      color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
+                      color: seconds <= 10 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
                       fontFamily: getScoreFont()
                     }}>
-                      {formatTimeout(timeoutModal.countdown)}
+                      {formatTimeout(seconds)}
                     </div>
                     {/* Progress bar */}
                     <div style={{
@@ -18074,14 +18093,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       marginRight: 'auto'
                     }}>
                       <div style={{
-                        width: `${(timeoutModal.countdown / 30) * 100}%`,
+                        width: `${(seconds / 30) * 100}%`,
                         height: '100%',
-                        background: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
+                        background: seconds <= 10 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
                         transition: 'width 1s linear, background 0.3s',
                         marginLeft: 'auto'
                       }} />
                     </div>
+                    </>)}</CountdownSeconds>
                     <button
                       className="secondary"
                       onClick={stopTimeout}
@@ -18265,35 +18285,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                     const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
 
+                    // The same box all match long: everything in it gets smaller as sets are added (scoreboard/setSummaryFit.js)
+                    const fit = setSummaryFit(visibleSets.length)
                     return (
                       <div className="set-summary-card"
+                        data-set-summary={'right'}
                         onClick={() => setSummaryTableZoom({ side: 'right', teamKey: currentRightTeamKey })}
                         style={{
                           background: 'var(--panel)',
                           border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
-                          padding: `calc(12px * var(--scale-factor)) var(--set-card-pad-x, calc(12px * var(--scale-factor)))`,
-                          fontSize: `calc(15px * var(--scale-factor))`,
+                          paddingLeft: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          paddingRight: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          ...fit.card,
                           width: '100%',
                           cursor: 'pointer'
                         }}>
-                        <h4 style={{ margin: `0 0 calc(8px * var(--scale-factor))`, fontSize: `calc(18px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
+                        <h4 style={{ ...fit.heading, fontWeight: 600, textAlign: 'center' }}>
                           <span style={{
-                            padding: `calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor))`,
+                            ...fit.badge,
                             borderRadius: `calc(4px * var(--scale-factor))`,
-                            fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
                             ...teamBoxStyle(rightTeamColor)
                           }}>{rightTeamLabel}</span>
                         </h4>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
+                        <div style={fit.tableBox}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', ...fit.table }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>S</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>T</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>Set</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>P</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>W</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>S</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>T</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -18320,16 +18344,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderBottom: '1px solid var(--border)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{rightPoints}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{won}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{substitutions}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{timeouts}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{rightPoints}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{timeouts}</td>
                                 </tr>
                               )
                             })}
                           </tbody>
                         </table>
+                        </div>
                       </div>
                     )
                   })()}
@@ -19847,10 +19872,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         strokeWidth={4}
         color="var(--accent)"
       />
-      {touchDragState.isDragging && draggedPlayer && touchDragState.dragPosition && (
+      {touchDragState.isDragging && draggedPlayer && (
         <DraggedPlayerOverlay
           player={draggedPlayer}
-          position={touchDragState.dragPosition}
           colors={getPlayerCircleColors((draggedPlayer.team === 'home') === leftIsHome ? 'left' : 'right', !!draggedPlayer.isLibero)}
           isValid={validDropTargets.length > 0}
         />

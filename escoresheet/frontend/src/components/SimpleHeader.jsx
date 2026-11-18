@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, Maximize, Menu, X } from 'lucide-react'
 import i18n from '../i18n'
@@ -8,11 +8,11 @@ import { cn } from '../ui/cn.js'
 import { toast } from '../ui/uiStore.js'
 import { SegmentedControl } from '../ui/SegmentedControl.jsx'
 import {
-  HEADER_BAR, HEADER_BAR_HEIGHT, HEADER_BTN, HEADER_BTN_ON, HEADER_HIT, HEADER_TITLE, MENU_PANEL, MENU_SECTION, MENU_ROW, MENU_SUBROW,
+  HEADER_BAR, HEADER_BAR_HEIGHT, HEADER_BTN, HEADER_BTN_ON, HEADER_HIT, HEADER_TITLE, MENU_SECTION, MENU_ROW, MENU_SUBROW,
   MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, toastLang
 } from './chromeClasses'
 import HeaderMenuItem from './HeaderMenuItem'
-import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { MenuPopover } from '../ui/MenuPopover.jsx'
 import { HeaderHelpButton } from './help/HelpButton.jsx'
 
 // Flag SVG components for language selector
@@ -109,24 +109,8 @@ export default function SimpleHeader({
     }
   }
 
-  // Close menu on outside click and on Escape
-  useEffect(() => {
-    if (!menuOpen) return
-    const handleClick = (e) => {
-      if (!e.target.closest('.simple-header-menu')) {
-        setMenuOpen(false)
-      }
-    }
-    const handleKey = (e) => {
-      if (e.key === 'Escape') setMenuOpen(false)
-    }
-    document.addEventListener('click', handleClick)
-    document.addEventListener('keydown', handleKey)
-    return () => {
-      document.removeEventListener('click', handleClick)
-      document.removeEventListener('keydown', handleKey)
-    }
-  }, [menuOpen])
+  // The menu closes on a press outside it and on Escape (ui/MenuPopover.jsx)
+  const menuButtonRef = useRef(null)
 
   const currentLanguage = languages.find(l => l.code === i18n.language)
   const CurrentFlag = currentLanguage ? currentLanguage.Flag : FlagGB
@@ -170,6 +154,7 @@ export default function SimpleHeader({
       <div className="simple-header-menu relative flex flex-none items-center justify-center">
         {/* Always show hamburger - at minimum has language, version, and clear cache */}
         <button
+          ref={menuButtonRef}
           type="button"
           onClick={(e) => {
             e.stopPropagation()
@@ -186,15 +171,15 @@ export default function SimpleHeader({
         {/* Dropdown Menu */}
         {menuOpen && (
           <>
-            {/* Backdrop */}
-            <div
-              {...backdropDismiss(() => setMenuOpen(false))}
-              className="fixed inset-0"
-              style={{ zIndex: 998 }}
-            />
-            <div
-              className={cn('absolute left-1/2 top-full mt-1.5 flex w-max min-w-[220px] max-w-[280px] -translate-x-1/2 flex-col', MENU_PANEL)}
-              style={{ zIndex: 1000 }}
+            <MenuPopover
+              open
+              onClose={() => setMenuOpen(false)}
+              anchorRef={menuButtonRef}
+              label={t('header.menu')}
+              role="group"
+              align="center"
+              closeLabel={t('common.close', 'Close')}
+              className="min-w-[220px] max-w-[280px]"
             >
               {menuItems.map((item, index) => {
                 // Divider
@@ -309,7 +294,7 @@ export default function SimpleHeader({
                   </div>
                 </div>
               )}
-            </div>
+            </MenuPopover>
           </>
         )}
       </div>
