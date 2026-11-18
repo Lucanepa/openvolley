@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.4.1" date="2026-11-18">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.4.1</url>
+      <description>
+        <ul>
+          <li>Pair a phone: the scorer's phone types into the tablet's fields.</li>
+          <li>"Scoreboard settings" in the Match menu while a scoreboard display follows.</li>
+          <li>Scoreboards without the PIN show substitution counts and finished sets.</li>
+          <li>Rosters: a roster sent during Match setup shows up; PDF import on older Android; the roster page scrolls.</li>
+          <li>Small screens: menus as a centred window, set tables fit; a substitution dragged in during a time-out can be confirmed.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.4.0" date="2026-11-17">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.4.0</url>
       <description>
