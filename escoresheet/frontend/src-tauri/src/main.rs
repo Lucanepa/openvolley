@@ -11,6 +11,7 @@ mod global_live;
 mod lifecycle;
 mod netifs;
 mod netshare;
+mod pair;
 mod popups;
 mod relay;
 mod sign;

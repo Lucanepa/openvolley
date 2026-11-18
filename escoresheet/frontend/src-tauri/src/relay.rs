@@ -392,6 +392,8 @@ pub struct AppState {
     claims: std::sync::Mutex<ClaimFile>,
     /// Sign on phone sessions (memory only; the sweeper starts with the first one)
     sign: Arc<crate::sign::SignSessions>,
+    /// Pair a phone (pair.rs): the remote keyboards, memory only
+    pair: Arc<crate::pair::PairSessions>,
     /// The Global tool's live page for TVs: a court summary per tournament
     /// code (global_live.rs), memory only
     global_live: std::sync::Mutex<crate::global_live::GlobalLive>,
@@ -425,6 +427,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         misses: Mutex::new(HashMap::new()),
         claims: std::sync::Mutex::new(ClaimFile::load(claim_file_path(http_port))),
         sign: crate::sign::SignSessions::lan(),
+        pair: crate::pair::PairSessions::lan(),
         global_live: std::sync::Mutex::new(crate::global_live::GlobalLive::default()),
         http_port,
         ws_port,
@@ -1238,6 +1241,13 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/sign/submit", post(sign_api))
         .route("/api/sign/wait", post(sign_api))
         .route("/api/sign/close", post(sign_api))
+        .route("/api/pair/start", post(pair_api))
+        .route("/api/pair/wait", post(pair_api))
+        .route("/api/pair/focus", post(pair_api))
+        .route("/api/pair/close", post(pair_api))
+        .route("/api/pair/join", post(pair_api))
+        .route("/api/pair/poll", post(pair_api))
+        .route("/api/pair/input", post(pair_api))
         .route("/api/global/live/game/{n}", get(global_live_game))
         .route("/api/global/live/{code}", get(global_live_page))
         .route("/tv", get(tv_entry))
@@ -2007,8 +2017,8 @@ async fn static_handler(
     }
 
     let mut res = serve_asset(path);
-    if crate::sign::is_sign_page_path(path) {
-        // The phone signing page (spec 4.7): strict CSP, no referrer, no-cache
+    if crate::sign::is_sign_page_path(path) || crate::pair::is_pair_page_path(path) {
+        // The phone pages (/sign, spec 4.7; /pair, Pair a phone): strict CSP, no referrer, no-cache
         let h = res.headers_mut();
         h.insert("Content-Security-Policy", HeaderValue::from_static(crate::sign::SIGN_PAGE_CSP));
         h.insert("Referrer-Policy", HeaderValue::from_static("no-referrer"));
@@ -2309,6 +2319,65 @@ async fn sign_api(
         "submit" => sessions.submit(&body, &ip_key),
         "close" => sessions.close(&body),
         // A dropped request drops this future, and the waiter with it
+        _ => sessions.wait(&body).await,
+    };
+    sign_response(answer)
+}
+
+// ---------------------------------------------------------------------------
+// Pair a phone (pair.rs, docs/phone-keyboard-spec.md): POST /api/pair/*
+// ---------------------------------------------------------------------------
+
+async fn pair_api(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    use crate::pair::pair_error;
+    let Some(endpoint) = crate::pair::endpoint_of(uri.path()) else {
+        return sign_response(pair_error(404, "OV_PAIR_NOT_FOUND"));
+    };
+    let is_json = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| {
+            let ct = ct.trim_start().to_ascii_lowercase();
+            ct.strip_prefix("application/json").map_or(false, |rest| !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
+        })
+        .unwrap_or(false);
+    if !is_json {
+        return sign_response(pair_error(400, "OV_PAIR_BAD_REQUEST"));
+    }
+    let limit = crate::pair::body_limit(endpoint);
+    let declared = headers.get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.map_or(false, |n| n > limit) {
+        return sign_response(pair_error(413, "OV_PAIR_TOO_LARGE"));
+    }
+    let Ok(bytes) = axum::body::to_bytes(body, limit).await else {
+        return sign_response(pair_error(413, "OV_PAIR_TOO_LARGE"));
+    };
+    let Ok(body) = serde_json::from_slice::<Value>(&bytes) else {
+        return sign_response(pair_error(400, "OV_PAIR_BAD_REQUEST"));
+    };
+    let ip_key = canonical_ip(addr.ip()).to_string();
+    let sessions = state.pair.clone();
+    let answer = match endpoint {
+        // the /api/sign/start rule (the relay host, or the game PIN of a match it holds)
+        "start" => match sign_owner(&state, &addr, &headers, &body).await {
+            Ok(owner) => sessions.start(&body, &owner),
+            Err(a) => {
+                let code = a.body["code"].as_str().unwrap_or("OV_SIGN_FORBIDDEN").replacen("OV_SIGN_", "OV_PAIR_", 1);
+                crate::sign::Answer { retry_after: a.retry_after, ..pair_error(a.status, &code) }
+            }
+        },
+        "focus" => sessions.focus(&body),
+        "close" => sessions.close(&body),
+        "join" => sessions.join(&body, &ip_key),
+        "input" => sessions.input(&body, &ip_key),
+        // A dropped request drops these futures, and the waiter with them
+        "poll" => sessions.poll(&body, &ip_key).await,
         _ => sessions.wait(&body).await,
     };
     sign_response(answer)
@@ -5097,6 +5166,39 @@ mod tests {
         assert_eq!(canonical_ip("::ffff:127.0.0.1".parse().unwrap()), "127.0.0.1".parse::<IpAddr>().unwrap());
         assert!(is_local(&"127.0.0.1:1".parse().unwrap()));
         assert!(!is_local(&"203.0.113.9:1".parse().unwrap()));
+    }
+
+    // --- Pair a phone through the router (pair.rs; docs/phone-keyboard-spec.md) ---
+
+    #[tokio::test]
+    async fn pair_start_rule_flow_and_body_caps_through_the_router() {
+        let state = new_state(0, 0);
+        let local = "127.0.0.1:1";
+        let phone_addr = "192.0.2.77:1";
+        let start = json!({ "matchKey": "m", "context": { "home": "A", "away": "B" } }).to_string();
+        // another device without a PIN: the /api/sign/start rule, in OV_PAIR_* codes
+        let (st, _, body) = sign_call(&state, "/api/pair/start", start.clone(), "192.0.2.9:1", &[]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::FORBIDDEN, Some("OV_PAIR_FORBIDDEN")));
+        let (st, h, started) = sign_call(&state, "/api/pair/start", start, local, &[]).await;
+        assert_eq!(st, StatusCode::CREATED);
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        let (watch, token) = (started["watch"].clone(), started["token"].clone());
+        let (_, _, joined) = sign_call(&state, "/api/pair/join", json!({ "k": token }).to_string(), phone_addr, &[]).await;
+        assert_eq!(joined["state"], "paired");
+        let phone = joined["phone"].clone();
+        let field = json!({ "watch": watch, "field": { "id": "ov-remarks", "kind": "multiline", "text": "x".repeat(30000) } }).to_string();
+        assert_eq!(sign_call(&state, "/api/pair/focus", field, local, &[]).await.0, StatusCode::OK);
+        let huge = json!({ "watch": watch, "field": { "id": "f", "text": "x".repeat(70000) } }).to_string();
+        assert_eq!(sign_call(&state, "/api/pair/focus", huge, local, &[]).await.0, StatusCode::PAYLOAD_TOO_LARGE);
+        let typed = json!({ "phone": phone, "n": 1, "field": "ov-remarks", "text": "Typed" }).to_string();
+        assert_eq!(sign_call(&state, "/api/pair/input", typed, phone_addr, &[]).await.2["seq"], 1);
+        let (_, _, got) = sign_call(&state, "/api/pair/wait", json!({ "watch": watch, "knownState": "paired", "after": 0, "knownPhone": true }).to_string(), local, &[]).await;
+        assert_eq!(got["inputs"][0]["text"], "Typed");
+        assert_eq!(sign_call(&state, "/api/pair/close", json!({ "watch": watch }).to_string(), local, &[]).await.0, StatusCode::OK);
+        let (_, _, ended) = sign_call(&state, "/api/pair/poll", json!({ "phone": phone }).to_string(), phone_addr, &[]).await;
+        assert_eq!(ended["state"], "closed");
+        let (st, _, body) = sign_call(&state, "/api/pair/join", json!({ "k": token }).to_string(), phone_addr, &[("content-type", "text/plain")]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::BAD_REQUEST, Some("OV_PAIR_BAD_REQUEST")));
     }
 
     // --- Sign on phone through the router (sign.rs; docs/qr-signing-spec.md 8.3) ---

@@ -124,6 +124,10 @@ describe('pwa-workbox and the phone signing page (/sign)', () => {
     for (const p of ['/sign', '/sign/', '/sign/index.html', '/api/sign/open', '/api/db']) expect(denied(p), p).toBe(true)
     for (const p of ['/', '/signature', '/referee/', '/scoresheet/']) expect(denied(p), p).toBe(false)
     expect(PRECACHE_GLOB_IGNORES).toContain('sign/**')
+    // the Pair a phone page the same way
+    for (const p of ['/pair', '/pair/', '/pair/pair.js', '/api/pair/join']) expect(denied(p), p).toBe(true)
+    for (const p of ['/pairing', '/repair']) expect(denied(p), p).toBe(false)
+    expect(PRECACHE_GLOB_IGNORES).toContain('pair/**')
     // vite-plugin-pwa's defaults stay ignored too
     expect(PRECACHE_GLOB_IGNORES).toEqual(expect.arrayContaining(['**/node_modules/**/*', 'sw.js', 'workbox-*.js']))
   })
