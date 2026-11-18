@@ -48,6 +48,7 @@ import { rotateLineup, pointSubEventsForTeam } from './rotation'
 import { swapTeamDesignation as swapTeamDesignationPatch, regularSetIndexes } from './coinToss'
 import { actualStartLines, actualStartReason, remarkClock } from './remarks'
 import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
+import { intervalMinutesAfter } from './setInterval'
 import { validateManualTimeout, validateManualSubstitution, classifySubstitutionRequest } from './substitutions'
 import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
 import { applyPlanToEvents, finalizePlan, isRotationLiberoExit, isRally } from './recompute'
@@ -1283,7 +1284,7 @@ function rotationRows(events, setIndex, team, seq, ts, ctx, { base = seq, sub = 
  * time: HH:MM" (the line the start dialog wrote is replaced; a start back on
  * the scheduled time removes it). `remarks` is the match's remarks text.
  */
-export function planSetTimes(events, sets, { setIndex, startTime, endTime, scheduledAt = null, remarks = '' } = {}, ctx = {}) {
+export function planSetTimes(events, sets, { setIndex, startTime, endTime, scheduledAt = null, remarks = '', longIntervalAfterSet2 = false } = {}, ctx = {}) {
   const set = setNumber(setIndex, ctx)
   const row = (sets || []).find(s => s.index === setIndex)
   if (!row) return fail('notFound')
@@ -1317,7 +1318,10 @@ export function planSetTimes(events, sets, { setIndex, startTime, endTime, sched
   const refMs = tsMs(ref)
   if (startMs && refMs) {
     const minutes = Math.round((startMs - refMs) / 60000)
-    if (minutes > 5) {
+    // a delay is over the interval + 2 minutes: 5 after a 3-minute break (and
+    // for set 1), 12 after the match's 10-minute one after set 2 (domain/setInterval)
+    const allowed = prev ? intervalMinutesAfter({ longIntervalAfterSet2: longIntervalAfterSet2 === true }, prev.index) + 2 : 5
+    if (minutes > allowed) {
       plan.suggestedRemark = remarkText('delayedStart', {
         set,
         time: remarkClock(new Date(startMs)),

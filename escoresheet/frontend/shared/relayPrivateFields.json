@@ -181,6 +181,7 @@
     "linesman2",
     "listSource",
     "liveClockOffsetMs",
+    "longIntervalAfterSet2",
     "matchGender",
     "matchInfo",
     "matchInfoConfirmedAt",

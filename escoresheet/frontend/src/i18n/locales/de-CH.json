@@ -336,6 +336,8 @@
     "senior": "Senior",
     "otherLevel": "Anderi Stufe",
     "matchFormat": "Spiilformat",
+    "longIntervalAfterSet2": "10-Minute-Pause nach Satz 2",
+    "longIntervalAfterSet2Hint": "D Pause nach Satz 2 duuret 10 statt 3 Minute, wänn de zueständig Verband si verlängeret. De nächscht Satz wird 10 Minute nach em Änd vom Satz 2 vorgschlage.",
     "chooseMatchFormat": "Uswähle…",
     "matchFormatRequired": "Zerscht s Spiilformat wähle (Best of 3 oder Best of 5).",
     "lockedAfterCoinToss": "D Usloosig isch gmacht: d Spiiliirichtig cha nüm gänderet werde, usser d Trikotfarbe (tipp uf es Trikot). En Kader im Spiilmenü ändere (Heimkader bearbeite, Gastkader bearbeite), Halle, Spiilnummere, Schiris, Churznäme und anderi Spiilaagabe mit Spiilinfo bearbeite.",

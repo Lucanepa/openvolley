@@ -335,6 +335,8 @@
     "senior": "Senior",
     "otherLevel": "Autre niveau",
     "matchFormat": "Format du match",
+    "longIntervalAfterSet2": "Pause de 10 minutes après le set 2",
+    "longIntervalAfterSet2Hint": "La pause après le set 2 dure 10 minutes au lieu de 3, si l'instance compétente la prolonge. Le set suivant est proposé 10 minutes après la fin du set 2.",
     "chooseMatchFormat": "Choisir…",
     "matchFormatRequired": "Choisis d’abord le format du match (best of 3 ou best of 5).",
     "lockedAfterCoinToss": "Le tirage au sort est fait : la configuration du match est en lecture seule, sauf les couleurs des maillots (appuie sur un maillot). Modifie un effectif depuis le menu du match (Modifier la composition domicile ou visiteur), et la salle, le numéro du match, les arbitres, les noms courts et d’autres données avec Modifier les infos du match.",

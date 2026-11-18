@@ -65,6 +65,7 @@ import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from 
 import { sendsCloudBackup } from '../utils/globalCloud'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
+import { breakSecondsAfter, hasLongIntervalAfterSet2, isLongInterval, retimedBreakLength } from '../domain/setInterval'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getToolMode } from '../utils/toolMode'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from '../domain/rules'
@@ -3660,6 +3661,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return !hasSetStarted
   }, [data?.sets, data?.set, data?.events])
 
+  // The length of the break before the current set (its countdown's total):
+  // 10 minutes after set 2 when the match says so, else the device's setting
+  const currentBreakSeconds = useMemo(() => {
+    const previousSet = findPreviousSet(data?.sets, data?.set?.index || 1)
+    return breakSecondsAfter(data?.match, previousSet?.index, setIntervalDuration)
+  }, [data?.sets, data?.set?.index, data?.match, setIntervalDuration])
+
   // Why a team's regular time-out / substitution is closed now (replay
   // pending; time-outs also in the set interval, where one would count in
   // the next set: R15, R18.1), or null (domain/interruptionRequests.js)
@@ -3690,7 +3698,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Calculate remaining time based on previous set's endTime
       const currentSetIndex = data?.set?.index || 1
       const previousSet = findPreviousSet(data?.sets, currentSetIndex)
-      let remainingTime = setIntervalDuration
+      // 10 minutes after set 2 when the match says so, else the device's setting
+      const breakSeconds = breakSecondsAfter(data?.match, previousSet?.index, setIntervalDuration)
+      let remainingTime = breakSeconds
 
       // The interval runs from the set end's confirmation: its set_end event
       // (the set's endTime is rounded down to the minute, up to 59 s early)
@@ -3701,7 +3711,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const now = Date.now()
         const elapsedSeconds = Math.floor((now - endTime) / 1000)
         // never more than the interval (a clock set back since the set end)
-        remainingTime = Math.min(setIntervalDuration, Math.max(0, setIntervalDuration - elapsedSeconds))
+        remainingTime = Math.min(breakSeconds, Math.max(0, breakSeconds - elapsedSeconds))
       }
 
       // If time has already elapsed, mark as dismissed
@@ -3716,7 +3726,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       countdownDismissedRef.current = false // Reset for next time
       intervalEndedByHandRef.current = false
     }
-  }, [isBetweenSets, setIntervalDuration, data?.set?.index, data?.sets]) // Removed betweenSetsCountdown from deps to prevent restart loop
+  }, [isBetweenSets, setIntervalDuration, data?.set?.index, data?.sets, data?.match?.longIntervalAfterSet2]) // Removed betweenSetsCountdown from deps to prevent restart loop
+
+  // The 10-minute switch changed (Edit match info) while the break after
+  // set 2 runs: the countdown keeps its start and ends at the start + the new
+  // length (domain/setInterval retimedBreakLength); a break over by then ends
+  // on the next tick. A break that ran out or was ended stays so. The tablets
+  // follow the match's switch themselves (Referee).
+  const longIntervalSeenRef = useRef(null)
+  const longIntervalOn = data?.match ? hasLongIntervalAfterSet2(data.match) : null
+  useEffect(() => {
+    if (longIntervalOn === null) return
+    const before = longIntervalSeenRef.current
+    longIntervalSeenRef.current = longIntervalOn
+    if (before === null || before === longIntervalOn) return
+    if (!betweenSetsCountdown?.started || !betweenSetsStartTimestampRef.current) return
+    const previousSet = findPreviousSet(data?.sets, data?.set?.index || 1)
+    if (!isLongInterval({ longIntervalAfterSet2: true }, previousSet?.index)) return
+    const oldLength = breakSecondsAfter({ longIntervalAfterSet2: before }, previousSet.index, setIntervalDuration)
+    const newLength = breakSecondsAfter({ longIntervalAfterSet2: longIntervalOn }, previousSet.index, setIntervalDuration)
+    betweenSetsInitialCountdownRef.current = retimedBreakLength(betweenSetsInitialCountdownRef.current, oldLength, newLength)
+    const remaining = secondsLeft(betweenSetsAnchorRef.current, betweenSetsInitialCountdownRef.current)
+    if (remaining <= 0) {
+      // over by now: ends as when its clock runs out
+      countdownDismissedRef.current = true
+      betweenSetsStartTimestampRef.current = null
+      setBetweenSetsCountdown(null)
+      return
+    }
+    setBetweenSetsCountdown(prev => (prev && prev.started ? { ...prev, countdown: remaining } : prev))
+  }, [longIntervalOn]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { longIntervalSeenRef.current = null }, [matchId])
 
   // Handle between-sets countdown timer
   useEffect(() => {
@@ -3906,8 +3946,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Fallback start (no set_end push in this session): the scorer's
       // countdown; none running (it ran out): the set end's (the live state
       // looks it up)
+      const breakSeconds = breakSecondsAfter(match, previousSet?.index, setIntervalDuration)
       const startTs = betweenSetsStartTimestampRef.current
-        ? betweenSetsStartTimestampRef.current - (setIntervalDuration - (betweenSetsInitialCountdownRef.current || setIntervalDuration)) * 1000
+        ? betweenSetsStartTimestampRef.current - (breakSeconds - (betweenSetsInitialCountdownRef.current || breakSeconds)) * 1000
         : null
       intervalInfo = {
         duringInterval: true,
@@ -6472,9 +6513,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Show set start time confirmation: set 1 the scheduled time (on the day
       // played, any match but an Easy one), sets 2-5 the last set's end + 3 min
+      // (+ 10 after set 2 with the match's 10-minute interval, domain/setInterval)
       const allSets = await db.sets.where('matchId').equals(matchId).toArray()
       const scheduledAt = startScheduleOf(data?.match)
-      const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt })
+      const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt, longIntervalAfterSet2: hasLongIntervalAfterSet2(data?.match) })
       const fromSchedule = startsFromSchedule({ setIndex: data?.set?.index, scheduledAt })
 
       deferUi(() => setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime, fromSchedule }))
@@ -7341,9 +7383,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // Start countdown immediately when set ends (not match end)
         // Reset dismissed flag and start countdown
-        console.log('[SET_END] Starting between-sets countdown:', { duration: setIntervalDuration })
+        // 10 minutes after set 2 when the match says so, else the device's setting
+        const breakSeconds = breakSecondsAfter(matchRecord || data?.match, setIndex, setIntervalDuration)
+        console.log('[SET_END] Starting between-sets countdown:', { duration: breakSeconds })
         countdownDismissedRef.current = false
-        setBetweenSetsCountdown({ countdown: setIntervalDuration, started: true })
+        setBetweenSetsCountdown({ countdown: breakSeconds, started: true })
 
         // Send set_end action to referee to show countdown
         console.log('[SET_END] Sending set_end action to Referee:', {
@@ -7351,7 +7395,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           winner: winner,
           homePoints: homePoints,
           awayPoints: awayPoints,
-          countdown: setIntervalDuration,
+          countdown: breakSeconds,
           homeSetsWon,
           awaySetsWon
         })
@@ -7360,7 +7404,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           winner: winner,
           homePoints: homePoints,
           awayPoints: awayPoints,
-          countdown: setIntervalDuration,
+          countdown: breakSeconds,
           startTimestamp: Date.now(),
           homeSetsWon,
           awaySetsWon
@@ -8000,7 +8044,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // 0: the break's time ran out; the tablets keep it all the same until
     // the setup is confirmed (as before the confirmation). Never more than
     // the break (a clock set back since the set end).
-    const remaining = Math.min(setIntervalDuration, Math.max(0, setIntervalDuration - Math.floor((Date.now() - startMs) / 1000)))
+    const breakSeconds = breakSecondsAfter(await db.matches.get(matchId), previousSet.index, setIntervalDuration)
+    const remaining = Math.min(breakSeconds, Math.max(0, breakSeconds - Math.floor((Date.now() - startMs) / 1000)))
     const winner = previousSet.homePoints > previousSet.awayPoints ? 'home' : 'away'
     const finished = sets.filter(s => s.finished)
     return {
@@ -8010,7 +8055,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         winner,
         homePoints: previousSet.homePoints,
         awayPoints: previousSet.awayPoints,
-        countdown: setIntervalDuration,
+        countdown: breakSeconds,
         startTimestamp: startMs,
         homeSetsWon: finished.filter(s => s.homePoints > s.awayPoints).length,
         awaySetsWon: finished.filter(s => s.awayPoints > s.homePoints).length
@@ -14349,7 +14394,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ...(betweenSetsCountdown ? {
           countdown: betweenSetsCountdown.countdown,
           countdownText: betweenSetsCountdown.countdown <= 0 ? '0' : formatCountdown(betweenSetsCountdown.countdown),
-          total: setIntervalDuration
+          total: currentBreakSeconds
         } : {})
       }
     } else if (betweenSetsCountdown) {
@@ -14357,7 +14402,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         kind: 'interval',
         countdown: betweenSetsCountdown.countdown,
         countdownText: betweenSetsCountdown.countdown <= 0 ? '0' : formatCountdown(betweenSetsCountdown.countdown),
-        total: setIntervalDuration
+        total: currentBreakSeconds
       }
     }
 
@@ -18017,7 +18062,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           marginRight: 'auto'
                         }}>
                           <div style={{
-                            width: `${setIntervalDuration > 0 ? (betweenSetsCountdown.countdown / setIntervalDuration) * 100 : 0}%`,
+                            width: `${currentBreakSeconds > 0 ? (betweenSetsCountdown.countdown / currentBreakSeconds) * 100 : 0}%`,
                             height: '100%',
                             background: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
                             borderRadius: '4px',
@@ -18052,7 +18097,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       marginRight: 'auto'
                     }}>
                       <div style={{
-                        width: `${(betweenSetsCountdown.countdown / setIntervalDuration) * 100}%`,
+                        width: `${currentBreakSeconds > 0 ? (betweenSetsCountdown.countdown / currentBreakSeconds) * 100 : 0}%`,
                         height: '100%',
                         background: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
@@ -23524,7 +23569,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   // closes in the change that opens it (no frame without a dialog).
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
                   const scheduledAt = startScheduleOf(data?.match)
-                  const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt })
+                  const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt, longIntervalAfterSet2: hasLongIntervalAfterSet2(data?.match) })
                   const fromSchedule = startsFromSchedule({ setIndex: data?.set?.index, scheduledAt })
                   setLiberoReminder(null)
                   setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime, fromSchedule })

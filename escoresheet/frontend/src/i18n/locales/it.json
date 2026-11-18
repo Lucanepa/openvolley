@@ -336,6 +336,8 @@
     "senior": "Senior",
     "otherLevel": "Altro livello",
     "matchFormat": "Formato della partita",
+    "longIntervalAfterSet2": "Intervallo di 10 minuti dopo il set 2",
+    "longIntervalAfterSet2Hint": "L'intervallo dopo il set 2 dura 10 minuti invece di 3, se l'organo competente lo prolunga. Il set successivo viene proposto 10 minuti dopo la fine del set 2.",
     "chooseMatchFormat": "Scegli…",
     "matchFormatRequired": "Scegli prima il formato della partita (best of 3 o best of 5).",
     "lockedAfterCoinToss": "Il coin toss è fatto: l’impostazione della partita è in sola lettura, tranne i colori delle maglie (tocca una maglia). Modifica una rosa dal menu della partita (Modifica rosa squadra casa o ospite), e la palestra, il numero di gara, gli arbitri, i nomi brevi e altri dati con Modifica info partita.",
