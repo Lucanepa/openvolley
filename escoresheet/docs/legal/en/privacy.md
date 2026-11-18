@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.19 · As of 17 November 2026
+**OpenVolley and OpenBeach** · Version 1.20 · As of 18 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -521,8 +521,6 @@ Without an account and without a PIN, the following is visible:
 - **LED boards** in the hall: team names and score.
 - **Match assignments** (section 11): match data with the names of referees
   and line judges, without dates of birth.
-- **Referee directory** (section 11): first and last name, country, without
-  dates of birth.
 - **Public beach tournaments** (section 10): teams, players' first and last
   names and countries, seeding, rank, schedule, courts.
 
@@ -662,9 +660,10 @@ assignments are kept like the match records (section 16).
 **Referee directory:** a shared directory with first and last name, country,
 date of birth and sport, so the scorer does not have to enter officials again
 each time. Signed-in accounts can add entries (a date of birth only an
-account that scores); administrators can change and delete them. Names and
-country are public; dates of birth are visible only to the administrators and
-the accounts that score.
+account that scores); administrators can change and delete them. Only the
+administrators and the accounts that score can see the directory, to fill in
+the officials of an official match; it is not public, and test and easy
+matches do not show it.
 
 If you do not want to be in the directory, write to support@openvolley.app.
 

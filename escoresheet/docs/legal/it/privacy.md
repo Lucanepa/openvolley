@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.19 · Aggiornata al 17 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.20 · Aggiornata al 18 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -567,8 +567,6 @@ Senza account e senza PIN sono visibili:
 - **Tabelloni LED** in palestra: nomi delle squadre e punteggio.
 - **Designazioni ufficiali** (sezione 11): dati della partita con i nomi
   degli arbitri e dei giudici di linea, senza date di nascita.
-- **Elenco degli arbitri** (sezione 11): nome e cognome, paese, senza date di
-  nascita.
 - **Tornei di beach volley pubblici** (sezione 10): squadre, nomi, cognomi e
   paesi delle giocatrici e dei giocatori, teste di serie, classifica,
   calendario, campi.
@@ -725,8 +723,10 @@ i verbali delle partite (sezione 16).
 nascita e sport, affinché il segnapunti non debba inserire ogni volta gli
 ufficiali di gara. Gli account con accesso possono aggiungere voci (una data
 di nascita solo un account che referta); gli amministratori possono
-modificarle e cancellarle. Nomi e paese sono pubblici; le date di nascita
-sono visibili solo agli amministratori e agli account che refertano.
+modificarle e cancellarle. Solo gli amministratori e gli account che
+refertano vedono l'elenco, per inserire gli ufficiali di gara di una partita
+ufficiale; non è pubblico, e le partite di prova e le partite Easy non lo
+mostrano.
 
 Se non desideri figurare nell'elenco, scrivi a support@openvolley.app.
 

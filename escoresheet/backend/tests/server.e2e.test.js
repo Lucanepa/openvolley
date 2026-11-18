@@ -624,7 +624,7 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     }
   })
 
-  it('anonymous reads of referee_database and svrz_games get no referee dates of birth', async () => {
+  it('the referee directory is refused without a scorer role; svrz_games reads get no referee dates of birth', async () => {
     const DOB1 = '1971-05-06'
     const DOB2 = '1984-07-08'
     const c = new pg.Client({ connectionString: db.url })
@@ -638,15 +638,17 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     } finally { await c.end() }
     const leaks = (text) => text.includes(DOB1) || text.includes(DOB2)
 
-    // The officials picker's query, anonymous: names stay, dob goes
-    const refs = await api(srv.base, '/api/db', { proto: null, body: { table: 'referee_database', action: 'select', params: {
-      columns: 'first_name, last_name, country, dob, created_at',
-      filters: [{ type: 'contains', column: 'sport_type', value: '["indoor"]' }],
-      order: [{ column: 'last_name', ascending: true }]
-    } } })
-    assert.equal(refs.status, 200, refs.text)
-    assert.equal(leaks(refs.text), false, refs.text.slice(0, 300))
-    assert.ok(refs.json.data.some((r) => r.last_name === 'Dobtest' && r.first_name === 'Dora'))
+    // The officials picker's query, anonymous: refused, not even the names
+    for (const columns of ['first_name, last_name, country, dob, created_at', 'id, last_name']) {
+      const refs = await api(srv.base, '/api/db', { proto: null, body: { table: 'referee_database', action: 'select', params: {
+        columns,
+        filters: [{ type: 'contains', column: 'sport_type', value: '["indoor"]' }],
+        order: [{ column: 'last_name', ascending: true }]
+      } } })
+      assert.equal(refs.status, 401, refs.text)
+      assert.equal(refs.json.error.code, 'OV_SIGN_IN_REQUIRED')
+      assert.equal(refs.text.includes('Dobtest'), false)
+    }
     // The official-match loader, anonymous
     const games = await api(srv.base, '/api/db', { proto: null, body: { table: 'svrz_games', action: 'select', params: {
       columns: '*', filters: [{ type: 'eq', column: 'league', value: 'H2' }], order: [{ column: 'datetime', ascending: true }]
@@ -654,8 +656,8 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(games.status, 200, games.text)
     assert.equal(leaks(games.text), false, games.text.slice(0, 300))
     assert.ok(games.json.data.some((g) => g.game_number === 'E2E-DOB' && g.referee_1_last_name === 'Dobtest'))
-    // dob cannot be probed through a filter
-    const probe = await api(srv.base, '/api/db', { proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: DOB1 }] } } })
+    // svrz_games' dob cannot be probed through a filter
+    const probe = await api(srv.base, '/api/db', { proto: null, body: { table: 'svrz_games', action: 'select', params: { columns: 'id', filters: [{ type: 'eq', column: 'referee_1_dob', value: DOB1 }] } } })
     assert.equal(probe.status, 400, probe.text)
     assert.equal(probe.json.error.code, 'OV_SECRET_FILTER')
     // The intended reader: a scorer of the sport gets the dates of birth
@@ -668,17 +670,21 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     const myRefs = await refsOf(token)
     assert.equal(myRefs.status, 200, myRefs.text)
     assert.equal(String(myRefs.json.data[0].dob).slice(0, 10), DOB1)
-    // A signed-in account without a role reads them like an anonymous caller
+    // A signed-in account without a role reads the schedule like an anonymous
+    // caller, and is refused the directory
     const roleless = await otherAccount([])
     const theirGame = await gameOf(roleless)
     assert.equal(theirGame.status, 200, theirGame.text)
     assert.equal(leaks(theirGame.text), false, theirGame.text.slice(0, 300))
     assert.equal(theirGame.json.data.referee_1_last_name, 'Dobtest')
     const theirRefs = await refsOf(roleless)
-    assert.equal(theirRefs.status, 200, theirRefs.text)
-    assert.equal(leaks(theirRefs.text), false, theirRefs.text.slice(0, 300))
-    const theirProbe = await api(srv.base, '/api/db', { token: roleless, proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: DOB1 }] } } })
-    assert.equal(theirProbe.status, 400, theirProbe.text)
+    assert.equal(theirRefs.status, 403, theirRefs.text)
+    assert.equal(theirRefs.json.error.code, 'OV_REFEREE_DIRECTORY')
+    assert.equal(theirRefs.text.includes('Dobtest'), false)
+    // A token that no longer verifies: 401, like the other reads
+    const stale = await refsOf('not-a-valid-token')
+    assert.equal(stale.status, 401, stale.text)
+    assert.equal(stale.json.error.code, 'invalid_token')
   })
 
   it('validates connection PINs server-side without returning them', async () => {

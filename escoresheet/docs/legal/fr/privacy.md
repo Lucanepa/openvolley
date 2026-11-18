@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.19 · État au 17 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.20 · État au 18 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -603,8 +603,6 @@ Sans compte et sans NIP, sont visibles :
 - **Panneaux LED** dans la salle : noms des équipes et score.
 - **Convocations officielles** (section 11) : données du match avec les noms
   des arbitres et juges de ligne, sans dates de naissance.
-- **Répertoire des arbitres** (section 11) : prénom et nom, pays, sans dates
-  de naissance.
 - **Tournois de beach-volley publics** (section 10) : équipes, prénoms, noms
   et pays des joueuses et joueurs, têtes de série, classement, programme,
   terrains.
@@ -768,9 +766,10 @@ procès-verbaux de match (section 16).
 date de naissance et sport, afin que le marqueur n'ait pas à saisir les
 officiels à chaque fois. Les comptes connectés peuvent ajouter des entrées
 (une date de naissance seulement un compte qui marque) ; les administrateurs
-peuvent les modifier et les supprimer. Les noms et le pays sont publics ; les
-dates de naissance ne sont visibles que pour les administrateurs et les
-comptes qui marquent.
+peuvent les modifier et les supprimer. Seuls les administrateurs et les
+comptes qui marquent voient le répertoire, pour saisir les officiels d'un
+match officiel ; il n'est pas public, et les matchs de test et les matchs
+Easy ne l'affichent pas.
 
 Si tu ne souhaites pas figurer dans le répertoire, écris à
 support@openvolley.app.
