@@ -67,6 +67,17 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.5" date="2026-11-18">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.5</url>
+      <description>
+        <ul>
+          <li>Android: the approval PDF no longer fails as "stopped answering" on slow tablets.</li>
+          <li>Live screen: every court of a beach event on TVs (opt-in).</li>
+          <li>Show/hide eye on every password field.</li>
+          <li>The activity log records the match-end scoresheet PDF.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.4" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.4</url>
       <description>
