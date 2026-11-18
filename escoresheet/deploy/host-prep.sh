@@ -155,6 +155,12 @@ preflight() {
   for entry in "${FS_LIST[@]}"; do
     read -r name label size <<<"$entry"
     img="${OV_IMG_DIR}/${name}.img"; mp="${OV_BASE}/${name}"
+    # Encrypted at rest (LUKS2, since 18.11.2026): this host's ${name} lives on
+    # ${OV_IMG_DIR}/${name}-crypt.img, opened as /dev/mapper/ov-${name} with a
+    # key the host never stores. After a reboot it is locked, and this script
+    # would otherwise lay a fresh, empty plaintext filesystem on the bare
+    # mountpoint. Unlock it instead (lenovoserver: ~/ov-ops/ov-vps-unlock.sh).
+    [[ -e "${OV_IMG_DIR}/${name}-crypt.img" ]] && bad "${name} is encrypted (${OV_IMG_DIR}/${name}-crypt.img, LUKS): unlock it with ov-vps-unlock.sh, do not run host-prep (README.md, Encryption at rest)"
     if [[ -e "$img" ]]; then
       local have
       have=$(blkid -o value -s LABEL "$img" 2>/dev/null || true)

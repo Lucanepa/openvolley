@@ -1001,6 +1001,9 @@ section 19 pour leur enfant.
 - Connexions chiffrées (HTTPS) pour tous les sites et le serveur.
 - Les mots de passe, NIP et jetons de connexion ne sont enregistrés sur le
   serveur que sous forme de hachage.
+- La base de données et les fichiers enregistrés se trouvent sur des volumes
+  chiffrés sur le serveur (LUKS2, AES). La clé n'est pas enregistrée sur le
+  serveur.
 - Accès selon les rôles ; tablettes uniquement avec NIP ; les matchs clôturés
   sont en lecture seule.
 - Limitation des tentatives de connexion et blocage après des échecs.

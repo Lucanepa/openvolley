@@ -974,6 +974,9 @@ für ihr Kind ausüben.
 
 - Verschlüsselte Verbindungen (HTTPS) für alle Seiten und den Server.
 - Passwörter, PINs und Anmelde-Token liegen nur als Hash auf dem Server.
+- Die Datenbank und die gespeicherten Dateien liegen auf dem Server auf
+  verschlüsselten Datenträgern (LUKS2, AES). Der Schlüssel liegt nicht auf dem
+  Server.
 - Zugriff nach Rollen; Tablets nur mit PIN; abgeschlossene Spiele sind
   schreibgeschützt.
 - Begrenzung von Anmeldeversuchen und Sperre nach Fehlversuchen.

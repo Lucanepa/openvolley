@@ -346,6 +346,7 @@ the account (4.5a).
 
 | Stage | What | Retention as built |
 |---|---|---|
+| VM (CH, Infomaniak) live data (since 18.11.2026) | Postgres (`/data/openvolley/pg`) and the storage volume (`/data/openvolley/storage`: scoresheets, per-account backups, Global files) on **LUKS2 volumes** (aes-xts-plain64); the key is not on the VM (lenovoserver + NAS, sent over ssh to unlock, `deploy/README.md` Encryption at rest). Not covered: FreeScout (`/opt/freescout`, support mail) and container logs on the root disk | Live data |
 | VM (CH, Infomaniak) `backup-openvolley.sh` | Hourly `pg_dump` of the whole database; nightly tar of `storage/scoresheets` and of `storage/backup` files changed in the last ~26 h. GPG-encrypted to a public key; the private key is never on the VM | DB dumps 48 h (`OV_DB_KEEP_MIN=2880`), file tars 7 days (`OV_FILES_KEEP_DAYS`) |
 | NAS at home (CH), via lenovoserver `ov-backup-pull.sh` (since 09.11.2026; before: `nas-pull.sh`) | lenovoserver copies the encrypted files every hour from the VM to the NAS over Tailscale; the VM holds no key to the NAS. FreeScout's nightly dump (GPG to the same key) goes the same way | DB dumps 30 days, file tars 90 days; **plus btrfs snapshots 7 daily / 4 weekly / 6 monthly** (`nas-pull.sh:10`) |
 | lenovoserver (CH) `restore-test.sh` | Weekly: decrypts the newest dump into `/dev/shm`, restores into a throwaway Postgres, checks, tears down | Nothing kept but a row-count floor file |

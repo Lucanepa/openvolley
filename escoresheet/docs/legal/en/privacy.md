@@ -874,6 +874,8 @@ for their child.
 
 - Encrypted connections (HTTPS) for all sites and the server.
 - Passwords, PINs and sign-in tokens are stored on the server only as hashes.
+- The database and the stored files are kept on encrypted volumes on the
+  server (LUKS2, AES). The key is not stored on the server.
 - Access by role; tablets only with a PIN; closed matches are read-only.
 - Limits on sign-in attempts and locking after failed attempts.
 - Backups: the server backs up the database every hour and the files every

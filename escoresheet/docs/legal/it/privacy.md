@@ -950,6 +950,8 @@ sezione 19 per il proprio figlio.
 
 - Connessioni cifrate (HTTPS) per tutti i siti e il server.
 - Password, PIN e token di accesso sono salvati sul server solo come hash.
+- La banca dati e i file salvati si trovano sul server su volumi cifrati
+  (LUKS2, AES). La chiave non è salvata sul server.
 - Accesso secondo i ruoli; tablet solo con PIN; le partite chiuse sono in sola
   lettura.
 - Limitazione dei tentativi di accesso e blocco dopo tentativi falliti.
