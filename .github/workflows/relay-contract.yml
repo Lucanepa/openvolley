@@ -7,7 +7,8 @@ name: Relay contract
 # contract against it as well: the protocol and the PIN-check budget
 # (lanRelayProtocol), room claims across a restart and the Origin rule
 # (lanRelayClaims), the private-field lists, by-game-number and the roster
-# upload (lanRelayData), and Sign on phone (lanRelaySign).
+# upload (lanRelayData), Sign on phone (lanRelaySign) and Pair a phone
+# (lanRelayPair).
 on:
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - 'escoresheet/frontend/vite-plugin-api-routes.js'
       - 'escoresheet/frontend/shared/**'
       - 'escoresheet/frontend/public/sign/**'
+      - 'escoresheet/frontend/public/pair/**'
       - 'escoresheet/frontend/src/utils/__tests__/lanRelay*.test.js'
       - 'escoresheet/frontend/src/utils/__tests__/tauriRelay.js'
       - 'escoresheet/backend/tests/helpers/*Contract.js'
@@ -32,6 +34,7 @@ on:
       - 'escoresheet/frontend/vite-plugin-api-routes.js'
       - 'escoresheet/frontend/shared/**'
       - 'escoresheet/frontend/public/sign/**'
+      - 'escoresheet/frontend/public/pair/**'
       - 'escoresheet/frontend/src/utils/__tests__/lanRelay*.test.js'
       - 'escoresheet/frontend/src/utils/__tests__/tauriRelay.js'
       - 'escoresheet/backend/tests/helpers/*Contract.js'
@@ -88,13 +91,14 @@ jobs:
         run: npm ci
 
       # The relay embeds dist/ (relay.rs Assets). The contract needs only the
-      # phone page of Sign on phone, so no web build: a stub start page and
-      # public/sign as the build would copy it.
+      # phone pages of Sign on phone and Pair a phone, so no web build: a stub
+      # start page and public/sign + public/pair as the build would copy them.
       - name: Stub dist for the relay
         working-directory: escoresheet/frontend
         run: |
           mkdir -p dist
           cp -r public/sign dist/
+          cp -r public/pair dist/
           printf '<!doctype html><title>OpenVolley relay test</title>\n' > dist/index.html
 
       - name: Rust tests
@@ -115,3 +119,4 @@ jobs:
           src/utils/__tests__/lanRelayClaims.test.js
           src/utils/__tests__/lanRelayData.test.js
           src/utils/__tests__/lanRelaySign.test.js
+          src/utils/__tests__/lanRelayPair.test.js

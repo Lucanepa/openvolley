@@ -12,6 +12,7 @@ import {
 import { LOCAL_ONLY_EVENT_TYPES } from '../../domain/eventRevisions'
 import { onEventHistory } from '../../db/eventHistory'
 import { getActiveMatch, setActiveMatch } from './activeMatch'
+import { isLocalOnly } from '../../domain/matchKind'
 
 // More events than this in one transaction (a backup restore, a test match
 // generator) are one 'event.bulk_add' entry
@@ -251,7 +252,7 @@ export function installActivityHooks(db, writer) {
     if (!obj) return
     const self = this
     const onKey = (key) => {
-      writer.rememberMatch(key, obj.seed_key ?? null, obj.test === true)
+      writer.rememberMatch(key, obj.seed_key ?? null, isLocalOnly(obj))
       afterCommit(tx, () => record('match.create', { status: obj.status ?? null, test: obj.test === true }, { matchId: key }))
     }
     if (primKey != null) onKey(primKey)
@@ -259,8 +260,8 @@ export function installActivityHooks(db, writer) {
   })
   add(db.matches, 'updating', function (mods, primKey, obj, tx) {
     if (!mods) return
-    if ('seed_key' in mods || 'test' in mods) {
-      writer.rememberMatch(primKey, 'seed_key' in mods ? mods.seed_key : obj?.seed_key, 'test' in mods ? mods.test === true : obj?.test === true)
+    if ('seed_key' in mods || 'test' in mods || 'global' in mods) {
+      writer.rememberMatch(primKey, 'seed_key' in mods ? mods.seed_key : obj?.seed_key, isLocalOnly({ ...obj, ...mods }))
     }
     let entries
     try {

@@ -16,6 +16,7 @@ import { coinTossChoiceOf, coinTossDraftOf } from '../domain/coinTossDraft'
 import Modal from './Modal'
 import MenuList from './MenuList'
 import ballFallback from '../ball_fallback.png'
+import { isLocalOnly } from '../domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -35,6 +36,7 @@ import { ArrowLeft, ArrowLeftRight } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
 import { DateField } from '../ui/DateField.jsx'
 import StackLabel from './StackLabel'
+import { MenuPopover } from '../ui/MenuPopover.jsx'
 import { useFormStack } from '../hooks/useFormStack'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { focusLeaves, steadyOrder } from '../utils/rosterOrder'
@@ -284,6 +286,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   useEffect(() => { setRosterEditOrder(null) }, [rosterModal])
   const [signatureMenuA, setSignatureMenuA] = useState(false)
   const [signatureMenuB, setSignatureMenuB] = useState(false)
+  // The Sign A / Sign B buttons: their coach / captain menu hangs from them (ui/MenuPopover.jsx)
+  const signAButtonRef = useRef(null)
+  const signBButtonRef = useRef(null)
   const [addPlayerModal, setAddPlayerModal] = useState(null)
   const [deletePlayerModal, setDeletePlayerModal] = useState(null)
   const [noticeModal, setNoticeModal] = useState(null)
@@ -824,7 +829,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               firstServe: firstServeTeam
             },
             seq: 1,
-            test: !!match?.test,
+            test: isLocalOnly(match),
             created_at: new Date().toISOString()
           },
           ts: Date.now(),
@@ -986,7 +991,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     // Create first set
     const firstSetId = await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
 
-    const isTest = match?.test || false
+    const isTest = isLocalOnly(match)
 
     // Add first set to sync queue (only for official matches)
     if (!isTest && match?.seed_key) {
@@ -1037,7 +1042,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             bench_away: match?.awayTeamPin || ''
           },
           // Signatures JSONB
-          signatures: !match?.test ? {
+          signatures: !isLocalOnly(match) ? {
             home_coach: homeCoachSignature || '',
             home_captain: homeCaptainSignature || '',
             away_coach: awayCoachSignature || '',
@@ -1091,6 +1096,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               timeouts_b: 0,
               subs_a: 0,
               subs_b: 0,
+              // public: no substitution and no finished set yet (domain/livePublicFields)
+              subs_count_a: 0,
+              subs_count_b: 0,
+              set_results: [],
               match_status: 'starting',
               // Match metadata
               game_n: match.gameN || match.game_n || null,
@@ -1164,7 +1173,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     // This is non-blocking - if offline or error, we still proceed (local status is already 'live')
     let verificationSkipped = false
 
-    if (!match?.test && !offlineMode) {
+    if (!isLocalOnly(match) && !offlineMode) {
       setInitModal({ status: 'verifying', message: t('coinToss.verifyingStatus', 'Verifying match status...') })
 
       try {
@@ -1217,7 +1226,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       t,
       backendUrl: getBackendUrl(),
       offlineMode,
-      isTest: !!match?.test,
+      isTest: isLocalOnly(match),
       seedKey: localMatch?.seed_key,
       localMatch,
       matchId,
@@ -1552,6 +1561,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <Button
                 variant="secondary"
                 size="xl"
+                ref={signAButtonRef}
                 onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
                 aria-expanded={signatureMenuA}
                 // h-auto on a phone: a long label (Signature équipe A) takes two lines
@@ -1561,13 +1571,20 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 {t('coinToss.signA')} {teamACoachSig && teamACaptainSig ? '✓' : `(${(teamACoachSig ? 1 : 0) + (teamACaptainSig ? 1 : 0)}/2)`}
               </Button>
               {signatureMenuA && (
-                // Anchored dropdown (white, stone-200 hairline, shadow-card-lg).
-                <div className="rounded-xl border border-stone-200 bg-white shadow-card-lg" style={{
-                  position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
-                  marginTop: '8px', zIndex: 10,
-                  padding: isCompact ? '6px' : '8px',
-                  display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '8px'
-                }}>
+                // The coach / captain menu: under (or, low on the screen, over)
+                // the button, never off the screen; a centred modal on a phone
+                // or a small tablet, where it ran off the bottom (17.11.2026)
+                <MenuPopover
+                  open
+                  onClose={() => setSignatureMenuA(false)}
+                  anchorRef={signAButtonRef}
+                  label={t('coinToss.signA')}
+                  role="group"
+                  align="center"
+                  closeLabel={t('common.close', 'Close')}
+                  className={isCompact ? 'gap-1.5 p-1.5' : 'gap-2 p-2'}
+                  bodyClassName="flex flex-col gap-2"
+                >
                   <Button
                     variant="secondary"
                     size="xl"
@@ -1586,7 +1603,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   >
                     {t('coinToss.coach')} {teamACoachSig ? '✓' : ''}
                   </Button>
-                </div>
+                </MenuPopover>
               )}
             </div>
           </div>
@@ -1648,6 +1665,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <Button
                 variant="secondary"
                 size="xl"
+                ref={signBButtonRef}
                 onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}
                 aria-expanded={signatureMenuB}
                 // h-auto on a phone: a long label (Signature équipe B) takes two lines
@@ -1657,13 +1675,20 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 {t('coinToss.signB')} {teamBCoachSig && teamBCaptainSig ? '✓' : `(${(teamBCoachSig ? 1 : 0) + (teamBCaptainSig ? 1 : 0)}/2)`}
               </Button>
               {signatureMenuB && (
-                // Anchored dropdown (white, stone-200 hairline, shadow-card-lg).
-                <div className="rounded-xl border border-stone-200 bg-white shadow-card-lg" style={{
-                  position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
-                  marginTop: '8px', zIndex: 10,
-                  padding: isCompact ? '6px' : '8px',
-                  display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '8px'
-                }}>
+                // The coach / captain menu: under (or, low on the screen, over)
+                // the button, never off the screen; a centred modal on a phone
+                // or a small tablet, where it ran off the bottom (17.11.2026)
+                <MenuPopover
+                  open
+                  onClose={() => setSignatureMenuB(false)}
+                  anchorRef={signBButtonRef}
+                  label={t('coinToss.signB')}
+                  role="group"
+                  align="center"
+                  closeLabel={t('common.close', 'Close')}
+                  className={isCompact ? 'gap-1.5 p-1.5' : 'gap-2 p-2'}
+                  bodyClassName="flex flex-col gap-2"
+                >
                   <Button
                     variant="secondary"
                     size="xl"
@@ -1682,7 +1707,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   >
                     {t('coinToss.coach')} {teamBCoachSig ? '✓' : ''}
                   </Button>
-                </div>
+                </MenuPopover>
               )}
             </div>
           </div>

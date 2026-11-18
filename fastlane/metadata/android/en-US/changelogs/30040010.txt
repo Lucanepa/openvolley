@@ -1,0 +1,6 @@
+OpenVolley 3.4.1
+- Pair a phone: the scorer's phone types into the tablet's fields.
+- "Scoreboard settings" in the Match menu while a scoreboard display follows.
+- Scoreboards without the PIN show substitution counts and finished sets.
+- Rosters: a roster sent during Match setup shows up; PDF import on older Android; the roster page scrolls.
+- Small screens: menus as a centred window, set tables fit; a substitution dragged in during a time-out can be confirmed.

@@ -225,6 +225,7 @@
     "close": "Schliesse"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Das löscht alli Sätz, Aktione, Spieler und Teamdate vo däm Spiil uf däm Grät.",
     "cancel": "Abbräche",
     "delete": "Lösche",
     "lossTitle": "Die Kopie hät, was de Server nöd hät:",
@@ -306,6 +307,9 @@
     "searchForRoster": "Kader sueche",
     "noSupabaseConnection": "Kei Datebankverbindig verfüegbar. Bitte überprüef dini Verbindigsiistellige.",
     "noRosterFound": "Kei usstehends Kader für das Spiil gfunde.",
+    "searchRosterHint": "«Kader sueche» findet es Kader, wo s Team mit däm PIN uffeglade hät, und eis, wo s über d Manager-Siite gschickt hät.",
+    "sentRosterFound": "S Kader vo {{team}} staht obe: Akzeptier s oder wähl «Nicht jetzt».",
+    "noRosterFoundAnywhere": "No kei Kader für das Spiil: Mit em Upload-PIN isch nüt uffeglade worde, und s Team hät über d Manager-Siite keis gschickt.",
     "errorSearchingRoster": "Fähler bi de Kadersuechi. Bitte nomal probiere.",
     "previewRoster": "Vorschau",
     "rosterPreviewTitle": "Kadervorschau",
@@ -764,6 +768,7 @@
       "openRemarksRecording": "Bemerkige erfasse",
       "stopMatch": "Spiil abbräche",
       "showPins": "PINs aazeige",
+      "scoreboardSettings": "Iistellige vo de Aazeigetafle",
       "showMatchSetup": "Spiiliirichtig aazeige",
       "editMatchInfo": "Spiilinfo bearbeite",
       "downloadGameData": "Spiildate abelade (JSON)",
@@ -1080,6 +1085,10 @@
       "applyDelayWarning": "Verzögerigswarnig für {{team}} erfasse?",
       "applyDelayPenalty": "Verzögerigsstraaf für {{team}} erfasse?",
       "repeatedImproperRequest": "S Team hät scho en nicht ordnungsgemässe Antrag, dä zellt drum als Verzögerig.",
+      "whatRequested": "Was hät s Team beaatreit?",
+      "kindImproper": "Nicht ordnungsgemässe Antrag",
+      "kindIllegalSubstitution": "Unerlaubte Wächsel",
+      "illegalSubstitution": "En unerlaubte Wächsel z beaatreie isch e Verzögerig: de Aatrag wird abglehnt.",
       "repeatedDelay": "S Team hät scho e Verzögerigswarnig, die Verzögerig isch drum e Straaf.",
       "pointToOpponent": "Punkt und Ufschlag für {{opponent}}."
     },
@@ -6484,6 +6493,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Global-Spiil uf livescore.openvolley.app zeige (nur de Spielstand, wie uf de TVs)",
+    "list": {
+      "title": "Global-Spiil",
+      "open": "Live-Screen öffne"
+    },
     "title": "Live-Bildschirm",
     "intro": "Zeigt den Spielstand aller Felder deines Anlasses auf TVs oder einem Beamer, für jedes Spiel. Starte ihn auf einem Schreibergerät und gib den Code auf den anderen ein. Online geht nur der Spielstand (Teamnamen, Punkte, Sätze), nie Spielerinnen und Spieler.",
     "codeLabel": "Live-Bildschirm-Code",
@@ -6509,6 +6523,75 @@
       "interval": "Satzpause",
       "set": "Satz {{n}}",
       "serving": "Aufschlag"
+    }
+  },
+  "rosterPdf": {
+    "tooSlow": "Das Grät hät s PDF nöd chönne läse: Es hät z lang gange. Probier s nomal oder gib d Spieler vo Hand ii.",
+    "failed": "S PDF hät nöd chönne gläse werde: {{reason}}"
+  },
+  "phonePair": {
+    "menu": "Handy koppele (Tastatur)",
+    "title": "Handy koppele",
+    "intro": "Schriib uf dim Handy: Was du det tippsch, chunnt sofort is Textfäld, wo uf dem Grät gwählt isch.",
+    "scanHint": "Scann de QR-Code mit de Handykamera.",
+    "orCode": "Oder mach {{url}} uf em Handy uf und gib dä Code ii:",
+    "code": "Code",
+    "validFor": "Code gültig für {{time}}",
+    "waiting": "Warte uf s Handy…",
+    "paired": "Handy verbunde",
+    "pairedHint": "Tipp uf dem Grät in es Textfäld und schriib dänn uf em Handy. Nächscht Fäld und Enter gönd au vom Handy us.",
+    "phoneAway": "Handy nöd erreichbar",
+    "hideKeyboard": "Tastatur vo dem Grät uusblände, solang s Handy verbunde isch",
+    "unpair": "Entkoppele",
+    "done": "Fertig",
+    "ended": "S Handy isch entkopplet.",
+    "expired": "D Kopplig isch beändet.",
+    "newPairing": "Neu koppele",
+    "startFailed": "D Kopplig hät nöd chöne starte. Probier s nomal.",
+    "notOnServer": "Das Spiel isch no nöd uf em Server (oder es Testspiel): Nimm s Halleznetz oder koppel, sobald s Spiel synchronisiert isch.",
+    "reasonNone": "Zum Koppele bruucht s Internet oder s Halleznetz. Da isch beides nöd verfüegbar.",
+    "reasonSignIn": "Mäld di aa, zum es Handy übers Internet z koppele.",
+    "reasonRole": "Dis Konto cha no kei Handy koppele.",
+    "reasonNoNetwork": "Kei Netz für Handys: Verbind das Grät mit em Halle-WLAN oder schalt sis eigete WLAN ii (Tablets verbinde).",
+    "indicator": "Handy-Tastatur",
+    "indicatorAway": "Handy-Tastatur · nöd erreichbar",
+    "indicatorWaiting": "Handy-Tastatur · wartet",
+    "arrived": "Vom Handy in «{{field}}»",
+    "matchClosed": "S Spiel isch abgschlosse: S Handy isch entkopplet worde.",
+    "textField": "Textfäld"
+  },
+  "globalCloud": {
+    "title": "I de Cloud speichere",
+    "intro": "Haltet das Spiil zuesätzlich online läsbar, ohni Konto: für en Teile-Link, d Liste vom Veranstalter und zum Wiiterfüere uf emene andere Grät. Gfunde über de Backup-Code, gschützt dur de Schiri-PIN, glöscht 180 Täg nach em letschte Speichere.",
+    "needsPin": "S Spiil bruucht zerscht sin Schiri-PIN.",
+    "offline": "Kei Verbindig: wird mit de nächschte Aktion gspeicheret.",
+    "pinRefused": "De Backup-Code isch mit emene andere Schiri-PIN gspeicheret.",
+    "failed": "Speichere i de Cloud hät nöd klappet. Probier s spöter nomal.",
+    "share": "Teile-Link (nur läse)",
+    "shareHint": "Wer de Link hät, gseht s Resultat, d Sätz und s PDF-Matchblatt. Uusschalte beändet de Link.",
+    "copy": "Kopiere",
+    "copied": "Kopiert",
+    "organizer": "Turniercode (optional)",
+    "newOrganizer": "Neue Turniercode",
+    "join": "Verwände",
+    "removeOrganizer": "Entferne",
+    "copyOrganizerLink": "Veranstalter-Link kopiere",
+    "badOrganizer": "Das isch kein Turniercode (10 Buechstabe und Ziffere).",
+    "organizerHint": "Gib uf jedem Schriiber-Grät vom Turnier dä gliich Code ii: De Veranstalter-Link listet alli sini Spiil mit Resultat und PDF.",
+    "otherDevice": "Uf emene andere Grät wiiterfüere: dört uf de Startsiite Spiil widerherstelle wähle und Backup-Code und Schiri-PIN iigäh (Backups obe).",
+    "delete": "Us de Cloud lösche",
+    "page": {
+      "sharedTitle": "Spiil",
+      "organizerTitle": "Turnier",
+      "final": "Schluss",
+      "ended": "Fertig",
+      "live": "Live",
+      "scheduled": "Planet",
+      "pdf": "Matchblatt (PDF)",
+      "notShared": "Das Spiil isch nöd (meh) teilt.",
+      "offline": "Verbindig verlore, neue Versuech…",
+      "loading": "Lade…",
+      "noMatches": "Mit dem Code isch no kei Spiil gspeicheret."
     }
   }
 }

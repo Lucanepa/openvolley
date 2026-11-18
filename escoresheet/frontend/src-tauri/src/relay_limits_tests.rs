@@ -14,6 +14,7 @@ fn conn_meta(ip: &str) -> ConnMeta {
         access: HashMap::new(),
         connected_at: iso_now(),
         scorer_device: None,
+        display: None,
     }
 }
 

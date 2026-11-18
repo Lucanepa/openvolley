@@ -18,6 +18,8 @@ vi.mock('../utils/backendConfig', () => ({
   applyServerParam: vi.fn(),
   serverParamNeedsConfirm: () => false,
   getBackendUrl: () => 'https://backend.openvolley.app',
+  // components/GlobalLiveList: no cloud list in these tests
+  getCloudApiUrl: () => null,
   clearBackendOverride: vi.fn()
 }))
 

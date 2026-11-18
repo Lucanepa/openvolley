@@ -5,6 +5,7 @@
  * scoring rule lives here.
  */
 import { timeLabel } from '../../ui/format'
+import { MENU_MODAL_BELOW } from '../../ui/menuLayout.js'
 
 /** Viewports narrower than this, held upright, get the phone layout (CSS px). */
 export const PHONE_MAX_WIDTH = 600
@@ -134,7 +135,7 @@ export function phoneHeldSideways(displayMode, size, screenSize) {
  * tablet (1280x800) and a laptop, even in a short browser window
  * (1366x650), keep them next to the tapped player.
  */
-export const CENTRED_DIALOGS_BELOW = { short: 700, long: 1100 }
+export const CENTRED_DIALOGS_BELOW = MENU_MODAL_BELOW // the size below which every menu is a centred modal (ui/menuLayout.js)
 
 /**
  * True when the scoring screen centres its court-anchored dialogs and menus

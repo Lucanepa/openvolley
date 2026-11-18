@@ -378,7 +378,9 @@ BEGIN
   FOR r IN SELECT c.oid, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') ORDER BY c.relname LOOP
     SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) INTO visible
-      FROM pg_attribute WHERE attrelid = r.oid AND attnum > 0 AND NOT attisdropped AND attname !~ secret_re;
+      FROM pg_attribute WHERE attrelid = r.oid AND attnum > 0 AND NOT attisdropped AND attname !~ secret_re
+       -- a Global match's device export and PDF (db/046): the summary is enough to browse
+       AND NOT (r.relname = 'global_matches' AND attname IN ('bundle', 'pdf'));
     CONTINUE WHEN visible IS NULL;
     EXECUTE format('CREATE VIEW ov_read.%I AS SELECT %s FROM %s', r.relname, visible, r.oid::regclass);
     EXECUTE format('REVOKE ALL ON ov_read.%I FROM PUBLIC', r.relname);

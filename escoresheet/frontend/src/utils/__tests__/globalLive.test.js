@@ -81,3 +81,18 @@ describe('the court of this device', () => {
     expect(liveCourtUrl('ABCD2345', null)).toBe(null)
   })
 })
+
+describe('the public livescore list (opt-out per device)', () => {
+  beforeEach(() => localStorage.clear())
+  it('lists a Global match unless the device turned it off; never a league, test or Easy match', async () => {
+    const { getLiveListed, setLiveListed, liveListedForMatch } = await import('../globalLive.js')
+    expect(getLiveListed()).toBe(true)
+    expect(liveListedForMatch({ global: true })).toBe(true)
+    for (const m of [{ test: true }, { test: true, easy: true }, { test: false, seed_key: 'g' }, null]) expect(liveListedForMatch(m)).toBe(false)
+    setLiveListed(false)
+    expect(getLiveListed()).toBe(false)
+    expect(liveListedForMatch({ global: true })).toBe(false)
+    setLiveListed(true)
+    expect(liveListedForMatch({ global: true })).toBe(true)
+  })
+})

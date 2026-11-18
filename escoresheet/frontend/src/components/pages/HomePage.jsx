@@ -166,6 +166,9 @@ export default function HomePage({
                 onClick={() => {
                   if (currentOfficialMatch) {
                     showDeleteMatchModal()
+                  } else if (currentTestMatch?.global === true) {
+                    // a Global match is a real one: the delete dialog with its game PIN
+                    showDeleteMatchModal(currentTestMatch.id)
                   } else if (currentTestMatch) {
                     restartTestMatch()
                   }
@@ -176,11 +179,11 @@ export default function HomePage({
               </Button>
               {/* Game PIN: in the match's card, under Delete, as it belongs
                   to that match (owner 2026-11-16, was at the card's foot) */}
-              {currentOfficialMatch?.gamePin && (
+              {(currentOfficialMatch || currentTestMatch)?.gamePin && (
                 <div data-testid="home-game-pin" className="rounded-xl border border-stone-200/70 bg-white px-4 py-2.5 text-center">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-500">{t('home.gamePin')}</div>
                   <div className="mt-0.5 font-mono text-xl font-bold tracking-[0.3em] tabular-nums text-stone-900">
-                    {currentOfficialMatch.gamePin}
+                    {(currentOfficialMatch || currentTestMatch).gamePin}
                   </div>
                 </div>
               )}

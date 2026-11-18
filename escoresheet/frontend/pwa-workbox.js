@@ -19,7 +19,8 @@ export const PRECACHE_GLOB_PATTERNS = ['**/*.{js,mjs,css,html,ico,png,jpg,jpeg,s
 // The phone signing page (public/sign/, docs/qr-signing-spec.md 4.7) is opened
 // by OTHER phones from a QR code, never by the app: not precached, and a
 // navigation to /sign must reach the server (its own page and CSP), never the
-// app shell.
+// app shell. The same for the Pair a phone page (public/pair/,
+// docs/phone-keyboard-spec.md).
 // (vite-plugin-pwa's own defaults are kept: setting globIgnores replaces them)
 // The largest file the service worker precaches. Workbox's default is
 // 2 MiB, and a build whose entry chunk outgrows it fails ("won't be
@@ -30,8 +31,8 @@ export const PRECACHE_MAX_FILE_BYTES = 8 * 1024 * 1024
 
 // assets/404.html: the page host's answer for a file of the build it no
 // longer has (public/assets/404.html, STATIC_ASSETS_ROUTE), not an app file
-export const PRECACHE_GLOB_IGNORES = ['**/node_modules/**/*', 'sw.js', 'workbox-*.js', 'sign/**', 'assets/404.html']
-export const NAVIGATE_FALLBACK_DENYLIST = [/^\/api\//, /^\/sign(\/|$)/]
+export const PRECACHE_GLOB_IGNORES = ['**/node_modules/**/*', 'sw.js', 'workbox-*.js', 'sign/**', 'pair/**', 'assets/404.html']
+export const NAVIGATE_FALLBACK_DENYLIST = [/^\/api\//, /^\/sign(\/|$)/, /^\/pair(\/|$)/]
 
 // Logo files the pages' heads link to (rendered from brand/ by
 // scripts/make-brand-assets.py). The serve ball is not one of them: the code

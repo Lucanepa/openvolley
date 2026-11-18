@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
-import { MENU_PANEL, MENU_TITLE, MENU_SECTION, MENU_ROW, MENU_ROW_DANGER, MENU_SEP, MENU_ICON, itemTone } from './chromeClasses'
+import { useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { MENU_TITLE, MENU_SECTION, MENU_ROW, MENU_ROW_DANGER, MENU_SEP, MENU_ICON, itemTone } from './chromeClasses'
 import { cn } from '../ui/cn.js'
-
-/** Keys that move the focus between the rows of an open menu. */
-const NAV_KEYS = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+import { MenuPopover } from '../ui/MenuPopover.jsx'
+import { useMenusAsModal } from '../ui/menuLayout.js'
 
 /**
  * A toolbar dropdown.
@@ -15,13 +15,17 @@ const NAV_KEYS = ['ArrowDown', 'ArrowUp', 'Home', 'End']
  * hairline and wears the destructive tone (the "End of match" group).
  * Arrow keys / Home / End move between rows, Escape closes and gives the
  * focus back to the button.
+ *
+ * The panel is the app's MenuPopover (ui/MenuPopover.jsx): a popover under
+ * (or, without room, over) the button that never leaves the window, and a
+ * centred modal on phones and small tablets.
  */
 export default function MenuList({
   items = [],
   sections = null,
   columns = 1,
   position = 'right', // 'left' | 'right' | 'center'
-  vertical = 'bottom', // 'bottom' | 'top' - whether menu opens above or below the button
+  vertical = 'bottom', // 'bottom' | 'top' - the side the menu prefers (it takes the other one when that has more room)
   buttonLabel = 'Menu',
   buttonTitle = '',
   menuTitle = '',
@@ -29,127 +33,13 @@ export default function MenuList({
   buttonClassName = '',
   showArrow = true
 }) {
+  const { t } = useTranslation()
   const [showMenu, setShowMenu] = useState(false)
-  const menuRef = useRef(null)
   const buttonRef = useRef(null)
   // Opened from the keyboard (Enter / Space on the button): the first row takes the focus
-  const openedByKeyRef = useRef(false)
-
-  // Close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (showMenu && menuRef.current && !menuRef.current.contains(e.target) && 
-          buttonRef.current && !buttonRef.current.contains(e.target)) {
-        setShowMenu(false)
-      }
-    }
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        setShowMenu(false)
-        if (menuRef.current?.contains(document.activeElement)) buttonRef.current?.focus()
-        return
-      }
-      if (!NAV_KEYS.includes(e.key) || !menuRef.current) return
-      const rows = [...menuRef.current.querySelectorAll('[role="menuitem"]:not([disabled])')]
-      if (!rows.length) return
-      e.preventDefault()
-      const at = rows.indexOf(document.activeElement)
-      let next = 0
-      if (e.key === 'End') next = rows.length - 1
-      else if (e.key === 'ArrowDown') next = at < 0 ? 0 : (at + 1) % rows.length
-      else if (e.key === 'ArrowUp') next = at < 0 ? rows.length - 1 : (at - 1 + rows.length) % rows.length
-      rows[next].focus()
-    }
-
-    if (showMenu) {
-      document.addEventListener('mousedown', handleClickOutside)
-      document.addEventListener('keydown', handleKeyDown)
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside)
-        document.removeEventListener('keydown', handleKeyDown)
-      }
-    }
-  }, [showMenu])
-
-  // Position menu dynamically
-  useEffect(() => {
-    if (showMenu && buttonRef.current && menuRef.current) {
-      const updatePosition = () => {
-        const buttonRect = buttonRef.current.getBoundingClientRect()
-        const menu = menuRef.current
-        
-        requestAnimationFrame(() => {
-          // Horizontal positioning
-          if (position === 'right') {
-            menu.style.right = `${window.innerWidth - buttonRect.right}px`
-            menu.style.left = 'auto'
-          } else if (position === 'left') {
-            menu.style.left = `${buttonRect.left}px`
-            menu.style.right = 'auto'
-          } else {
-            // center
-            menu.style.left = `${buttonRect.left + (buttonRect.width / 2)}px`
-            menu.style.right = 'auto'
-            menu.style.transform = 'translateX(-50%)'
-          }
-
-          // Vertical positioning
-          if (vertical === 'top') {
-            menu.style.bottom = `${window.innerHeight - buttonRect.top + 4}px`
-            menu.style.top = 'auto'
-          } else {
-            menu.style.top = `${buttonRect.bottom + 4}px`
-            menu.style.bottom = 'auto'
-          }
-
-          // Clamp to viewport bounds
-          const MARGIN = 8
-          const menuRect = menu.getBoundingClientRect()
-          if (menuRect.right > window.innerWidth - MARGIN) {
-            if (menu.style.left !== 'auto') {
-              menu.style.left = `${parseFloat(menu.style.left) - (menuRect.right - (window.innerWidth - MARGIN))}px`
-            } else {
-              menu.style.right = `${parseFloat(menu.style.right) + (menuRect.right - (window.innerWidth - MARGIN))}px`
-            }
-          }
-          if (menuRect.left < MARGIN) {
-            menu.style.left = `${MARGIN}px`
-            menu.style.right = 'auto'
-          }
-          if (menuRect.bottom > window.innerHeight - MARGIN) {
-            menu.style.bottom = `${MARGIN}px`
-            menu.style.top = 'auto'
-          }
-          if (menuRect.top < MARGIN) {
-            menu.style.top = `${MARGIN}px`
-            menu.style.bottom = 'auto'
-          }
-        })
-      }
-
-      updatePosition()
-      window.addEventListener('scroll', updatePosition, true)
-      window.addEventListener('resize', updatePosition)
-
-      return () => {
-        window.removeEventListener('scroll', updatePosition, true)
-        window.removeEventListener('resize', updatePosition)
-      }
-    }
-  }, [showMenu, position, vertical])
-
-  // Opened with Enter / Space: put the focus on the first row, so the arrow keys work at once
-  useEffect(() => {
-    if (!showMenu || !openedByKeyRef.current) return
-    openedByKeyRef.current = false
-    menuRef.current?.querySelector('[role="menuitem"]:not([disabled])')?.focus()
-  }, [showMenu])
-
-  const getPositionStyle = () => {
-    // Will be set dynamically via useEffect
-    return {}
-  }
+  const [openedByKey, setOpenedByKey] = useState(false)
+  // As a modal the menu's name is the modal's title
+  const asModal = useMenusAsModal()
 
   const renderRow = (item, index) => {
     // Callers colour a row through item.style (e.g. red "Stop the Match") or
@@ -218,6 +108,8 @@ export default function MenuList({
     )
   }
 
+  const name = menuTitle || buttonTitle || (typeof buttonLabel === 'string' ? buttonLabel : '')
+
   return (
     <div style={{ position: 'relative' }}>
       <button
@@ -230,7 +122,7 @@ export default function MenuList({
         onClick={(e) => {
           e.stopPropagation()
           // detail === 0: a click synthesised by Enter / Space, not a pointer
-          openedByKeyRef.current = !showMenu && e.detail === 0
+          setOpenedByKey(!showMenu && e.detail === 0)
           setShowMenu(!showMenu)
         }}
         style={{
@@ -256,34 +148,37 @@ export default function MenuList({
           </span>
         )}
       </button>
-      
-      {/* Menu List: white anchored dropdown, 48 px rows (volleyui menu) */}
-      {showMenu && (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label={menuTitle || undefined}
-          onClick={(e) => e.stopPropagation()}
-          className={cn('ov-kit fixed', MENU_PANEL, 'min-w-[220px] max-h-[calc(100vh-16px)] overflow-y-auto')}
-          style={{ ...getPositionStyle(), zIndex: 1000 }}
-        >
-          {/* A grouped menu names its sections instead (the title stays its aria-label) */}
-          {menuTitle && !sections && (
-            <div className={MENU_TITLE}>
-              {menuTitle}
-            </div>
-          )}
-          {sections ? renderSections() : items.map((item, index) => {
-            if (item.separator) {
-              return <div key={`separator-${index}`} role="separator" className={MENU_SEP} />
-            }
-            if (item.header) {
-              return <div key={`header-${index}`} className={MENU_SECTION}>{item.header}</div>
-            }
-            return renderRow(item, index)
-          })}
-        </div>
-      )}
+
+      {/* Menu List: white anchored dropdown, 48 px rows (volleyui menu); a centred modal on small screens */}
+      <MenuPopover
+        open={showMenu}
+        onClose={() => setShowMenu(false)}
+        anchorRef={buttonRef}
+        label={name || undefined}
+        title={name || undefined}
+        align={position === 'left' ? 'start' : position === 'center' ? 'center' : 'end'}
+        side={vertical === 'top' ? 'top' : 'bottom'}
+        autoFocus={openedByKey}
+        modalSize={sections && columns > 1 ? 'lg' : 'sm'}
+        closeLabel={t('common.close', 'Close')}
+        className="min-w-[220px]"
+      >
+        {/* A grouped menu names its sections instead (the title stays its aria-label) */}
+        {menuTitle && !sections && !asModal && (
+          <div className={MENU_TITLE}>
+            {menuTitle}
+          </div>
+        )}
+        {sections ? renderSections() : items.map((item, index) => {
+          if (item.separator) {
+            return <div key={`separator-${index}`} role="separator" className={MENU_SEP} />
+          }
+          if (item.header) {
+            return <div key={`header-${index}`} className={MENU_SECTION}>{item.header}</div>
+          }
+          return renderRow(item, index)
+        })}
+      </MenuPopover>
     </div>
   )
 }

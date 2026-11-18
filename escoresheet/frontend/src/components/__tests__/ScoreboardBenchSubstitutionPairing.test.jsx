@@ -2,8 +2,9 @@
 // allow (the starter-substitute pairing, FIVB 15.6.2), as the court player's
 // menu does: a bench player who never played may come in for a starter, not
 // for a substitute (only the starter that substitute replaced may come back
-// for him). Such a court player is listed under "Not allowed" with why, and a
-// tap opens the request warning "Illegal substitution" (a delay, 16.1.3).
+// for him). Such a court player is not offered (owner 17.11: no "Not allowed"
+// list); an illegal substitution request is recorded from the team's Improper
+// request dialog: rejected, a delay on the delay ladder (16.1.3, 16.2).
 // On the real scoring screen over the app's real Dexie database (fake
 // IndexedDB), at tablet width. Network is off: no relay socket, no fetch.
 import 'fake-indexeddb/auto'
@@ -128,38 +129,86 @@ const substitutionChips = () => [...benchMenu().querySelectorAll('button')]
   .filter(text => /^\d+$/.test(text))
 
 describe('Scoreboard: the bench menu keeps the starter-substitute pairing (FIVB 15.6.2)', () => {
-  it('a bench player who never played is not offered for a substitute on court: "Not allowed" with why, a tap opens the illegal-substitution warning', async () => {
+  it('a bench player who never played is not offered for a substitute on court, and the menu has no "Not allowed" list (owner 17.11)', async () => {
     const matchId = await setUpMatch()
     await openBenchSubstitutions(matchId)
     // #12 may come in for the starters, not for #9 (who came in for #5)
     expect(substitutionChips()).toEqual(['1', '2', '3', '4', '6'])
-
-    fireEvent.click(screen.getByTestId('bench-menu-illegal-toggle'))
-    const illegal = await waitFor(() => screen.getByTestId('bench-menu-illegal-9'))
-    expect(illegal.textContent).toContain('Wrong partner')
-    fireEvent.click(illegal)
-
-    const warning = await waitFor(() => screen.getByTestId('request-warning'))
-    expect(warning.getAttribute('data-reason')).toBe('illegal_substitution')
-    expect(warning.textContent).toContain('#12 cannot come in for #9')
-    // nothing was recorded: #9 stays on court
-    expect(await ofType('substitution')).toHaveLength(1)
-    expect(document.querySelector('[data-bench-player-action-menu]')).toBeNull()
+    expect(benchMenu().textContent).not.toContain('Not allowed')
+    expect(screen.queryByTestId('bench-menu-illegal-toggle')).toBeNull()
+    expect(screen.queryByTestId('bench-menu-illegal-9')).toBeNull()
   }, 60000)
 
-  it('choosing "reject + delay sanction" in that warning records the delay warning, no substitution', async () => {
+  it('the team\'s Improper request records an illegal substitution request: rejected, a delay warning, no improper request', async () => {
     const matchId = await setUpMatch()
-    await openBenchSubstitutions(matchId)
-    fireEvent.click(screen.getByTestId('bench-menu-illegal-toggle'))
-    fireEvent.click(await waitFor(() => screen.getByTestId('bench-menu-illegal-9')))
-    const warning = await waitFor(() => screen.getByTestId('request-warning'))
+    mount(matchId)
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
     await settle()
-    fireEvent.click(warning.querySelector('[data-option="illegal"]'))
+    fireEvent.click(button('Improper request'))
+    const dialog = await waitFor(() => screen.getByTestId('team-sanction-confirm'))
+    expect(dialog.textContent).toContain('What did the team request?')
+    // an improper request until the scorer says otherwise
+    expect(screen.getByTestId('ir-kind-improper').getAttribute('aria-pressed')).toBe('true')
+    expect(dialog.textContent).toContain('Record an improper request for')
+    fireEvent.click(screen.getByTestId('ir-kind-illegal'))
+    await waitFor(() => expect(screen.getByTestId('ir-kind-illegal').getAttribute('aria-pressed')).toBe('true'))
+    expect(dialog.textContent).toContain('Requesting an illegal substitution is a delay: the request is rejected.')
+    expect(dialog.textContent).toContain('FIVB 15.10.4 · 16.1.3')
+    expect(dialog.textContent).toContain('Record a delay warning for')
+    await settle()
+    fireEvent.click(button('Yes', dialog))
     await waitFor(async () => expect(await ofType('sanction')).toHaveLength(1), { timeout: 5000 })
-    expect((await ofType('sanction'))[0].payload).toMatchObject({ team: 'home', type: 'delay_warning' })
-    const subs = await ofType('substitution')
-    expect(subs).toHaveLength(1)
-    expect(subs[0].payload).toMatchObject({ playerOut: 5, playerIn: 9 })
+    const sanction = (await ofType('sanction'))[0].payload
+    expect(sanction.type).toBe('delay_warning')
+    const match = await db.matches.get(matchId)
+    expect(match.sanctions?.improperRequestHome).toBeFalsy()
+    expect(match.sanctions?.improperRequestAway).toBeFalsy()
+    expect(match.sanctions?.[sanction.team === 'home' ? 'delayWarningHome' : 'delayWarningAway']).toBe(true)
+    // nothing else: #9 stays on court
+    expect(await ofType('substitution')).toHaveLength(1)
+  }, 60000)
+
+  it('the same choice after a delay warning is a delay penalty (16.2)', async () => {
+    const matchId = await setUpMatch()
+    mount(matchId)
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    // the first illegal request: a delay warning
+    fireEvent.click(button('Improper request'))
+    let dialog = await waitFor(() => screen.getByTestId('team-sanction-confirm'))
+    fireEvent.click(screen.getByTestId('ir-kind-illegal'))
+    await settle()
+    fireEvent.click(button('Yes', dialog))
+    await waitFor(async () => expect(await ofType('sanction')).toHaveLength(1), { timeout: 5000 })
+    const team = (await ofType('sanction'))[0].payload.team
+    await waitFor(() => expect(screen.queryByTestId('team-sanction-confirm')).toBeNull())
+    await settle()
+    // the same team again (its Improper request button is the first one still there)
+    fireEvent.click(button('Improper request'))
+    dialog = await waitFor(() => screen.getByTestId('team-sanction-confirm'))
+    fireEvent.click(screen.getByTestId('ir-kind-illegal'))
+    await waitFor(() => expect(dialog.textContent).toContain('Record a delay penalty for'))
+    expect(dialog.textContent).toContain('The team already has a delay warning, so this delay is a penalty.')
+    await settle()
+    fireEvent.click(button('Yes', dialog))
+    await waitFor(async () => expect(await ofType('sanction')).toHaveLength(2), { timeout: 5000 })
+    expect((await ofType('sanction'))[1].payload).toMatchObject({ team, type: 'delay_penalty' })
+  }, 60000)
+
+  it('"Improper request" in that dialog still records the improper request', async () => {
+    const matchId = await setUpMatch()
+    mount(matchId)
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    fireEvent.click(button('Improper request'))
+    const dialog = await waitFor(() => screen.getByTestId('team-sanction-confirm'))
+    fireEvent.click(screen.getByTestId('ir-kind-illegal'))
+    fireEvent.click(screen.getByTestId('ir-kind-improper'))
+    await waitFor(() => expect(dialog.textContent).toContain('Record an improper request for'))
+    await settle()
+    fireEvent.click(button('Yes', dialog))
+    await waitFor(async () => expect(await ofType('sanction')).toHaveLength(1), { timeout: 5000 })
+    expect((await ofType('sanction'))[0].payload.type).toBe('improper_request')
   }, 60000)
 
   it('a legal pair from the same list is still recorded: #12 in for the starter #4', async () => {

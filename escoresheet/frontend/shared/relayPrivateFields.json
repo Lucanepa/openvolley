@@ -28,7 +28,8 @@
     "pendingTeam1Roster",
     "pendingTeam2Roster",
     "pending_team1_roster",
-    "pending_team2_roster"
+    "pending_team2_roster",
+    "globalKey"
   ],
   "matchRosterFields": [
     "players_home",

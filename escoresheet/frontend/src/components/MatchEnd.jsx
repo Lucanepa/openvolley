@@ -33,6 +33,7 @@ import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 import { diagnosticLogQuery } from '../utils/activity/logQuery'
 import { listActivity } from '../utils/activity'
 import { preload, usePreloaded } from '../utils/preload'
+import { isLocalOnly } from '../domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -536,7 +537,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // publishEndedLiveStates), and the livescore kept the game running for
   // good. Tried once a Match End shows, again when the queue drains or the
   // device comes back online, until it is done.
-  const officialSeedKey = data?.match && data.match.test !== true ? seedKey : null
+  const officialSeedKey = data?.match && !isLocalOnly(data.match) ? seedKey : null
   useEffect(() => {
     if (!officialSeedKey) return undefined
     let done = false
@@ -810,7 +811,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // Approved here without the official PDF on its way to the server
   // ("Approve without PDF", or the queue refused the file): made again from
   // the approved view, and Close match warns while it is missing
-  const pdfMissing = !match.test && !!match.seed_key && match.approved === true && match.scoresheetPdfMissing === true
+  const pdfMissing = !isLocalOnly(match) && !!match.seed_key && match.approved === true && match.scoresheetPdfMissing === true
 
   // The assistant scorer and the 2nd referee sign only when the match has
   // them: a named official, or a slot already signed (or approved). A null
@@ -1277,7 +1278,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       }
       const updated = await db.matches.get(matchId)
       if (updated?.seed_key) {
-        await queueMatchUpdate(db, updated.seed_key, { match_info: matchInfoFromLocal(updated) }, { test: updated.test === true })
+        await queueMatchUpdate(db, updated.seed_key, { match_info: matchInfoFromLocal(updated) }, { test: isLocalOnly(updated) })
         try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
       }
     } catch (err) {
@@ -1658,7 +1659,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // queued, or neither
       await db.transaction('rw', db.sync_queue, db.matches, async () => {
         // Save to sync queue if official match with seed_key
-        if (!match.test && match?.seed_key) {
+        if (!isLocalOnly(match) && match?.seed_key) {
           // Collect all signatures for the approval JSONB field
           const approvalData = {
             approvedAt: new Date().toISOString(),
@@ -1700,7 +1701,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           approvedAt: new Date().toISOString(),
           current_set: null,
           // the official PDF counts as missing until its upload is queued
-          ...(!match.test && match?.seed_key ? { scoresheetPdfMissing: true } : {})
+          ...(!isLocalOnly(match) && match?.seed_key ? { scoresheetPdfMissing: true } : {})
         })
       })
 
@@ -1716,7 +1717,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // connection that passed no data held "Confirm and approve" (no Cancel
       // at that step), and with it the approval and the ZIP, for minutes
       // (stress test 2026-10-25).
-      if (!match?.test) {
+      if (!isLocalOnly(match)) {
         const pdfQueued = await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents, match: approvedMatch })
         if (pdfQueued && match?.seed_key) await db.matches.update(matchId, { scoresheetPdfMissing: false })
         // (a match without a game number has no cloud copy: nothing to queue)
@@ -1753,7 +1754,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     // No official PDF of this approval on its way to the server: once the
     // match is closed here, this device cannot make it any more
     const current = await db.matches.get(matchId).catch(() => null)
-    if (current && !current.test && current.seed_key && current.approved === true && current.scoresheetPdfMissing === true) {
+    if (current && !isLocalOnly(current) && current.seed_key && current.approved === true && current.scoresheetPdfMissing === true) {
       const go = await askConfirm({
         title: t('matchEnd.pdfMissing.closeTitle'),
         message: t('matchEnd.pdfMissing.closeBody'),
@@ -1768,7 +1769,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
     try {
       // Update match to final status in Supabase first (before deleting local data)
-      if (!match.test && match?.seed_key) {
+      if (!isLocalOnly(match) && match?.seed_key) {
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
@@ -1910,13 +1911,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         scoresheetPdfMissing: null,
         ...(match?.cloudBlock?.code === 'OV_MATCH_CLOSED' ? { cloudBlock: null } : {}),
         ...(voidApprovals ? { accountApprovals: null } : {}),
-        ...(everClosed && !match?.test ? { everClosed: true } : {})
+        ...(everClosed && !isLocalOnly(match) ? { everClosed: true } : {})
       })
       setServerClosed(false)
 
       // The approval's scoresheet files still unsent are the old approval's:
       // the new approval queues new ones (utils/scoresheetUploader)
-      if (!match?.test && match?.seed_key) {
+      if (!isLocalOnly(match) && match?.seed_key) {
         const n = await supersedeUnsentScoresheetUploadsOf(db.sync_queue, match.seed_key)
         if (n) console.log(`[MatchEnd] Reopened: ${n} scoresheet upload(s) of the earlier approval dropped`)
       }
@@ -1924,13 +1925,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // The writes set aside when the server refused them as closed go out
       // again (utils/matchHandover requeueClosedJobs), except a closing one
       // and those of a local copy this one replaced
-      if (requeueSetAside && !match?.test && match?.seed_key) {
+      if (requeueSetAside && !isLocalOnly(match) && match?.seed_key) {
         const n = await requeueClosedJobs(db, match.seed_key, { since: match.restoredAt || match.importedAt || null })
         if (n) console.log(`[MatchEnd] Reopened on the server: ${n} write(s) set aside as closed queued again`)
       }
 
       // Mirror the un-approval to the cloud (approve queued status 'approved')
-      if (queue && !match?.test && match?.seed_key) {
+      if (queue && !isLocalOnly(match) && match?.seed_key) {
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
@@ -2001,7 +2002,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         const staleJobs = syncJobsForEvents(queued, deleteIds, match?.seed_key)
         if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
         await queueSetDeletes(db, match, forfeitPlan.deleteSetIds)
-        if (!match?.test && match?.seed_key) {
+        if (!isLocalOnly(match) && match?.seed_key) {
           for (const r of forfeitPlan.restoreSets) {
             await db.sync_queue.add(setUpdateJob(match, r.id, restoredSetWrites(r).cloud))
           }
@@ -2075,7 +2076,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             id: match.seed_key,
             status: 'live',
             // the post-match signatures were synced as they were made: clear them there too
-            ...(match.test ? {} : { signatures: signaturesPayload({ ...match, ...clearedPostMatchSignatures() }) })
+            ...(isLocalOnly(match) ? {} : { signatures: signaturesPayload({ ...match, ...clearedPostMatchSignatures() }) })
           },
           ts: new Date().toISOString(),
           status: 'queued'
@@ -2713,6 +2714,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               ref={remarksTextareaRef}
               placeholder={t('matchEnd.remarksPlaceholder', 'Record match remarks...')}
               aria-label={t('matchEnd.remarks', 'Remarks')}
+              // the official sheet's remarks: a paired phone's text is shown as it arrives (Pair a phone)
+              data-ov-phone="official"
               value={remarksText}
               onChange={e => setRemarksText(e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 bg-white text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500 resize-y"
