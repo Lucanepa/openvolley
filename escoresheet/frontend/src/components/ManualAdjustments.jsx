@@ -29,6 +29,7 @@ import { setLiveStateDirty } from '../utils/eventSync'
 import TeamColourPicker, { CloseColourNote, customColourKey, recallCustomColour, rememberCustomColour } from './TeamColourPicker'
 import TeamShirt from './TeamShirt'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { isLocalOnly } from '../domain/matchKind'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -645,7 +646,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
         // (it kept them, attached to the changed sheet): the whole object, the
         // server replaces the column, so the pre-match ones travel along
         ...(signaturesCleared ? { signatures: signaturesPayload(await db.matches.get(matchId)) } : {})
-      }, { test: data?.match?.test === true || editedMatch.test === true })
+      }, { test: isLocalOnly(data?.match) || isLocalOnly(editedMatch) })
 
       console.log('[ManualAdjustments] Cloud update queued')
     } catch (error) {

@@ -187,6 +187,32 @@ describe('Global live page through the relay', () => {
     for (const leak of ['Anna', 'Muster', '515253', '316271', room]) assert.equal(text.includes(leak), false, leak)
   })
 
+  it('the public livescore list has a court only when its scorer opted in (relay, HTTP push and venue forward)', async () => {
+    const code = 'LSTX2345'
+    const list = async () => (await (await fetch(`${srv.base}/api/global/live`, { signal: AbortSignal.timeout(5000) })).json()).data
+    const room = `match_${hex()}`
+    const scorer = await open()
+    scorer.send(sync(room, { global: true }))
+    await settle(scorer)
+    scorer.send({ type: 'live-state-update', matchId: room, liveState: liveState({ points_a: 5 }), globalLive: code, globalLiveCourt: 'c'.repeat(32) })
+    await settle(scorer)
+    assert.equal((await list()).events.some((e) => e.code === code), false, 'not listed without the opt-in')
+    scorer.send({ type: 'live-state-update', matchId: room, liveState: liveState({ points_a: 6 }), globalLive: code, globalLiveCourt: 'c'.repeat(32), globalLiveListed: true })
+    await settle(scorer)
+    const ev = (await list()).events.find((e) => e.code === code)
+    assert.ok(ev, 'listed')
+    assert.equal(ev.courts[0].points.home, 6)
+    assert.equal(JSON.stringify(ev).includes(room), false)
+    // the venue forward carries the opt-in
+    const deadline = Date.now() + 5000
+    while (!forwarded.some((f) => f.path === `/api/global/live/${code}` && f.body?.listed === true) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50))
+    assert.ok(forwarded.some((f) => f.path === `/api/global/live/${code}` && f.body?.listed === true), 'forwarded with listed')
+    // the HTTP push (desktop app) carries it too
+    const pushCode = 'LSTP2345'
+    await fetch(`${srv.base}/api/global/live/${pushCode}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ court: 'd'.repeat(32), liveState: liveState(), listed: true }), signal: AbortSignal.timeout(5000) })
+    assert.ok((await list()).events.some((e) => e.code === pushCode))
+  })
+
   it('/tv without a code asks for it; /tv/go sends a good code to its page and a bad one back', async () => {
     for (const path of ['/tv', '/tv/']) {
       const r = await fetch(`${srv.base}${path}`, { signal: AbortSignal.timeout(5000) })

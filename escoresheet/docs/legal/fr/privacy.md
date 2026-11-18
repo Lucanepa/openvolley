@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.18 · État au 17 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.19 · État au 17 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -19,12 +19,17 @@ version anglaise fait foi.
   ton appareil. Seules une sauvegarde du match et, à la fin, la feuille de
   match en PDF sont conservées sur le serveur, sous un code de sauvegarde
   aléatoire et sans compte, et supprimées 180 jours après la dernière
-  modification (section 7).
+  modification. Si le marqueur active « Enregistrer dans le cloud » pour un
+  match (désactivé par défaut), celui-ci est aussi conservé lisible sur le
+  serveur, sans PIN ni images des signatures, jusqu'à 180 jours après le
+  dernier enregistrement (section 7).
 - Écran en direct (facultatif, dans OpenVolley et OpenBeach) : si les
   appareils de marque d'un événement l'activent, le score de chacun de leurs
   matchs (noms des équipes, points et sets, aucun joueur) est aussi envoyé au
   serveur ; il est gardé uniquement en mémoire et visible par toute personne
-  qui a le code de l'écran en direct (section 7).
+  qui a le code de l'écran en direct, et pour les matchs Global aussi par
+  tout le monde sur livescore.openvolley.app, sauf si c'est désactivé
+  (section 7).
 - Une feuille de match électronique contient des données sur les joueuses et
   joueurs, l'encadrement et les officiels : noms, numéros de maillot, dates de
   naissance et signatures. Seuls les noms des équipes, le score et les numéros
@@ -464,9 +469,11 @@ n'est sur l'appareil), tu saisis les matchs d'un tournoi quelconque sans
 compte. Les effectifs, les officiels et les matchs que tu saisis ou que
 tu charges depuis un fichier Excel ou CSV restent sur ton appareil ;
 l'application lit le fichier sur l'appareil et ne le téléverse pas. Un match
-Global n'est pas synchronisé avec la base de données : il ne figure dans aucun
-enregistrement de match, d'équipe ou de joueur, ni dans le manager ni dans les
-affichages publics. Deux fichiers par match sont conservés sur le serveur, sans
+Global ne figure jamais dans les enregistrements de match, d'équipe ou de
+joueur de la ligue, ni dans le manager ni dans les affichages publics de la
+ligue ; ce n'est qu'avec « Enregistrer dans le cloud » (ci-dessous) qu'il est
+conservé sur le serveur, dans une table séparée qui lui est propre. Deux
+fichiers par match sont conservés sur le serveur, sans
 compte : la sauvegarde du match (le contenu d'un fichier de sauvegarde :
 équipes, effectifs avec noms, numéros de maillot et dates de naissance,
 officiels, signatures, déroulement du match) et, une fois le match validé, la
@@ -484,6 +491,41 @@ sauvegardes du serveur (section 18) en gardent encore une copie quelque temps.
 L'organisatrice ou l'organisateur du tournoi est responsable d'avoir le droit
 d'enregistrer les données et d'informer les joueuses et joueurs et leurs
 parents (section 17).
+
+**Enregistrer dans le cloud (outil Global, facultatif) :** dans la
+préparation du match, le marqueur peut activer « Enregistrer dans le cloud »
+pour un match Global ; c'est désactivé par défaut. Le match est alors, en plus
+de la sauvegarde et du PDF ci-dessus, aussi conservé lisible (non chiffré)
+dans la base de données du serveur, sans compte : le contenu de la feuille de
+match (équipes, effectifs avec noms, numéros de maillot et dates de naissance,
+staff des équipes, officiels, déroulement du match, sets, remarques), sans les
+PIN, les images des signatures, le code de sauvegarde et le code du tournoi ;
+un résumé (noms, noms courts et couleurs des équipes, sets et points, état,
+salle, ligue, heure prévue, numéro du match) ; et, une fois le match validé,
+la feuille de match en PDF, sur laquelle figurent les signatures et les dates
+de naissance. Le match est retrouvé par un hachage de son code de sauvegarde
+et protégé par un hachage de son PIN arbitre ; le serveur ne conserve ni le
+code ni le PIN. En option :
+
+- **Lien de partage :** un lien en lecture seule avec un jeton aléatoire, que
+  le marqueur active et désactive. Toute personne qui a le lien voit le
+  résultat, les sets et la feuille de match en PDF sur
+  livescore.openvolley.app.
+- **Code du tournoi :** un code de 10 caractères, saisi sur les appareils de
+  marque d'un tournoi. Toute personne qui a le code voit la liste de tous les
+  matchs enregistrés avec lui, avec leurs résumés et leurs PDF, sur
+  livescore.openvolley.app. Le serveur ne conserve le code que sous forme de
+  hachage.
+- **Autre appareil :** pour y continuer, tu restaures le match avec le code de
+  sauvegarde et le PIN arbitre, comme ci-dessus.
+
+La copie lisible, le lien de partage et le code du tournoi sont supprimés
+180 jours après le dernier enregistrement, ou aussitôt que le marqueur choisit
+« Supprimer du cloud » ; les sauvegardes du serveur (section 18) en gardent
+encore une copie quelque temps. Sans « Enregistrer dans le cloud », rien de
+tout cela n'est conservé. Ici aussi, l'organisatrice ou l'organisateur du
+tournoi est responsable d'avoir le droit d'enregistrer les données et
+d'informer les joueuses et joueurs et leurs parents (section 17).
 
 **Écran en direct pour TV (facultatif, tout match, aussi OpenBeach) :** les
 appareils de marque d'un événement peuvent activer un écran en direct avec un
@@ -504,8 +546,13 @@ supprimé 45 minutes après la fin du match, après 3 heures sans mise à jour o
 au redémarrage du serveur. Toute personne qui connaît le code peut voir les
 résumés de ses matchs sur openvolley.app/tv et livescore.openvolley.app ou les
 lire via l'interface du serveur ; un relais de salle les montre aussi sur son
-propre réseau. Désactive l'écran en direct dans les Options pour arrêter
-l'envoi.
+propre réseau. Un appareil de marque qui a un code d'écran en direct liste en
+outre les résumés de ses matchs Global sur livescore.openvolley.app, pour tout
+le monde et sans le code, sauf si « Afficher les matchs Global sur
+livescore.openvolley.app » est désactivé sur cet appareil dans Options, Écran
+en direct (c'est activé par défaut). Les matchs de championnat figurent de
+toute façon dans le livescore ; les matchs de test et simples n'y sont jamais
+listés. Désactive l'écran en direct dans les Options pour arrêter l'envoi.
 
 **Validation avec NIP :** les officiels peuvent confirmer le résultat, en plus
 de leur signature, avec un NIP de validation personnel. Sont enregistrés : le
@@ -570,7 +617,9 @@ joueurs.
 
 **Jamais publics :** dates de naissance, numéros de licence, signatures,
 validations, adresses e-mail et NIP. Les listes d'équipe avec les noms ne
-sont visibles que pour qui connaît le NIP du match.
+sont visibles que pour qui connaît le NIP du match ou, pour un match Global
+enregistré dans le cloud, son lien de partage ou son code du tournoi
+(section 7).
 
 ## 9. Tablettes et mode salle (LAN)
 
@@ -913,6 +962,7 @@ prestataires. Tu peux me demander une copie de ces garanties.
 | Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
 | Feuille d'un match de test par e-mail | Non conservée sur le serveur |
 | Outil Global : sauvegarde et feuille de match PDF d'un match (sous le code de sauvegarde) | 180 jours après la dernière modification |
+| Outil Global, « Enregistrer dans le cloud » : copie lisible d'un match, lien de partage, code du tournoi (sous forme de hachage) | 180 jours après le dernier enregistrement, ou à la suppression du cloud |
 | Écran en direct : résumé du score d'un match dont l'appareil de marque l'a activé (noms des équipes, points, sets ; aucun joueur) | Uniquement dans la mémoire du serveur ; supprimé 45 minutes après la fin du match, après 3 heures sans mise à jour ou au redémarrage du serveur |
 | Copies de sauvegarde téléversées | 30 jours |
 | Journaux de l'application téléversés | 30 jours ; effacés avec ton compte |
@@ -940,7 +990,8 @@ la catégorie d'âge sur la feuille de match officielle et n'est jamais publique
 
 Dans l'outil Global, l'organisatrice ou l'organisateur du tournoi, ou la
 personne qui saisit les données, est responsable de la même manière. Les
-parents peuvent demander la suppression de la sauvegarde d'un match ; il me
+parents peuvent demander la suppression de la sauvegarde ou de la copie dans
+le cloud d'un match ; il me
 faut alors le code de sauvegarde ou les indications du match (section 19).
 
 Les parents ou autres représentants légaux peuvent exercer les droits de la
@@ -1014,7 +1065,7 @@ pays.
 Lorsque le RGPD s'applique, je me fonde sur :
 
 - **le contrat** (art. 6, par. 1, let. b RGPD) : compte, synchronisation,
-  e-mails liés au compte, support, fonctions que tu utilises, la sauvegarde en ligne de l'outil Global ;
+  e-mails liés au compte, support, fonctions que tu utilises, la sauvegarde en ligne et la copie dans le cloud de l'outil Global ;
 - **l'intérêt légitime** (art. 6, par. 1, let. f RGPD) : des procès-verbaux
   de match officiels corrects et vérifiables pour les clubs, la fédération et
   les officiels (listes d'équipe, dates de naissance pour le contrôle de la

@@ -16,6 +16,7 @@ import { coinTossChoiceOf, coinTossDraftOf } from '../domain/coinTossDraft'
 import Modal from './Modal'
 import MenuList from './MenuList'
 import ballFallback from '../ball_fallback.png'
+import { isLocalOnly } from '../domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -824,7 +825,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               firstServe: firstServeTeam
             },
             seq: 1,
-            test: !!match?.test,
+            test: isLocalOnly(match),
             created_at: new Date().toISOString()
           },
           ts: Date.now(),
@@ -986,7 +987,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     // Create first set
     const firstSetId = await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
 
-    const isTest = match?.test || false
+    const isTest = isLocalOnly(match)
 
     // Add first set to sync queue (only for official matches)
     if (!isTest && match?.seed_key) {
@@ -1037,7 +1038,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             bench_away: match?.awayTeamPin || ''
           },
           // Signatures JSONB
-          signatures: !match?.test ? {
+          signatures: !isLocalOnly(match) ? {
             home_coach: homeCoachSignature || '',
             home_captain: homeCaptainSignature || '',
             away_coach: awayCoachSignature || '',
@@ -1091,6 +1092,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               timeouts_b: 0,
               subs_a: 0,
               subs_b: 0,
+              // public: no substitution and no finished set yet (domain/livePublicFields)
+              subs_count_a: 0,
+              subs_count_b: 0,
+              set_results: [],
               match_status: 'starting',
               // Match metadata
               game_n: match.gameN || match.game_n || null,
@@ -1164,7 +1169,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     // This is non-blocking - if offline or error, we still proceed (local status is already 'live')
     let verificationSkipped = false
 
-    if (!match?.test && !offlineMode) {
+    if (!isLocalOnly(match) && !offlineMode) {
       setInitModal({ status: 'verifying', message: t('coinToss.verifyingStatus', 'Verifying match status...') })
 
       try {
@@ -1217,7 +1222,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       t,
       backendUrl: getBackendUrl(),
       offlineMode,
-      isTest: !!match?.test,
+      isTest: isLocalOnly(match),
       seedKey: localMatch?.seed_key,
       localMatch,
       matchId,

@@ -135,7 +135,7 @@ export async function verifyGamePin(matchId, pin) {
     
     if (!match) return false
     
-    // Test matches have no PIN
+    // Test matches have no PIN (a Global match has one, as an official match)
     if (match.test === true) {
       return false // Test matches don't use PIN
     }

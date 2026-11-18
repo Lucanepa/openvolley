@@ -14,6 +14,7 @@
  */
 
 import { remarksSignaturesOf } from './remarksSignatures'
+import { isLocalOnly } from './matchKind'
 
 /** The server keys of the post-match signatures, by match-row field. */
 export const POST_MATCH_SIGNATURE_KEYS = Object.freeze({
@@ -94,7 +95,7 @@ export function postMatchSignaturesFromServer(signatures) {
  * (as MatchSetup and the approval job, which never send test signatures).
  */
 export function signaturesSyncJob(match, now = new Date()) {
-  if (!match?.seed_key || match.test) return null
+  if (!match?.seed_key || isLocalOnly(match)) return null
   return {
     resource: 'match',
     action: 'update',

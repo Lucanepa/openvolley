@@ -574,6 +574,36 @@ needs it before the PIN step (its PIN check is bound to that match), the live
 sockets publish it anyway, and since the relay no longer hands out the bundle
 for a known key it is an identifier, not a capability.
 
+### Live state: what every viewer gets (the scoreboard contract)
+
+The scorer's live state (`match_live_state` row, relay `live-state-update`,
+the summary's `liveState` and its `data.liveState` copy for the LedBox
+bridge) is built in `frontend/src/components/Scoreboard.jsx`
+`syncLiveStateToSupabase`. Team A / B are the coin toss's (fixed for the
+match); `side_a` says where Team A stands. A viewer without the match's PIN
+(Livescore, Point Hub and other scoreboards, TV pages, anonymous `/api/db`,
+the public API) gets every column but `LIVE_STATE_PRIVATE_COLUMNS`
+(`lib/publicColumns.js`: line-ups, `subs_a` / `subs_b`, sanctions,
+`last_event_data`, the alarm). Two public fields stand in for what a
+scoreboard needs of those (scorer apps after 3.3.6, `frontend/src/domain/livePublicFields.js`):
+
+| Field | Meaning |
+|---|---|
+| `subs_count_a`, `subs_count_b` | Regular substitutions of Team A / B in the set `current_set` names, a number. Exceptional substitutions (FIVB 15.7) are not counted, as they are not among the 6 of a set. `0` from the set end's push on (it names the next set), so the count starts again with every set; the match end's push stays on the last set and keeps its count. An undone substitution is gone from the next push. |
+| `set_results` | The finished sets, oldest first: `[{ set, home, away, a, b }]`. `set` is the stored set index (a best-of-3 decider is `5`, shown as set 3), `home` / `away` as the match row's `set_results`, `a` / `b` the same points by Team A / B. `[]` before the first set ends. Read from the scorer's sets at every push: a set end adds its set with that push, an undone set end, a reopened set or a corrected score is gone or changed with the next one. |
+
+Both are absent (or `null` in the database row) from a scorer app up to
+3.3.6: read a missing `subs_count_*` as "unknown", a missing `set_results` as
+"no finished set known" (the livescore then falls back on the match row's
+`set_results`). `subs_a` / `subs_b` (who came in for whom, by shirt number)
+stay PIN-only. Every relay passes both fields: the cloud relay's PIN-less
+summary and room broadcast (`publicLiveState`, a denylist), the realtime
+hub's `match_live_state` changes (`LIVE_COLUMNS`) and its summary channels,
+anonymous `/api/db` (`ANON_DB_COLUMNS`), and the LAN relays, which forward
+the live state as it came. The columns are `db/047_live_state_public_counts.sql`;
+before it runs, `/api/db` writes the live state without them (pgQuery drops
+unknown columns), so the order of deploy and app release does not matter.
+
 ### PINs at rest
 
 - **Database:** with `OV_PIN_SECRET` set, `game_pin` and every

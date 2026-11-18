@@ -18,6 +18,7 @@ import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import { matchMenuSections, toMenuListSections } from './matchMenu'
 import { openPhonePair, phonePairMatchOf } from './phonePair/phonePairStore'
+import { useScoreboardDisplay } from './scoreboard/useScoreboardDisplay'
 import SanctionsResultsModal from './SanctionsResultsModal'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
@@ -37,6 +38,7 @@ import { setPlayerDragImage } from '../utils/dragImage'
 import { teamShortLabels } from '../utils/teamShortLabels'
 import { LOG_REWRITE_EVENTS, liveStateLastAction } from '../utils/refereeLastEvent.js'
 import ballFallback from '../ball_fallback.png'
+import { isLocalOnly } from '../domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -48,7 +50,7 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
-import { liveCodeForMatch, cachedCourtToken, getLiveCourt } from '../utils/globalLive'
+import { liveCodeForMatch, cachedCourtToken, getLiveCourt, liveListedForMatch } from '../utils/globalLive'
 import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
@@ -97,6 +99,7 @@ import PreMatchSignDialog, { SignaturesMissingModal, MissingSignatureButton } fr
 import { savedSidesOfRegularSets } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot, correctionAfter } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
+import { livePublicFields } from '../domain/livePublicFields'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
@@ -189,7 +192,7 @@ async function queueTeamRoster(matchId, teamKey, columns = {}) {
   const teamId = teamKey === 'home' ? m?.homeTeamId : teamKey === 'away' ? m?.awayTeamId : null
   if (teamId == null || !m?.seed_key) return null
   const roster = await db.players.where('teamId').equals(teamId).sortBy('number')
-  return queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster), ...columns }, { test: m.test === true })
+  return queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster), ...columns }, { test: isLocalOnly(m) })
 }
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
@@ -1434,7 +1437,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!m?.id) return
     db.matches.update(m.id, { lfpTracking: on })
       .then(() => db.matches.get(m.id))
-      .then((fresh) => fresh && queueMatchUpdate(db, fresh.seed_key, { match_info: matchInfoFromLocal(fresh) }, { test: fresh.test === true }))
+      .then((fresh) => fresh && queueMatchUpdate(db, fresh.seed_key, { match_info: matchInfoFromLocal(fresh) }, { test: isLocalOnly(fresh) }))
       .catch((err) => console.warn('[Scoreboard] LFP setting not kept with the match:', err))
   }, [data?.match])
   scorerMovedRef.current = isScorerMoved(data?.match)
@@ -1953,7 +1956,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // the match's seed_key; told here, the job commits (or rolls back) with the
   // action instead of being queued after it
   useEffect(() => {
-    if (matchId != null && data?.match) rememberSeedKey(matchId, data.match.seed_key ?? null, data.match.test === true)
+    if (matchId != null && data?.match) rememberSeedKey(matchId, data.match.seed_key ?? null, isLocalOnly(data.match))
   }, [matchId, data?.match?.seed_key, data?.match?.test]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore match state from a snapshot (used by undo)
@@ -2547,7 +2550,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // the cloud (relay or database), so the LedBox can be rehearsed
       const match = await db.matches.get(matchId)
       if (!match) return
-      const isTest = match.test === true
+      const isTest = isLocalOnly(match)
       const routeOf = () => liveStateTargets({ isTest, relayKey: relayKeyRef.current, relayUrl: scorerRelay.url })
       if (isTest && !routeOf().relay) return
       console.log(`[PERF:liveState] After match.get: +${(performance.now() - _tl).toFixed(0)}ms`)
@@ -2657,11 +2660,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Only when the snapshot does not count that set yet: a fresh snapshot
       // after the finish (manual change, undo, court switch) already does.
       const setWinner = eventData?.winner
+      // The match's sets now: the finished ones go out as set_results
+      // (domain/livePublicFields), read again at every push so an undone set
+      // end or a corrected score is gone from the next push too
+      const matchSets = await db.sets.where({ matchId }).toArray()
       let countFinishedSet = false
       if (isSetInterval || isMatchEnd) {
         const finishedSetCount = eventType === 'set_end'
           ? 0
-          : (await db.sets.where({ matchId }).toArray()).filter(s => s.finished).length
+          : matchSets.filter(s => s.finished).length
         countFinishedSet = finishedSetMissingFromSnapshot(snapshot, finishedSetCount, eventType)
       }
       const { a: updatedSetScoreA, b: updatedSetScoreB } = setsWonWithFinishedSet(snapshot, setWinner, countFinishedSet)
@@ -2825,6 +2832,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         timeouts_b: snapshot.timeoutsB,
         subs_a: snapshot.subsA?.length > 0 ? snapshot.subsA : null,
         subs_b: snapshot.subsB?.length > 0 ? snapshot.subsB : null,
+        // For every viewer, PIN or not (subs_a / subs_b are PIN-only): the
+        // regular substitutions of the set current_set names, and the
+        // finished sets' scores (domain/livePublicFields)
+        ...livePublicFields({ snapshot, sets: matchSets, pushedSetIndex: finalSetIndex, countFinishedSet }),
         // All sanctions (team, players, bench officials) - match-wide, persist across sets
         sanctions_a: snapshot.matchTeamSanctionsA?.length > 0 ? snapshot.matchTeamSanctionsA : null,
         sanctions_b: snapshot.matchTeamSanctionsB?.length > 0 ? snapshot.matchTeamSanctionsB : null,
@@ -2879,7 +2890,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session },
             ...(liveCode ? { globalLive: liveCode } : {}),
             ...(liveCourt ? { globalLiveCourt: liveCourt } : {}),
-            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {})
+            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {}),
+            ...(liveCode && liveListedForMatch(match) ? { globalLiveListed: true } : {})
           })
           // the desktop app's relay feeds no cloud page: it sends the court itself
           if (liveCode && pushesGlobalLive()) pushGlobalLive({ code: liveCode, match, liveState: liveStateData, db, matchId })
@@ -3212,7 +3224,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
 
     // Use match from guard check above (already fetched)
-    const isTest = match?.test || false
+    const isTest = isLocalOnly(match)
 
     // Only sync official matches (not test matches)
     if (!isTest) {
@@ -4800,7 +4812,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // To the cloud through the sync queue (kept while offline, retried); a
       // Dexie write, so inside an action it is part of its transaction
-      trackWrite(queueMatchUpdate(db, data.match?.seed_key, { manual_changes: updatedChanges }, { test: data.match?.test === true }).catch((err) => {
+      trackWrite(queueMatchUpdate(db, data.match?.seed_key, { manual_changes: updatedChanges }, { test: isLocalOnly(data.match) }).catch((err) => {
         console.warn('[ManualChange] Could not queue the cloud update:', err?.message)
       }))
     } else {
@@ -4945,7 +4957,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const fresh = await db.matches.get(matchId)
       const manualChanges = [...(fresh?.manualChanges || []), ...entries]
       await db.matches.update(matchId, { manualChanges })
-      await queueMatchUpdate(db, fresh?.seed_key, { manual_changes: manualChanges }, { test: fresh?.test === true })
+      await queueMatchUpdate(db, fresh?.seed_key, { manual_changes: manualChanges }, { test: isLocalOnly(fresh) })
       deferUi(() => setManualChangesLog(prev => [...prev, ...entries]))
     }
 
@@ -5231,7 +5243,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Reuse match from snapshot or fetch fresh (lightweight events need it for isTest check)
     const match = snapshotMatch || await db.matches.get(matchId)
-    const isTest = match?.test || false
+    const isTest = isLocalOnly(match)
     console.log(`[PERF] After match.get: +${(performance.now() - _t0).toFixed(0)}ms`)
 
     // Only sync official matches to Supabase, not test matches
@@ -7070,7 +7082,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const matchRecord = await db.matches.get(matchId)
       console.log('[SET_END_DEBUG] STEP 7: Match info:', JSON.stringify({
         matchId,
-        isTest: matchRecord?.test,
+        isTest: isLocalOnly(matchRecord),
         seed_key: matchRecord?.seed_key,
         currentStatus: matchRecord?.status
       }))
@@ -7080,7 +7092,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // STEP 8: IMMEDIATE SYNC TO SUPABASE (if not a test match)
       // Sync happens FIRST before any UI operations to ensure data is saved
-      if (matchRecord?.test !== true && matchRecord?.seed_key) {
+      if (!isLocalOnly(matchRecord) && matchRecord?.seed_key) {
         setSetTransitionLoading({ step: 'Syncing to cloud...' })
         console.log('[SET_END_DEBUG] STEP 8: Starting IMMEDIATE sync to Supabase')
 
@@ -7433,7 +7445,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
           // Sync new set to cloud (if not test match)
           const matchRecordForNewSet = await db.matches.get(matchId)
-          const isTest = matchRecordForNewSet?.test || false
+          const isTest = isLocalOnly(matchRecordForNewSet)
           if (!isTest && !existingSet) {
             await db.sync_queue.add({
               resource: 'set',
@@ -7570,7 +7582,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Get match to check if it's a test match
       const match = await db.matches.get(matchId)
-      const isTest = match?.test || false
+      const isTest = isLocalOnly(match)
 
       // Only add to sync queue if set was newly created and it's an official match
       if (!existingSet5 && !isTest) {
@@ -7830,7 +7842,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!setRow) return
     await db.sets.update(setRow.id, { homePoints, awayPoints })
     const match = await db.matches.get(matchId)
-    if (match && !match.test && match.seed_key) {
+    if (match && !isLocalOnly(match) && match.seed_key) {
       await db.sync_queue.add({
         resource: 'set',
         action: 'update',
@@ -7939,7 +7951,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // result the approval checks); the reopened one is corrected
     const match = await db.matches.get(matchId)
     await queueSetDeletes(db, match, plan.deleteSetIds)
-    if (match && !match.test && match.seed_key) {
+    if (match && !isLocalOnly(match) && match.seed_key) {
       for (const r of plan.restoreSets) {
         await db.sync_queue.add(setUpdateJob(match, r.id, restoredSetWrites(r).cloud))
       }
@@ -9552,6 +9564,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // scorer's own dialog for it, with every check; the request is answered when
   // the event is recorded (useBenchRequestBridge)
   const benchBridge = useBenchRequestBridge({ relayKey: data?.match ? relayMatchKey(data.match) : null, events: data?.events, setIndex: data?.set?.index })
+  // A scoreboard display following this match (an LED board) and its settings page: the menu's "Scoreboard settings"
+  const scoreboardDisplay = useScoreboardDisplay(data?.match ? relayMatchKey(data.match) : null)
   const benchActions = {
     onAcceptLineup: (entry) => {
       // only the set being scored, and only while the team has no line-up in it
@@ -11236,7 +11250,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     try {
       const matchRecord = await db.matches.get(matchId)
       if (isMatchOverStatus(matchRecord?.status)) return
-      const isTest = matchRecord?.test === true
+      const isTest = isLocalOnly(matchRecord)
       const allSets = await db.sets.where({ matchId }).sortBy('index')
       const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf, setOnly, inDefault, targets: setTargetsOf(matchRecord) })
       // Score of the existing sets the forfeit touches, for a later reversal
@@ -14212,6 +14226,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     editRosterAway: () => setReopenRosterConfirm('away'),
     showPins: () => setShowPinsModal(true),
     pairPhone: data?.match ? () => openPhonePair(phonePairMatchOf(data, { lang: i18n.language, fallbackHome: t('common.home'), fallbackAway: t('common.away') })) : undefined,
+    scoreboardSettings: scoreboardDisplay.open,
     downloadGameData: () => { downloadGameData() },
     options: () => setShowOptionsInMenu(true),
     stopMatch: () => setStopMatchModal('select')
@@ -23072,7 +23087,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       ...clearedPostMatchSignatures()
                     })
                   }
-                  if (matchRecord && !matchRecord.test && matchRecord.seed_key) {
+                  if (matchRecord && !isLocalOnly(matchRecord) && matchRecord.seed_key) {
                     await db.sync_queue.add(setUpdateJob(matchRecord, reopenSetId, { finished: false, end_time: null }))
                     if (isMatchOverStatus(matchRecord.status)) {
                       await db.sync_queue.add({

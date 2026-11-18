@@ -226,6 +226,7 @@
     "cancel": "Cancel"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "This deletes all sets, events, players and team data of this match on this device.",
     "cancel": "Cancel",
     "delete": "Delete",
     "lossTitle": "This copy holds what the server does not have:",
@@ -763,6 +764,7 @@
       "openRemarksRecording": "Open remarks recording",
       "stopMatch": "Stop the match",
       "showPins": "Show PINs",
+      "scoreboardSettings": "Scoreboard settings",
       "showMatchSetup": "Show match setup",
       "editMatchInfo": "Edit match info",
       "downloadGameData": "Download game data (JSON)",
@@ -6484,6 +6486,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Show Global matches on livescore.openvolley.app (the score only, as on the TVs)",
+    "list": {
+      "title": "Global matches",
+      "open": "Open the live screen"
+    },
     "title": "Live screen",
     "intro": "Shows the score of every court of your event on TVs or a beamer, for any match. Start it on one scorer device and enter its code on the others. Only the score goes online (team names, points, sets), never players.",
     "codeLabel": "Live screen code",
@@ -6541,5 +6548,39 @@
     "arrived": "From the phone into “{{field}}”",
     "matchClosed": "The match is closed: the phone was unpaired.",
     "textField": "Text field"
+  },
+  "globalCloud": {
+    "title": "Save in the cloud",
+    "intro": "Also keeps this match readable online, without an account: for a share link, the organizer's list and continuing on another device. Found by its backup code, guarded by its referee PIN, deleted 180 days after the last save.",
+    "needsPin": "The match needs its referee PIN first.",
+    "offline": "No connection: saved with the next action.",
+    "pinRefused": "This backup code is saved with another referee PIN.",
+    "failed": "Could not save in the cloud. Try again later.",
+    "share": "Share link (read-only)",
+    "shareHint": "Anyone with the link sees the result, the sets and the PDF scoresheet. Turn it off to stop the link.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "organizer": "Tournament code (optional)",
+    "newOrganizer": "New tournament code",
+    "join": "Use",
+    "removeOrganizer": "Remove",
+    "copyOrganizerLink": "Copy organizer link",
+    "badOrganizer": "This is not a tournament code (10 letters and digits).",
+    "organizerHint": "Enter the same code on every scorer device of the tournament: the organizer link lists all its matches, with results and PDFs.",
+    "otherDevice": "Continue on another device: there, choose Restore match on Home and enter the backup code and the referee PIN (Backups above).",
+    "delete": "Delete from the cloud",
+    "page": {
+      "sharedTitle": "Match",
+      "organizerTitle": "Tournament",
+      "final": "Final",
+      "ended": "Ended",
+      "live": "Live",
+      "scheduled": "Scheduled",
+      "pdf": "Scoresheet (PDF)",
+      "notShared": "This match is not shared (any more).",
+      "offline": "Connection lost, retrying…",
+      "loading": "Loading…",
+      "noMatches": "No match is saved with this code yet."
+    }
   }
 }

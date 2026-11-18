@@ -152,6 +152,15 @@ describe('one court and one game', () => {
     assert.equal(JSON.stringify(s).includes('lineup'), false)
     assert.equal(gameSummary(null), null)
   })
+
+  it('a league game with the scorer\'s set_results ({ set, home, away, a, b }): home / away as written', () => {
+    const s = gameSummary({
+      game_n: 4243, status: 'live', match_status: 'interval', home_team: { name: 'VBC Zürich' }, away_team: { name: 'Volley Luzern' },
+      team_a_name: 'Volley Luzern', team_b_name: 'VBC Zürich', points_a: 0, points_b: 0, sets_won_a: 1, sets_won_b: 1, current_set: 3,
+      set_results: [{ set: 2, home: 12, away: 25, a: 25, b: 12 }, { set: 1, home: 27, away: 25, a: 25, b: 27 }]
+    }, 'T')
+    assert.deepEqual(s.sets, [{ home: 27, away: 25 }, { home: 12, away: 25 }])
+  })
 })
 
 describe('screenOf', () => {
@@ -162,5 +171,41 @@ describe('screenOf', () => {
     assert.equal(screenOf(null, { match: { court: 3 } }), 3)
     assert.equal(screenOf(null, { match: { court: 'Centre Court' } }), null)
     assert.equal(screenOf(null, {}), null)
+  })
+})
+
+describe('list (the public livescore, opt-in)', () => {
+  it('lists only the courts whose scorer opted in, and only codes that have one', () => {
+    const store = createGlobalLive()
+    store.update(CODE, 'room-1', live(), entry(), null, true)
+    store.update(CODE, 'room-2', live({ points_a: 3 }), entry(), null, false)
+    store.update('QRST6789', 'room-3', live(), entry(), null, false)
+    const l = store.list()
+    assert.equal(l.events.length, 1)
+    assert.equal(l.events[0].code, CODE)
+    assert.equal(l.events[0].courts.length, 1)
+    assert.equal(l.events[0].courts[0].points.home, 12)
+    // the code's own page still has both
+    assert.equal(store.get(CODE).courts.length, 2)
+    assert.equal(JSON.stringify(l).includes('room-'), false)
+    assert.equal(JSON.stringify(l).includes('Anna'), false)
+  })
+  it('a court that stops opting in leaves the list with its next update', () => {
+    const store = createGlobalLive()
+    store.update(CODE, 'room-1', live(), entry(), null, true)
+    assert.equal(store.list().events.length, 1)
+    store.update(CODE, 'room-1', live(), entry(), null, false)
+    assert.deepEqual(store.list(), { updatedAt: null, events: [] })
+  })
+  it('running events come before ended ones, at most maxEvents', () => {
+    let t = 1_000_000
+    const store = createGlobalLive({ now: () => t })
+    store.update('AAAA2345', 'r1', live({ match_status: 'final' }), entry(), null, true)
+    t += 1000
+    store.update('BBBB2345', 'r2', live(), entry(), null, true)
+    t += 1000
+    store.update('CCCC2345', 'r3', live({ match_status: 'final' }), entry(), null, true)
+    assert.deepEqual(store.list().events.map((e) => e.code), ['BBBB2345', 'CCCC2345', 'AAAA2345'])
+    assert.equal(store.list({ maxEvents: 1 }).events.length, 1)
   })
 })

@@ -33,6 +33,8 @@ describe('globalLivePush', () => {
     expect(body.liveState).toEqual({ team_a_name: 'Munich IS', points_a: 3, points_b: 0 })
     expect(body.homeTeam).toEqual({ name: 'Munich IS' })
     expect(body.sets).toEqual([{ index: 1, homePoints: 25, awayPoints: 20, finished: true }])
+    // a Global match is listed on the livescore unless the device turned it off
+    expect(body.listed).toBe(true)
     expect(init.body).not.toContain('316271')
     expect(init.body).not.toContain('players')
     expect(pickSummary({ lineup_a: 1, points_a: 2 })).toEqual({ points_a: 2 })

@@ -43,6 +43,7 @@ import { jobMatchKey } from './syncIds'
 import { matchGameNumber, setScore } from './deviceMatches'
 import { isClosingSyncJob, serverRowClosed } from './matchReopen'
 import { randomUuid } from './deviceId'
+import { isLocalOnly } from '../domain/matchKind'
 
 export const SCORER_MOVED = 'OV_SCORER_MOVED'
 export const SCORER_CLAIM_ACTION = 'scorer'
@@ -60,7 +61,7 @@ export const isScorerMoved = (match) => match?.cloudBlock?.code === SCORER_MOVED
 
 /** The claim job of `match` (null: no seed_key, a test match). */
 export function scorerClaimJob(match, now = new Date()) {
-  if (!match?.seed_key || match.test === true) return null
+  if (!match?.seed_key || isLocalOnly(match)) return null
   return {
     resource: 'match',
     action: SCORER_CLAIM_ACTION,
@@ -226,7 +227,7 @@ export async function setAsideClosedJobs(database, seedKey) {
 export async function setAsideClosedCopies(database) {
   if (!database?.sync_queue || !database?.matches) return 0
   let n = 0
-  const blocked = (await database.matches.toArray()).filter(m => m.test !== true && !!m.seed_key && m.cloudBlock?.code === MATCH_CLOSED)
+  const blocked = (await database.matches.toArray()).filter(m => !isLocalOnly(m) && !!m.seed_key && m.cloudBlock?.code === MATCH_CLOSED)
   for (const m of blocked) n += await setAsideClosedJobs(database, m.seed_key)
   const parked = await database.sync_queue.where('status').equals('failed').toArray()
   for (const j of parked) {
@@ -372,7 +373,7 @@ export async function serverScoreForTakeBack(database, matchId, { lookup, online
 export async function noteScorerMoved(database, seedKey, { check, now = Date.now() } = {}) {
   if (!seedKey || typeof check !== 'function') return false
   const local = await database.matches.filter(m => m.seed_key === seedKey).first()
-  if (!local || local.test === true || local.status === 'final') return false
+  if (!local || isLocalOnly(local) || local.status === 'final') return false
   if (await hasUnsentClaim(database, seedKey)) return false
   const { data, error } = await check(seedKey)
   if (error || data?.mine !== false) return false
@@ -388,7 +389,7 @@ export async function noteScorerMoved(database, seedKey, { check, now = Date.now
  */
 export async function closeMovedMatches(database, { check }) {
   if (typeof check !== 'function') return 0
-  const moved = (await database.matches.toArray()).filter(m => isScorerMoved(m) && m.status !== 'final' && m.test !== true && m.seed_key)
+  const moved = (await database.matches.toArray()).filter(m => isScorerMoved(m) && m.status !== 'final' && !isLocalOnly(m) && m.seed_key)
   let n = 0
   for (const m of moved) {
     const { data, error } = await check(m.seed_key)
@@ -440,9 +441,9 @@ async function retire(database, m, bySeedKey, now) {
  */
 export async function retireSupersededMatches(database, joined, { now = Date.now() } = {}) {
   const game = matchGameNumber(joined)
-  if (!joined?.seed_key || joined.test === true || !game) return []
+  if (!joined?.seed_key || isLocalOnly(joined) || !game) return []
   const others = (await database.matches.toArray()).filter(m =>
-    m.id !== joined.id && m.test !== true && m.status !== 'final' && m.seed_key !== joined.seed_key &&
+    m.id !== joined.id && !isLocalOnly(m) && m.status !== 'final' && m.seed_key !== joined.seed_key &&
     matchGameNumber(m) === game && refusedFor(m, joined.seed_key))
   for (const m of others) await retire(database, m, joined.seed_key, now)
   return others.map(m => m.id)
@@ -474,11 +475,11 @@ const CLOSED_STATUSES = ['approved', 'final']
 export async function retireIfSuperseded(database, refused, { now = Date.now() } = {}) {
   const block = refused?.cloudBlock
   const game = matchGameNumber(refused)
-  if (block?.code !== GAME_TAKEN || refused.test === true || refused.status === 'final' || !game) return null
+  if (block?.code !== GAME_TAKEN || isLocalOnly(refused) || refused.status === 'final' || !game) return null
   const claim = block.claim || {}
   const named = claim.external_id || null
   const joined = (await database.matches.toArray()).find(m =>
-    m.id !== refused.id && m.test !== true && !!m.seed_key && m.seed_key !== refused.seed_key &&
+    m.id !== refused.id && !isLocalOnly(m) && !!m.seed_key && m.seed_key !== refused.seed_key &&
     m.cloudBlock?.code !== GAME_TAKEN && matchGameNumber(m) === game &&
     (named ? m.seed_key === named : (claim.mine === true && !!(m.importedFrom || m.restoredAt))))
   if (joined) {
@@ -500,7 +501,7 @@ export async function retireIfSuperseded(database, refused, { now = Date.now() }
  * @returns {Promise<number>} local matches retired
  */
 export async function retireStaleGameCopies(database) {
-  const refused = (await database.matches.toArray()).filter(m => m.cloudBlock?.code === GAME_TAKEN && m.status !== 'final' && m.test !== true)
+  const refused = (await database.matches.toArray()).filter(m => m.cloudBlock?.code === GAME_TAKEN && m.status !== 'final' && !isLocalOnly(m))
   let n = 0
   for (const m of refused) if (await retireIfSuperseded(database, m)) n++
   return n

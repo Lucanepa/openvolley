@@ -75,6 +75,10 @@
  *                     device ('referee' | 'bench' | 'livescore') and team ('home' | 'away')
  *                     only label the socket in /api/server/connections (tablet status on
  *                     the scorer); they grant nothing. `role` is accepted as the old name.
+ *                     device 'display' (a scoreboard display, e.g. an LED board) with
+ *                     settingsUrl?: its settings page, kept only when it is a private-LAN
+ *                     http(s) URL (displaySettingsUrl); grants nothing either, and only
+ *                     the match's scoreboard hears of it (display-presence).
  *                     pin: the referee PIN, a bench PIN (while that connection is on) or
  *                     the game PIN of the match (pinGrantsAccess). With it the socket gets
  *                     the bundle (rosters, events) and match-action; without it, or with a
@@ -112,6 +116,13 @@
  *                     repeat per sync, no PIN, device id or address. Unsubscribing ends no
  *                     claim here (ownership comes from the sync, not the subscription). The referee and bench warn when the scorer's
  *                     device is gone (lid closed, app crashed, Wi-Fi lost).
+ *   display-presence  { type, matchId, present, settingsUrl }  to the room's proven
+ *                     scoreboards only: whether a display follows the room, and the settings
+ *                     page of the newest one that named a usable one (null otherwise). Sent
+ *                     to a socket right after its first accepted sync of the room, and to the
+ *                     room's scoreboards when it changes (a display subscribing, naming
+ *                     another page, unsubscribing or closing); no repeat. Same message on the
+ *                     cloud relay and the Tauri relay (docs/scoreboard-display-spec.md).
  *   connected, pong, error { type:'error', code, message, matchId? }
  *   match-data-request | game-number-request | match-update-request  (proven scoreboards only)
  *
@@ -339,7 +350,7 @@ const MATCH_PRIVATE_FIELDS = [
   'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges',
   'manual_changes', 'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster',
   'pending_away_roster', 'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster',
-  'pending_team2_roster',
+  'pending_team2_roster', 'globalKey',
 ]
 
 // Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS.
@@ -657,6 +668,39 @@ function carryMatchSecrets(prevMatch, nextMatch) {
 }
 
 const DEVICE_ROLES = ['referee', 'bench', 'livescore']
+
+// --- Scoreboard displays (display-presence) ----------------------------------
+// The same rule as backend/lib/displayPresence.js and src-tauri/src/relay.rs
+// (docs/scoreboard-display-spec.md): a display's settings page is passed on
+// only when it is an http(s) URL on a private-LAN address.
+const DISPLAY_DEVICE = 'display'
+const MAX_SETTINGS_URL_LENGTH = 256
+
+/** RFC 1918 IPv4 or IPv6 unique local (fc00::/7), as new URL().hostname gives them. */
+function isPrivateLanHost(hostname) {
+  if (typeof hostname !== 'string' || !hostname) return false
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname)
+  if (m) {
+    const [a, b, c, d] = m.slice(1).map(Number)
+    if ([a, b, c, d].some((n) => n > 255)) return false
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  }
+  const v6 = /^\[([0-9a-f:.]+)\]$/i.exec(hostname)
+  if (v6) return /^f[cd][0-9a-f]{2}:/i.test(v6[1])
+  return false
+}
+
+/** A display's settings page as the relay keeps it (normalised href), or null. */
+function displaySettingsUrl(raw) {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_SETTINGS_URL_LENGTH) return null
+  if (/[\u0000-\u0020\u007f]/.test(raw)) return null
+  let u
+  try { u = new URL(raw) } catch { return null }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+  if (u.username || u.password) return null
+  if (!isPrivateLanHost(u.hostname)) return null
+  return u.href.length <= MAX_SETTINGS_URL_LENGTH ? u.href : null
+}
 const DEVICE_TEAMS = ['home', 'away']
 const MAX_ALIASES = 16
 
@@ -1521,6 +1565,8 @@ function createLanRelay(options = {}) {
   const movedClaims = new Map() // matchId -> Map<device id, claim> another device's claim took over
   const supersededClaims = new Map() // matchId -> Set<claim> the scorers' copies were continued from
   const presentRooms = new Set() // room keys whose subscribers were last told present:true (scorer-presence)
+  const displayTold = new Map() // room key -> display state its scoreboards were last told (display-presence)
+  let displaySeq = 0
   const benchRequests = createBenchRequestStore() // open + recently answered bench requests per match
   const benchLimiter = createWindowLimiter() // bench-request per socket and minute
   const messageLimiter = createWindowLimiter({ max: options.messagesPerMinute ?? MESSAGES_PER_MINUTE })
@@ -1707,6 +1753,7 @@ function createLanRelay(options = {}) {
       pinKeys: new Set(), // room keys this socket sent PINs for (see 'pins-required')
       access: new Map(), // room key -> { pin, verified }: the PIN offered in subscribe-match
       scorerDevice: null, // the device its syncs named with a claim (see noteScorer)
+      display: null, // a display's announcement { settingsUrl, at } (subscribe-match device 'display')
     }
     clients.set(ws, meta)
     watch(ws)
@@ -1728,6 +1775,7 @@ function createLanRelay(options = {}) {
     clients.delete(ws)
     benchLimiter.forget(meta.id)
     messageLimiter.forget(meta.id)
+    if (meta.display) for (const id of meta.subscribed) noteDisplays(id)
     for (const matchId of meta.owned) {
       if (ownersOf(matchId).length === 0) orphanedSince.set(matchId, Date.now())
       notePresence(matchId)
@@ -1785,6 +1833,46 @@ function createLanRelay(options = {}) {
     if (!subs) return
     const out = presenceMessage(matchId, present)
     for (const c of [...subs]) if (!clients.get(c)?.owned.has(matchId)) send(c, out)
+  }
+
+  // --- Scoreboard displays (display-presence) -------------------------------
+
+  /** Whether a display follows the room, and the newest usable settings page. */
+  function displayStateIn(matchId) {
+    let present = false
+    let settingsUrl = null
+    let at = -Infinity
+    for (const c of subscriptions.get(matchId) || []) {
+      const meta = clients.get(c)
+      if (!meta || !meta.display || c.readyState !== 1) continue
+      present = true
+      if (meta.display.settingsUrl && meta.display.at >= at) {
+        settingsUrl = meta.display.settingsUrl
+        at = meta.display.at
+      }
+    }
+    return { present, settingsUrl: present ? settingsUrl : null }
+  }
+
+  const displayKey = (s) => (s.present ? `1|${s.settingsUrl || ''}` : '0')
+  const displayMessage = (matchId, s) => ({ type: 'display-presence', matchId, present: s.present, settingsUrl: s.settingsUrl })
+
+  /** To one socket that has just proved the room. */
+  function sendDisplayPresence(ws, matchId) {
+    const s = displayStateIn(matchId)
+    displayTold.set(matchId, displayKey(s))
+    send(ws, displayMessage(matchId, s))
+  }
+
+  /** After a display came, went or named another page: its scoreboards, when that changed. */
+  function noteDisplays(matchId) {
+    const s = displayStateIn(matchId)
+    const key = displayKey(s)
+    if (key === (displayTold.get(matchId) ?? '0')) return
+    if (key === '0') displayTold.delete(matchId)
+    else displayTold.set(matchId, key)
+    const out = displayMessage(matchId, s)
+    for (const o of ownersOf(matchId)) if (o.readyState === 1) send(o, out)
   }
 
   /**
@@ -1851,6 +1939,7 @@ function createLanRelay(options = {}) {
     benchRequests.drop(matchId)
     provenAddrs.delete(matchId)
     presentRooms.delete(matchId)
+    displayTold.delete(matchId)
   }
 
   /**
@@ -2100,6 +2189,7 @@ function createLanRelay(options = {}) {
     provenAddrs.delete(matchId)
     // Its subscribers were told match-deleted and dropped: no presence message
     presentRooms.delete(matchId)
+    displayTold.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
@@ -2251,6 +2341,8 @@ function createLanRelay(options = {}) {
     // Bench requests of a set that is over go; a socket that has just
     // (re)proved the match gets the open ones again
     benchRequests.prune(matchId, currentSetOfBundle(stored))
+    // A socket that has just proved the room hears whether a display follows it
+    if (claimed.kind !== 'owner') sendDisplayPresence(ws, matchId)
     if (claimed.kind !== 'owner') {
       for (const e of benchRequests.open(matchId)) {
         send(ws, { type: 'bench-request', matchId, team: e.team, request: e.request, status: e.status, at: e.at, replay: true })
@@ -2292,6 +2384,11 @@ function createLanRelay(options = {}) {
     // Last, once the subscription is answered: is the scorer there now (false
     // for a room not on the relay yet)
     send(ws, presenceMessage(matchId, isScorerPresent(matchId)))
+    // A display: its announcement, for every room it follows (the scoreboards told)
+    if (meta && msg.device === DISPLAY_DEVICE) {
+      meta.display = { settingsUrl: displaySettingsUrl(msg.settingsUrl), at: ++displaySeq }
+      for (const id of meta.subscribed) noteDisplays(id)
+    }
   }
 
   // --- Bench requests (see the block above createLanRelay) ------------------
@@ -2414,7 +2511,9 @@ function createLanRelay(options = {}) {
       subs.delete(ws)
       if (subs.size === 0) subscriptions.delete(matchId)
     }
-    clients.get(ws)?.subscribed.delete(matchId)
+    const meta = clients.get(ws)
+    if (meta) meta.subscribed.delete(matchId)
+    if (meta && meta.display) noteDisplays(matchId)
   }
 
   function requireOwner(ws, matchId, what) {
@@ -3098,5 +3197,8 @@ module.exports = {
   isTrustedRelayOrigin,
   isAllowedRelayHost,
   relayRequestRefusal,
+  DISPLAY_DEVICE,
+  displaySettingsUrl,
+  isPrivateLanHost,
   createLanRelay,
 }

@@ -497,12 +497,12 @@ export default function MainHeader({
         {/* PIN or TEST */}
         <div className={cn(
           'rounded-lg border px-3 py-1.5 text-sm font-semibold',
-          matchData.match.test
+          matchData.match.test || (matchData.match.global === true && !matchData.match.gamePin)
             ? 'border-amber-200 bg-amber-50 text-[11px] uppercase tracking-[0.08em] text-amber-800'
             : 'border-stone-200 bg-stone-50 font-mono tracking-[0.3em] text-stone-900'
         )}>
           {matchData.match.global === true
-            ? t('home.tool.global', 'Global')
+            ? (matchData.match.gamePin || t('home.tool.global', 'Global'))
             : matchData.match.easy === true
             ? t('header.unofficial', 'Unofficial')
             : matchData.match.test ? t('header.test') : (matchData.match.gamePin || 'N/A')}
@@ -513,7 +513,7 @@ export default function MainHeader({
 
   const renderMatchInfoButton = (match) => {
     // Hide button if no match exists or no valid match number (unless it's a test match)
-    if (!match || (!match.test && !match.gameNumber && !match.game_n)) return null
+    if (!match || (!match.test && match.global !== true && !match.gameNumber && !match.game_n)) return null
 
     const isTest = match?.test
     const isEasy = match?.easy === true
@@ -954,7 +954,7 @@ export default function MainHeader({
 
         {/* Center: Collapsible Match Info Menu, between the two equal groups */}
         {/* Only show when match has a gamePin set OR is a test match */}
-        {!effectivelyCollapsed && (((showMatchSetup || matchId) && currentMatch && (currentMatch.gamePin || currentMatch.test)) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch) && ((currentOfficialMatch || currentTestMatch)?.gamePin || (currentOfficialMatch || currentTestMatch)?.test))) ? (
+        {!effectivelyCollapsed && (((showMatchSetup || matchId) && currentMatch && (currentMatch.gamePin || currentMatch.test || currentMatch.global === true)) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch) && ((currentOfficialMatch || currentTestMatch)?.gamePin || (currentOfficialMatch || currentTestMatch)?.test || (currentOfficialMatch || currentTestMatch)?.global === true))) ? (
           <div style={{
             // In the row, between the two groups: centred over the bar it
             // covered the connection status on a phone and the tablet status

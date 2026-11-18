@@ -11,6 +11,7 @@
 import { sanitizeActivityData, isKnownKind, ACTIVITY_LEVELS } from '../../domain/activitySummary'
 import { deviceId, appVersion, platformName, currentAccountId } from '../identity'
 import { randomUuid } from '../deviceId'
+import { isLocalOnly } from '../../domain/matchKind'
 
 export const FLUSH_DELAY_MS = 250
 export const FLUSH_BATCH = 50
@@ -113,7 +114,7 @@ export function createActivityWriter({ db, onWritten = null, now = () => Date.no
       if (!info) {
         try {
           const m = await db?.matches?.get?.(r.matchId)
-          rememberMatch(r.matchId, m?.seed_key ?? null, m?.test === true)
+          rememberMatch(r.matchId, m?.seed_key ?? null, isLocalOnly(m))
         } catch { /* unknown match */ }
         info = matchInfo.get(r.matchId)
       }

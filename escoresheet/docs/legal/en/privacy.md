@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.18 · As of 17 November 2026
+**OpenVolley and OpenBeach** · Version 1.19 · As of 17 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -17,11 +17,16 @@ version is binding.
 - The Global tool of OpenVolley needs no account. Its matches stay on your
   device. Only a backup of the match and, at the end, the scoresheet as a PDF
   are stored on the server, under a random backup code and without any
-  account, and deleted 180 days after the last change (section 7).
+  account, and deleted 180 days after the last change. If the scorer switches
+  on "Save in the cloud" for a match (off by default), it is also kept
+  readable on the server, without PINs or signature images, until 180 days
+  after the last save (section 7).
 - Live screen (optional, in OpenVolley and OpenBeach): if the scorer devices
   of an event switch it on, the score of each of their matches (team names,
   points and sets, no players) also goes to the server, is kept in memory only
-  and can be seen by anyone who has the live screen code (section 7).
+  and can be seen by anyone who has the live screen code; that of Global
+  matches also by anyone on livescore.openvolley.app, unless it is switched
+  off (section 7).
 - An electronic scoresheet contains data about players, team staff and
   officials: names, shirt numbers, dates of birth and signatures. Only team
   names, the score and shirt numbers are public, for beach volleyball also the
@@ -401,8 +406,9 @@ the app starts, changed in Options as long as no match is on the device) you
 score the matches of any tournament without an account. The rosters, officials
 and games you type in or load from an Excel or CSV file stay on your device;
 the app reads the file on the device and does not upload it. A Global match is
-not synced to the database: it is in no match, team or player record, and not
-in the manager or the public displays. Two files per match are stored on the
+never in the league's match, team or player records, nor in the manager or the
+league's public displays; only with "Save in the cloud" (below) is it kept, in
+a separate table of its own. Two files per match are stored on the
 server, without an account: the backup of the match (the content of a backup
 file: teams, rosters with names, shirt numbers and dates of birth, officials,
 signatures, the course of the match) and, once the match is approved, the
@@ -417,6 +423,36 @@ files are deleted 180 days after the last change; the server backups
 (section 18) keep a copy for a while longer. The organiser of the tournament is
 responsible for being allowed to record the data and for informing the players
 and their parents (section 17).
+
+**Save in the cloud (Global tool, optional):** in Match Setup the scorer can
+switch on "Save in the cloud" for a Global match; it is off by default. Then,
+besides the backup and the PDF above, the match is also kept readable (not
+encrypted) in the server's database, without an account: the content of the
+scoresheet (teams, rosters with names, shirt numbers and dates of birth, team
+staff, officials, the course of the match, sets, remarks), without the PINs,
+the signature images, the backup code and the tournament code; a summary
+(team names, short names and colours, sets and points, status, hall, league,
+scheduled time, game number); and, once the match is approved, the scoresheet
+as a PDF, which shows the signatures and the dates of birth. The match is
+found by a hash of its backup code and guarded by a hash of its referee PIN;
+the server stores neither the code nor the PIN. Optionally:
+
+- **Share link:** a read-only link with a random token, which the scorer turns
+  on and off. Anyone with the link sees the result, the sets and the PDF
+  scoresheet on livescore.openvolley.app.
+- **Tournament code:** a code of 10 characters, entered on the scorer devices
+  of a tournament. Anyone with the code sees the list of all matches saved
+  with it, with their summaries and PDFs, on livescore.openvolley.app. The
+  server stores the code only as a hash.
+- **Another device:** to continue there, restore the match with the backup
+  code and the referee PIN, as above.
+
+The readable copy, the share link and the tournament code are deleted 180
+days after the last save, or at once when the scorer chooses "Delete from the
+cloud"; the server backups (section 18) keep a copy for a while longer.
+Without "Save in the cloud" none of this is stored. Here too the organiser of
+the tournament is responsible for being allowed to record the data and for
+informing the players and their parents (section 17).
 
 **Live screen for TVs (optional, any match, also OpenBeach):** the scorer
 devices of an event can switch on a live screen with a shared live screen code
@@ -434,8 +470,13 @@ in a database or a file, and is removed 45 minutes after the match has ended,
 after 3 hours without an update, or when the server restarts. Anyone who knows
 the code can see the summaries of its matches on openvolley.app/tv, on
 livescore.openvolley.app or read them from the server's interface; a venue
-relay shows them on its own network too. Switch the live screen off in Options
-to stop sending.
+relay shows them on its own network too. A scorer device with a live screen
+code also lists the summaries of its Global matches on
+livescore.openvolley.app, for anyone and without the code, unless "Show Global
+matches on livescore.openvolley.app" is switched off on it in Options, Live
+screen (it is on by default). League matches are on the livescore anyway; test
+and Easy matches are never listed. Switch the live screen off in Options to
+stop sending.
 
 **Approval with a PIN:** officials can confirm the result with a personal
 approval PIN in addition to their signature. Stored are: the PIN as a
@@ -492,7 +533,8 @@ it shows the same data without names of players.
 
 **Never public:** dates of birth, licence numbers, signatures, approvals,
 email addresses and PINs. Rosters with names are only visible to whoever
-knows the match's PIN.
+knows the match's PIN or, for a Global match saved in the cloud, its share link
+or tournament code (section 7).
 
 ## 9. Tablets and venue mode (LAN)
 
@@ -796,6 +838,7 @@ copy of these safeguards.
 | Sending of the final scoresheet (time, number of recipients, no addresses) | With the match |
 | Scoresheet of a test match by email | Not stored on the server |
 | Global tool: backup and scoresheet PDF of a match (under the backup code) | 180 days after the last change |
+| Global tool, "Save in the cloud": readable copy of a match, share link, tournament code (as a hash) | 180 days after the last save, or when deleted from the cloud |
 | Live screen: score summary of a match whose scorer switched it on (team names, points, sets; no players) | In the server's memory only; removed 45 minutes after the end of the match, after 3 hours without an update or at a server restart |
 | Uploaded backup copies | 30 days |
 | Uploaded app logs | 30 days; deleted with your account |
@@ -821,8 +864,8 @@ players and their parents. The date of birth is used to check eligibility and
 age category on the official scoresheet and is never public.
 
 In the Global tool the organiser of the tournament or the scorer who enters
-the data is responsible in the same way. Parents can ask for the backup of a
-match to be deleted; for that I need the backup code or the match details
+the data is responsible in the same way. Parents can ask for the backup or the
+cloud copy of a match to be deleted; for that I need the backup code or the match details
 (section 19).
 
 Parents or other legal representatives can exercise the rights in section 19
@@ -884,7 +927,8 @@ country.
 Where the GDPR applies, I rely on:
 
 - **Contract** (Art. 6(1)(b) GDPR): account, sync, account emails, support,
-  the features you use, the online backup of the Global tool.
+  the features you use, the online backup and the cloud copy of the Global
+  tool.
 - **Legitimate interests** (Art. 6(1)(f) GDPR): correct and verifiable
   official match records for clubs, the association and officials (rosters,
   dates of birth to check eligibility, signatures, approvals, activity log and

@@ -7,6 +7,7 @@ import DashboardHeader from './components/DashboardHeader'
 import ContextualHelpPanel from './components/help/ContextualHelpPanel'
 import LegalLinks from './legal/LegalLinks'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
+import GlobalLiveList from './components/GlobalLiveList'
 import { applyServerParam, getApiUrl, getBackendOverride, isServedFromLocalServer, isStaticDeployment, serverParamNeedsConfirm } from './utils/backendConfig'
 import { createRelayLivescoreFeed, fetchRelayLivescoreList, relayLivescoreMode, relayLivescoreWsUrl } from './utils/relayLivescore'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
@@ -655,6 +656,9 @@ export default function LivescoreApp() {
             </RowList>
           </Card>
         )}
+        {/* Global matches have no database row: their opted-in live screens
+            (components/GlobalLiveList); a venue relay lists its own matches */}
+        {!loading && !relayLivescoreNow() && <GlobalLiveList />}
         {/* Public page with team names: the privacy policy says what is shown */}
         <LegalLinks docs={['privacy', 'terms', 'impressum']} className="mt-8 text-center text-[11px] text-stone-400" />
       </div>
