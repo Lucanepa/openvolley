@@ -1,13 +1,15 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
 import { TEAM_COLOUR_MARK, markColourOn } from '../utils/teamColours'
+import { useDragPointer } from './scoreboard/dragPointer'
 
 /**
  * DraggedPlayerOverlay - Floating player number that follows finger/cursor during drag.
  * Renders at document.body level via portal for proper z-index stacking.
  *
  * @param {Object} player - Player info { number | playerNumber, isLibero }
- * @param {Object} position - Screen coordinates { x, y }
+ * @param {Object} [position] - Screen coordinates { x, y }; without it the disc follows the
+ *   finger of the touch drag (scoreboard/dragPointer.js) and only it renders on a move
  * @param {{ bg: string, text: string, textShadow?: string, ring?: string|null }} [colors] - the disc's paint on the court (team shirt colour, libero colour; utils/teamColours.js)
  * @param {string} teamColor - Team primary color, used when no `colors` are given
  * @param {boolean} isValid - Whether current position is over a valid drop target
@@ -19,6 +21,8 @@ export default function DraggedPlayerOverlay({
   teamColor = '#64748b',
   isValid = true
 }) {
+  const pointer = useDragPointer()
+  position = position || pointer
   if (!player || !position) return null
 
   const bgColor = colors?.bg || (player.isLibero ? '#FFF8E7' : teamColor)

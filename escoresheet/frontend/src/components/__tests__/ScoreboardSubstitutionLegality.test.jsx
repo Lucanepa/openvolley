@@ -201,21 +201,16 @@ async function openExceptionalList() {
 }
 
 describe('the court player\'s menu (FIVB 15.6.2, 19.3.1.3)', () => {
-  it('a substitute goes out only for the starter he replaced; the others are "Not allowed" with why', async () => {
+  it('a substitute goes out only for the starter he replaced; the menu has no "Not allowed" list (owner 17.11)', async () => {
     const matchId = await setUp('substitute')
     await openScreen(matchId, 9)
     fireEvent.click(court(9))
     await waitFor(() => expect(playerMenu()).toBeTruthy())
-    fireEvent.click(screen.getByTestId('menu-illegal-toggle'))
-    await waitFor(() => expect(screen.getByTestId('menu-illegal-5')).toBeTruthy())
-    const why = (n) => screen.getByTestId(`menu-illegal-${n}`).textContent.replace(/\s+/g, ' ').trim()
-    expect([7, 8, 10, 11].map(why)).toEqual(['7 · Wrong partner', '8 · Wrong partner', '10 · Wrong partner', '11 · Wrong partner'])
-    // #5 is off the court for the libero, not a substitute (FIVB 15.7)
-    expect(why(5)).toBe('5 · Libero in for him')
-    fireEvent.click(screen.getByTestId('menu-illegal-5'))
-    const warning = await waitFor(() => screen.getByTestId('request-warning'))
-    expect(warning.getAttribute('data-reason')).toBe('illegal_substitution')
-    expect(warning.textContent).toContain('#5 cannot come in for #9: the libero is on court for him')
+    expect(playerMenu().textContent).not.toContain('Not allowed')
+    expect(screen.queryByTestId('menu-illegal-toggle')).toBeNull()
+    expect(screen.queryByTestId('menu-illegal-5')).toBeNull()
+    // one legal substitute, #3, and no list to open
+    expect(menuItems()).toContain('Substitution')
     expect(await ofType('substitution')).toHaveLength(1)
   }, 60000)
 

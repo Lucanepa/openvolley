@@ -133,6 +133,25 @@ export function useLiveCourt() {
 /** The TV address of one court of a code. */
 export const liveCourtUrl = (code, court) => (isLiveCode(code) && isCourtNumber(court) ? `${TV_SITE}${code}/${court}` : null)
 
+// The public livescore (livescore.openvolley.app) lists a Global match's
+// court too, unless this device turned it off (owner 2026-11-17: a Global
+// match has no database row, so the livescore's game list cannot have it;
+// backend lib/globalLive.js list). Only a Global match: a league match is on
+// the livescore anyway, a test or Easy match is practice.
+const LISTED_KEY = 'ov.liveScreen.listed'
+export function getLiveListed() {
+  try { return localStorage.getItem(LISTED_KEY) !== '0' } catch { return true }
+}
+export function setLiveListed(on) {
+  try { localStorage.setItem(LISTED_KEY, on ? '1' : '0') } catch { /* private window */ }
+  try { window.dispatchEvent(new Event(EVENT)) } catch { /* no window */ }
+}
+export function useLiveListed() {
+  return useSyncExternalStore(subscribe, getLiveListed, () => true)
+}
+/** The live push asks the cloud to list this match's court on the livescore. */
+export const liveListedForMatch = (match) => match?.global === true && getLiveListed()
+
 /** The code a match's live push carries: any match on a device that opted in. */
 export const liveCodeForMatch = (match) => (match ? getLiveCode() : null)
 

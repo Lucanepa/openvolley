@@ -100,7 +100,12 @@ const MATCH_LIVE_STATE_COLUMNS = Object.freeze({
   sanctions_b: true,
   subs_a: true,
   subs_b: true,
+  // Regular substitutions of the current set per team, a count (no shirt
+  // numbers): public, unlike subs_a / subs_b (frontend domain/livePublicFields)
+  subs_count_a: true,
+  subs_count_b: true,
   scorer_attention_trigger: true,
+  // The finished sets [{ set, home, away, a, b }]: public score data
   set_results: true,
   game_n: true,
   league: true,
@@ -109,7 +114,8 @@ const MATCH_LIVE_STATE_COLUMNS = Object.freeze({
 
 // What a viewer without a PIN gets of a live state (anonymous /api/db, the
 // relay's PIN-less summary and room broadcast): the score, sets, time-outs,
-// team names and colours. Line-ups, substitutions, sanctions and the last
+// the substitution counts (subs_count_a / _b), the finished sets
+// (set_results), team names and colours. Line-ups, substitutions, sanctions and the last
 // event's data (shirt numbers, a sanction's player or official) need the PIN
 // of the match (a match token on /api/db, a PIN-proved socket on the relay).
 export const LIVE_STATE_PRIVATE_COLUMNS = Object.freeze([
@@ -356,7 +362,7 @@ const LIVE_SUMMARY_COLUMNS = Object.freeze(Object.fromEntries([
   'id', 'match_id', 'current_set', 'best_of', 'match_status', 'sport_type',
   'team_a_name', 'team_a_short', 'team_a_color', 'team_b_name', 'team_b_short', 'team_b_color',
   'sets_won_a', 'sets_won_b', 'points_a', 'points_b', 'side_a', 'serving_team',
-  'timeouts_a', 'timeouts_b', 'timeout_active', 'set_interval_active',
+  'timeouts_a', 'timeouts_b', 'subs_count_a', 'subs_count_b', 'timeout_active', 'set_interval_active',
   'last_event_type', 'last_event_ts', 'updated_at', 'game_n', 'league', 'gender', 'set_results'
 ].map((c) => [c, true])))
 
@@ -423,7 +429,10 @@ export const MATCH_PRIVATE_FIELDS = Object.freeze([
   'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges', 'manual_changes',
   'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
   // openbeach's uploaded rosters waiting for the scorer (with dob)
-  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster'
+  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster',
+  // a Global match's key to its backup store (frontend utils/globalCloud);
+  // a scorer before 2026-11-17 sent it
+  'globalKey'
 ])
 /**
  * Match keys only the referee and the scorer's own devices get (relayBundleView):

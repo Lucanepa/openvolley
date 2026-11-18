@@ -49,6 +49,8 @@ import { createLiveStreams, listParams, MATCH_ID_RE as PUBLIC_MATCH_ID_RE } from
 import { createVectorPdf } from './lib/vectorPdf.js'
 import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS, SLOTS as SIGN_SLOTS } from './lib/signSessions.js'
 import { signPageFile } from './lib/signPage.js'
+import { createPairSessions, pairEndpointOf, pairBodyLimit, pairError, isPairPagePath, PAIR_API_HEADERS } from './lib/pairSessions.js'
+import { pairPageFile } from './lib/pairPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
@@ -57,6 +59,7 @@ import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIV
 import { admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
 import { checkUploadedRoster, signaturesAfterUpload, uploadedRosterProblemText, withPendingRostersCleared } from './lib/uploadedRoster.js'
+import { DISPLAY_DEVICE, displaySettingsUrl, displayPresenceMessage, displayStateOf, displayStateKey } from './lib/displayPresence.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -235,6 +238,10 @@ async function runGlobalGated(action, address, fn, opts) {
 }
 // A load's body is a key and a kind
 const GLOBAL_LOAD_BODY_MAX = 4 * 1024
+// POST /api/global/cloud/* (db/046, lib/globalMatches.js, the opt-in cloud
+// copy of a Global match): a save carries the match export and the PDF (base64)
+const GLOBAL_CLOUD_BODY_MAX = 4 * 1024 * 1024
+const GLOBAL_CLOUD_SMALL_BODY_MAX = 4 * 1024
 const STORAGE_IP_RATE_LIMIT_MAX = 600 // /api/storage/* per IP (per-user write quota lives in lib/storage.js)
 const PIN_RATE_LIMIT_MAX = 20        // validate-connection-pin per IP (/64) + PIN type
 const PIN_IP_RATE_LIMIT_MAX = 60     // validate-connection-pin per IP (/64), coarse total
@@ -364,13 +371,14 @@ const GLOBAL_LIVE_FORWARD = IS_CLOUD ? null : (() => {
 })()
 const GLOBAL_LIVE_FORWARD_MS = 2000
 const globalLiveForwards = new Map() // code\0court -> { timer, payload }
-function forwardGlobalLive(code, court, liveState, entry, screen = null) {
+function forwardGlobalLive(code, court, liveState, entry, screen = null, listed = false) {
   if (!GLOBAL_LIVE_FORWARD || !isLiveCode(code) || !isCourtToken(court)) return
   const key = `${code}\0${court}`
   const m = entry?.match || {}
   const payload = {
     court,
     screen: screenNumber(screen),
+    listed: listed === true,
     liveState: pickLiveSummaryFields(liveState),
     match: { coinTossTeamA: m.coinTossTeamA ?? null, hall: m.hall ?? m.venue ?? null, court: m.court ?? null, scheduledAt: m.scheduledAt ?? null, gameN: m.gameN ?? null },
     homeTeam: { name: entry?.homeTeam?.name ?? null },
@@ -390,7 +398,7 @@ function forwardGlobalLive(code, court, liveState, entry, screen = null) {
   const sent = slot.payload
   slot.timer = setTimeout(() => {
     globalLiveForwards.delete(key)
-    if (slot.payload !== sent) forwardGlobalLive(code, court, slot.payload.liveState, { match: { ...slot.payload.match }, homeTeam: slot.payload.homeTeam, awayTeam: slot.payload.awayTeam, sets: slot.payload.sets }, slot.payload.screen)
+    if (slot.payload !== sent) forwardGlobalLive(code, court, slot.payload.liveState, { match: { ...slot.payload.match }, homeTeam: slot.payload.homeTeam, awayTeam: slot.payload.awayTeam, sets: slot.payload.sets }, slot.payload.screen, slot.payload.listed)
   }, GLOBAL_LIVE_FORWARD_MS)
   slot.timer.unref?.()
 }
@@ -418,6 +426,26 @@ function sweepGlobalStore() {
 }
 setTimeout(sweepGlobalStore, 2000).unref()
 setInterval(sweepGlobalStore, 60 * 60 * 1000).unref()
+// The opt-in cloud copies of Global matches (db/046, lib/globalMatches.js):
+// DATABASE_URL mode only, the store made on first use
+let globalMatchesPromise = null
+function getGlobalMatches() {
+  if (!DB_MODE) return null
+  globalMatchesPromise ||= Promise.all([getDataLayer(), import('./lib/globalMatches.js')])
+    .then(([layer, gm]) => gm.createGlobalMatches({ pool: layer.db.pool }))
+  globalMatchesPromise.catch(() => { globalMatchesPromise = null })
+  return globalMatchesPromise
+}
+// deleted 180 days after the last save (privacy policy), also when nobody saves:
+// 5 min after start, then hourly
+if (DB_MODE) {
+  const sweepGlobalMatches = () => getGlobalMatches()
+    ?.then((gm) => gm.sweepExpired())
+    .then((n) => { if (n) console.log(`[Global cloud] retention: ${n} match(es) deleted`) })
+    .catch((err) => console.warn('[Global cloud] sweep failed:', String(err?.code || err?.message || err).slice(0, 120)))
+  setTimeout(sweepGlobalMatches, 5 * 60 * 1000).unref()
+  setInterval(sweepGlobalMatches, 60 * 60 * 1000).unref()
+}
 
 let dataLayer = null
 let dataLayerPromise = null
@@ -1112,8 +1140,9 @@ function rememberKey(set, key, max) {
 
 // subscribe-match { device, team }: a label for /api/server/connections (the
 // scorer's tablet status). Grants nothing; 'referee'/'bench' as `role` still
-// need the PIN.
-const DEVICE_LABELS = ['referee', 'bench', 'livescore']
+// need the PIN. 'display': a scoreboard display following the match
+// (display-presence, lib/displayPresence.js).
+const DEVICE_LABELS = ['referee', 'bench', 'livescore', DISPLAY_DEVICE]
 
 // The match's game PIN as a comparable string, or null (test matches have
 // none). Text or a number only, like the other PINs (lib/matchAccess.js).
@@ -1865,9 +1894,13 @@ function mayStartPhoneSign(access) {
  * never reaches the server, a new one only once its insert synced: the app
  * takes the hall network then, or says so (PhoneSignPanel startFailureKey).
  */
-async function signMatchOf(layer, body, userId, access) {
+const SIGN_MATCH_ERRORS = {
+  match: () => signError(403, 'OV_SIGN_MATCH'),
+  unavailable: () => signError(503, 'OV_SIGN_UNAVAILABLE', { 'Retry-After': '5' })
+}
+async function signMatchOf(layer, body, userId, access, errors = SIGN_MATCH_ERRORS) {
   const key = typeof body?.matchKey === 'string' ? body.matchKey.trim() : ''
-  if (!key || key.length > 128) return { error: signError(403, 'OV_SIGN_MATCH') }
+  if (!key || key.length > 128) return { error: errors.match() }
   let m
   try {
     ({ rows: [m] } = await layer.db.pool.query(
@@ -1878,9 +1911,9 @@ async function signMatchOf(layer, body, userId, access) {
          FROM public.matches m WHERE m.external_id = $1 LIMIT 1`, [key, userId]))
   } catch (err) {
     console.warn('[Sign] match lookup failed:', err?.message)
-    return { error: signError(503, 'OV_SIGN_UNAVAILABLE', { 'Retry-After': '5' }) }
+    return { error: errors.unavailable() }
   }
-  if (!m || !(access?.isAdmin === true || m.created_by === userId || m.editor === true)) return { error: signError(403, 'OV_SIGN_MATCH') }
+  if (!m || !(access?.isAdmin === true || m.created_by === userId || m.editor === true)) return { error: errors.match() }
   const text = (v) => (typeof v === 'string' && v.trim() ? v : null)
   const ctx = body.context
   const context = ctx && typeof ctx === 'object' && !Array.isArray(ctx)
@@ -2005,6 +2038,111 @@ async function handleSignRequest(req, res, endpoint) {
   const onGone = () => { if (!res.writableEnded) ac.abort() }
   res.on('close', onGone)
   const r = await sessions.wait(body, { signal: ac.signal })
+  res.off('close', onGone)
+  if (r.status !== 499) send(r)
+}
+
+// --- Pair a phone (docs/phone-keyboard-spec.md; lib/pairSessions.js) --------
+// POST /api/pair/start|wait|focus|close (the scoring device: start with the
+// same auth as /api/sign/start, the rest with its watch secret) and
+// join|poll|input (the phone: the QR token or the short code once, then its
+// own secret), and the phone page at /pair. Memory only, created on the first
+// request. OV_PAIR_DISABLED=1: 503 OV_PAIR_UNAVAILABLE.
+const PAIR_DISABLED = process.env.OV_PAIR_DISABLED === '1'
+const PAIR_MATCH_ERRORS = {
+  match: () => pairError(403, 'OV_PAIR_MATCH'),
+  unavailable: () => pairError(503, 'OV_PAIR_UNAVAILABLE', { 'Retry-After': '5' })
+}
+let pairSessions = null
+function getPairSessions() {
+  pairSessions ??= createPairSessions({
+    via: DB_MODE ? 'cloud' : 'lan',
+    randomBytes: (n) => randomBytes(n),
+    sha256: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+    log: (line) => console.log(`[Pair] ${line}`)
+  })
+  return pairSessions
+}
+
+async function handlePairRequest(req, res, endpoint) {
+  const send = (r) => sendJson(res, r.status, r.body, {
+    ...PAIR_API_HEADERS,
+    ...(r.headers || {}),
+    ...(r.status === 413 ? { Connection: 'close' } : {})
+  })
+  const refuse = (r) => { req.resume(); send(r) }
+  if (PAIR_DISABLED) return refuse(pairError(503, 'OV_PAIR_UNAVAILABLE'))
+  if (!/^application\/json\b/i.test(String(req.headers['content-type'] || ''))) return refuse(pairError(400, 'OV_PAIR_BAD_REQUEST'))
+  const ipKey = ipBucketKey(getClientIp(req))
+  let owner = null
+  let layer = null
+  let access = null
+  let userId = null
+  if (endpoint === 'start' && DB_MODE) {
+    // The account first, before the body is read (the Sign on phone rule, D2)
+    const token = bearerFromHeaders(req.headers)
+    if (!token) return refuse(pairError(401, 'OV_AUTH_REQUIRED'))
+    let user = null
+    try {
+      layer = await getDataLayer()
+      const v = await layer.auth.verifyAccessToken(token)
+      user = v?.user || null
+      if (user) access = await layer.access.get(user.id)
+    } catch (err) {
+      console.warn('[Pair] account check failed:', err?.message)
+      return refuse(pairError(503, 'OV_PAIR_UNAVAILABLE', { 'Retry-After': '5' }))
+    }
+    if (!user) return refuse(pairError(401, 'OV_AUTH_REQUIRED'))
+    if (!mayStartPhoneSign(access)) return refuse(pairError(403, 'OV_PAIR_FORBIDDEN'))
+    userId = user.id
+    owner = `u:${user.id}`
+  }
+  let body
+  try {
+    body = await readJsonBody(req, pairBodyLimit(endpoint))
+  } catch (err) {
+    return send(err?.code === 'BODY_TOO_LARGE' ? pairError(413, 'OV_PAIR_TOO_LARGE') : pairError(400, 'OV_PAIR_BAD_REQUEST'))
+  }
+  if (endpoint === 'start' && !DB_MODE) {
+    if (isLocalCaller(req)) {
+      owner = 'local'
+    } else {
+      // the scoring device that holds the room, with its game PIN (as /api/sign/start)
+      const pin = String(req.headers['x-ov-match-pin'] || '').trim().slice(0, 32)
+      if (!pin) return send(pairError(403, 'OV_PAIR_FORBIDDEN'))
+      const matchKey = typeof body?.matchKey === 'string' ? normalizeMatchId(body.matchKey) : null
+      const stored = matchKey && roomHeldFrom(matchKey, ipKey) ? gamePinOf(activeMatches.get(matchKey)?.match) : null
+      if (!stored) return send(pairError(403, 'OV_PAIR_FORBIDDEN'))
+      const scope = pinScope.match(matchKey, 'game')
+      if (pinFailureLimiter.isLimited(ipKey, scope)) return send(pairError(429, 'OV_PAIR_RATE_LIMITED', { 'Retry-After': '600' }))
+      if (!safeEqualStr(stored, pin)) return send(pairError(403, 'OV_PAIR_PIN_INVALID'))
+      pinFailureLimiter.refund(ipKey, scope)
+      owner = `pin:${ipKey}`
+    }
+  }
+  const sessions = getPairSessions()
+  if (endpoint === 'start') {
+    // cloud: the match the account writes, its stored teams and its app
+    let app = null
+    if (DB_MODE && body && typeof body === 'object' && !Array.isArray(body)) {
+      const bound = await signMatchOf(layer, body, userId, access, PAIR_MATCH_ERRORS)
+      if (bound.error) return send(bound.error)
+      body = bound.body
+      app = bound.app
+    }
+    return send(sessions.start(body, { owner, app }))
+  }
+  if (endpoint === 'focus') return send(sessions.focus(body))
+  if (endpoint === 'close') return send(sessions.close(body))
+  if (endpoint === 'join') return send(sessions.join(body, { ipKey }))
+  if (endpoint === 'input') return send(sessions.input(body, { ipKey }))
+  // wait / poll: dropped when the caller goes away
+  const ac = new AbortController()
+  const onGone = () => { if (!res.writableEnded) ac.abort() }
+  res.on('close', onGone)
+  const r = endpoint === 'poll'
+    ? await sessions.poll(body, { ipKey, signal: ac.signal })
+    : await sessions.wait(body, { signal: ac.signal })
   res.off('close', onGone)
   if (r.status !== 499) send(r)
 }
@@ -2309,8 +2447,8 @@ const transportRefusals = { origin: 0, mediaType: 0, upgradeOrigin: 0, frames: 0
 //   without an Origin (a native app, a script, the board bridge) is no page;
 // - with a body type other than JSON (415): a browser then asks first
 //   (preflight), and the CORS answer refuses a foreign page. The support form
-//   (/api/contact) also takes multipart/form-data; the phone-sign API checks
-//   its own body type (handleSignRequest).
+//   (/api/contact) also takes multipart/form-data; the phone-sign and
+//   phone-pair APIs check their own body type (handleSignRequest, handlePairRequest).
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const JSON_TYPE_RE = /^\s*application\/json\s*(;|$)/i
 const MULTIPART_TYPE_RE = /^\s*multipart\/form-data\s*;/i
@@ -2323,7 +2461,7 @@ function apiWriteRefusal(req, pathname) {
     transportRefusals.origin++
     return { status: 403, code: 'OV_ORIGIN_REFUSED', message: 'This site may not call the OpenVolley server' }
   }
-  if (signEndpointOf(pathname)) return null
+  if (signEndpointOf(pathname) || pairEndpointOf(pathname)) return null
   const type = String(req.headers['content-type'] || '')
   if (JSON_TYPE_RE.test(type) || (pathname === '/api/contact' && MULTIPART_TYPE_RE.test(type))) return null
   transportRefusals.mediaType++
@@ -2679,6 +2817,23 @@ function handleHttpRequest(req, res) {
     handleSignRequest(req, res, signEndpoint).catch((err) => {
       console.error('[Sign] request failed:', err?.message)
       sendJson(res, 503, signError(503, 'OV_SIGN_UNAVAILABLE').body, SIGN_API_HEADERS)
+    })
+    return
+  }
+
+  // Pair a phone: the phone page (same-origin with its API, the /sign page's headers) ...
+  if ((req.method === 'GET' || req.method === 'HEAD') && isPairPagePath(url.pathname)) {
+    const file = pairPageFile(url.pathname)
+    res.writeHead(file ? 200 : 404, { 'Content-Type': file ? file.type : 'text/plain', ...SIGN_PAGE_HEADERS })
+    res.end(req.method === 'HEAD' ? undefined : (file ? file.body : 'Not Found'))
+    return
+  }
+  // ... and its API (start/wait/focus/close come from the app origins through the CORS above)
+  const pairEndpoint = req.method === 'POST' ? pairEndpointOf(url.pathname) : null
+  if (pairEndpoint) {
+    handlePairRequest(req, res, pairEndpoint).catch((err) => {
+      console.error('[Pair] request failed:', err?.message)
+      sendJson(res, 503, pairError(503, 'OV_PAIR_UNAVAILABLE').body, PAIR_API_HEADERS)
     })
     return
   }
@@ -4932,7 +5087,7 @@ Generated by eScoresheet
 
   // POST /api/global/live/<code> — a scorer device whose relay is not the
   // cloud (the desktop app, a venue relay with internet) sends its court
-  // itself: { court, liveState, match, homeTeam, awayTeam, sets }. The court
+  // itself: { court, liveState, match, homeTeam, awayTeam, sets, listed }. The court
   // token (a hash of the match's own secret key) keeps it one court with the
   // relay path; the summary is cut down in lib/globalLive.js courtSummary.
   if (req.method === 'POST' && /^\/api\/global\/live\/[^/]{1,40}$/.test(url.pathname)) {
@@ -4957,7 +5112,7 @@ Generated by eScoresheet
         return
       }
       const entry = { match: body.match && typeof body.match === 'object' ? body.match : {}, homeTeam: body.homeTeam, awayTeam: body.awayTeam, sets: Array.isArray(body.sets) ? body.sets.slice(0, 5) : [] }
-      const ok = globalLive.update(code, body.court, body.liveState, entry, screenOf(body.screen, entry))
+      const ok = globalLive.update(code, body.court, body.liveState, entry, screenOf(body.screen, entry), body.listed === true)
       sendJson(res, ok ? 200 : 503, { data: { ok }, error: ok ? null : { message: 'Live store full', code: 'OV_BUSY' } }, { 'Cache-Control': 'no-store' })
     })().catch((err) => {
       console.error('[GlobalLive] push failed:', String(err?.message || err).slice(0, 200))
@@ -5000,6 +5155,20 @@ Generated by eScoresheet
     return
   }
 
+  // GET /api/global/live — the public livescore's list (lib/globalLive.js
+  // list): only the courts whose scorer opted in to it
+  if (req.method === 'GET' && (url.pathname === '/api/global/live' || url.pathname === '/api/global/live/')) {
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.removeHeader('Access-Control-Allow-Credentials')
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+    if (isRateLimited(ipBucketKey(getClientIp(req)), GLOBAL_LIVE_RATE_LIMIT_MAX, 'global-live')) {
+      sendTooMany()
+      return
+    }
+    sendJson(res, 200, { data: globalLive.list(), error: null }, { 'Cache-Control': 'no-store' })
+    return
+  }
+
   const globalLiveRoute = req.method === 'GET' ? /^\/api\/global\/live\/([^/]{1,40})$/.exec(url.pathname) : null
   if (globalLiveRoute) {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -5017,6 +5186,89 @@ Generated by eScoresheet
     // nothing live yet is an empty page, not an error: the TV waits for the first rally
     const screen = screenNumber(url.searchParams.get('screen'))
     sendJson(res, 200, { data: globalLive.get(code, { screen }) || { code, updatedAt: null, courts: [] }, error: null }, { 'Cache-Control': 'no-store' })
+    return
+  }
+
+  // The opt-in cloud copy of a Global match (db/046, lib/globalMatches.js), no
+  // account: the match's own key and PIN. POST /api/global/cloud/{save,load,
+  // share,delete}; the read-only share link GET /api/global/shared/<token>
+  // (and /pdf); a tournament's list GET /api/global/organizer/<code> (and
+  // /<id>/pdf). DATABASE_URL mode only. Keys, PINs and tokens are never logged.
+  const globalCloudPost = req.method === 'POST' ? /^\/api\/global\/cloud\/(save|load|share|delete)$/.exec(url.pathname) : null
+  const globalSharedGet = req.method === 'GET' ? /^\/api\/global\/shared\/([^/]{1,64})(\/pdf)?$/.exec(url.pathname) : null
+  const globalOrganizerGet = req.method === 'GET' ? /^\/api\/global\/organizer\/([^/]{1,40})(?:\/([^/]{1,64})\/pdf)?$/.exec(url.pathname) : null
+  if (globalCloudPost || globalSharedGet || globalOrganizerGet || url.pathname.startsWith('/api/global/cloud/')) {
+    if (!globalCloudPost) {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.removeHeader('Access-Control-Allow-Credentials')
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+    }
+    if (!globalCloudPost && !globalSharedGet && !globalOrganizerGet) {
+      req.resume()
+      sendJson(res, 405, { data: null, error: { message: 'Method not allowed', code: 'OV_METHOD' } })
+      return
+    }
+    if (isRateLimited(ipBucketKey(getClientIp(req)), globalCloudPost ? GLOBAL_IP_RATE_LIMIT_MAX : GLOBAL_LIVE_RATE_LIMIT_MAX, 'global-cloud')) {
+      req.resume()
+      sendTooMany()
+      return
+    }
+    if (!DB_MODE) {
+      req.resume()
+      sendJson(res, 503, { data: null, error: { message: 'No cloud on this server', code: 'OV_NO_CLOUD' } }, { 'Cache-Control': 'no-store' })
+      return
+    }
+    const sendPdf = (buf) => {
+      if (!buf) {
+        sendJson(res, 404, { data: null, error: { message: 'Not found', code: 'OV_NOT_FOUND' } }, { 'Cache-Control': 'no-store' })
+        return
+      }
+      res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': buf.length, 'Content-Disposition': 'inline; filename="scoresheet.pdf"', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
+      res.end(buf)
+    }
+    ;(async () => {
+      try {
+        const gm = await getGlobalMatches()
+        if (globalSharedGet) {
+          if (globalSharedGet[2]) sendPdf(await gm.sharedPdf(globalSharedGet[1]))
+          else { const r = await gm.shared(globalSharedGet[1]); sendJson(res, r.status, r.body, { 'Cache-Control': 'no-store' }) }
+          return
+        }
+        if (globalOrganizerGet) {
+          const code = String(globalOrganizerGet[1]).toUpperCase()
+          if (globalOrganizerGet[2]) sendPdf(await gm.organizerPdf(code, globalOrganizerGet[2]))
+          else { const r = await gm.organizerList(code); sendJson(res, r.status, r.body, { 'Cache-Control': 'no-store' }) }
+          return
+        }
+        const action = globalCloudPost[1]
+        await runGlobalGated(action === 'save' ? 'save' : 'load', ipBucketKey(getClientIp(req)), async () => {
+          let body
+          try {
+            body = await readJsonBody(req, action === 'save' ? GLOBAL_CLOUD_BODY_MAX : GLOBAL_CLOUD_SMALL_BODY_MAX, { idleMs: RESTORE_BODY_IDLE_MS, totalMs: RESTORE_BODY_TOTAL_MS })
+          } catch (err) {
+            sendBodyError(res, err, { tooLargeBody: { data: null, error: { message: 'Match too large', code: 'OV_GLOBAL_TOO_LARGE' } } })
+            return
+          }
+          const b = body && typeof body === 'object' ? body : {}
+          const r = action === 'save'
+            ? await gm.save(b.key, b.pin, { bundle: b.bundle, summary: b.summary, organizer: b.organizer ?? null, ...('pdf' in b ? { pdf: b.pdf } : {}) })
+            : action === 'load' ? await gm.load(b.key, b.pin)
+              : action === 'share' ? await gm.setShare(b.key, b.pin, b.on === true)
+                : await gm.del(b.key, b.pin)
+          sendJson(res, r.status, r.body, { 'Cache-Control': 'no-store' })
+        }, { abandoned: () => req.destroyed })
+      } catch (err) {
+        if (err?.code === 'AUTH_BUSY') {
+          req.resume()
+          sendJson(res, 503, { data: null, error: { message: 'Server busy, retry shortly', code: 'OV_BUSY', retryable: true } }, { 'Retry-After': '5', Connection: 'close' })
+          return
+        }
+        if (err?.code === 'GATE_ABANDONED') return
+        // the code only: the message of a pg error may quote a parameter
+        console.error('[Global cloud] failed:', String(err?.code || 'error').slice(0, 40))
+        if (!res.headersSent) sendJson(res, 503, { data: null, error: { message: 'Cloud unavailable', code: 'OV_GLOBAL_UNAVAILABLE' } }, { 'Retry-After': '5' })
+      }
+    })()
     return
   }
 
@@ -5425,8 +5677,11 @@ wss.on('connection', (ws, req) => {
     // offered (subscribe-match). Full bundles and match actions only with one
     // that grants the match (hasRelayAccess); the summary otherwise.
     matchAccess: new Map(),
-    device: null, // subscribe-match label: 'referee' | 'bench' | 'livescore'
+    device: null, // subscribe-match label: 'referee' | 'bench' | 'livescore' | 'display'
     deviceTeam: null,
+    // A display's announcement (subscribe-match device 'display'):
+    // { settingsUrl, at }, settingsUrl already checked (displaySettingsUrl)
+    display: null,
     // The installation a scoreboard names in sync-match-data (db/019, the
     // scoring device): its claims are checked against match_scorer_devices
     scorerDevice: null,
@@ -5587,8 +5842,11 @@ function handleSocketMessage(clientInfo, data) {
         // DATABASE_URL mode: also a match_live_state db-change for live
         // subscribers (livescore, scorer alarm), even when HTTP sync is down;
         // not one the relay refused (too large, relay memory full).
-        // A test (rehearsal) match stays in the relay's memory: never in the database
-        const isTestRoom = activeMatches.get(resolveMatchKey(clientInfo, message.matchId))?.match?.test === true
+        // A test (rehearsal) match stays in the relay's memory: never in the
+        // database. So does a Global match (no account, no row: a real match
+        // that stays local, frontend domain/matchKind)
+        const roomMatch = activeMatches.get(resolveMatchKey(clientInfo, message.matchId))?.match
+        const isTestRoom = roomMatch?.test === true || roomMatch?.global === true
         const liveTaken = handleLiveStateUpdate(clientInfo, message)
         // The live screen for TVs (lib/globalLive.js): any match (league,
         // test, Easy, Global; OpenBeach too) whose scorer opted in with a live
@@ -5602,7 +5860,8 @@ function handleSocketMessage(clientInfo, data) {
             // match's court token when it sends one, else the room
             const court = isCourtToken(message.globalLiveCourt) ? message.globalLiveCourt : courtTokenOf(liveKey)
             const screen = screenOf(message.globalLiveScreen, entry)
-            if (globalLive.update(message.globalLive, court, entry.liveState, entry, screen)) forwardGlobalLive(message.globalLive, court, entry.liveState, entry, screen)
+            const listed = message.globalLiveListed === true
+            if (globalLive.update(message.globalLive, court, entry.liveState, entry, screen, listed)) forwardGlobalLive(message.globalLive, court, entry.liveState, entry, screen, listed)
           }
         }
         if (liveTaken && liveStateRelay && !isTestRoom) {
@@ -5646,6 +5905,7 @@ function handleSocketMessage(clientInfo, data) {
         clientInfo.deviceTeam = VALID_TEAMS.includes(message.team) ? message.team : clientInfo.deviceTeam
         sendBenchRequestsOnJoin(clientInfo, normalizeMatchId(message.matchId))
         sendScorerPresence(clientInfo, normalizeMatchId(message.matchId))
+        if (message.device === DISPLAY_DEVICE) noteDisplay(clientInfo, message.settingsUrl)
         break
 
       case 'unsubscribe-match': {
@@ -5836,6 +6096,50 @@ function updateScorerPresence(matchId) {
     const c = connections.get(id)
     if (c && c.ws.readyState === 1 && !c.ownedMatches.has(matchId)) sendToRoomMember(c, data)
   }
+}
+
+// --- Scoreboard displays (display-presence, lib/displayPresence.js) ---------
+// A display (an LED board's controller) subscribes with device 'display' and
+// may name its settings page (settingsUrl, private-LAN http(s) only). The
+// match's scorer, and only the scorer (the sockets that proved the match),
+// is told whether a display follows and that page: as the answer to its
+// first accepted sync on a socket, and when it changes (a display in, out,
+// or naming another page). Same message as the LAN relays.
+let displaySeq = 0
+
+/** A display's subscribe-match: its announcement, for every room it follows. */
+function noteDisplay(clientInfo, rawUrl) {
+  clientInfo.display = { settingsUrl: displaySettingsUrl(rawUrl), at: ++displaySeq }
+  for (const id of clientInfo.rooms) updateDisplayPresence(id)
+}
+
+/** The room's display state: its open display sockets (in it or waiting for it). */
+function displayStateIn(matchId) {
+  const displays = []
+  for (const c of connections.values()) {
+    if (c.display && c.device === DISPLAY_DEVICE && c.ws.readyState === 1 && c.rooms.has(matchId)) displays.push(c.display)
+  }
+  return displayStateOf(displays)
+}
+
+/** display-presence to one socket that has just proved the match. */
+function sendDisplayPresence(clientInfo, matchId) {
+  const state = displayStateIn(matchId)
+  const room = rooms.get(matchId)
+  if (room) room.displayTold = displayStateKey(state)
+  sendToClient(clientInfo, displayPresenceMessage(matchId, state))
+}
+
+/** Tell the room's scorer sockets when its display state changed; nothing when it did not. */
+function updateDisplayPresence(matchId) {
+  const room = matchId ? rooms.get(matchId) : null
+  if (!room) return
+  const state = displayStateIn(matchId)
+  const key = displayStateKey(state)
+  if (key === (room.displayTold ?? '0')) return
+  room.displayTold = key
+  const data = JSON.stringify(displayPresenceMessage(matchId, state))
+  for (const c of matchOwners(matchId)) sendToRoomMember(c, data)
 }
 
 /**
@@ -6123,6 +6427,8 @@ function leaveRoom(clientInfo, matchId) {
 
   // The scorer's last socket out: its tablets are told (scorer-presence)
   if (room.clients.size > 0) updateScorerPresence(matchId)
+  // A display out: the scorer is told (display-presence)
+  if (clientInfo.display) updateDisplayPresence(matchId)
 
   // Clean up empty room
   if (room.clients.size === 0) {
@@ -7110,6 +7416,8 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   // Once the claim is made: a take-over within this sync (claimMatch,
   // venueScorerAfter) never reads as the scorer gone
   updateScorerPresence(matchId)
+  // A socket that has just proved the match hears whether a display follows it
+  if (newlyOwned) sendDisplayPresence(clientInfo, matchId)
 
   if (LOG_EACH_CONNECTION) console.log(`📤 Match data synced for ${logValue(matchId)} (Game #${logValue(match?.gameN || 'unknown')})`)
   else relaySummary.count('match bundles synced')

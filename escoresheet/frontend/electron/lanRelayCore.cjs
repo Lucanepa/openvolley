@@ -75,6 +75,10 @@
  *                     device ('referee' | 'bench' | 'livescore') and team ('home' | 'away')
  *                     only label the socket in /api/server/connections (tablet status on
  *                     the scorer); they grant nothing. `role` is accepted as the old name.
+ *                     device 'display' (a scoreboard display, e.g. an LED board) with
+ *                     settingsUrl?: its settings page, kept only when it is a private-LAN
+ *                     http(s) URL (displaySettingsUrl); grants nothing either, and only
+ *                     the match's scoreboard hears of it (display-presence).
  *                     pin: the referee PIN, a bench PIN (while that connection is on) or
  *                     the game PIN of the match (pinGrantsAccess). With it the socket gets
  *                     the bundle (rosters, events) and match-action; without it, or with a
@@ -112,6 +116,13 @@
  *                     repeat per sync, no PIN, device id or address. Unsubscribing ends no
  *                     claim here (ownership comes from the sync, not the subscription). The referee and bench warn when the scorer's
  *                     device is gone (lid closed, app crashed, Wi-Fi lost).
+ *   display-presence  { type, matchId, present, settingsUrl }  to the room's proven
+ *                     scoreboards only: whether a display follows the room, and the settings
+ *                     page of the newest one that named a usable one (null otherwise). Sent
+ *                     to a socket right after its first accepted sync of the room, and to the
+ *                     room's scoreboards when it changes (a display subscribing, naming
+ *                     another page, unsubscribing or closing); no repeat. Same message on the
+ *                     cloud relay and the Tauri relay (docs/scoreboard-display-spec.md).
  *   connected, pong, error { type:'error', code, message, matchId? }
  *   match-data-request | game-number-request | match-update-request  (proven scoreboards only)
  *
@@ -162,6 +173,13 @@
  *                   from the relay host itself, or with X-OV-Match-Pin = the game PIN
  *                   of the body's matchKey (wrong PINs counted like GET
  *                   /api/match/:id). Bodies: 64 KB submit, 4 KB otherwise (413).
+ *
+ * Pair a phone (docs/phone-keyboard-spec.md): POST /api/pair/start|wait|focus|
+ *                   close (the scoring device) and join|poll|input (the phone),
+ *                   state machine in ./pairSessionCore.cjs (same protocol in
+ *                   backend/server.js and src-tauri/src/pair.rs). start has the
+ *                   /api/sign/start rule; the rest needs the session's secrets.
+ *                   Bodies: 64 KB focus and input, 4 KB otherwise (413).
  */
 
 // Secret fields on a match object that must never be returned to a client.
@@ -332,7 +350,7 @@ const MATCH_PRIVATE_FIELDS = [
   'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges',
   'manual_changes', 'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster',
   'pending_away_roster', 'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster',
-  'pending_team2_roster',
+  'pending_team2_roster', 'globalKey',
 ]
 
 // Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS.
@@ -650,6 +668,39 @@ function carryMatchSecrets(prevMatch, nextMatch) {
 }
 
 const DEVICE_ROLES = ['referee', 'bench', 'livescore']
+
+// --- Scoreboard displays (display-presence) ----------------------------------
+// The same rule as backend/lib/displayPresence.js and src-tauri/src/relay.rs
+// (docs/scoreboard-display-spec.md): a display's settings page is passed on
+// only when it is an http(s) URL on a private-LAN address.
+const DISPLAY_DEVICE = 'display'
+const MAX_SETTINGS_URL_LENGTH = 256
+
+/** RFC 1918 IPv4 or IPv6 unique local (fc00::/7), as new URL().hostname gives them. */
+function isPrivateLanHost(hostname) {
+  if (typeof hostname !== 'string' || !hostname) return false
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname)
+  if (m) {
+    const [a, b, c, d] = m.slice(1).map(Number)
+    if ([a, b, c, d].some((n) => n > 255)) return false
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  }
+  const v6 = /^\[([0-9a-f:.]+)\]$/i.exec(hostname)
+  if (v6) return /^f[cd][0-9a-f]{2}:/i.test(v6[1])
+  return false
+}
+
+/** A display's settings page as the relay keeps it (normalised href), or null. */
+function displaySettingsUrl(raw) {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_SETTINGS_URL_LENGTH) return null
+  if (/[\u0000-\u0020\u007f]/.test(raw)) return null
+  let u
+  try { u = new URL(raw) } catch { return null }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+  if (u.username || u.password) return null
+  if (!isPrivateLanHost(u.hostname)) return null
+  return u.href.length <= MAX_SETTINGS_URL_LENGTH ? u.href : null
+}
 const DEVICE_TEAMS = ['home', 'away']
 const MAX_ALIASES = 16
 
@@ -1110,6 +1161,7 @@ function createRateLimiter({ windowMs = 60 * 1000, max = 10 } = {}) {
 // --- Sign on phone (docs/qr-signing-spec.md 4): /api/sign/* -----------------
 
 const SIGN_ENDPOINT_RE = /^\/api\/sign\/(start|open|submit|wait|close)$/
+const PAIR_ENDPOINT_RE = /^\/api\/pair\/(start|wait|focus|close|join|poll|input)$/
 
 /**
  * Read at most `limit` bytes of a JSON body and stop: { body } or { error: status }.
@@ -1432,10 +1484,17 @@ function pinRoleOf(match, pin) {
  * `isLocal(addr)`: the relay host itself may start a session; anyone else
  * proves the match's game PIN (X-OV-Match-Pin). Defaults to loopback only.
  *
+ * Pair a phone (/api/pair/*): `pairCore` is ./pairSessionCore.cjs, passed the
+ * same way (`pairOptions.sha256` is required by that core; the ESM entry
+ * passes the sign core's). Without it every pair call answers 503
+ * OV_PAIR_UNAVAILABLE. Created lazily, disposed by close(), like the sign
+ * sessions.
+ *
  * `heartbeatMs`: the ping interval (HEARTBEAT_MS; 0 turns it off).
  *
  * @param {{ log?: Console, requestTimeoutMs?: number, isRateLimited?: Function,
- *   signCore?: object, isLocal?: (addr: string) => boolean, signOptions?: object }} [options]
+ *   signCore?: object, isLocal?: (addr: string) => boolean, signOptions?: object,
+ *   pairCore?: object, pairOptions?: object }} [options]
  */
 function createLanRelay(options = {}) {
   const log = options.log || console
@@ -1458,6 +1517,7 @@ function createLanRelay(options = {}) {
   const validatePinFailures = createFailureCounter({ windowMs: VALIDATE_PIN_FAILURE_WINDOW_MS, max: VALIDATE_PIN_FAILURES })
   const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
   const signCore = options.signCore || null
+  const pairCore = options.pairCore || null
   const isLocalAddr = options.isLocal || isLoopbackAddress
   // Wrong PINs per match from every address (MATCH_PIN_FAILURE_LIMIT)
   const matchPinFailures = createFailureCounter({ windowMs: MATCH_PIN_WINDOW_MS, max: options.matchPinFailureLimit ?? MATCH_PIN_FAILURE_LIMIT })
@@ -1492,6 +1552,7 @@ function createLanRelay(options = {}) {
   const roomIdleMs = options.roomIdleMs ?? ROOM_IDLE_EVICT_MS
   const allowedHosts = (options.allowedHosts || []).map((h) => String(h).toLowerCase())
   let signSessions = null // created on the first /api/sign/* request
+  let pairSessions = null // created on the first /api/pair/* request
 
   const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
   const subscriptions = new Map() // matchId -> Set<ws>
@@ -1504,6 +1565,8 @@ function createLanRelay(options = {}) {
   const movedClaims = new Map() // matchId -> Map<device id, claim> another device's claim took over
   const supersededClaims = new Map() // matchId -> Set<claim> the scorers' copies were continued from
   const presentRooms = new Set() // room keys whose subscribers were last told present:true (scorer-presence)
+  const displayTold = new Map() // room key -> display state its scoreboards were last told (display-presence)
+  let displaySeq = 0
   const benchRequests = createBenchRequestStore() // open + recently answered bench requests per match
   const benchLimiter = createWindowLimiter() // bench-request per socket and minute
   const messageLimiter = createWindowLimiter({ max: options.messagesPerMinute ?? MESSAGES_PER_MINUTE })
@@ -1690,6 +1753,7 @@ function createLanRelay(options = {}) {
       pinKeys: new Set(), // room keys this socket sent PINs for (see 'pins-required')
       access: new Map(), // room key -> { pin, verified }: the PIN offered in subscribe-match
       scorerDevice: null, // the device its syncs named with a claim (see noteScorer)
+      display: null, // a display's announcement { settingsUrl, at } (subscribe-match device 'display')
     }
     clients.set(ws, meta)
     watch(ws)
@@ -1711,6 +1775,7 @@ function createLanRelay(options = {}) {
     clients.delete(ws)
     benchLimiter.forget(meta.id)
     messageLimiter.forget(meta.id)
+    if (meta.display) for (const id of meta.subscribed) noteDisplays(id)
     for (const matchId of meta.owned) {
       if (ownersOf(matchId).length === 0) orphanedSince.set(matchId, Date.now())
       notePresence(matchId)
@@ -1768,6 +1833,46 @@ function createLanRelay(options = {}) {
     if (!subs) return
     const out = presenceMessage(matchId, present)
     for (const c of [...subs]) if (!clients.get(c)?.owned.has(matchId)) send(c, out)
+  }
+
+  // --- Scoreboard displays (display-presence) -------------------------------
+
+  /** Whether a display follows the room, and the newest usable settings page. */
+  function displayStateIn(matchId) {
+    let present = false
+    let settingsUrl = null
+    let at = -Infinity
+    for (const c of subscriptions.get(matchId) || []) {
+      const meta = clients.get(c)
+      if (!meta || !meta.display || c.readyState !== 1) continue
+      present = true
+      if (meta.display.settingsUrl && meta.display.at >= at) {
+        settingsUrl = meta.display.settingsUrl
+        at = meta.display.at
+      }
+    }
+    return { present, settingsUrl: present ? settingsUrl : null }
+  }
+
+  const displayKey = (s) => (s.present ? `1|${s.settingsUrl || ''}` : '0')
+  const displayMessage = (matchId, s) => ({ type: 'display-presence', matchId, present: s.present, settingsUrl: s.settingsUrl })
+
+  /** To one socket that has just proved the room. */
+  function sendDisplayPresence(ws, matchId) {
+    const s = displayStateIn(matchId)
+    displayTold.set(matchId, displayKey(s))
+    send(ws, displayMessage(matchId, s))
+  }
+
+  /** After a display came, went or named another page: its scoreboards, when that changed. */
+  function noteDisplays(matchId) {
+    const s = displayStateIn(matchId)
+    const key = displayKey(s)
+    if (key === (displayTold.get(matchId) ?? '0')) return
+    if (key === '0') displayTold.delete(matchId)
+    else displayTold.set(matchId, key)
+    const out = displayMessage(matchId, s)
+    for (const o of ownersOf(matchId)) if (o.readyState === 1) send(o, out)
   }
 
   /**
@@ -1834,6 +1939,7 @@ function createLanRelay(options = {}) {
     benchRequests.drop(matchId)
     provenAddrs.delete(matchId)
     presentRooms.delete(matchId)
+    displayTold.delete(matchId)
   }
 
   /**
@@ -2083,6 +2189,7 @@ function createLanRelay(options = {}) {
     provenAddrs.delete(matchId)
     // Its subscribers were told match-deleted and dropped: no presence message
     presentRooms.delete(matchId)
+    displayTold.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
@@ -2234,6 +2341,8 @@ function createLanRelay(options = {}) {
     // Bench requests of a set that is over go; a socket that has just
     // (re)proved the match gets the open ones again
     benchRequests.prune(matchId, currentSetOfBundle(stored))
+    // A socket that has just proved the room hears whether a display follows it
+    if (claimed.kind !== 'owner') sendDisplayPresence(ws, matchId)
     if (claimed.kind !== 'owner') {
       for (const e of benchRequests.open(matchId)) {
         send(ws, { type: 'bench-request', matchId, team: e.team, request: e.request, status: e.status, at: e.at, replay: true })
@@ -2275,6 +2384,11 @@ function createLanRelay(options = {}) {
     // Last, once the subscription is answered: is the scorer there now (false
     // for a room not on the relay yet)
     send(ws, presenceMessage(matchId, isScorerPresent(matchId)))
+    // A display: its announcement, for every room it follows (the scoreboards told)
+    if (meta && msg.device === DISPLAY_DEVICE) {
+      meta.display = { settingsUrl: displaySettingsUrl(msg.settingsUrl), at: ++displaySeq }
+      for (const id of meta.subscribed) noteDisplays(id)
+    }
   }
 
   // --- Bench requests (see the block above createLanRelay) ------------------
@@ -2397,7 +2511,9 @@ function createLanRelay(options = {}) {
       subs.delete(ws)
       if (subs.size === 0) subscriptions.delete(matchId)
     }
-    clients.get(ws)?.subscribed.delete(matchId)
+    const meta = clients.get(ws)
+    if (meta) meta.subscribed.delete(matchId)
+    if (meta && meta.display) noteDisplays(matchId)
   }
 
   function requireOwner(ws, matchId, what) {
@@ -2830,6 +2946,63 @@ function createLanRelay(options = {}) {
     if (r.status !== 499) sendSign(res, r)
   }
 
+  // --- Pair a phone -----------------------------------------------------------
+
+  function getPairSessions() {
+    if (!pairSessions) {
+      pairSessions = pairCore.createPairSessions({
+        via: 'lan',
+        sha256: signCore ? signCore.sha256Hex : undefined,
+        log: (line) => log.log(`[Pair] ${line}`),
+        ...(options.pairOptions || {}),
+      })
+    }
+    return pairSessions
+  }
+
+  const pairFail = (status, code, headers) => (pairCore
+    ? pairCore.pairError(status, code, headers)
+    : { status, body: { ok: false, code, message: code }, ...(headers ? { headers } : {}) })
+
+  /** Who may start a pairing: the /api/sign/start rule, in OV_PAIR_* codes. */
+  function pairOwner(req, body, ip) {
+    const who = signOwner(req, body, ip)
+    if (!who.error) return who
+    const code = String(who.error.body && who.error.body.code || '').replace(/^OV_SIGN_/, 'OV_PAIR_')
+    return { error: pairFail(who.error.status, code, who.error.headers) }
+  }
+
+  /** POST /api/pair/<endpoint>. */
+  async function handlePair(req, res, endpoint, ip) {
+    if (!pairCore) return sendSign(res, pairFail(503, 'OV_PAIR_UNAVAILABLE'))
+    if (!isJsonRequest(req)) {
+      req.resume()
+      return sendSign(res, pairFail(400, 'OV_PAIR_BAD_REQUEST'))
+    }
+    const read = await readSignBody(req, pairCore.pairBodyLimit(endpoint))
+    if (read.error === 413) return sendSign(res, pairFail(413, 'OV_PAIR_TOO_LARGE'))
+    if (read.error) return sendSign(res, pairFail(400, 'OV_PAIR_BAD_REQUEST'))
+    const body = read.body
+    const sessions = getPairSessions()
+    const ipKey = stripV4Prefix(ip)
+    if (endpoint === 'start') {
+      const who = pairOwner(req, body, ip)
+      return sendSign(res, who.error || sessions.start(body, { owner: who.owner }))
+    }
+    if (endpoint === 'focus') return sendSign(res, sessions.focus(body))
+    if (endpoint === 'close') return sendSign(res, sessions.close(body))
+    if (endpoint === 'join') return sendSign(res, sessions.join(body, { ipKey }))
+    if (endpoint === 'input') return sendSign(res, sessions.input(body, { ipKey }))
+    // wait / poll: dropped when the caller goes away
+    const ac = typeof AbortController === 'function' ? new AbortController() : null
+    const onGone = () => { if (ac && !res.writableEnded) ac.abort() }
+    res.on('close', onGone)
+    const opts = ac ? { signal: ac.signal } : {}
+    const r = endpoint === 'poll' ? await sessions.poll(body, { ipKey, ...opts }) : await sessions.wait(body, opts)
+    res.off('close', onGone)
+    if (r.status !== 499) sendSign(res, r)
+  }
+
   /**
    * Serve the relay-owned endpoints. `url` is the full '/api/...' path with
    * query (the Vite middleware strips '/api', so it passes '/api' + req.url).
@@ -2854,6 +3027,15 @@ function createLanRelay(options = {}) {
     const reply = (p) => Promise.resolve().then(typeof p === 'function' ? p : () => p)
       .then((r) => sendJson(res, r.status, r.body))
       .catch((err) => sendJson(res, err.status || 500, { success: false, error: err.message || 'Internal error' }))
+
+    const pair = PAIR_ENDPOINT_RE.exec(path)
+    if (pair && method === 'POST') {
+      handlePair(req, res, pair[1], ip).catch((err) => {
+        log.error('[Pair] request failed:', err && err.message)
+        sendSign(res, pairFail(500, 'OV_PAIR_BAD_REQUEST'))
+      })
+      return true
+    }
 
     const sign = SIGN_ENDPOINT_RE.exec(path)
     if (sign && method === 'POST') {
@@ -2951,6 +3133,8 @@ function createLanRelay(options = {}) {
     heartbeat,
     /** Sign session counts (tests): null before the first sign request. */
     signStats: () => (signSessions ? signSessions.stats() : null),
+    /** Pair session counts (tests): null before the first pair request. */
+    pairStats: () => (pairSessions ? pairSessions.stats() : null),
     /**
      * Stop the relay's timers: the sign sessions (sweeper, held waits) and the
      * rate limiters it created. A later sign request starts fresh sessions.
@@ -2958,6 +3142,8 @@ function createLanRelay(options = {}) {
     close() {
       if (signSessions) signSessions.dispose()
       signSessions = null
+      if (pairSessions) pairSessions.dispose()
+      pairSessions = null
       for (const limiter of ownLimiters) limiter.dispose()
       for (const p of pending.values()) clearTimeout(p.timer)
       if (heartbeatTimer) clearInterval(heartbeatTimer)
@@ -3011,5 +3197,8 @@ module.exports = {
   isTrustedRelayOrigin,
   isAllowedRelayHost,
   relayRequestRefusal,
+  DISPLAY_DEVICE,
+  displaySettingsUrl,
+  isPrivateLanHost,
   createLanRelay,
 }

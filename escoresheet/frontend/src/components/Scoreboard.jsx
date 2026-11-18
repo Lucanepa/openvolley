@@ -17,6 +17,8 @@ import { useScorerActions, pickLiveStateSnapshot, isReportedActionError, markAct
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import { matchMenuSections, toMenuListSections } from './matchMenu'
+import { openPhonePair, phonePairMatchOf } from './phonePair/phonePairStore'
+import { useScoreboardDisplay } from './scoreboard/useScoreboardDisplay'
 import SanctionsResultsModal from './SanctionsResultsModal'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
@@ -33,9 +35,11 @@ import { phoneSignContext, signatureUpdate } from '../domain/phoneSignature'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
+import { noteOwnTapClick, trackOwnTapClicks } from '../utils/pointerPresses'
 import { teamShortLabels } from '../utils/teamShortLabels'
 import { LOG_REWRITE_EVENTS, liveStateLastAction } from '../utils/refereeLastEvent.js'
 import ballFallback from '../ball_fallback.png'
+import { isLocalOnly } from '../domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -47,7 +51,7 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
-import { liveCodeForMatch, cachedCourtToken, getLiveCourt } from '../utils/globalLive'
+import { liveCodeForMatch, cachedCourtToken, getLiveCourt, liveListedForMatch } from '../utils/globalLive'
 import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
@@ -96,12 +100,16 @@ import PreMatchSignDialog, { SignaturesMissingModal, MissingSignatureButton } fr
 import { savedSidesOfRegularSets } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot, correctionAfter } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
+import { livePublicFields } from '../domain/livePublicFields'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import { setSummaryFit } from './scoreboard/setSummaryFit'
+import { dragPointer } from './scoreboard/dragPointer'
+import CountdownSeconds from './scoreboard/CountdownSeconds'
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
 import { useBenchRequestBridge, lineupAcceptBlock } from './scoreboard/useBenchRequestBridge'
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
@@ -188,7 +196,7 @@ async function queueTeamRoster(matchId, teamKey, columns = {}) {
   const teamId = teamKey === 'home' ? m?.homeTeamId : teamKey === 'away' ? m?.awayTeamId : null
   if (teamId == null || !m?.seed_key) return null
   const roster = await db.players.where('teamId').equals(teamId).sortBy('number')
-  return queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster), ...columns }, { test: m.test === true })
+  return queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster), ...columns }, { test: isLocalOnly(m) })
 }
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
@@ -850,9 +858,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [summaryTableZoom, setSummaryTableZoom] = useState(null) // { side: 'left'|'right', teamKey: 'home'|'away' } | null
 
   const [benchSubExpanded, setBenchSubExpanded] = useState(false) // Track if substitution list is expanded in bench player menu
-  const [benchIllegalExpanded, setBenchIllegalExpanded] = useState(false) // the "Not allowed" court players in the bench player menu
   const [courtSubExpanded, setCourtSubExpanded] = useState(false) // Track if substitution list is expanded in court player menu
-  const [courtIllegalExpanded, setCourtIllegalExpanded] = useState(false) // the "Not allowed" candidates in the court player menu
   const [courtSanctionExpanded, setCourtSanctionExpanded] = useState(false) // Track if sanction list is expanded in court player menu
   const [courtLiberoExpanded, setCourtLiberoExpanded] = useState(false) // Track if libero list is expanded in court player menu
   const [courtLiberoUnableExpanded, setCourtLiberoUnableExpanded] = useState(false) // Track if "Unable to play" submenu is expanded
@@ -889,7 +895,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     longPressProgress: 0,
     touchPosition: null,  // { x, y } for progress indicator
     isDragging: false,
-    dragPosition: null,   // { x, y } for floating player overlay
+    // the finger of a drag is not state: scoreboard/dragPointer.js
   })
   const [validDropTargets, setValidDropTargets] = useState([]) // [{ team, position, type: 'court'|'bench', playerNumber? }]
   const touchProgressIntervalRef = useRef(null)
@@ -1433,7 +1439,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!m?.id) return
     db.matches.update(m.id, { lfpTracking: on })
       .then(() => db.matches.get(m.id))
-      .then((fresh) => fresh && queueMatchUpdate(db, fresh.seed_key, { match_info: matchInfoFromLocal(fresh) }, { test: fresh.test === true }))
+      .then((fresh) => fresh && queueMatchUpdate(db, fresh.seed_key, { match_info: matchInfoFromLocal(fresh) }, { test: isLocalOnly(fresh) }))
       .catch((err) => console.warn('[Scoreboard] LFP setting not kept with the match:', err))
   }, [data?.match])
   scorerMovedRef.current = isScorerMoved(data?.match)
@@ -1952,7 +1958,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // the match's seed_key; told here, the job commits (or rolls back) with the
   // action instead of being queued after it
   useEffect(() => {
-    if (matchId != null && data?.match) rememberSeedKey(matchId, data.match.seed_key ?? null, data.match.test === true)
+    if (matchId != null && data?.match) rememberSeedKey(matchId, data.match.seed_key ?? null, isLocalOnly(data.match))
   }, [matchId, data?.match?.seed_key, data?.match?.test]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore match state from a snapshot (used by undo)
@@ -2546,7 +2552,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // the cloud (relay or database), so the LedBox can be rehearsed
       const match = await db.matches.get(matchId)
       if (!match) return
-      const isTest = match.test === true
+      const isTest = isLocalOnly(match)
       const routeOf = () => liveStateTargets({ isTest, relayKey: relayKeyRef.current, relayUrl: scorerRelay.url })
       if (isTest && !routeOf().relay) return
       console.log(`[PERF:liveState] After match.get: +${(performance.now() - _tl).toFixed(0)}ms`)
@@ -2656,11 +2662,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Only when the snapshot does not count that set yet: a fresh snapshot
       // after the finish (manual change, undo, court switch) already does.
       const setWinner = eventData?.winner
+      // The match's sets now: the finished ones go out as set_results
+      // (domain/livePublicFields), read again at every push so an undone set
+      // end or a corrected score is gone from the next push too
+      const matchSets = await db.sets.where({ matchId }).toArray()
       let countFinishedSet = false
       if (isSetInterval || isMatchEnd) {
         const finishedSetCount = eventType === 'set_end'
           ? 0
-          : (await db.sets.where({ matchId }).toArray()).filter(s => s.finished).length
+          : matchSets.filter(s => s.finished).length
         countFinishedSet = finishedSetMissingFromSnapshot(snapshot, finishedSetCount, eventType)
       }
       const { a: updatedSetScoreA, b: updatedSetScoreB } = setsWonWithFinishedSet(snapshot, setWinner, countFinishedSet)
@@ -2824,6 +2834,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         timeouts_b: snapshot.timeoutsB,
         subs_a: snapshot.subsA?.length > 0 ? snapshot.subsA : null,
         subs_b: snapshot.subsB?.length > 0 ? snapshot.subsB : null,
+        // For every viewer, PIN or not (subs_a / subs_b are PIN-only): the
+        // regular substitutions of the set current_set names, and the
+        // finished sets' scores (domain/livePublicFields)
+        ...livePublicFields({ snapshot, sets: matchSets, pushedSetIndex: finalSetIndex, countFinishedSet }),
         // All sanctions (team, players, bench officials) - match-wide, persist across sets
         sanctions_a: snapshot.matchTeamSanctionsA?.length > 0 ? snapshot.matchTeamSanctionsA : null,
         sanctions_b: snapshot.matchTeamSanctionsB?.length > 0 ? snapshot.matchTeamSanctionsB : null,
@@ -2878,7 +2892,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session },
             ...(liveCode ? { globalLive: liveCode } : {}),
             ...(liveCourt ? { globalLiveCourt: liveCourt } : {}),
-            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {})
+            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {}),
+            ...(liveCode && liveListedForMatch(match) ? { globalLiveListed: true } : {})
           })
           // the desktop app's relay feeds no cloud page: it sends the court itself
           if (liveCode && pushesGlobalLive()) pushGlobalLive({ code: liveCode, match, liveState: liveStateData, db, matchId })
@@ -3211,7 +3226,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
 
     // Use match from guard check above (already fetched)
-    const isTest = match?.test || false
+    const isTest = isLocalOnly(match)
 
     // Only sync official matches (not test matches)
     if (!isTest) {
@@ -3729,9 +3744,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Update every 100ms for smooth visuals (instead of 1000ms)
+    // Checked every 100 ms; the state changes only when the shown second does
+    // (a new object every 100 ms rendered the whole scoring screen ten times
+    // a second for the whole set interval, as the time-out countdown did)
     const timer = setInterval(() => {
       const remaining = secondsLeft(betweenSetsAnchorRef.current, betweenSetsInitialCountdownRef.current)
+      if (remaining === betweenSetsCountdown.countdown) return
 
       if (remaining <= 0) {
         // Auto-end the set interval when countdown reaches 0
@@ -3744,7 +3762,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           return { ...prev, countdown: remaining }
         })
       }
-    }, 100) // 100ms for smooth visual updates
+    }, 100)
 
     return () => clearInterval(timer)
   }, [betweenSetsCountdown])
@@ -4799,7 +4817,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // To the cloud through the sync queue (kept while offline, retried); a
       // Dexie write, so inside an action it is part of its transaction
-      trackWrite(queueMatchUpdate(db, data.match?.seed_key, { manual_changes: updatedChanges }, { test: data.match?.test === true }).catch((err) => {
+      trackWrite(queueMatchUpdate(db, data.match?.seed_key, { manual_changes: updatedChanges }, { test: isLocalOnly(data.match) }).catch((err) => {
         console.warn('[ManualChange] Could not queue the cloud update:', err?.message)
       }))
     } else {
@@ -4944,7 +4962,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const fresh = await db.matches.get(matchId)
       const manualChanges = [...(fresh?.manualChanges || []), ...entries]
       await db.matches.update(matchId, { manualChanges })
-      await queueMatchUpdate(db, fresh?.seed_key, { manual_changes: manualChanges }, { test: fresh?.test === true })
+      await queueMatchUpdate(db, fresh?.seed_key, { manual_changes: manualChanges }, { test: isLocalOnly(fresh) })
       deferUi(() => setManualChangesLog(prev => [...prev, ...entries]))
     }
 
@@ -5230,7 +5248,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Reuse match from snapshot or fetch fresh (lightweight events need it for isTest check)
     const match = snapshotMatch || await db.matches.get(matchId)
-    const isTest = match?.test || false
+    const isTest = isLocalOnly(match)
     console.log(`[PERF] After match.get: +${(performance.now() - _t0).toFixed(0)}ms`)
 
     // Only sync official matches to Supabase, not test matches
@@ -6662,11 +6680,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // improper-request escalation (FIVB 15.11 / 16.2; resolveSanction is pure and
   // unit-tested), and kept in the dialog state: the dialog shows what will be
   // recorded, and confirmSanction records exactly that.
+  //
+  // The team's Improper request button also records an illegal substitution
+  // request (owner 17.11, in place of the player menus' "Not allowed" list):
+  // the dialog asks which it was. An illegal substitution requested is
+  // rejected and is a delay (FIVB 16.1.3), on the delay ladder, as the
+  // request warning's "reject + delay sanction" (chooseRequestWarning).
   const openTeamSanctionConfirm = useCallback((side, requestedType, reason = null) => {
     const teamKey = mapSideToTeamKey(side)
     const resolved = resolveSanction(requestedType, teamSanctionCounts(data?.events, teamKey))
-    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason })
+    const askKind = requestedType === 'improper_request' && !reason
+    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason, ...(askKind ? { askKind: true, illegal: false } : {}) })
   }, [mapSideToTeamKey, data?.events])
+
+  // In that dialog: an improper request, or an illegal substitution requested
+  const chooseImproperKind = useCallback((illegal) => {
+    setSanctionConfirm(prev => {
+      if (!prev?.askKind) return prev
+      const counts = teamSanctionCounts(data?.events, prev.team)
+      return { ...prev, illegal, resolved: resolveSanction(illegal ? 'delay_warning' : 'improper_request', counts) }
+    })
+  }, [data?.events])
 
   // The request warning (domain/interruptionRequests.js): the first issue of
   // a time-out or substitution request. What each option records is resolved
@@ -7070,7 +7104,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const matchRecord = await db.matches.get(matchId)
       console.log('[SET_END_DEBUG] STEP 7: Match info:', JSON.stringify({
         matchId,
-        isTest: matchRecord?.test,
+        isTest: isLocalOnly(matchRecord),
         seed_key: matchRecord?.seed_key,
         currentStatus: matchRecord?.status
       }))
@@ -7080,7 +7114,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // STEP 8: IMMEDIATE SYNC TO SUPABASE (if not a test match)
       // Sync happens FIRST before any UI operations to ensure data is saved
-      if (matchRecord?.test !== true && matchRecord?.seed_key) {
+      if (!isLocalOnly(matchRecord) && matchRecord?.seed_key) {
         setSetTransitionLoading({ step: 'Syncing to cloud...' })
         console.log('[SET_END_DEBUG] STEP 8: Starting IMMEDIATE sync to Supabase')
 
@@ -7433,7 +7467,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
           // Sync new set to cloud (if not test match)
           const matchRecordForNewSet = await db.matches.get(matchId)
-          const isTest = matchRecordForNewSet?.test || false
+          const isTest = isLocalOnly(matchRecordForNewSet)
           if (!isTest && !existingSet) {
             await db.sync_queue.add({
               resource: 'set',
@@ -7570,7 +7604,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Get match to check if it's a test match
       const match = await db.matches.get(matchId)
-      const isTest = match?.test || false
+      const isTest = isLocalOnly(match)
 
       // Only add to sync queue if set was newly created and it's an official match
       if (!existingSet5 && !isTest) {
@@ -7830,7 +7864,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!setRow) return
     await db.sets.update(setRow.id, { homePoints, awayPoints })
     const match = await db.matches.get(matchId)
-    if (match && !match.test && match.seed_key) {
+    if (match && !isLocalOnly(match) && match.seed_key) {
       await db.sync_queue.add({
         resource: 'set',
         action: 'update',
@@ -7939,7 +7973,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // result the approval checks); the reopened one is corrected
     const match = await db.matches.get(matchId)
     await queueSetDeletes(db, match, plan.deleteSetIds)
-    if (match && !match.test && match.seed_key) {
+    if (match && !isLocalOnly(match) && match.seed_key) {
       for (const r of plan.restoreSets) {
         await db.sync_queue.add(setUpdateJob(match, r.id, restoredSetWrites(r).cloud))
       }
@@ -8868,40 +8902,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     prevTimeoutModalRef.current = timeoutModal
   }, [timeoutModal, sendActionToReferee, syncLiveStateToSupabase])
 
-  useEffect(() => {
-    if (!timeoutModal || !timeoutModal.started) return
-
+  // The running time-out's clock: its start on the monotonic clock and its
+  // length. The digits tick in CountdownSeconds (scoreboard/), not in this
+  // screen's state: a state change each second (ten, before) rendered the
+  // whole scoring screen for the whole time-out, and on a small tablet a
+  // substitution dragged in then could not be confirmed until the time-out
+  // was over (owner, 17.11.2026). timeoutModal.countdown keeps the length
+  // the time-out started with.
+  const timeoutClock = useMemo(() => {
+    if (!timeoutModal?.started) return null
     // Use startedAt from state if available, otherwise fallback to ref or Date.now()
     const startTimestamp = timeoutModal.startedAt ? new Date(timeoutModal.startedAt).getTime() : (timeoutStartTimestampRef.current || Date.now())
-    const initialCountdown = timeoutInitialCountdownRef.current || 30
+    const duration = timeoutInitialCountdownRef.current || 30
     // On the monotonic clock (without its anchor: from the start, within the length)
-    const anchor = timeoutModal.anchor ?? countdownAnchor(Math.min(Math.max(0, Date.now() - startTimestamp), initialCountdown * 1000))
+    const anchor = timeoutModal.anchor ?? countdownAnchor(Math.min(Math.max(0, Date.now() - startTimestamp), duration * 1000))
+    return { anchor, duration, startTimestamp }
+  }, [timeoutModal?.started, timeoutModal?.startedAt, timeoutModal?.anchor]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The time-out ends when its clock reaches 0 (checked every 100 ms; no
+  // state change before that)
+  useEffect(() => {
+    if (!timeoutModal?.started || !timeoutClock) return
 
     // Sync refs for legacy support/internal tracking
-    if (!timeoutStartTimestampRef.current) timeoutStartTimestampRef.current = startTimestamp
+    if (!timeoutStartTimestampRef.current) timeoutStartTimestampRef.current = timeoutClock.startTimestamp
 
     if (timeoutModal.countdown <= 0) {
       return
     }
 
-    // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
-      const remaining = secondsLeft(anchor, initialCountdown)
-
-      if (remaining <= 0) {
-        setTimeoutModal(null)
-        timeoutStartTimestampRef.current = null
-      } else {
-        setTimeoutModal(prev => {
-          if (!prev || !prev.started) return null
-          if (prev.countdown === remaining) return prev
-          return { ...prev, countdown: remaining }
-        })
-      }
+      if (secondsLeft(timeoutClock.anchor, timeoutClock.duration) > 0) return
+      setTimeoutModal(prev => (prev?.started ? null : prev))
+      timeoutStartTimestampRef.current = null
     }, 100)
 
     return () => clearInterval(timer)
-  }, [timeoutModal?.started, timeoutModal?.startedAt, timeoutModal?.anchor])
+  }, [timeoutModal?.started, timeoutClock]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const getTimeoutsUsed = useCallback(
     side => {
@@ -9552,6 +9589,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // scorer's own dialog for it, with every check; the request is answered when
   // the event is recorded (useBenchRequestBridge)
   const benchBridge = useBenchRequestBridge({ relayKey: data?.match ? relayMatchKey(data.match) : null, events: data?.events, setIndex: data?.set?.index })
+  // A scoreboard display following this match (an LED board) and its settings page: the menu's "Scoreboard settings"
+  const scoreboardDisplay = useScoreboardDisplay(data?.match ? relayMatchKey(data.match) : null)
   const benchActions = {
     onAcceptLineup: (entry) => {
       // only the set being scored, and only while the team has no line-up in it
@@ -10095,7 +10134,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    setDropTargetPosition({ team: teamKey, position })
+    // dragover fires every few ms: a new object each time rendered the whole screen
+    setDropTargetPosition(prev => (prev && prev.team === teamKey && prev.position === position ? prev : { team: teamKey, position }))
   }, [draggedPlayer, getCurrentServe, isLiberoUnable, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set?.index, substitutionsUsed, getAvailableSubstitutes])
 
   const handleCourtDragLeave = useCallback(() => {
@@ -10286,7 +10326,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
       // Allow the exchange
       e.dataTransfer.dropEffect = 'move'
-      setDropTargetBench({ team: teamKey, playerNumber, isLibero })
+      setDropTargetBench(prev => (prev && prev.team === teamKey && String(prev.playerNumber) === String(playerNumber) && !!prev.isLibero === !!isLibero ? prev : { team: teamKey, playerNumber, isLibero }))
       return
     }
 
@@ -10342,7 +10382,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     e.dataTransfer.dropEffect = 'move'
-    setDropTargetBench({ team: teamKey, playerNumber, isLibero })
+    setDropTargetBench(prev => (prev && prev.team === teamKey && String(prev.playerNumber) === String(playerNumber) && !!prev.isLibero === !!isLibero ? prev : { team: teamKey, playerNumber, isLibero }))
   }, [draggedPlayer, getLiberoOnCourt, getCurrentServe, hasPointSinceLastLiberoExchange, isLiberoUnable])
 
   const handleBenchDropLeave = useCallback(() => {
@@ -10579,10 +10619,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       longPressProgress: 0,
       touchPosition: null,
       isDragging: false,
-      dragPosition: null,
     })
     setDraggedPlayer(null)
     setValidDropTargets([])
+    dragPointer.set(null)
     touchDragDataRef.current = null
     touchStartPositionRef.current = null
   }, [])
@@ -10755,12 +10795,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (navigator.vibrate) {
         try { navigator.vibrate(30) } catch { /* not allowed */ }
       }
+      dragPointer.set(touchStartPositionRef.current)
       setTouchDragState(prev => ({
         ...prev,
         isLongPressing: false,
         longPressProgress: 1,
         isDragging: true,
-        dragPosition: touchStartPositionRef.current,
       }))
       setDraggedPlayer(playerData)
       computeValidDropTargets(playerData)
@@ -10789,14 +10829,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     if (touchState.isDragging) {
       if (e.cancelable) e.preventDefault() // Prevent scrolling while dragging
-      // one update per frame, not per touchmove: every update renders the
-      // whole scoring screen
+      // one update per frame, not per touchmove, and outside the screen's
+      // state: only the floating disc renders (scoreboard/dragPointer.js)
       touchMovePendingRef.current = pos
       if (!touchMoveFrameRef.current) {
         touchMoveFrameRef.current = requestAnimationFrame(() => {
           touchMoveFrameRef.current = 0
           const next = touchMovePendingRef.current
-          if (next) setTouchDragState(prev => (prev.isDragging ? { ...prev, dragPosition: next } : prev))
+          if (next) dragPointer.set(next)
         })
       }
     }
@@ -10853,15 +10893,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const target = touchTapTargetRef.current
       const claimed = touchClaimedRef.current
       cancelTouchDrag()
-      // only when the touch was claimed: else the browser clicks as well
-      if (claimed && target?.isConnected && typeof target.click === 'function') target.click()
+      // only when the touch was claimed: else the browser clicks as well.
+      // WebKitGTK clicks anyway (its compatibility click, right after this
+      // touchend): that one is dropped as the echo of this tap
+      // (pointerPresses: trackOwnTapClicks), else it shut the menu again.
+      if (claimed && target?.isConnected && typeof target.click === 'function') {
+        noteOwnTapClick(e)
+        target.click()
+      }
       return
     }
 
     if (touchState.isDragging && draggedPlayer) {
       // Find drop target under finger (the last move may still wait for its frame)
       const lifted = e?.changedTouches?.[0]
-      const pos = lifted ? { x: lifted.clientX, y: lifted.clientY } : (touchMovePendingRef.current || touchState.dragPosition)
+      const pos = lifted ? { x: lifted.clientX, y: lifted.clientY } : (touchMovePendingRef.current || dragPointer.get())
       if (pos) {
         const element = document.elementFromPoint(pos.x, pos.y)
         const dropInfo = getDropInfoFromElement(element)
@@ -10901,6 +10947,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // drops the browser's click: a short tap clicks the player itself
   // (handleTouchEnd).
   useEffect(() => {
+    trackOwnTapClicks()
     const claim = (e) => {
       if (!touchDragDataRef.current || !e.cancelable) return
       e.preventDefault()
@@ -11236,7 +11283,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     try {
       const matchRecord = await db.matches.get(matchId)
       if (isMatchOverStatus(matchRecord?.status)) return
-      const isTest = matchRecord?.test === true
+      const isTest = isLocalOnly(matchRecord)
       const allSets = await db.sets.where({ matchId }).sortBy('index')
       const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf, setOnly, inDefault, targets: setTargetsOf(matchRecord) })
       // Score of the existing sets the forfeit touches, for a later reversal
@@ -14211,6 +14258,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     editRosterHome: () => setReopenRosterConfirm('home'),
     editRosterAway: () => setReopenRosterConfirm('away'),
     showPins: () => setShowPinsModal(true),
+    pairPhone: data?.match ? () => openPhonePair(phonePairMatchOf(data, { lang: i18n.language, fallbackHome: t('common.home'), fallbackAway: t('common.away') })) : undefined,
+    scoreboardSettings: scoreboardDisplay.open,
     downloadGameData: () => { downloadGameData() },
     options: () => setShowOptionsInMenu(true),
     stopMatch: () => setStopMatchModal('select')
@@ -14289,6 +14338,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         teamName: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')),
         countdown: timeoutModal.countdown,
         countdownText: formatTimeout(timeoutModal.countdown),
+        // the phone's digits tick by themselves (CountdownSeconds)
+        clock: timeoutClock,
         total: 30
       }
     } else if (data?.set?.index === 5 && !set5SetupConfirmed) {
@@ -17735,35 +17786,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                     const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
 
+                    // The same box all match long: everything in it gets smaller as sets are added (scoreboard/setSummaryFit.js)
+                    const fit = setSummaryFit(visibleSets.length)
                     return (
                       <div className="set-summary-card"
+                        data-set-summary={'left'}
                         onClick={() => setSummaryTableZoom({ side: 'left', teamKey: currentLeftTeamKey })}
                         style={{
                           background: 'var(--panel)',
                           border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
-                          padding: `calc(12px * var(--scale-factor)) var(--set-card-pad-x, calc(12px * var(--scale-factor)))`,
-                          fontSize: `calc(15px * var(--scale-factor))`,
+                          paddingLeft: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          paddingRight: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          ...fit.card,
                           width: '100%',
                           cursor: 'pointer'
                         }}>
-                        <h4 style={{ margin: `0 0 calc(8px * var(--scale-factor))`, fontSize: `calc(18px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
+                        <h4 style={{ ...fit.heading, fontWeight: 600, textAlign: 'center' }}>
                           <span style={{
-                            padding: `calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor))`,
+                            ...fit.badge,
                             borderRadius: `calc(4px * var(--scale-factor))`,
-                            fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
                             ...teamBoxStyle(leftTeamColor)
                           }}>{leftTeamLabel}</span>
                         </h4>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
+                        <div style={fit.tableBox}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', ...fit.table }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>S</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>T</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>Set</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>P</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>W</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>S</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>T</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -17790,16 +17845,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderBottom: '1px solid var(--border)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{leftPoints}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{won}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{substitutions}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{timeouts}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{leftPoints}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{timeouts}</td>
                                 </tr>
                               )
                             })}
                           </tbody>
                         </table>
+                        </div>
                       </div>
                     )
                   })()}
@@ -18035,15 +18091,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}>
                       {t('scoreboard.phone.timeoutRunning', { team: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
                     </div>
+                    {/* the digits and the bar tick by themselves (CountdownSeconds) */}
+                    <CountdownSeconds clock={timeoutClock} fallback={timeoutModal.countdown}>{(seconds) => (<>
                     <div style={{
                       fontSize: '48px',
                       lineHeight: 1.1,
                       fontWeight: 700,
-                      color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
+                      color: seconds <= 10 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
                       fontFamily: getScoreFont()
                     }}>
-                      {formatTimeout(timeoutModal.countdown)}
+                      {formatTimeout(seconds)}
                     </div>
                     {/* Progress bar */}
                     <div style={{
@@ -18058,14 +18116,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       marginRight: 'auto'
                     }}>
                       <div style={{
-                        width: `${(timeoutModal.countdown / 30) * 100}%`,
+                        width: `${(seconds / 30) * 100}%`,
                         height: '100%',
-                        background: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
+                        background: seconds <= 10 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
                         transition: 'width 1s linear, background 0.3s',
                         marginLeft: 'auto'
                       }} />
                     </div>
+                    </>)}</CountdownSeconds>
                     <button
                       className="secondary"
                       onClick={stopTimeout}
@@ -18249,35 +18308,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                     const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
 
+                    // The same box all match long: everything in it gets smaller as sets are added (scoreboard/setSummaryFit.js)
+                    const fit = setSummaryFit(visibleSets.length)
                     return (
                       <div className="set-summary-card"
+                        data-set-summary={'right'}
                         onClick={() => setSummaryTableZoom({ side: 'right', teamKey: currentRightTeamKey })}
                         style={{
                           background: 'var(--panel)',
                           border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
-                          padding: `calc(12px * var(--scale-factor)) var(--set-card-pad-x, calc(12px * var(--scale-factor)))`,
-                          fontSize: `calc(15px * var(--scale-factor))`,
+                          paddingLeft: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          paddingRight: 'var(--set-card-pad-x, calc(12px * var(--scale-factor)))',
+                          ...fit.card,
                           width: '100%',
                           cursor: 'pointer'
                         }}>
-                        <h4 style={{ margin: `0 0 calc(8px * var(--scale-factor))`, fontSize: `calc(18px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
+                        <h4 style={{ ...fit.heading, fontWeight: 600, textAlign: 'center' }}>
                           <span style={{
-                            padding: `calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor))`,
+                            ...fit.badge,
                             borderRadius: `calc(4px * var(--scale-factor))`,
-                            fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
                             ...teamBoxStyle(rightTeamColor)
                           }}>{rightTeamLabel}</span>
                         </h4>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
+                        <div style={fit.tableBox}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', ...fit.table }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>S</th>
-                              <th style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>T</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>Set</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>P</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>W</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>S</th>
+                              <th style={{ ...fit.th, textAlign: 'center', fontWeight: 600 }}>T</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -18304,16 +18367,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderBottom: '1px solid var(--border)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{rightPoints}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{won}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{substitutions}</td>
-                                  <td style={{ padding: `calc(4px * var(--scale-factor)) var(--set-cell-pad-x, calc(2px * var(--scale-factor)))`, textAlign: 'center' }}>{timeouts}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{rightPoints}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ ...fit.td, textAlign: 'center' }}>{timeouts}</td>
                                 </tr>
                               )
                             })}
                           </tbody>
                         </table>
+                        </div>
                       </div>
                     )
                   })()}
@@ -19831,10 +19895,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         strokeWidth={4}
         color="var(--accent)"
       />
-      {touchDragState.isDragging && draggedPlayer && touchDragState.dragPosition && (
+      {touchDragState.isDragging && draggedPlayer && (
         <DraggedPlayerOverlay
           player={draggedPlayer}
-          position={touchDragState.dragPosition}
           colors={getPlayerCircleColors((draggedPlayer.team === 'home') === leftIsHome ? 'left' : 'right', !!draggedPlayer.isLibero)}
           isValid={validDropTargets.length > 0}
         />
@@ -20449,6 +20512,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <h3 className="m-0 mb-2 text-sm font-semibold text-stone-700">{t('scoreboard.remarks.title')}</h3>
               <textarea
                 ref={remarksTextareaRef}
+                aria-label={t('scoreboard.remarks.title')}
+                // the official sheet's remarks: a paired phone's text is shown as it arrives (Pair a phone)
+                data-ov-phone="official"
                 placeholder={t('scoreboard.remarks.placeholder')}
                 value={remarksText}
                 onChange={e => {
@@ -20838,7 +20904,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Get available substitutes for this player
         const { team, position, playerNumber } = playerActionMenu
         const availableSubs = playerActionMenu.canSubstitute ? getAvailableSubstitutes(team, playerNumber) : []
-        const illegalSubs = playerActionMenu.canSubstitute && data?.match?.easy !== true ? getIllegalSubstitutes(team, playerNumber) : []
         // Easy match: a number that is no player yet can come in (domain/easyMatch.js)
         const easyNewSub = data?.match?.easy === true && playerActionMenu.canSubstitute && newPlayerMayEnter({
           substitutions: getSubstitutionHistory(team),
@@ -20899,7 +20964,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              {...backdropDismiss(() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false); setCourtIllegalExpanded(false) })}
+              {...backdropDismiss(() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false) })}
             />
             {/* Action Menu */}
             <div ref={playerMenuWrapRef} style={menuStyle} className="modal-wrapper-roll-down">
@@ -20955,36 +21020,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         available={availableSubs}
                         onPick={(number, newPlayer) => handleSubFromMenu({ number }, { newPlayer })}
                       />
-                    )}
-                  </div>
-                )}
-                {/* Bench players who may not come in for this player, greyed
-                    with why: a tap opens "Illegal substitution requested" */}
-                {playerActionMenu.canSubstitute && illegalSubs.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <SbMenuItem tone="neutral" className="text-stone-500" expanded={courtIllegalExpanded} onClick={() => setCourtIllegalExpanded(!courtIllegalExpanded)} data-testid="menu-illegal-toggle">
-                      {t('scoreboard.requestWarning.notAllowed')}
-                    </SbMenuItem>
-                    {courtIllegalExpanded && (
-                      <div className={SB_MENU_SUB}>
-                        {illegalSubs.map(c => (
-                          <SbMenuItem
-                            key={c.number}
-                            tone="neutral"
-                            data-testid={`menu-illegal-${c.number}`}
-                            className="border-dashed bg-stone-50 text-stone-500 hover:bg-stone-100"
-                            onClick={() => {
-                              setPlayerActionMenu(null)
-                              setCourtSubExpanded(false)
-                              setCourtIllegalExpanded(false)
-                              openIllegalSubstitution(team, position, playerNumber, c)
-                            }}
-                          >
-                            <span className="tabular-nums">{c.number}</span>
-                            <span className="font-medium"> · {t(`scoreboard.requestWarning.illegalShort.${c.reason}`)}</span>
-                          </SbMenuItem>
-                        ))}
-                      </div>
                     )}
                   </div>
                 )}
@@ -21753,16 +21788,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Filter out liberos - cannot substitute for a libero on court
         // A court player who came in as a substitute may only be replaced by
         // the starter he came in for (FIVB 15.6.2, the court player's menu's
-        // rule: domain/interruptionRequests substitutionIllegalReason): he is
-        // listed under "Not allowed" with why, a tap opens the request warning
-        // (not in an easy match, nor beyond the 6 substitutions: as there)
+        // rule: domain/interruptionRequests substitutionIllegalReason). The
+        // others are not offered: an illegal substitution request is recorded
+        // from the team's Improper request (owner 17.11)
         const availableCourtPlayers = []
-        const illegalCourtPlayers = []
         if (neverPlayed && canSubstitute) {
           const currentLineup = getCurrentLineup(team)
           const liberoOnCourt = getLiberoOnCourt(team)
           const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-          const showIllegal = data?.match?.easy !== true && (substitutionsUsed?.[team] || 0) < MAX_SUBSTITUTIONS_PER_SET
           if (currentLineup) {
             Object.entries(currentLineup).forEach(([pos, num]) => {
               if (num) {
@@ -21777,7 +21810,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 if (canBeSub && !isLibero && !isLiberoOnCourt) {
                   const reason = data?.set ? substitutionIllegalReason(data.events, data.set.index, team, { playerOut: num, playerIn: playerNumber }, { players: teamPlayers }) : null
                   if (!reason) availableCourtPlayers.push({ position: pos, number: num })
-                  else if (showIllegal) illegalCourtPlayers.push({ position: pos, number: num, reason })
                 }
               }
             })
@@ -21798,7 +21830,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchIllegalExpanded(false); setBenchSanctionExpanded(false) })}
+              {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchSanctionExpanded(false) })}
             />
             {/* Action Menu */}
             <div ref={benchMenuWrapRef} style={menuStyle} className="modal-wrapper-roll-down">
@@ -21856,7 +21888,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             onClick={() => {
                               setBenchPlayerActionMenu(null)
                               setBenchSubExpanded(false)
-                              setBenchIllegalExpanded(false)
                               // Go directly to substitution confirmation modal
                               setSubstitutionConfirm({
                                 team,
@@ -21867,36 +21898,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             {cp.number}
-                          </SbMenuItem>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {/* Court players this bench player may not replace, greyed
-                    with why: a tap opens "Illegal substitution requested" */}
-                {illegalCourtPlayers.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <SbMenuItem tone="neutral" className="text-stone-500" expanded={benchIllegalExpanded} onClick={() => setBenchIllegalExpanded(!benchIllegalExpanded)} data-testid="bench-menu-illegal-toggle">
-                      {t('scoreboard.requestWarning.notAllowed')}
-                    </SbMenuItem>
-                    {benchIllegalExpanded && (
-                      <div className={SB_MENU_SUB}>
-                        {illegalCourtPlayers.map(cp => (
-                          <SbMenuItem
-                            key={cp.position}
-                            tone="neutral"
-                            data-testid={`bench-menu-illegal-${cp.number}`}
-                            className="border-dashed bg-stone-50 text-stone-500 hover:bg-stone-100"
-                            onClick={() => {
-                              setBenchPlayerActionMenu(null)
-                              setBenchSubExpanded(false)
-                              setBenchIllegalExpanded(false)
-                              openIllegalSubstitution(team, cp.position, cp.number, { number: playerNumber, reason: cp.reason })
-                            }}
-                          >
-                            <span className="tabular-nums">{cp.number}</span>
-                            <span className="font-medium"> · {t(`scoreboard.requestWarning.illegalShort.${cp.reason}`)}</span>
                           </SbMenuItem>
                         ))}
                       </div>
@@ -21917,7 +21918,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   const showSanctionConfirmFromBenchMenu = (sanctionType) => {
                     setBenchPlayerActionMenu(null)
                     setBenchSubExpanded(false)
-                    setBenchIllegalExpanded(false)
                     setBenchSanctionExpanded(false)
                     setSanctionConfirmModal({
                       team,
@@ -23068,7 +23068,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       ...clearedPostMatchSignatures()
                     })
                   }
-                  if (matchRecord && !matchRecord.test && matchRecord.seed_key) {
+                  if (matchRecord && !isLocalOnly(matchRecord) && matchRecord.seed_key) {
                     await db.sync_queue.add(setUpdateJob(matchRecord, reopenSetId, { finished: false, end_time: null }))
                     if (isMatchOverStatus(matchRecord.status)) {
                       await db.sync_queue.add({
@@ -23675,9 +23675,41 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             const team = `${teamKey === teamAKey ? 'A' : 'B'} (${nameOf(teamKey)})`
             const opponentKey = teamKey === 'home' ? 'away' : 'home'
             const opponent = `${opponentKey === teamAKey ? 'A' : 'B'} (${nameOf(opponentKey)})`
-            const { type: requested, resolved, reason } = sanctionConfirm
+            const { type: requested, resolved, reason, askKind, illegal } = sanctionConfirm
+            const kindButton = (isIllegal, label, testId) => (
+              <button
+                type="button"
+                data-testid={testId}
+                aria-pressed={illegal === isIllegal}
+                onClick={() => chooseImproperKind(isIllegal)}
+                className={`box-border flex-1 min-h-12 rounded-xl border px-3 py-2 text-sm font-semibold cursor-pointer ${illegal === isIllegal ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-50'}`}
+              >
+                {label}
+              </button>
+            )
             return (
-              <div style={{ padding: '4px 0', textAlign: 'center' }}>
+              <div style={{ padding: '4px 0', textAlign: 'center' }} data-testid="team-sanction-confirm">
+                {askKind && (
+                  <div style={{ marginBottom: '14px' }}>
+                    <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
+                      {t('scoreboard.teamSanctionConfirm.whatRequested')}
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {kindButton(false, t('scoreboard.teamSanctionConfirm.kindImproper'), 'ir-kind-improper')}
+                      {kindButton(true, t('scoreboard.teamSanctionConfirm.kindIllegalSubstitution'), 'ir-kind-illegal')}
+                    </div>
+                    {illegal && (
+                      <>
+                        <p style={{ marginTop: '10px', marginBottom: 0, fontSize: '14px' }}>
+                          {t('scoreboard.teamSanctionConfirm.illegalSubstitution')}
+                        </p>
+                        <p style={{ marginTop: '4px', marginBottom: 0, fontSize: '11px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+                          {t('scoreboard.requestWarning.illegal_substitution.rule')}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
                 {reason === 'substitution_limit' && (
                   <p style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>
                     {t('scoreboard.modals.substitutionLimitImproperRequest', 'The team has used its 6 substitutions in this set: a further substitution request is an improper request.')}
@@ -23695,12 +23727,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       ? t('scoreboard.teamSanctionConfirm.applyDelayWarning', { team })
                       : t('scoreboard.teamSanctionConfirm.applyDelayPenalty', { team })}
                 </p>
-                {requested === 'improper_request' && resolved !== 'improper_request' && (
+                {requested === 'improper_request' && !illegal && resolved !== 'improper_request' && (
                   <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
                     {t('scoreboard.teamSanctionConfirm.repeatedImproperRequest')}
                   </p>
                 )}
-                {requested === 'delay_warning' && resolved === 'delay_penalty' && (
+                {(requested === 'delay_warning' || illegal) && resolved === 'delay_penalty' && (
                   <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
                     {t('scoreboard.teamSanctionConfirm.repeatedDelay')}
                   </p>

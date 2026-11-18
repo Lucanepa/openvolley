@@ -13,6 +13,7 @@ import {
   projectRow,
   projectRows,
   projectLiveRow,
+  projectLiveSummaryRow,
   hasAnonPolicy,
   anonSelectCheck,
   projectAnonDbRows,
@@ -522,6 +523,42 @@ describe('anonymous live states (match_live_state, sets)', () => {
     assert.equal(anonSelectCheck('match_live_state', { columns: '*', filters: [{ type: 'eq', column: 'lineup_a->>pos1', value: '4' }] }).badFilter, 'lineup_a->>pos1')
     assert.equal(anonSelectCheck('match_live_state', { columns: '*', filters: [{ type: 'eq', column: 'sport_type', value: 'indoor' }], order: [{ column: 'updated_at' }] }).badFilter, null)
     assert.equal(hasAnonPolicy('sets'), true)
+  })
+  it('every viewer gets the substitution counts and the finished sets, never who came in for whom', () => {
+    const setResults = [{ set: 1, home: 27, away: 25, a: 27, b: 25 }, { set: 2, home: 25, away: 12, a: 25, b: 12 }]
+    const live = { ...row, subs_a: [{ playerIn: 9, playerOut: 4, exceptional: false }], subs_count_a: 2, subs_count_b: 1, set_results: setResults }
+    const hasNoSubs = (out, where) => {
+      for (const c of ['subs_a', 'subs_b', 'lineup_a', 'sanctions_a', 'last_event_data']) assert.equal(out[c], undefined, `${where}: ${c}`)
+      assert.equal(JSON.stringify(out).includes('playerIn'), false, where)
+    }
+    // anonymous /api/db, another match's row next to a match token's, the PIN-less relay summary and broadcast
+    const views = {
+      anonDb: projectAnonDbRows('match_live_state', { ...live }),
+      otherMatch: projectAnonDbRows('match_live_state', [{ ...live, match_id: 'm2' }], { grantedMatchUuid: 'm1' })[0],
+      summaryBundle: relaySummaryBundle({ match: {}, sets: [], liveState: { ...live } }).liveState,
+      broadcast: publicLiveState(live),
+      hubSummary: projectLiveSummaryRow('match_live_state', { ...live })
+    }
+    for (const [where, out] of Object.entries(views)) {
+      assert.equal(out.subs_count_a, 2, where)
+      assert.equal(out.subs_count_b, 1, where)
+      assert.deepEqual(out.set_results, setResults, where)
+      hasNoSubs(out, where)
+    }
+    // the realtime hub's live channel carries them too
+    const hub = projectLiveRow('match_live_state', { ...live })
+    assert.equal(hub.subs_count_a, 2)
+    assert.deepEqual(hub.set_results, setResults)
+    // the match token's own row keeps the substitutions as well
+    const mine = projectAnonDbRows('match_live_state', [{ ...live }], { grantedMatchUuid: 'm1' })[0]
+    assert.deepEqual(mine.subs_a, live.subs_a)
+    assert.equal(mine.subs_count_a, 2)
+  })
+  it('a live state from an app without the counts (older scorer) reads as it did', () => {
+    const out = projectAnonDbRows('match_live_state', { ...row })
+    assert.equal('subs_count_a' in out, false)
+    assert.equal('set_results' in out, false)
+    assert.equal(out.points_a, 3)
   })
   it('the PIN-less relay summary and public live state leave out line-ups, substitutions and sanctions', () => {
     const live = { points_a: 3, lineup_a: row.lineup_a, subs_b: row.subs_b, sanctions_a: row.sanctions_a, last_event_data: {}, _seq: 4, _session: 'S' }

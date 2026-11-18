@@ -323,6 +323,9 @@ struct ConnMeta {
     connected_at: String,
     /// the device its syncs named with a claim (see `note_scorer`)
     scorer_device: Option<String>,
+    /// a display's announcement (subscribe-match device 'display'): its
+    /// settings page as kept (`display_settings_url`) and its order
+    display: Option<(Option<String>, u64)>,
 }
 
 const MAX_ALIASES: usize = 16;
@@ -372,6 +375,10 @@ pub struct AppState {
     /// room key -> whether its subscribers were last told a scorer is in it
     /// ('scorer-presence'; no entry: not present)
     presence: Mutex<HashMap<String, bool>>,
+    /// room key -> display state its scoreboards were last told
+    /// ('display-presence'; no entry: no display)
+    display_told: Mutex<HashMap<String, String>>,
+    display_seq: AtomicU64,
     next_id: AtomicU64,
     /// open sockets per address (taken before the upgrade, see `SocketSlot`)
     sockets: std::sync::Mutex<HashMap<IpAddr, usize>>,
@@ -385,6 +392,8 @@ pub struct AppState {
     claims: std::sync::Mutex<ClaimFile>,
     /// Sign on phone sessions (memory only; the sweeper starts with the first one)
     sign: Arc<crate::sign::SignSessions>,
+    /// Pair a phone (pair.rs): the remote keyboards, memory only
+    pair: Arc<crate::pair::PairSessions>,
     /// The Global tool's live page for TVs: a court summary per tournament
     /// code (global_live.rs), memory only
     global_live: std::sync::Mutex<crate::global_live::GlobalLive>,
@@ -409,6 +418,8 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         pending: Mutex::new(HashMap::new()),
         bench: Mutex::new(HashMap::new()),
         presence: Mutex::new(HashMap::new()),
+        display_told: Mutex::new(HashMap::new()),
+        display_seq: AtomicU64::new(1),
         next_id: AtomicU64::new(1),
         sockets: std::sync::Mutex::new(HashMap::new()),
         rooms: Mutex::new(HashMap::new()),
@@ -416,6 +427,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         misses: Mutex::new(HashMap::new()),
         claims: std::sync::Mutex::new(ClaimFile::load(claim_file_path(http_port))),
         sign: crate::sign::SignSessions::lan(),
+        pair: crate::pair::PairSessions::lan(),
         global_live: std::sync::Mutex::new(crate::global_live::GlobalLive::default()),
         http_port,
         ws_port,
@@ -1229,6 +1241,13 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/sign/submit", post(sign_api))
         .route("/api/sign/wait", post(sign_api))
         .route("/api/sign/close", post(sign_api))
+        .route("/api/pair/start", post(pair_api))
+        .route("/api/pair/wait", post(pair_api))
+        .route("/api/pair/focus", post(pair_api))
+        .route("/api/pair/close", post(pair_api))
+        .route("/api/pair/join", post(pair_api))
+        .route("/api/pair/poll", post(pair_api))
+        .route("/api/pair/input", post(pair_api))
         .route("/api/global/live/game/{n}", get(global_live_game))
         .route("/api/global/live/{code}", get(global_live_page))
         .route("/tv", get(tv_entry))
@@ -1998,8 +2017,8 @@ async fn static_handler(
     }
 
     let mut res = serve_asset(path);
-    if crate::sign::is_sign_page_path(path) {
-        // The phone signing page (spec 4.7): strict CSP, no referrer, no-cache
+    if crate::sign::is_sign_page_path(path) || crate::pair::is_pair_page_path(path) {
+        // The phone pages (/sign, spec 4.7; /pair, Pair a phone): strict CSP, no referrer, no-cache
         let h = res.headers_mut();
         h.insert("Content-Security-Policy", HeaderValue::from_static(crate::sign::SIGN_PAGE_CSP));
         h.insert("Referrer-Policy", HeaderValue::from_static("no-referrer"));
@@ -2305,6 +2324,65 @@ async fn sign_api(
     sign_response(answer)
 }
 
+// ---------------------------------------------------------------------------
+// Pair a phone (pair.rs, docs/phone-keyboard-spec.md): POST /api/pair/*
+// ---------------------------------------------------------------------------
+
+async fn pair_api(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    use crate::pair::pair_error;
+    let Some(endpoint) = crate::pair::endpoint_of(uri.path()) else {
+        return sign_response(pair_error(404, "OV_PAIR_NOT_FOUND"));
+    };
+    let is_json = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| {
+            let ct = ct.trim_start().to_ascii_lowercase();
+            ct.strip_prefix("application/json").map_or(false, |rest| !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
+        })
+        .unwrap_or(false);
+    if !is_json {
+        return sign_response(pair_error(400, "OV_PAIR_BAD_REQUEST"));
+    }
+    let limit = crate::pair::body_limit(endpoint);
+    let declared = headers.get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.map_or(false, |n| n > limit) {
+        return sign_response(pair_error(413, "OV_PAIR_TOO_LARGE"));
+    }
+    let Ok(bytes) = axum::body::to_bytes(body, limit).await else {
+        return sign_response(pair_error(413, "OV_PAIR_TOO_LARGE"));
+    };
+    let Ok(body) = serde_json::from_slice::<Value>(&bytes) else {
+        return sign_response(pair_error(400, "OV_PAIR_BAD_REQUEST"));
+    };
+    let ip_key = canonical_ip(addr.ip()).to_string();
+    let sessions = state.pair.clone();
+    let answer = match endpoint {
+        // the /api/sign/start rule (the relay host, or the game PIN of a match it holds)
+        "start" => match sign_owner(&state, &addr, &headers, &body).await {
+            Ok(owner) => sessions.start(&body, &owner),
+            Err(a) => {
+                let code = a.body["code"].as_str().unwrap_or("OV_SIGN_FORBIDDEN").replacen("OV_SIGN_", "OV_PAIR_", 1);
+                crate::sign::Answer { retry_after: a.retry_after, ..pair_error(a.status, &code) }
+            }
+        },
+        "focus" => sessions.focus(&body),
+        "close" => sessions.close(&body),
+        "join" => sessions.join(&body, &ip_key),
+        "input" => sessions.input(&body, &ip_key),
+        // A dropped request drops these futures, and the waiter with them
+        "poll" => sessions.poll(&body, &ip_key).await,
+        _ => sessions.wait(&body).await,
+    };
+    sign_response(answer)
+}
+
 fn serve_asset(req_path: &str) -> Response {
     let exists = |p: &str| Assets::get(p).is_some();
     match resolve_asset(req_path, crate::flavour::CURRENT, &exists).and_then(|p| try_file(&p)) {
@@ -2496,6 +2574,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
             access: HashMap::new(),
             connected_at: iso_now(),
             scorer_device: None,
+            display: None,
         },
     );
 
@@ -2554,7 +2633,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
 /// scored lose their scorer (subscribers told when that was the last one).
 async fn forget_connection(state: &Arc<AppState>, conn_id: u64) {
     state.clients.lock().await.remove(&conn_id);
-    state.conn_meta.lock().await.remove(&conn_id);
+    let was_display = state.conn_meta.lock().await.remove(&conn_id).is_some_and(|m| m.display.is_some());
     state.limits.lock().await.remove(&format!("fail:ws:{conn_id}"));
     state.limits.lock().await.remove(&format!("bench:{conn_id}"));
     state.limits.lock().await.remove(&format!("msg:{conn_id}"));
@@ -2570,12 +2649,20 @@ async fn forget_connection(state: &Arc<AppState>, conn_id: u64) {
         }
         owned.into_iter().collect()
     };
-    {
+    let followed: Vec<String> = {
         let mut subs = state.subs.lock().await;
+        let followed = subs.iter().filter(|(_, set)| set.contains(&conn_id)).map(|(id, _)| id.clone()).collect();
         subs.retain(|_, set| {
             set.remove(&conn_id);
             !set.is_empty()
         });
+        followed
+    };
+    // A display gone: the scoreboards of the rooms it followed are told
+    if was_display {
+        for id in &followed {
+            note_displays(state, id).await;
+        }
     }
     // A scoreboard that left can no longer answer pending requests.
     {
@@ -3004,6 +3091,7 @@ async fn drop_room(state: &Arc<AppState>, match_id: &str) {
     state.superseded_claims.lock().await.remove(match_id);
     state.bench.lock().await.remove(match_id);
     state.presence.lock().await.remove(match_id);
+    state.display_told.lock().await.remove(match_id);
 }
 
 /// May this sync (of `bytes`) be stored (lanRelayCore `roomBudgetDenied`)?
@@ -3077,6 +3165,7 @@ async fn delete_match(state: &Arc<AppState>, match_id: &str) {
     }
     // (its subscribers were told 'match-deleted' and are gone: nobody to tell)
     state.presence.lock().await.remove(match_id);
+    state.display_told.lock().await.remove(match_id);
 }
 
 async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &str) {
@@ -3175,6 +3264,10 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
             // After the update: a tablet has the match before it hears its scorer
             // is there. A takeover (note_scorer) is complete here: it flips nothing.
             update_presence(state, &match_id, None).await;
+            // A connection that has just proved the room hears whether a display follows it
+            if kind != ClaimKind::Owner {
+                send_display_presence(state, &match_id, tx).await;
+            }
             // Bench requests of a set that is over go; a connection that has
             // just (re)proved the match gets the open ones again
             let replay = {
@@ -3261,17 +3354,35 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
             // Last, once the subscription is answered: is the scorer there now
             // (false for a room not on the relay yet)
             update_presence(state, &match_id, Some((conn_id, tx))).await;
+            // A display: its announcement, for every room it follows (their scoreboards told)
+            if device == Some(DISPLAY_DEVICE) {
+                let url = display_settings_url(data.get("settingsUrl"));
+                let seq = state.display_seq.fetch_add(1, Ordering::Relaxed);
+                if let Some(m) = state.conn_meta.lock().await.get_mut(&conn_id) {
+                    m.display = Some((url, seq));
+                }
+                let followed: Vec<String> = state.subs.lock().await.iter().filter(|(_, set)| set.contains(&conn_id)).map(|(id, _)| id.clone()).collect();
+                for id in followed {
+                    note_displays(state, &id).await;
+                }
+            }
         }
         "bench-request" => on_bench_request(state, conn_id, tx, &data).await,
         "bench-response" => on_bench_response(state, conn_id, tx, &data).await,
         "unsubscribe-match" => {
             if let Some(match_id) = match_id {
-                let mut subs = state.subs.lock().await;
-                if let Some(set) = subs.get_mut(&match_id) {
-                    set.remove(&conn_id);
-                    if set.is_empty() {
-                        subs.remove(&match_id);
+                {
+                    let mut subs = state.subs.lock().await;
+                    if let Some(set) = subs.get_mut(&match_id) {
+                        set.remove(&conn_id);
+                        if set.is_empty() {
+                            subs.remove(&match_id);
+                        }
                     }
+                }
+                let display = state.conn_meta.lock().await.get(&conn_id).is_some_and(|m| m.display.is_some());
+                if display {
+                    note_displays(state, &match_id).await;
                 }
             }
         }
@@ -3666,6 +3777,117 @@ async fn update_presence(state: &Arc<AppState>, match_id: &str, joined: Option<(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Scoreboard displays ('display-presence', docs/scoreboard-display-spec.md):
+// a display (an LED board's controller) subscribes with device 'display' and
+// may name its settings page (`settingsUrl`), kept only when it is an http(s)
+// URL on a private-LAN address. The room's scoreboards, and only they, are
+// told whether a display follows and that page: on a connection's first
+// accepted sync of the room, and when it changes. The same rule and message
+// as backend/lib/displayPresence.js and lanRelayCore.cjs.
+// ---------------------------------------------------------------------------
+
+const DISPLAY_DEVICE: &str = "display";
+const MAX_SETTINGS_URL_LENGTH: usize = 256;
+
+/// RFC 1918 IPv4, or an IPv6 unique local address (fc00::/7), as a URL's host_str() gives them.
+fn is_private_lan_host(host: &str) -> bool {
+    if let Ok(v4) = host.parse::<std::net::Ipv4Addr>() {
+        let o = v4.octets();
+        return o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1])) || (o[0] == 192 && o[1] == 168);
+    }
+    if let Some(inner) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        if let Ok(v6) = inner.parse::<std::net::Ipv6Addr>() {
+            return v6.segments()[0] & 0xfe00 == 0xfc00;
+        }
+    }
+    false
+}
+
+/// A display's settings page as the relay keeps it (the normalised URL), or None.
+fn display_settings_url(raw: Option<&Value>) -> Option<String> {
+    let raw = raw?.as_str()?;
+    let len = raw.encode_utf16().count();
+    if len == 0 || len > MAX_SETTINGS_URL_LENGTH || raw.chars().any(|c| c <= ' ' || c == '\u{7f}') {
+        return None;
+    }
+    let url = tauri::Url::parse(raw).ok()?;
+    if !matches!(url.scheme(), "http" | "https") || !url.username().is_empty() || url.password().is_some() {
+        return None;
+    }
+    if !is_private_lan_host(url.host_str()?) {
+        return None;
+    }
+    let href = url.as_str();
+    (href.encode_utf16().count() <= MAX_SETTINGS_URL_LENGTH).then(|| href.to_string())
+}
+
+/// Whether a display follows the room, and the newest usable settings page.
+async fn display_state(state: &Arc<AppState>, match_id: &str) -> (bool, Option<String>) {
+    let ids: Vec<u64> = state.subs.lock().await.get(match_id).map(|s| s.iter().copied().collect()).unwrap_or_default();
+    let meta = state.conn_meta.lock().await;
+    let (mut present, mut url, mut at) = (false, None, 0u64);
+    for id in ids {
+        if let Some((page, seq)) = meta.get(&id).and_then(|m| m.display.as_ref()) {
+            present = true;
+            if let Some(page) = page {
+                if url.is_none() || *seq >= at {
+                    url = Some(page.clone());
+                    at = *seq;
+                }
+            }
+        }
+    }
+    (present, if present { url } else { None })
+}
+
+fn display_key(present: bool, url: &Option<String>) -> String {
+    if present {
+        format!("1|{}", url.as_deref().unwrap_or(""))
+    } else {
+        "0".to_string()
+    }
+}
+
+fn display_message(match_id: &str, present: bool, url: &Option<String>) -> String {
+    json!({ "type": "display-presence", "matchId": match_id, "present": present, "settingsUrl": url }).to_string()
+}
+
+/// To one connection that has just proved the room.
+async fn send_display_presence(state: &Arc<AppState>, match_id: &str, tx: &Tx) {
+    let (present, url) = display_state(state, match_id).await;
+    state.display_told.lock().await.insert(match_id.to_string(), display_key(present, &url));
+    let _ = tx.send(Message::Text(display_message(match_id, present, &url).into()));
+}
+
+/// After a display came, went or named another page: the room's scoreboards, when that changed.
+async fn note_displays(state: &Arc<AppState>, match_id: &str) {
+    let (present, url) = display_state(state, match_id).await;
+    let key = display_key(present, &url);
+    {
+        let mut told = state.display_told.lock().await;
+        if told.get(match_id).map_or("0", |k| k.as_str()) == key {
+            return;
+        }
+        if present {
+            told.insert(match_id.to_string(), key);
+        } else {
+            told.remove(match_id);
+        }
+    }
+    let owners: Vec<u64> = state.owners.lock().await.iter().filter(|(_, o)| o.contains(match_id)).map(|(id, _)| *id).collect();
+    if owners.is_empty() {
+        return;
+    }
+    let text = display_message(match_id, present, &url);
+    let clients = state.clients.lock().await;
+    for id in owners {
+        if let Some(tx) = clients.get(&id) {
+            let _ = tx.send(Message::Text(text.clone().into()));
+        }
+    }
+}
+
 async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, exclude: Option<u64>) {
     let sub_ids: Vec<u64> = state
         .subs
@@ -3895,6 +4117,7 @@ mod tests {
                 access: HashMap::new(),
                 connected_at: iso_now(),
                 scorer_device: None,
+                display: None,
             },
         );
     }
@@ -4327,6 +4550,89 @@ mod tests {
 
     // 2026-11-15: a referee or bench tablet only saw a frozen score when the
     // scorer's laptop was closed; the relay now says whether the room has its
+    // scoreboard displays ('display-presence', same as lanRelayCore and the cloud relay)
+    #[test]
+    fn a_display_settings_page_is_kept_only_on_a_private_lan() {
+        let keep = |raw: &str| display_settings_url(Some(&json!(raw)));
+        assert_eq!(keep("http://172.24.1.1:8890/#settings").as_deref(), Some("http://172.24.1.1:8890/#settings"));
+        assert_eq!(keep("http://192.168.5.1:8890/#settings").as_deref(), Some("http://192.168.5.1:8890/#settings"));
+        assert_eq!(keep("https://10.1.2.3/settings").as_deref(), Some("https://10.1.2.3/settings"));
+        assert_eq!(keep("http://[fd12:3456::1]:8890/").as_deref(), Some("http://[fd12:3456::1]:8890/"));
+        // normalised as the browsers do: what is checked is what is passed on
+        assert_eq!(keep("HTTP://172.24.1.1:8890/#settings").as_deref(), Some("http://172.24.1.1:8890/#settings"));
+        assert_eq!(keep("http://0xac.24.1.1/").as_deref(), Some("http://172.24.1.1/"));
+        assert_eq!(keep("http://192.168.5.1.").as_deref(), Some("http://192.168.5.1/"));
+        let long = format!("http://10.0.0.1/{}", "a".repeat(300));
+        for raw in [
+            "https://example.com/settings", "http://8.8.8.8/", "http://127.0.0.1:8890/", "http://localhost:8890/",
+            "http://169.254.10.1/", "http://172.32.0.1/", "http://172.15.0.1/", "http://user:pass@172.24.1.1:8890/",
+            "javascript:alert(1)", "file:///etc/passwd", "ftp://192.168.1.1/", "http://board.local/", "http://[::1]/",
+            "http://[fc::1]/", " http://172.24.1.1:8890/", "http://10.0.0.1/\n", "", long.as_str(),
+        ] {
+            assert_eq!(keep(raw), None, "{raw}");
+        }
+        assert_eq!(display_settings_url(Some(&json!(42))), None);
+        assert_eq!(display_settings_url(None), None);
+    }
+
+    #[tokio::test]
+    async fn the_scorer_is_told_when_a_display_comes_and_goes() {
+        const BOARD: &str = "http://172.24.1.1:8890/#settings";
+        let state = new_state(0, 0);
+        let mut rxs = HashMap::new();
+        let mut txs = HashMap::new();
+        for (id, ip) in [(1u64, "192.168.1.10"), (2, "192.168.1.60"), (3, "192.168.1.20"), (4, "192.168.1.61")] {
+            connect(&state, id, ip).await;
+            let (tx, rx) = tx_pair();
+            state.clients.lock().await.insert(id, tx.clone());
+            txs.insert(id, tx);
+            rxs.insert(id, rx);
+        }
+        let told = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Vec<(bool, Value)> {
+            let mut out = Vec::new();
+            while let Ok(Message::Text(t)) = rx.try_recv() {
+                let m: Value = serde_json::from_str(&t).unwrap();
+                if m["type"] == json!("display-presence") {
+                    assert_eq!(m.as_object().unwrap().len(), 4, "{m}");
+                    assert_eq!(m["matchId"], json!("1"));
+                    out.push((m["present"].as_bool().unwrap(), m["settingsUrl"].clone()));
+                }
+            }
+            out
+        };
+        let sync = |home: u32| json!({
+            "type": "sync-match-data", "matchId": "1", "match": bundle(1, "111111", "live")["match"].clone(),
+            "sets": [{ "index": 1, "homePoints": home, "awayPoints": 0 }]
+        }).to_string();
+        let display = |url: &str| json!({ "type": "subscribe-match", "matchId": "1", "device": "display", "settingsUrl": url }).to_string();
+
+        // the board follows before the scorer is there: nobody to tell
+        handle_ws_message(&state, 2, &txs[&2], &display(BOARD)).await;
+        // the scorer's first sync: told at once; its next ones: nothing
+        handle_ws_message(&state, 1, &txs[&1], &sync(1)).await;
+        assert_eq!(told(rxs.get_mut(&1).unwrap()), vec![(true, json!(BOARD))]);
+        handle_ws_message(&state, 1, &txs[&1], &sync(2)).await;
+        assert!(told(rxs.get_mut(&1).unwrap()).is_empty());
+        // a referee follows: no display message for it, none for the scorer
+        handle_ws_message(&state, 3, &txs[&3], &json!({ "type": "subscribe-match", "matchId": "1", "device": "referee", "pin": "314159" }).to_string()).await;
+        assert!(told(rxs.get_mut(&1).unwrap()).is_empty());
+        // the same subscription again: nothing; a page off the LAN: never passed on, nothing changes
+        handle_ws_message(&state, 2, &txs[&2], &display(BOARD)).await;
+        handle_ws_message(&state, 4, &txs[&4], &display("https://example.com/")).await;
+        assert!(told(rxs.get_mut(&1).unwrap()).is_empty());
+        // the board unsubscribes: the other display is still there, with no page
+        handle_ws_message(&state, 2, &txs[&2], &json!({ "type": "unsubscribe-match", "matchId": "1" }).to_string()).await;
+        assert_eq!(told(rxs.get_mut(&1).unwrap()), vec![(true, Value::Null)]);
+        // the last display gone: false
+        forget_connection(&state, 4).await;
+        assert_eq!(told(rxs.get_mut(&1).unwrap()), vec![(false, Value::Null)]);
+        for id in [2u64, 3] {
+            assert!(told(rxs.get_mut(&id).unwrap()).is_empty(), "connection {id} is no scoreboard");
+        }
+        // a deleted room forgets what it told
+        assert!(state.display_told.lock().await.get("1").is_none());
+    }
+
     // scorer ('scorer-presence', same as lanRelayCore and the cloud relay)
     #[tokio::test]
     async fn subscribers_are_told_when_the_scorer_comes_and_goes() {
@@ -4860,6 +5166,39 @@ mod tests {
         assert_eq!(canonical_ip("::ffff:127.0.0.1".parse().unwrap()), "127.0.0.1".parse::<IpAddr>().unwrap());
         assert!(is_local(&"127.0.0.1:1".parse().unwrap()));
         assert!(!is_local(&"203.0.113.9:1".parse().unwrap()));
+    }
+
+    // --- Pair a phone through the router (pair.rs; docs/phone-keyboard-spec.md) ---
+
+    #[tokio::test]
+    async fn pair_start_rule_flow_and_body_caps_through_the_router() {
+        let state = new_state(0, 0);
+        let local = "127.0.0.1:1";
+        let phone_addr = "192.0.2.77:1";
+        let start = json!({ "matchKey": "m", "context": { "home": "A", "away": "B" } }).to_string();
+        // another device without a PIN: the /api/sign/start rule, in OV_PAIR_* codes
+        let (st, _, body) = sign_call(&state, "/api/pair/start", start.clone(), "192.0.2.9:1", &[]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::FORBIDDEN, Some("OV_PAIR_FORBIDDEN")));
+        let (st, h, started) = sign_call(&state, "/api/pair/start", start, local, &[]).await;
+        assert_eq!(st, StatusCode::CREATED);
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        let (watch, token) = (started["watch"].clone(), started["token"].clone());
+        let (_, _, joined) = sign_call(&state, "/api/pair/join", json!({ "k": token }).to_string(), phone_addr, &[]).await;
+        assert_eq!(joined["state"], "paired");
+        let phone = joined["phone"].clone();
+        let field = json!({ "watch": watch, "field": { "id": "ov-remarks", "kind": "multiline", "text": "x".repeat(30000) } }).to_string();
+        assert_eq!(sign_call(&state, "/api/pair/focus", field, local, &[]).await.0, StatusCode::OK);
+        let huge = json!({ "watch": watch, "field": { "id": "f", "text": "x".repeat(70000) } }).to_string();
+        assert_eq!(sign_call(&state, "/api/pair/focus", huge, local, &[]).await.0, StatusCode::PAYLOAD_TOO_LARGE);
+        let typed = json!({ "phone": phone, "n": 1, "field": "ov-remarks", "text": "Typed" }).to_string();
+        assert_eq!(sign_call(&state, "/api/pair/input", typed, phone_addr, &[]).await.2["seq"], 1);
+        let (_, _, got) = sign_call(&state, "/api/pair/wait", json!({ "watch": watch, "knownState": "paired", "after": 0, "knownPhone": true }).to_string(), local, &[]).await;
+        assert_eq!(got["inputs"][0]["text"], "Typed");
+        assert_eq!(sign_call(&state, "/api/pair/close", json!({ "watch": watch }).to_string(), local, &[]).await.0, StatusCode::OK);
+        let (_, _, ended) = sign_call(&state, "/api/pair/poll", json!({ "phone": phone }).to_string(), phone_addr, &[]).await;
+        assert_eq!(ended["state"], "closed");
+        let (st, _, body) = sign_call(&state, "/api/pair/join", json!({ "k": token }).to_string(), phone_addr, &[("content-type", "text/plain")]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::BAD_REQUEST, Some("OV_PAIR_BAD_REQUEST")));
     }
 
     // --- Sign on phone through the router (sign.rs; docs/qr-signing-spec.md 8.3) ---

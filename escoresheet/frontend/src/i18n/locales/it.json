@@ -225,6 +225,7 @@
     "cancel": "Annulla"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Questo elimina tutti i set, le azioni, i giocatori e i dati delle squadre di questa partita su questo dispositivo.",
     "cancel": "Annullamento",
     "delete": "Cancellare",
     "lossTitle": "Questa copia contiene ciò che il server non ha:",
@@ -306,6 +307,9 @@
     "searchForRoster": "Cerca rosa",
     "noSupabaseConnection": "Nessuna connessione al database disponibile. Controlla le impostazioni di connessione.",
     "noRosterFound": "Nessuna rosa in attesa trovata per questa partita.",
+    "searchRosterHint": "«Cerca rosa» trova la rosa che la squadra ha caricato con questo PIN e quella che ha inviato dalla pagina del manager.",
+    "sentRosterFound": "La rosa inviata da {{team}} è qui sopra: accettala o scegli «Non ora».",
+    "noRosterFoundAnywhere": "Ancora nessuna rosa per questa partita: nulla è stato caricato con il PIN, e la squadra non ne ha inviata una dalla pagina del manager.",
     "errorSearchingRoster": "Errore nella ricerca della rosa. Riprova.",
     "previewRoster": "Anteprima",
     "rosterPreviewTitle": "Anteprima rosa",
@@ -762,6 +766,7 @@
       "openRemarksRecording": "Apri la registrazione delle osservazioni",
       "stopMatch": "Interrompi partita",
       "showPins": "Mostra PIN",
+      "scoreboardSettings": "Impostazioni del tabellone",
       "showMatchSetup": "Mostra impostazione partita",
       "editMatchInfo": "Modifica info partita",
       "downloadGameData": "Scarica i dati della partita (JSON)",
@@ -1078,6 +1083,10 @@
       "applyDelayWarning": "Registrare un avvertimento per ritardo per {{team}}?",
       "applyDelayPenalty": "Registrare una penalità per ritardo per {{team}}?",
       "repeatedImproperRequest": "La squadra ha già una richiesta impropria: questa conta come ritardo.",
+      "whatRequested": "Che cosa ha chiesto la squadra?",
+      "kindImproper": "Richiesta impropria",
+      "kindIllegalSubstitution": "Sostituzione irregolare",
+      "illegalSubstitution": "Richiedere una sostituzione irregolare è un ritardo: la richiesta viene respinta.",
       "repeatedDelay": "La squadra ha già un avvertimento per ritardo: questo ritardo è una penalità.",
       "pointToOpponent": "Punto e servizio a {{opponent}}."
     },
@@ -6487,6 +6496,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Mostra le partite Global su livescore.openvolley.app (solo il punteggio, come sui TV)",
+    "list": {
+      "title": "Partite Global",
+      "open": "Apri lo schermo live"
+    },
     "title": "Schermo live",
     "intro": "Mostra il punteggio di tutti i campi del tuo evento su TV o un proiettore, per qualsiasi partita. Avvialo su un dispositivo segnapunti e inserisci il suo codice sugli altri. Online va solo il punteggio (nomi delle squadre, punti, set), mai i giocatori.",
     "codeLabel": "Codice schermo live",
@@ -6512,6 +6526,75 @@
       "interval": "Pausa tra i set",
       "set": "Set {{n}}",
       "serving": "Al servizio"
+    }
+  },
+  "rosterPdf": {
+    "tooSlow": "Questo dispositivo non è riuscito a leggere il PDF: ci è voluto troppo. Riprova o inserisci i giocatori a mano.",
+    "failed": "Non è stato possibile leggere il PDF: {{reason}}"
+  },
+  "phonePair": {
+    "menu": "Collega un telefono (tastiera)",
+    "title": "Collega un telefono",
+    "intro": "Scrivi sul tuo telefono: quello che digiti appare subito nel campo di testo scelto su questo dispositivo.",
+    "scanHint": "Scansiona il codice QR con la fotocamera del telefono.",
+    "orCode": "Oppure apri {{url}} sul telefono e digita questo codice:",
+    "code": "Codice",
+    "validFor": "Codice valido ancora {{time}}",
+    "waiting": "In attesa del telefono…",
+    "paired": "Telefono collegato",
+    "pairedHint": "Tocca un campo di testo su questo dispositivo, poi scrivi sul telefono. Campo successivo e Invio funzionano anche dal telefono.",
+    "phoneAway": "Telefono non raggiungibile",
+    "hideKeyboard": "Nascondi la tastiera di questo dispositivo finché il telefono è collegato",
+    "unpair": "Scollega",
+    "done": "Fatto",
+    "ended": "Il telefono è scollegato.",
+    "expired": "Il collegamento è terminato.",
+    "newPairing": "Collega di nuovo",
+    "startFailed": "Non è stato possibile avviare il collegamento. Riprova.",
+    "notOnServer": "Questa partita non è ancora sul server (o è una partita di prova): usa la rete della palestra, o collega quando la partita è sincronizzata.",
+    "reasonNone": "Per collegare un telefono serve Internet o la rete della palestra. Qui non c’è né l’uno né l’altra.",
+    "reasonSignIn": "Accedi per collegare un telefono via Internet.",
+    "reasonRole": "Il tuo account non può ancora collegare un telefono.",
+    "reasonNoNetwork": "Nessuna rete per i telefoni: collega questo dispositivo al Wi-Fi della palestra o attiva il suo Wi-Fi (Collega tablet).",
+    "indicator": "Tastiera del telefono",
+    "indicatorAway": "Tastiera del telefono · non raggiungibile",
+    "indicatorWaiting": "Tastiera del telefono · in attesa",
+    "arrived": "Dal telefono in «{{field}}»",
+    "matchClosed": "La partita è chiusa: il telefono è stato scollegato.",
+    "textField": "Campo di testo"
+  },
+  "globalCloud": {
+    "title": "Salva nel cloud",
+    "intro": "Tiene questa partita leggibile anche online, senza account: per un link di condivisione, l'elenco dell'organizzatore e per continuare su un altro dispositivo. Trovata con il suo codice di backup, protetta dal PIN dell'arbitro, eliminata 180 giorni dopo l'ultimo salvataggio.",
+    "needsPin": "La partita ha prima bisogno del PIN dell'arbitro.",
+    "offline": "Nessuna connessione: salvata con la prossima azione.",
+    "pinRefused": "Questo codice di backup è salvato con un altro PIN dell'arbitro.",
+    "failed": "Salvataggio nel cloud non riuscito. Riprova più tardi.",
+    "share": "Link di condivisione (sola lettura)",
+    "shareHint": "Chi ha il link vede il risultato, i set e il referto PDF. Disattivalo per fermare il link.",
+    "copy": "Copia",
+    "copied": "Copiato",
+    "organizer": "Codice torneo (facoltativo)",
+    "newOrganizer": "Nuovo codice torneo",
+    "join": "Usa",
+    "removeOrganizer": "Rimuovi",
+    "copyOrganizerLink": "Copia link organizzatore",
+    "badOrganizer": "Questo non è un codice torneo (10 lettere e cifre).",
+    "organizerHint": "Inserisci lo stesso codice su ogni dispositivo del segnapunti del torneo: il link organizzatore elenca tutte le sue partite, con risultati e PDF.",
+    "otherDevice": "Continuare su un altro dispositivo: lì scegli Ripristina partita nella pagina iniziale e inserisci il codice di backup e il PIN dell'arbitro (Backup sopra).",
+    "delete": "Elimina dal cloud",
+    "page": {
+      "sharedTitle": "Partita",
+      "organizerTitle": "Torneo",
+      "final": "Finale",
+      "ended": "Terminata",
+      "live": "In diretta",
+      "scheduled": "Prevista",
+      "pdf": "Referto (PDF)",
+      "notShared": "Questa partita non è (più) condivisa.",
+      "offline": "Connessione persa, nuovo tentativo…",
+      "loading": "Caricamento…",
+      "noMatches": "Nessuna partita è ancora salvata con questo codice."
     }
   }
 }

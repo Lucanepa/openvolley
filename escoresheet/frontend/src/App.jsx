@@ -42,6 +42,7 @@ import { useBackupUnlock } from './hooks/useBackupUnlock'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import { publishEndedLiveStates } from './utils/matchEndLiveState'
 import ballFallback from './ball_fallback.png'
+import { isLocalOnly } from './domain/matchKind'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -89,7 +90,7 @@ import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } 
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import ToolModeChooser from './components/ToolModeChooser'
-import { newGlobalKey, loadGlobal, isGlobalKey, markGlobalMatch, globalRestoreData } from './utils/globalCloud'
+import { newGlobalKey, loadGlobal, isGlobalKey, markGlobalMatch, globalRestoreData, upgradeGlobalMatches } from './utils/globalCloud'
 import { useToolMode, getToolMode, setToolMode, toolModeLocked, impliedToolMode } from './utils/toolMode'
 import { Button, cn, FormError, Input, ScreenLoading } from './ui'
 import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isNativeApp, isStaticHost } from './utils/backendConfig'
@@ -692,7 +693,7 @@ export default function App() {
       // This prevents showing Continue/Delete for matches where user hasn't clicked "Create Match"
       // A copy closed on the server is always reachable (Load the official
       // version, Remove), even a restored row without matchInfoConfirmedAt
-      return matches.find(m => m.test !== true && m.status !== 'final' && (m.matchInfoConfirmedAt || isStaleClosedCopy(m))) || null
+      return matches.find(m => !isLocalOnly(m) && m.status !== 'final' && (m.matchInfoConfirmedAt || isStaleClosedCopy(m))) || null
     } catch (error) {
       console.error('Unable to load official match', error)
       return null
@@ -1026,8 +1027,9 @@ export default function App() {
   const currentTestMatch = useLiveQuery(async () => {
     try {
       const matches = await db.matches.orderBy('createdAt').reverse().toArray()
-      const testMatch = matches.find(m => m.test === true && m.status !== 'final')
-      // Return test match if it exists, regardless of setup status
+      // The device's one local match: a test, easy or Global match
+      // (domain/matchKind), whatever its setup status
+      const testMatch = matches.find(m => isLocalOnly(m) && m.status !== 'final')
       return testMatch || null
     } catch (error) {
       console.error('Unable to load test match', error)
@@ -1375,6 +1377,10 @@ export default function App() {
     return () => { alive = false }
   }, [runSelfCheck])
 
+  // A Global match made before 2026-11-17 was test-flagged: a real match now
+  // (utils/globalCloud upgradeGlobalMatches), once at start-up
+  useEffect(() => { upgradeGlobalMatches(db).catch(() => {}) }, [])
+
   // Match End's live-state repair (utils/matchEndLiveState, fbf159bf) at
   // start-up, for every official match this device holds as ended. An app
   // killed between the last rally and the scoreboard's 'match_end' push used
@@ -1475,9 +1481,7 @@ export default function App() {
       return
     }
 
-    const isTestMatch = currentMatch.test === true
-
-    if (isTestMatch) {
+    if (isLocalOnly(currentMatch)) {
       // Test matches don't have a game number - just show base title
       document.title = 'OpenVolley eScoresheet'
     } else {
@@ -1811,7 +1815,7 @@ export default function App() {
 
   async function finishSet(cur) {
     const matchRecord = await db.matches.get(cur.matchId)
-    const isTestMatch = matchRecord?.test === true
+    const isTestMatch = isLocalOnly(matchRecord)
 
     // Calculate current set scores
     const sets = await db.sets.where({ matchId: cur.matchId }).toArray()
@@ -2115,7 +2119,7 @@ export default function App() {
   async function clearLocalTestData() {
     await db.transaction('rw', db.events, db.event_history, db.sets, db.matches, db.players, db.teams, async () => {
       const testMatches = await db.matches
-        .filter(m => m.test === true || m.externalId === TEST_MATCH_EXTERNAL_ID)
+        .filter(m => isLocalOnly(m) || m.externalId === TEST_MATCH_EXTERNAL_ID)
         .toArray()
       for (const match of testMatches) {
         // a wipe, not an undo: no event history (db/eventHistory)
@@ -2636,7 +2640,9 @@ export default function App() {
       // that device's, only this device's copy goes
       moved: isScorerMoved(matchToDelete) && !isKnownClosedOnServer(matchToDelete),
       otherCopy,
-      unsent
+      unsent,
+      // a Global match never reached the cloud database (domain/matchKind)
+      deviceOnly: isLocalOnly(matchToDelete)
     })
   }
 
@@ -2787,7 +2793,7 @@ export default function App() {
   // utils/currentMatch newOfficialMatchStep for `match`, with its writes the
   // server does not have yet (deviceSelfCheck unsentOfMatch) among `jobs`
   function officialMatchStep(match, jobs) {
-    const unsent = match && match.test !== true ? unsentOfMatch(jobs, match.seed_key) : { changes: 0, events: 0 }
+    const unsent = match && !isLocalOnly(match) ? unsentOfMatch(jobs, match.seed_key) : { changes: 0, events: 0 }
     const step = newOfficialMatchStep(match, matchStatus?.status, {
       closedCopy: isStaleClosedCopy(match) || isKnownClosedOnServer(match),
       movedCopy: isScorerMoved(match),
@@ -3334,10 +3340,12 @@ export default function App() {
   }
 
   /**
-   * Global tool's "Match": a full match (rosters, officials, signatures) kept
-   * on this device. It is a test-flagged match, so the sync queue drops every
-   * job of it and nothing reaches the clubs/games/players tables; `global`
-   * marks it as a real scoresheet, not practice. No sign-in, no Einsatzliste.
+   * Global tool's "Match": a full match (rosters, officials, signatures, game
+   * PIN) kept on this device. A real match, not practice (test: false: the
+   * referee and bench tablets, livescore and TV list it as one), and local
+   * only (domain/matchKind isLocalOnly): the sync queue drops every job of it
+   * and nothing reaches the clubs/games/players tables. It takes the device's
+   * test-match slot (Home's Continue/Delete). No sign-in, no Einsatzliste.
    */
   async function createGlobalMatch() {
     if (easyMatchLoading || testMatchLoading) return
@@ -3357,7 +3365,7 @@ export default function App() {
         status: 'scheduled',
         refereePin,
         coinTossConfirmed: false,
-        test: true,
+        test: false,
         global: true,
         globalKey: newGlobalKey(),
         seedKey,
@@ -3380,7 +3388,7 @@ export default function App() {
 
     // Use toArray and filter to avoid index requirement
     const matches = await db.matches.orderBy('createdAt').reverse().toArray()
-    const existing = matches.find(m => m.test === true && m.status !== 'final')
+    const existing = matches.find(m => isLocalOnly(m) && m.status !== 'final')
     if (existing) {
       // Check if coin toss is confirmed
       const isCoinTossConfirmed = existing.coinTossTeamA !== null &&
@@ -3469,7 +3477,7 @@ export default function App() {
         try {
           // Find the test match - use toArray and filter to avoid index requirement
           const matches = await db.matches.orderBy('createdAt').reverse().toArray()
-          const testMatch = matches.find(m => m.test === true && m.status !== 'final')
+          const testMatch = matches.find(m => isLocalOnly(m) && m.status !== 'final')
           if (!testMatch) {
             setAlertModal(t('home.modals.noTestMatchFound'))
             setTestMatchLoading(false)
@@ -3525,7 +3533,7 @@ export default function App() {
    */
   async function startEasyMatch(form) {
     if (easyMatchLoading) return
-    const previous = (await db.matches.filter(m => m.test === true && m.status !== 'final').first()) || null
+    const previous = (await db.matches.filter(m => isLocalOnly(m) && m.status !== 'final').first()) || null
     const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
     const replacing = previous && ['live', 'ended'].includes(previous.status)
     if (!officialMatchRecording && !replacing) {
@@ -4237,7 +4245,9 @@ export default function App() {
                         ? t('cloudBlock.removeLocalOnly')
                         : deleteMatchModal.moved
                           ? t('cloudBlock.removeMovedLocalOnly')
-                          : 'This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.'}
+                          : deleteMatchModal.deviceOnly
+                            ? t('deleteMatch.deviceOnlyBody', 'This deletes all sets, events, players and team data of this match on this device.')
+                            : 'This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.'}
                   </p>
 
                   {/* What would be lost: the changes the server does not have */}

@@ -11,6 +11,7 @@
  */
 import { eventExtId, setExtId } from './syncIds'
 import { syncJobsForSets } from '../domain/corrections'
+import { isLocalOnly } from '../domain/matchKind'
 
 // Set update fields that only carry the running score: a newer score of the
 // same set makes an older, still queued one pointless.
@@ -95,7 +96,7 @@ export function setDeleteJob(seedKey, setId, ts = new Date().toISOString()) {
  */
 export async function queueSetDeletes(db, match, setIds) {
   const ids = [...(setIds || [])].filter(id => id != null)
-  if (ids.length === 0 || !match?.seed_key || match.test) return 0
+  if (ids.length === 0 || !match?.seed_key || isLocalOnly(match)) return 0
   try {
     const unsent = await db.sync_queue.where('status').anyOf('queued', 'error', 'failed').toArray()
     const stale = syncJobsForSets(unsent, ids, match.seed_key)
@@ -119,7 +120,7 @@ export async function queueEventSync(db, eventId) {
     const event = await db.events.get(eventId)
     if (!event) return false
     const match = await db.matches.get(event.matchId)
-    if (!match || match.test || !match.seed_key) return false
+    if (!match || isLocalOnly(match) || !match.seed_key) return false
     await db.sync_queue.add(buildEventInsertJob(event, match))
     return true
   } catch (err) {
@@ -138,7 +139,7 @@ export async function queueEventSync(db, eventId) {
 export async function queueSetScoreSync(db, { matchId, setIndex }) {
   try {
     const match = await db.matches.get(matchId)
-    if (!match || match.test || !match.seed_key) return false
+    if (!match || isLocalOnly(match) || !match.seed_key) return false
     const set = await db.sets.where('matchId').equals(matchId).and(s => s.index === setIndex).first()
     if (!set) return false
     const externalId = setExtId(match.seed_key, set.id)
@@ -218,7 +219,7 @@ export function buildSetReopenMatchPayload({ seedKey, finishedSets, reopenedSetI
 export async function queueSetReopenSync(db, { matchId, setIndex, wasMatchEnd = false }) {
   try {
     const match = await db.matches.get(matchId)
-    if (!match || match.test || !match.seed_key) return false
+    if (!match || isLocalOnly(match) || !match.seed_key) return false
     const sets = await db.sets.where('matchId').equals(matchId).toArray()
     const set = sets.find(s => s.index === setIndex)
     if (!set) return false

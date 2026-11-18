@@ -54,6 +54,11 @@ describe('matchEndLiveStatePatch', () => {
       last_event_type: 'match_end',
       updated_at: '2026-10-25T19:00:00.000Z'
     })
+    // the finished sets for every viewer, by home/away and by team A/B
+    expect(patch.set_results).toEqual([
+      { set: 1, home: 25, away: 20, a: 20, b: 25 },
+      { set: 2, home: 25, away: 0, a: 0, b: 25 }
+    ])
   })
 
   it('nothing before a set is finished', () => {

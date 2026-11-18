@@ -5,14 +5,14 @@ import { applyRelayTablets, relayMatchKey } from '../utils/serverDataSync'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../ui/cn.js'
+import { MenuPopover } from '../ui/MenuPopover.jsx'
 import { StatusPill } from '../ui/StatusPill.jsx'
-import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
+import { FOCUS_RING, KIT_SCOPE, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
 // compact (a phone's header): no arrow, the header has no room for it
 export default function TabletStatusIndicator({ match, compact = false }) {
   const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState({ top: 0, right: 12 })
   const buttonRef = useRef(null)
   const [, setTick] = useState(0)
 
@@ -34,28 +34,8 @@ export default function TabletStatusIndicator({ match, compact = false }) {
     : summary.overallStatus === 'issues' ? 'warn'
     : 'neutral']
 
-  const openMenu = useCallback(() => {
-    if (buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect()
-      setMenuPos({
-        top: rect.bottom + 4,
-        right: Math.max(12, window.innerWidth - rect.right)
-      })
-    }
-    setMenuOpen(prev => !prev)
-  }, [])
-
-  // Close menu on outside click
-  useEffect(() => {
-    if (!menuOpen) return
-    const handleClick = (e) => {
-      if (buttonRef.current && !buttonRef.current.contains(e.target)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [menuOpen])
+  // The popover hangs from the pill and closes on a press outside it (ui/MenuPopover.jsx)
+  const openMenu = useCallback(() => setMenuOpen(prev => !prev), [])
 
   // Don't render if no roles are enabled. Must stay below every hook: the
   // scorer toggles connections mid-match, and an early return above a hook
@@ -91,16 +71,17 @@ export default function TabletStatusIndicator({ match, compact = false }) {
       </span>
 
       {menuOpen && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className={cn('fixed w-[260px] max-w-[calc(100vw-24px)]', POPOVER_PANEL)}
-          style={{
-            top: `${menuPos.top}px`,
-            right: `${menuPos.right}px`,
-            zIndex: 1000
-          }}
+        <MenuPopover
+          open
+          onClose={() => setMenuOpen(false)}
+          anchorRef={buttonRef}
+          label={t('tabletStatus.title', 'Tablet status')}
+          role="dialog"
+          align="end"
+          closeLabel={t('common.close', 'Close')}
+          className="w-[260px] p-3 text-stone-800"
         >
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+          <div className="menu-own-title mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
             {t('tabletStatus.title', 'Tablet status')}
           </div>
 
@@ -140,7 +121,7 @@ export default function TabletStatusIndicator({ match, compact = false }) {
                 })
             }
           </div>
-        </div>
+        </MenuPopover>
       )}
     </div>
   )

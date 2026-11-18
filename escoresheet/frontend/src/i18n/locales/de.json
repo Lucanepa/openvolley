@@ -218,6 +218,7 @@
     "close": "Schliessen"
   },
   "deleteMatch": {
+    "deviceOnlyBody": "Das löscht alle Sätze, Aktionen, Spieler und Teamdaten dieses Spiels auf diesem Gerät.",
     "cancel": "Abbrechen",
     "delete": "Löschen",
     "lossTitle": "Diese Kopie enthält, was der Server nicht hat:",
@@ -299,6 +300,9 @@
     "searchForRoster": "Kader suchen",
     "noSupabaseConnection": "Keine Datenbankverbindung verfügbar. Bitte überprüfe deine Verbindungseinstellungen.",
     "noRosterFound": "Keine Kaderliste für dieses Spiel gefunden.",
+    "searchRosterHint": "«Kader suchen» findet einen Kader, den das Team mit diesem PIN hochgeladen hat, und einen, den es über die Manager-Seite geschickt hat.",
+    "sentRosterFound": "Der Kader von {{team}} steht oben: Akzeptiere ihn oder wähle «Nicht jetzt».",
+    "noRosterFoundAnywhere": "Noch kein Kader für dieses Spiel: Mit dem Upload-PIN wurde nichts hochgeladen, und das Team hat über die Manager-Seite keinen geschickt.",
     "errorSearchingRoster": "Fehler bei der Kadersuche. Bitte erneut versuchen.",
     "previewRoster": "Vorschau",
     "rosterPreviewTitle": "Kadervorschau",
@@ -755,6 +759,7 @@
       "openRemarksRecording": "Bemerkungen erfassen",
       "stopMatch": "Spiel abbrechen",
       "showPins": "PINs anzeigen",
+      "scoreboardSettings": "Einstellungen der Anzeigetafel",
       "showMatchSetup": "Spieleinrichtung anzeigen",
       "editMatchInfo": "Spielinfo bearbeiten",
       "downloadGameData": "Spieldaten herunterladen (JSON)",
@@ -1071,6 +1076,10 @@
       "applyDelayWarning": "Verzögerungswarnung für {{team}} erfassen?",
       "applyDelayPenalty": "Verzögerungsstrafe für {{team}} erfassen?",
       "repeatedImproperRequest": "Die Mannschaft hat bereits einen nicht ordnungsgemässen Antrag, dieser zählt deshalb als Verzögerung.",
+      "whatRequested": "Was hat die Mannschaft beantragt?",
+      "kindImproper": "Nicht ordnungsgemässer Antrag",
+      "kindIllegalSubstitution": "Unerlaubte Auswechslung",
+      "illegalSubstitution": "Eine unerlaubte Auswechslung zu beantragen ist eine Verzögerung: das Gesuch wird abgelehnt.",
       "repeatedDelay": "Die Mannschaft hat bereits eine Verzögerungswarnung, diese Verzögerung ist deshalb eine Strafe.",
       "pointToOpponent": "Punkt und Aufschlag für {{opponent}}."
     },
@@ -6470,6 +6479,11 @@
     }
   },
   "globalLive": {
+    "listedLabel": "Global-Spiele auf livescore.openvolley.app zeigen (nur der Spielstand, wie auf den TVs)",
+    "list": {
+      "title": "Global-Spiele",
+      "open": "Live-Screen öffnen"
+    },
     "title": "Live-Bildschirm",
     "intro": "Zeigt den Spielstand aller Felder deines Anlasses auf TVs oder einem Beamer, für jedes Spiel. Starte ihn auf einem Schreibergerät und gib den Code auf den anderen ein. Online geht nur der Spielstand (Teamnamen, Punkte, Sätze), nie Spielerinnen und Spieler.",
     "codeLabel": "Live-Bildschirm-Code",
@@ -6495,6 +6509,75 @@
       "interval": "Satzpause",
       "set": "Satz {{n}}",
       "serving": "Aufschlag"
+    }
+  },
+  "rosterPdf": {
+    "tooSlow": "Dieses Gerät konnte das PDF nicht lesen: Es dauerte zu lange. Versuch es nochmals oder gib die Spieler von Hand ein.",
+    "failed": "Das PDF konnte nicht gelesen werden: {{reason}}"
+  },
+  "phonePair": {
+    "menu": "Handy koppeln (Tastatur)",
+    "title": "Handy koppeln",
+    "intro": "Schreib auf deinem Handy: Was du dort tippst, erscheint sofort im Textfeld, das auf diesem Gerät gewählt ist.",
+    "scanHint": "Scanne den QR-Code mit der Handykamera.",
+    "orCode": "Oder öffne {{url}} auf dem Handy und gib diesen Code ein:",
+    "code": "Code",
+    "validFor": "Code gültig für {{time}}",
+    "waiting": "Warte auf das Handy…",
+    "paired": "Handy verbunden",
+    "pairedHint": "Tippe auf diesem Gerät in ein Textfeld und schreib dann auf dem Handy. Nächstes Feld und Enter gehen auch vom Handy aus.",
+    "phoneAway": "Handy nicht erreichbar",
+    "hideKeyboard": "Tastatur dieses Geräts ausblenden, solange das Handy verbunden ist",
+    "unpair": "Entkoppeln",
+    "done": "Fertig",
+    "ended": "Das Handy ist entkoppelt.",
+    "expired": "Die Kopplung ist beendet.",
+    "newPairing": "Neu koppeln",
+    "startFailed": "Die Kopplung konnte nicht starten. Versuch es nochmals.",
+    "notOnServer": "Dieses Spiel ist noch nicht auf dem Server (oder ein Testspiel): Nimm das Hallennetz oder koppel, sobald das Spiel synchronisiert ist.",
+    "reasonNone": "Zum Koppeln braucht es Internet oder das Hallennetz. Hier ist beides nicht verfügbar.",
+    "reasonSignIn": "Melde dich an, um ein Handy über das Internet zu koppeln.",
+    "reasonRole": "Dein Konto kann noch kein Handy koppeln.",
+    "reasonNoNetwork": "Kein Netz für Handys: Verbinde dieses Gerät mit dem Hallen-WLAN oder schalte sein eigenes WLAN ein (Tablets verbinden).",
+    "indicator": "Handy-Tastatur",
+    "indicatorAway": "Handy-Tastatur · nicht erreichbar",
+    "indicatorWaiting": "Handy-Tastatur · wartet",
+    "arrived": "Vom Handy in «{{field}}»",
+    "matchClosed": "Das Spiel ist abgeschlossen: Das Handy wurde entkoppelt.",
+    "textField": "Textfeld"
+  },
+  "globalCloud": {
+    "title": "In der Cloud speichern",
+    "intro": "Hält dieses Spiel zusätzlich online lesbar, ohne Konto: für einen Teilen-Link, die Liste des Veranstalters und das Weiterführen auf einem anderen Gerät. Gefunden über den Backup-Code, geschützt durch den Schiedsrichter-PIN, gelöscht 180 Tage nach dem letzten Speichern.",
+    "needsPin": "Das Spiel braucht zuerst seinen Schiedsrichter-PIN.",
+    "offline": "Keine Verbindung: wird mit der nächsten Aktion gespeichert.",
+    "pinRefused": "Dieser Backup-Code ist mit einem anderen Schiedsrichter-PIN gespeichert.",
+    "failed": "Speichern in der Cloud fehlgeschlagen. Versuche es später nochmals.",
+    "share": "Teilen-Link (nur lesen)",
+    "shareHint": "Wer den Link hat, sieht das Resultat, die Sätze und das PDF-Matchblatt. Ausschalten beendet den Link.",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "organizer": "Turniercode (optional)",
+    "newOrganizer": "Neuer Turniercode",
+    "join": "Verwenden",
+    "removeOrganizer": "Entfernen",
+    "copyOrganizerLink": "Veranstalter-Link kopieren",
+    "badOrganizer": "Das ist kein Turniercode (10 Buchstaben und Ziffern).",
+    "organizerHint": "Gib auf jedem Schreibergerät des Turniers denselben Code ein: Der Veranstalter-Link listet alle seine Spiele mit Resultaten und PDFs.",
+    "otherDevice": "Auf einem anderen Gerät weiterführen: Dort auf der Startseite Spiel wiederherstellen wählen und Backup-Code und Schiedsrichter-PIN eingeben (Backups oben).",
+    "delete": "Aus der Cloud löschen",
+    "page": {
+      "sharedTitle": "Spiel",
+      "organizerTitle": "Turnier",
+      "final": "Schluss",
+      "ended": "Beendet",
+      "live": "Live",
+      "scheduled": "Geplant",
+      "pdf": "Matchblatt (PDF)",
+      "notShared": "Dieses Spiel ist nicht (mehr) geteilt.",
+      "offline": "Verbindung verloren, neuer Versuch…",
+      "loading": "Laden…",
+      "noMatches": "Mit diesem Code ist noch kein Spiel gespeichert."
     }
   }
 }

@@ -20,6 +20,7 @@
  * scoring flow.
  */
 import { setExtId } from './syncIds'
+import { isLocalOnly } from '../domain/matchKind'
 
 const START_ONLY_KEYS = new Set(['external_id', 'start_time'])
 
@@ -44,7 +45,7 @@ export async function queueSetStartTimeSync(db, { matchId, setId, startTime }) {
   try {
     if (setId == null || !startTime) return false
     const match = await db.matches.get(matchId)
-    if (!match || match.test || !match.seed_key) return false
+    if (!match || isLocalOnly(match) || !match.seed_key) return false
     const externalId = setExtId(match.seed_key, setId)
     const stale = await db.sync_queue.where('status').equals('queued')
       .and((j) => isStartOnlySetUpdate(j, externalId))
