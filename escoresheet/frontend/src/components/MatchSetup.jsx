@@ -23,7 +23,7 @@ import { isLocalOnly } from '../domain/matchKind'
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
-import { parseRosterPdf } from '../utils/parseRosterPdf'
+import { parseRosterPdf, rosterPdfErrorText } from '../utils/parseRosterPdf'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { sendMatchInfoMail } from '../utils/matchInfoMail'
 import { exportMatchData, officialsFromCloud } from '../utils/backupManager'
@@ -59,7 +59,8 @@ import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
 import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
-import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rowToPendingRoster } from '../db/gameRosters'
+import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rosterSearchOutcome, rowToPendingRoster } from '../db/gameRosters'
+import { useSentRosterRefresh } from '../hooks/useSentRosterRefresh'
 import SentRosterCard from './SentRosterCard'
 import BackupTargetsPanel from './BackupTargetsPanel'
 import GlobalCloudPanel from './GlobalCloudPanel'
@@ -1165,12 +1166,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sentRows, user?.id, match?.test, match?.global, match?.status, match?.sentRosterUsed, match?.sentRosterDismissed])
   // With a connection, ask for this game as well (a roster sent minutes ago,
-  // another club's game); nothing waits for it
-  useEffect(() => {
-    if (!sentGameNumber || !access?.canReadTeams || !user?.id) return
-    refreshGameRosters({ access, userId: user.id, games: [sentGameNumber] }).catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sentGameNumber, access?.canReadTeams, user?.id])
+  // another club's game), and again while the screen stays open: a roster
+  // sent while the scorer waits shows up without reopening Match Setup
+  // (17.11.2026). Nothing waits for it; offline it reads the device's copy.
+  const canAskSentRosters = !!sentGameNumber && !!access?.canReadTeams && !!user?.id
+  const refreshSentRosters = () => refreshGameRosters({ access, userId: user?.id, games: [sentGameNumber] })
+  useSentRosterRefresh(canAskSentRosters && !setupLocked, refreshSentRosters)
 
   // db/024, offline first: the licence lists of the account's clubs, read
   // from the device's copy (downloaded while online; AuthContext). "Add from
@@ -3768,58 +3769,57 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     )
   }
 
-  // Search for the roster a coach uploaded (remote roster upload)
-  const handleSearchHomeRoster = async () => {
+  // Search for roster (Edit roster -> Remote): both places a team's roster
+  // comes from, the upload made with the upload PIN (the match's row,
+  // connections.pending_{team}_roster) and the roster sent from the manager
+  // site (db/023; asked again now, then the device's copy, so offline still
+  // finds one downloaded before). 17.11.2026: it only asked for the upload
+  // and said "No pending roster" while the team had sent theirs.
+  const handleSearchRoster = async (team) => {
     if (!match) {
       setNoticeModal({ message: t('matchSetup.noSupabaseConnection') })
       return
     }
-
-    setHomeRosterSearching(true)
+    const setSearching = team === 'home' ? setHomeRosterSearching : setAwayRosterSearching
+    setSearching(true)
     try {
-      // The coach's upload lands in this match's row (connections.pending_home_roster)
-      const { roster, error } = await fetchPendingRoster(apiFrom, match.seed_key, 'home')
-      if (error) throw error
-      if (!roster) {
-        setNoticeModal({ message: t('matchSetup.noRosterFound') })
-        return
+      const [remoteRes] = await Promise.allSettled([
+        fetchPendingRoster(apiFrom, match.seed_key, team),
+        canAskSentRosters ? refreshSentRosters() : Promise.resolve('skipped')
+      ])
+      const remoteFailed = remoteRes.status === 'rejected' || !!remoteRes.value?.error
+      if (remoteFailed) console.error('[MatchSetup] Error searching for the uploaded roster:', remoteRes.reason?.message || remoteRes.value?.error?.message || remoteRes.value?.error)
+      const remote = remoteFailed ? null : (remoteRes.value?.roster || null)
+      let rows = []
+      if (canAskSentRosters) {
+        try {
+          rows = await db.game_rosters.where('gameNumber').equals(sentGameNumber).toArray()
+        } catch { /* none on the device */ }
       }
-
-      // Store in local match data to trigger the pending roster UI
-      await db.matches.update(matchId, { pendingHomeRoster: roster })
+      const outcome = rosterSearchOutcome({ side: team, remote, remoteFailed, sentRows: rows, match, userId: user?.id, sentChecked: canAskSentRosters })
+      if (outcome.kind === 'remote') {
+        // Store in local match data to trigger the pending roster UI
+        await db.matches.update(matchId, { [team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster']: remote })
+      } else if (outcome.kind === 'sent') {
+        if (outcome.restore) {
+          await db.matches.update(matchId, { sentRosterDismissed: { ...(match?.sentRosterDismissed || {}), [team]: null } })
+        }
+        // its card is on this screen already (or now): nothing stored yet
+        toast.info(t('matchSetup.sentRosterFound', { team: outcome.row.teamName || (team === 'home' ? home : away) || '' }))
+      } else if (outcome.kind === 'error') {
+        setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
+      } else {
+        setNoticeModal({ message: outcome.sentChecked ? t('matchSetup.noRosterFoundAnywhere') : t('matchSetup.noRosterFound') })
+      }
     } catch (err) {
-      console.error('[MatchSetup] Error searching for home roster:', err?.message || err)
+      console.error(`[MatchSetup] Error searching for ${team} roster:`, err?.message || err)
       setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
     } finally {
-      setHomeRosterSearching(false)
+      setSearching(false)
     }
   }
-
-  const handleSearchAwayRoster = async () => {
-    if (!match) {
-      setNoticeModal({ message: t('matchSetup.noSupabaseConnection') })
-      return
-    }
-
-    setAwayRosterSearching(true)
-    try {
-      // The coach's upload lands in this match's row (connections.pending_away_roster)
-      const { roster, error } = await fetchPendingRoster(apiFrom, match.seed_key, 'away')
-      if (error) throw error
-      if (!roster) {
-        setNoticeModal({ message: t('matchSetup.noRosterFound') })
-        return
-      }
-
-      // Store in local match data to trigger the pending roster UI
-      await db.matches.update(matchId, { pendingAwayRoster: roster })
-    } catch (err) {
-      console.error('[MatchSetup] Error searching for away roster:', err?.message || err)
-      setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
-    } finally {
-      setAwayRosterSearching(false)
-    }
-  }
+  const handleSearchHomeRoster = () => handleSearchRoster('home')
+  const handleSearchAwayRoster = () => handleSearchRoster('away')
 
   // PDF upload handlers - must be defined before conditional returns
   const handleHomePdfUpload = async (file) => {
@@ -3893,7 +3893,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
     } catch (err) {
       console.error('Error parsing PDF:', err)
-      setHomePdfError(`Failed to parse PDF: ${err.message}`)
+      setHomePdfError(rosterPdfErrorText(err, t))
       // Clear file state on error too
       setHomePdfFile(null)
       if (homeFileInputRef.current) {
@@ -3975,7 +3975,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
     } catch (err) {
       console.error('Error parsing PDF:', err)
-      setAwayPdfError(`Failed to parse PDF: ${err.message}`)
+      setAwayPdfError(rosterPdfErrorText(err, t))
       // Clear file state on error too
       setAwayPdfFile(null)
       if (awayFileInputRef.current) {
@@ -4798,6 +4798,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {/* Remote Upload */}
               {homeUploadMode === 'remote' && (
                 <div className="flex flex-col gap-1.5">
+                  {/* what Search for roster looks in: the upload with this PIN and the manager site's sent roster */}
+                  <p className="m-0 text-xs text-stone-500" data-testid="search-roster-hint-home">{t('matchSetup.searchRosterHint')}</p>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
                     <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">
@@ -5893,6 +5895,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {/* Remote Upload */}
               {awayUploadMode === 'remote' && (
                 <div className="flex flex-col gap-1.5">
+                  {/* what Search for roster looks in: the upload with this PIN and the manager site's sent roster */}
+                  <p className="m-0 text-xs text-stone-500" data-testid="search-roster-hint-away">{t('matchSetup.searchRosterHint')}</p>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
                     <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">

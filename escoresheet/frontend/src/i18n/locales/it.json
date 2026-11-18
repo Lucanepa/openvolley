@@ -307,6 +307,9 @@
     "searchForRoster": "Cerca rosa",
     "noSupabaseConnection": "Nessuna connessione al database disponibile. Controlla le impostazioni di connessione.",
     "noRosterFound": "Nessuna rosa in attesa trovata per questa partita.",
+    "searchRosterHint": "«Cerca rosa» trova la rosa che la squadra ha caricato con questo PIN e quella che ha inviato dalla pagina del manager.",
+    "sentRosterFound": "La rosa inviata da {{team}} è qui sopra: accettala o scegli «Non ora».",
+    "noRosterFoundAnywhere": "Ancora nessuna rosa per questa partita: nulla è stato caricato con il PIN, e la squadra non ne ha inviata una dalla pagina del manager.",
     "errorSearchingRoster": "Errore nella ricerca della rosa. Riprova.",
     "previewRoster": "Anteprima",
     "rosterPreviewTitle": "Anteprima rosa",
@@ -6516,6 +6519,10 @@
       "set": "Set {{n}}",
       "serving": "Al servizio"
     }
+  },
+  "rosterPdf": {
+    "tooSlow": "Questo dispositivo non è riuscito a leggere il PDF: ci è voluto troppo. Riprova o inserisci i giocatori a mano.",
+    "failed": "Non è stato possibile leggere il PDF: {{reason}}"
   },
   "phonePair": {
     "menu": "Collega un telefono (tastiera)",

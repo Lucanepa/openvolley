@@ -61,6 +61,18 @@ body,
   overflow: hidden;
 }
 
+/* A page that reads like a document (roster.openvolley.app): the page itself
+   scrolls, so everything below the fold can be reached on a phone and a PC.
+   The scoring screens keep the locked frame above. Visible on all three lets
+   the body's overflow reach the viewport, so a modal's scroll lock (inline
+   body overflow: hidden, ui/Modal.jsx) still works. */
+html.ov-page-scroll,
+html.ov-page-scroll body,
+html.ov-page-scroll #root {
+  overflow: visible;
+  height: auto;
+}
+
 body {
   margin: 0;
   background: var(--bg);

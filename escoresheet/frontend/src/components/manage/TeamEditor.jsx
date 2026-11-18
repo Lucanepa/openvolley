@@ -503,7 +503,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       toast.success(t('manage.myTeams.pdfImported', { added: merged.added, updated: merged.updated }))
     } catch (err) {
       console.warn('[TeamEditor] Einsatzliste import failed:', err?.message)
-      setRosterError(t('manage.myTeams.pdfFailed'))
+      setRosterError(err?.code === 'pdf-timeout' /* parseRosterPdf PDF_TIMEOUT_CODE */ ? t('rosterPdf.tooSlow') : t('manage.myTeams.pdfFailed'))
     } finally {
       setImporting(false)
       if (pdfInput.current) pdfInput.current.value = ''

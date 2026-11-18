@@ -306,6 +306,9 @@
     "searchForRoster": "Chercher l'effectif",
     "noSupabaseConnection": "Erreur de connexion à la base de données.",
     "noRosterFound": "Aucun effectif trouvé pour ce match.",
+    "searchRosterHint": "« Chercher l'effectif » trouve l'effectif que l'équipe a téléversé avec ce PIN et celui qu'elle a envoyé depuis la page de gestion.",
+    "sentRosterFound": "L'effectif envoyé par {{team}} est affiché plus haut : accepte-le ou choisis « Pas maintenant ».",
+    "noRosterFoundAnywhere": "Pas encore d'effectif pour ce match : rien n'a été téléversé avec le PIN, et l'équipe n'en a pas envoyé depuis la page de gestion.",
     "errorSearchingRoster": "Erreur lors de la recherche de l'effectif.",
     "previewRoster": "Aperçu",
     "rosterPreviewTitle": "Aperçu de l'effectif",
@@ -6510,6 +6513,10 @@
       "set": "Set {{n}}",
       "serving": "Au service"
     }
+  },
+  "rosterPdf": {
+    "tooSlow": "Cet appareil n'a pas pu lire le PDF : cela a pris trop de temps. Réessaie ou saisis les joueurs à la main.",
+    "failed": "Le PDF n'a pas pu être lu : {{reason}}"
   },
   "phonePair": {
     "menu": "Coupler un téléphone (clavier)",

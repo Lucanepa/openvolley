@@ -300,6 +300,9 @@
     "searchForRoster": "Kader suchen",
     "noSupabaseConnection": "Keine Datenbankverbindung verfügbar. Bitte überprüfe deine Verbindungseinstellungen.",
     "noRosterFound": "Keine Kaderliste für dieses Spiel gefunden.",
+    "searchRosterHint": "«Kader suchen» findet einen Kader, den das Team mit diesem PIN hochgeladen hat, und einen, den es über die Manager-Seite geschickt hat.",
+    "sentRosterFound": "Der Kader von {{team}} steht oben: Akzeptiere ihn oder wähle «Nicht jetzt».",
+    "noRosterFoundAnywhere": "Noch kein Kader für dieses Spiel: Mit dem Upload-PIN wurde nichts hochgeladen, und das Team hat über die Manager-Seite keinen geschickt.",
     "errorSearchingRoster": "Fehler bei der Kadersuche. Bitte erneut versuchen.",
     "previewRoster": "Vorschau",
     "rosterPreviewTitle": "Kadervorschau",
@@ -6499,6 +6502,10 @@
       "set": "Satz {{n}}",
       "serving": "Aufschlag"
     }
+  },
+  "rosterPdf": {
+    "tooSlow": "Dieses Gerät konnte das PDF nicht lesen: Es dauerte zu lange. Versuch es nochmals oder gib die Spieler von Hand ein.",
+    "failed": "Das PDF konnte nicht gelesen werden: {{reason}}"
   },
   "phonePair": {
     "menu": "Handy koppeln (Tastatur)",
