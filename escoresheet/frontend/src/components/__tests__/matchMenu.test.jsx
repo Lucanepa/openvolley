@@ -64,9 +64,39 @@ describe('match menu sections', () => {
     expect(sections.map(s => s.key)).not.toContain('settings')
   })
 
+  // A scoreboard display (an LED board) follows the match and named its
+  // settings page (utils/scoreboardDisplay.js): one more row, after the PINs.
+  // Without one, no row at all (the test above).
+  it('"Scoreboard settings" only while a scoreboard offers its settings page', () => {
+    const scoreboardSettings = vi.fn()
+    const sections = matchMenuSections(keyT, { ...allActions(), scoreboardSettings })
+    const devices = sections.find(s => s.key === 'devices')
+    expect(devices.items.map(i => i.key)).toEqual(['pins', 'scoreboard-settings', 'export'])
+    const row = devices.items[1]
+    expect(row.label).toBe('scoreboard.menu.scoreboardSettings')
+    expect(row.Icon).toBeTruthy()
+    expect(row.danger).toBeUndefined()
+    row.onClick()
+    expect(scoreboardSettings).toHaveBeenCalledTimes(1)
+    expect(matchMenuSections(keyT, { ...allActions(), scoreboardSettings: undefined }).find(s => s.key === 'devices').items.map(i => i.key)).toEqual(['pins', 'export'])
+  })
+
+  it('"Scoreboard settings" is a named menu item that opens the page', () => {
+    const scoreboardSettings = vi.fn()
+    const enT = (key, fallback) => (typeof lookup(en, key) === 'string' ? lookup(en, key) : fallback)
+    render(<MenuList buttonLabel="Match" menuTitle="Match" columns={2} sections={toMenuListSections(matchMenuSections(enT, { ...allActions(), scoreboardSettings }))} />)
+    fireEvent.click(screen.getByRole('button', { name: /Match/ }))
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Match' })).getByRole('menuitem', { name: 'Scoreboard settings' }))
+    expect(scoreboardSettings).toHaveBeenCalledTimes(1)
+    // brand- and club-free in every language
+    for (const [lng, dict] of Object.entries(LOCALES)) {
+      expect(lookup(dict, 'scoreboard.menu.scoreboardSettings'), lng).not.toMatch(/point ?hub|kscw|ledbox/i)
+    }
+  })
+
   it('every section title and row label exists in all five languages', () => {
     const keys = new Set()
-    matchMenuSections((key) => { keys.add(key); return key }, allActions())
+    matchMenuSections((key) => { keys.add(key); return key }, { ...allActions(), scoreboardSettings: vi.fn() })
     expect(keys.size).toBeGreaterThan(10)
     for (const [lng, dict] of Object.entries(LOCALES)) {
       for (const key of keys) {
