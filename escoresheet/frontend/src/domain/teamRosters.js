@@ -10,7 +10,7 @@
  * carry the licence number, never a date of birth.
  */
 
-import { STAFF_ROLES, normalizeName } from './savedTeams'
+import { STAFF_ROLES, normalizeName, savedNumberFinder } from './savedTeams'
 
 // lib/teams.js (FIVB 4.1.1, VolleyManager's own limit)
 export const GAME_ROSTER_MAX_PLAYERS = 14
@@ -33,6 +33,16 @@ const noDob = (row) => {
   const { dob, ...rest } = row
   return rest
 }
+
+// Owner 2026-11-19: the numbers of a player new to a roster come from the
+// team's saved team (the server keeps the latest official match's there,
+// backend lib/rosterSaveBack.js), its players set inactive too; null: none
+const squadNumbers = (squad) => {
+  if (!squad) return () => null
+  const numberOf = savedNumberFinder(squad, { inactive: true })
+  return (p) => numberOf({ licence: p?.license_number, firstName: p?.first_name, lastName: p?.last_name })
+}
+const numberKey = (v) => (v === null || v === undefined || clean(v) === '' ? null : Number(v))
 
 const PDF_OFFICIAL_ROLES = [['coach', 'Coach'], ['ac1', 'Assistant Coach 1'], ['ac2', 'Assistant Coach 2']]
 
@@ -71,7 +81,9 @@ export function parsedPdfToRoster(parsed) {
  * Merge an imported roster into the saved team's players and staff (drafts
  * keep their own fields, e.g. `key` and `id`): the same player gets the
  * imported number and licence where the import has them, a new
- * player is added (active). The same player = the same licence, else the same
+ * player is added (active; without a number in the import, with the one the
+ * saved team as the server has it, `squad`, knows for them, when no active
+ * player of the list wears it). The same player = the same licence, else the same
  * name (accents and case aside), else the same name with first and last name
  * swapped; a player twice in the import is one. Staff by role: the import fills
  * a role's person. Returns { players, staff, added, updated }.
@@ -109,15 +121,20 @@ export function samePerson(a, b) {
   return nameKey(a) === nameKey(b) || nameKey(a) === swappedKey(b)
 }
 
-export function mergeImportedRoster(players, staff, imported, makePlayer = (p) => p, makeStaff = (s) => s) {
+export function mergeImportedRoster(players, staff, imported, makePlayer = (p) => p, makeStaff = (s) => s, squad = null) {
   const out = (players || []).map(noDob)
   let added = 0
   let updated = 0
   const { find, remember } = playerFinder(out)
+  // a new player without a number: the saved team's (`squad`, as the server
+  // has it), unless an active player of the list wears it
+  const known = squadNumbers(squad)
+  const worn = (n) => out.some((x) => x.active !== false && numberKey(x.number) === n)
   for (const p of imported?.players || []) {
     const i = find(p)
     if (i === undefined) {
-      out.push(makePlayer({ ...noDob(p), active: true }))
+      const n = p.number == null ? known(p) : null
+      out.push(makePlayer({ ...noDob(p), ...(n !== null && !worn(n) ? { number: n } : {}), active: true }))
       remember(p, out.length - 1)
       added++
       continue
@@ -199,12 +216,14 @@ export function uniqueStaffRoles(staff) {
  * (parsedPdfToRoster) applied: its players ticked, the others unticked. An
  * Einsatzliste has no shirt numbers: a player already offered keeps the
  * draft's number, captain and libero (the licence filled from the list); one
- * not offered yet comes without a number. Its officials are
+ * not offered yet comes with the number the team's saved team (`squad`) has
+ * for them, by licence, else name (not one a ticked player has), else
+ * without one. Its officials are
  * ticked in the roles it gives them (one entry per person: the draft's entry
  * moves to the role); every other official is unticked.
  * { draft, added } (added: the players not offered before).
  */
-export function applyEinsatzlisteToGameDraft(draft, imported) {
+export function applyEinsatzlisteToGameDraft(draft, imported, squad = null) {
   const before = draft?.players || []
   const { find } = playerFinder(before)
   const used = new Set()
@@ -223,8 +242,21 @@ export function applyEinsatzlisteToGameDraft(draft, imported) {
     let key = nameKey(p)
     while (keys.has(key)) key = `${key}|${p.license_number || added}`
     keys.add(key)
-    ticked.push({ key, number: '', first_name: p.first_name, last_name: p.last_name, license_number: p.license_number || null, is_libero: false, is_captain: false, picked: true })
+    ticked.push({ key, number: '', first_name: p.first_name, last_name: p.last_name, license_number: p.license_number || null, is_libero: false, is_captain: false, picked: true, fresh: true })
     added++
+  }
+  // the new ones: the saved team's numbers, never one a ticked player has
+  const known = squadNumbers(squad)
+  const taken = new Set(ticked.map((x) => numberKey(x.number)).filter((n) => n !== null))
+  for (let j = 0; j < ticked.length; j++) {
+    if (!ticked[j].fresh) continue
+    const { fresh, ...entry } = ticked[j]
+    const n = known(entry)
+    if (n !== null && !taken.has(n)) {
+      entry.number = n
+      taken.add(n)
+    }
+    ticked[j] = entry
   }
   const rest = before.filter((_, i) => !used.has(i)).map((p) => ({ ...p, picked: false }))
 
@@ -406,19 +438,23 @@ export function wrongGenderIndexes(players, clubPlayers, gender) {
  * existing row gets the licence), new ones without a number.
  * { players, staff, added, updated }.
  */
-export function addClubPlayersToSquad(players, staff, chosen, makePlayer = (p) => p, makeStaff = (s) => s) {
-  return mergeImportedRoster(players, staff, { players: (chosen || []).map(clubPersonToPlayer), staff: [] }, makePlayer, makeStaff)
+export function addClubPlayersToSquad(players, staff, chosen, makePlayer = (p) => p, makeStaff = (s) => s, squad = null) {
+  return mergeImportedRoster(players, staff, { players: (chosen || []).map(clubPersonToPlayer), staff: [] }, makePlayer, makeStaff, squad)
 }
 
 /**
  * A game roster draft (gameRosterDraft) with `chosen` (club list people)
  * ticked: one already offered (the same licence, else name) is ticked, the
- * others are added ticked, without a number. { draft, added, ticked }.
+ * others are added ticked, with the number the team's saved team (`squad`)
+ * has for them when no ticked player wears it, else without one.
+ * { draft, added, ticked }.
  */
-export function addClubPlayersToGameDraft(draft, chosen) {
+export function addClubPlayersToGameDraft(draft, chosen, squad = null) {
   const players = [...(draft?.players || [])]
   const { find, remember } = playerFinder(players)
   const keys = new Set(players.map((p) => p.key))
+  const known = squadNumbers(squad)
+  const wornByTicked = (n) => players.some((x) => x.picked && numberKey(x.number) === n)
   let added = 0
   let ticked = 0
   for (const c of chosen || []) {
@@ -433,7 +469,8 @@ export function addClubPlayersToGameDraft(draft, chosen) {
     let key = nameKey(p)
     while (keys.has(key)) key = `${key}|${p.license_number || added}`
     keys.add(key)
-    players.push({ key, number: '', first_name: p.first_name, last_name: p.last_name, license_number: p.license_number, is_libero: false, is_captain: false, picked: true })
+    const n = known(p)
+    players.push({ key, number: n !== null && !wornByTicked(n) ? n : '', first_name: p.first_name, last_name: p.last_name, license_number: p.license_number, is_libero: false, is_captain: false, picked: true })
     remember(p, players.length - 1)
     added++
   }

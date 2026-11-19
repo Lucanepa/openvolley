@@ -4,7 +4,7 @@ import { ArrowLeft, FileUp, Plus, Trash2, UserPlus, X } from 'lucide-react'
 import { savedTeamsApi, errorKeyOf, fetchPublicClubs } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
 import { selectAll } from '../../lib/selectAll'
-import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sameTypedName, sportOf } from '../../domain/savedTeams'
+import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sameTypedName, savedNumberFinder, sportOf } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import { addClubPlayersToSquad, clubFillOf, clubPersonOf, clubPersonToPlayer, clubPlayersForGender, handTypedForClub, linkRowToClubPerson, mergeImportedRoster, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setSquadOfficial, wrongGenderIndexes } from '../../domain/teamRosters'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
@@ -489,7 +489,8 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
         setRosterError(t('manage.myTeams.pdfEmpty'))
         return
       }
-      const merged = mergeImportedRoster(players, staff, imported, toPlayerDraft, toStaffDraft)
+      // a new player gets the number the saved team (as stored) has for them
+      const merged = mergeImportedRoster(players, staff, imported, toPlayerDraft, toStaffDraft, team)
       setPlayers(merged.players)
       setStaff(merged.staff)
       setRowErrors({})
@@ -535,9 +536,14 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   // as an import is (the same licence, else name: nobody twice)
   const offered = useMemo(() => clubPersonOffer(clubPlayers), [clubPlayers])
   const finder = useMemo(() => playerFinder(players), [players])
+  // the picker shows the number the saved team has for each person
+  const savedNumberOf = useMemo(() => {
+    const numberOf = savedNumberFinder(team, { inactive: true })
+    return (c) => numberOf({ licence: c.sv_number, firstName: c.first_name, lastName: c.last_name })
+  }, [team])
   const addFromClub = (chosen) => {
     setClubPicker(false)
-    const merged = addClubPlayersToSquad(players, staff, chosen, toPlayerDraft, toStaffDraft)
+    const merged = addClubPlayersToSquad(players, staff, chosen, toPlayerDraft, toStaffDraft, team)
     setPlayers(merged.players)
     setRosterError('')
     setRowErrors({})
@@ -839,6 +845,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
         onPick={addFromClub}
         players={offered}
         isTaken={(c) => finder.find(clubPersonToPlayer(c)) !== undefined}
+        numberOf={savedNumberOf}
       />
       <ClubPlayerPickerModal
         open={officialPicker}

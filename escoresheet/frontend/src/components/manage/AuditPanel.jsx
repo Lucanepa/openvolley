@@ -124,6 +124,14 @@ export function auditDetailsLine(entry, opts = {}) {
     if (d.sql) parts.push(String(d.sql).replace(/\s+/g, ' ').slice(0, 200))
     return parts.join(' · ')
   }
+  // db/048: an official match's roster added to the team's saved team (lib/rosterSaveBack.js; counts, never a name)
+  if (entry?.action === 'team.squad.match') {
+    if (d.game_number) parts.push(`#${d.game_number}`)
+    const n = (v) => (Number.isFinite(v) ? v : 0)
+    parts.push(tr('manage.audit.squadMatch', `added ${n(d.added)} · numbers ${n(d.numbers)} · left out ${n(d.skipped)}`, { added: n(d.added), numbers: n(d.numbers), skipped: n(d.skipped) }))
+    if (Number.isFinite(d.club_added) && d.club_added > 0) parts.push(`${tr('manage.licences.title', 'Licences')} +${d.club_added}`)
+    return parts.join(' · ')
+  }
   if (SAVED_TEAM_ACTIONS.has(entry?.action)) {
     if (d.name) parts.push(String(d.name))
     if (d.season) parts.push(String(d.season))

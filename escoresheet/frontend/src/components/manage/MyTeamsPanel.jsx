@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, ChevronDown, FileUp, PenLine, Plus, Trash2, UserPlus } from 'lucide-react'
 import { teamApi } from '../../lib/accountApi'
 import { addClubPlayersToGameDraft, applyEinsatzlisteToGameDraft, clubPersonOf, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, roleForNewOfficial, setGameDraftOfficial, setGameDraftStaffRole, wrongGenderIndexes, GAME_ROSTER_MAX_LIBEROS, GAME_ROSTER_MAX_PLAYERS, GAME_ROSTER_MAX_STAFF } from '../../domain/teamRosters'
-import { STAFF_ROLES } from '../../domain/savedTeams'
+import { STAFF_ROLES, savedNumberFinder } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import TeamEditor, { clubPeopleOf, clubPersonOffer } from './TeamEditor'
 import RequestsSection from './RequestsSection'
@@ -414,7 +414,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
         setSaveError(t('manage.myTeams.pdfEmpty'))
         return
       }
-      setDraft(applyEinsatzlisteToGameDraft(shown, imported).draft)
+      setDraft(applyEinsatzlisteToGameDraft(shown, imported, squad).draft)
       toast.success(t('manage.myTeams.pdfImportedGame', { count: imported.players.length }))
     } catch (err) {
       console.warn('[MyTeams] Einsatzliste import failed:', err?.message)
@@ -429,10 +429,15 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
   const [clubPicker, setClubPicker] = useState(false)
   const offered = useMemo(() => clubPersonOffer(clubPlayers), [clubPlayers])
   const finder = useMemo(() => playerFinder(shown?.players || []), [shown])
+  // the picker shows the number the saved team has for each person
+  const savedNumberOf = useMemo(() => {
+    const numberOf = savedNumberFinder(squad, { inactive: true })
+    return (c) => numberOf({ licence: c.sv_number, firstName: c.first_name, lastName: c.last_name })
+  }, [squad])
   const addFromClub = (chosen) => {
     setClubPicker(false)
     if (!shown) return
-    const r = addClubPlayersToGameDraft(shown, chosen)
+    const r = addClubPlayersToGameDraft(shown, chosen, squad)
     change(() => r.draft)
     toast.success(t('clubPlayers.ticked', { count: r.added + r.ticked }))
   }
@@ -691,6 +696,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
           const i = finder.find(clubPersonToPlayer(c))
           return i !== undefined && !!shown?.players[i]?.picked
         }}
+        numberOf={savedNumberOf}
       />
       <ClubPlayerPickerModal
         open={officialPicker}
