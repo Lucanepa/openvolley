@@ -43,6 +43,11 @@ const REFUSED = [
   ['a third libero slot', { players: [player(1, { libero: 'libero3' })] }, 'players[0].libero', 'badLibero'],
   ['captain as text', { players: [player(1, { isCaptain: 'yes' })] }, 'players[0].isCaptain', 'badFlag'],
   ['a date that is no date', { players: [player(1, { dob: '<b>' })] }, 'players[0].dob', 'badDate'],
+  ['a licence of 3 digits', { players: [player(1, { dob: '123' })] }, 'players[0].dob', 'badDate'],
+  ['a licence of 8 digits', { players: [player(1, { dob: '12345678' })] }, 'players[0].dob', 'badDate'],
+  ['a licence with letters', { players: [player(1, { dob: 'SV12345' })] }, 'players[0].dob', 'badDate'],
+  ['a number as a licence', { players: [player(1, { dob: 123456 })] }, 'players[0].dob', 'badDate'],
+  ['a bench licence of 2 digits', { bench: [{ role: 'Coach', lastName: 'Muster', dob: '12' }] }, 'bench[0].dob', 'badDate'],
   ['bench role "constructor"', { bench: [{ role: 'constructor', lastName: 'Muster' }] }, 'bench[0].role', 'badRole'],
   ['bench role "hasOwnProperty"', { bench: [{ role: 'hasOwnProperty' }] }, 'bench[0].role', 'badRole'],
   ['two coaches', { bench: [{ role: 'Coach' }, { role: 'Coach' }] }, 'bench[1].role', 'roleTwice'],
@@ -70,6 +75,16 @@ describe('checkUploadedRoster', () => {
     assert.deepEqual(r.roster.players.map((p) => [p.number, p.lastName, p.dob]), [[3, '', ''], [null, 'Muster', '']])
   })
 
+  it('takes a licence number (4 to 7 digits) or a date beside a name (a Swiss match, 2026-11-19)', () => {
+    const r = server.checkUploadedRoster({
+      players: [player(1, { dob: '1234' }), player(2, { dob: ' 1234567 ' }), player(3, { dob: '14.03.2008' }), player(4, { dob: '2008-03-14' })],
+      bench: [{ role: 'Coach', firstName: 'Hans', lastName: 'Beispiel', dob: '654321' }]
+    })
+    assert.equal(r.ok, true)
+    assert.deepEqual(r.roster.players.map((p) => p.dob), ['1234', '1234567', '14.03.2008', '2008-03-14'])
+    assert.equal(r.roster.bench[0].dob, '654321')
+  })
+
   for (const [what, roster, path, code] of REFUSED) {
     it(`refuses ${what}`, () => {
       const r = server.checkUploadedRoster(roster)
@@ -79,7 +94,8 @@ describe('checkUploadedRoster', () => {
   }
 
   it('the scorer app answers alike (frontend/src/domain/uploadedRoster.js)', () => {
-    for (const [, roster] of [['good', good()], ...REFUSED]) {
+    const licences = { players: [player(1, { dob: '1234' }), player(2, { dob: '1234567' })], bench: [{ role: 'Coach', lastName: 'Muster', dob: '654321' }] }
+    for (const [, roster] of [['good', good()], ['licences', licences], ...REFUSED]) {
       assert.deepEqual(app.checkUploadedRoster(roster), server.checkUploadedRoster(roster))
     }
     assert.equal(app.SIGNATURE_RE.source, SIGNATURE_RE.source)
