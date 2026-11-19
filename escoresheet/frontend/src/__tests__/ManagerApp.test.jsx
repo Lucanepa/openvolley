@@ -324,14 +324,18 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     'Confirm password': 'secret1234'
   }
 
-  it('the page: every field of the sign-up, the date of birth empty, a way back to sign in', () => {
+  it('the page: every field of the sign-up, an optional licence number and no date of birth, a way back to sign in', () => {
     setAuth({ user: null })
     render(<ManagerApp />)
     const page = screen.getByTestId('manager-sign-up')
     expect(within(page).getByRole('heading', { name: 'managerSite.signUpHeading' })).toBeInTheDocument()
-    for (const label of ['First name', 'Last name', 'Country', 'Date of birth', 'Email', 'Password', 'Confirm password']) {
+    for (const label of ['First name', 'Last name', 'Country', 'auth.licenceNumber', 'Email', 'Password', 'Confirm password']) {
       expect(within(page).getByLabelText(label)).toBeInTheDocument()
     }
+    // db/048 (owner 2026-11-19): no date of birth at sign-up
+    expect(within(page).queryByLabelText(/birth/i)).toBeNull()
+    expect(within(page).getByLabelText('First name')).toBeRequired()
+    expect(within(page).getByLabelText('Last name')).toBeRequired()
     // a dropdown with Switzerland only, for now
     const country = within(page).getByLabelText('Country')
     expect(country.tagName).toBe('SELECT')
@@ -339,17 +343,21 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     expect(within(country).getAllByRole('option').map(o => o.value)).toEqual(['CHE'])
     // no line under the heading on OpenVolley (OpenBeach keeps its own)
     expect(within(page).queryByText('managerSite.signUpBody')).toBeNull()
-    // never today's date: a text field, empty until the user types
-    const dob = within(page).getByLabelText('Date of birth')
-    expect(dob).toHaveValue('')
-    expect(dob).toHaveAttribute('type', 'text')
+    // the licence number: optional (not required), empty, digits only, at most 7
+    const licence = within(page).getByLabelText('auth.licenceNumber')
+    expect(licence).toHaveValue('')
+    expect(licence).not.toBeRequired()
+    expect(licence).toHaveAttribute('inputmode', 'numeric')
+    expect(within(page).getByText('auth.licenceNumberHint')).toBeInTheDocument()
+    fireEvent.change(licence, { target: { value: 'SV 12 34-567 89' } })
+    expect(licence).toHaveValue('1234567')
     expect(within(page).getByText('access.signUpPendingNote')).toBeInTheDocument()
     // "Already have an account? Sign in" opens the sign-in dialog here
     fireEvent.click(within(page).getByRole('button', { name: 'Sign in' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  it('checks the passwords and the date of birth before asking the server', async () => {
+  it('checks the names, the passwords and the licence number before asking the server', async () => {
     setAuth({ user: null })
     render(<ManagerApp />)
     const page = screen.getByTestId('manager-sign-up')
@@ -363,10 +371,14 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     submit()
     expect(await within(page).findByRole('alert')).toHaveTextContent('Password must be at least 10 characters')
 
-    fill(page, { ...valid, 'Date of birth': '31.02.1990' })
+    fill(page, { ...valid, 'Last name': '  ' })
     submit()
-    expect(await within(page).findByText('Enter the date of birth as DD.MM.YYYY.')).toBeInTheDocument()
-    expect(within(page).getByLabelText('Date of birth')).toHaveAttribute('aria-invalid', 'true')
+    expect(await within(page).findByRole('alert')).toHaveTextContent('auth.nameRequired')
+
+    fill(page, { ...valid, 'auth.licenceNumber': '123' })
+    submit()
+    expect(await within(page).findByText('auth.licenceNumberInvalid')).toBeInTheDocument()
+    expect(within(page).getByLabelText('auth.licenceNumber')).toHaveAttribute('aria-invalid', 'true')
     expect(auth.value.signUp).not.toHaveBeenCalled()
   })
 
@@ -381,7 +393,7 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     })
     const { rerender } = render(<ManagerApp />)
     const page = screen.getByTestId('manager-sign-up')
-    fill(page, { ...valid, 'Date of birth': '6.10.1990' })
+    fill(page, { ...valid, 'auth.licenceNumber': '123456' })
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
     await waitFor(() => expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument())
     rerender(<ManagerApp />)
@@ -485,14 +497,14 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     expect(screen.queryByTestId('manager-sign-up')).toBeNull()
   })
 
-  it('sends the trimmed fields, the ISO date of birth (null when left empty)', async () => {
+  it('sends the trimmed fields and the licence number (null when left empty), never a date of birth', async () => {
     setAuth({ user: null })
     render(<ManagerApp />)
     const page = screen.getByTestId('manager-sign-up')
     fill(page, { ...valid, Email: ' lea@club.ch ', 'First name': ' Lea ' })
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
     await waitFor(() => expect(auth.value.signUp).toHaveBeenCalledWith('lea@club.ch', 'secret1234', {
-      firstName: 'Lea', lastName: 'Muster', country: 'CHE', dob: null
+      firstName: 'Lea', lastName: 'Muster', country: 'CHE', licenceNumber: null
     }, { requests: [] }))
   })
 
@@ -501,11 +513,11 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     auth.value.signUp = vi.fn(async () => ({ data: { user: { id: 'u-new', email_confirmed_at: null } }, error: null }))
     render(<ManagerApp />)
     const page = screen.getByTestId('manager-sign-up')
-    fill(page, { ...valid, 'Date of birth': '06.10.1990' })
+    fill(page, { ...valid, 'auth.licenceNumber': '0123456' })
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
     const done = await within(page).findByTestId('signup-done')
     expect(done).toHaveTextContent('Check your email to confirm your account')
-    expect(auth.value.signUp.mock.calls[0][2].dob).toBe('1990-10-06')
+    expect(auth.value.signUp.mock.calls[0][2]).toEqual({ firstName: 'Lea', lastName: 'Muster', country: 'CHE', licenceNumber: '0123456' })
     expect(auth.value.signIn).not.toHaveBeenCalled()
     fireEvent.click(within(done).getByRole('button', { name: 'Sign in' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()

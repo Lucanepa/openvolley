@@ -7,7 +7,7 @@ import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 import RoleChips from './RoleChips'
 import PendingApprovalBanner from './PendingApprovalBanner'
 import EmailConfirmBanner from './EmailConfirmBanner'
-import DateOfBirthInput from './DateOfBirthInput'
+import { licenceInput, licenceOk, licenceValue, LICENCE_NUMBER_MAX } from './licenceNumber'
 import ApprovalPinSection from './ApprovalPinSection'
 import PasskeySection from './PasskeySection'
 import AccountSecuritySection from './AccountSecuritySection'
@@ -22,7 +22,8 @@ export default function ProfileModal({ open, onClose }) {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [country, setCountry] = useState('CHE')
-  const [dob, setDob] = useState('')
+  // The licence number (db/048), optional; no date of birth
+  const [licence, setLicence] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -54,7 +55,7 @@ export default function ProfileModal({ open, onClose }) {
       setFirstName(profile.first_name || '')
       setLastName(profile.last_name || '')
       setCountry(profile.country || 'CHE')
-      setDob(profile.dob || '')
+      setLicence(profile.license_number || '')
       setError('')
       setSuccess(false)
       // Reset delete state
@@ -99,15 +100,14 @@ export default function ProfileModal({ open, onClose }) {
     firstName !== (profile?.first_name || '') ||
     lastName !== (profile?.last_name || '') ||
     country !== (profile?.country || 'CHE') ||
-    dob !== (profile?.dob || '')
+    licence !== (profile?.license_number || '')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setSuccess(false)
-    // null: the date of birth is unfinished or impossible (DateOfBirthInput)
-    if (dob === null) {
-      setError(t('auth.dobInvalid', 'Enter the date of birth as DD.MM.YYYY.'))
+    if (!licenceOk(licence)) {
+      setError(t('auth.licenceNumberInvalid'))
       return
     }
     setLoading(true)
@@ -116,7 +116,7 @@ export default function ProfileModal({ open, onClose }) {
       firstName,
       lastName,
       country,
-      dob: dob || null
+      licenceNumber: licenceValue(licence)
     })
 
     if (updateError) {
@@ -215,7 +215,7 @@ export default function ProfileModal({ open, onClose }) {
               </Field>
             </div>
 
-            {/* Country and DOB */}
+            {/* Country and licence number */}
             <div className="grid grid-cols-2 gap-3 stack:grid-cols-1">
               <Field label={t('auth.country', 'Country')}>
                 <Input
@@ -229,11 +229,18 @@ export default function ProfileModal({ open, onClose }) {
                   className="uppercase"
                 />
               </Field>
-              <Field label={t('auth.dob', 'Date of birth')}>
-                <DateOfBirthInput
-                  value={dob}
-                  onChange={setDob}
-                  aria-label={t('auth.dob', 'Date of birth')}
+              <Field label={t('auth.licenceNumber')} hint={t('auth.licenceNumberHint')}>
+                <Input
+                  size="lg"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={LICENCE_NUMBER_MAX}
+                  value={licence}
+                  onChange={e => setLicence(licenceInput(e.target.value))}
+                  aria-label={t('auth.licenceNumber')}
+                  autoComplete="off"
+                  data-testid="profile-licence"
                 />
               </Field>
             </div>

@@ -153,15 +153,17 @@ describe('SyncSignInBanner', () => {
 })
 
 describe('profile save', () => {
-  const sent = profileUpdateColumns({ firstName: 'E2E Renamed', lastName: 'Tester2', country: 'CHE', dob: '' })
+  const sent = profileUpdateColumns({ firstName: 'E2E Renamed', lastName: 'Tester2', country: 'CHE', licenceNumber: '' })
 
-  it('sends only the editable columns (never roles)', () => {
-    expect(sent).toEqual({ first_name: 'E2E Renamed', last_name: 'Tester2', country: 'CHE', dob: null, sport_type: 'indoor' })
+  it('sends only the editable columns (never roles, never a date of birth)', () => {
+    expect(sent).toEqual({ first_name: 'E2E Renamed', last_name: 'Tester2', country: 'CHE', license_number: null, sport_type: 'indoor' })
     expect('roles' in profileUpdateColumns({ roles: ['admin'] })).toBe(false)
+    // db/048: an older form's date of birth is never sent
+    expect('dob' in profileUpdateColumns({ firstName: 'A', dob: '1990-02-03' })).toBe(false)
   })
 
   it('is confirmed only by the written row coming back', () => {
-    const written = { user_id: 'u', first_name: 'E2E Renamed', last_name: 'Tester2', country: 'CHE', dob: null }
+    const written = { user_id: 'u', first_name: 'E2E Renamed', last_name: 'Tester2', country: 'CHE', license_number: null }
     expect(confirmedProfileRow(sent, written)).toBe(written)
     expect(confirmedProfileRow(sent, [written])).toBe(written)
     // an old client's SELECT answered with the unchanged row: not saved
@@ -171,10 +173,15 @@ describe('profile save', () => {
     expect(confirmedProfileRow(sent, [])).toBeNull()
   })
 
-  it('compares the date of birth by day', () => {
-    const withDob = profileUpdateColumns({ firstName: 'A', lastName: 'B', country: 'CHE', dob: '1990-02-03' })
-    expect(confirmedProfileRow(withDob, { first_name: 'A', last_name: 'B', country: 'CHE', dob: '1990-02-03' })).not.toBeNull()
-    expect(confirmedProfileRow(withDob, { first_name: 'A', last_name: 'B', country: 'CHE', dob: '1990-02-04' })).toBeNull()
+  it('checks the licence number came back; a database without the column kept none', () => {
+    const withLicence = profileUpdateColumns({ firstName: 'A', lastName: 'B', country: 'CHE', licenceNumber: '123456' })
+    expect(withLicence.license_number).toBe('123456')
+    expect(confirmedProfileRow(withLicence, { first_name: 'A', last_name: 'B', country: 'CHE', license_number: '123456' })).not.toBeNull()
+    expect(confirmedProfileRow(withLicence, { first_name: 'A', last_name: 'B', country: 'CHE', license_number: '654321' })).toBeNull()
+    // a database before db/048 drops the column: not saved
+    expect(confirmedProfileRow(withLicence, { first_name: 'A', last_name: 'B', country: 'CHE' })).toBeNull()
+    // none sent, none there: fine
+    expect(confirmedProfileRow(sent, { first_name: 'E2E Renamed', last_name: 'Tester2', country: 'CHE' })).not.toBeNull()
   })
 })
 
