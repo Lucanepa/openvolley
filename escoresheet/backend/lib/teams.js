@@ -25,8 +25,9 @@
  * Scorers (indoor canReadTeams, the read right of the saved teams):
  *   scorerRosters({ userId, games })            the sent rosters the scoring tablet keeps
  *   markUsed({ userId, body })                  accepted in Match Setup (who, which match)
- * Everyone else (lib/accounts.js, lib/manageApi.js):
+ * Everyone else (lib/accounts.js, lib/manageApi.js, lib/rosterSaveBack.js):
  *   managedTeamsOf(client, userId, { all })     [{ id, name, club_id, club_name, via }] (/api/me; all: admins)
+ *   ensureSquad(client, { team, year })         the season's saved team of a team, made when there is none
  *   mayManage({ userId, access, teamId })       may the account act for the team?
  *   teamOfClub(clubId, teamId)                  is the team one of the club's?
  *
@@ -658,6 +659,34 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
    * the creation under a lock on the team (two first saves at once make one
    * saved team, be-races-4). No date of birth (db/048).
    */
+  /**
+   * The saved team of `team` ({ name, club_name? }: a club's team, or any
+   * team of the schedule) in season `year`, on `client` (in the caller's
+   * transaction): found as squadId finds it, else made the way a team
+   * manager's first save makes it (competitionFor, createTeam; without a
+   * club name when the team is no club's). Under the lock on the team's name
+   * and season, held to the end of the transaction: two first saves at once
+   * make one saved team (be-races-4), and a squad save and an official
+   * match's roster (lib/rosterSaveBack.js) take turns. { id, created } or
+   * { answer } (a savedTeams answer that is not a success).
+   */
+  async function ensureSquad (client, { actorId = null, team, year }) {
+    const label = seasonLabel(year)
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ov:squad:${label}:${key(team.name)}`])
+    const id = await squadId(client, team, label)
+    if (id) return { id, created: false }
+    const comp = await competitionFor(client, actorId, team, label, year)
+    if (comp.answer) return { answer: comp.answer }
+    const club = String(team.club_name ?? '').trim()
+    const made = await savedTeams.createTeam({
+      actorId,
+      client,
+      body: { competition_id: comp.id, name: team.name.slice(0, 120), ...(club ? { club: club.slice(0, 120) } : {}), svrz_team_name: team.name }
+    })
+    if (made.status !== 201) return { answer: made }
+    return { id: made.body.data.team.id, created: true }
+  }
+
   async function putSquad ({ actorId, teamId, body } = {}) {
     const v = validateRoster(body, { sport: 'indoor' })
     if (v.error) return v.error
@@ -670,19 +699,9 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       if (wrong) throw abort(WRONG_GENDER(wrong.index, wrong.gender))
       const year = seasonOf(clock())
       const label = seasonLabel(year)
-      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ov:squad:${label}:${key(team.name)}`])
-      let id = await squadId(client, team, label)
-      if (!id) {
-        const comp = await competitionFor(client, actorId, team, label, year)
-        if (comp.answer) throw abort(comp.answer)
-        const made = await savedTeams.createTeam({
-          actorId,
-          client,
-          body: { competition_id: comp.id, name: team.name.slice(0, 120), club: team.club_name.slice(0, 120), svrz_team_name: team.name }
-        })
-        if (made.status !== 201) throw abort(made)
-        id = made.body.data.team.id
-      }
+      const squadOf = await ensureSquad(client, { actorId, team, year })
+      if (squadOf.answer) throw abort(squadOf.answer)
+      const id = squadOf.id
       const { rows: before } = await client.query(
         `SELECT btrim(license_number) AS lic FROM public.competition_players WHERE team_id = $1
          UNION SELECT btrim(license_number) FROM public.competition_staff WHERE team_id = $1`, [id])
@@ -918,7 +937,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
 
   return {
     managedTeamsOf, mayManage, teamOfClub,
-    teamDetail, games, getRoster, putRoster, deleteRoster, squad, putSquad,
+    teamDetail, games, getRoster, putRoster, deleteRoster, squad, putSquad, ensureSquad,
     clubTeams, removeManager, scorerRosters, markUsed, sweep, startSweeps
   }
 }

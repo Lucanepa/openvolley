@@ -26,6 +26,12 @@
  * club and MAX_MANUAL_PER_DAY per account a day; a club manager deletes one
  * of them (deleteRow).
  *
+ * db/048 (owner 2026-11-19): the people of an official match's roster with a
+ * licence number join the lists too, source 'match' (addFromMatch, called by
+ * lib/rosterSaveBack.js): the rules of a hand-added row (never over a row the
+ * club has, an upload keeps them, the gray shield, deleteRow), counted with
+ * them in the MAX_MANUAL_PER_CLUB rows no upload brought, no daily cap.
+ *
  * db/037: each row has the season of its upload (or of its adding by hand);
  * only the current season's rows are served, sweep() deletes the others
  * (server.js, daily). Each row has an id: My club's person page and deleteRow
@@ -57,12 +63,15 @@
  *                                              once (the tablet's copy)
  *   scorerDob()                                GET /api/club-licences/dob of apps before db/048:
  *                                              always { people: [] } (no dates of birth kept)
- * Everyone else (lib/teams.js, server.js):
+ * Everyone else (lib/teams.js, lib/rosterSaveBack.js, server.js):
  *   wrongGender(db, team, players)             the first player of the club's players list
  *                                              whose gender is not the team's, or null; players
  *                                              only, never the team's officials (owner 2026-11-09:
  *                                              "coaches can literally be any player/member of the
  *                                              club")
+ *   wrongGenders(db, team, players)            every such player: Map index -> gender
+ *   addFromMatch(client, { clubId, people })   an official match's people with a licence number
+ *                                              (source 'match'), on the caller's transaction
  *   teamGenders(db, names)                     Map team key -> 'm' | 'f' | null (svrz_games)
  *   sweep()                                    deletes the rows of past seasons
  *
@@ -105,6 +114,11 @@ const nameSql = (alias) => `nullif(trim(coalesce(${alias}.first_name, '') || ' '
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
 // db/026's column; 'import' on a database without it (every row of before is an import)
 const sourceSql = (alias) => `coalesce(to_jsonb(${alias}) ->> 'source', 'import')`
+// A row no upload brought: added by hand (db/026) or from an official match's
+// roster (db/048, lib/rosterSaveBack.js); both have the gray shield, an upload
+// keeps them and turns those it contains into imported rows, and a club
+// manager deletes one of them (deleteRow)
+const notUploaded = (source) => source === 'manual' || source === 'match'
 // db/037's columns: a row of the season in `param` or later (every row without
 // the column), and the row's id (null without it)
 const currentSql = (alias, param) => `coalesce((to_jsonb(${alias}) ->> 'season')::int, ${param}::int) >= ${param}::int`
@@ -268,8 +282,8 @@ export function mergeLicencePeople (rows, extra = null) {
   const people = new Map()
   const manualOf = new Map()
   const valid = (rows || []).filter((x) => LICENCE_LISTS.includes(x?.list))
-  for (const r of valid) manualOf.set(r.sv_number, (manualOf.get(r.sv_number) ?? true) && r.source === 'manual')
-  const rank = (r) => (r.source === 'manual' ? 10 : 0) + listOrder(r.list)
+  for (const r of valid) manualOf.set(r.sv_number, (manualOf.get(r.sv_number) ?? true) && notUploaded(r.source))
+  const rank = (r) => (notUploaded(r.source) ? 10 : 0) + listOrder(r.list)
   for (const r of [...valid].sort((a, b) => rank(a) - rank(b))) {
     const cur = people.get(r.sv_number)
     if (!cur) {
@@ -285,7 +299,7 @@ export function mergeLicencePeople (rows, extra = null) {
 }
 
 /** The players list of `rows` (several lists): the four fields and manual (this row's, db/026), in name order. */
-const playersOf = (rows) => (rows || []).filter((r) => r.list === 'players').map((r) => personOut(r, r.source === 'manual')).sort(byName)
+const playersOf = (rows) => (rows || []).filter((r) => r.list === 'players').map((r) => personOut(r, notUploaded(r.source))).sort(byName)
 
 /**
  * @param {object} o
@@ -410,23 +424,40 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
    * gender (owner 2026-11-09).
    */
   async function wrongGender (db, team, players) {
-    if (!team || !isUuid(team.club_id) || !Array.isArray(players) || !players.length) return null
+    const wrong = await wrongGenders(db, team, players)
+    if (!wrong.size) return null
+    const [[index, gender]] = wrong
+    return { index, gender }
+  }
+
+  /**
+   * Every player of `players` that wrongGender() refuses: Map index -> the
+   * list's gender, in body order (empty: none, or no check). lib/rosterSaveBack.js
+   * leaves those out of a saved team instead of refusing the whole roster.
+   * Throws on a DB error.
+   */
+  async function wrongGenders (db, team, players) {
+    const out = new Map()
+    if (!team || !isUuid(team.club_id) || !Array.isArray(players) || !players.length) return out
     const lics = [...new Set(players.map((p) => String(p?.license_number ?? '').trim()).filter((s) => SV_RE.test(s)))]
-    if (!lics.length) return null
+    if (!lics.length) return out
     try {
       const want = (await teamGenders(db, [team.name])).get(key(team.name)) ?? null
-      if (!want) return null
+      if (!want) return out
       const { rows } = await (db || pool).query(
         `SELECT sv_number, gender FROM public.club_licences l
           WHERE club_id = $1 AND list = 'players' AND sv_number = ANY($2::text[]) AND gender IS NOT NULL AND gender <> $3
             AND ${currentSql('l', '$4')}`,
         [team.club_id, lics, want, seasonNow()])
-      if (!rows.length) return null
+      if (!rows.length) return out
       const wrong = new Map(rows.map((r) => [r.sv_number, r.gender]))
-      const index = players.findIndex((p) => wrong.has(String(p?.license_number ?? '').trim()))
-      return index === -1 ? null : { index, gender: wrong.get(String(players[index].license_number).trim()) }
+      players.forEach((p, i) => {
+        const g = wrong.get(String(p?.license_number ?? '').trim())
+        if (g) out.set(i, g)
+      })
+      return out
     } catch (err) {
-      if (MISSING.has(err?.code)) return null
+      if (MISSING.has(err?.code)) return out
       throw err
     }
   }
@@ -498,7 +529,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
             p.map((x) => x.first_name), p.map((x) => x.gender), seasonNow()])
       }
       const { rows: [n] } = await client.query(
-        "SELECT count(*)::int AS manual, now() AS at FROM public.club_licences WHERE club_id = $1 AND list = $2 AND source = 'manual'", [clubId, list])
+        "SELECT count(*)::int AS manual, now() AS at FROM public.club_licences WHERE club_id = $1 AND list = $2 AND source <> 'import'", [clubId, list])
       // the list and the count only: never a name
       await audit(client, { actorId: userId, action: 'club.licences', details: { club_id: clubId, list, count: p.length } })
       return ok({ list, count: p.length, manual: n.manual, imported_at: iso(n.at) })
@@ -570,6 +601,72 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
   }
 
   /**
+   * The people of an official match's roster (lib/rosterSaveBack.js, owner
+   * 2026-11-19: "a big database ... last name first name number and licence
+   * n"): [{ list, sv_number, last_name, first_name }] added to club `clubId`'s
+   * lists as rows of source 'match' (db/048) of the current season, on
+   * `client` (the caller's transaction). The rules of addPeople: a licence
+   * number the club has in ANY list stays as it is (nothing is overwritten,
+   * an upload's row least of all), the club is locked against an upload at
+   * the same time, its rows of past seasons go. The rows not from an upload
+   * (by hand or from a match) stay within MAX_MANUAL_PER_CLUB: those past it
+   * are left out (`capped`), never an error; no daily cap (no account writes
+   * them). A person addPeople would refuse is left out (`invalid`). No
+   * gender: a roster does not say it (an official match's player of the
+   * other gender is a scorer's mistake to fix, not a fact to keep).
+   * { added, already, capped, invalid, lists }. Throws on a DB error (a
+   * database without db/048 refuses the source: 23514).
+   */
+  async function addFromMatch (client, { clubId, people } = {}) {
+    const out = { added: 0, already: 0, capped: 0, invalid: 0, lists: {} }
+    if (!isUuid(clubId) || !Array.isArray(people) || !people.length) return out
+    const byKey = new Map()
+    for (const raw of people) {
+      const list = raw?.list
+      const v = LICENCE_LISTS.includes(list)
+        ? validPerson({ sv_number: raw.sv_number, last_name: raw.last_name, first_name: raw.first_name ?? null }, 'person')
+        : { error: true }
+      if (v.error) { out.invalid++; continue }
+      const k = `${list}:${v.person.sv_number}`
+      if (!byKey.has(k)) byKey.set(k, { list, ...v.person })
+    }
+    const p = [...byKey.values()]
+    if (!p.length) return out
+    const { rows: [c] } = await client.query('SELECT id FROM public.clubs WHERE id = $1 FOR NO KEY UPDATE', [clubId])
+    if (!c) return out
+    await dropPastSeasons(client, clubId)
+    const { rows: held } = await client.query(
+      'SELECT DISTINCT sv_number FROM public.club_licences WHERE club_id = $1 AND sv_number = ANY($2::text[])', [clubId, p.map((x) => x.sv_number)])
+    const taken = new Set(held.map((r) => r.sv_number))
+    // one person once (a player who is also the coach goes to the players list)
+    const seen = new Set()
+    const fresh = []
+    for (const x of p.sort((a, b) => listOrder(a.list) - listOrder(b.list))) {
+      if (taken.has(x.sv_number) || seen.has(x.sv_number)) { out.already++; continue }
+      seen.add(x.sv_number)
+      fresh.push(x)
+    }
+    if (!fresh.length) return out
+    const { rows: [n] } = await client.query(
+      "SELECT count(*)::int AS rows FROM public.club_licences WHERE club_id = $1 AND source <> 'import'", [clubId])
+    const room = Math.max(0, MAX_MANUAL_PER_CLUB - n.rows)
+    const go = fresh.slice(0, room)
+    out.capped = fresh.length - go.length
+    if (!go.length) return out
+    const { rows: added } = await client.query(
+      `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, gender, imported_by, source, season)
+       SELECT $1, x.list, x.sv, x.ln, x.fn, NULL, NULL, 'match', $6
+         FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS x(list, sv, ln, fn)
+       ON CONFLICT (club_id, list, sv_number) DO NOTHING
+       RETURNING list`,
+      [clubId, go.map((x) => x.list), go.map((x) => x.sv_number), go.map((x) => x.last_name), go.map((x) => x.first_name), seasonNow()])
+    out.added = added.length
+    out.already += go.length - added.length
+    for (const r of added) out.lists[r.list] = (out.lists[r.list] || 0) + 1
+    return out
+  }
+
+  /**
    * DELETE /api/club/:id/licences/rows/:rowId (db/037): one row added by
    * hand, by its id. An imported row is the upload's (409 OV_NOT_HAND_ADDED:
    * upload the list again). { deleted: true, list }.
@@ -581,7 +678,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       if (!c) throw abort(notFound())
       const { rows: [r] } = await client.query('SELECT list, source FROM public.club_licences WHERE club_id = $1 AND id = $2', [clubId, rowId])
       if (!r) throw abort(notFound())
-      if (r.source !== 'manual') throw abort(fail(409, 'OV_NOT_HAND_ADDED', 'Only a person added by hand is removed one by one; upload the list again for the others'))
+      if (!notUploaded(r.source)) throw abort(fail(409, 'OV_NOT_HAND_ADDED', 'Only a person added by hand is removed one by one; upload the list again for the others'))
       await client.query('DELETE FROM public.club_licences WHERE club_id = $1 AND id = $2', [clubId, rowId])
       // the club and the list only: never a name or a licence number
       await audit(client, { actorId: userId, action: 'club.licences.manual_delete', details: { club_id: clubId, list: r.list } })
@@ -613,7 +710,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
         rows = await peopleOf(pool, clubId)
         ;({ rows: summary } = await pool.query(
           `WITH r AS (SELECT l.*, ${sourceSql('l')} AS src FROM public.club_licences l WHERE l.club_id = $1 AND ${currentSql('l', '$2')}),
-                n AS (SELECT list, count(*)::int AS count, (count(*) FILTER (WHERE src = 'manual'))::int AS manual FROM r GROUP BY list),
+                n AS (SELECT list, count(*)::int AS count, (count(*) FILTER (WHERE src <> 'import'))::int AS manual FROM r GROUP BY list),
                 i AS (SELECT DISTINCT ON (r.list) r.list, r.imported_at, ${nameSql('p')} AS imported_by_name
                         FROM r LEFT JOIN public.profiles p ON p.user_id = r.imported_by
                        WHERE r.src = 'import'
@@ -653,11 +750,11 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       const idOf = new Map()
       const idsOf = new Map()
       const handOf = new Map()
-      const order = (r) => (r.source === 'manual' ? 10 : 0) + listOrder(r.list)
+      const order = (r) => (notUploaded(r.source) ? 10 : 0) + listOrder(r.list)
       for (const r of [...rows].sort((a, b) => order(a) - order(b))) {
         if (!idOf.has(r.sv_number)) idOf.set(r.sv_number, r.id ?? null)
         if (r.id) idsOf.set(r.sv_number, [...(idsOf.get(r.sv_number) || []), r.id])
-        if (r.source === 'manual' && r.id) {
+        if (notUploaded(r.source) && r.id) {
           if (!handOf.has(r.sv_number)) handOf.set(r.sv_number, [])
           handOf.get(r.sv_number).push({ id: r.id, list: r.list })
         }
@@ -797,5 +894,5 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
     return ok({ club_id: isUuid(clubId) ? clubId : null, people: [] })
   }
 
-  return { putList, addPeople, deleteRow, clubList, teamClubPlayers, searchPeople, scorerClubPlayers, scorerDob, wrongGender, teamGenders, sweep }
+  return { putList, addPeople, addFromMatch, deleteRow, clubList, teamClubPlayers, searchPeople, scorerClubPlayers, scorerDob, wrongGender, wrongGenders, teamGenders, sweep }
 }

@@ -722,11 +722,14 @@ export function createSavedTeams ({ pool, audit = null, logger = console, clock 
     }
   }
 
-  /** One saved team with its players and staff (lib/teams.js, a team manager's squad). */
-  async function getTeam ({ id } = {}) {
+  /**
+   * One saved team with its players and staff (lib/teams.js, a team manager's
+   * squad). `client`: inside the caller's transaction (lib/rosterSaveBack.js).
+   */
+  async function getTeam ({ id, client = null } = {}) {
     if (!isUuid(id)) return notFound()
     return guarded('get-team', async () => {
-      const team = await teamById(pool, id)
+      const team = await teamById(client || pool, id)
       return team ? ok({ team }) : notFound()
     })
   }
