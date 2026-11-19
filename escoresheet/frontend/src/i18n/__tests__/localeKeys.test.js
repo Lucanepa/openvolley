@@ -33,7 +33,12 @@ const EXTRA_KEYS = [
   'matchEnd.reopenAdminBody',
   'matchEnd.reopenReason',
   'matchEnd.reopenCheckFailed',
-  'matchEnd.reopenMatch'
+  'matchEnd.reopenMatch',
+  // db/048: sign-up and the profile ask for the licence number, not a date of birth
+  'auth.licenceNumber',
+  'auth.licenceNumberHint',
+  'auth.licenceNumberInvalid',
+  'auth.nameRequired'
 ]
 const SPEC_KEYS = [
   'access.pendingTitle',
@@ -209,7 +214,6 @@ const SPEC_KEYS = [
   'savedTeams.number',
   'savedTeams.firstName',
   'savedTeams.lastName',
-  'savedTeams.dob',
   'savedTeams.license',
   'savedTeams.libero',
   'savedTeams.captain',
@@ -310,6 +314,21 @@ describe('locale keys for accounts, manage, saved teams and cloud blocks', () =>
 
   it.each(Object.keys(LOCALES))('%s has none of the removed reopen-password keys', (lng) => {
     for (const k of REMOVED) expect(get(LOCALES[lng], `matchEnd.${k}`), `${lng} matchEnd.${k}`).toBeUndefined()
+  })
+
+  // db/048 (owner 2026-11-19): no date of birth in sign-up, the profile, the
+  // squads and the club lists; the match's own sheet keeps its keys
+  it.each(Object.keys(LOCALES))('%s: the accounts, squads and club lists name no date of birth', (lng) => {
+    for (const k of ['auth.dob', 'auth.dobInvalid', 'auth.dobPlaceholder', 'savedTeams.dob', 'clubPlayers.shield.fields.dob']) {
+      expect(get(LOCALES[lng], k), `${lng} ${k}`).toBeUndefined()
+    }
+    const birth = /birth|geburt|naissance|nascita/i
+    const offenders = [
+      ...flatten(LOCALES[lng].auth, 'auth'), ...flatten(LOCALES[lng].savedTeams, 'savedTeams'), ...flatten(LOCALES[lng].manage, 'manage'),
+      ...flatten(LOCALES[lng].contextHelp?.teamManager, 'contextHelp.teamManager'), ...flatten(LOCALES[lng].contextHelp?.clubLicences, 'contextHelp.clubLicences'),
+      ...flatten(LOCALES[lng].contextHelp?.clubApi, 'contextHelp.clubApi')
+    ].filter(([, v]) => birth.test(String(v))).map(([k]) => k)
+    expect(offenders).toEqual([])
   })
 
   it('German uses ss, never ß', () => {
