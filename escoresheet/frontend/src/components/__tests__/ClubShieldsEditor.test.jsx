@@ -108,7 +108,7 @@ describe('Save asks about the club\'s lists', () => {
     await waitFor(() => expect(onAddToClub).toHaveBeenCalledTimes(1))
     expect(saveRoster).toHaveBeenCalledTimes(1)
     expect(onAddToClub.mock.calls[0][0]).toEqual([
-      { list: 'players', sv_number: '400001', last_name: 'Hand', first_name: 'Hans', dob: '2000-01-01', gender: 'm' }
+      { list: 'players', sv_number: '400001', last_name: 'Hand', first_name: 'Hans', gender: 'm' }
     ])
     await waitFor(() => expect(screen.queryByTestId('club-offer')).toBeNull())
     expect(ui.toasts).toEqual([['ok', 'savedTeams.rosterSaved'], ['ok', 'clubPlayers.offer.added']])

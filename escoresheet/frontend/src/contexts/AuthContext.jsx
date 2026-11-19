@@ -21,9 +21,19 @@ const AuthContext = createContext(null)
 // re-checks the My Matches roles then: they compare the profile name with the
 // match officials.
 export const PROFILE_CACHED_EVENT = 'ov-profile-cached'
+/**
+ * The profile row as this device keeps it: without the dob column (NULL since
+ * db/048, kept until db/049 for older apps' selects). The scorer's licence
+ * number (license_number) prefills Match setup's scorer.
+ */
+export function profileForDevice(profile) {
+  if (!profile || typeof profile !== 'object') return profile
+  const { dob, ...rest } = profile
+  return rest
+}
 function cacheProfile(profile) {
   try {
-    localStorage.setItem('cachedProfile', JSON.stringify(profile))
+    localStorage.setItem('cachedProfile', JSON.stringify(profileForDevice(profile)))
     window.dispatchEvent(new Event(PROFILE_CACHED_EVENT))
   } catch { /* storage full or blocked: offline auto-fill just has no profile */ }
 }
@@ -69,7 +79,7 @@ function removeAccountEntries(keepUserId) {
       if (!keepUserId || owner !== keepUserId) localStorage.removeItem(key)
     } catch { /* storage blocked */ }
   }
-  // The saved-team cache holds DOBs and licence numbers of the account's
+  // The saved-team cache holds names and licence numbers of the account's
   // teams; the rosters teams sent (db/023) and the clubs' licence lists (db/024) too
   clearSavedTeams({ keepUserId })
   clearGameRosters({ keepUserId })
@@ -197,7 +207,7 @@ export function AuthProvider({ children, app = null }) {
         return null
       }
 
-      setProfile(prev => keepSameProfile(prev, data))
+      setProfile(prev => keepSameProfile(prev, profileForDevice(data)))
       if (import.meta.env.DEV) console.log('[AuthContext] Profile set successfully:', data)
       // Cache profile in localStorage for offline auto-fill
       cacheProfile(data)
@@ -357,7 +367,8 @@ export function AuthProvider({ children, app = null }) {
           first_name: profileData.firstName || null,
           last_name: profileData.lastName || null,
           country: profileData.country || 'CHE',
-          dob: profileData.dob || null,
+          // db/048: the optional licence number, never a date of birth
+          license_number: profileData.licenceNumber || null,
           // No roles: the server never takes them from the client. New
           // accounts are pending until an admin approves them or they
           // redeem an invite code.
@@ -413,7 +424,7 @@ export function AuthProvider({ children, app = null }) {
       console.warn('[AuthContext] Profile save not confirmed by the backend')
       return { data: null, error: { message: 'Your profile was not saved. Please reload the app and try again.', code: PROFILE_NOT_SAVED } }
     }
-    setProfile(prev => keepSameProfile(prev, updatedProfile))
+    setProfile(prev => keepSameProfile(prev, profileForDevice(updatedProfile)))
     cacheProfile(updatedProfile)
 
     return { data: updatedProfile, error: null }

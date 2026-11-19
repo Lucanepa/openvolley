@@ -22,8 +22,12 @@ describe('validateRoster (pure)', () => {
     assert.match(details({ players: [player(100, 'A')], staff: [] }), /^players\[0\]\.number/)
     assert.match(details({ players: [player(5, 'A'), player(5, 'B')], staff: [] }), /^players\[1\]\.number: 5 is used twice/)
     assert.match(details({ players: [player(5, 'A', { is_captain: true }), player(6, 'B', { is_captain: true })], staff: [] }), /^players\[1\]\.is_captain/)
-    assert.match(details({ players: [player(5, 'A', { dob: '31.12.1990' })], staff: [] }), /^players\[0\]\.dob/)
-    assert.match(details({ players: [player(5, 'A', { dob: '2001-02-30' })], staff: [] }), /^players\[0\]\.dob/)
+    // db/048: a date of birth an older app sends is dropped, whatever it holds
+    for (const dob of ['31.12.1990', '2001-02-30', '1990-12-31', 42]) {
+      const v = validateRoster({ players: [player(5, 'A', { dob })], staff: [{ role: 'Coach', last_name: 'T', dob }] })
+      assert.equal(v.error, undefined, String(dob))
+      assert.ok(!('dob' in v.players[0]) && !('dob' in v.staff[0]))
+    }
     assert.match(details({ players: [], staff: [{ role: 'Mascot', last_name: 'X' }] }), /^staff\[0\]\.role/)
     assert.match(details({ players: Array.from({ length: 41 }, (_, i) => player(null, `P${i}`)), staff: [] }), /^players: at most 40/)
     assert.match(details({ players: [], staff: Array.from({ length: 11 }, () => ({ role: 'Medic', last_name: 'M' })) }), /^staff: at most 10/)
@@ -48,11 +52,11 @@ describe('validateRoster beach (pure)', () => {
   })
 
   it('answers each rule with its exact details', () => {
+    assert.ok(!('dob' in beach({ players: [bp(1, 'A', { dob: '05.01.1998' })], staff: [] }).players[0]), 'a dob is dropped (db/048)')
     const cases = [
       [{ players: [bp(1, 'A'), bp(2, 'B'), bp(1, 'C')], staff: [] }, 'players: at most 2 in beach'],
       [{ players: [], staff: [{ role: 'Coach', last_name: 'A' }, { role: 'Coach', last_name: 'B' }] }, 'staff: at most 1 (the coach) in beach'],
       [{ players: [bp(1, '')], staff: [] }, 'players[0].last_name: required'],
-      [{ players: [bp(1, 'A', { dob: '05.01.1998' })], staff: [] }, 'players[0].dob: YYYY-MM-DD or null'],
       [{ players: [bp(1, 'A', { license_number: 'x'.repeat(41) })], staff: [] }, 'players[0].license_number: at most 40 characters'],
       [{ players: [bp(3, 'A')], staff: [] }, 'players[0].number: 1 or 2'],
       [{ players: [bp(null, 'A')], staff: [] }, 'players[0].number: 1 or 2'],
@@ -153,8 +157,11 @@ describe('savedTeams on Postgres', { skip: SKIP_PG }, () => {
     assert.equal(put.status, 200, JSON.stringify(put.body))
     const r1 = put.body.data.team
     assert.equal(r1.players.length, 2)
-    assert.deepEqual({ ...r1.players[0], id: undefined }, { id: undefined, number: 7, first_name: 'Anna', last_name: 'Muster', dob: '2001-02-03', license_number: 'L-7', is_libero: false, is_captain: true, active: true, sort_order: 0, country: null })
-    assert.equal(r1.staff[0].dob, '1970-01-01')
+    assert.deepEqual({ ...r1.players[0], id: undefined }, { id: undefined, number: 7, first_name: 'Anna', last_name: 'Muster', license_number: 'L-7', is_libero: false, is_captain: true, active: true, sort_order: 0, country: null })
+    assert.ok(!('dob' in r1.staff[0]), 'no date of birth stored or answered (db/048)')
+    const { rows: stored } = await pool.query(
+      'SELECT dob FROM public.competition_players WHERE team_id = $1 UNION ALL SELECT dob FROM public.competition_staff WHERE team_id = $1', [team.id])
+    assert.ok(stored.length === 3 && stored.every((x) => x.dob === null))
     const after1 = (await st.getBundle()).body.data.version
     assert.ok(after1 > before, 'the version moves')
 

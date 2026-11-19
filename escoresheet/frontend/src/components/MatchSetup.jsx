@@ -14,7 +14,8 @@ import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal, { knownMatchFormat } from './LoadOfficialMatchModal'
 import GlobalImportModal from './GlobalImportModal'
 import { setTargetsOf } from '../domain/rules'
-import { idModeOf, cleanIdValue, ID_LABEL_FALLBACK } from '../domain/idMode'
+import { idModeOf, importedIdValue, licenceOf, SWISS_ID_MODE, ID_LABEL_FALLBACK } from '../domain/idMode'
+import IdField from './IdField'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { isLocalOnly, isGuestMatch, usesKeyStore } from '../domain/matchKind'
@@ -58,7 +59,7 @@ import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule, teamContactEmail, withTeamContacts } from '../domain/officials'
 import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
-import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
+import { savedTeamToRoster, findSavedTeamSuggestions, fillNumbersFromSaved, savedNumberFinder } from '../domain/savedTeams'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rosterSearchOutcome, rowToPendingRoster } from '../db/gameRosters'
 import { useSentRosterRefresh } from '../hooks/useSentRosterRefresh'
@@ -68,7 +69,7 @@ import GlobalCloudPanel from './GlobalCloudPanel'
 import ClubPlayerPickerModal from './ClubPlayerPickerModal'
 import ClubGenderNotice from './ClubGenderNotice'
 import JanuaryDobNotice from './JanuaryDobNotice'
-import { clubOfTeam, withClubDob } from '../db/clubPlayers'
+import { clubOfTeam } from '../db/clubPlayers'
 import { addClubPlayersToRoster, applyClubFill, benchOfficialOfRole, benchRolesOf, clubFillOfRow, clubGenderWarnings, clubPersonOfRow, linkRowToClub, matchGenderOf, offeredClubPlayers, rosterHasPerson, setBenchOfficial } from '../domain/clubPlayers'
 import ClubShield from './manage/ClubShield'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
@@ -374,29 +375,6 @@ const OFFICIAL_TITLE = 'whitespace-nowrap text-sm font-semibold text-stone-700'
 const SETUP_BLOCK = 'rounded-xl border border-stone-200/70 bg-stone-50/60'
 
 /**
- * The person's date of birth, or what a Global match prints instead
- * (domain/idMode): the same stored `dob` string. 'dob' draws the DateField with
- * the props it always had; 'number' / 'text' draw a plain input of the stored
- * text (onRawChange gets the typed text).
- */
-function IdField({ idMode = 'dob', rawValue = '', onRawChange, ...dateProps }) {
-  if (idMode === 'dob') return <DateField {...dateProps} />
-  const { wrapperClassName, onKeyDown, 'aria-label': aria, className } = dateProps
-  const input = (
-    <input
-      aria-label={aria}
-      className={cn(wrapperClassName ? 'w-full' : '', className)}
-      inputMode={idMode === 'number' ? 'numeric' : 'text'}
-      autoComplete="off"
-      value={/^(01[./]01[./]1900|1900-01-01)$/.test(rawValue || '') ? '' : (rawValue || '')}
-      onChange={e => onRawChange(cleanIdValue(idMode, e.target.value))}
-      onKeyDown={onKeyDown}
-    />
-  )
-  return wrapperClassName ? <div className={wrapperClassName}>{input}</div> : input
-}
-
-/**
  * The role cell of a bench row. In a Global match the official may also be
  * called differently ("Teacher", "Manager"): a text box beside the standard
  * role, which stays the slot on the sheet (domain: bench role + roleLabel).
@@ -442,10 +420,10 @@ const OfficialCard = memo(function OfficialCard({
   // a referee's optional address for the final scoresheet (setEmail: shown)
   email = '',
   setEmail = null,
-  // the scorer's licence number, taken for the coin toss instead of a date of
-  // birth (setLicence: shown)
+  // an older match's own scorer licence field (before 2026-11-19 the licence
+  // had a field of its own beside the date of birth): it still identifies the
+  // scorer for the coin toss; the value field holds the licence since
   licence = '',
-  setLicence = null,
   t
 }) {
   // null: the switch was not touched, the card follows defaultCollapsed and
@@ -453,9 +431,9 @@ const OfficialCard = memo(function OfficialCard({
   // the switch did nothing)
   const [collapsed, setCollapsed] = useState(null)
   const isCollapsed = collapsible && (collapsed ?? (defaultCollapsed && !filled))
-  // The coin toss needs this date of birth or a licence number (scorer): flag
-  // it while both are missing; the 01.01.1900 placeholder is shown as empty.
-  const dobMissing = dobRequired && idMode === 'dob' && !scorerIdentified(dob, setLicence ? licence : '')
+  // The coin toss needs the scorer's licence (or date of birth): flag it while
+  // it is missing; the 01.01.1900 placeholder is shown as empty.
+  const dobMissing = dobRequired && !scorerIdentified(dob, licence)
   const dobValue = dob && !(dobRequired && !isKnownDob(dob)) ? formatDateToISO(dob) : ''
   const dobNoteId = `${officialKey || 'official'}-dob-required`
   return (
@@ -488,11 +466,12 @@ const OfficialCard = memo(function OfficialCard({
             <Field tone="compact" className={FIELD} label={t('matchSetup.firstName')}><Input aria-label={t('matchSetup.firstName')} className="capitalize" value={firstName} onChange={e => setFirstName(e.target.value)} /></Field>
             <Field tone="compact" className={FIELD} label={t('matchSetup.country')}><Input aria-label={t('matchSetup.country')} value={country} onChange={e => setCountry(e.target.value)} /></Field>
             <div className="min-w-0">
-              <Field tone="compact" className={FIELD} required={dobMissing || undefined} label={dobMissing ? `${idLabel || t('matchSetup.dateOfBirth')} *` : (idLabel || t('matchSetup.dateOfBirth'))}>
+              <Field tone="compact" className={FIELD} required={dobMissing || undefined} label={dobMissing ? `${idLabel || t('matchSetup.dateOfBirth')} *` : (idLabel || t('matchSetup.dateOfBirth'))} hint={idMode === 'licence' && !dobMissing ? t('idMode.hint.licence', 'or date of birth (dd.mm.yyyy)') : undefined}>
                 <IdField
                   idMode={idMode}
                   rawValue={dob}
                   onRawChange={setDob}
+                  data-testid={`${officialKey || 'official'}-id`}
                   aria-label={idLabel || t('matchSetup.dateOfBirth')}
                   aria-describedby={dobMissing ? dobNoteId : undefined}
                   className={cn(dobMissing && 'border-amber-400')}
@@ -507,11 +486,6 @@ const OfficialCard = memo(function OfficialCard({
                 </p>
               )}
             </div>
-            {setLicence && (
-              <Field tone="compact" className={FIELD} label={t('matchSetup.licenceNumber')}>
-                <Input aria-label={`${title} ${t('matchSetup.licenceNumber')}`} aria-describedby={dobMissing ? dobNoteId : undefined} className={cn(dobMissing && 'border-amber-400')} value={licence} onChange={e => setLicence(e.target.value)} maxLength={30} autoComplete="off" data-testid={`${officialKey || 'official'}-licence`} />
-              </Field>
-            )}
           </div>
           {setEmail && (
             <Field tone="compact" className={cn(FIELD, 'mt-2')} label={t('matchSetup.refereeEmail')} hint={t('matchSetup.refereeEmailHint')}>
@@ -612,9 +586,12 @@ function generateShortName(name) {
   return cleaned.substring(0, 4)
 }
 
-// Helper to convert DOB from DD.MM.YYYY to YYYY-MM-DD for Supabase date columns
-function formatDobForSync(dob) {
+// The value beside a name as the server stores it: a date of birth from
+// DD.MM.YYYY to YYYY-MM-DD; a licence number as it is (a Swiss match: licence
+// or date, domain/idMode)
+export function formatDobForSync(dob) {
   if (!dob) return null
+  if (licenceOf(dob)) return licenceOf(dob)
   // Already in ISO format (YYYY-MM-DD)?
   if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) return dob
   // DD.MM.YYYY format?
@@ -689,8 +666,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // 5 played a best-of-3 decider to 25 points): Create match waits for it
   const [bestOf, setBestOf] = useState(null)
   // Points a set is played to (Global may play shorter sets; domain/rules setTargetsOf)
-  // what the sheet carries beside a name: birthdate, number or text (Global; domain/idMode)
-  const [idMode, setIdModeState] = useState('dob')
+  // what the sheet carries beside a name (domain/idMode): the licence (or a
+  // date of birth) in a Swiss match; Global: birthdate, number or text
+  const [idMode, setIdModeState] = useState(SWISS_ID_MODE)
   const [pointsRegular, setPointsRegular] = useState(25)
   const [pointsDeciding, setPointsDeciding] = useState(15)
   const [gameN, setGameN] = useState('')
@@ -859,7 +837,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [ref1First, setRef1First] = useState('')
   const [ref1Last, setRef1Last] = useState('')
   const [ref1Country, setRef1Country] = useState('CHE')
-  const [ref1Dob, setRef1Dob] = useState('01.01.1900')
+  // A new match leaves the officials' value empty (the 01.01.1900 placeholder
+  // of older matches shows empty too)
+  const [ref1Dob, setRef1Dob] = useState('')
   const [ref1Email, setRef1Email] = useState('')
   // each team's contact address for the final scoresheet (domain/officials)
   const [homeContactEmail, setHomeContactEmail] = useState('')
@@ -869,7 +849,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [ref2First, setRef2First] = useState('')
   const [ref2Last, setRef2Last] = useState('')
   const [ref2Country, setRef2Country] = useState('CHE')
-  const [ref2Dob, setRef2Dob] = useState('01.01.1900')
+  const [ref2Dob, setRef2Dob] = useState('')
 
   const [scorerFirst, setScorerFirst] = useState('')
   const [scorerLast, setScorerLast] = useState('')
@@ -883,7 +863,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [asstFirst, setAsstFirst] = useState('')
   const [asstLast, setAsstLast] = useState('')
   const [asstCountry, setAsstCountry] = useState('CHE')
-  const [asstDob, setAsstDob] = useState('01.01.1900')
+  const [asstDob, setAsstDob] = useState('')
 
   // Line Judges (only names needed)
   const [lineJudge1, setLineJudge1] = useState('')
@@ -1206,8 +1186,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // club's lists, other matches' rosters on the device and the referee
   // directory stay out; the public schedule and the Einsatzliste import stay.
   const guestMatch = isGuestMatch(match)
-  // What the sheet carries beside a name (Global: birthdate, number or text), kept on the match
-  useEffect(() => { if (match) setIdModeState(idModeOf(match)) }, [match?.idMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The saved teams on this device (the account's copy, offline first): the
+  // shirt numbers an Einsatzliste import and "Add from club" fill in (owner
+  // 2026-11-19; the server keeps the latest official match's numbers in them,
+  // backend lib/rosterSaveBack.js). Read again whenever the copy changes.
+  const savedTeamRows = useLiveQuery(async () => (guestMatch || !access?.canReadTeams ? [] : getSavedTeams({ userId: user?.id ?? null })),
+    [guestMatch, access?.canReadTeams, user?.id])
+  // Online, Match Setup asks for a fresh copy (at most every 10 minutes,
+  // db/savedTeams.js SAVED_TEAMS_MAX_AGE_MS): the numbers of the team's last
+  // match. Nothing waits for it; offline the device's copy answers.
+  useEffect(() => {
+    if (guestMatch || !access?.canReadTeams || !user?.id) return
+    refreshSavedTeams({ access, userId: user.id }).catch(() => { /* offline first: keep the copy */ })
+  }, [guestMatch, access, user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The saved team of a side: the one of the side's team name (the
+  // schedule's league and season first), else the schedule suggestion; the
+  // newest copy of it. None for a guest match.
+  const savedTeamOf = (side) => {
+    if (guestMatch) return null
+    const rows = savedTeamRows || []
+    const name = side === 'home' ? home : away
+    const byName = name ? findSavedTeamSuggestions(rows, { home: name, league, scheduledAt: date ? `${date}T${time || '12:00'}:00` : null }).home : null
+    const suggested = savedSuggestion?.[side] || null
+    return byName || (suggested ? rows.find((r) => r.id === suggested.id) || suggested : null)
+  }
+  // What the sheet carries beside a name (Swiss: the licence; Global: birthdate, number or text), kept on the match
+  useEffect(() => { if (match) setIdModeState(idModeOf(match)) }, [match?.idMode, match?.global]) // eslint-disable-line react-hooks/exhaustive-deps
   const setIdMode = (mode) => {
     setIdModeState(mode)
     if (matchId != null) db.matches.update(matchId, { idMode: mode, updatedAt: new Date().toISOString() }).catch(() => {})
@@ -1219,14 +1223,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     home: clubTeams.home ? clubGenderWarnings(homeRoster, clubTeams.home.players, clubGender) : [],
     away: clubTeams.away ? clubGenderWarnings(awayRoster, clubTeams.away.players, clubGender) : []
   }), [clubTeams, homeRoster, awayRoster, clubGender])
-  // The chosen club players join the side's roster without a number; one
-  // already in it stays as it is. In the roster editor only its Save keeps them.
+  // The chosen club players join the side's roster with the number the
+  // side's saved team has for them (else none); one already in it stays as
+  // it is. In the roster editor only its Save keeps them.
   const addFromClub = (side, chosen) => {
     setClubPicker(null)
-    const { roster, added } = addClubPlayersToRoster(side === 'home' ? homeRoster : awayRoster, chosen)
+    const { roster, added, numbered } = addClubPlayersToRoster(side === 'home' ? homeRoster : awayRoster, chosen, savedTeamOf(side))
     if (side === 'home') setHomeRoster(roster)
     else setAwayRoster(roster)
     toast.success(t('clubPlayers.added', { count: added }))
+    if (numbered) toast.info(t('savedTeams.numbersFilled', { count: numbered }))
   }
   // A bench official from the club: the role's row takes the person (names
   // and date of birth), else a row of that role is added; each role once
@@ -1278,9 +1284,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const roster = side === 'home' ? homeRoster : awayRoster
     const bench = side === 'home' ? benchHome : benchAway
     const team = (side === 'home' ? home : away) || club?.clubName || ''
-    // owner decision 2: the tablet's copy has no dates of birth; those of the
-    // people added are asked for while online (else the scorer types them)
-    const withDob = (chosen) => withClubDob(club?.clubId, chosen)
+    // the club's people come with their licence (sv_number) and never a date
+    // of birth (owner 2026-11-19); the saved team's number beside each (looked
+    // up while the players' picker of the side is open only)
+    const savedTeam = clubPicker === side && club ? savedTeamOf(side) : null
+    const numberOf = savedTeam ? savedNumberFinder(savedTeam) : null
     return (
       <>
         <ClubPlayerPickerModal
@@ -1290,14 +1298,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           players={players}
           title={t('clubPlayers.titleTeam', { team })}
           isTaken={(c) => rosterHasPerson(roster, c)}
-          resolve={withDob}
+          numberOf={numberOf ? (c) => numberOf({ licence: c.sv_number, firstName: c.first_name, lastName: c.last_name }) : undefined}
         />
         <ClubPlayerPickerModal
           open={officialPicker === side && !!club}
           mode="officials"
           onClose={() => setOfficialPicker(null)}
           onPick={(chosen, role) => officialFromClub(side, chosen, role)}
-          resolve={withDob}
           players={club?.people || []}
           title={t('clubPlayers.officialTitleTeam', { team })}
           roles={BENCH_ROLES.map((r) => ({ value: r.value, label: t(r.fullLabelKey) }))}
@@ -1313,7 +1320,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           mode="link"
           onClose={() => setLinkTarget(null)}
           onPick={linkRow}
-          resolve={withDob}
           players={(linkTarget?.kind === 'bench' ? club?.people || [] : players).filter((c) => !c.manual)}
           initialQuery={linkTarget?.query || ''}
         />
@@ -1811,7 +1817,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setRef1First(ref1.firstName || '')
             setRef1Last(ref1.lastName || '')
             setRef1Country(ref1.country || (match.global === true ? '' : 'CHE'))
-            setRef1Dob(ref1.dob || '01.01.1900')
+            setRef1Dob(ref1.dob || '')
             setRef1Email(ref1.email || '')
           }
           const ref2 = officials.find(o => o.role === '2nd referee')
@@ -1819,7 +1825,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setRef2First(ref2.firstName || '')
             setRef2Last(ref2.lastName || '')
             setRef2Country(ref2.country || (match.global === true ? '' : 'CHE'))
-            setRef2Dob(ref2.dob || '01.01.1900')
+            setRef2Dob(ref2.dob || '')
             setRef2Email(ref2.email || '')
           }
           const scorer = officials.find(o => o.role === 'scorer')
@@ -1827,7 +1833,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setScorerFirst(scorer.firstName || '')
             setScorerLast(scorer.lastName || '')
             setScorerCountry(scorer.country || (match.global === true ? '' : 'CHE'))
-            setScorerDob(scorer.dob || '')
+            // An older Swiss match kept the scorer's licence in a field of its
+            // own: it shows in the value field while that holds nothing
+            const known = scorer.dob && isKnownDob(scorer.dob)
+            setScorerDob(known ? scorer.dob : (match.global !== true && licenceOf(scorer.licence)) || scorer.dob || '')
             setScorerLicence(scorer.licence || '')
           }
           const asst = officials.find(o => o.role === 'assistant scorer')
@@ -1835,7 +1844,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setAsstFirst(asst.firstName || '')
             setAsstLast(asst.lastName || '')
             setAsstCountry(asst.country || (match.global === true ? '' : 'CHE'))
-            setAsstDob(asst.dob || '01.01.1900')
+            setAsstDob(asst.dob || '')
           }
           // Load line judges
           const lj1 = officials.find(o => o.role === 'line judge 1')
@@ -1943,14 +1952,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (userProfile.first_name) setScorerFirst(userProfile.first_name)
     if (userProfile.last_name) setScorerLast(userProfile.last_name)
     if (userProfile.country) setScorerCountry(userProfile.country)
-    if (userProfile.dob) {
-      // Convert ISO date (YYYY-MM-DD) to DD.MM.YYYY format used by the app
-      const dobParts = userProfile.dob.split('-')
-      if (dobParts.length === 3) {
-        setScorerDob(`${dobParts[2]}.${dobParts[1]}.${dobParts[0]}`)
-      }
-    }
+    // never the account's date of birth (owner 2026-11-19): the licence below
   }, [profile, scorerFirst, scorerLast])
+
+  // A Swiss match: the scorer's value is the account's licence number, once
+  // per match, after the stored fields are in the form, while the value is
+  // empty and the scorer is the account. A Global match chooses its column.
+  const scorerLicencePrefillRef = useRef(null)
+  useEffect(() => {
+    if (!matchId || storedAppliedFor !== matchId || scorerLicencePrefillRef.current === matchId || !match) return
+    scorerLicencePrefillRef.current = matchId
+    if (match.global === true || (scorerDob && isKnownDob(scorerDob))) return
+    const userProfile = profile || getCachedProfile()
+    const licence = licenceOf(userProfile?.license_number)
+    if (!licence) return
+    const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
+    if (!same(scorerLast, userProfile.last_name) || !same(scorerFirst, userProfile.first_name)) return
+    setScorerDob(licence)
+  }, [matchId, storedAppliedFor, match, profile, scorerFirst, scorerLast, scorerDob]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Server management - Only check in Electron
   useEffect(() => {
@@ -3427,9 +3446,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     // Referees and line judges: this game's, or none (a second game loaded
     // kept the first game's referees, their DOB and line judges)
+    // The referees' value: their licence when the schedule has one, never the
+    // schedule's date of birth (owner 2026-11-19)
     const { ref1, ref2, lineJudge1: lj1, lineJudge2: lj2 } = officialsFromSchedule(matchData)
-    setRef1First(ref1.first); setRef1Last(ref1.last); setRef1Country(ref1.country); setRef1Dob(ref1.dob); setRef1Email('')
-    setRef2First(ref2.first); setRef2Last(ref2.last); setRef2Country(ref2.country); setRef2Dob(ref2.dob); setRef2Email('')
+    setRef1First(ref1.first); setRef1Last(ref1.last); setRef1Country(ref1.country); setRef1Dob(licenceOf(matchData?.referee1Licence) || ''); setRef1Email('')
+    setRef2First(ref2.first); setRef2Last(ref2.last); setRef2Country(ref2.country); setRef2Dob(licenceOf(matchData?.referee2Licence) || ''); setRef2Email('')
     setLineJudge1(lj1)
     setLineJudge2(lj2)
 
@@ -3853,16 +3874,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       const parsedData = await parseRosterPdf(file)
 
       // Replace all players with imported ones (overwrite mode)
-      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
+      // An Einsatzliste has no shirt numbers: the side's saved team gives them
+      // (by licence, else name; owner 2026-11-19), the 14 or fewer and the
+      // player pool of more alike
+      const { roster: mergedPlayers, filled: numbersFilled } = fillNumbersFromSaved(parsedData.players.map(parsedPlayer => ({
         id: null,
         number: parsedPlayer.number || null,
         firstName: parsedPlayer.firstName || '',
         lastName: parsedPlayer.lastName || '',
-        dob: parsedPlayer.dob || '',
+        dob: importedIdValue(parsedPlayer, idMode),
         libero: '',
         isCaptain: false,
         isLfp: parsedPlayer.isLfp || false
-      }))
+      })), savedTeamOf('home'))
+      if (numbersFilled) toast.info(t('savedTeams.numbersFilled', { count: numbersFilled }))
 
       setHomeRoster(mergedPlayers)
 
@@ -3873,7 +3898,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           role: 'Coach',
           firstName: parsedData.coach.firstName || '',
           lastName: parsedData.coach.lastName || '',
-          dob: parsedData.coach.dob || ''
+          dob: importedIdValue(parsedData.coach, idMode)
         })
       }
       if (parsedData.ac1) {
@@ -3881,7 +3906,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           role: 'Assistant Coach 1',
           firstName: parsedData.ac1.firstName || '',
           lastName: parsedData.ac1.lastName || '',
-          dob: parsedData.ac1.dob || ''
+          dob: importedIdValue(parsedData.ac1, idMode)
         })
       }
       if (parsedData.ac2) {
@@ -3889,7 +3914,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           role: 'Assistant Coach 2',
           firstName: parsedData.ac2.firstName || '',
           lastName: parsedData.ac2.lastName || '',
-          dob: parsedData.ac2.dob || ''
+          dob: importedIdValue(parsedData.ac2, idMode)
         })
       }
 
@@ -3935,16 +3960,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       const parsedData = await parseRosterPdf(file)
 
       // Replace all players with imported ones (overwrite mode)
-      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
+      // An Einsatzliste has no shirt numbers: the side's saved team gives them
+      // (by licence, else name; owner 2026-11-19), the 14 or fewer and the
+      // player pool of more alike
+      const { roster: mergedPlayers, filled: numbersFilled } = fillNumbersFromSaved(parsedData.players.map(parsedPlayer => ({
         id: null,
         number: parsedPlayer.number || null,
         firstName: parsedPlayer.firstName || '',
         lastName: parsedPlayer.lastName || '',
-        dob: parsedPlayer.dob || '',
+        dob: importedIdValue(parsedPlayer, idMode),
         libero: '',
         isCaptain: false,
         isLfp: parsedPlayer.isLfp || false
-      }))
+      })), savedTeamOf('away'))
+      if (numbersFilled) toast.info(t('savedTeams.numbersFilled', { count: numbersFilled }))
 
       setAwayRoster(mergedPlayers)
 
@@ -3955,7 +3984,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           role: 'Coach',
           firstName: parsedData.coach.firstName || '',
           lastName: parsedData.coach.lastName || '',
-          dob: parsedData.coach.dob || ''
+          dob: importedIdValue(parsedData.coach, idMode)
         })
       }
       if (parsedData.ac1) {
@@ -3963,7 +3992,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           role: 'Assistant Coach 1',
           firstName: parsedData.ac1.firstName || '',
           lastName: parsedData.ac1.lastName || '',
-          dob: parsedData.ac1.dob || ''
+          dob: importedIdValue(parsedData.ac1, idMode)
         })
       }
       if (parsedData.ac2) {
@@ -3971,7 +4000,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           role: 'Assistant Coach 2',
           firstName: parsedData.ac2.firstName || '',
           lastName: parsedData.ac2.lastName || '',
-          dob: parsedData.ac2.dob || ''
+          dob: importedIdValue(parsedData.ac2, idMode)
         })
       }
 
@@ -4288,10 +4317,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setCountry={setScorerCountry}
               setDob={setScorerDob}
               dobRequired={match?.global !== true}
-              licence={scorerLicence}
-              setLicence={match?.global !== true ? setScorerLicence : null}
-              idMode={idMode}
-              idLabel={idLabel}
+              licence={match?.global !== true ? scorerLicence : ''}
               hasDatabase={false}
               selectorKey="scorer"
               onOpenDatabase={handleOpenDatabase}
@@ -4589,20 +4615,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setRef1First(referee.firstName || '')
               setRef1Last(referee.lastName || '')
               setRef1Country(referee.country || 'CHE')
-              setRef1Dob(referee.dob || '01.01.1900')
+              // never a date of birth from the directory: its licence when it has one
+              setRef1Dob(licenceOf(referee.licence) || '')
               setRef1Email(referee.email || '')
             } else if (showRefereeSelector === 'ref2') {
               setRef2First(referee.firstName || '')
               setRef2Last(referee.lastName || '')
               setRef2Country(referee.country || 'CHE')
-              setRef2Dob(referee.dob || '01.01.1900')
+              setRef2Dob(licenceOf(referee.licence) || '')
               setRef2Email(referee.email || '')
             } else if (showRefereeSelector === 'scorer') {
               setScorerFirst(referee.firstName || '')
               setScorerLast(referee.lastName || '')
               setScorerCountry(referee.country || 'CHE')
-              setScorerDob(referee.dob || '')
-              setScorerLicence(referee.licence || '')
+              setScorerDob(licenceOf(referee.licence) || '')
+              setScorerLicence('')
             }
           }}
         />
@@ -4720,8 +4747,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 >
                   {t('roster.deleteRoster')}
                 </Button>
-                {match?.global !== true && (
-                  <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('home')}>
+                {/* practice only: a test or Easy match (an official, guest or Global one never) */}
+                {match?.test === true && (
+                  <Button variant="dark" size="xl" data-testid="load-test-roster-home" onClick={() => setTestRosterConfirm('home')}>
                   {t('roster.loadTestRoster')}
                 </Button>
                 )}
@@ -5648,7 +5676,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             <th className="px-2 py-2 text-left">#</th>
                             <th className="px-2 py-2 text-left">{t('rosterSetup.lastName')}</th>
                             <th className="px-2 py-2 text-left">{t('rosterSetup.firstName')}</th>
-                            <th className="px-2 py-2 text-left">{t('rosterSetup.dob')}</th>
+                            <th className="px-2 py-2 text-left">{idLabel}</th>
                             <th className="px-2 py-2 text-center">L</th>
                             <th className="px-2 py-2 text-center">C</th>
                           </tr>
@@ -5821,8 +5849,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 >
                   {t('roster.deleteRoster')}
                 </Button>
-                {match?.global !== true && (
-                  <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('away')}>
+                {match?.test === true && (
+                  <Button variant="dark" size="xl" data-testid="load-test-roster-away" onClick={() => setTestRosterConfirm('away')}>
                   {t('roster.loadTestRoster')}
                 </Button>
                 )}
@@ -6754,7 +6782,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             <th className="px-2 py-2 text-left">#</th>
                             <th className="px-2 py-2 text-left">{t('rosterSetup.lastName')}</th>
                             <th className="px-2 py-2 text-left">{t('rosterSetup.firstName')}</th>
-                            <th className="px-2 py-2 text-left">{t('rosterSetup.dob')}</th>
+                            <th className="px-2 py-2 text-left">{idLabel}</th>
                             <th className="px-2 py-2 text-center">L</th>
                             <th className="px-2 py-2 text-center">C</th>
                           </tr>
@@ -7931,7 +7959,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <tr>
               <th className={thCls}>#</th>
               <th className={thCls}>{t('roster.name')}</th>
-              <th className={thCls}>{t('roster.dob')}</th>
+              <th className={thCls}>{idLabel}</th>
               {lfpTrackingEnabled && <th className={thCls}>LFP</th>}
             </tr>
           </thead>
@@ -8013,7 +8041,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <tr>
                       <th className={thCls}>{t('roster.role')}</th>
                       <th className={thCls}>{t('roster.name')}</th>
-                      <th className={thCls}>{t('roster.dob')}</th>
+                      <th className={thCls}>{idLabel}</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -368,12 +368,17 @@ payloads; the rosters of one match with its match token, see below), and a
 filter or order on a non-public column only matches the caller's own rows, so
 hidden values cannot be probed (`pgQuery` `opts.readOwner`). A referee or coach
 whose My Matches lists someone else's match therefore sees that match like the
-public scoresheet archive. Referees' dates of birth need a role that fills the
-sheet's officials (`server.js` `REFEREE_DOB_SPORTS`): full `referee_database`
-rows go to admins and accounts that can score indoor or beach, full
-`svrz_games` rows to admins and indoor scorers. Every other account reads these
-two tables like an anonymous caller (public columns, no dates of birth), and a
-filter or order on a date of birth is refused with 400 `OV_SECRET_FILTER`.
+public scoresheet archive. The referee directory (`referee_database`) is read
+only by admins and accounts that can score indoor or beach (`server.js`
+`fillsOfficials`; 401 without a session, 403 `OV_REFEREE_DIRECTORY`
+otherwise). **No dates of birth (db/048):** the dob columns that stay until
+db/049 (`profiles.dob`, `referee_database.dob`, `svrz_games.referee_1_dob` /
+`referee_2_dob`; installed apps still select them) are answered as `null` to
+every caller (`lib/publicColumns.js` `withoutDobColumns`), a filter or order
+on one is refused with 400 `OV_DOB_FILTER` (`dobColumnFilter`), and
+`WRITE_DENYLIST` drops a `dob` that a profile or referee write sends.
+`profiles.license_number` (db/048, 4 to 7 digits, a CHECK) is the owner's to
+write like the rest of the profile.
 
 **Rows that existed before `005` have no owner** (`created_by` NULL): nobody
 can tell who scored them, so they are **read-only for everyone except admins**
@@ -393,10 +398,8 @@ account").
 server's vm-sync job) is read-only for every account but admins (403
 `OV_READ_ONLY_TABLE`). In `referee_database` an account may add referees and
 change `sport_type` of one row by id (Match Setup's referee history); any other
-update, an upsert or a delete is for admins. For an account that may not read
-the dates of birth, the rows such a write returns (`returning`) are the public
-columns, and a referee it adds is stored with the public columns only (no date
-of birth), so the answer to an insert never depends on a stored date of birth.
+update, an upsert or a delete is for admins. Only an account that can score
+(or an admin) writes it, and never a date of birth (db/048).
 `beach_competition_matches` is not
 on the `/api/db` allowlist (no client uses it).
 
@@ -478,8 +481,8 @@ invite code's club joined: `details.joined`), `null` once the club is deleted
 once as `XXXX-XXXX-XXXX`; only `sha256('ov-invite:' + code)` and the last 4
 characters are stored. Typing is forgiving (case, spaces, dashes, O/0, I/L/1).
 
-**Saved teams** (competitions, teams, players with dates of birth and licence
-numbers, officials) are served by `/api/saved-teams*` only: never on the
+**Saved teams** (competitions, teams, players with licence numbers, officials;
+no dates of birth since db/048: a `dob` sent is dropped, none is answered) are served by `/api/saved-teams*` only: never on the
 `/api/db` allowlist, never anonymous, never in a public projection. Since
 `db/009` they cover indoor and beach (`competitions.sport`; the OpenVolley
 console manages both, OpenBeach only reads `?sport=beach`; see
@@ -710,7 +713,7 @@ locks before any file is removed (lib/auth.js `eraseAccount`).
 |---|---|
 | the account (email, password hash) | `auth.users` |
 | every session (all devices signed out) | `auth.app_sessions` |
-| the profile (name, date of birth, licence, roles) | `public.profiles` |
+| the profile (name, licence number, roles) | `public.profiles` |
 | My Matches links | `public.user_matches` |
 | editor rights on other accounts' matches | `public.match_editors` |
 | the approval PIN | `auth.approval_pins` (FK cascade) |
@@ -720,7 +723,7 @@ locks before any file is removed (lib/auth.js `eraseAccount`).
 | Kept | Why |
 |---|---|
 | the matches it created (`matches`, `sets`, `events`, `match_live_state`), with `created_by` set NULL | official match records (results, rosters, officials, signatures) that the clubs and the league rely on; a match is not the scorer's personal data. Without an owner they are read-only except for admins and editors, like the rows that predate `005` (see "Who may write a match"). |
-| the officials list of those matches, including the scorer's own name and date of birth | it is part of the match record, exactly as on the paper scoresheet |
+| the officials list of those matches, including the scorer's own name and licence number (or a date of birth typed on that sheet) | it is part of the match record, exactly as on the paper scoresheet |
 | the scoresheet files it uploaded (`scoresheets/…`) | the approved scoresheet is the match's official record. With no owner left nobody can read it through the API; an operator can grant it to the club or federation account (`scripts/storage-owner.mjs grant`). A PDF recorded for its match (`match_scoresheets`, `stored_by` set NULL) stays in the manager's Scoresheets tab. |
 | beach competition matches it created or claimed, with `created_by`/`claimed_by` NULL | competition records, same reasoning |
 | the account approvals it gave or sent (`match_approvals`), with `user_id`/`requested_by`/`revoked_by` NULL and the name snapshot kept | the approval of a result is part of the match record, like a drawn signature; also on closed matches |
@@ -728,7 +731,7 @@ locks before any file is removed (lib/auth.js `eraseAccount`).
 | copies in the host backups, until they expire (see below) | they exist to restore the service after a loss; they are GPG-encrypted to a key that is not on the server and cannot be edited row by row |
 
 **Host backups still hold a deleted account until they rotate out.** The
-account's rows (email, password hash, profile with date of birth, licence,
+account's rows (email, password hash, profile with licence number,
 sessions, user_matches, match_editors) are in every database dump taken before
 the deletion, and its `backup/{user id}/` files are in the nightly storage
 snapshots (`deploy/backup-openvolley.sh`). Retention:
@@ -823,11 +826,12 @@ removed anything is audited as `retention.sweep` (counts only).
 number with `UPDATE public.app_settings SET retention_years = <n> WHERE id;`
 (read on every run). Tests: `tests/retention.pg.test.js`.
 
-A data subject's correction or erasure (privacy section 19) goes through
+A data subject's erasure (privacy section 19) goes through
 `scripts/redact-person.mjs`, on the host as the owner role
 (`OV_MIGRATE_DATABASE_URL`, as for `scripts/migrate.mjs`), dry run first:
-`--first --last [--dob] [--match <external_id>]...`, `--set-dob` for a
-correction, `--drop-files` to remove the touched matches' scoresheet files
+`--first --last [--match <external_id>]...` (the person by name; `--dob` and
+`--set-dob` went with db/048: no dates of birth to tell namesakes apart or to
+correct, so `--match` narrows a namesake's records), `--drop-files` to remove the touched matches' scoresheet files
 (made again from the corrected record), `--actor <admin uuid>` for the audit
 entry, `--register FILE` (kept outside the database, next to the backups'
 keys) and, after a restore from a backup older than a request,
@@ -890,7 +894,7 @@ A download of a missing object answers **200** `{ data: null, error: { code: 'OV
 
 ### Who can read a scoresheet
 
-Scoresheets (`scoresheets/{YYYY-MM-DD}/game{n}_{key}[_final].{json,pdf}`) carry players' and officials' names, dates of birth and signature images. **Only the signed-in account that created a file can read, replace or list it through `/api/storage`.** Everyone else gets 401 (no session) or 403 `OV_STORAGE_FORBIDDEN`. The bucket is never public. The one kind of link is the manager's 10-minute view link below (owner decision 2026-10-13); there are no lasting share links.
+Scoresheets (`scoresheets/{YYYY-MM-DD}/game{n}_{key}[_final].{json,pdf}`) carry players' and officials' names, licence numbers (or dates of birth a scorer typed on that sheet; those of before db/048 are taken out by the deploy step `scripts/scrub-sheet-birthdates.mjs`) and signature images. **Only the signed-in account that created a file can read, replace or list it through `/api/storage`.** Everyone else gets 401 (no session) or 403 `OV_STORAGE_FORBIDDEN`. The bucket is never public. The one kind of link is the manager's 10-minute view link below (owner decision 2026-10-13); there are no lasting share links.
 
 - **The manager's Scoresheets tab** (`lib/scoresheets.js`, the one exception): admins and the competition managers of a sport (`competition_manager` for indoor, `beach:competition_manager` for beach) list that sport's matches with `GET /api/scoresheets?app=indoor|beach&state=closed|open|all&q=` and open a match's stored **PDF** with `GET /api/scoresheets/:id/pdf[?download=1]` (the role of the MATCH's sport is checked). The server takes the newest PDF stored for the match (`public.match_scoresheets`, next bullet) and reads it past the owner check. A match without one (files stored before `db/033`) is found by the name as before (the scheduled UTC day's folder, `beach/` for beach; for indoor `game{game_n or external_id}_k…pdf`, for beach `game{n}_{external_id}.pdf`; the newest when there are several), but only a file without any record, and whose owner record names the match's creator, the account that closed it, an editor it had at the close or an editor an admin added (`POST /api/admin/matches/:id/editors`, `match_editors.granted_via = 'admin'`: a deliberate grant). A record stays when its match is deleted (`match_id` NULL; the app's sync queue deletes open and test matches), so a file stored for one match never becomes another's by its name. An account that proves the game PIN after the close becomes an editor (a shared tablet's next account sends the approval's PDF so), but its files of the name without a record are never the closed match's served sheet for that. A file such an account stored within 6 hours of the close, after it became an editor (`LATE_EDITOR_WINDOW_MS`: a shared tablet before `db/033`), keeps other files out of a match that has no file of its own accounts (no other PDF is stored for it, admins excepted, until an operator records one); its files of any other time hold nothing. The names also find a PDF stored since `db/033` whose record is gone (a database restored from an older dump) or was never written (an older backend put back). The deploy step below records these files, so the names are left for a closed match the step cannot record (a file the names give to two closed matches); the server logs each such match once (`[scoresheets] closed match <id> has no recorded PDF: served by its file name`). Every opening is written to the audit log first (`scoresheet.read`, with the match, `download` and the file's time, never the file name); without that entry no file is sent. The JSON files and the listing of folders stay uploader-only.
 - **The manager's view link** (owner decision 2026-10-13): **View** in that tab opens the PDF in the browser's own viewer, which shows and saves it under its name (`game402397_1L-D_2026-10-10.pdf`). A `blob:` URL saved it as `<uuid>`, and a new tab cannot send the session's `Authorization` header. So `POST /api/scoresheets/:id/view` reads the PDF exactly as `GET …/pdf` (same role check, same `scoresheet.read` audit entry, written before the link exists) and answers `{ path, filename, expires_at }`, with `path` = `/api/scoresheet-view/<token>/<file name>`. `GET` of that path serves the PDF inline (`Content-Disposition: inline; filename=…`, `Cache-Control: no-store, private`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`) without a session; anything else under `/api/scoresheet-view/` is 404 (rate-limited per IP). The token is 32 random bytes and is the capability. Its limits:
@@ -942,6 +946,35 @@ Then record the PDF of every match closed before `db/033`, the one the Scoreshee
 node scripts/scoresheet-records.mjs            # dry run: counts
 node scripts/scoresheet-records.mjs --apply    # record
 ```
+
+**After `db/048` and the backend that reads it** (owner 2026-11-19: no birthdates outside a
+match's own sheet, the past sheets scrubbed too; privacy 1.21). `db/048_no_birthdates.sql` runs
+with `deploy/deploy.sh <image>` like every migration (not in the match-day freeze; it is safe for
+the old backend: it adds `profiles.license_number`, NULLs the dob columns, strips the `dob` keys
+of the account metadata and the sent rosters, and takes the date values out of the stored match
+records, closed matches included). Then, in the new backend's container, the stored files:
+`scripts/scrub-sheet-birthdates.mjs` clears what the old backend stored between the migration and
+the switch, replaces every recorded PDF of a match recorded before db/048 in place with one vector
+PDF of its scrubbed record ("Birthdates removed" printed as the rebuild's reason; needs
+`OV_RENDER_URL` / `OV_RENDER_TOKEN`, `lib/scoresheets.js` `rewriteRecordedWithVector`: same paths
+and owners, records and audit updated), takes the dates out of the JSON sheets, and lists, never
+deletes, what it cannot rebuild (beach PDFs, no render service, a record that does not end as its
+close says, a deleted match, a PDF without a record). Dry run first, show the owner the counts and
+the list, then `--apply`; idempotent (a match rebuilt with that reason after its newest PDF is
+skipped), `--limit N` for a run in parts:
+
+```sh
+docker compose exec ov-backend node scripts/scrub-sheet-birthdates.mjs           # dry run
+docker compose exec ov-backend node scripts/scrub-sheet-birthdates.mjs --apply   # rebuild and replace
+```
+
+A count under `auth_users` in its first line (an account signed up through the old backend in the
+deploy window) is cleared by the owner role:
+`UPDATE auth.users SET raw_user_meta_data = raw_user_meta_data - 'dob' WHERE raw_user_meta_data ? 'dob';`.
+The dob columns stay NULL until a later `db/049` drops them (installed apps still select them).
+Rosters sent ahead with a signature before db/048 lose it once, at their next send (the roster
+hash no longer has the `dob` key). Tests: `tests/migration048.pg.test.js`,
+`tests/scrubSheetBirthdates.pg.test.js`.
 
 Wired in server.js (cloud mode): one `/api/storage/*` block, session required,
 the body read with `storage.maxBodyBytes`, an oversized body answered with
@@ -1172,20 +1205,21 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 | `POST /api/saved-teams/competitions`, `PATCH`/`DELETE …/competitions/:id[?confirm=<name>]` | competition manager, admin | `{ competition }` (201 on create) / `{ deleted: true }` (cascades; a competition with teams only with its name as `confirm`, else 400 `OV_CONFIRM_NAME`; audited `saved_teams.competition_delete` with the name and the counts). Create takes `sport: 'indoor'\|'beach'` (absent/`null` = indoor); it is fixed: any `sport` in a PATCH is 400 `sport: cannot be changed`. Season: indoor `'2026/27'` (consecutive years), beach `'2026'` (2000-2100). `vm_leagues` (VolleyManager) is indoor only: a non-empty list on beach is 400. |
 | `POST /api/saved-teams/teams`, `PATCH`/`DELETE …/teams/:id[?confirm=<name>]` | competition manager, admin | `{ team }` (201; 409 `OV_DUPLICATE` for a name already in the competition) / `{ deleted: true }` (a team with players or officials only with its name as `confirm`; audited `saved_teams.team_delete`) |
 | `GET /api/club/:id/teams`, `POST /api/club/:id/teams/:teamId/invites {max_uses?, expires_at?}`, `DELETE /api/club/:id/teams/:teamId/managers/:userId` | club manager of the club, admin | db/023. `{ teams: [{ id, name, managers, open_links }] }` / `{ invite, code }` (a team link: at most 10 uses and 90 days, default 3 and 30; the code is shown once) / `{ removed }` (the team link only) |
-| `GET /api/team/:id`, `GET`/`PUT /api/team/:id/squad`, `GET /api/team/:id/games`, `GET`/`PUT`/`DELETE /api/team/:id/roster?game=<n>` | team manager of the team, club manager of its club, admin | db/023. The squad is the team's saved team of the current season (`PUT {players, staff}`, saved-team rules; the first save creates it in the season's competition of the team's league, made when there is none). Games: the team's `svrz_games` from today, each with `side`, `locked` (kick-off passed) and a roster summary. A game roster `{players, staff, coach_signature?, captain_signature?}`: at most 14 players, each with a number, one captain, at most 2 liberos, at most 5 officials with each role once; signatures PNG data URLs (≤ 200,000 characters; the coach's needs a Coach, the captain's a captain); no lock (any time); 404 `OV_GAME_NOT_YOURS` for a game the team does not play. The content is deleted when a scorer accepts it; rows go 14 days after the game. Admins see every team (`/api/me` `managedTeams`). |
+| `GET /api/team/:id`, `GET`/`PUT /api/team/:id/squad`, `GET /api/team/:id/games`, `GET`/`PUT`/`DELETE /api/team/:id/roster?game=<n>` | team manager of the team, club manager of its club, admin | db/023. The squad is the team's saved team of the current season (`PUT {players, staff}`, saved-team rules; the first save creates it in the season's competition of the team's league, made when there is none). Games: the team's `svrz_games` from today, each with `side`, `locked` (kick-off passed) and a roster summary. A game roster `{players, staff, coach_signature?, captain_signature?}`: at most 14 players, each with a number, one captain, at most 2 liberos, at most 5 officials with each role once; signatures PNG data URLs (≤ 200,000 characters; the coach's needs a Coach, the captain's a captain); no lock (any time); 404 `OV_GAME_NOT_YOURS` for a game the team does not play. No date of birth (db/048): a `dob` in the squad or a roster is dropped; the roster hash changed with it, so a signature given ahead before db/048 is dropped once, at the next send. The content is deleted when a scorer accepts it; rows go 14 days after the game. Admins see every team (`/api/me` `managedTeams`). |
+| (no route: after every `matches` write) | the server (`lib/rosterSaveBack.js`) | db/048, owner 2026-11-19 (`docs/team-managers-spec.md` "Filled from official matches"). After every successful write of a `matches` row (`/api/db`, `/api/match/restore`), off the response path, coalesced per match (60 s quiet, at most 10 min; at start the matches written in the last 6 h; `OV_SAVE_BACK_TEST_MS` shortens the wait outside production): an official indoor match of the current season past its coin toss (not a test, `game_n > 0`, not exempt, status live / ended / approved / final, its game in `svrz_games`) fills, per side (mapped to the schedule's team by name, straight or swapped), the team's saved team of the season (made as a squad's first save when there is none, under its lock): the same person by licence, else name; the match's shirt number wins, the old holder loses it (only the team's latest official match sets numbers); licences filled in; new people added; nobody removed; captain and libero flags kept; a player of the other gender, a duplicate, more than 40 players or 10 officials left out, never the whole save. A club's team: its people with a licence join the club's lists (`source = 'match'`, players and coaches, never over a row the club has, within the 300 rows per club no upload brought). Audited `team.squad.match` (game, side, ids, counts; no name or licence) when anything changed. |
 | `GET /api/game-rosters[?games=<n>,<n>]` | indoor `canReadTeams` (scorer, competition manager, admin) | db/023. `{ fetched_at, games: [{ game_number, season }], rosters: [{ game_number, season, side, team_name, kickoff, players, staff, updated_at, updated_by_name }] }`: without `games` the home games of the caller's clubs from today to +7 days, with `games` those (at most 50). `games` lists every game covered, so the scoring tablet drops a roster the team deleted or a scorer accepted. Accepted rosters are left out. |
 | `POST /api/game-rosters/used {game_number, side, season?, updated_at}` | indoor `canReadTeams` | db/023. Accepted in Match Setup: players, officials and signatures are deleted at once (`used_at`, `used_by` stay). `{ used: true }`, or `{ used: false, reason: 'changed' }` when the team sent a newer version (left alone), `'gone'` when there is none. Audited `team.roster` `used: true`. |
-| `PUT /api/club/:id/licences/:list {people}` (`list`: `players`, `scorers`, `coaches`), `GET /api/club/:id/licences` | club manager of the club, admin | db/024 (`docs/club-licences-spec.md`). A licence list from VolleyManager's club administration, read in the browser: `people` = `[{ sv_number (4-7 digits), last_name, first_name, dob, gender ('m' \| 'f' \| null) }]`, at most 2000, any other field refused; replaces the uploaded rows of that list in one transaction and keeps those added by hand (db/026; one the upload has becomes uploaded); `[]` deletes the whole list. `{ list, count, manual, imported_at }`. db/037: the rows have the upload's season; only the current season is served, the club's past seasons go with its next upload and every day (server.js). `GET`: `{ season, lists: {<list>: { count, manual, imported_at, imported_by_name }}, people: [{ id (the person page's key, db/037), ..., manual, lists, teams: [{ id, name }], hand_rows: [{ id, list }] }] }` (`count` every row, `manual` those by hand, `imported_at`/`imported_by_name` the last upload's; teams: the club's teams whose saved team of the season has that licence). Audited `club.licences` (list and count only). |
-| `POST /api/club/:id/licences/people {people}`, `POST /api/team/:id/club-people {people}` | club manager of the club, admin / team manager of the team, club manager of its club, admin | db/026 (`docs/club-licences-spec.md` section 8). People typed in by hand added to the club's lists (the team's club): `people` = `[{ list ('players' \| 'scorers' \| 'coaches'), sv_number, last_name, first_name, dob, gender }]`, 1 to 30, any other field in the body or a person refused (400). New rows only (`source = 'manual'`), a licence number any list of the club has is left as it is (db/037); at most 300 rows by hand per club and 100 per account a day (409 `OV_MANUAL_LIMIT`). `{ club_id, added, already }`; 404 for an unknown club or team. Audited `club.licences.manual` (club and team ids, counts per list only). `DELETE /api/club/:id/licences/rows/:rowId` (club manager, admin): one row by hand (409 `OV_NOT_HAND_ADDED` for an uploaded one), audited `club.licences.manual_delete`. |
-| `GET /api/team/:id/club-players`, `GET /api/team/:id/club-people?q=` | team manager of the team, club manager of its club, admin | db/024, owner decision 2. `{ team, gender: 'm' \| 'f' \| null, age_class, players, people }`: for "Add from club", `players` is the club's players list of the team's gender and age class (filtered here) and `people` the people of the team's saved team and those players, with `lists`; dates of birth only of the people of the saved team (saving a squad or a game roster fills in the club's date of birth of a row without one, `fillDob`). An official (anyone of the club, either gender): `club-people?q=` (at least 3 characters) answers `{ people, more }`, at most 10. Each person has `manual` (db/026: only by hand, in no upload); the team's gender from its `svrz_games`. `PUT /api/team/:id/squad` and `/roster` answer 400 `OV_WRONG_GENDER` (`index`) for a player of the players list with the other gender; officials are never checked. |
+| `PUT /api/club/:id/licences/:list {people}` (`list`: `players`, `scorers`, `coaches`), `GET /api/club/:id/licences` | club manager of the club, admin | db/024 (`docs/club-licences-spec.md`). A licence list from VolleyManager's club administration, read in the browser: `people` = `[{ sv_number (4-7 digits), last_name, first_name, gender ('m' \| 'f' \| null) }]`, at most 2000, any other field refused (a `dob` older clients send is accepted and dropped, db/048); replaces the uploaded rows of that list in one transaction and keeps those added by hand (db/026; one the upload has becomes uploaded); `[]` deletes the whole list. `{ list, count, manual, imported_at }`. db/037: the rows have the upload's season; only the current season is served, the club's past seasons go with its next upload and every day (server.js). `GET`: `{ season, lists: {<list>: { count, manual, imported_at, imported_by_name }}, people: [{ id (the person page's key, db/037), ..., manual, lists, teams: [{ id, name }], hand_rows: [{ id, list }] }] }` (`count` every row, `manual` those by hand, `imported_at`/`imported_by_name` the last upload's; teams: the club's teams whose saved team of the season has that licence). Audited `club.licences` (list and count only). |
+| `POST /api/club/:id/licences/people {people}`, `POST /api/team/:id/club-people {people}` | club manager of the club, admin / team manager of the team, club manager of its club, admin | db/026 (`docs/club-licences-spec.md` section 8). People typed in by hand added to the club's lists (the team's club): `people` = `[{ list ('players' \| 'scorers' \| 'coaches'), sv_number, last_name, first_name, gender }]`, 1 to 30, any other field in the body or a person refused (400; a `dob` is accepted and dropped). New rows only (`source = 'manual'`), a licence number any list of the club has is left as it is (db/037); at most 300 rows by hand per club and 100 per account a day (409 `OV_MANUAL_LIMIT`). `{ club_id, added, already }`; 404 for an unknown club or team. Audited `club.licences.manual` (club and team ids, counts per list only). `DELETE /api/club/:id/licences/rows/:rowId` (club manager, admin): one row by hand or from an official match (db/048; 409 `OV_NOT_HAND_ADDED` for an uploaded one), audited `club.licences.manual_delete`. |
+| `GET /api/team/:id/club-players`, `GET /api/team/:id/club-people?q=` | team manager of the team, club manager of its club, admin | db/024, owner decision 2. `{ team, gender: 'm' \| 'f' \| null, age_class, players, people }`: for "Add from club", `players` is the club's players list of the team's gender (filtered here; `age_class` is shown only, the age-class filter went with db/048) and `people` the people of the team's saved team and those players, with `lists`; no dates of birth (db/048). An official (anyone of the club, either gender): `club-people?q=` (at least 3 characters) answers `{ people, more }`, at most 10. Each person has `manual` (db/026: only by hand, in no upload); the team's gender from its `svrz_games`. `PUT /api/team/:id/squad` and `/roster` answer 400 `OV_WRONG_GENDER` (`index`) for a player of the players list with the other gender; officials are never checked. |
 | `GET /api/public/clubs` | anyone (no session; 30 per minute per IP, cached 60 s) | db/025. `{ clubs: [{ id, name, teams: [{ id, name }] }] }`: the sign-up form's clubs and their teams, ids and names only (no person, no count). |
-| `POST /api/auth/sign-up {…, requests?}` | anyone | db/025. `requests: [{ kind: 'scorer'\|'referee'\|'team_manager'\|'club_manager', club_id?, team_id? }]` (at most 20; scorer and club manager a club, team manager a team, referee neither; OpenBeach's sign-up none): stored in the sign-up's transaction, nothing granted; 422 `validation_failed` for a bad part or a club / team that is gone. `GET /api/me` adds the account's own open `requests`. |
+| `POST /api/auth/sign-up {…, requests?}` | anyone | db/048: the metadata's optional `license_number` (4 to 7 digits, else 422 `validation_failed`) goes to `profiles.license_number`; a `dob` (older apps) is dropped, never stored or answered. db/025. `requests: [{ kind: 'scorer'\|'referee'\|'team_manager'\|'club_manager', club_id?, team_id? }]` (at most 20; scorer and club manager a club, team manager a team, referee neither; OpenBeach's sign-up none): stored in the sign-up's transaction, nothing granted; 422 `validation_failed` for a bad part or a club / team that is gone. `GET /api/me` adds the account's own open `requests`. |
 | `POST /api/admin/accounts/:id/requests {approve: [{id, club_id?, team_id?}], reject: [id]}` | admin | db/025 (`docs/account-approval-spec.md` section 8). Approves (scorer: the role and the club; referee: the role; team manager: the team; club manager: the club) and rejects parts of the account's sign-up request, a part's club or team changed first if need be. `{ approved, rejected, requests }`; 409 `OV_REQUEST_GONE` (decided meanwhile), 409 `OV_EMAIL_UNCONFIRMED` (approving). `GET /api/admin/accounts` gives each account its `requests`, `managed_clubs`, `managed_teams`; Pending also lists accounts with an open part, and an account that manages a club or team is no longer pending (and is deleted, not rejected). Audited `account.request_approve` / `account.request_reject`. |
 | `GET /api/club/:id/requests`, `POST /api/club/:id/requests/:userId {approve: [{id, team_id?}], reject}` | club manager of the club, admin | db/025. `{ requests: [{ user: { id, email, name, created_at, email_confirmed }, parts }] }`: the club's parts (scorer, team manager of its teams, club manager); a team part may move to another team of the club. Referee parts are admins' only. |
 | `GET /api/team/:id/requests`, `POST /api/team/:id/requests/:userId {approve: [{id}], reject}` | team manager of the team, club manager of its club, admin | db/025. The team's team manager parts, approved as asked. |
 | `GET /api/saved-teams/vm-teams?q=` | indoor competition manager, admin | `{ teams: [{ name, club_id, club_name }] }`: the schedule's team names (`svrz_games` home and away, at most 1000), for the saved team editor's VolleyManager name. |
-| `GET /api/club-licences` | indoor `canReadTeams` | db/024. `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }`: per club of the caller its players list (`players`, all that release 3.0.15 reads) and every person of its three lists once (`people`, with `lists`, for the bench officials), kept on the scoring tablet for Match Setup (offline first), without dates of birth (owner decision 2). `GET /api/club-licences/dob?club=<id>&sv=<n>,…`: those of at most 30 people of one of the caller's clubs, `{ club_id, people: [{ sv_number, dob }] }`, asked for the people a scorer adds. |
-| `PUT /api/saved-teams/teams/:id/roster {players, staff}` | competition manager, admin | `{ team }`. At most 40 players and 10 officials; `last_name` required; numbers 0-99 unique among active players; one active captain; `dob` `YYYY-MM-DD`; staff roles `Coach`, `Assistant Coach 1/2`, `Physiotherapist`, `Medic`; `country` must be empty. Rows keep their `id`; an id of another team is 400. **Beach team** (its competition's sport): a pair, at most 2 players numbered 1 and 2 (unique), no `is_libero`/`is_captain` `true` and no `active: false` (stored `false`/`false`/`true`), optional `country` of 3 letters (stored upper-case, `'CHE'`), staff at most one `Coach`. Every rule violation is 400 `OV_INVALID_REQUEST` with a `details` string. |
+| `GET /api/club-licences` | indoor `canReadTeams` | db/024. `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }`: per club of the caller its players list (`players`, all that release 3.0.15 reads) and every person of its three lists once (`people`, with `lists`, for the bench officials), kept on the scoring tablet for Match Setup (offline first), without dates of birth. `GET /api/club-licences/dob?club=<id>&sv=<n>,…` (asked by apps before db/048): always `{ club_id, people: [] }`, nothing looked up or audited. |
+| `PUT /api/saved-teams/teams/:id/roster {players, staff}` | competition manager, admin | `{ team }`. At most 40 players and 10 officials; `last_name` required; numbers 0-99 unique among active players; one active captain; a `dob` is dropped (db/048, none stored or answered); staff roles `Coach`, `Assistant Coach 1/2`, `Physiotherapist`, `Medic`; `country` must be empty. Rows keep their `id`; an id of another team is 400. **Beach team** (its competition's sport): a pair, at most 2 players numbered 1 and 2 (unique), no `is_libero`/`is_captain` `true` and no `active: false` (stored `false`/`false`/`true`), optional `country` of 3 letters (stored upper-case, `'CHE'`), staff at most one `Coach`. Every rule violation is 400 `OV_INVALID_REQUEST` with a `details` string. |
 
 ### `POST /api/match/send-info`
 

@@ -137,8 +137,12 @@ describe('club API end to end', { skip: SKIP }, () => {
   it('a squad and a licence list can be replaced; the audit names the token', async () => {
     const squad = await club(writeTok, 'PUT', `/teams/${teamH1}/squad`, { players: [{ number: 5, first_name: 'A', last_name: 'B', active: true }], staff: [] })
     assert.equal(squad.status, 200, squad.text)
+    // an older client's date of birth is taken and dropped (db/048)
     const list = await club(writeTok, 'PUT', '/licences/players', { people: [{ first_name: 'Anna', last_name: 'Muster', sv_number: '123456', dob: '1999-01-01', gender: 'f' }] })
     assert.equal(list.status, 200, list.text)
+    const read = await club(writeTok, 'GET', '/licences')
+    assert.equal(read.status, 200, read.text)
+    assert.ok(read.text.includes('123456') && !read.text.includes('1999-01-01'), read.text.slice(0, 300))
     const calls = await auditOf('club_api.call')
     assert.ok(calls.length >= 3)
     assert.ok(calls.every((c) => c.details.token_id && c.details.club_id === muster.id))

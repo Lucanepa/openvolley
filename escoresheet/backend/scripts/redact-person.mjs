@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * Operator tool for a data subject's request (privacy policy section 19):
- * erase one person from every stored copy, or correct their date of birth.
+ * erase one person from every stored copy. (Correcting a date of birth,
+ * --set-dob, went with db/048: no date of birth is kept outside a match's own
+ * sheet, and a sheet's is corrected in the match itself.)
  * Runs as the owner role (closed matches, the event history, the activity
  * and audit logs are append-only or frozen for the backend role), in ONE
  * transaction with ov.allow_closed / ov.admin, and is audited
@@ -9,9 +11,10 @@
  * never a name). Dry run unless --apply.
  *
  * The person is found by first and last name (case, accents' composition and
- * spaces normalised), and, with --dob, only where a stored date of birth is
- * that date or missing (a namesake with another date is left). --match limits
- * it to those matches (external_id, repeatable) and everything stored for them.
+ * spaces normalised); --dob went with db/048 (the dates of birth it told
+ * namesakes apart by are gone): name a namesake's matches with --match
+ * instead. --match limits it to those matches (external_id, repeatable) and
+ * everything stored for them.
  *
  *   records  (redacted in place: the record keeps the shirt number, role and
  *            flags; names become "[redacted]", date of birth, licence number,
@@ -27,14 +30,12 @@
  *   files    the scoresheet PDFs and their JSON files of the matches touched
  *            are listed; --drop-files removes them (a PDF is not rewritten:
  *            the scorer or an admin makes a new one from the corrected record)
- * With --set-dob the date of birth is set to that date in the same places
- * (rows of lists included) and nothing else changes.
  *
  * Not reached: the account (profiles, auth.users: the account's own
  * deletion or the admin's), the per-account backup copies (encrypted, gone
  * after 30 days), copies on the devices, mails already sent, and the
  * encrypted backups (up to about 6 months). The backup note: --register FILE
- * appends the request (mode, the digest, the new date) to a register kept
+ * appends the request (mode, the digest) to a register kept
  * outside the database; after a restore from a backup older than the request,
  * --reapply FILE runs every request of it again (structured fields: the
  * free-text names need the name, i.e. a new run with --first/--last). It
@@ -44,8 +45,8 @@
  * Usage (on the host, the owner role's connection as for scripts/migrate.mjs;
  * the storage root for the files):
  *   OV_MIGRATE_DATABASE_URL=postgres://ov_owner@... STORAGE_ROOT=/data/storage \
- *     node scripts/redact-person.mjs --first Mia --last Example [--dob 2011-03-02] \
- *       [--match <external_id>]... [--set-dob 2011-03-20] [--drop-files] \
+ *     node scripts/redact-person.mjs --first Mia --last Example \
+ *       [--match <external_id>]... [--drop-files] \
  *       [--actor <admin account uuid>] [--register FILE] [--apply]
  *   ... node scripts/redact-person.mjs --reapply FILE [--apply]
  * Prints counts per table and the files (paths) only, never the rows.
@@ -130,8 +131,10 @@ function groupsOf (o) {
 }
 
 /**
- * The matcher of one request: `who` = { first, last, dob? } (the name) or
- * { digest, withDob } (a register line: structured fields only).
+ * The matcher of one request: `who` = { first, last } (the name) or
+ * { digest, withDob } (a register line: structured fields only; withDob: a
+ * line written before db/048 with --dob, matched by its date where a record
+ * still has one, else by the name).
  */
 export function matcherOf (who) {
   if (who.digest) {
@@ -140,7 +143,7 @@ export function matcherOf (who) {
   }
   const f = norm(who.first)
   const l = norm(who.last)
-  return (first, last, dob) => norm(first) === f && norm(last) === l && (!who.dob || !dob || dob === who.dob)
+  return (first, last) => norm(first) === f && norm(last) === l
 }
 
 function escapeRe (s) {
@@ -156,15 +159,15 @@ export function nameTextRe (who) {
 }
 
 /**
- * Walk one JSON value and redact (mode 'erase') or correct (mode 'correct',
- * setDob) the person in it. Returns { value, hits } (value is a new copy
- * when anything changed, else the same).
+ * Walk one JSON value and redact the person in it (names "[redacted]", a date
+ * of birth a sheet still carries, licence, e-mail and phone null). Returns
+ * { value, hits } (value is a new copy when anything changed, else the same).
  */
-export function redactValue (value, { match, textRe = null, mode = 'erase', setDob = null }) {
+export function redactValue (value, { match, textRe = null }) {
   let hits = 0
   const walk = (v) => {
     if (typeof v === 'string') {
-      if (mode !== 'erase' || !textRe) return v
+      if (!textRe) return v
       textRe.lastIndex = 0
       if (!textRe.test(v)) return v
       textRe.lastIndex = 0
@@ -187,13 +190,9 @@ export function redactValue (value, { match, textRe = null, mode = 'erase', setD
       const dob = g.dob.map((k) => dateOf(v[k])).find(Boolean) || null
       if (!match(v[g.first], v[g.last], dob)) continue
       hits++
-      if (mode === 'correct') {
-        for (const k of g.dob) set(k, setDob)
-      } else {
-        set(g.first, REDACTED)
-        set(g.last, REDACTED)
-        for (const k of [...g.dob, ...g.erase]) set(k, null)
-      }
+      set(g.first, REDACTED)
+      set(g.last, REDACTED)
+      for (const k of [...g.dob, ...g.erase]) set(k, null)
     }
     for (const k of Object.keys(out)) {
       const x = out[k]
@@ -215,12 +214,11 @@ function likeOf (s) {
 }
 
 /**
- * Run one request in `client`'s open transaction. `who`: { first, last, dob? }
- * or a register line ({ digest, nameDigest, withDob, mode, setDob }).
+ * Run one request in `client`'s open transaction. `who`: { first, last }
+ * or a register line ({ digest, nameDigest, withDob }).
  * Returns { tables: { name: rows }, matches: [ids], hits }.
  */
-export async function redactPerson (client, { who, mode = 'erase', setDob = null, matches = [] } = {}) {
-  if (mode === 'correct' && !isoDateOf(setDob)) throw new Error('correct: setDob must be YYYY-MM-DD')
+export async function redactPerson (client, { who, matches = [] } = {}) {
   await client.query("SELECT set_config('ov.allow_closed', 'on', true), set_config('ov.admin', 'on', true)")
   const match = matcherOf(who)
   const textRe = who.digest ? null : nameTextRe(who)
@@ -263,13 +261,13 @@ export async function redactPerson (client, { who, mode = 'erase', setDob = null
         `SELECT to_jsonb(t) AS row_ FROM public.${table} t WHERE t.ctid = $1::tid FOR UPDATE`, [ctid])
       if (!locked) return false // changed by another session since the read: the next pass finds it
       const before = locked.row_
-      const { value: after, hits: h } = redactValue(before, { match, textRe: isList ? null : textRe, mode, setDob })
+      const { value: after, hits: h } = redactValue(before, { match, textRe: isList ? null : textRe })
       if (!h) return true
       hits += h
       n++
       const mid = table === 'matches' ? before.id : before.match_id
       if (mid) touchedMatches.add(String(mid))
-      if (isList && mode === 'erase') {
+      if (isList) {
         await client.query(`DELETE FROM public.${table} WHERE ctid = $1::tid`, [ctid])
         return true
       }
@@ -299,7 +297,7 @@ export async function redactPerson (client, { who, mode = 'erase', setDob = null
             WHERE t.ctid >= $${args.length + 1}::tid AND t.ctid < $${args.length + 2}::tid${filter}`,
           [...args, `(${page},0)`, `(${page + SCAN_PAGES},0)`])
         for (const r of rows) {
-          if (written.has(r.ctid_) || !redactValue(r.row_, { match, textRe: isList ? null : textRe, mode, setDob }).hits) continue
+          if (written.has(r.ctid_) || !redactValue(r.row_, { match, textRe: isList ? null : textRe }).hits) continue
           if (!(await apply(r.ctid_))) missed++
         }
       }
@@ -323,16 +321,17 @@ export async function filesOf (client, matchIds) {
 }
 
 const USAGE = `Usage: OV_MIGRATE_DATABASE_URL=postgres://ov_owner@... node scripts/redact-person.mjs
-  --first NAME --last NAME [--dob YYYY-MM-DD] [--match EXTERNAL_ID]... [--set-dob YYYY-MM-DD]
+  --first NAME --last NAME [--match EXTERNAL_ID]...
   [--drop-files] [--actor ACCOUNT_UUID] [--register FILE] [--apply]
   | --reapply FILE [--apply]   (reads every row: best before the restored server takes traffic)
 Dry run unless --apply. See the header of this file.`
 
 export function parseArgs (argv) {
   const o = { matches: [], apply: false, dropFiles: false }
-  const takes = { '--first': 'first', '--last': 'last', '--dob': 'dob', '--set-dob': 'setDob', '--actor': 'actor', '--register': 'register', '--reapply': 'reapply' }
+  const takes = { '--first': 'first', '--last': 'last', '--actor': 'actor', '--register': 'register', '--reapply': 'reapply' }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
+    if (a === '--dob' || a === '--set-dob') return { error: `${a}: gone with db/048 (no dates of birth are kept); find a namesake's records with --match` }
     if (a === '--apply') o.apply = true
     else if (a === '--drop-files') o.dropFiles = true
     else if (a === '--match') { if (!argv[i + 1]) return { error: '--match needs a value' }; o.matches.push(argv[++i]) }
@@ -343,7 +342,6 @@ export function parseArgs (argv) {
   if (o.help) return o
   if (o.reapply) return o
   if (!o.first || !o.last) return { error: '--first and --last are needed (or --reapply FILE)' }
-  for (const k of ['dob', 'setDob']) if (o[k] && !isoDateOf(o[k])) return { error: `--${k === 'dob' ? 'dob' : 'set-dob'}: YYYY-MM-DD` }
   return o
 }
 
@@ -353,9 +351,10 @@ async function main () {
   if (o.help) { console.log(USAGE); return 0 }
   const url = process.env.OV_MIGRATE_DATABASE_URL
   if (!url) { console.error(`OV_MIGRATE_DATABASE_URL is not set (the owner role's connection).\n${USAGE}`); return 2 }
+  // a register's corrections of a date of birth (before db/048) have nothing left to correct
   const requests = o.reapply
-    ? readFileSync(o.reapply, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l))
-    : [{ who: { first: o.first, last: o.last, dob: o.dob || null }, mode: o.setDob ? 'correct' : 'erase', setDob: o.setDob || null, matches: o.matches }]
+    ? readFileSync(o.reapply, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)).filter((r) => r.mode !== 'correct')
+    : [{ who: { first: o.first, last: o.last }, mode: 'erase', matches: o.matches }]
   const client = new pg.Client({ connectionString: url, application_name: 'redact-person' })
   await client.connect()
   let storage = null
@@ -365,7 +364,7 @@ async function main () {
     const matchIds = new Set()
     for (const req of requests) {
       const who = req.who || { digest: req.digest, nameDigest: req.nameDigest, withDob: req.withDob }
-      const r = await redactPerson(client, { who, mode: req.mode, setDob: req.setDob, matches: req.matches || [] })
+      const r = await redactPerson(client, { who, matches: req.matches || [] })
       r.matches.forEach((m) => matchIds.add(m))
       const digest = req.digest || personDigest(who)
       report.push({ mode: req.mode, digest, tables: r.tables, matches: r.matches.length })
@@ -393,10 +392,9 @@ async function main () {
     }
     if (o.apply && o.register && !o.reapply) {
       const req = requests[0]
-      const withDob = !!req.who.dob
       appendFileSync(o.register, JSON.stringify({
-        at: new Date().toISOString(), mode: req.mode, setDob: req.setDob, matches: req.matches,
-        digest: personDigest(req.who), nameDigest: personDigest({ ...req.who, dob: '' }), withDob
+        at: new Date().toISOString(), mode: req.mode, matches: req.matches,
+        digest: personDigest(req.who), nameDigest: personDigest(req.who), withDob: false
       }) + '\n', { mode: 0o600 })
       console.log(`Recorded in the register ${o.register} (no name).`)
     }

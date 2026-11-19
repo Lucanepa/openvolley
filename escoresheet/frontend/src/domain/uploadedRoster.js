@@ -11,7 +11,8 @@
  *
  * A roster: { players, bench, coachSignature?, captainSignature?, timestamp? }
  *  - players: at most UPLOADED_ROSTER_MAX_PLAYERS plain objects { number
- *    (1-99, or empty), firstName, lastName, dob, libero ('', 'libero1' or
+ *    (1-99, or empty), firstName, lastName, dob (the value beside the name:
+ *    empty, a date or a 4-7 digit licence number), libero ('', 'libero1' or
  *    'libero2'), isCaptain, isLfp }: no number twice (7 and '7' are one
  *    number), one captain at most, each libero slot once
  *  - bench: at most one official per role of BENCH_ROLES { role, firstName,
@@ -34,6 +35,9 @@ export const BENCH_ROLES = Object.freeze(['Coach', 'Assistant Coach 1', 'Assista
 // ---- the rules (backend/lib/uploadedRoster.js has the same code below its imports)
 const LIBERO_SLOTS = ['libero1', 'libero2']
 const DATE_RE = /^(\d{1,2}[./]\d{1,2}[./]\d{4}|\d{4}-\d{2}-\d{2})$/
+// A Swiss match carries the licence number beside a name, or a date of birth
+// (owner 2026-11-19; frontend domain/idMode): a licence is 4 to 7 digits
+const LICENCE_RE = /^\d{4,7}$/
 const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T[0-9:.]{2,20}(Z|[+-]\d{2}:?\d{2})?$/
 
 // A plain object (also one made in another realm, e.g. read back from IndexedDB)
@@ -46,7 +50,7 @@ const empty = (v) => v === undefined || v === null || (typeof v === 'string' && 
  * @returns {{ ok: true, roster: { players: object[], bench: object[], coachSignature: string|null,
  *   captainSignature: string|null, timestamp: string|null } } | { ok: false, problems: Array<{ path: string, code: string }> }}
  *   problems: the first problem of each entry, in order (code: notObject, notList, tooMany,
- *   badText, badDate, badNumber, numberTwice, badLibero, liberoSlotTwice, badFlag,
+ *   badText, badDate (no date and no licence), badNumber, numberTwice, badLibero, liberoSlotTwice, badFlag,
  *   captainTwice, badRole, roleTwice, badSignature, badTimestamp)
  */
 export function checkUploadedRoster(raw) {
@@ -71,7 +75,7 @@ export function checkUploadedRoster(raw) {
     if (!text(entry.firstName, `${path}.firstName`, out, 'firstName')) return null
     if (!text(entry.lastName, `${path}.lastName`, out, 'lastName')) return null
     if (empty(entry.dob)) out.dob = ''
-    else if (typeof entry.dob !== 'string' || !DATE_RE.test(entry.dob.trim())) { problem(`${path}.dob`, 'badDate'); return null }
+    else if (typeof entry.dob !== 'string' || !(DATE_RE.test(entry.dob.trim()) || LICENCE_RE.test(entry.dob.trim()))) { problem(`${path}.dob`, 'badDate'); return null }
     else out.dob = entry.dob.trim()
     return out
   }

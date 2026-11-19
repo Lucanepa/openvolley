@@ -137,8 +137,9 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     const r = await call(users.coach, 'GET', `/api/team/${h1.id}/club-players`)
     assert.equal(r.status, 200, r.text)
     assert.deepEqual(r.json.data.players.map((p) => [p.sv_number, p.manual]), [['100001', false], ['100009', true], ['100002', false], ['100003', true]])
-    // not in the team's saved team: no date of birth (owner decision 2)
-    assert.deepEqual(r.json.data.players.find((p) => p.sv_number === '100003'), { ...MARCO, dob: null, manual: true })
+    // no date of birth (db/048), whatever was sent with it
+    const { dob, ...marco } = MARCO
+    assert.deepEqual(r.json.data.players.find((p) => p.sv_number === '100003'), { ...marco, manual: true })
     // people: those players (the team's saved team is empty)
     assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists, p.manual]), [
       ['100001', ['players'], false], ['100009', ['players'], true], ['100002', ['players'], false], ['100003', ['players'], true]
@@ -191,7 +192,7 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     assert.equal((await call(users.coach, 'GET', `/api/team/${h1.id}/club-people`)).status, 400)
   })
 
-  it('refuses a bad body: the list and the five fields only, 1 to 30 people', async () => {
+  it('refuses a bad body: the list and the four fields only (a dob dropped), 1 to 30 people', async () => {
     const before = await countOf(musterdorf.id)
     const bad = async (body, re) => {
       const r = await call(users.coach, 'POST', `/api/team/${h1.id}/club-people`, body)
@@ -211,7 +212,7 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     await bad({ people: [{ ...p, sv_number: '12' }] }, /sv_number/)
     await bad({ people: [{ ...p, sv_number: undefined }] }, /sv_number/)
     await bad({ people: [{ ...p, last_name: ' ' }] }, /last_name/)
-    await bad({ people: [{ ...p, dob: '06.05.2004' }] }, /dob/)
+    await bad({ people: [{ ...p, birthdate: '06.05.2004' }] }, /birthdate: not accepted/)
     await bad({ people: [{ ...p, gender: 'x' }] }, /gender/)
     await bad({ people: ['100050'] }, /must be an object/)
     // at most 30 per request (one bad entry refuses the whole batch)

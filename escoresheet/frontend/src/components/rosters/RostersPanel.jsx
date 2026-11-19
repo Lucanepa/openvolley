@@ -12,6 +12,7 @@ import {
   gameCaptainOnCourt
 } from '../../domain/rosterLive'
 import { sanctionTarget } from '../../domain/describe'
+import { idLabelOf, idModeOf } from '../../domain/idMode'
 
 // Body of the scorer's "Rosters" dialog: players, liberos, bench officials and
 // match officials of both teams. During play it also shows, per person, the
@@ -170,7 +171,9 @@ function NameWithDob({ name, dob, phone }) {
   )
 }
 
-function PlayerTable({ team, rows, showPos, kind }) {
+// idLabel: the heading of the value beside a name (domain/idMode: Licence in a
+// Swiss match, a Global match's own choice)
+function PlayerTable({ team, rows, showPos, kind, idLabel }) {
   const { t } = useTranslation()
   const phone = usePhoneWidth()
   const cols = (showPos ? 5 : 4) - (phone ? 1 : 0)
@@ -181,7 +184,7 @@ function PlayerTable({ team, rows, showPos, kind }) {
         <tr>
           <th style={TH}>{t('roster.number')}</th>
           <th style={TH}>{t('roster.name')}</th>
-          {!phone && <th style={TH}>{t('roster.dob')}</th>}
+          {!phone && <th style={TH}>{idLabel || t('roster.dob')}</th>}
           {showPos && <th style={TH} title={t('rosterLive.posTitle')}>{t('rosterLive.pos')}</th>}
           <th style={TH}>{t('rosterLive.sanctions')}</th>
         </tr>
@@ -230,7 +233,7 @@ function PlayerTable({ team, rows, showPos, kind }) {
   )
 }
 
-function BenchTable({ team, rows, emptyAll }) {
+function BenchTable({ team, rows, emptyAll, idLabel }) {
   const { t } = useTranslation()
   const phone = usePhoneWidth()
   return (
@@ -245,7 +248,7 @@ function BenchTable({ team, rows, emptyAll }) {
         <tr>
           <th style={TH}>{t('roster.role')}</th>
           <th style={TH}>{t('roster.name')}</th>
-          {!phone && <th style={TH}>{t('roster.dob')}</th>}
+          {!phone && <th style={TH}>{idLabel || t('roster.dob')}</th>}
           <th style={TH}>{t('rosterLive.sanctions')}</th>
         </tr>
       </thead>
@@ -354,6 +357,7 @@ export default function RostersPanel({ data, lineups, servingTeam, team: onlyTea
   const maxBench = Math.max(...shown.map(team => team.bench.length))
   // the match officials (a team's contact address is no official: domain/officials isTeamContact)
   const officials = onlyTeam ? [] : (Array.isArray(data?.match?.officials) ? data.match.officials : []).filter(o => !isTeamContact(o))
+  const idLabel = idLabelOf(t, idModeOf(data?.match), t('roster.dob'))
 
   return (
     <div className="roster-panel">
@@ -361,7 +365,7 @@ export default function RostersPanel({ data, lineups, servingTeam, team: onlyTea
         {shown.map(team => (
           <div className="roster-table-wrapper" key={`players-${team.key}`} data-team={team.key}>
             <Section title={<>{team.name} {t('scoreboard.players')}</>} action={<TeamSanctionsLine entries={team.sanctions.team} />} />
-            <PlayerTable team={team} rows={pad(team.players, maxPlayers)} showPos={showPos} kind="player" />
+            <PlayerTable team={team} rows={pad(team.players, maxPlayers)} showPos={showPos} kind="player" idLabel={idLabel} />
           </div>
         ))}
       </div>
@@ -371,7 +375,7 @@ export default function RostersPanel({ data, lineups, servingTeam, team: onlyTea
           {shown.map(team => (
             <div className="roster-table-wrapper" key={`liberos-${team.key}`}>
               <Section title={<>{team.name} {t('scoreboard.liberos')}</>} />
-              <PlayerTable team={team} rows={pad(team.liberos, maxLiberos)} showPos={showPos} kind="libero" />
+              <PlayerTable team={team} rows={pad(team.liberos, maxLiberos)} showPos={showPos} kind="libero" idLabel={idLabel} />
             </div>
           ))}
         </div>
@@ -382,7 +386,7 @@ export default function RostersPanel({ data, lineups, servingTeam, team: onlyTea
           {shown.map(team => (
             <div className="roster-table-wrapper" key={`bench-${team.key}`}>
               <Section title={<>{team.name} {t('scoreboard.benchOfficials')}</>} />
-              <BenchTable team={team} rows={pad(team.bench, maxBench)} emptyAll={maxBench === 0} />
+              <BenchTable team={team} rows={pad(team.bench, maxBench)} emptyAll={maxBench === 0} idLabel={idLabel} />
             </div>
           ))}
         </div>
@@ -397,7 +401,7 @@ export default function RostersPanel({ data, lineups, servingTeam, team: onlyTea
                 <th>{t('matchSetup.role')}</th>
                 <th>{t('matchSetup.name')}</th>
                 <th>{t('matchSetup.country')}</th>
-                <th>{t('roster.dob')}</th>
+                <th>{idLabel}</th>
               </tr>
             </thead>
             <tbody>
@@ -406,7 +410,7 @@ export default function RostersPanel({ data, lineups, servingTeam, team: onlyTea
                   <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
                   <td>{official.lastName || ''} {official.firstName || ''}</td>
                   <td>{official.country || '—'}</td>
-                  <td>{official.dob || '—'}</td>
+                  <td>{official.dob || official.licence || '—'}</td>
                 </tr>
               ))}
             </tbody>

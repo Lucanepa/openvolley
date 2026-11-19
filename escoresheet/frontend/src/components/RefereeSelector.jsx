@@ -18,24 +18,20 @@ const ROW = cn(
 )
 
 const nameKey = (r) => `${r.lastName}\u0000${r.firstName}`.trim().toLowerCase()
-const yearOf = (dob) => (/\b(\d{4})\b/.exec(String(dob || '')) || [])[1] || ''
 
 /**
  * The directory rows with a `detail` for a name that occurs more than once:
- * the country and the year of birth, the whole date when the year is the
- * same too. The scorer sees which person (and which date of birth for the
- * sheet) the pick takes.
+ * the licence number when the row has one. No date of birth tells namesakes
+ * apart any more (db/048: the directory keeps none); without a licence the
+ * row has no detail.
  */
 export function withNameDetails(referees) {
   const byName = new Map()
-  for (const r of referees) byName.set(nameKey(r), [...(byName.get(nameKey(r)) || []), r])
+  for (const r of referees) byName.set(nameKey(r), (byName.get(nameKey(r)) || 0) + 1)
   return referees.map((r) => {
-    const same = byName.get(nameKey(r))
-    if (same.length < 2) return r
-    const year = yearOf(r.dob)
-    const sameYear = same.filter((o) => yearOf(o.dob) === year).length > 1
-    const when = sameYear ? (r.dob || '–') : year
-    return { ...r, detail: [r.country, when].filter(Boolean).join(' · ') }
+    if (byName.get(nameKey(r)) < 2) return r
+    const lic = String(r.licence ?? '').trim()
+    return lic ? { ...r, detail: lic } : r
   })
 }
 
@@ -69,7 +65,7 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
       try {
         // The whole directory, paged past the server's row cap, by last name
         const { data, error } = await selectAll(() => apiFrom('referee_database')
-          .select('id, first_name, last_name, country, dob, created_at')
+          .select('id, first_name, last_name, country, created_at')
           .contains('sport_type', JSON.stringify([SPORT_TYPE])), { order: [{ column: 'last_name' }] })
         if (cancelled) return
         if (error) {
@@ -79,15 +75,16 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
           return
         }
         setOffline(false)
-        // Map to the shape Match setup expects. Names are not unique in the
-        // directory (two people, or one entered twice with another date of
-        // birth): rows are keyed by their id, and same names show a detail.
+        // Map to the shape Match setup expects (no date of birth: db/048).
+        // Names are not unique in the directory (two people, or one entered
+        // twice): rows are keyed by their id, and same names show a licence
+        // number where the row has one.
         setReferees(withNameDetails((data || []).map((ref, i) => ({
           id: ref.id != null ? String(ref.id) : `${ref.last_name}_${ref.first_name}_${i}`.toLowerCase(),
           firstName: ref.first_name || '',
           lastName: ref.last_name || '',
           country: ref.country || 'CHE',
-          dob: ref.dob || ''
+          ...(ref.licence ? { licence: String(ref.licence) } : {})
         }))))
       } catch (error) {
         if (cancelled) return

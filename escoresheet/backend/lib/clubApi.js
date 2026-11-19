@@ -7,9 +7,11 @@
  *   rosters:write    GET / PUT / DELETE the roster of a game
  *   teams:write      GET / PUT a team's squad (its saved team)
  *   licences:write   GET / PUT the licence lists (players, scorers, coaches)
- * Names, dates of birth, licence numbers and signatures are read only with
- * the write scope of that data, which needs the manager's password to make:
- * a read token (a website's) reaches none of them.
+ * Names, licence numbers and signatures are read only with the write scope
+ * of that data, which needs the manager's password to make: a read token (a
+ * website's) reaches none of them. No date of birth is kept or answered
+ * (db/048); one a client still sends in a roster, a squad or a licence list
+ * is dropped.
  * It acts as the manager who made it: every route calls the same functions the
  * manager console uses (lib/teams.js, lib/licences.js, lib/clubs.js), which
  * hold all the rules (the team must be the club's, the game the team's, the
@@ -214,7 +216,7 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
   }
 
   // [method, regex, scope, handler(match, ctx), personal?]; ctx = { p: principal, query, body }
-  // personal: the answer has names / dates of birth (read with that data's write scope, audited)
+  // personal: the answer has names / licence numbers (read with that data's write scope, audited)
   // team routes check the team is the club's (and the token's team); the module does the rest
   const ownTeam = (fn) => async (m, c) => {
     if (c.p.teamId && c.p.teamId !== m[1]) return OWN_TEAM_ONLY()

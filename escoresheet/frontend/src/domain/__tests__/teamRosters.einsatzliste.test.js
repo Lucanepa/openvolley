@@ -32,7 +32,9 @@ describe('an Einsatzliste on a game roster', () => {
   it('keeps the saved numbers, captain and libero; ticks the listed players', () => {
     const by = Object.fromEntries(draft.players.map((p) => [p.last_name, p]))
     expect(by.Muster).toMatchObject({ number: 7, is_captain: true, picked: true })
-    expect(by.Beispiel).toMatchObject({ number: 12, is_libero: true, picked: true, license_number: '234567', dob: '1999-07-02' })
+    expect(by.Beispiel).toMatchObject({ number: 12, is_libero: true, picked: true, license_number: '234567' })
+    // the list's dates of birth only told the reader a row: none comes through (db/048)
+    expect(draft.players.some((p) => 'dob' in p)).toBe(false)
     expect(by.Neu).toMatchObject({ number: '', is_captain: false, is_libero: false, picked: true, license_number: '345678' })
     expect(by.Exemple).toMatchObject({ number: 3, picked: false })
   })

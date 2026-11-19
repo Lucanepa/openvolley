@@ -73,7 +73,7 @@
  *   POST   /api/club/:id/invites/:inviteId/revoke    the same: a code of that club only
  *   GET    /api/games/today                          any signed-in account: today's home games of
  *                                                    its clubs (the scorer app's Official game);
- *                                                    referees' dates of birth for an indoor scorer only
+ *                                                    no referee's date of birth (db/048)
  *   PUT    /api/club/:id/licences/:list { people }   a manager of that club, or isAdmin (db/024):
  *                                                    one licence list (players|scorers|coaches) replaced
  *   GET    /api/club/:id/licences                    the same: every person once, its lists and teams
@@ -82,17 +82,17 @@
  *   DELETE /api/club/:id/licences/rows/:rowId        the same: one row added by hand (db/037)
  *   GET    /api/team/:id/club-players                whoever may manage the team (lib/teams.js
  *                                                    mayManage): the club's players of the team's
- *                                                    gender and age class, the people of its saved team,
- *                                                    the team's gender (owner decision 2)
+ *                                                    gender, the people of its saved team, the team's
+ *                                                    gender and age class (owner decision 2)
  *   GET    /api/team/:id/club-people?q=              the same: a few people of the club's lists by
  *                                                    name or licence number (an official)
  *   POST   /api/team/:id/club-people { people }      the same: as POST /api/club/:id/licences/people,
  *                                                    to the team's club (db/026)
  *   GET    /api/club-licences                        indoor canReadTeams: the players lists and every
  *                                                    person of the lists of the caller's clubs, for the
- *                                                    scoring tablet (offline first), no dates of birth
- *   GET    /api/club-licences/dob?club=&sv=          the same: the dates of birth of the people the
- *                                                    scorer adds to a roster (its own clubs only)
+ *                                                    scoring tablet (offline first)
+ *   GET    /api/club-licences/dob?club=&sv=          the same: apps before db/048 ask it for dates of
+ *                                                    birth; always { people: [] } (none is kept)
  *   POST   /api/admin/accounts/:id/requests          isAdmin: approve / reject parts of the account's
  *                                                    sign-up request, a part's club or team changed
  *                                                    first if need be (db/025, lib/accountRequests.js)
@@ -317,8 +317,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/settings$/, 'manageTeams', () => (finalMail ? finalMail.getSettings() : notFound())],
     ['PUT', /^\/api\/settings$/, 'manageTeams', (m, c) => (finalMail ? finalMail.setSettings({ actorId: c.user.id, body: c.body }) : notFound())],
     // The scorer app's Official game: today's home games of the account's clubs
-    // (the referees' dates of birth for an indoor scorer only)
-    ['GET', /^\/api\/games\/today$/, 'any', (m, c) => club((cl) => cl.todayGames({ userId: c.user.id, refereeDob: accessForSport(c.access, 'indoor').canScore === true }))],
+    // (no referee's date of birth since db/048)
+    ['GET', /^\/api\/games\/today$/, 'any', (m, c) => club((cl) => cl.todayGames({ userId: c.user.id }))],
     // db/020: a club manager's own club
     ['GET', new RegExp(`^/api/club/${ID}$`), clubManagerOf, (m) => club((cl) => cl.clubDetail({ id: m[1] }))],
     ['PATCH', new RegExp(`^/api/club/${ID}$`), clubManagerOf, (m, c) => club((cl) => cl.setContact({ actorId: c.user.id, id: m[1], body: c.body }))],
@@ -375,8 +375,9 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['POST', /^\/api\/game-rosters\/used$/, readIndoorTeams, (m, c) => team((tm) => tm.markUsed({ userId: c.user.id, body: c.body }))],
     // db/024: the licence lists of the caller's clubs, kept on the scoring tablet
     ['GET', /^\/api\/club-licences$/, readIndoorTeams, (m, c) => lic((l) => l.scorerClubPlayers({ userId: c.user.id }))],
-    // ... without dates of birth: those of the people the scorer adds to a roster
-    ['GET', /^\/api\/club-licences\/dob$/, readIndoorTeams, (m, c) => lic((l) => l.scorerDob({ userId: c.user.id, clubId: q(c.query, 'club')?.toLowerCase(), svNumbers: q(c.query, 'sv') }))],
+    // ... apps before db/048 ask here for the dates of birth of the people they
+    // add to a roster: none is kept, the answer is empty
+    ['GET', /^\/api\/club-licences\/dob$/, readIndoorTeams, (m, c) => lic((l) => l.scorerDob({ userId: c.user.id, clubId: q(c.query, 'club')?.toLowerCase() }))],
     ['GET', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.listInvites({ app: q(c.query, 'app') })],
     ['POST', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.createInvite({ actorId: c.user.id, body: c.body, app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/invites/${ID}/revoke$`), 'admin', (m, c) => accounts.revokeInvite({ actorId: c.user.id, id: m[1] })],

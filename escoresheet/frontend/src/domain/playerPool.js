@@ -5,7 +5,8 @@
  * ticked players as the roster, as a saved-team load does.
  *
  * Sources, in priority order (a player found in several takes the number,
- * date of birth and libero / captain marks of the first that has them):
+ * the value beside the name (licence or date of birth, domain/idMode) and
+ * libero / captain marks of the first that has them):
  *   current   the roster in the setup now
  *   imported  an Einsatzliste just read (utils/parseRosterPdf)
  *   saved     the saved team (domain/savedTeams savedTeamToRoster, active players)
@@ -15,7 +16,8 @@
  * ({ number, firstName, lastName, dob, libero, isCaptain, isLfp }).
  */
 
-import { normalizeName, displayDobToIso } from './savedTeams'
+import { normalizeName } from './savedTeams'
+import { licenceOf } from './idMode'
 
 // FIVB 4.1.1: up to 14 players on the scoresheet; with more than 12, two
 // liberos (19.1.1, MatchSetup liberosOk); never more than two liberos marked
@@ -33,9 +35,10 @@ function numberOf(value) {
 }
 
 /**
- * The identity of a player across sources: the name (last + first), and the
- * date of birth when there is one, so a new shirt number is the same player.
- * A player without a name is known by the number only.
+ * The identity of a player across sources by name (last + first), so a new
+ * shirt number is the same player; buildPlayerPool puts the licence first
+ * when both sides have one. A player without a name is known by the number
+ * only.
  */
 export function poolKey(p) {
   const name = `${normalizeName(p?.lastName)}|${normalizeName(p?.firstName)}`
@@ -45,10 +48,6 @@ export function poolKey(p) {
 }
 
 const hasName = (p) => !!(String(p?.lastName || '').trim() || String(p?.firstName || '').trim())
-
-// A date of birth to compare: a saved team gives DD.MM.YYYY, an Einsatzliste
-// DD/MM/YYYY, the same day either way
-const dobId = (dob) => displayDobToIso(dob) || dob
 
 /**
  * Merge the sources into one list, sorted by number (players without a
@@ -62,16 +61,22 @@ const dobId = (dob) => displayDobToIso(dob) || dob
  */
 export function buildPlayerPool({ current = [], imported = [], saved = [], earlier = [] } = {}) {
   const byKey = new Map()
+  // licence -> the key of its player: the same licence is the same player,
+  // whatever the spelling of the name (a date of birth is never compared)
+  const byLicence = new Map()
   const add = (p, source, lastMatch) => {
     if (!p || (!hasName(p) && numberOf(p.number) === null)) return
-    let key = poolKey(p)
-    if (!key) return
     const dob = String(p.dob || '').trim()
-    const known = byKey.get(key)
-    if (known && dob && known.dob && dobId(known.dob) !== dobId(dob)) {
-      // Same name, another date of birth: another person
-      key = `${key}|${dobId(dob)}`
+    const licence = licenceOf(dob)
+    let key = licence ? byLicence.get(licence) : null
+    if (!key) {
+      key = poolKey(p)
+      if (!key) return
+      const knownLicence = licenceOf(byKey.get(key)?.dob)
+      // Same name, another licence: another person
+      if (licence && knownLicence && knownLicence !== licence) key = `${key}|${licence}`
     }
+    if (licence) byLicence.set(licence, key)
     const entry = byKey.get(key)
     if (!entry) {
       byKey.set(key, {

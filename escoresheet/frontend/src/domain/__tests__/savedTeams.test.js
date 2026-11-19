@@ -44,7 +44,17 @@ describe('savedTeamToRoster', () => {
       ]
     })
     expect(roster.map(p => p.lastName)).toEqual(['A', 'B'])
-    expect(roster[0]).toEqual({ number: 3, firstName: 'Anna', lastName: 'A', dob: '04.03.2001', libero: '', isCaptain: false, isLfp: false })
+    // the value beside the name: the licence, never the saved date of birth (owner 2026-11-19)
+    expect(roster[0]).toEqual({ number: 3, firstName: 'Anna', lastName: 'A', dob: '', libero: '', isCaptain: false, isLfp: false })
+  })
+
+  it('brings each player\'s and official\'s licence number as the value beside the name', () => {
+    const { roster, bench } = savedTeamToRoster({
+      players: [player({ number: 4, license_number: '123456' }), player({ number: 5, last_name: 'B', license_number: 'L-5', sort_order: 1 })],
+      staff: [{ role: 'Coach', first_name: 'C', last_name: 'Trainer', dob: '1970-02-01', license_number: '654321' }]
+    })
+    expect(roster.map(p => p.dob)).toEqual(['123456', ''])
+    expect(bench).toEqual([{ role: 'Coach', firstName: 'C', lastName: 'Trainer', dob: '654321' }])
   })
 
   it.each([
@@ -94,7 +104,7 @@ describe('rosterToSavedRoster', () => {
     staff: [{ id: 's1', role: 'Coach', first_name: 'C', last_name: 'Trainer', license_number: 'T-1' }]
   }
 
-  it('keeps ids and licence numbers by number + last name, and saved inactive players', () => {
+  it('keeps ids and licence numbers by number + last name, and saved inactive players; never a date of birth', () => {
     const body = rosterToSavedRoster(
       [
         { number: '5', firstName: 'Anna', lastName: 'MUSTER', dob: '04.03.2001', libero: 'libero1', isCaptain: true },
@@ -105,11 +115,43 @@ describe('rosterToSavedRoster', () => {
       existing
     )
     expect(body.players).toEqual([
-      { id: 'p1', number: 5, first_name: 'Anna', last_name: 'MUSTER', dob: '2001-03-04', license_number: 'L-5', is_libero: true, is_captain: true, active: true },
-      { number: 6, first_name: 'New', last_name: 'Player', dob: null, license_number: null, is_libero: false, is_captain: false, active: true },
-      { id: 'p2', number: 8, first_name: 'Anna', last_name: 'Old', dob: '2001-03-04', license_number: 'L-8', is_libero: false, is_captain: false, active: false }
+      { id: 'p1', number: 5, first_name: 'Anna', last_name: 'MUSTER', license_number: 'L-5', is_libero: true, is_captain: true, active: true },
+      { number: 6, first_name: 'New', last_name: 'Player', license_number: null, is_libero: false, is_captain: false, active: true },
+      { id: 'p2', number: 8, first_name: 'Anna', last_name: 'Old', license_number: 'L-8', is_libero: false, is_captain: false, active: false }
     ])
-    expect(body.staff).toEqual([{ id: 's1', role: 'Coach', first_name: 'C', last_name: 'trainer', dob: null, license_number: 'T-1' }])
+    expect(body.staff).toEqual([{ id: 's1', role: 'Coach', first_name: 'C', last_name: 'trainer', license_number: 'T-1' }])
+  })
+
+  // Owner 2026-11-19: the value beside a name is the licence (or a date of birth)
+  it('a licence in the roster goes to license_number and finds the saved player first', () => {
+    const team = {
+      players: [
+        player({ id: 'p-lic', number: 3, first_name: 'Lea', last_name: 'Licenz', license_number: '123456' }),
+        player({ id: 'p-other', number: 4, first_name: 'Lea', last_name: 'Licenz', license_number: '999999', sort_order: 1 })
+      ],
+      staff: [{ id: 's1', role: 'Coach', first_name: 'Tina', last_name: 'Trainer', license_number: '222222' }]
+    }
+    const body = rosterToSavedRoster([
+      // a new number and another spelling: the same licence is the same player
+      { number: 11, firstName: 'Léa', lastName: 'Lizenz', dob: '123456' },
+      // a new licence for a player without one
+      { number: 12, firstName: 'Nina', lastName: 'Neu', dob: '7654321' }
+    ], [{ role: 'Assistant Coach 1', firstName: 'T', lastName: 'Other', dob: '222222' }], team)
+    expect(body.players.find(p => p.number === 11)).toMatchObject({ id: 'p-lic', license_number: '123456', first_name: 'Léa' })
+    expect(body.players.find(p => p.number === 12)).toMatchObject({ license_number: '7654321' })
+    expect(body.players.find(p => p.number === 12).id).toBeUndefined()
+    expect(body.players.find(p => p.id === 'p-other')).toMatchObject({ number: 4, license_number: '999999' })
+    expect(body.staff).toEqual([{ id: 's1', role: 'Assistant Coach 1', first_name: 'T', last_name: 'Other', license_number: '222222' }])
+    expect(body.players.every(p => !('dob' in p))).toBe(true)
+  })
+
+  it('a same-name player with another licence is someone else; a date of birth in the roster is no licence', () => {
+    const team = { players: [player({ id: 'p1', number: 5, first_name: 'Anna', last_name: 'Muster', license_number: '111111' })], staff: [] }
+    const other = rosterToSavedRoster([{ number: 5, firstName: 'Anna', lastName: 'Muster', dob: '222222' }], [], team)
+    expect(other.players.find(p => p.license_number === '222222').id).toBeUndefined()
+    expect(other.players.find(p => p.id === 'p1')).toMatchObject({ number: null, license_number: '111111' })
+    const dated = rosterToSavedRoster([{ number: 5, firstName: 'Anna', lastName: 'Muster', dob: '14.03.2008' }], [], team)
+    expect(dated.players).toEqual([{ id: 'p1', number: 5, first_name: 'Anna', last_name: 'Muster', license_number: '111111', is_libero: false, is_captain: false, active: true }])
   })
 
   // gap-fe-unread-dialogs-4: siblings of one family, the younger now wearing the elder's former number
@@ -128,7 +170,7 @@ describe('rosterToSavedRoster', () => {
     expect(younger.license_number).toBeNull()
     expect(elder).toMatchObject({ id: 'p-elder', number: 12, license_number: '111111' })
     // another coach of the same last name: a new official, without the licence
-    expect(body.staff).toEqual([{ role: 'Coach', first_name: 'Max', last_name: 'Sample', dob: null, license_number: null }])
+    expect(body.staff).toEqual([{ role: 'Coach', first_name: 'Max', last_name: 'Sample', license_number: null }])
   })
 
   it('twins of one date of birth who swapped numbers keep their own records', () => {
@@ -182,9 +224,9 @@ describe('rosterToSavedRoster', () => {
         { number: 9, firstName: 'Dora', lastName: 'Delta', dob: '01.02.2003', libero: 'libero1', isCaptain: false }
       ], [], team)
       expect(body.players.map(p => p.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
-      expect(body.players.find(p => p.id === 'd')).toMatchObject({ dob: '2003-02-01', is_libero: true, active: true })
-      // not chosen: as saved (Bea a libero, Cleo the captain, Eve inactive)
-      expect(body.players.find(p => p.id === 'b')).toEqual({ id: 'b', number: 4, first_name: 'Bea', last_name: 'Bravo', dob: '2001-03-04', license_number: null, is_libero: true, is_captain: false, active: true })
+      expect(body.players.find(p => p.id === 'd')).toMatchObject({ is_libero: true, active: true })
+      // not chosen: as saved (Bea a libero, Cleo the captain, Eve inactive), without the date of birth
+      expect(body.players.find(p => p.id === 'b')).toEqual({ id: 'b', number: 4, first_name: 'Bea', last_name: 'Bravo', license_number: null, is_libero: true, is_captain: false, active: true })
       expect(body.players.find(p => p.id === 'c')).toMatchObject({ number: 7, is_captain: true, active: true })
       expect(body.players.find(p => p.id === 'e')).toMatchObject({ number: 12, active: false })
       expect(validateSavedRoster(body)).toEqual([])
@@ -198,10 +240,14 @@ describe('rosterToSavedRoster', () => {
       expect(body.players.find(p => p.number === 15)).toMatchObject({ id: 'a', license_number: 'L-1' })
       expect(body.players.find(p => p.number === 3).id).toBeUndefined()
       expect(body.players).toHaveLength(6)
-      // a same-name player with another date of birth is someone else
-      const other = rosterToSavedRoster([{ number: 15, firstName: 'Ada', lastName: 'Alpha', dob: '01.01.2010' }], [], team)
+      // a same-name player with another licence is someone else (a date of
+      // birth is never compared: owner 2026-11-19)
+      const licensed = { ...team, players: team.players.map(p => (p.id === 'a' ? { ...p, license_number: '1111111' } : p)) }
+      const other = rosterToSavedRoster([{ number: 15, firstName: 'Ada', lastName: 'Alpha', dob: '7654321' }], [], licensed)
       expect(other.players.find(p => p.number === 15).id).toBeUndefined()
       expect(other.players.find(p => p.id === 'a')).toMatchObject({ number: 1, active: true })
+      const dated = rosterToSavedRoster([{ number: 15, firstName: 'Ada', lastName: 'Alpha', dob: '01.01.2010' }], [], team)
+      expect(dated.players.find(p => p.number === 15).id).toBe('a')
     })
 
     it('a kept player gives way on the number and the captaincy the roster now has', () => {

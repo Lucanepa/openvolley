@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.20 · As of 19 November 2026
+**OpenVolley and OpenBeach** · Version 1.21 · As of 19 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -31,10 +31,16 @@ version is binding.
   matches also by anyone on livescore.openvolley.app, unless it is switched
   off (section 7).
 - An electronic scoresheet contains data about players, team staff and
-  officials: names, shirt numbers, dates of birth and signatures. Only team
+  officials: names, shirt numbers, licence numbers and signatures. A date of
+  birth is on a match's own scoresheet only where the scorer types one (in the
+  Global tool the organiser chooses what is printed beside a name). Only team
   names, the score and shirt numbers are public, for beach volleyball also the
   players' names, as well as the referees' names for official matches.
   **Dates of birth, licence numbers and signatures are never public.**
+- No date of birth is kept anywhere else: not with accounts, club lists,
+  saved teams, rosters sent ahead, the referee directory or the schedule.
+  Those stored before 19 November 2026 were deleted, also from past
+  scoresheets (section 16).
 - The OpenVolley app keeps an activity log of each match, without PINs or
   passwords. When you are signed in it goes to the server. What you click or
   type stays on your device, except for a summary without the text you typed
@@ -119,8 +125,9 @@ for their data processing.
 ## 5. The scorer apps (browser, desktop, Android)
 
 **Without signing in**, the app stores everything only on your device:
-matches, teams, rosters with dates of birth, sets, match events, lists of
-officials, settings and the app's logs (see below). Matches stay stored until
+matches, teams, rosters (with licence numbers, and dates of birth where the
+scorer typed them), sets, match events, lists of officials, settings and the
+app's logs (see below). Matches stay stored until
 you delete them or clear the app data.
 
 **Live transfer, also without signing in.** As soon as a match is created,
@@ -132,8 +139,8 @@ local network instead.
 **When signed in**, the app syncs your matches with the server (section 7).
 It also uploads:
 
-- **Backup copies** of a match (complete, with rosters, dates of birth and
-  signatures). Only your account can read them. They are deleted after
+- **Backup copies** of a match (complete, with rosters and signatures). Only
+  your account can read them. They are deleted after
   30 days.
 - **App logs** (technical messages from the app; they can contain names and
   game numbers). Only your account can read them. They are deleted after
@@ -190,8 +197,9 @@ screen, and it is deleted after 30 days or beyond 50,000 entries.
 
 **Desktop app.** The desktop app also keeps automatic backup files of matches
 in your user folder (Linux: `~/.local/share/OpenVolley/backups`, Windows:
-`%APPDATA%\OpenVolley\backups`). They contain names and dates of birth, but no
-PINs, and are deleted after 30 days. From version 2.4.0 the OpenVolley
+`%APPDATA%\OpenVolley\backups`). They contain names (and dates of birth where
+the scorer typed them), but no PINs, and are deleted after 30 days.
+From version 2.4.0 the OpenVolley
 desktop app also writes a technical log file (`desktop.log`) to the folder
 `OpenVolley/logs`: start and quit, update checks and downloads, links and
 downloads opened (address without parameters, save location), the number of
@@ -227,14 +235,19 @@ match results as an official. Accounts are opened on
 `manager.openvolley.app` and `manager-beach.openvolley.app`.
 
 **Data:** email address, password (stored only as a hash, never in plain
-text), first and last name, country, date of birth (optional), the language chosen at sign-up (for
+text), first and last name, country, licence number (optional: your Swiss
+Volley licence number, 4 to 7 digits), the language chosen at sign-up (for
 the account's emails), roles (for
 example scorer, referee, competition manager), the apps the account is for
 (indoor, beach), times of creation, last sign-in and email confirmation. What
 you enter at sign-up is also kept as a copy with the account.
 
 **Purpose:** signing in, unlocking the features of your role, and pre-filling
-your own details on the scoresheet (name, country, date of birth).
+your own details on the scoresheet (name, country, licence number).
+
+**No date of birth:** sign-up and the profile do not ask for one, and the
+server keeps none (since 19 November 2026; dates of birth entered before were
+deleted, section 16).
 
 **New accounts** start without a role. An administrator approves them, or you
 redeem an invite code. The system records who redeemed which code and when.
@@ -318,16 +331,22 @@ you delete it yourself.
 ## 7. Match data and scoresheets
 
 **What a match contains:** game number, league, hall and town, teams (name,
-short name, colour), rosters with shirt number, first and last name, date of
-birth and libero or captain flag, team staff (role, name, date of birth),
-officials (referees, scorer, line judges with name, country, date of birth; referees optionally with an
-email address; the scorer optionally with a licence number instead of the date
-of birth), an optional contact email address per team,
+short name, colour), rosters with shirt number, first and last name, licence
+number and libero or captain flag, team staff (role, name, licence number),
+officials (referees, scorer, line judges with name, country and licence
+number; referees optionally with an email address), an optional contact email
+address per team,
 **signatures** (as images drawn on the device or on a phone), coin toss, the course of the
 match with all events, substitutions and sanctions, results and later
 corrections, and the **remarks** (the scoresheet's remarks box: what the
 scorer writes and the lines the app adds, for example for a forced
 substitution or a libero who becomes unable to play).
+
+**Licence number or date of birth:** in the Swiss version the value beside a
+name is the licence number. The scorer may type a date of birth there
+instead; it is then on that match's scoresheet only. In the Global tool the
+organiser of the tournament chooses what is printed beside a name: the date of
+birth, an ID number or a text.
 
 **Health data in a match:** a substitution or a libero change because a
 player is injured or ill, and an injury the scorer notes, is information about
@@ -344,10 +363,12 @@ section 20; kept with the match (section 16).
 **Who enters the data:** the scorer in the app, team managers on the roster
 page (`roster.openvolley.app`) and in the manager (section 10), competition managers through saved teams
 (section 10), and the official match assignments from Swiss Volley
-(section 11). Players do not enter their data themselves.
+(section 11). Players do not enter their data themselves. An Einsatzliste
+imported in the match setup fills in names, shirt numbers and licence
+numbers; the dates of birth on it are not taken over.
 
 **Purpose:** an electronic scoresheet for official matches: recording during
-the match, the official match record, checking eligibility and age category,
+the match, the official match record, checking eligibility (licence number),
 livescore.
 
 **Who sees what:**
@@ -579,8 +600,8 @@ On `manager.openvolley.app` and `manager-beach.openvolley.app`, competition
 managers can prepare teams and tournaments.
 
 **Saved teams:** team name, club, players with number, first and last name,
-date of birth, licence number, libero/captain and (beach) country; team staff
-with role, name, date of birth and licence number. Visible to the competition
+licence number, libero/captain and (beach) country; team staff with role,
+name and licence number; no dates of birth. Visible to the competition
 managers and the administrators of that sport. In OpenVolley a scorer account
 sees only the saved teams of its own matches of the current season (the teams
 of its clubs and their opponents, and the games of the matches it recorded or
@@ -588,13 +609,23 @@ edits); a scorer without a club only while the game is near and for a few
 games a week, each recorded in the change log. The scorer apps cache these
 teams and delete them on sign-out.
 
+**Filled from official matches (OpenVolley):** after the coin toss of an
+official indoor match (never a test or Easy match), the server adds the
+people of each team's roster to that team's saved team of the season: first
+and last name, shirt number and licence number. A person already there (the
+same licence number, else the same name) keeps their entry and gets the
+number of the latest match; a player of the saved team who had that number
+loses it. Nobody is removed, and the libero and captain flags of the saved
+team stay. People with a licence number are also added to the club's licence
+lists (below), when the club's lists do not have that licence number yet.
+
 **Team managers (OpenVolley):** a club's managers can give a link to the coach
 or manager of one of the club's teams; whoever opens it and signs in manages
 that team. The server stores which account manages which team, who added it
 and when. A team manager edits the team's saved team and can send the roster
 of each of the team's games ahead: players with number, first and last name,
-date of birth, licence number and libero/captain, and team staff with role,
-name, date of birth and licence number. If they want to, the coach and the
+licence number and libero/captain, and team staff with role, name and licence
+number; no dates of birth. If they want to, the coach and the
 captain can sign that roster ahead; the signatures are stored with it as
 images.
 
@@ -612,23 +643,22 @@ the account signs out, and at the latest 36 hours after the game.
 **Club licence lists (OpenVolley):** a club's managers can upload the
 club's lists of players, scorers and coaches from VolleyManager's club
 administration. The file is read in the browser: only the licence number, last
-name, first name, date of birth and gender of each person are kept; nothing
-else of the file is sent to the server. The lists are visible to the club's
-managers and the administrators. A team manager of the club sees the players
-of the team's gender and age class, with dates of birth only of the team's own
-people, and finds team officials (a coach can be anyone of the club's lists)
-with a name search that shows a few people at a time. The scoring devices of
-the club's scorers download the lists without dates of birth, so that the
-match setup can add players and team officials without internet; the date of
-birth of a person added to a roster is fetched for that person only (at most
-80 a day per account, each time recorded in the change log). The gender is
+name, first name and gender of each person are kept; the file's date of birth
+column is not read, and nothing else of the file is sent to the server. The
+lists are visible to the club's managers and the administrators. A team
+manager of the club sees the players of the team's gender and finds team
+officials (a coach can be anyone of the club's lists) with a name search that
+shows a few people at a time. The scoring devices of the club's scorers
+download the lists, so that the match setup can add players and team
+officials without internet. The gender is
 used so that a player is not put in a team of the other gender; it is not
 checked for team officials. Each upload replaces the people of the previous
 upload of that list; the lists are deleted with the club, and those of past
 seasons are deleted daily. The lists can also
 hold people that a team manager or a club manager added by hand from a team's
-roster (licence number, names, date of birth and gender only); an upload keeps
-them, and they are deleted with their list or the club. On a scoring device
+roster, and people of an official match's roster (above), with licence number,
+names and gender only; an upload keeps them, and they are deleted with their
+list or the club. On a scoring device
 the copy is replaced by each download and deleted when the account signs out.
 
 **Club API (OpenVolley):** a club's managers can make API tokens for the
@@ -638,9 +668,9 @@ manager who made it and stops working when it is revoked, expires or that
 person no longer manages the club. With it the club's software reads and,
 if the token allows it, writes the club's teams, the rosters sent ahead of
 its games, its saved teams and its licence lists, with the data described
-above (names, dates of birth, licence numbers), and the club's matches as the
-public interface shows them (section 8). Names, dates of birth and licence
-numbers are read only by a token that may also write them, and such a token
+above (names, shirt numbers, licence numbers), and the club's matches as the
+public interface shows them (section 8). Names and licence numbers are read
+only by a token that may also write them, and such a token
 needs the manager's password. The server stores only a fingerprint of the
 token, its name, rights, team, expiry and last use, and records who made or
 revoked it, each change made with it and each time it read those personal
@@ -655,7 +685,7 @@ dates of birth.
 
 **Purpose:** re-using rosters, preparing a game's roster ahead, adding a club's players and team officials
 to a roster and checking the players' gender against the team's, running tournaments, matching players by
-licence number when importing.
+licence number when importing, filling in shirt numbers for the next game.
 
 This data is kept until a manager deletes it, even if the account that
 created it is deleted.
@@ -665,16 +695,17 @@ created it is deleted.
 **Match assignments from Swiss Volley:** every day the server copies the
 official match assignments from Swiss Volley's VolleyManager, for the period
 from yesterday to 14 days ahead: teams, hall and address, league, 1st and 2nd
-referee with name and date of birth, line judges, call-ups. The server uses a
+referee with their names, line judges, call-ups. The server uses a
 VolleyManager account for this. Purpose: loading official matches with the
-correct officials. Names are public (section 8); dates of birth are visible
-only to the administrators and the accounts that score for that sport. The
-assignments are kept like the match records (section 16).
+correct officials. Names are public (section 8). VolleyManager also sends the
+referees' dates of birth; the server does not read or keep them (since
+19 November 2026; those kept before were deleted). The assignments are kept
+like the match records (section 16).
 
-**Referee directory:** a shared directory with first and last name, country,
-date of birth and sport, so the scorer does not have to enter officials again
-each time. Signed-in accounts can add entries (a date of birth only an
-account that scores); administrators can change and delete them. Only the
+**Referee directory:** a shared directory with first and last name, country
+and sport, so the scorer does not have to enter officials again each time; no
+dates of birth (those kept before 19 November 2026 were deleted). Accounts
+that score can add entries; administrators can change and delete them. Only the
 administrators and the accounts that score can see the directory, to fill in
 the officials of an official match; it is not public, and test and easy
 matches do not show it.
@@ -812,8 +843,8 @@ They process the data on my behalf.
 
 **Important about Cloudflare:** the encrypted connection from your device ends
 at Cloudflare; from there it continues encrypted to my server. Cloudflare can
-therefore technically see the content of requests, including rosters and
-dates of birth. Cloudflare may use the data only to provide its service.
+therefore technically see the content of requests, including rosters.
+Cloudflare may use the data only to provide its service.
 
 **Independently responsible** are: GitHub, Inc. (USA) for downloads and the
 version list, F-Droid for the app catalogue, Swiss Volley for the data in
@@ -846,7 +877,7 @@ copy of these safeguards.
 | Club managers | Until the administrators remove them, the club is deleted or you delete your account |
 | Team managers | Until a club manager or an administrator removes them, the team or the club is deleted, or you delete your account |
 | A roster sent ahead (players, staff, signatures) | Until a scorer accepts it, at the latest 14 days after the game; the note that it was accepted 14 days after the game |
-| A club's licence lists (licence number, names, date of birth, gender) | Until the next upload of that list, its deletion by a club manager or the deletion of the club, at the latest until the end of the season; people added by hand: until the list or the club is deleted, at the latest until the end of the season; on a scoring device until the next download or sign-out |
+| A club's licence lists (licence number, names, gender) | Until the next upload of that list, its deletion by a club manager or the deletion of the club, at the latest until the end of the season; people added by hand or from a match roster: until the list or the club is deleted, at the latest until the end of the season; on a scoring device until the next download or sign-out |
 | A referee's or a team's email address for a match | With the match, as part of the scoresheet |
 | Sending of the final scoresheet (time, number of recipients, no addresses) | With the match |
 | Scoresheet of a test match by email | Not stored on the server |
@@ -868,13 +899,35 @@ copy of these safeguards.
 | Backups | Up to about 6 months (section 18) |
 | Data on your device | Until you delete it; backup files of the desktop and Android app 30 days |
 
+**Dates of birth deleted (19 November 2026).** Since then no date of birth is
+kept outside a match's own scoresheet, and there only where the scorer typed
+one (section 7). The dates of birth stored before were deleted on the server:
+from the accounts (profile and the copy kept of the sign-up), the club licence
+lists, the saved teams, the rosters sent ahead, the referee directory, the
+match assignments from Swiss Volley and the past match records (rosters, team
+staff, officials, rosters uploaded by teams, the entries and remarks of
+corrections, the event history). Licence numbers stay. The stored scoresheet
+PDFs are made anew from the corrected records; a file that cannot be made anew
+this way (for example a beach scoresheet) stays as it is until I have checked
+it, and is not deleted without that check. What I cannot reach: emails already
+sent (for example a final scoresheet); the encrypted backups, which keep older
+copies for up to about 6 months (section 18); and copies outside my server,
+such as data on devices and backup files on a computer, a USB stick or in
+Android's "Documents" folder, until they are overwritten or deleted (an
+updated scorer app removes the dates of birth of the Swiss matches on its
+device that are not in progress). Global matches are not affected: their
+organiser chooses what is printed beside a name, and their files and cloud
+copies are kept as described in section 7.
+
 ## 17. Minors
 
-Many players are minors. Their data (name, number, date of birth) is not
+Many players are minors. Their data (name, number, licence number) is not
 entered by them but by clubs, team managers, scorers or organisers. These are
 responsible for being allowed to record the data and for informing the
-players and their parents. The date of birth is used to check eligibility and
-age category on the official scoresheet and is never public.
+players and their parents. A player's date of birth is kept only on a match's
+own scoresheet where the scorer types one (in the Global tool where the
+organiser chose it), never with the club lists, saved teams or rosters sent
+ahead; it is never public, and neither is the licence number.
 
 In the Global tool the organiser of the tournament or the scorer who enters
 the data is responsible in the same way. Parents can ask for the backup or the
@@ -924,7 +977,7 @@ not give data to the wrong person, I may ask for proof of your identity.
 record of a match, in which clubs, the association and officials have an
 interest. I delete or anonymise your data in it as far as the record does not
 need it, and I explain what remains and why. A correction (for example of a
-wrong date of birth) or a deletion is made in every copy on the server at
+misspelt name) or a deletion is made in every copy on the server at
 once: the match records with their history and logs, the club lists and saved
 teams, the referee directory and the match assignments. The shirt number and
 the role stay where the record needs them, and the scoresheet PDF is made
@@ -941,18 +994,19 @@ country.
 
 Where the GDPR applies, I rely on:
 
-- **Contract** (Art. 6(1)(b) GDPR): account, sync, account emails, support,
-  the features you use, the online backup and the cloud copy of the Global
-  tool.
+- **Contract** (Art. 6(1)(b) GDPR): account (with the optional licence
+  number), sync, account emails, support, the features you use, the online
+  backup and the cloud copy of the Global tool.
 - **Legitimate interests** (Art. 6(1)(f) GDPR): correct and verifiable
   official match records for clubs, the association and officials (rosters,
-  dates of birth to check eligibility, signatures, approvals, activity log and
-  event history, remarks), delivering the final scoresheet to officials and
-  clubs,
+  licence numbers and, where the scorer types one on the sheet, the date of
+  birth to check eligibility, signatures, approvals, activity log and event
+  history, remarks), saved teams and club lists filled from official match
+  rosters, delivering the final scoresheet to officials and clubs,
   livescore for the public, running tournaments,
   troubleshooting, security and protection against misuse, backups.
-- **Consent** (Art. 6(1)(a) GDPR): the optional date of birth in the account,
-  the update check of the directly installed Android app.
+- **Consent** (Art. 6(1)(a) GDPR): the update check of the directly installed
+  Android app.
 - **Health data** (an injury or illness recorded in a match, section 7): the
   Rules of the Game require the record of such a substitution and of a libero
   who can no longer play. Under the GDPR I rely on Art. 9(2)(f) (establishing,

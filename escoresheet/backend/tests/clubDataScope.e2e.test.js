@@ -10,11 +10,11 @@
  *      deletes and roster replacements are audited;
  *   3. two first saves of a team's squad at once make one competition and one
  *      saved team;
- *   4. a team manager gets the club's players of its team's gender and age
- *      class, dates of birth only of the people of its saved team (filled in
- *      on save), and finds an official by name (a few rows);
- *   5. a scorer's download has no dates of birth; the tablet asks for those
- *      of the people it adds, of its own clubs only;
+ *   4. a team manager gets the club's players of its team's gender (the age
+ *      class is shown, no longer a filter: db/048 took the dates of birth it
+ *      read), never a date of birth, and finds an official by name (a few rows);
+ *   5. a scorer's download has no dates of birth, and the route older apps
+ *      ask for them answers none (db/048);
  *   6. a licence number of another list is never added by hand, `manual` is
  *      per list, the rows by hand are bounded per club and per account a day,
  *      and a club manager deletes one of them;
@@ -38,7 +38,8 @@ const dayPlus = (day, n) => { const t = new Date(`${day}T12:00:00Z`); t.setUTCDa
 const YEAR = seasonOf(new Date())
 const SEASON = seasonLabel(YEAR)
 const PAST = seasonLabel(YEAR - 1)
-// the club's lists (made-up people): an under-16 girl, a woman, a boy, a girl without a date of birth, a coach
+// the club's lists (made-up people): an under-16 girl, a woman, a boy, a girl without a date of birth, a coach;
+// `dob` as an older manager build sends it (db/048: dropped, never stored or answered)
 const ALICE = { sv_number: '110001', last_name: 'Aebi', first_name: 'Alice', dob: `${YEAR - 14}-03-04`, gender: 'f' }
 const BEA = { sv_number: '110002', last_name: 'Brunner', first_name: 'Bea', dob: '1990-01-01', gender: 'f' }
 const CARL = { sv_number: '110003', last_name: 'Caduff', first_name: 'Carl', dob: `${YEAR - 15}-05-05`, gender: 'm' }
@@ -147,7 +148,9 @@ describe('club data: only what each role needs', { skip: SKIP }, () => {
       assert.deepEqual(r.json.data.teams.map((t) => t.id).sort(), [saved['VBC Alpha H1'], saved['VBC Beta H1']].sort())
       // never Gamma (Alpha plays there away), Delta, an archived or a past competition
       assert.deepEqual(r.json.data.competitions.map((c) => c.id), [saved.comp])
-      assert.equal(r.json.data.teams.find((t) => t.id === saved['VBC Beta H1']).players[0].dob, BEA.dob)
+      const bea = r.json.data.teams.find((t) => t.id === saved['VBC Beta H1']).players[0]
+      assert.equal(bea.license_number, BEA.sv_number)
+      assert.ok(!('dob' in bea), 'a saved team has no date of birth (db/048)')
       // the same with ?sport=all
       const all = await call(users.scorerA, 'GET', '/api/saved-teams?sport=all')
       assert.deepEqual(all.json.data.teams.map((t) => t.id).sort(), [saved['VBC Alpha H1'], saved['VBC Beta H1']].sort())
@@ -255,15 +258,15 @@ describe('club data: only what each role needs', { skip: SKIP }, () => {
   })
 
   describe('4. a team manager (be-clubs-teams-6, fe-manage-3)', () => {
-    it('gets the club\'s players of its team\'s gender and age class, without dates of birth', async () => {
+    it('gets the club\'s players of its team\'s gender (the age class shown, no filter), without dates of birth', async () => {
       const r = await call(users.coachU16, 'GET', `/api/team/${teams['VBC Alpha U16'].id}/club-players`)
       assert.equal(r.status, 200, r.text)
       assert.equal(r.json.data.gender, 'f')
       assert.equal(r.json.data.age_class, 'U16')
-      // the girls born late enough, and the one without a date of birth: never Bea (adult) or Carl (a boy)
-      assert.deepEqual(r.json.data.players.map((p) => p.sv_number), [ALICE.sv_number, DORA.sv_number])
-      assert.ok(r.json.data.players.every((p) => p.dob === null))
-      assert.deepEqual(r.json.data.people.map((p) => p.sv_number), [ALICE.sv_number, DORA.sv_number])
+      // the women and girls, Bea (an adult) too since db/048; never Carl (a boy)
+      assert.deepEqual(r.json.data.players.map((p) => p.sv_number), [ALICE.sv_number, BEA.sv_number, DORA.sv_number])
+      assert.ok([...r.json.data.players, ...r.json.data.people].every((p) => !('dob' in p)))
+      assert.deepEqual(r.json.data.people.map((p) => p.sv_number), [ALICE.sv_number, BEA.sv_number, DORA.sv_number])
       // the adult men's team: the men (Carl), no age class
       const h = await call(users.coachH1, 'GET', `/api/team/${teams['VBC Alpha H1'].id}/club-players`)
       assert.equal(h.json.data.age_class, null)
@@ -274,7 +277,7 @@ describe('club data: only what each role needs', { skip: SKIP }, () => {
       const path = (q) => `/api/team/${teams['VBC Alpha U16'].id}/club-people?q=${encodeURIComponent(q)}`
       const r = await call(users.coachU16, 'GET', path('coachm'))
       assert.equal(r.status, 200, r.text)
-      assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists, p.dob]), [[COACHY.sv_number, ['coaches'], null]])
+      assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists, 'dob' in p]), [[COACHY.sv_number, ['coaches'], false]])
       assert.equal(r.json.data.more, false)
       // by licence number, and Bea of the players list (an official may be anyone of the club)
       assert.deepEqual((await call(users.coachU16, 'GET', path(BEA.sv_number))).json.data.people.map((p) => p.last_name), ['Brunner'])
@@ -285,42 +288,42 @@ describe('club data: only what each role needs', { skip: SKIP }, () => {
       assert.equal((await call(users.coachH1, 'GET', `/api/team/${teams['VBC Alpha U16'].id}/club-people?q=coachm`)).status, 403)
     })
 
-    it('a person saved into the squad or a game roster gets the club\'s date of birth', async () => {
+    it('a squad or a game roster never gets a date of birth, not even one an older manager sends', async () => {
       const id = teams['VBC Alpha U16'].id
       const put = await call(users.coachU16, 'PUT', `/api/team/${id}/squad`, {
-        players: [player(4, { ...ALICE, dob: null }), player(5, DORA)],
-        staff: [{ role: 'Coach', first_name: COACHY.first_name, last_name: COACHY.last_name, license_number: COACHY.sv_number }]
+        players: [player(4, ALICE), player(5, DORA)],
+        staff: [{ role: 'Coach', first_name: COACHY.first_name, last_name: COACHY.last_name, license_number: COACHY.sv_number, dob: COACHY.dob }]
       })
       assert.equal(put.status, 200, put.text)
-      assert.deepEqual(put.json.data.squad.players.map((p) => [p.license_number, p.dob]), [[ALICE.sv_number, ALICE.dob], [DORA.sv_number, null]])
-      // an official is not of the team's players: no date of birth from the lists
-      assert.equal(put.json.data.squad.staff[0].dob, null)
-      // now in the saved team: their dates of birth are read
+      assert.deepEqual(put.json.data.squad.players.map((p) => [p.license_number, 'dob' in p]), [[ALICE.sv_number, false], [DORA.sv_number, false]])
+      assert.ok(!('dob' in put.json.data.squad.staff[0]))
+      const { rows } = await sql.query(
+        `SELECT count(*)::int AS n FROM (SELECT dob FROM public.competition_players UNION ALL SELECT dob FROM public.competition_staff) x WHERE dob IS NOT NULL`)
+      assert.equal(rows[0].n, 0)
       const r = await call(users.coachU16, 'GET', `/api/team/${id}/club-players`)
-      assert.equal(r.json.data.players.find((p) => p.sv_number === ALICE.sv_number).dob, ALICE.dob)
-      assert.equal(r.json.data.people.find((p) => p.sv_number === COACHY.sv_number).dob, null)
-      assert.equal((await call(users.coachU16, 'GET', `/api/team/${id}/club-people?q=coachm`)).json.data.people[0].dob, null)
+      assert.ok([...r.json.data.players, ...r.json.data.people].every((p) => !('dob' in p)))
+      assert.ok(!('dob' in (await call(users.coachU16, 'GET', `/api/team/${id}/club-people?q=coachm`)).json.data.people[0]))
       // a game roster the same way
-      const roster = await call(users.coachH1, 'PUT', `/api/team/${teams['VBC Alpha H1'].id}/roster?game=960001`, { players: [player(9, { ...CARL, dob: null })], staff: [] })
+      const roster = await call(users.coachH1, 'PUT', `/api/team/${teams['VBC Alpha H1'].id}/roster?game=960001`, { players: [player(9, CARL)], staff: [] })
       assert.equal(roster.status, 200, roster.text)
-      assert.equal(roster.json.data.roster.players[0].dob, CARL.dob)
+      assert.deepEqual(roster.json.data.roster.players[0], { number: 9, first_name: CARL.first_name, last_name: CARL.last_name, license_number: CARL.sv_number, is_libero: false, is_captain: false })
+      const { rows: [g] } = await sql.query("SELECT players FROM public.game_rosters WHERE game_number = '960001'")
+      assert.ok(g.players.every((p) => !('dob' in p)))
     })
   })
 
   describe('4b. a squad does not reveal people outside the team', () => {
-    it('someone of another age class or gender put into the squad gets no date of birth; the audit names the licence numbers', async () => {
+    it('someone of another gender put into the squad as an official: no date of birth anywhere; the audit names the licence numbers', async () => {
       const id = teams['VBC Alpha U16'].id
       const put = await call(users.coachU16, 'PUT', `/api/team/${id}/squad`, {
-        players: [player(4, { ...ALICE, dob: null }), player(6, { ...BEA, dob: null })],
+        players: [player(4, ALICE), player(6, BEA)],
         staff: [{ role: 'Coach', first_name: CARL.first_name, last_name: CARL.last_name, license_number: CARL.sv_number }]
       })
       assert.equal(put.status, 200, put.text)
-      assert.deepEqual(put.json.data.squad.players.map((p) => [p.license_number, p.dob]), [[ALICE.sv_number, ALICE.dob], [BEA.sv_number, null]])
-      assert.equal(put.json.data.squad.staff[0].dob, null)
+      assert.ok([...put.json.data.squad.players, ...put.json.data.squad.staff].every((p) => !('dob' in p)))
       const r = await call(users.coachU16, 'GET', `/api/team/${id}/club-players`)
-      assert.equal(r.json.data.people.find((p) => p.sv_number === BEA.sv_number).dob, null)
-      assert.equal(r.json.data.people.find((p) => p.sv_number === CARL.sv_number).dob, null)
-      assert.equal((await call(users.coachU16, 'GET', `/api/team/${id}/club-people?q=brunner`)).json.data.people[0].dob, null)
+      assert.ok(r.json.data.people.every((p) => !('dob' in p)))
+      assert.deepEqual(r.json.data.people.map((p) => p.sv_number).sort(), [ALICE.sv_number, BEA.sv_number, CARL.sv_number, DORA.sv_number].sort())
       const { rows: [a] } = await sql.query(
         "SELECT details FROM public.audit_log WHERE action = 'team.squad' AND details ->> 'team_id' = $1 ORDER BY id DESC LIMIT 1", [id])
       assert.deepEqual([a.details.added.sort(), a.details.removed.sort()], [[BEA.sv_number, CARL.sv_number].sort(), [COACHY.sv_number, DORA.sv_number].sort()])
@@ -328,39 +331,24 @@ describe('club data: only what each role needs', { skip: SKIP }, () => {
   })
 
   describe('5. a scorer (delta-be-managers-5)', () => {
-    it('downloads its clubs\' lists without dates of birth, and asks for those of the people it adds', async () => {
+    it('downloads its clubs\' lists without dates of birth; the route older apps ask for them answers none', async () => {
       const r = await call(users.scorerA, 'GET', '/api/club-licences')
       assert.equal(r.status, 200, r.text)
       const c = r.json.data.clubs.find((x) => x.club_id === clubs.Alpha.id)
       assert.ok(c.players.length >= 4 && c.people.length >= 5)
-      assert.ok([...c.players, ...c.people].every((p) => p.dob === null))
+      assert.ok([...c.players, ...c.people].every((p) => !('dob' in p)))
       const ask = (clubId, sv) => call(users.scorerA, 'GET', `/api/club-licences/dob?club=${clubId}&sv=${sv}`)
       const d = await ask(clubs.Alpha.id, [ALICE.sv_number, DORA.sv_number, COACHY.sv_number, '999999'].join(','))
       assert.equal(d.status, 200, d.text)
-      assert.deepEqual(d.json.data, { club_id: clubs.Alpha.id, people: [{ sv_number: ALICE.sv_number, dob: ALICE.dob }, { sv_number: COACHY.sv_number, dob: COACHY.dob }] })
-      // never another club's, never more than a roster's
-      assert.equal((await ask(clubs.Beta.id, ALICE.sv_number)).status, 404)
-      assert.equal((await ask(clubs.Alpha.id, Array.from({ length: 31 }, (_, i) => String(500000 + i)).join(','))).status, 400)
-      assert.equal((await ask(clubs.Alpha.id, 'abc')).status, 400)
+      assert.deepEqual(d.json.data, { club_id: clubs.Alpha.id, people: [] })
+      // any club, any query: nothing to answer, nothing looked up or audited
+      assert.deepEqual((await ask(clubs.Beta.id, ALICE.sv_number)).json.data.people, [])
+      assert.deepEqual((await ask(clubs.Alpha.id, 'abc')).json.data.people, [])
+      const { rows } = await sql.query("SELECT count(*)::int AS n FROM public.audit_log WHERE action = 'club.licences.dob'")
+      assert.equal(rows[0].n, 0)
+      // the same rights as before: a scorer's route
       assert.equal((await call(users.coachU16, 'GET', `/api/club-licences/dob?club=${clubs.Alpha.id}&sv=${ALICE.sv_number}`)).status, 403)
       assert.equal((await call(null, 'GET', `/api/club-licences/dob?club=${clubs.Alpha.id}&sv=${ALICE.sv_number}`)).status, 401)
-    })
-
-    it('cannot read the whole lists in chunks: so many dates of birth a day, each lookup audited', async () => {
-      const all = [ALICE, BEA, CARL, COACHY, ...helpers].map((p) => p.sv_number).join(',')
-      let got = 0
-      let last
-      for (let i = 0; i < 10; i++) {
-        last = await call(users.scorerA, 'GET', `/api/club-licences/dob?club=${clubs.Alpha.id}&sv=${all}`)
-        if (last.status !== 200) break
-        got += last.json.data.people.length
-      }
-      assert.equal(last.status, 429, last.text)
-      assert.equal(last.json.error.code, 'OV_DOB_LIMIT')
-      assert.ok(got <= 80, String(got))
-      const { rows } = await sql.query("SELECT details FROM public.audit_log WHERE action = 'club.licences.dob' AND actor_id = $1", [users.scorerA.id])
-      assert.equal(rows.reduce((n, r) => n + r.details.count, 0), got + 2)
-      assert.ok(rows.every((r) => r.details.club_id === clubs.Alpha.id && Object.keys(r.details).length === 2))
     })
   })
 
@@ -380,11 +368,11 @@ describe('club data: only what each role needs', { skip: SKIP }, () => {
       await sql.query(`INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, dob, gender, source)
         VALUES ($1, 'players', $2, 'Erfunden', 'Nemo', '2000-02-02', 'm', 'manual')`, [clubs.Alpha.id, COACHY.sv_number])
       const s = (await call(users.scorerA, 'GET', '/api/club-licences')).json.data.clubs.find((x) => x.club_id === clubs.Alpha.id)
-      assert.deepEqual(s.players.find((x) => x.sv_number === COACHY.sv_number), { sv_number: COACHY.sv_number, last_name: 'Erfunden', first_name: 'Nemo', dob: null, gender: 'm', manual: true })
+      assert.deepEqual(s.players.find((x) => x.sv_number === COACHY.sv_number), { sv_number: COACHY.sv_number, last_name: 'Erfunden', first_name: 'Nemo', gender: 'm', manual: true })
       const p = s.people.find((x) => x.sv_number === COACHY.sv_number)
       assert.deepEqual([p.last_name, p.first_name, p.lists, p.manual], ['Coachmann', 'Ueli', ['players', 'coaches'], false])
       const c = (await people()).find((x) => x.sv_number === COACHY.sv_number)
-      assert.equal(c.dob, COACHY.dob)
+      assert.ok(!('dob' in c), 'a date of birth still in the table (a row of before) is never answered')
       assert.deepEqual(c.hand_rows.map((h) => h.list), ['players'])
     })
 

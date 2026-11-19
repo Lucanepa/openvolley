@@ -7,7 +7,8 @@
  * Choose players in the roster editor writes nothing before its Save.
  * A roster of more than 14 players is not ready for the coin toss.
  * "Add from club" (db/024, the device's copy): a bench official from anyone
- * of the club's lists, of either gender.
+ * of the club's lists, of either gender. An Einsatzliste and "Add from club"
+ * take the shirt numbers of the side's saved team (owner 2026-11-19).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react'
@@ -19,8 +20,8 @@ vi.mock('react-i18next', () => ({
   })
 }))
 vi.mock('../../contexts/AlertContext', () => ({ useAlert: () => ({ showAlert: vi.fn(), showConfirm: vi.fn() }) }))
-const auth = vi.hoisted(() => ({ user: null }))
-vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: auth.user, profile: null, getCachedProfile: () => null }) }))
+const auth = vi.hoisted(() => ({ user: null, access: undefined }))
+vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: auth.user, profile: null, getCachedProfile: () => null, access: auth.access }) }))
 
 // useLiveQuery: run the query once per deps change (no Dexie observation)
 vi.mock('dexie-react-hooks', async () => {
@@ -117,6 +118,7 @@ beforeEach(() => {
   store.tables = {}
   store.nextId = 100
   auth.user = null
+  auth.access = undefined
   globalThis.ResizeObserver ||= class { observe() {} unobserve() {} disconnect() {} }
 })
 afterEach(() => {
@@ -211,29 +213,58 @@ describe('MatchSetup smoke render', () => {
     expect(insert.payload.officials.find((o) => o.role === '1st referee').email).toBe('rita.ref@example.ch')
   })
 
-  // The coin toss needs the scorer's date of birth, or a licence number in its
-  // place (owner 2026-11-15): the licence is saved with the scorer and lifts the note
-  it('a scorer licence number lifts the missing date of birth and is saved with the scorer', async () => {
+  // A Swiss match carries the licence beside each name, or a date of birth
+  // typed with its dots (owner 2026-11-19): one field per official, a text
+  // field (the iPad's numeric keypad has no "."), the licence kept as typed,
+  // the date tidied; the scorer's value lifts the coin-toss note
+  it('a Swiss official\'s value is a licence or a date of birth; the scorer\'s lifts the coin-toss note', async () => {
     store.tables.matches = new Map([[1, {
       id: 1, status: 'setup', seed_key: 'match_1_lic', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
       homeTeamId: 11, awayTeamId: 12, homeName: 'Home V', awayName: 'Away V', homeShortName: 'HOM', awayShortName: 'AWA',
       scheduledAt: '2026-10-29T18:00:00.000Z', game_n: 991408, league: '3L', hall: 'Halle A', city: 'Zürich',
       officials: [
-        { role: '1st referee', firstName: 'Rita', lastName: 'Ref', country: 'CHE', dob: '01.01.1990' },
+        { role: '1st referee', firstName: 'Rita', lastName: 'Ref', country: 'CHE', dob: '01.01.1900' },
         { role: 'scorer', firstName: 'Sara', lastName: 'Schreiber', country: 'CHE', dob: '01.01.1900' }
       ], ...PINS
     }]])
     store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
     render(<Setup matchId={1} />)
     fireEvent.click((await screen.findAllByRole('button', { name: 'common.edit' }))[0])
-    const licence = await screen.findByLabelText('matchSetup.scorer matchSetup.licenceNumber')
+    const scorer = await screen.findByTestId('scorer-id')
+    // one field, no separate licence input; text, not the numeric keypad
+    expect(screen.queryByTestId('scorer-licence')).toBeNull()
+    expect(scorer).toHaveAttribute('inputMode', 'text')
+    expect(scorer).toHaveValue('') // the 01.01.1900 placeholder shows empty
     expect(screen.getByText('matchSetup.dobRequiredForCoinToss')).toBeTruthy()
-    fireEvent.change(licence, { target: { value: ' SV 12345 ' } })
+    fireEvent.change(scorer, { target: { value: '123456' } })
     await waitFor(() => expect(screen.queryByText('matchSetup.dobRequiredForCoinToss')).toBeNull())
+    const ref1 = screen.getByTestId('ref1-id')
+    fireEvent.change(ref1, { target: { value: '14.3.2008' } })
+    fireEvent.blur(ref1)
+    await waitFor(() => expect(ref1).toHaveValue('14.03.2008'))
     fireEvent.click(await screen.findByRole('button', { name: 'matchSetup.save' }))
-    await waitFor(() => expect(store.tables.matches.get(1).officials.find((o) => o.role === 'scorer')?.licence).toBe('SV 12345'))
+    await waitFor(() => expect(store.tables.matches.get(1).officials.find((o) => o.role === 'scorer')?.dob).toBe('123456'))
+    expect(store.tables.matches.get(1).officials.find((o) => o.role === '1st referee').dob).toBe('14.03.2008')
     const insert = queued().find((j) => j.resource === 'match' && j.action === 'insert')
-    expect(insert.payload.officials.find((o) => o.role === 'scorer').licence).toBe('SV 12345')
+    // the server gets the licence as it is, a date as ISO
+    expect(insert.payload.officials.find((o) => o.role === 'scorer').dob).toBe('123456')
+    expect(insert.payload.officials.find((o) => o.role === '1st referee').dob).toBe('2008-03-14')
+  })
+
+  // An older match kept the scorer's licence in a field of its own: it shows
+  // in the value field and still identifies the scorer
+  it('an older match\'s scorer licence field shows in the value and identifies the scorer', async () => {
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_old', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, homeName: 'Home V', awayName: 'Away V', homeShortName: 'HOM', awayShortName: 'AWA',
+      scheduledAt: '2026-10-29T18:00:00.000Z', game_n: 991409, league: '3L', hall: 'Halle A', city: 'Zürich',
+      officials: [{ role: 'scorer', firstName: 'Sara', lastName: 'Schreiber', country: 'CHE', dob: '', licence: '7654' }], ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'common.edit' }))[0])
+    await waitFor(() => expect(screen.getByTestId('scorer-id')).toHaveValue('7654'))
+    expect(screen.queryByText('matchSetup.dobRequiredForCoinToss')).toBeNull()
   })
 
   // A test match never reaches the cloud: saving its edited info once queued a
@@ -562,5 +593,110 @@ describe('MatchSetup smoke render', () => {
     fireEvent.click(screen.getByTestId('club-picker-add'))
     await waitFor(() => expect([...document.querySelectorAll('.bench-grid input.cell-last')].map((i) => i.value)).toEqual(['Trainer']))
     expect(shields('.bench-grid')).toEqual(['club'])
+    // the link brings the club person's licence, never a date of birth
+    expect(document.querySelector('.bench-grid .cell-dob input').value).toBe('200001')
+  })
+
+  // Owner 2026-11-19: "delete test roster from official games (anything but
+  // test and easy)"
+  it.each([[true, true], [false, false]])('a match with test: %s offers "Load test roster": %s', async (test, shown) => {
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', test, seed_key: test ? null : 'match_1_testroster', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991411, ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
+    await screen.findByText('roster.deleteRoster')
+    expect(!!screen.queryByTestId('load-test-roster-home')).toBe(shown)
+  })
+
+  // Owner 2026-11-19: "for switzerland: import only the licence number from
+  // the einsatzliste": a typed value in the roster is a licence or a date
+  it('a Swiss roster row takes a licence or a date of birth in its value field', async () => {
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_value', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991412, ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    store.tables.players = new Map([
+      [501, { id: 501, teamId: 11, number: 1, lastName: 'Licenz', firstName: 'Lea', dob: '', libero: '' }],
+      [502, { id: 502, teamId: 11, number: 2, lastName: 'Datum', firstName: 'Dana', dob: '', libero: '' }]
+    ])
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
+    await waitFor(() => expect(document.querySelectorAll('.roster-grid:not(.roster-add) .cell-dob input')).toHaveLength(2))
+    const [a, b] = document.querySelectorAll('.roster-grid:not(.roster-add) .cell-dob input')
+    expect(a).toHaveAttribute('inputMode', 'text')
+    fireEvent.change(a, { target: { value: '123456' } })
+    fireEvent.change(b, { target: { value: '14.03.2008' } })
+    fireEvent.blur(b)
+    await waitFor(() => expect(b).toHaveValue('14.03.2008'))
+    expect(a).toHaveValue('123456')
+  })
+
+  // Owner 2026-11-19: the server keeps each official match's numbers in the
+  // team's saved team; the device's copy fills them into an Einsatzliste
+  // (none on the list) and into "Add from club", never a number taken
+  it('an Einsatzliste and Add from club take the numbers of the side\'s saved team', async () => {
+    auth.user = { id: 'u1' }
+    auth.access = { canReadTeams: true, canScore: true }
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_numbers', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991410, ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    // the saved team on the device, fresh (no download)
+    store.tables.saved_teams_meta = new Map([['bundle', { key: 'bundle', userId: 'u1', version: '1', fetchedAt: new Date().toISOString(), competitions: [] }]])
+    store.tables.saved_teams = new Map([['st1', {
+      id: 'st1', name: 'Home V', svrzTeamName: 'Home V', nameKey: 'home v', svrzKey: 'home v',
+      competition: { id: 'c1', season: '2026/27', archived: false, sport: 'indoor' },
+      players: [
+        { id: 'p1', number: 9, first_name: 'Marco', last_name: 'Probe', license_number: '100003', active: true },
+        { id: 'p2', number: 4, first_name: 'Lea', last_name: 'Müller', license_number: null, active: true },
+        { id: 'p3', number: 12, first_name: 'Ida', last_name: 'Taken', license_number: '100005', active: true }
+      ],
+      staff: []
+    }]])
+    store.tables.club_players = new Map([['c1', {
+      clubId: 'c1', clubName: 'VBC Home', teamNames: ['Home V'], teamGenders: { 'Home V': 'm' }, userId: 'u1', fetchedAt: '2026-11-09T10:00:00Z',
+      players: [{ sv_number: '100005', last_name: 'Taken', first_name: 'Ida', gender: null }],
+      people: [{ sv_number: '100005', last_name: 'Taken', first_name: 'Ida', gender: null, lists: ['players'] }]
+    }]])
+    const { parseRosterPdf } = await import('../../utils/parseRosterPdf')
+    parseRosterPdf.mockResolvedValue({
+      players: [
+        { firstName: 'Marco', lastName: 'Probe', licence: '100003', number: null },
+        // by name (accents aside), no licence on the saved team
+        { firstName: 'Lea', lastName: 'Muller', licence: '100004', number: null },
+        { firstName: 'Neu', lastName: 'Unbekannt', licence: '100006', number: null },
+        // the list's own number stays
+        { firstName: 'Own', lastName: 'Number', licence: '100007', number: 12 }
+      ],
+      coach: null, ac1: null, ac2: null
+    })
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
+    const input = await waitFor(() => {
+      const el = document.querySelector('input[type="file"][accept=".pdf"]')
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.change(input, { target: { files: [new File(['%PDF'], 'einsatzliste.pdf', { type: 'application/pdf' })] } })
+    fireEvent.click(await screen.findByRole('button', { name: 'matchSetup.importPdf' }))
+    const lastNames = () => [...document.querySelectorAll('.roster-grid:not(.roster-add) input.cell-last')].map((i) => i.value)
+    const numbersOf = () => [...document.querySelectorAll('.roster-grid:not(.roster-add) input[aria-label="Player number"]')].map((i) => i.value)
+    await waitFor(() => expect(lastNames()).toHaveLength(4))
+    const byName = Object.fromEntries(lastNames().map((n, i) => [n, numbersOf()[i]]))
+    expect(byName).toEqual({ Probe: '9', Muller: '4', Unbekannt: '', Number: '12' })
+    // "Add from club": the saved team's 12 is taken in the roster: none
+    fireEvent.click(screen.getByTestId('add-from-club-home'))
+    const picker = await screen.findByTestId('club-picker')
+    expect(picker.textContent).toContain('clubPlayers.shirtNumber')
+    fireEvent.click(within(picker).getAllByRole('checkbox')[0])
+    fireEvent.click(screen.getByTestId('club-picker-add'))
+    await waitFor(() => expect(lastNames()).toContain('Taken'))
+    const after = Object.fromEntries(lastNames().map((n, i) => [n, numbersOf()[i]]))
+    expect(after.Taken).toBe('')
   })
 })

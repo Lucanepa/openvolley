@@ -73,7 +73,8 @@ describe('a game\'s roster is a page of its own', () => {
   it('opens straight from the URL, and says so for a game not in the schedule', async () => {
     const { unmount } = render(<Routed initial="t-h1/950001" />)
     await screen.findByTestId('game-roster')
-    expect(api.team.roster).toHaveBeenCalledWith('t-h1', '950001')
+    // the page can show before its roster request runs on a busy machine: wait for it
+    await waitFor(() => expect(api.team.roster).toHaveBeenCalledWith('t-h1', '950001'))
     unmount()
     render(<Routed initial="t-h1/123" />)
     await waitFor(() => expect(tr).toHaveBeenCalledWith('manage.myTeams.gameNotFound', { number: '123' }))

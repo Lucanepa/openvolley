@@ -6,7 +6,8 @@ import { REMARKS_MIN_PX } from '../components/FooterSection'
 import { NUMBER_CIRCLE_MM, SERVICE_NUMBER_PX, SUB_CIRCLE_MM, LINEUP_NUMBER_PT, TWO_DIGIT_INK_RADIUS_EM, MARK_STROKE } from '../components/Marks'
 
 // The owner's request of 2026-10-07 on the printed sheet and its PDF:
-// OpenVolley instead of Swiss Volley, the new ball, "DoB" in APPROVAL, a file
+// OpenVolley instead of Swiss Volley, the new ball, "DoB" in APPROVAL ("Licence"
+// since 2026-11-19), a file
 // name with the real teams, a valid PDF and where it went.
 
 // ---- the PDF libraries: a canvas of the sheet's size, a PDF that is a PDF
@@ -113,12 +114,13 @@ describe('the generated sheet', () => {
     expect(getByTestId('header-match-no').textContent).toBe('77')
   })
 
-  it('APPROVAL: a "DoB" column (no "Lic."), dates of birth as DD.MM.YYYY, placeholder left empty', () => {
+  it('APPROVAL: a "Licence" column (owner 2026-11-19), dates of birth as DD.MM.YYYY, placeholder left empty', () => {
     const { container, getByTestId } = render(<App matchData={fixture()} autoAction="preview" />)
     const text = sheetText(container)
     const approval = text.slice(text.indexOf('APPROVAL'), text.indexOf('Line Judges'))
-    expect(approval).toContain('OfficialNameCountryDoBSignature')
-    expect(approval).not.toContain('Lic')
+    expect(approval).toContain('OfficialNameCountryLicenceSignature')
+    expect(approval).not.toContain('DoB')
+    expect(approval).not.toContain('Lic.')
     expect(getByTestId('approval-dob-0').textContent).toBe('19.04.1982')
     expect(getByTestId('approval-dob-1').textContent).toBe('02.09.1979')
     expect(getByTestId('approval-dob-2').textContent).toBe('') // 01.01.1900
@@ -156,16 +158,16 @@ describe('the generated sheet', () => {
     expect(text).toContain('02.09.1979')
   })
 
-  it('rosters: DoB | No | Name (no licence column), sorted by number, normalised dates, a short name always', () => {
+  it('rosters: Licence | No | Name, sorted by number, normalised dates, a short name always', () => {
     const data = fixture({ match: { awayShortName: '' } })
     const { container } = render(<App matchData={data} autoAction="preview" />)
     const text = sheetText(container)
-    const home = text.slice(text.indexOf('MUST-H1DoBNoName'))
-    expect(home.startsWith('MUST-H1DoBNoName')).toBe(true)
+    const home = text.slice(text.indexOf('MUST-H1LicenceNoName'))
+    expect(home.startsWith('MUST-H1LicenceNoName')).toBe(true)
     // 1, 3, 7, 12 in shirt-number order, ISO dates as DD.MM.YYYY
     expect(home).toMatch(/01\.03\.19981Home1, A\.03\.03\.19983Home3, A\.07\.03\.19987Home7, A\.03\.03\.199812Home12, A\./)
     // the away short name was empty: the team name
-    expect(text).toContain('BVolley Spada Academica H1DoBNoName')
+    expect(text).toContain('BVolley Spada Academica H1LicenceNoName')
     expect(text).toContain('02.03.19982Away2, X.')
     expect(text).not.toContain('Lic.')
   })

@@ -51,6 +51,10 @@
  *   recordOldPdfs({ apply })                 operator step after db/033
  *                                            (scripts/scoresheet-records.mjs): the PDF
  *                                            of each match closed before it, recorded
+ *   rewriteRecordedWithVector({ matchId,     operator step after db/048
+ *               reason })                    (scripts/scrub-sheet-birthdates.mjs): every
+ *                                            recorded PDF of the match replaced in place by
+ *                                            one vector PDF of its (scrubbed) record
  *
  * Where the scorer apps put the files ('scoresheets' bucket; OpenVolley:
  * frontend/src/utils/scoresheetUploader.js, OpenBeach:
@@ -1467,6 +1471,75 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     return storeRebuiltPdf({ actorId, matchId, data: out.pdf, why, mode: 'vector', extra: { render_ms: out.ms } })
   }
 
+  /**
+   * Operator step after db/048 (scripts/scrub-sheet-birthdates.mjs): every
+   * recorded PDF of match `matchId` (public.match_scoresheets) replaced IN
+   * PLACE by one vector PDF that the render service draws from the server's
+   * record, `reason` printed on it as a rebuild's (rebuildReason): the same
+   * paths and owners (the view link, the final mail and the Scoresheets tab
+   * keep working), each record's sha256, size and stored_at new, one
+   * scoresheet.rebuild entry (mode 'vector', the reason, replaced: n). A test
+   * match too (its PDFs carry names as well). Nothing is removed: a match it
+   * cannot draw keeps its files as they are:
+   *   OV_RENDER_UNAVAILABLE  no render service on this server
+   *   OV_BEACH_SHEET         a beach match (the service prints the indoor sheet only)
+   *   OV_RECORD_INCOMPLETE   the record does not end as its close says (setsMatchClose):
+   *                          the device's PDF stays rather than a sheet with points missing
+   *   OV_NO_OWNER            a file without an owner record (lib/storage.js keeps it)
+   *   the render's code      the service could not make it
+   * -> { ok: true, replaced, paths } | { ok: false, code, paths }
+   */
+  async function rewriteRecordedWithVector ({ matchId, reason } = {}) {
+    const why = rebuildReason(reason)
+    if (!isUuid(matchId) || !why) return { ok: false, code: 'OV_INVALID', paths: [] }
+    const { rows } = await pool.query(
+      'SELECT path, stored_by FROM public.match_scoresheets WHERE match_id = $1 ORDER BY stored_at, path', [matchId])
+    const paths = rows.map((r) => r.path)
+    if (!rows.length) return { ok: false, code: 'OV_SCORESHEET_NOT_FOUND', paths }
+    if (!vector?.enabled) return { ok: false, code: 'OV_RENDER_UNAVAILABLE', paths }
+    if (!db?.withTransaction) return { ok: false, code: 'OV_DB_UNAVAILABLE', paths }
+    const record = await renderRecord(matchId)
+    if (!record) return { ok: false, code: 'OV_MATCH_NOT_FOUND', paths }
+    if (String(record.match.sport_type ?? '') === 'beach') return { ok: false, code: 'OV_BEACH_SHEET', paths }
+    if (!setsMatchClose(record)) return { ok: false, code: 'OV_RECORD_INCOMPLETE', paths }
+    const out = await vector.render({ record, rebuildReason: why, rebuiltAt: new Date(now()).toISOString() })
+    if (!out.ok) return { ok: false, code: out.code || 'OV_RENDER_FAILED', paths }
+    const sha256 = createHash('sha256').update(out.pdf).digest('hex')
+    const fileBase64 = out.pdf.toString('base64')
+    const done = []
+    for (const row of rows) {
+      const owners = await storage.getOwners({ bucket: SCORESHEETS_BUCKET, path: row.path }).catch(() => [])
+      const by = owners.find(isUuid) ?? null
+      if (!by) return { ok: false, code: 'OV_NO_OWNER', paths, replaced: done.length }
+      // one file and its record at a time, under the match's lock (storePdf's):
+      // a file written is never left with an older record
+      const r = await db.withTransaction(async (client) => {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ov.scoresheet:${matchId}`])
+        const up = await storage.handle('upload', { bucket: SCORESHEETS_BUCKET, path: row.path, fileBase64, contentType: 'application/pdf', upsert: true },
+          { userId: by, adopt: (o) => o })
+        if (up.status !== 200) return up
+        await client.query('UPDATE public.match_scoresheets SET sha256 = $2, size = $3, stored_at = now() WHERE path = $1',
+          [row.path, sha256, out.pdf.length])
+        return up
+      })
+      if (r.status !== 200) return { ok: false, code: r.body?.error?.code || 'OV_STORE_FAILED', paths, replaced: done.length }
+      done.push(row.path)
+    }
+    await accounts.audit(null, {
+      action: 'scoresheet.rebuild',
+      matchId,
+      details: {
+        game_n: record.match.game_n ?? null,
+        external_id: record.match.external_id ?? null,
+        reason: why,
+        mode: 'vector',
+        replaced: done.length,
+        render_ms: out.ms
+      }
+    })
+    return { ok: true, replaced: done.length, paths }
+  }
+
   // the waits of queueVectorCopy (tests shorten them: server.js OV_VECTOR_TEST_TIMES, never in production)
   const VT = {
     quietMs: VECTOR_QUIET_MS,
@@ -1583,5 +1656,5 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     return { status: 200, file: { ...v.file, disposition: 'inline' } }
   }
 
-  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles, recordOldPdfs, matchForRebuild, rebuildPdf, rebuildVector, queueVectorCopy, vectorPending }
+  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles, recordOldPdfs, matchForRebuild, rebuildPdf, rebuildVector, rewriteRecordedWithVector, queueVectorCopy, vectorPending }
 }

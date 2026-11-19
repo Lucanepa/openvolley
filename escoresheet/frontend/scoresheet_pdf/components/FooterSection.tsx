@@ -555,7 +555,7 @@ const ApprovalsView: React.FC<ApprovalsProps> = ({ officials = [], match, teamAK
                  <div className={`${APPROVAL_COL.official} pl-2 flex items-center`}>Official</div>
                  <div className={`${APPROVAL_COL.name} pl-2 flex items-center`}>Name</div>
                  <div className={`${APPROVAL_COL.country} flex items-center justify-center`}>Country</div>
-                 {/* the paper's "Lizenz-Nr." column holds the date of birth (SC p.9-11) */}
+                 {/* the paper's "Lizenz-Nr." column: the licence, or a date of birth (idHeadingOf) */}
                  <div className={`${APPROVAL_COL.dob} flex items-center justify-center`}>{idHeadingOf(match)}</div>
                  <div className="flex-1 flex items-center justify-center">Signature</div>
             </div>
@@ -580,7 +580,7 @@ const ApprovalsView: React.FC<ApprovalsProps> = ({ officials = [], match, teamAK
                         </div>
 
                         <div className={`${APPROVAL_COL.dob} flex items-center justify-center text-[9px] leading-none`} data-testid={`approval-dob-${idx}`}>
-                            {/* no date of birth: the licence number, as the paper's "Lizenz-Nr." */}
+                            {/* the value (a licence, or a date of birth); an older match's scorer licence field */}
                             {fullName ? (formatDob(official?.dob) || official?.licence || '') : ''}
                         </div>
                         <div className="flex-1 relative flex items-center justify-center min-h-0 min-w-0">
@@ -716,11 +716,11 @@ interface RosterProps {
    * players flagged libero, re-designated ones left out.
    */
   liberos?: Player[];
-  /** The heading beside the numbers: DoB, ID or Info (idHeadingOf). */
+  /** The heading beside the numbers: Licence, DoB, ID or Info (idHeadingOf). */
   idHeading?: string;
 }
 
-const RosterView: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false, liberos: liberoList, idHeading = 'DoB' }) => {
+const RosterView: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false, liberos: liberoList, idHeading = 'Licence' }) => {
     // bench_home / bench_away may be null or an object in older rows
     const staff: any[] = Array.isArray(benchStaff) ? benchStaff : [];
 
@@ -732,9 +732,10 @@ const RosterView: React.FC<RosterProps> = ({ team, side, players = [], benchStaf
     const captainSignature = preGameCaptainSignature || '';
     const coachSignature = preGameCoachSignature || '';
 
-    // DoB | No | Name, as the Matchblatt roster (field-spec 3): its "Lizenz-Nr." column
-    // holds the date of birth (SC p.10), so there is no separate licence column.
-    // Owner 2026-10-07: the roster's whole width, the DoB never clipped and every
+    // Licence | No | Name, as the Matchblatt roster (field-spec 3): its "Lizenz-Nr." column
+    // holds the licence or, when the scorer typed one, the date of birth (owner
+    // 2026-11-19; a Global match: DoB, ID or Info).
+    // Owner 2026-10-07: the roster's whole width, the value never clipped and every
     // name on one line. DD.MM.YYYY at 8.5 px tabular figures is ~45 px; the name
     // takes all the rest (and shrinks to fit, never wraps).
     const gridClass = "grid grid-cols-[52px_20px_minmax(0,1fr)]";

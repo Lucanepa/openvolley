@@ -137,7 +137,8 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
       ['5002', '25/10/2026', '19:00'],
       ['5003', '10/10/2026', '18:00']
     ])
-    assert.equal(rows[1].dob, '1990-03-05')
+    // VolleyManager's birthday of the referee is never read (db/048)
+    assert.deepEqual(rows.map((x) => x.dob), [null, null, null])
     assert.deepEqual(rows[0].convocations, ['Muster Anna'])
 
     // Same data again: nothing changes but synced_at
