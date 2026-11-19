@@ -249,9 +249,9 @@
     "pointsPerSet": "Punti per set",
     "pointsDeciding": "Set decisivo",
     "loadingScheduleGame": "Caricamento della partita…",
-    "scorerDobForCoinToss": "Segnapunti: data di nascita o numero di licenza necessari per il sorteggio",
+    "scorerDobForCoinToss": "Segnapunti: licenza (o data di nascita) necessaria per il sorteggio",
     "guestNote": "Nuova partita senza account: resta su questo dispositivo, con un backup sotto il suo codice di backup. Le squadre salvate, le liste del club e l'elenco degli arbitri richiedono l'accesso (Partita SV).",
-    "dobRequiredForCoinToss": "Per il sorteggio: inserisci una data di nascita o un numero di licenza",
+    "dobRequiredForCoinToss": "Per il sorteggio: inserisci la licenza (o la data di nascita) del segnapunti",
     "licenceNumber": "Numero di licenza",
     "title": "Configurazione partita",
     "scoresheet": "Scheda punteggio",
@@ -1379,7 +1379,7 @@
   },
   "restoreGlobal": {"title": "Ripristina dal backup online", "desc": "Inserisci il codice di backup della partita (Preparazione partita, Backup). L'app chiede poi il suo PIN arbitro.", "code": "Codice di backup", "notFound": "Nessun backup trovato per questo codice.", "notGlobal": "Questo codice non contiene nessuna partita dello strumento Global.", "button": "Cerca backup"},
   "toolChooser": {"title": "Come usi OpenVolley?", "swissBody": "Partite di lega svizzere: accesso, elenco partite, Einsatzliste, rose di club e cloud.", "globalBody": "Qualsiasi torneo o amichevole: senza accesso, rose e partite da Excel. Squadre e giocatori restano su questo dispositivo.", "later": "Puoi cambiarlo più tardi in Opzioni, finché non c’è una partita su questo dispositivo."},
-  "idMode": {"title": "Accanto a ogni nome", "dob": "Usa le date di nascita", "number": "Usa un numero di identificazione", "text": "Usa del testo", "label": {"dob": "Data di nascita", "number": "Numero di identificazione", "text": "Info"}},
+  "idMode": {"title": "Accanto a ogni nome", "dob": "Usa le date di nascita", "number": "Usa un numero di identificazione", "text": "Usa del testo", "label": {"dob": "Data di nascita", "number": "Numero di identificazione", "text": "Info", "licence": "Licenza"}, "hint": {"licence": "o data di nascita (gg.mm.aaaa)"}},
   "globalImport": {"templateGames": "Modello partite (Excel)", "templateRosters": "Modello rose (Excel)", "gamesTitle": "Importa partite", "rostersTitle": "Importa rose", "gamesHint": "Un file Excel o CSV con una riga per partita: partita, data, ora, palestra, città, lega, casa, ospite, best of, arbitri. Nulla viene salvato: il file è letto su questo dispositivo.", "rostersHint": "Un file Excel o CSV con una riga per persona: squadra, numero, nome, cognome, ruolo (giocatore, libero, capitano, allenatore...), data di nascita. Nulla viene salvato: il file è letto su questo dispositivo.", "choose": "Scegli file", "template": "Modello", "errFile": "Impossibile leggere il file.", "errEmpty": "Il file è vuoto.", "errColumns": "Colonne non trovate. Usa il modello.", "noTeamName": "(senza nome squadra)", "counts": "{{players}} giocatori, {{staff}} staff", "warnings": "{{count}} righe non pulite: {{list}}", "applied": "{{count}} giocatori aggiunti", "gamesButton": "Importa partite (Excel)", "rostersButton": "Importa rose (Excel)"},
   "home": {
     "storageWarning": "Questo browser può cancellare i dati dell'app, e una partita su questo dispositivo ha modifiche non ancora inviate. Accedi perché vengano sincronizzate, installa l'app o aggiungila alla schermata iniziale, oppure attiva i download dei backup nelle Opzioni.",
@@ -2164,7 +2164,7 @@
       "roleTwice": "{{role}} c’è due volte: ogni ruolo di ufficiale una sola volta.",
       "tooMany": "Al massimo {{max}} giocatori.",
       "badText": "Un nome ha più di {{max}} caratteri.",
-      "badDate": "Una data di nascita non è una data.",
+      "badDate": "Una licenza o una data di nascita non è valida: una licenza ha da 4 a 7 cifre, una data si scrive gg.mm.aaaa.",
       "other": "La rosa non può essere inviata ({{problem}})."
     }
   },
@@ -3530,7 +3530,7 @@
     "matchInfoNotConfirmed": "Info partita non confermate",
     "firstRefereeMissing": "Nome del 1° arbitro richiesto",
     "scorerNameMissing": "Nome del segnapunti richiesto",
-    "scorerDobMissing": "Data di nascita o numero di licenza del segnapunti richiesti",
+    "scorerDobMissing": "Licenza (o data di nascita) del segnapunti richiesta",
     "homeRosterIncomplete": "Rosa di casa incompleta ({{count}}/6 giocatori)",
     "awayRosterIncomplete": "Rosa ospite incompleta ({{count}}/6 giocatori)",
     "homeCaptainMissing": "Squadra di casa: nessun capitano assegnato",

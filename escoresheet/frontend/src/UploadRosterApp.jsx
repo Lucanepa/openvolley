@@ -17,7 +17,8 @@ import { CalendarX2, Check, ChevronRight, FileUp, Loader2, Plus } from 'lucide-r
 import { cn } from './ui/cn.js'
 import { Button } from './ui/Button.jsx'
 import { Card } from './ui/Card.jsx'
-import { DateField } from './ui/DateField.jsx'
+import IdField from './components/IdField'
+import { idModeOf, importedIdValue, ID_LABEL_FALLBACK } from './domain/idMode'
 import { Field, FormError } from './ui/Field.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
 import { RowList } from './ui/Row.jsx'
@@ -87,6 +88,10 @@ export default function UploadRosterApp() {
   const [uploadPin, setUploadPin] = useState('')
   const [match, setMatch] = useState(null)
   const [matchId, setMatchId] = useState(null)
+  // What the sheet carries beside a name (domain/idMode): the licence (or a
+  // date of birth) in a Swiss match; a Global match's own choice
+  const idMode = idModeOf(match)
+  const idLabel = idMode === 'dob' ? t('rosterSetup.dob', 'DOB') : t(`idMode.label.${idMode}`, ID_LABEL_FALLBACK[idMode])
   const [homeTeam, setHomeTeam] = useState(null)
   const [awayTeam, setAwayTeam] = useState(null)
   const [validationError, setValidationError] = useState('')
@@ -717,11 +722,13 @@ export default function UploadRosterApp() {
       const data = await parseRosterPdf(pdfFile)
 
       // Prepare roster data
+      // the licence beside each name, never the list's date of birth (owner
+      // 2026-11-19: "import only the licence number from the einsatzliste")
       const players = data.players.map(p => ({
         number: p.number || null,
         firstName: p.firstName || '',
         lastName: p.lastName || '',
-        dob: p.dob || '',
+        dob: importedIdValue(p, idMode),
         libero: '',
         isCaptain: false,
         isLfp: !!p.isLfp
@@ -734,7 +741,7 @@ export default function UploadRosterApp() {
           role: 'Coach',
           firstName: data.coach.firstName || '',
           lastName: data.coach.lastName || '',
-          dob: data.coach.dob || ''
+          dob: importedIdValue(data.coach, idMode)
         })
       }
       if (data.ac1) {
@@ -742,7 +749,7 @@ export default function UploadRosterApp() {
           role: 'Assistant Coach 1',
           firstName: data.ac1.firstName || '',
           lastName: data.ac1.lastName || '',
-          dob: data.ac1.dob || ''
+          dob: importedIdValue(data.ac1, idMode)
         })
       }
       if (data.ac2) {
@@ -750,7 +757,7 @@ export default function UploadRosterApp() {
           role: 'Assistant Coach 2',
           firstName: data.ac2.firstName || '',
           lastName: data.ac2.lastName || '',
-          dob: data.ac2.dob || ''
+          dob: importedIdValue(data.ac2, idMode)
         })
       }
 
@@ -1259,7 +1266,7 @@ export default function UploadRosterApp() {
                     <span>{t('rosterSetup.number', '#')}</span>
                     <span>{t('rosterSetup.lastName', 'Last name')}</span>
                     <span>{t('rosterSetup.firstName', 'First name')}</span>
-                    <span>{t('rosterSetup.dob', 'DOB')}</span>
+                    <span>{idLabel}</span>
                     <span>{t('rosterSetup.libero', 'Libero')}</span>
                     <span className="text-center">C</span>
                     <span></span>
@@ -1296,10 +1303,13 @@ export default function UploadRosterApp() {
                           aria-label={t('rosterSetup.firstName', 'First name')}
                           className={FIELD}
                         />
-                        <DateField
+                        <IdField
+                          idMode={idMode}
+                          rawValue={player.dob}
+                          onRawChange={(v) => handlePlayerChange(index, 'dob', v)}
                           value={player.dob ? formatDateToISO(player.dob) : ''}
                           onChange={(v) => handlePlayerChange(index, 'dob', v ? formatDateToDDMMYYYY(v) : '')}
-                          aria-label={t('rosterSetup.dob', 'DOB')}
+                          aria-label={idLabel}
                         />
                         <Select
                           value={player.libero}
@@ -1357,7 +1367,7 @@ export default function UploadRosterApp() {
                     <span>{t('rosterSetup.role', 'Role')}</span>
                     <span>{t('rosterSetup.lastName', 'Last name')}</span>
                     <span>{t('rosterSetup.firstName', 'First name')}</span>
-                    <span>{t('rosterSetup.dob', 'DOB')}</span>
+                    <span>{idLabel}</span>
                     <span></span>
                   </div>
 
@@ -1392,10 +1402,13 @@ export default function UploadRosterApp() {
                           aria-label={t('rosterSetup.firstName', 'First name')}
                           className={FIELD}
                         />
-                        <DateField
+                        <IdField
+                          idMode={idMode}
+                          rawValue={official.dob}
+                          onRawChange={(v) => handleBenchChange(index, 'dob', v)}
                           value={official.dob ? formatDateToISO(official.dob) : ''}
                           onChange={(v) => handleBenchChange(index, 'dob', v ? formatDateToDDMMYYYY(v) : '')}
-                          aria-label={t('rosterSetup.dob', 'DOB')}
+                          aria-label={idLabel}
                         />
                         <Button variant="danger-outline" size="sm" block onClick={() => handleDeleteBench(index)}>
                           {t('common.delete')}

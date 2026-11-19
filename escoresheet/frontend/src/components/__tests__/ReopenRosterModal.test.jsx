@@ -22,18 +22,36 @@ const players = [
 const bench = [{ role: 'Coach', firstName: 'Marco', lastName: 'Frei', dob: '15.05.1975' }]
 const benchRoles = [{ value: 'Coach', key: 'coach' }, { value: 'Medic', key: 'medic' }]
 
-function open(onSave = vi.fn()) {
+function open(onSave = vi.fn(), idMode = 'dob') {
   render(
     <ReopenRosterModal
-      teamKey="home" teamName="VBC Zürich" players={players} bench={bench}
+      teamKey="home" teamName="VBC Musterdorf" players={players} bench={bench}
       onSave={onSave} onClose={() => {}} t={tr} benchRoles={benchRoles}
       toISODate={(d) => (d ? d.split('.').reverse().join('-') : '')}
+      idMode={idMode}
     />
   )
   return onSave
 }
 
 describe('ReopenRosterModal', () => {
+  // Owner 2026-11-19: a Swiss match carries the licence (or a date of birth)
+  it('a Swiss match: a Licence column of text fields, a licence or a date typed with its dots', () => {
+    const onSave = open(vi.fn(), 'licence')
+    const rows = within(screen.getAllByRole('list')[0]).getAllByRole('listitem')
+    const value = within(rows[0]).getByLabelText('Licence')
+    expect(value).toHaveAttribute('inputMode', 'text')
+    expect(value).toHaveValue('05.01.1998')
+    fireEvent.change(value, { target: { value: '123456' } })
+    const coach = within(screen.getAllByRole('list')[1]).getByLabelText('Licence')
+    fireEvent.change(coach, { target: { value: '1.2.1975' } })
+    fireEvent.blur(coach)
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    const [, edited, editedBench] = onSave.mock.calls[0]
+    expect(edited.find(p => p.number === 1).dob).toBe('123456')
+    expect(editedBench[0].dob).toBe('01.02.1975')
+  })
+
   it('lists each player as one row, by number, and the officials', () => {
     open()
     const [playerList, benchList] = screen.getAllByRole('list')

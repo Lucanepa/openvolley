@@ -8,12 +8,13 @@
  * officials, who may be anyone of the club's lists).
  *
  * One row per club: { clubId, clubName, teamNames, teamGenders, players:
- * [{ sv_number, last_name, first_name, dob, gender }] (the players list),
- * people: [{ ...the same five fields, lists }] (everyone of the three lists
+ * [{ sv_number, last_name, first_name, gender, manual }] (the players list),
+ * people: [{ ...the same fields, lists }] (everyone of the three lists
  * once), fetchedAt, userId }. A server before `people` (or a row kept by an
  * older app) has the players list only: people are then the players.
- * The server sends no dates of birth here (db/048: none is kept).
- * Personal data (names, dates of birth, licence numbers, gender): only for
+ * No date of birth is kept (owner 2026-11-19): Match Setup fills the licence
+ * (sv_number) beside a club person's name.
+ * Personal data (names, licence numbers, gender): only for
  * the account that loaded them (row.userId) and cleared on sign-out and
  * account switch (AuthContext), like the saved teams and the sent rosters.
  */
@@ -51,14 +52,14 @@ function currentAccess() {
 const LISTS = ['players', 'scorers', 'coaches']
 
 /**
- * A person of a list: the five fields only, and whether every row of the
+ * A person of a list: the licence, the names and the gender only (never a
+ * date of birth, also from an older server), and whether every row of the
  * person was added by hand (db/026 `manual`: a gray shield in Match Setup).
  */
 const personOf = (p) => ({
   sv_number: String(p.sv_number),
   last_name: p.last_name || '',
   first_name: p.first_name || null,
-  dob: p.dob || null,
   gender: p.gender === 'm' || p.gender === 'f' ? p.gender : null,
   manual: p.manual === true
 })
@@ -77,7 +78,7 @@ export function peopleOfClub(c) {
   return (Array.isArray(c?.players) ? c.players : []).filter((p) => p && p.sv_number != null).map((p) => ({ ...personOf(p), lists: ['players'] }))
 }
 
-/** One club of GET /api/club-licences -> the cache row (the five fields of each person, and its lists). */
+/** One club of GET /api/club-licences -> the cache row (the fields of each person, and its lists). */
 export function clubToRow(c, userId, fetchedAt = null) {
   const names = Array.isArray(c?.team_names) ? c.team_names.filter((n) => typeof n === 'string') : []
   const genders = c?.team_genders && typeof c.team_genders === 'object' ? c.team_genders : {}
@@ -158,15 +159,6 @@ export async function refreshClubPlayers({ access, userId, online, force = false
     console.warn('[clubPlayers] refresh failed:', e?.message)
     return 'error'
   }
-}
-
-/**
- * `people` as they are: no date of birth is kept to fill in (db/048; GET
- * /api/club-licences/dob answers none). Kept until Match Setup no longer
- * calls it (it goes with the scorer app's licence change).
- */
-export async function withClubDob(clubId, people) {
-  return Array.isArray(people) ? people : []
 }
 
 /** Tests only: forget the last download time. */

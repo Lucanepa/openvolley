@@ -26,6 +26,7 @@ import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useSyncQueue, isAuthBlocked, checkScorerMoved } from '../hooks/useSyncQueue'
 import { isScorerMoved, SCORER_MOVED, relaySyncDevice } from '../utils/matchHandover'
 import { checkUploadedRoster } from '../domain/uploadedRoster'
+import { idModeOf, isDateValue } from '../domain/idMode'
 import { liveTeamIdentity } from '../domain/teamIdentity'
 import { useSequentialSync, setEndBackupPlan, setEndStillUndelivered, SET_END_DOWNLOAD_GRACE_MS } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
@@ -135,6 +136,9 @@ import { preload, usePreloaded } from '../utils/preload'
 // undone with set 5: undoing the set end that created set 5, reopening a set
 // before it
 const CLEARED_SET5_SETUP = { set5LeftTeam: null, set5FirstServe: null, set5CourtSwitched: false }
+// The value beside a name in the roster-change remarks (domain/idMode), in the
+// sheet's English
+const ID_REMARK_NAME = { licence: 'licence', dob: 'date of birth', number: 'ID number', text: 'info' }
 
 // Live-state pushes that start or end the break between sets: the set end
 // (its own push opens it), "End set interval", the set's start, the set 5
@@ -4884,10 +4888,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // ==================== REOPEN ROSTER HELPERS ====================
 
-  // Diff original vs edited roster and return { changes, remarkLines }
-  const diffRosters = useCallback((originalPlayers, editedPlayers, originalBench, editedBench, teamLabel) => {
+  // Diff original vs edited roster and return { changes, remarkLines }.
+  // The value beside a name (domain/idMode) is named for what it holds: the
+  // licence in a Swiss match, a Global match's own column; a date of birth is
+  // never written into the change log or the remarks (owner 2026-11-19).
+  const diffRosters = useCallback((originalPlayers, editedPlayers, originalBench, editedBench, teamLabel, idMode = 'licence') => {
     const changes = []
     const remarkLines = []
+    const valueName = ID_REMARK_NAME[idMode] || ID_REMARK_NAME.licence
+    const shownValue = (v) => (isDateValue(v) ? '(date of birth)' : v)
 
     // --- Players ---
     const origById = new Map(originalPlayers.map(p => [p.id, p]))
@@ -4921,12 +4930,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           { key: 'isCaptain', label: 'captain' }
         ]
         for (const f of fields) {
-          const oldVal = orig[f.key] ?? ''
-          const newVal = edit[f.key] ?? ''
-          if (String(oldVal) !== String(newVal)) {
-            const desc = `Player #${orig.number} ${f.label}: ${oldVal || '(none)'} → ${newVal || '(none)'} (${teamLabel})`
+          const rawOld = orig[f.key] ?? ''
+          const rawNew = edit[f.key] ?? ''
+          if (String(rawOld) !== String(rawNew)) {
+            const oldVal = f.key === 'dob' ? shownValue(rawOld) : rawOld
+            const newVal = f.key === 'dob' ? shownValue(rawNew) : rawNew
+            const desc = `Player #${orig.number} ${f.key === 'dob' ? valueName : f.label}: ${oldVal || '(none)'} → ${newVal || '(none)'} (${teamLabel})`
             changes.push({ category: 'player', field: f.key, before: oldVal, after: newVal, description: desc })
-            remarkLines.push(`- ${f.key === 'dob' ? `Player #${orig.number} date of birth changed (${teamLabel})` : desc}`)
+            remarkLines.push(`- ${f.key === 'dob' ? `Player #${orig.number} ${valueName} changed (${teamLabel})` : desc}`)
           }
         }
       }
@@ -4948,12 +4959,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       } else if (orig && edit) {
         const benchFields = ['role', 'firstName', 'lastName', 'dob']
         for (const f of benchFields) {
-          const oldVal = orig[f] ?? ''
-          const newVal = edit[f] ?? ''
-          if (String(oldVal) !== String(newVal)) {
-            const desc = `Bench official ${orig.role || edit.role} ${f}: ${oldVal || '(none)'} → ${newVal || '(none)'} (${teamLabel})`
+          const rawOld = orig[f] ?? ''
+          const rawNew = edit[f] ?? ''
+          if (String(rawOld) !== String(rawNew)) {
+            const oldVal = f === 'dob' ? shownValue(rawOld) : rawOld
+            const newVal = f === 'dob' ? shownValue(rawNew) : rawNew
+            const desc = `Bench official ${orig.role || edit.role} ${f === 'dob' ? valueName : f}: ${oldVal || '(none)'} → ${newVal || '(none)'} (${teamLabel})`
             changes.push({ category: 'benchOfficial', field: f, before: oldVal, after: newVal, description: desc })
-            remarkLines.push(`- ${f === 'dob' ? `Bench official ${orig.role || edit.role} date of birth changed (${teamLabel})` : desc}`)
+            remarkLines.push(`- ${f === 'dob' ? `Bench official ${orig.role || edit.role} ${valueName} changed (${teamLabel})` : desc}`)
           }
         }
       }
@@ -4984,7 +4997,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    const { changes, remarkLines } = diffRosters(snapshotPlayers, editedPlayers, snapshotBench, editedBench, teamLabel)
+    const { changes, remarkLines } = diffRosters(snapshotPlayers, editedPlayers, snapshotBench, editedBench, teamLabel, idModeOf(data?.match))
 
     if (changes.length === 0) {
       deferUi(() => {
@@ -15159,6 +15172,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             t={t}
             benchRoles={ROSTER_BENCH_ROLES}
             toISODate={toISODate}
+            idMode={idModeOf(data?.match)}
           />
         )
       })()}

@@ -34,7 +34,8 @@ import { teamBoxStyle } from '../utils/teamColours'
 import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 import { ArrowLeft, ArrowLeftRight } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
-import { DateField } from '../ui/DateField.jsx'
+import IdField from './IdField'
+import { idLabelOf, idModeOf } from '../domain/idMode'
 import StackLabel from './StackLabel'
 import { MenuPopover } from '../ui/MenuPopover.jsx'
 import { useFormStack } from '../hooks/useFormStack'
@@ -490,6 +491,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   }, [matchId])
   // An easy match (domain/easyMatch.js): no rosters or signatures to show
   const isEasyMatch = match?.easy === true
+  // What the column beside a name holds (domain/idMode): the licence (or a
+  // date of birth) in a Swiss match; a Global match's own choice
+  const idMode = idModeOf(match)
+  const idLabel = idLabelOf(t, idMode, t('roster.dateOfBirth'))
+  const idHeading = idLabelOf(t, idMode, t('roster.dob'))
 
   // Colours can't change here. The team's own colour first, as on the
   // scoreboard (Manual Adjustments edits only the team, a test match sets
@@ -1883,7 +1889,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     <tr>
                       <th>{t('roster.number')}</th>
                       <th>{t('roster.name')}</th>
-                      <th className="ct-dob" style={{ width: '90px' }}>{t('roster.dob')}</th>
+                      <th className="ct-dob" style={{ width: '90px' }}>{idHeading}</th>
                       <th>{t('roster.role')}</th>
                       {lfpTrackingEnabled && <th style={{ textAlign: 'center' }}>LFP</th>}
                       <th></th>
@@ -1967,12 +1973,19 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             />
                           </td>
                           <td className="ct-dob" style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
-                            <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
-                            <DateField
+                            <StackLabel>{idLabel}</StackLabel>
+                            <IdField
+                              idMode={idMode}
+                              rawValue={p.dob}
+                              onRawChange={v => {
+                                const updated = [...roster]
+                                updated[originalIdx] = { ...updated[originalIdx], dob: v }
+                                setRoster(updated)
+                              }}
                               size="bare"
                               // 90px column: typed only (the native field's picker icon was hidden here too)
                               calendar={false}
-                              aria-label={t('roster.dateOfBirth')}
+                              aria-label={idLabel}
                               value={p.dob ? formatDateToISO(p.dob) : ''}
                               onChange={v => {
                                 const value = v ? formatDateToDDMMYYYY(v) : ''
@@ -2107,7 +2120,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     <tr>
                       <th>{t('roster.role')}</th>
                       <th>{t('roster.name')}</th>
-                      <th className="ct-dob" style={{ width: '90px' }}>{t('roster.dob')}</th>
+                      <th className="ct-dob" style={{ width: '90px' }}>{idHeading}</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -2154,12 +2167,19 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             />
                           </td>
                           <td className="ct-dob" style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
-                            <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
-                            <DateField
+                            <StackLabel>{idLabel}</StackLabel>
+                            <IdField
+                              idMode={idMode}
+                              rawValue={official.dob}
+                              onRawChange={v => {
+                                const updated = [...bench]
+                                updated[originalIdx] = { ...updated[originalIdx], dob: v }
+                                setBench(updated)
+                              }}
                               size="bare"
                               // 90px column: typed only (the native field's picker icon was hidden here too)
                               calendar={false}
-                              aria-label={t('roster.dateOfBirth')}
+                              aria-label={idLabel}
                               value={official.dob ? formatDateToISO(official.dob) : ''}
                               onChange={v => {
                                 const value = v ? formatDateToDDMMYYYY(v) : ''
@@ -2344,10 +2364,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 />
               </div>
               <div>
-                <label className={FIELD_LABEL} style={{ margin: '0 0 4px' }}>{t('roster.dateOfBirth')}</label>
-                <DateField
+                <label className={FIELD_LABEL} style={{ margin: '0 0 4px' }}>{idLabel}</label>
+                <IdField
+                  idMode={idMode}
+                  rawValue={dob}
+                  onRawChange={v => (currentTeam === 'home' ? setHomeDob(v) : setAwayDob(v))}
                   size="bare"
-                  aria-label={t('roster.dateOfBirth')}
+                  aria-label={idLabel}
                   value={dob ? formatDateToISO(dob) : ''}
                   onChange={v => {
                     const value = v ? formatDateToDDMMYYYY(v) : ''

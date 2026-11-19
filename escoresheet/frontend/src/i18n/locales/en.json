@@ -250,9 +250,9 @@
     "pointsPerSet": "Points per set",
     "pointsDeciding": "Deciding set",
     "loadingScheduleGame": "Loading the game…",
-    "scorerDobForCoinToss": "Scorer: date of birth or licence number needed for the coin toss",
+    "scorerDobForCoinToss": "Scorer: licence (or date of birth) needed for the coin toss",
     "guestNote": "New match without an account: it stays on this device, with a backup under its backup code. Saved teams, club lists and the referee directory need a sign-in (SV match).",
-    "dobRequiredForCoinToss": "For the coin toss: enter a date of birth or a licence number",
+    "dobRequiredForCoinToss": "For the coin toss: enter the scorer's licence (or date of birth)",
     "licenceNumber": "Licence number",
     "title": "Match setup",
     "scoresheet": "Scoresheet",
@@ -1380,7 +1380,7 @@
   },
   "restoreGlobal": {"title": "Restore from the online backup", "desc": "Enter the backup code of the match (Match Setup, Backups). The app then asks for its referee PIN.", "code": "Backup code", "notFound": "No backup found for this code.", "notGlobal": "This code holds no match of the Global tool.", "button": "Find backup"},
   "toolChooser": {"title": "How do you use OpenVolley?", "swissBody": "Swiss league games: sign-in, game list, Einsatzliste, club rosters and the cloud.", "globalBody": "Any tournament or friendly: no sign-in, rosters and games from Excel. Teams and players stay on this device.", "later": "You can change this later in Options, as long as no match is on this device."},
-  "idMode": {"title": "Next to each name", "dob": "Use birthdates", "number": "Use an ID number", "text": "Use text", "label": {"dob": "Date of birth", "number": "ID number", "text": "Info"}},
+  "idMode": {"title": "Next to each name", "dob": "Use birthdates", "number": "Use an ID number", "text": "Use text", "label": {"dob": "Date of birth", "number": "ID number", "text": "Info", "licence": "Licence"}, "hint": {"licence": "or date of birth (dd.mm.yyyy)"}},
   "globalImport": {"templateGames": "Games template (Excel)", "templateRosters": "Rosters template (Excel)", "gamesTitle": "Import games", "rostersTitle": "Import rosters", "gamesHint": "An Excel or CSV file with one row per game: game, date, time, hall, city, league, home, away, best of, referees. Nothing is stored: the file is read on this device.", "rostersHint": "An Excel or CSV file with one row per person: team, number, first name, last name, role (player, libero, captain, coach...), date of birth. Nothing is stored: the file is read on this device.", "choose": "Choose file", "template": "Template", "errFile": "The file could not be read.", "errEmpty": "The file has no rows.", "errColumns": "The columns were not found. Use the template.", "noTeamName": "(no team name)", "counts": "{{players}} players, {{staff}} staff", "warnings": "{{count}} rows were not clean: {{list}}", "applied": "{{count}} players added", "gamesButton": "Import games (Excel)", "rostersButton": "Import rosters (Excel)"},
   "home": {
     "storageWarning": "This browser may clear the app's data, and a match on this device has changes not sent yet. Sign in so they sync, install the app or add it to the home screen, or switch on backup downloads in Options.",
@@ -2165,7 +2165,7 @@
       "roleTwice": "{{role}} is there twice: each team official role once.",
       "tooMany": "At most {{max}} players.",
       "badText": "A name has more than {{max}} characters.",
-      "badDate": "A date of birth is not a date.",
+      "badDate": "A licence or date of birth is not valid: a licence has 4 to 7 digits, a date is written dd.mm.yyyy.",
       "other": "The roster cannot be sent ({{problem}})."
     }
   },
@@ -3531,7 +3531,7 @@
     "matchInfoNotConfirmed": "Match info not confirmed",
     "firstRefereeMissing": "1st referee name required",
     "scorerNameMissing": "Scorer name required",
-    "scorerDobMissing": "Scorer date of birth or licence number required",
+    "scorerDobMissing": "Scorer's licence (or date of birth) required",
     "homeRosterIncomplete": "Home roster incomplete ({{count}}/6 players)",
     "awayRosterIncomplete": "Away roster incomplete ({{count}}/6 players)",
     "homeCaptainMissing": "Home team: no captain assigned",
