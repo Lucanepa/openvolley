@@ -67,6 +67,17 @@
   </screenshots>
 
   <releases>
+    <release version="3.1.0" date="2026-11-19">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.1.0</url>
+      <description>
+        <ul>
+          <li>Account: an optional licence number instead of the date of birth.</li>
+          <li>Beach sheets: a licence number (or a date of birth) beside each name; the scoresheet's column reads "Licence".</li>
+          <li>Saved teams, the Excel import and the referee directory bring licences only, never birthdates.</li>
+          <li>Birthdates still kept on this device are deleted once, at start-up.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.5" date="2026-11-18">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.5</url>
       <description>
