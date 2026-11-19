@@ -249,6 +249,7 @@
     "pointsDeciding": "Set décisif",
     "loadingScheduleGame": "Chargement du match…",
     "scorerDobForCoinToss": "Marqueur : date de naissance ou numéro de licence nécessaire pour le tirage au sort",
+    "guestNote": "Nouveau match sans compte : il reste sur cet appareil, avec une sauvegarde sous son code de sauvegarde. Les équipes enregistrées, les listes du club et le répertoire des arbitres demandent une connexion (Match SV).",
     "dobRequiredForCoinToss": "Pour le tirage au sort : saisis une date de naissance ou un numéro de licence",
     "licenceNumber": "Numéro de licence",
     "title": "Configuration du match",
@@ -1386,6 +1387,7 @@
     "openingMatch": "Ouverture du match…",
     "title": "e-Feuille",
     "newMatch": "Nouveau match",
+    "svMatch": "Match SV",
     "officialMatch": "Match officiel",
     "testMatch": "Match test",
     "preparing": "Préparation...",
@@ -1477,7 +1479,7 @@
       "unchecked": "Non vérifié",
       "unsent": "Modifications non envoyées"
     },
-    "signInForOfficial": "Connecte-toi pour marquer des matchs officiels. Les matchs de test et simples restent sur cet appareil.",
+    "signInForOfficial": "Connecte-toi pour les matchs SV : équipes enregistrées, listes du club et répertoire des arbitres. Les nouveaux matchs, les matchs de test et simples fonctionnent sans compte et restent sur cet appareil.",
     "todayGames": {
       "title": "Matchs du jour",
       "loading": "Chargement des matchs du jour…",
@@ -2886,8 +2888,8 @@
     },
     "home": {
       "q_createMatch": "Comment créer un nouveau match ?",
-      "a_createMatch": "Connecté, appuie sur « Match officiel » : choisis le match à domicile de ton club du jour dans la liste, ou saisis le match toi-même. « Match test » et « Match simplifié » se trouvent en dessous ; déconnecté, tu n'as que ces deux-là. Un match officiel a des effectifs, des officiels et des signatures. Un match test sert à s'entraîner. Un match simplifié n'est pas officiel : pas d'effectifs ni de signatures. « Tableau de score » n'est pas un match : seulement les points et les sets de deux équipes sur tout l'écran, pour un match entre amis ou un entraînement. Il reste sur cet appareil. Dans l'outil Global, « Match » lance un match complet sans connexion.",
-      "tip_createMatch": "Commence un nouveau match ici : officiel (connecté), test ou simplifié, ou ouvre un tableau de score.",
+      "a_createMatch": "Connecté, appuie sur « Match SV » : choisis le match à domicile de ton club du jour dans la liste, ou saisis le match toi-même. Déconnecté, appuie sur « Nouveau match » : un match complet sans compte. Tu peux choisir le match dans le calendrier et importer l'Einsatzliste ; les équipes enregistrées, les listes du club et le répertoire des arbitres demandent une connexion. Le match reste sur cet appareil, avec une sauvegarde sous son code de sauvegarde. « Match test » et « Match simplifié » se trouvent en dessous. Un match officiel a des effectifs, des officiels et des signatures. Un match test sert à s'entraîner. Un match simplifié n'est pas officiel : pas d'effectifs ni de signatures. « Tableau de score » n'est pas un match : seulement les points et les sets de deux équipes sur tout l'écran, pour un match entre amis ou un entraînement. Il reste sur cet appareil. Dans l'outil Global, « Match » lance un match complet sans connexion.",
+      "tip_createMatch": "Commence un nouveau match ici : Match SV (connecté), Nouveau match (déconnecté), test ou simplifié, ou ouvre un tableau de score.",
       "q_officialVsTest": "Quelle est la différence entre les matchs officiels et tests ?",
       "a_officialVsTest": "Un match officiel demande les deux effectifs (au moins 6 joueurs chacun), les officiels et, avant le premier service, les signatures. Si tu es connecté, il est enregistré sur le serveur pour l'arbitre, le livescore et les sauvegardes. Un match test a des équipes inventées pour s'entraîner. Il n'est jamais enregistré sur le serveur ; les tablettes de l'arbitre et des bancs peuvent quand même le suivre (« Passer aux matchs de test » sur la tablette).",
       "q_continueMatch": "Comment reprendre un match ?",

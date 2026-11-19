@@ -3348,6 +3348,20 @@ export default function App() {
    * test-match slot (Home's Continue/Delete). No sign-in, no Einsatzliste.
    */
   async function createGlobalMatch() {
+    return createKeyStoreMatch('global')
+  }
+
+  /**
+   * Home's "New match" signed out (owner 2026-11-18): a guest match, the
+   * Swiss format without an account (domain/matchKind isGuestMatch). Built
+   * like the Global match: local only, the device's test-match slot, its
+   * backup and final sheet in the keyed store by its own key.
+   */
+  async function createGuestMatch() {
+    return createKeyStoreMatch('guest')
+  }
+
+  async function createKeyStoreMatch(kind) {
     if (easyMatchLoading || testMatchLoading) return
     const recording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
     if (recording) {
@@ -3366,7 +3380,7 @@ export default function App() {
         refereePin,
         coinTossConfirmed: false,
         test: false,
-        global: true,
+        ...(kind === 'guest' ? { guest: true } : { global: true }),
         globalKey: newGlobalKey(),
         seedKey,
         externalId: TEST_MATCH_EXTERNAL_ID,
@@ -3378,7 +3392,7 @@ export default function App() {
       setShowMatchSetup(true)
       setShowCoinToss(false)
     } catch (error) {
-      console.error('Failed to create the global match:', error)
+      console.error(`Failed to create the ${kind} match:`, error)
       setAlertModal(t('home.modals.unableToPrepareGlobalMatch', { error: error.message || error, defaultValue: 'Unable to start the match: {{error}}' }))
     }
   }
@@ -4114,6 +4128,7 @@ export default function App() {
                     testMatchLoading={testMatchLoading}
                     createEasyMatch={() => openEasyMatch()}
                     onGlobalMatch={createGlobalMatch}
+                    onGuestMatch={createGuestMatch}
                     easyMatchLoading={easyMatchLoading}
                     onOpenScoreboard={() => setSimpleBoardOpen(true)}
                     currentOfficialMatch={homeOfficialMatch}

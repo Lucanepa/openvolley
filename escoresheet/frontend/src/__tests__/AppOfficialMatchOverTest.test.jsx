@@ -50,7 +50,7 @@ async function seedRecordingMatch(fields = {}) {
 }
 
 const menuOfficialMatch = () => [...document.querySelectorAll('button')]
-  .find(b => b.textContent.trim() === 'Official match' && !b.disabled)
+  .find(b => b.textContent.trim() === 'SV match' && !b.disabled)
 const dialogWith = (text) => [...document.querySelectorAll('[role="dialog"]')].find(d => d.textContent.includes(text))
 
 // Signed in (Official game is for accounts); offline, today's games cannot

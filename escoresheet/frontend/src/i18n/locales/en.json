@@ -251,6 +251,7 @@
     "pointsDeciding": "Deciding set",
     "loadingScheduleGame": "Loading the game…",
     "scorerDobForCoinToss": "Scorer: date of birth or licence number needed for the coin toss",
+    "guestNote": "New match without an account: it stays on this device, with a backup under its backup code. Saved teams, club lists and the referee directory need a sign-in (SV match).",
     "dobRequiredForCoinToss": "For the coin toss: enter a date of birth or a licence number",
     "licenceNumber": "Licence number",
     "title": "Match setup",
@@ -1388,6 +1389,7 @@
     "openingMatch": "Opening the match…",
     "title": "eScoresheet",
     "newMatch": "New match",
+    "svMatch": "SV match",
     "officialMatch": "Official match",
     "testMatch": "Test match",
     "preparing": "Preparing…",
@@ -1479,7 +1481,7 @@
       "unchecked": "Not checked",
       "unsent": "Unsent changes"
     },
-    "signInForOfficial": "Sign in to score official games. Test and easy matches stay on this device.",
+    "signInForOfficial": "Sign in for SV matches: saved teams, club lists and the referee directory. New, test and easy matches work without an account and stay on this device.",
     "todayGames": {
       "title": "Today's games",
       "loading": "Loading today's games…",
@@ -2893,8 +2895,8 @@
     },
     "home": {
       "q_createMatch": "How do I create a new match?",
-      "a_createMatch": "Signed in, tap “Official match”: pick today's home game of your club from the list, or enter the game yourself. “Test match” and “Easy match” are below it; signed out, you only have those two. An official match has rosters, officials and signatures. A test match is for practice. An easy match is unofficial: no rosters and no signatures. “Scoreboard” is no match at all: just the points and sets of two teams on the whole screen, for a friendly or a training game. It stays on this device. In the Global tool, “Match” starts a full match without signing in.",
-      "tip_createMatch": "Start a new match here: official (signed in), test or easy, or open a plain scoreboard.",
+      "a_createMatch": "Signed in, tap “SV match”: pick today's home game of your club from the list, or enter the game yourself. Signed out, tap “New match”: a full match without an account. You can pick the game from the schedule and import the Einsatzliste, but saved teams, club lists and the referee directory need a sign-in; the match stays on this device, with a backup under its backup code. “Test match” and “Easy match” are below. An official match has rosters, officials and signatures. A test match is for practice. An easy match is unofficial: no rosters and no signatures. “Scoreboard” is no match at all: just the points and sets of two teams on the whole screen, for a friendly or a training game. It stays on this device. In the Global tool, “Match” starts a full match without signing in.",
+      "tip_createMatch": "Start a new match here: SV match (signed in), New match (signed out), test or easy, or open a plain scoreboard.",
       "q_officialVsTest": "What is the difference between official and test matches?",
       "a_officialVsTest": "An official match needs both rosters (at least 6 players each), the officials and, before the first serve, the signatures. When you are signed in, it is saved on the server for the referee, the livescore and the backups. A test match has invented teams for practice. It is never saved on the server; referee and bench tablets can still follow it (“Switch to test matches” on the tablet).",
       "q_continueMatch": "How do I continue a match?",

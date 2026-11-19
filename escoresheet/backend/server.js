@@ -56,7 +56,7 @@ import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './li
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIVE_MATCH_SQL, matchMailDateTime, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 // What the relay keeps of an anonymous socket's bundles and live states
-import { admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
+import { admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, relayRoomIsLocal, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
 import { checkUploadedRoster, signaturesAfterUpload, uploadedRosterProblemText, withPendingRostersCleared } from './lib/uploadedRoster.js'
 import { DISPLAY_DEVICE, displaySettingsUrl, displayPresenceMessage, displayStateOf, displayStateKey } from './lib/displayPresence.js'
@@ -5875,10 +5875,11 @@ function handleSocketMessage(clientInfo, data) {
         // subscribers (livescore, scorer alarm), even when HTTP sync is down;
         // not one the relay refused (too large, relay memory full).
         // A test (rehearsal) match stays in the relay's memory: never in the
-        // database. So does a Global match (no account, no row: a real match
-        // that stays local, frontend domain/matchKind)
+        // database. So does a Global match and a guest match (the Swiss "New
+        // match" signed out): no account, no row, a real match that stays
+        // local (frontend domain/matchKind isLocalOnly)
         const roomMatch = activeMatches.get(resolveMatchKey(clientInfo, message.matchId))?.match
-        const isTestRoom = roomMatch?.test === true || roomMatch?.global === true
+        const isTestRoom = relayRoomIsLocal(roomMatch)
         const liveTaken = handleLiveStateUpdate(clientInfo, message)
         // The live screen for TVs (lib/globalLive.js): any match (league,
         // test, Easy, Global; OpenBeach too) whose scorer opted in with a live

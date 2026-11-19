@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 const store = vi.hoisted(() => ({ files: new Map() }))
 vi.mock('../backendConfig', async (orig) => ({ ...(await orig()), getCloudApiUrl: (p) => `https://api.test${p}` }))
 
-import { uploadGlobalBackup, uploadGlobalFinal, loadGlobal, globalRestoreData } from '../globalCloud'
+import { uploadGlobalBackup, uploadGlobalFinal, loadGlobal, globalRestoreData, sendsCloudBackup } from '../globalCloud'
 import { isLocalOnly } from '../../domain/matchKind'
 import { openWithKnownPins } from '../backupFile'
 import { isEncryptedBackup } from '../backupCrypto/envelope'
@@ -74,6 +74,26 @@ describe('the Global store copy is an app backup file (utils/backupFile)', () =>
     for (const secret of SECRETS) expect(body).not.toContain(secret)
     expect(isEncryptedBackup(JSON.parse(body))).toBe(true)
   }, 60000)
+
+  it('a guest match (the Swiss "New match" signed out) uses the same keyed store, sealed the same way', async () => {
+    const guest = (m = {}) => backup({ test: false, global: undefined, guest: true, ...m })
+    expect(sendsCloudBackup(guest().match)).toBe(true)
+    expect(await uploadGlobalBackup(guest(), 9)).toBe(`global/${KEY}/backup`)
+    const body = store.files.get(`${KEY}/backup`)
+    for (const secret of SECRETS) expect(body).not.toContain(secret)
+    const opened = await openWithKnownPins(JSON.parse(body), ['654321'])
+    expect(opened.match.guest).toBe(true)
+    const pdfBlob = new Blob(['%PDF-1.4 g'], { type: 'application/pdf' })
+    const r = await uploadGlobalFinal({ match: guest().match, matchId: 9, pdfBlob, backupData: guest() }, { retries: 0 })
+    expect(r.ok).toBe(true)
+    expect(store.files.get(`${KEY}/scoresheet-final`)).toBe('%PDF-1.4 g')
+  }, 60000)
+
+  it('an official or test match never goes to the keyed store', async () => {
+    expect(await uploadGlobalBackup(backup({ global: undefined, test: false }), 9)).toBeNull()
+    expect(await uploadGlobalBackup(backup({ global: undefined, test: true }), 9)).toBeNull()
+    expect(store.files.size).toBe(0)
+  })
 
   // the server keeps only an encrypted backup (lib/globalStore.js): a plain
   // file (names, birth dates in the clear) is never sent (audit 2026-11-14)

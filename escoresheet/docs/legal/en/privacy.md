@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.20 · As of 18 November 2026
+**OpenVolley and OpenBeach** · Version 1.20 · As of 19 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -21,6 +21,9 @@ version is binding.
   on "Save in the cloud" for a match (off by default), it is also kept
   readable on the server, without PINs or signature images, until 180 days
   after the last save (section 7).
+- "New match" in the Swiss version (signed out) works the same way: no
+  account, the match on your device, its backup and PDF under its backup
+  code, and none of the saved teams, club lists or the referee directory.
 - Live screen (optional, in OpenVolley and OpenBeach): if the scorer devices
   of an event switch it on, the score of each of their matches (team names,
   points and sets, no players) also goes to the server, is kept in memory only
@@ -423,6 +426,17 @@ files are deleted 180 days after the last change; the server backups
 (section 18) keep a copy for a while longer. The organiser of the tournament is
 responsible for being allowed to record the data and for informing the players
 and their parents (section 17).
+
+**New match without an account (Swiss version):** signed out, "New match"
+starts a match in the Swiss format without an account. It is handled like a
+Global match: it stays on your device, is never in the league's match, team or
+player records, and its backup and approved scoresheet PDF are stored under a
+random backup code in the same way (encrypted, deleted 180 days after the last
+change). It can use the public game information of the Swiss Volley schedule
+(teams, hall, league, game number, referees' names, without dates of birth)
+and an Einsatzliste read on the device. Saved teams, the clubs' licence lists,
+rosters sent by teams and the referee directory are not available in it, even
+if someone signs in on the device later.
 
 **Save in the cloud (Global tool, optional):** in Match Setup the scorer can
 switch on "Save in the cloud" for a Global match; it is off by default. Then,

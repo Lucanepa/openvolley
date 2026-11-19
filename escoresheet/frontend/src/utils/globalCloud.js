@@ -1,5 +1,6 @@
 import { getCloudApiUrl } from './backendConfig'
 import { db } from '../db/db'
+import { usesKeyStore } from '../domain/matchKind'
 
 /**
  * The Global tool's server side (backend lib/globalStore.js): a match's backup
@@ -14,7 +15,7 @@ import { db } from '../db/db'
  * Whether a match's backups go to the cloud: every match but a test match,
  * and a Global match (stored as a test match, with its own store by its key).
  */
-export const sendsCloudBackup = (match) => !!match && (match.test !== true || match.global === true)
+export const sendsCloudBackup = (match) => !!match && (match.test !== true || usesKeyStore(match))
 
 /** 22 base64url characters = 128 random bits. */
 export function newGlobalKey() {
@@ -74,7 +75,7 @@ export async function isGlobalMatchId(matchId) {
   if (globalIds.has(matchId)) return globalIds.get(matchId)
   try {
     const m = await db.matches.get(matchId)
-    const g = m?.global === true && isGlobalKey(m.globalKey)
+    const g = usesKeyStore(m) && isGlobalKey(m.globalKey)
     globalIds.set(matchId, g)
     return g
   } catch { return false }
@@ -127,7 +128,7 @@ export async function upgradeGlobalMatches(database) {
 /** The every-action / set-end backup of a Global match (the newest copy replaces the last). */
 export async function uploadGlobalBackup(backupData, matchId = null) {
   const m = backupData?.match
-  if (m?.global !== true || !isGlobalKey(m.globalKey)) return null
+  if (!usesKeyStore(m) || !isGlobalKey(m.globalKey)) return null
   let text
   try {
     text = await globalBackupText(matchId, backupData)
@@ -154,7 +155,7 @@ function saveCloudCopy(backupData, matchId, pdfBlob = null) {
 
 /** The closed match: its PDF and its final backup, retried a few times (never queued: nothing of a Global match goes through the sync queue). */
 export async function uploadGlobalFinal({ match, matchId = null, pdfBlob, backupData }, { retries = 3, waitMs = 4000 } = {}) {
-  if (match?.global !== true || !isGlobalKey(match.globalKey)) return { ok: false, reason: 'not-global' }
+  if (!usesKeyStore(match) || !isGlobalKey(match.globalKey)) return { ok: false, reason: 'not-global' }
   const jobs = []
   let allOk = true
   if (pdfBlob) jobs.push(['scoresheet-final', pdfBlob, 'application/pdf'])

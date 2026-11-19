@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.20 · État au 18 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.20 · État au 19 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -23,6 +23,10 @@ version anglaise fait foi.
   match (désactivé par défaut), celui-ci est aussi conservé lisible sur le
   serveur, sans PIN ni images des signatures, jusqu'à 180 jours après le
   dernier enregistrement (section 7).
+- « Nouveau match » dans la version suisse (déconnecté) fonctionne de la
+  même manière : pas de compte, le match sur ton appareil, sa sauvegarde et
+  son PDF sous son code de sauvegarde, et ni équipes enregistrées, ni listes
+  du club, ni répertoire des arbitres.
 - Écran en direct (facultatif, dans OpenVolley et OpenBeach) : si les
   appareils de marque d'un événement l'activent, le score de chacun de leurs
   matchs (noms des équipes, points et sets, aucun joueur) est aussi envoyé au
@@ -491,6 +495,19 @@ sauvegardes du serveur (section 18) en gardent encore une copie quelque temps.
 L'organisatrice ou l'organisateur du tournoi est responsable d'avoir le droit
 d'enregistrer les données et d'informer les joueuses et joueurs et leurs
 parents (section 17).
+
+**Nouveau match sans compte (version suisse) :** déconnecté, « Nouveau
+match » lance un match au format suisse sans compte. Il est traité comme un
+match Global : il reste sur ton appareil, ne figure jamais dans les données de
+matchs, d'équipes ou de joueurs de la ligue, et sa sauvegarde et la feuille de
+match approuvée en PDF sont enregistrées de la même manière sous un code de
+sauvegarde aléatoire (chiffrées, supprimées 180 jours après la dernière
+modification). Il peut utiliser les informations publiques du calendrier de
+Swiss Volley (équipes, salle, ligue, numéro du match, noms des arbitres, sans
+dates de naissance) et une Einsatzliste lue sur l'appareil. Les équipes
+enregistrées, les listes de licences des clubs, les effectifs envoyés par les
+équipes et le répertoire des arbitres n'y sont pas disponibles, même si
+quelqu'un se connecte plus tard sur l'appareil.
 
 **Enregistrer dans le cloud (outil Global, facultatif) :** dans la
 préparation du match, le marqueur peut activer « Enregistrer dans le cloud »
