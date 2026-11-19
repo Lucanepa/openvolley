@@ -19,8 +19,8 @@ A club manager makes tokens in the manager: **My club → API**. A token
 
 Scopes: `read` · `rosters:write` · `teams:write` · `licences:write` (a write scope brings `read`).
 `read` reaches **no personal data**: the club, its teams, their games and the matches. Rosters, squads
-and licence lists (names, dates of birth, licence numbers, signatures) are read with the write scope of
-that data, which needs the manager's password to make. Expired tokens do not count against the 20.
+and licence lists (names, licence numbers, signatures; no dates of birth since db/048) are read with
+the write scope of that data, which needs the manager's password to make. Expired tokens do not count against the 20.
 
 Keep write tokens on a server. A token in a web page is visible to every visitor; the widget and the
 public API need none.
@@ -43,7 +43,7 @@ revoked or expired) that address gets 429 for the rest of the minute, whatever t
 | `DELETE /teams/:team/games/:game/roster` | rosters:write | Remove it |
 | `GET` / `PUT /teams/:team/squad` | teams:write | The team's saved team (`{ players, staff }`) |
 | `GET /licences` | licences:write | The club's licence lists and people |
-| `PUT /licences/players` `scorers` `coaches` | licences:write | `{ people: [{ sv_number, last_name, first_name, dob, gender }] }` replaces that list |
+| `PUT /licences/players` `scorers` `coaches` | licences:write | `{ people: [{ sv_number, last_name, first_name, gender }] }` replaces that list (a `dob` an older client still sends is accepted and dropped) |
 | `GET /matches?from&to&status&limit` | read | The club's matches (home or away), as the public API shows them |
 | `GET /matches/:id`, `/live`, `/stats` | read | One of the club's matches |
 
@@ -51,7 +51,9 @@ revoked or expired) that address gets 429 for the rest of the minute, whatever t
 change one. A roster for a game of the team's schedule can be sent any time before the scorer accepts it;
 accepted rosters are deleted (the row stays without personal data) and every one goes 14 days after the game.
 
-Rosters, squads and licence lists contain names and dates of birth: only a token of that club reads them.
+Rosters, squads and licence lists contain names and licence numbers: only a token of that club reads
+them. No date of birth is kept or answered (db/048): a `dob` in a roster, squad or licence list body is
+dropped. Rosters and squads have no age-class rule; a youth team's squad takes any player of the club.
 The public API never shows names.
 
 ## Audit

@@ -69,16 +69,16 @@ Shown when `/api/me` `managedTeams` is not empty (team managers, club managers).
 - **The game page's head**: when, where (hall, address and postal code with a map link), league,
   referees and the game number (owner 2026-11-10: "at the top where, when, referees etc"). The
   referees are names only, as in the public match assignments; `GET /api/team/:id/games` gives
-  `hall_address`, `hall_postal_code` and `referees` (never their dates of birth). Each player and
-  official is one line: name, date of birth, licence number.
+  `hall_address`, `hall_postal_code` and `referees` (no dates of birth: none is kept since
+  db/048). Each player and official is one line: name and licence number.
 - **Every page has its address** (owner 2026-11-10: "make sure every page there gets their own
   page"): the team at `#myteams/<team id>`, a game at `#myteams/<team id>/<game number>`; in My
   club the club at `#myclub/<club id>`, a person of its licence lists at
   `#myclub/<club id>/person/<licence>`, and a team opens in My teams.
 - **Officials of a game**: each has a role menu (coach, assistant coaches 1 and 2,
   physiotherapist, medic). Each role once: a ticked official who takes a role, or is ticked in
-  it, unticks the one who had it. **Add official** adds someone typed in (role, names, date of
-  birth and licence optional; the physiotherapist offered first, then the medic), not necessarily
+  it, unticks the one who had it. **Add official** adds someone typed in (role, names, licence
+  optional; the physiotherapist offered first, then the medic), not necessarily
   of the club's lists (owner 2026-11-10: "have people be put as P/M manually").
 - Locked at kick-off (**D2**, owner 2026-11-15, replacing "no lock"): a game's roster can be sent,
   changed and deleted until its kick-off; after it the team only reads it (409 `OV_GAME_STARTED`),
@@ -104,7 +104,7 @@ The scorer's tablet never waits on the network for a roster.
    remote roster does. Nothing is filled without the tap (**D4**).
 5. **Accepted = used (D5, owner).** Accept marks the device copy at once and tells the server
    (`POST /api/game-rosters/used` with the version accepted), now or as soon as the tablet is
-   online again; the server deletes the roster's names, dates of birth, licence numbers and
+   online again; the server deletes the roster's names, licence numbers and
    signatures at once and keeps a row without them, so the team sees "Accepted by the scorer".
    A newer version the team sent meanwhile is left alone and offered again. Rows nobody accepts
    go 14 days after the game.
@@ -157,8 +157,11 @@ people):
 ## 6. Data and privacy
 
 - `game_rosters(game_number, season, side, team_name, players, staff, coach_signature,
-  captain_signature, used_at, used_by, updated_by, updated_at)`: names, dates of birth, licence
-  numbers and the optional signatures of one game's roster. Not on the `/api/db` allowlist,
+  captain_signature, used_at, used_by, updated_by, updated_at)`: names, licence numbers and the
+  optional signatures of one game's roster. No date of birth since db/048: a `dob` sent is dropped,
+  db/048 removed the key from stored rows, and the roster hash (`lib/teams.js` `rosterHash`)
+  changed with it, so a signature given ahead before db/048 is dropped once, at the roster's next
+  send. Not on the `/api/db` allowlist,
   never in a public projection, never anonymous, never in the activity log or the audit details
   (the audit keeps the game number, side and counts).
 - **Deleted as soon as a scorer accepts it** (**D5**): the content goes at once, the row without

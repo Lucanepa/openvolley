@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.20 · Aggiornata al 19 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.21 · Aggiornata al 19 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -33,11 +33,19 @@ la versione inglese.
   schermo live, e per le partite Global anche a chiunque su
   livescore.openvolley.app, a meno che sia disattivato (sezione 7).
 - Un referto elettronico contiene dati di giocatrici e giocatori, staff e
-  ufficiali di gara: nomi, numeri di maglia, date di nascita e firme. Sono
+  ufficiali di gara: nomi, numeri di maglia, numeri di licenza e firme. Una
+  data di nascita figura nel referto di una partita solo se il segnapunti ne
+  digita una (nello strumento Global l'organizzatrice o l'organizzatore
+  sceglie cosa figura accanto a un nome). Sono
   pubblici solo i nomi delle squadre, il punteggio e i numeri di maglia; nel
   beach volley anche i nomi delle giocatrici e dei giocatori, nonché i nomi
   degli arbitri delle partite ufficiali. **Date di nascita, numeri di licenza
   e firme non sono mai pubblici.**
+- Nessuna data di nascita è conservata altrove: né con gli account, né negli
+  elenchi delle società, nelle squadre salvate, negli elenchi inviati in
+  anticipo, nell'elenco degli arbitri o nelle designazioni. Quelle salvate
+  prima del 19 novembre 2026 sono state cancellate, anche dai referti passati
+  (sezione 16).
 - L'app OpenVolley tiene un registro attività di ogni partita, senza PIN né
   password. Se hai effettuato l'accesso, viene caricato sul server. Ciò che
   clicchi o digiti resta sul tuo dispositivo, salvo un riassunto senza il
@@ -127,8 +135,9 @@ del loro trattamento dei dati.
 ## 5. Le app di refertazione (browser, desktop, Android)
 
 **Senza accesso**, l'app salva tutto solo sul tuo dispositivo: partite,
-squadre, liste squadra con date di nascita, set, eventi della partita, elenchi
-di ufficiali di gara, impostazioni e i registri dell'app (vedi sotto). Le
+squadre, liste squadra (con numeri di licenza, e date di nascita dove il
+segnapunti le ha digitate), set, eventi della partita, elenchi di ufficiali di
+gara, impostazioni e i registri dell'app (vedi sotto). Le
 partite restano salvate finché non le cancelli o non cancelli i dati dell'app.
 
 **Trasmissione in diretta, anche senza accesso.** Appena una partita è
@@ -140,8 +149,8 @@ memoria di lavoro. L'app desktop usa invece il proprio relay nella rete locale.
 **Con accesso**, l'app sincronizza le tue partite con il server (sezione 7).
 Inoltre carica:
 
-- **copie di sicurezza** di una partita (complete, con liste squadra, date di
-  nascita e firme). Solo il tuo account può leggerle. Vengono cancellate dopo
+- **copie di sicurezza** di una partita (complete, con liste squadra e
+  firme). Solo il tuo account può leggerle. Vengono cancellate dopo
   30 giorni;
 - **registri dell'app** (messaggi tecnici dell'app; possono contenere nomi e
   numeri di partita). Solo il tuo account può leggerli. Vengono cancellati
@@ -205,8 +214,9 @@ né i PIN mostrati sullo schermo, e viene cancellato dopo 30 giorni od oltre
 **App desktop.** L'app desktop salva inoltre copie di sicurezza automatiche
 delle partite nella tua cartella utente (Linux:
 `~/.local/share/OpenVolley/backups`, Windows: `%APPDATA%\OpenVolley\backups`).
-Contengono nomi e date di nascita, ma nessun PIN, e vengono cancellate dopo
-30 giorni. Dalla versione 2.4.0 l'app desktop di OpenVolley scrive inoltre un
+Contengono nomi (e date di nascita dove il segnapunti le ha digitate), ma
+nessun PIN, e vengono cancellate dopo 30 giorni. Dalla versione 2.4.0 l'app
+desktop di OpenVolley scrive inoltre un
 file di registro tecnico (`desktop.log`) nella cartella `OpenVolley/logs`:
 avvio e chiusura, verifiche e download degli aggiornamenti, link e download
 aperti (indirizzo senza parametri, posizione di salvataggio), numero di
@@ -245,7 +255,8 @@ approvare risultati come ufficiale di gara. Gli account si aprono su
 `manager.openvolley.app` e `manager-beach.openvolley.app`.
 
 **Dati:** indirizzo e-mail, password (salvata solo come hash, mai in chiaro),
-nome e cognome, paese, data di nascita (facoltativa), la lingua scelta all'apertura (per
+nome e cognome, paese, numero di licenza (facoltativo: il tuo numero di
+licenza Swiss Volley, da 4 a 7 cifre), la lingua scelta all'apertura (per
 le e-mail all'account), ruoli (per esempio
 segnapunti, arbitro, gestore di competizione), le app per cui vale l'account
 (indoor, beach), date di apertura, ultimo accesso e conferma dell'e-mail. I
@@ -253,7 +264,11 @@ dati inseriti alla registrazione sono conservati anche come copia presso
 l'account.
 
 **Scopo:** accesso, attivazione delle funzioni del tuo ruolo e
-precompilazione dei tuoi dati nel referto (nome, paese, data di nascita).
+precompilazione dei tuoi dati nel referto (nome, paese, numero di licenza).
+
+**Nessuna data di nascita:** la registrazione e il profilo non la chiedono, e
+il server non ne conserva (dal 19 novembre 2026; le date di nascita inserite
+prima sono state cancellate, sezione 16).
 
 **I nuovi account** non hanno inizialmente alcun ruolo. Un amministratore li
 abilita, oppure tu utilizzi un codice d'invito. Il sistema registra chi ha
@@ -348,16 +363,21 @@ dati e restano gli stessi come quando lo cancelli tu.
 
 **Contenuto di una partita:** numero della partita, lega, palestra e località,
 squadre (nome, nome breve, colore), liste squadra con numero di maglia, nome e
-cognome, data di nascita e indicazione libero o capitano, staff (funzione,
-nome, data di nascita), ufficiali di gara (arbitri, segnapunti, giudici di
-linea con nome, paese, data di nascita; arbitri con indirizzo e-mail
-facoltativo; il segnapunti con un numero di licenza facoltativo al posto della
-data di nascita), un indirizzo e-mail di contatto facoltativo per squadra, **firme** (immagini disegnate sul
+cognome, numero di licenza e indicazione libero o capitano, staff (funzione,
+nome, numero di licenza), ufficiali di gara (arbitri, segnapunti, giudici di
+linea con nome, paese e numero di licenza; arbitri con indirizzo e-mail
+facoltativo), un indirizzo e-mail di contatto facoltativo per squadra, **firme** (immagini disegnate sul
 dispositivo o su un telefono), sorteggio, svolgimento della partita con tutti gli eventi,
 sostituzioni e sanzioni, risultati e correzioni successive, nonché le
 **osservazioni** (il riquadro delle osservazioni del referto: ciò che scrive
 il segnapunti e le righe che aggiunge l'app, per esempio per una sostituzione
 obbligata o un libero che non può più giocare).
+
+**Numero di licenza o data di nascita:** nella versione svizzera accanto a un
+nome figura il numero di licenza. Il segnapunti può digitarvi invece una data
+di nascita; essa figura allora solo nel referto di quella partita. Nello
+strumento Global l'organizzatrice o l'organizzatore del torneo sceglie cosa
+figura accanto a un nome: la data di nascita, un numero d'identità o un testo.
 
 **Dati sulla salute in una partita:** una sostituzione o un cambio del libero
 perché una giocatrice o un giocatore è infortunato o malato, e un infortunio
@@ -377,11 +397,13 @@ sezione 20; conservate con la partita (sezione 16).
 sulla pagina delle liste squadra (`roster.openvolley.app`) e nel sito di gestione (sezione 10), i gestori di
 competizione tramite le squadre salvate (sezione 10) e le designazioni
 ufficiali di Swiss Volley (sezione 11). Le giocatrici e i giocatori non
-inseriscono essi stessi i propri dati.
+inseriscono essi stessi i propri dati. Un'Einsatzliste importata nella
+preparazione della partita compila nomi, numeri di maglia e numeri di
+licenza; le sue date di nascita non vengono riprese.
 
 **Scopo:** un referto elettronico per le partite ufficiali: registrazione
 durante la partita, verbale ufficiale della partita, controllo
-dell'idoneità e della categoria d'età, livescore.
+dell'idoneità (numero di licenza), livescore.
 
 **Chi vede cosa:**
 
@@ -630,8 +652,8 @@ Su `manager.openvolley.app` e `manager-beach.openvolley.app` i gestori di
 competizione possono preparare squadre e tornei.
 
 **Squadre salvate:** nome della squadra, società, giocatrici e giocatori con
-numero, nome e cognome, data di nascita, numero di licenza, libero/capitano e
-(beach) paese; staff con funzione, nome, data di nascita e numero di licenza.
+numero, nome e cognome, numero di licenza, libero/capitano e (beach) paese;
+staff con funzione, nome e numero di licenza; nessuna data di nascita.
 Visibili ai gestori di competizione e agli amministratori dello sport
 corrispondente. In OpenVolley un account segnapunti vede solo le squadre
 salvate delle proprie partite della stagione in corso (le squadre delle sue
@@ -641,14 +663,26 @@ settimana, ognuna annotata nel registro delle modifiche. Le app di
 refertazione memorizzano temporaneamente queste squadre e le cancellano
 all'uscita.
 
+**Completate dalle partite ufficiali (OpenVolley):** dopo il sorteggio di una
+partita ufficiale indoor (mai una partita di prova o Easy), il server aggiunge
+le persone della lista di ogni squadra alla squadra salvata di quella squadra
+per la stagione: nome e cognome, numero di maglia e numero di licenza. Chi vi
+figura già (lo stesso numero di licenza, altrimenti lo stesso nome) mantiene
+la sua voce e riceve il numero dell'ultima partita; una giocatrice o un
+giocatore della squadra salvata che aveva quel numero lo perde. Nessuno viene
+rimosso, e le indicazioni libero e capitano della squadra salvata restano. Le
+persone con un numero di licenza vengono aggiunte anche agli elenchi delle
+licenze della società (sotto), se questi non hanno ancora quel numero di
+licenza.
+
 **Responsabili di squadra (OpenVolley):** i responsabili di una società
 possono dare un link all'allenatore o al responsabile di una squadra della
 società; chi lo apre ed effettua l'accesso gestisce quella squadra. Il server
 salva quale account gestisce quale squadra, chi l'ha aggiunto e quando. Un
 responsabile di squadra modifica la squadra salvata e può inviare in anticipo
 l'elenco di ogni partita della squadra: giocatrici e giocatori con numero,
-nome e cognome, data di nascita, numero di licenza e libero/capitano, e lo
-staff con funzione, nome, data di nascita e numero di licenza. Se lo
+nome e cognome, numero di licenza e libero/capitano, e lo staff con
+funzione, nome e numero di licenza; nessuna data di nascita. Se lo
 desiderano, l'allenatore e il capitano possono firmare questo elenco in
 anticipo; le firme vengono salvate con esso come immagini.
 
@@ -669,26 +703,22 @@ accettato, all'uscita e al più tardi 36 ore dopo la partita.
 società possono caricare gli elenchi di giocatrici e giocatori, segnapunti e
 allenatori della società dall'amministrazione della società di VolleyManager.
 Il file viene letto nel browser: di ogni persona vengono conservati solo
-numero di licenza, cognome, nome, data di nascita e sesso; nient'altro del
-file viene inviato al server. Gli elenchi sono visibili ai responsabili della
-società e agli amministratori. Un responsabile di squadra della società vede
-le giocatrici e i giocatori del sesso e della categoria d'età della sua
-squadra, con le date di nascita solo delle persone della propria squadra, e
-trova gli ufficiali di squadra (un allenatore può essere qualsiasi persona
-degli elenchi della società) con una ricerca per nome che mostra poche
+numero di licenza, cognome, nome e sesso; la colonna della data di nascita non
+viene letta, e nient'altro del file viene inviato al server. Gli elenchi sono
+visibili ai responsabili della società e agli amministratori. Un responsabile
+di squadra della società vede le giocatrici e i giocatori del sesso della sua
+squadra e trova gli ufficiali di squadra (un allenatore può essere qualsiasi
+persona degli elenchi della società) con una ricerca per nome che mostra poche
 persone alla volta. I dispositivi dei segnapunti della società scaricano gli
-elenchi senza date di nascita, affinché la preparazione della partita possa
-aggiungere giocatori e ufficiali di squadra senza internet; la data di
-nascita di una persona aggiunta a una lista squadra viene richiesta solo per
-quella persona (al massimo 80 al giorno per account, ogni volta annotata nel
-registro delle modifiche). Il sesso serve a non
+elenchi, affinché la preparazione della partita possa aggiungere giocatori e
+ufficiali di squadra senza internet. Il sesso serve a non
 iscrivere giocatrici o giocatori in una squadra dell'altro sesso; per gli
 ufficiali di squadra non viene controllato. Ogni caricamento sostituisce le
 persone del caricamento precedente di quell'elenco; gli elenchi vengono
 cancellati con la società, e quelli delle stagioni passate ogni giorno. Gli elenchi possono contenere anche persone che un
 responsabile di squadra o di società ha aggiunto a mano dalla rosa di una
-squadra (solo numero di licenza, nomi, data di nascita e sesso); un
-caricamento le mantiene, e vengono cancellate con il loro elenco o con la
+squadra, e persone della lista di una partita ufficiale (sopra), solo con
+numero di licenza, nomi e sesso; un caricamento le mantiene, e vengono cancellate con il loro elenco o con la
 società. Su un dispositivo del segnapunti ogni download sostituisce la copia,
 che viene cancellata all'uscita dall'account.
 
@@ -700,9 +730,9 @@ funzionare quando viene revocato, scade o quella persona non gestisce più la
 società. Con esso il software della società legge e, se il token lo consente,
 scrive le squadre della società, gli elenchi inviati in anticipo per le sue
 partite, le sue squadre salvate e le sue liste delle licenze, con i dati
-descritti sopra (nomi, date di nascita, numeri di licenza), e le partite della
-società come le mostra l'interfaccia pubblica (sezione 8). Nomi, date di
-nascita e numeri di licenza li legge solo un token che può anche scriverli, e
+descritti sopra (nomi, numeri di maglia, numeri di licenza), e le partite della
+società come le mostra l'interfaccia pubblica (sezione 8). Nomi e numeri di
+licenza li legge solo un token che può anche scriverli, e
 un tale token richiede la password della persona responsabile. Il server conserva
 del token solo un'impronta, il nome, i diritti, la squadra, la scadenza e
 l'ultimo uso; il registro delle modifiche indica chi l'ha creato o revocato e
@@ -718,7 +748,7 @@ numeri di licenza o date di nascita.
 **Scopo:** riutilizzare le liste squadra, preparare in anticipo l'elenco di una partita, aggiungere a un
 elenco giocatrici, giocatori e ufficiali di squadra della società e confrontare il sesso di giocatrici e
 giocatori con quello della squadra, organizzare tornei, abbinare giocatrici e giocatori tramite il numero
-di licenza durante l'importazione.
+di licenza durante l'importazione, compilare i numeri di maglia per la prossima partita.
 
 Questi dati restano salvati finché un gestore non li cancella, anche se
 l'account che li ha creati viene cancellato.
@@ -728,18 +758,19 @@ l'account che li ha creati viene cancellato.
 **Designazioni di Swiss Volley:** ogni giorno il server riprende le
 designazioni ufficiali dal VolleyManager di Swiss Volley, per il periodo da
 ieri a 14 giorni in avanti: squadre, palestra e indirizzo, lega, 1° e
-2° arbitro con nome e data di nascita, giudici di linea, convocazioni. A tal
-fine il server usa un account VolleyManager. Scopo: caricare le partite
-ufficiali con gli ufficiali di gara corretti. I nomi sono pubblici
-(sezione 8); le date di nascita sono visibili solo agli amministratori e agli
-account che refertano per quello sport. Le designazioni sono conservate come
-i verbali delle partite (sezione 16).
+2° arbitro con i loro nomi, giudici di linea, convocazioni. A tal fine il
+server usa un account VolleyManager. Scopo: caricare le partite ufficiali con
+gli ufficiali di gara corretti. I nomi sono pubblici (sezione 8).
+VolleyManager invia anche le date di nascita degli arbitri; il server non le
+legge e non le conserva (dal 19 novembre 2026; quelle conservate prima sono
+state cancellate). Le designazioni sono conservate come i verbali delle
+partite (sezione 16).
 
-**Elenco degli arbitri:** un elenco comune con nome e cognome, paese, data di
-nascita e sport, affinché il segnapunti non debba inserire ogni volta gli
-ufficiali di gara. Gli account con accesso possono aggiungere voci (una data
-di nascita solo un account che referta); gli amministratori possono
-modificarle e cancellarle. Solo gli amministratori e gli account che
+**Elenco degli arbitri:** un elenco comune con nome e cognome, paese e sport,
+affinché il segnapunti non debba inserire ogni volta gli ufficiali di gara;
+nessuna data di nascita (quelle conservate prima del 19 novembre 2026 sono
+state cancellate). Gli account che refertano possono aggiungere voci; gli
+amministratori possono modificarle e cancellarle. Solo gli amministratori e gli account che
 refertano vedono l'elenco, per inserire gli ufficiali di gara di una partita
 ufficiale; non è pubblico, e le partite di prova e le partite Easy non lo
 mostrano.
@@ -886,7 +917,7 @@ l'esercizio. Essi trattano i dati per mio conto.
 **Importante riguardo a Cloudflare:** la connessione cifrata del tuo
 dispositivo termina presso Cloudflare; da lì prosegue cifrata fino al mio
 server. Cloudflare può quindi tecnicamente vedere il contenuto delle
-richieste, comprese liste squadra e date di nascita. Cloudflare può usare i
+richieste, comprese le liste squadra. Cloudflare può usare i
 dati solo per fornire il proprio servizio.
 
 **Sono responsabili in modo indipendente:** GitHub, Inc. (USA) per i download e
@@ -921,7 +952,7 @@ ricevi una copia di queste garanzie.
 | Responsabili di società | Finché gli amministratori non li rimuovono, la società viene cancellata o tu cancelli il tuo account |
 | Responsabili di squadra | Finché un responsabile di società o un amministratore non li rimuove, la squadra o la società viene cancellata o tu cancelli il tuo account |
 | Elenco inviato in anticipo (giocatrici e giocatori, staff, firme) | Finché un segnapunti non lo accetta, al più tardi 14 giorni dopo la partita; la nota dell'accettazione 14 giorni dopo la partita |
-| Elenchi delle licenze di una società (numero di licenza, nomi, data di nascita, sesso) | Fino al prossimo caricamento di quell'elenco, alla sua cancellazione da parte di un responsabile della società o alla cancellazione della società, al più tardi fino alla fine della stagione; persone aggiunte a mano: fino alla cancellazione dell'elenco o della società, al più tardi fino alla fine della stagione; su un dispositivo fino al prossimo download o all'uscita dall'account |
+| Elenchi delle licenze di una società (numero di licenza, nomi, sesso) | Fino al prossimo caricamento di quell'elenco, alla sua cancellazione da parte di un responsabile della società o alla cancellazione della società, al più tardi fino alla fine della stagione; persone aggiunte a mano o dalla lista di una partita: fino alla cancellazione dell'elenco o della società, al più tardi fino alla fine della stagione; su un dispositivo fino al prossimo download o all'uscita dall'account |
 | Indirizzo e-mail di un arbitro o di una squadra per una partita | Con la partita, come parte del referto |
 | Invio del referto finale (momento, numero di destinatari, senza indirizzi) | Con la partita |
 | Referto di una partita di prova per e-mail | Non conservato sul server |
@@ -943,15 +974,42 @@ ricevi una copia di queste garanzie.
 | Copie di sicurezza del server | Fino a circa 6 mesi (sezione 18) |
 | Dati sul tuo dispositivo | Finché non li cancelli; copie di sicurezza delle app desktop e Android 30 giorni |
 
+**Date di nascita cancellate (19 novembre 2026).** Da allora nessuna data di
+nascita è conservata al di fuori del referto di una partita, e lì solo se il
+segnapunti ne ha digitata una (sezione 7). Le date di nascita salvate prima
+sono state cancellate sul server: negli account (il profilo e la copia
+conservata della registrazione), negli elenchi delle licenze delle società,
+nelle squadre salvate, negli elenchi inviati in anticipo, nell'elenco degli
+arbitri, nelle designazioni di Swiss Volley e nei verbali delle partite
+passate (liste squadra, staff, ufficiali di gara, elenchi caricati dalle
+squadre, le voci e le osservazioni delle correzioni, la cronologia degli
+eventi). I numeri di licenza restano. I PDF dei referti salvati vengono
+rifatti a partire dai verbali corretti; un file che non può essere rifatto
+così (per esempio un referto di beach volley) resta com'è finché non l'ho
+verificato, e non viene cancellato senza questa verifica. Ciò che non posso
+raggiungere: le e-mail già inviate (per esempio un referto finale); le copie
+di sicurezza cifrate, che conservano copie più vecchie fino a circa 6 mesi
+(sezione 18); e le copie al di fuori del mio server, come i dati sui
+dispositivi e le copie di sicurezza su un computer, una chiavetta USB o nella
+cartella «Documenti» di Android, finché non vengono sovrascritte o cancellate
+(un'app di refertazione aggiornata toglie le date di nascita delle partite
+svizzere sul suo dispositivo che non sono in corso). Le partite Global non
+sono toccate: lì l'organizzatrice o l'organizzatore sceglie cosa figura
+accanto a un nome, e i loro file e copie nel cloud restano come descritto
+nella sezione 7.
+
 ## 17. Minorenni
 
 Molte giocatrici e molti giocatori sono minorenni. I loro dati (nome, numero,
-data di nascita) non vengono inseriti da loro stessi, ma da società,
+numero di licenza) non vengono inseriti da loro stessi, ma da società,
 responsabili di squadra, segnapunti od organizzatori. Questi devono essere
 autorizzati a registrare i dati e devono informarne le giocatrici, i
-giocatori e i loro genitori. La data di nascita serve al controllo
-dell'idoneità e della categoria d'età nel referto ufficiale e non è mai
-pubblica.
+giocatori e i loro genitori. La data di nascita di una giocatrice o di un
+giocatore figura solo nel referto di una partita in cui il segnapunti ne
+digita una (nello strumento Global, se l'organizzatrice o l'organizzatore
+l'ha scelta), mai negli elenchi delle società, nelle squadre salvate o negli
+elenchi inviati in anticipo; non è mai pubblica, e nemmeno il numero di
+licenza.
 
 Nello strumento Global è responsabile allo stesso modo l'organizzatrice o
 l'organizzatore del torneo, ovvero la persona che registra i dati. I genitori
@@ -1007,7 +1065,7 @@ identità.
 ufficiale di una partita, a cui società, federazione e ufficiali di gara hanno
 un interesse. Cancello o rendo anonimi i tuoi dati in esso nella misura in cui
 il verbale non ne ha bisogno, e ti spiego cosa resta e perché. Una rettifica
-(per esempio di una data di nascita errata) o una cancellazione avviene in
+(per esempio di un nome scritto male) o una cancellazione avviene in
 tutte le copie sul server allo stesso tempo: nei verbali con la loro
 cronologia e i loro registri, negli elenchi delle società e nelle squadre
 salvate, nell'elenco degli arbitri e nelle designazioni. Il numero di maglia
@@ -1025,19 +1083,20 @@ SEE, anche all'autorità di protezione dei dati del tuo paese.
 
 Se si applica il RGPD, mi baso su:
 
-- **contratto** (art. 6 par. 1 lett. b RGPD): account, sincronizzazione,
+- **contratto** (art. 6 par. 1 lett. b RGPD): account (con il numero di
+  licenza facoltativo), sincronizzazione,
   e-mail legate all'account, supporto, funzioni che utilizzi, il backup online e la copia nel cloud dello strumento Global;
 - **interesse legittimo** (art. 6 par. 1 lett. f RGPD): verbali ufficiali
   delle partite corretti e verificabili per società, federazione e ufficiali
-  di gara (liste squadra, date di nascita per il controllo dell'idoneità,
-  firme, approvazioni, registro attività, cronologia degli eventi e
-  osservazioni),
-  invio del referto finale a ufficiali di gara e società, livescore per il
+  di gara (liste squadra, numeri di licenza e, dove il segnapunti ne digita
+  una nel referto, la data di nascita per il controllo dell'idoneità, firme,
+  approvazioni, registro attività, cronologia degli eventi e osservazioni),
+  squadre salvate ed elenchi delle società completati dalle liste delle
+  partite ufficiali, invio del referto finale a ufficiali di gara e società, livescore per il
   pubblico, organizzazione di tornei, diagnosi dei problemi,
   sicurezza e protezione dagli abusi, copie di sicurezza;
-- **consenso** (art. 6 par. 1 lett. a RGPD): data di nascita facoltativa
-  nell'account, ricerca di aggiornamenti dell'app Android installata
-  direttamente;
+- **consenso** (art. 6 par. 1 lett. a RGPD): ricerca di aggiornamenti
+  dell'app Android installata direttamente;
 - **per i dati sulla salute** (un infortunio o una malattia registrati in una
   partita, sezione 7): le regole di gioco richiedono la registrazione di una
   tale sostituzione e di un libero che non può più giocare. Secondo il RGPD mi
