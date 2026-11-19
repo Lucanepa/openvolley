@@ -99,11 +99,15 @@ describe('save-back end to end: an official match fills the squad and the club l
       const t = await savedTeamOf(users.scorer, H1)
       return t?.players?.length === 3 ? t : null
     }, { what: 'the saved team of the home team', timeoutMs: 20000 })
+    // the two sides are written one after the other: wait for the away side too
+    const away = await waitUntil(async () => {
+      const t = await savedTeamOf(users.scorer, H2)
+      return t?.players?.length === 1 ? t : null
+    }, { what: 'the saved team of the away team', timeoutMs: 20000 })
     assert.deepEqual(saved.players.map((p) => [p.last_name, p.number, p.license_number]), [['Muster', 7, '100001'], ['Beispiel', 12, '100002'], ['Ohnelizenz', 3, null]])
     assert.deepEqual(saved.staff.map((s) => [s.role, s.last_name, s.license_number]), [['Coach', 'Trainer', '5001']])
     assert.equal(saved.club, 'VBC Musterdorf')
     // the opponent the scorer meets at home has one too
-    const away = await savedTeamOf(users.scorer, H2)
     assert.deepEqual(away?.players.map((p) => [p.last_name, p.number]), [['Gast', 1]])
     // the team manager's squad is that saved team
     const sq = await call(users.clubmgr, 'GET', `/api/team/${team.id}/squad`)
