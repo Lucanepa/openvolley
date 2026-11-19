@@ -88,6 +88,46 @@ Shown when `/api/me` `managedTeams` is not empty (team managers, club managers).
   (the same signature pad as the app). A signature belongs to the roster it was made on: a change
   after signing drops it and asks to sign again. Without them, they sign at the coin toss.
 
+### Filled from official matches (db/048, owner 2026-11-19)
+
+"As club/team management can be used saltuarly": the saved team fills itself from the official
+matches, also for a team nobody manages (`backend/lib/rosterSaveBack.js`; no client job, older
+apps feed it too).
+
+- **When.** After every successful write of a `matches` row (`/api/db`, `/api/match/restore`),
+  once the match has been quiet for 60 s (at most 10 min), and at start for the matches written in
+  the last 6 h. Only an official match past its coin toss: not a test, `game_n > 0`, indoor, not
+  exempt (released or a second match of the game), status live / ended / approved / final, of the
+  current season, its game in `svrz_games`.
+- **Which team.** Each side of the row by its team name against the schedule's home and away
+  names (the same, accents and case aside, or one holding the other; straight or swapped: Match
+  Setup's swap, a game played the other way round). A side no name points to is left alone.
+- **The saved team** of the season (`lib/teams.js` `ensureSquad`: found as the squad is, else made
+  as a team manager's first save makes it, under the same lock; without a club name for a team that
+  is no club's). The match's people: the same person by licence, else by name (accents, case,
+  first and last name swapped). **The match's shirt number wins**; a player of the saved team who
+  had it loses it. Only the team's **latest** official match sets numbers: an older one (another
+  official match of the team, past its coin toss, kicks off later) adds people and fills an empty
+  number nobody holds. A missing licence is filled in; another licence than the saved team's stays
+  the saved team's (counted). New people come without captain or libero; **nobody is removed**;
+  the captain and libero flags stay; a player set inactive who played is active again. Officials
+  are added or completed, never removed; their role stays the saved team's. A person that would
+  break the saved team's rules is left out, never the whole save: a player of the other gender in
+  the club's players list, more than 40 players or 10 officials, twice in the roster, a name too
+  long.
+- **The club's lists** (team in `club_teams`): its people with a licence (4 to 7 digits) as
+  `match` rows (docs/club-licences-spec.md section 8): players to `players`, Coach and Assistant
+  Coaches to `coaches`.
+- **Audit** `team.squad.match`: game number, season, side, ids, counts; no name, no licence.
+  Nothing changed: no write, no entry.
+- **Numbers on the next import.** An Einsatzliste has no shirt numbers. Match Setup fills them from
+  the side's saved team on the device (by licence, else name; never a number the roster has),
+  for 14 players or fewer and for the player pool of more; "Add from club" too, and its picker
+  shows the number. The manager's game roster (Import Einsatzliste, Add from club) and squad
+  editor fill a player new to the list from the stored squad, its inactive players too. Match
+  Setup asks for a fresh copy of the saved teams when it opens online (at most every 10 minutes);
+  nothing waits for it.
+
 ## 4. The scorer: offline first
 
 The scorer's tablet never waits on the network for a roster.
@@ -168,7 +208,8 @@ people):
   personal data stays for the team's "Accepted". Every row goes 14 days after the game (the sweep
   runs with every write and every scorer read). The match record holds the roster from Match
   Setup on.
-- Audit: `team.managers` (redeem, remove), `team.roster` (put, delete), `team.squad`.
+- Audit: `team.managers` (redeem, remove), `team.roster` (put, delete), `team.squad`,
+  `team.squad.match` (an official match's roster, counts only).
 - The privacy policy already names team managers who enter rosters (roster page). It needs one
   more line for the manager and the 14 days before this is switched on for clubs (owner review,
   privacy 1.8).

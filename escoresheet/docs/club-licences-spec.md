@@ -191,7 +191,7 @@ longer written since db/048; older entries stay filterable.)
   imported_by, source, season, id)`, primary key `(club_id, list, sv_number)` (`dob` NULL since
   db/048, dropped by db/049); `source` `import`, `manual` (db/026: `imported_at`/`imported_by` of
   a manual row: when and by whom it was added) or `match` (db/048: a person of an official match's
-  roster, the roster save-back); `season` the season of the upload or of the row by hand, `id` a row id (db/037).
+  roster, the roster save-back, section 8); `season` the season of the upload or of the row by hand, `id` a row id (db/037).
 - **Each upload replaces the uploaded people of that list.** A person who left the club is gone
   with the next upload. Those added by hand stay until Delete list (section 8) or until a club
   manager removes them one by one (section 9).
@@ -275,6 +275,29 @@ Deploy: `db/026_club_licences_manual.sql` and `apply-roles.sh` before the backen
 manager. Without 026 the new backend reads every row as uploaded and answers 503 to the two
 routes and to an upload (Delete list still works); a backend of before 026 works on it (its
 upload replaces the rows by hand too).
+
+### People of official matches (db/048, owner 2026-11-19)
+
+"so that we can create a big database (at the end of the day it is last name first name number
+and licence n, super public) and next games the 'load from club' works". After the coin toss of an
+official match, the backend adds the people of each team's roster with a licence number (4 to 7
+digits) to the lists of the team's club (the team in `club_teams`; `backend/lib/rosterSaveBack.js`,
+docs/team-managers-spec.md "Filled from official matches"): players to `players`, Coach and
+Assistant Coaches to `coaches` (a physiotherapist or a medic does not go). `lib/licences.js`
+`addFromMatch`:
+
+- `source = 'match'`, `imported_by` NULL (no account writes them), the current season, the names
+  of the match's roster, **no gender** (a roster does not say it; without one it never refuses
+  anyone, section 3).
+- The rules of a row by hand: a licence number any list of the club has is left as it is (an
+  upload's row least of all); an upload keeps them and turns those it contains into uploaded rows;
+  Delete list removes them; a club manager removes one (section 9's delete, 409
+  `OV_NOT_HAND_ADDED` only for uploaded rows). The gray shield and `manual: true` in every read,
+  as a row by hand.
+- At most `MAX_MANUAL_PER_CLUB` (300) rows no upload brought per club (by hand and from matches
+  together): those past it are left out, counted (`club_capped` in the audit), never an error. No
+  daily cap (no account writes them). Audited with the saved team as `team.squad.match`
+  (`club_added`, `club_capped`), never a name.
 
 ## 9. Only what each role needs (db/037)
 
