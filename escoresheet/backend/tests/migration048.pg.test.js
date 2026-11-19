@@ -125,8 +125,12 @@ describe('db/048 (no birthdates outside a match\'s own sheet)', { skip: SKIP_PG 
     id.open = (await one(`INSERT INTO public.matches (external_id, game_n, status, test, connections, players_home)
       VALUES ('m048_open', 480002, 'setup', true, $1, '[{"number":1,"last_name":"Muster","dob":"123456"}]') RETURNING id`,
     [JSON.stringify({ referee_enabled: true, pending_home_roster: { players: [{ number: 1, lastName: 'Muster', dob: '3.4.2009' }], bench: [{ role: 'Coach', dob: '1980-01-01' }] } })])).id
-    id.beach = (await one(`INSERT INTO public.matches (external_id, game_n, status, sport_type, players_team1, team1_data)
-      VALUES ('m048_beach', 12, 'live', 'beach', '[{"number":1,"lastName":"Sand","dob":"1999-09-09"},{"number":2,"lastName":"Strand","dob":"55555"}]', '{"name":"Sand/Strand","dateOfBirth":"1999-09-09"}') RETURNING id`)).id
+    // a beach match (OpenBeach): its people in players_team1 / players_team2 and officials
+    id.beach = (await one(`INSERT INTO public.matches (external_id, game_n, status, sport_type, players_team1, players_team2, team1_data, officials)
+      VALUES ('m048_beach', 12, 'live', 'beach', '[{"number":1,"lastName":"Sand","dob":"1999-09-09"},{"number":2,"lastName":"Strand","dob":"55555"}]',
+              '[{"number":1,"lastName":"Kies","dob":"09/09/1998"},{"number":2,"lastName":"Welle","dob":"7654321"}]',
+              '{"name":"Sand/Strand","dateOfBirth":"1999-09-09"}',
+              '[{"role":"referee","lastName":"Pfiff","dob":"1970-01-01"},{"role":"scorer","lastName":"Zahl","dob":"123456"}]') RETURNING id`)).id
     await raw.query(`INSERT INTO public.events (match_id, type, payload, state_snapshot) VALUES ($1, 'remark', '{"player":{"number":7,"dob":"05.05.2005"},"text":"x"}', '{"home":{"players":[{"dob":"2001-01-01"}]}}')`, [id.closed])
     await raw.query(`INSERT INTO public.event_revisions (rev_uid, match_id, event_external_id, op, reason, before, after, applied, client_ts)
       VALUES (gen_random_uuid(), $1, 'e1', 'edit', 'correction', '{"payload":{"dob":"05.05.2005"}}', '{"payload":{"dob":"06.05.2005"}}', true, now())`, [id.closed])
@@ -162,9 +166,12 @@ describe('db/048 (no birthdates outside a match\'s own sheet)', { skip: SKIP_PG 
     assert.equal(m.match_info.referee1Dob, null)
     assert.equal(m.match_info.hall, 'Halle Musterdorf')
     assert.equal((await one('SELECT players_home FROM public.matches WHERE id = $1', [id.open])).players_home[0].dob, '123456')
-    const b = await one('SELECT players_team1, team1_data FROM public.matches WHERE id = $1', [id.beach])
+    const b = await one('SELECT players_team1, players_team2, team1_data, officials FROM public.matches WHERE id = $1', [id.beach])
     assert.deepEqual(b.players_team1.map((p) => p.dob), [null, '55555'])
+    assert.deepEqual(b.players_team2.map((p) => p.dob), [null, '7654321'])
+    assert.deepEqual(b.officials.map((p) => [p.lastName, p.dob]), [['Pfiff', null], ['Zahl', '123456']])
     assert.equal(b.team1_data.name, 'Sand/Strand')
+    assert.equal(b.team1_data.dateOfBirth, null)
     assert.equal((await one('SELECT license_number FROM public.competition_players')).license_number, '123456')
     assert.equal((await one('SELECT license_number FROM public.competition_staff')).license_number, '654321')
     assert.equal((await one('SELECT sv_number FROM public.club_licences')).sv_number, '123456')

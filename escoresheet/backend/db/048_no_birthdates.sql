@@ -27,7 +27,8 @@
 --      frontend domain/idMode.js); 01.01.1900, the placeholder, is one; digits
 --      only are a licence. In every JSON column of public.matches (rosters,
 --      benches, officials, the teams' uploaded rosters in connections,
---      manual_changes, coin_toss ...), match_closures (closed_record,
+--      manual_changes, coin_toss ...; a beach match's players_team1 /
+--      players_team2, team1_data / team2_data), match_closures (closed_record,
 --      reclosed_record), events (payload, state_snapshot, line-ups),
 --      event_revisions (before, after), match_live_state,
 --      beach_competition_matches and beach_entries: a key named dob,
