@@ -10,14 +10,14 @@ vi.mock('../../lib/accountApi', () => ({
 
 import { db } from '../db'
 import { fetchGameRosters, markGameRosterUsed } from '../../lib/accountApi'
-import { clearGameRosters, flushUsedGameRosters, getGameRoster, markGameRosterAccepted, offeredSentRosters, pruneGameRosters, refreshGameRosters, rowToPendingRoster, storeGameRosters } from '../gameRosters'
+import { clearGameRosters, flushUsedGameRosters, getGameRoster, markGameRosterAccepted, offeredSentRosters, pruneGameRosters, refreshGameRosters, rosterToRow, rowToPendingRoster, storeGameRosters } from '../gameRosters'
 import { accessFromRoles } from '../../lib/access'
 
 const scorer = accessFromRoles(['scorer'])
 const roster = (n, side, over = {}) => ({
   game_number: n, season: 2026, side, team_name: side === 'home' ? 'VBC Musterdorf H1' : 'VBC Other H1', kickoff: '2026-11-10T18:00:00',
-  players: [{ number: 4, first_name: 'Anna', last_name: 'Muster', dob: '2001-02-03', is_captain: true, is_libero: false }, { number: 7, first_name: 'Bea', last_name: 'Libero', dob: '2002-03-04', is_libero: true }],
-  staff: [{ role: 'Coach', first_name: 'Chris', last_name: 'Coach', dob: '1980-01-01' }],
+  players: [{ number: 4, first_name: 'Anna', last_name: 'Muster', dob: '2001-02-03', license_number: '123456', is_captain: true, is_libero: false }, { number: 7, first_name: 'Bea', last_name: 'Libero', dob: '2002-03-04', is_libero: true }],
+  staff: [{ role: 'Coach', first_name: 'Chris', last_name: 'Coach', dob: '1980-01-01', license_number: '654321' }],
   updated_at: '2026-11-08T19:30:00.000Z', updated_by_name: 'Coach Test', ...over
 })
 
@@ -162,13 +162,20 @@ describe('sent game rosters on the device', () => {
     expect(await db.game_rosters.count()).toBe(0)
   })
 
-  it('becomes Match Setup\'s pending-roster shape', () => {
+  // Owner 2026-11-19: the value beside a name is the licence, never the date of birth
+  it('becomes Match Setup\'s pending-roster shape, with the licence beside each name', () => {
     const p = rowToPendingRoster({ teamName: 'T', updatedAt: 'x', updatedByName: 'N', players: roster('1', 'home').players, staff: roster('1', 'home').staff })
     expect(p.players).toEqual([
-      { number: 4, firstName: 'Anna', lastName: 'Muster', dob: '03.02.2001', libero: '', isCaptain: true, isLfp: false },
-      { number: 7, firstName: 'Bea', lastName: 'Libero', dob: '04.03.2002', libero: 'libero1', isCaptain: false, isLfp: false }
+      { number: 4, firstName: 'Anna', lastName: 'Muster', dob: '123456', libero: '', isCaptain: true, isLfp: false },
+      { number: 7, firstName: 'Bea', lastName: 'Libero', dob: '', libero: 'libero1', isCaptain: false, isLfp: false }
     ])
-    expect(p.bench).toEqual([{ role: 'Coach', firstName: 'Chris', lastName: 'Coach', dob: '01.01.1980' }])
+    expect(p.bench).toEqual([{ role: 'Coach', firstName: 'Chris', lastName: 'Coach', dob: '654321' }])
     expect(p).toMatchObject({ source: 'team', teamName: 'T', sentAt: 'x', sentBy: 'N' })
+  })
+
+  it('the device copy keeps no date of birth (an older server sent one)', () => {
+    const row = rosterToRow(roster('1', 'home'), 'u1')
+    expect(row.players.map((x) => 'dob' in x)).toEqual([false, false])
+    expect(row.staff[0]).toEqual({ role: 'Coach', first_name: 'Chris', last_name: 'Coach', license_number: '654321' })
   })
 })

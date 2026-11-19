@@ -79,21 +79,24 @@ describe('the club\'s players in Match Setup', () => {
     expect(offeredClubPlayers(CLUB, null).hidden).toBe(0)
   })
 
-  it('adds the chosen ones without a number, nobody twice', () => {
+  it('adds the chosen ones without a number and with their licence (never a date of birth), nobody twice', () => {
     const roster = [{ number: 4, firstName: 'Marco', lastName: 'Probe', dob: '02.11.2001', libero: '', isCaptain: true, isLfp: false }]
     expect(rosterHasPerson(roster, MARCO)).toBe(true)
     expect(rosterHasPerson(roster, { first_name: 'Probe', last_name: 'Marco' })).toBe(true)
+    // the same licence under another spelling is the same person
+    expect(rosterHasPerson([{ firstName: 'Ana', lastName: 'Beyspiel', dob: '100001' }], ANNA)).toBe(true)
     const r = addClubPlayersToRoster(roster, [MARCO, KIM])
     expect(r.added).toBe(1)
-    expect(r.roster).toEqual([roster[0], { number: null, firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '', libero: '', isCaptain: false, isLfp: false }])
+    expect(r.roster).toEqual([roster[0], { number: null, firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '100004', libero: '', isCaptain: false, isLfp: false }])
   })
 
-  it('warns about a roster player the club has with the other gender (by name and date of birth), never for a test match', () => {
+  it('warns about a roster player the club has with the other gender (by licence, else by name), never for a test match', () => {
     const roster = [
-      { number: 1, firstName: 'Marco', lastName: 'Probe', dob: '02.11.2001' },
+      { number: 1, firstName: 'Marco', lastName: 'Probe', dob: '100003' },
       { number: 2, firstName: 'Anna', lastName: 'Beispiel', dob: '06.05.2004' },
       { number: 3, firstName: 'Lea', lastName: 'Muster', dob: '' },
-      { number: 4, firstName: 'Anna', lastName: 'Beispiel', dob: '01.01.1999' }
+      // the same name with another licence: someone else
+      { number: 4, firstName: 'Anna', lastName: 'Beispiel', dob: '999999' }
     ]
     expect(clubGenderWarnings(roster, CLUB, 'm')).toEqual([
       { index: 1, name: 'Anna Beispiel', gender: 'f' },
@@ -101,9 +104,12 @@ describe('the club\'s players in Match Setup', () => {
     ])
     expect(clubGenderWarnings(roster, CLUB, 'f')).toEqual([{ index: 0, name: 'Marco Probe', gender: 'm' }])
     expect(clubGenderWarnings(roster, CLUB, null)).toEqual([])
-    // the same name twice in the list with both genders and no date to tell them apart: nothing
-    const twins = [{ ...MARCO, sv_number: '1', dob: null }, { ...MARCO, sv_number: '2', dob: null, gender: 'f' }]
+    // the same name twice in the list with both genders and no licence to tell them apart: nothing
+    const twins = [{ ...MARCO, sv_number: '1001', dob: null }, { ...MARCO, sv_number: '1002', dob: null, gender: 'f' }]
     expect(clubGenderWarnings([{ firstName: 'Marco', lastName: 'Probe', dob: '' }], twins, 'm')).toEqual([])
+    // a date of birth tells nobody apart (owner 2026-11-19); the licence does
+    expect(clubGenderWarnings([{ firstName: 'Marco', lastName: 'Probe', dob: '02.11.2001' }], twins, 'm')).toEqual([])
+    expect(clubGenderWarnings([{ firstName: 'Marco', lastName: 'Probe', dob: '1002' }], twins, 'm')).toEqual([{ index: 0, name: 'Marco Probe', gender: 'f' }])
   })
 })
 
@@ -188,21 +194,21 @@ describe('bench officials from the club (Match Setup)', () => {
     expect(benchOfficialOfRole(bench, 'Assistant Coach 1')).toBeNull()
   })
 
-  it('the role\'s row takes the person (DD.MM.YYYY), else a row of that role is added; either gender', () => {
+  it('the role\'s row takes the person and the licence, else a row of that role is added; either gender', () => {
     const coach = setBenchOfficial(bench, 'Coach', TINA)
     expect(coach.replaced).toMatchObject({ firstName: 'Marco' })
     expect(coach.bench).toEqual([
-      { role: 'Coach', firstName: 'Tina', lastName: 'Trainer', dob: '04.03.1980' },
+      { role: 'Coach', firstName: 'Tina', lastName: 'Trainer', dob: '200001' },
       bench[1]
     ])
     const ac = setBenchOfficial(coach.bench, 'Assistant Coach 1', KIM)
     expect(ac.replaced).toBeNull()
-    expect(ac.bench[1]).toEqual({ role: 'Assistant Coach 1', firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '' })
+    expect(ac.bench[1]).toEqual({ role: 'Assistant Coach 1', firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '100004' })
     const medic = setBenchOfficial(ac.bench, 'Medic', ANNA)
     expect(medic.bench).toHaveLength(3)
-    expect(medic.bench[2]).toEqual({ role: 'Medic', firstName: 'Anna', lastName: 'Beispiel', dob: '06.05.2004' })
-    // the same person again keeps the date of birth the list does not have
-    expect(setBenchOfficial([{ role: 'Coach', firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '01.01.2000' }], 'Coach', KIM).bench[0].dob).toBe('01.01.2000')
+    expect(medic.bench[2]).toEqual({ role: 'Medic', firstName: 'Anna', lastName: 'Beispiel', dob: '100001' })
+    // the same person again: the list's licence (a date of birth typed gives way)
+    expect(setBenchOfficial([{ role: 'Coach', firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '01.01.2000' }], 'Coach', KIM).bench[0].dob).toBe('100004')
   })
 
   it('the players picker keeps the gender filter, the warning stays for players', () => {

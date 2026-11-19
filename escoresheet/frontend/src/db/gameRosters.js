@@ -4,8 +4,8 @@
  * downloads them whenever it is online (GET /api/game-rosters) and Match Setup
  * only ever reads this table, so a hall without internet still offers them.
  *
- * The rows hold personal data (names, DOBs, licence numbers, signatures made
- * ahead): they are only for the account that loaded them (row.userId) and are
+ * The rows hold personal data (names, licence numbers, signatures made
+ * ahead; never a date of birth: withoutDob, owner 2026-11-19): they are only for the account that loaded them (row.userId) and are
  * cleared on sign-out and account switch (AuthContext), like the saved teams.
  *
  * Accepted in Match Setup (owner 2026-11-08: deleted as soon as it is used):
@@ -17,7 +17,7 @@
 import { db } from './db'
 import { fetchGameRosters, markGameRosterUsed } from '../lib/accountApi'
 import { accessFromRoles } from '../lib/access'
-import { isoToDisplayDob } from '../domain/savedTeams'
+import { licenceOf } from '../domain/idMode'
 import { currentUserId } from './savedTeams'
 import { isLocalOnly } from '../domain/matchKind'
 
@@ -46,7 +46,14 @@ function currentAccess() {
   }
 }
 
-/** An API roster → the cache row. */
+// A person of a sent roster without its date of birth (an older server sent one)
+const withoutDob = (list) => (Array.isArray(list) ? list : []).map((p) => {
+  if (!p || typeof p !== 'object' || !('dob' in p)) return p
+  const { dob: _dob, ...rest } = p
+  return rest
+})
+
+/** An API roster → the cache row (no date of birth is kept). */
 export function rosterToRow(r, userId) {
   return {
     key: rowKey(r.game_number, r.side),
@@ -55,8 +62,8 @@ export function rosterToRow(r, userId) {
     side: r.side,
     teamName: r.team_name || '',
     kickoff: r.kickoff || null,
-    players: Array.isArray(r.players) ? r.players : [],
-    staff: Array.isArray(r.staff) ? r.staff : [],
+    players: withoutDob(r.players),
+    staff: withoutDob(r.staff),
     coachSignature: r.coach_signature || null,
     captainSignature: r.captain_signature || null,
     // db/035: the account that sent the signatures made ahead (Accept shows it)
@@ -69,9 +76,10 @@ export function rosterToRow(r, userId) {
 
 /**
  * A cached (or API) roster → MatchSetup's pending-roster shape, the one an
- * uploaded roster has: { players: [{ number, firstName, lastName, dob
- * (DD.MM.YYYY), libero: ''|'libero1'|'libero2', isCaptain, isLfp }], bench:
- * [{ role, firstName, lastName, dob }] } plus where it came from.
+ * uploaded roster has: { players: [{ number, firstName, lastName, dob (the
+ * value beside the name: the licence number, domain/idMode), libero:
+ * ''|'libero1'|'libero2', isCaptain, isLfp }], bench: [{ role, firstName,
+ * lastName, dob }] } plus where it came from. A date of birth never comes in.
  */
 export function rowToPendingRoster(row) {
   let liberos = 0
@@ -82,7 +90,7 @@ export function rowToPendingRoster(row) {
       number: Number.isInteger(p.number) ? p.number : (p.number == null || p.number === '' ? null : Number(p.number)),
       firstName: p.first_name || '',
       lastName: p.last_name || '',
-      dob: isoToDisplayDob(p.dob),
+      dob: licenceOf(p.license_number) || '',
       libero,
       isCaptain: !!p.is_captain,
       isLfp: false
@@ -92,7 +100,7 @@ export function rowToPendingRoster(row) {
     role: s.role,
     firstName: s.first_name || '',
     lastName: s.last_name || '',
-    dob: isoToDisplayDob(s.dob)
+    dob: licenceOf(s.license_number) || ''
   }))
   return {
     players,
