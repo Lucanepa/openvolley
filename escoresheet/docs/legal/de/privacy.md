@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.19 · Stand: 17. November 2026
+**OpenVolley und OpenBeach** · Version 1.20 · Stand: 18. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -588,8 +588,6 @@ Ohne Anmeldung und ohne PIN sind sichtbar:
 - **LED-Anzeigen** in der Halle: Teamnamen und Spielstand.
 - **Spielansetzungen** (Abschnitt 11): Spieldaten mit den Namen der
   Schiedsrichter und Linienrichter, ohne Geburtsdaten.
-- **Schiedsrichter-Verzeichnis** (Abschnitt 11): Vor- und Nachname, Land,
-  ohne Geburtsdaten.
 - **Öffentliche Beachturniere** (Abschnitt 10): Teams, Vor- und Nachnamen und
   Länder der Spielerinnen und Spieler, Setzung, Rang, Spielplan, Felder.
 
@@ -747,8 +745,10 @@ aufbewahrt (Abschnitt 16).
 Nachname, Land, Geburtsdatum und Sportart, damit die Schreiberin oder der
 Schreiber Offizielle nicht jedes Mal neu erfassen muss. Angemeldete Konten
 können Einträge hinzufügen (ein Geburtsdatum nur ein Konto, das schreibt);
-ändern und löschen kann die Administration. Namen und Land sind öffentlich,
-Geburtsdaten sehen nur die Administration und die Konten, die schreiben.
+ändern und löschen kann die Administration. Das Verzeichnis sehen nur die
+Administration und die Konten, die schreiben, um die Offiziellen eines
+offiziellen Spiels einzutragen; es ist nicht öffentlich, und Test- und
+Easy-Spiele zeigen es nicht an.
 
 Wenn du nicht im Verzeichnis stehen möchtest, schreib an
 support@openvolley.app.
@@ -974,6 +974,9 @@ für ihr Kind ausüben.
 
 - Verschlüsselte Verbindungen (HTTPS) für alle Seiten und den Server.
 - Passwörter, PINs und Anmelde-Token liegen nur als Hash auf dem Server.
+- Die Datenbank und die gespeicherten Dateien liegen auf dem Server auf
+  verschlüsselten Datenträgern (LUKS2, AES). Der Schlüssel liegt nicht auf dem
+  Server.
 - Zugriff nach Rollen; Tablets nur mit PIN; abgeschlossene Spiele sind
   schreibgeschützt.
 - Begrenzung von Anmeldeversuchen und Sperre nach Fehlversuchen.

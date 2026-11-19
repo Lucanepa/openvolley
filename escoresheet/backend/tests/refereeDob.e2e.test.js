@@ -2,9 +2,10 @@
  * Referees' dates of birth (referee_database.dob, svrz_games.referee_1_dob /
  * referee_2_dob) go only to the accounts that fill a scoresheet's officials:
  * admins and accounts that can score (referee_database: indoor or beach;
- * svrz_games, the indoor schedule: indoor). Every other reader, signed in or
- * not, gets the anonymous projection (lib/publicColumns.js ANON_DB_COLUMNS)
- * and cannot filter or order on the hidden columns. Covers /api/db selects
+ * svrz_games, the indoor schedule: indoor). The directory itself is refused
+ * to every other reader (401 without a session, 403 otherwise); the schedule
+ * gives them the anonymous projection (lib/publicColumns.js ANON_DB_COLUMNS)
+ * and they cannot filter or order on its hidden columns. Covers /api/db selects
  * (the app screens' own queries), the rows a referee directory write returns,
  * the referees such an account adds (no date of birth stored), GET
  * /api/games/today, the live sockets, and a failed role lookup (503).
@@ -101,17 +102,25 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
     await db?.drop()
   })
 
-  it('an account without a role reads the directory and the schedule like an anonymous reader', async () => {
-    for (const sport of ['indoor', 'beach']) {
-      const r = await dbCall(users.pending, 'referee_database', 'select', pickerQuery(sport))
-      assert.equal(r.status, 200, r.text)
-      assert.ok(noDob(r), r.text.slice(0, 300))
-      assert.ok(r.json.data.length > 0 && r.json.data.every((row) => !('dob' in row) && row.last_name), 'names stay, dob goes')
+  // The directory, refused: not even the names (Match setup's picker is for
+  // the official match of a scorer; test and easy matches have none)
+  const refusedDirectory = (r, status, code) => {
+    assert.equal(r.status, status, r.text)
+    assert.equal(r.json.error.code, code)
+    assert.equal(r.json.data, null)
+    assert.ok(!/Zzminor|Zzadult|Zzbeach/.test(r.text), r.text.slice(0, 300))
+  }
+
+  it('without a session the directory is refused', async () => {
+    for (const params of [pickerQuery('indoor'), pickerQuery('beach'), { columns: 'id, last_name' }, { columns: '*' }]) {
+      refusedDirectory(await dbCall(null, 'referee_database', 'select', params), 401, 'OV_SIGN_IN_REQUIRED')
     }
-    const star = await dbCall(users.pending, 'referee_database', 'select', { columns: '*' })
-    assert.equal(star.status, 200, star.text)
-    assert.ok(noDob(star), star.text.slice(0, 300))
-    assert.deepEqual(star.json.data.map((row) => row.last_name).sort(), ['Zzadult', 'Zzbeach', 'Zzminor'])
+  })
+
+  it('an account without a role is refused the directory and reads the schedule like an anonymous reader', async () => {
+    for (const params of [pickerQuery('indoor'), pickerQuery('beach'), { columns: 'id, last_name' }, { columns: '*' }]) {
+      refusedDirectory(await dbCall(users.pending, 'referee_database', 'select', params), 403, 'OV_REFEREE_DIRECTORY')
+    }
 
     const games = await dbCall(users.pending, 'svrz_games', 'select', loaderQuery)
     assert.equal(games.status, 200, games.text)
@@ -122,10 +131,14 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
   })
 
   it('an account without a role cannot filter or order on a date of birth', async () => {
+    for (const params of [
+      { columns: 'id, last_name', filters: [{ type: 'gte', column: 'dob', value: '2008-01-01' }] },
+      { columns: 'id, last_name', order: [{ column: 'dob', ascending: false }], limit: 1 },
+      { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: MINOR_DOB }], head: true, count: 'exact' }
+    ]) {
+      refusedDirectory(await dbCall(users.pending, 'referee_database', 'select', params), 403, 'OV_REFEREE_DIRECTORY')
+    }
     for (const [table, params] of [
-      ['referee_database', { columns: 'id, last_name', filters: [{ type: 'gte', column: 'dob', value: '2008-01-01' }] }],
-      ['referee_database', { columns: 'id, last_name', order: [{ column: 'dob', ascending: false }], limit: 1 }],
-      ['referee_database', { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: MINOR_DOB }], head: true, count: 'exact' }],
       ['svrz_games', { columns: 'id, game_number', filters: [{ type: 'eq', column: 'referee_1_dob', value: MINOR_DOB }] }],
       ['svrz_games', { columns: 'id', order: { column: 'referee_2_dob', ascending: true } }]
     ]) {
@@ -155,13 +168,11 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
 
   it('competition managers and referees do not get them either', async () => {
     for (const name of ['manager', 'referee']) {
-      const refs = await dbCall(users[name], 'referee_database', 'select', pickerQuery('indoor'))
-      assert.equal(refs.status, 200, refs.text)
-      assert.ok(noDob(refs), `${name}: ${refs.text.slice(0, 300)}`)
+      refusedDirectory(await dbCall(users[name], 'referee_database', 'select', pickerQuery('indoor')), 403, 'OV_REFEREE_DIRECTORY')
       const games = await dbCall(users[name], 'svrz_games', 'select', loaderQuery)
       assert.equal(games.status, 200, games.text)
       assert.ok(noDob(games), `${name}: ${games.text.slice(0, 300)}`)
-      const probe = await dbCall(users[name], 'referee_database', 'select', { columns: 'id', filters: [{ type: 'gte', column: 'dob', value: '2008-01-01' }] })
+      const probe = await dbCall(users[name], 'svrz_games', 'select', { columns: 'id', filters: [{ type: 'eq', column: 'referee_1_dob', value: MINOR_DOB }] })
       assert.equal(probe.status, 400, probe.text)
       // The saved team screens' schedule reads need no hidden column
       const leagues = await dbCall(users[name], 'svrz_games', 'select', { columns: 'id, league, gender' })
@@ -255,15 +266,18 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
     }
   })
 
-  it('when the roles cannot be read, a scorer gets 503, never the cut-down row; public columns need no lookup', async () => {
+  it('when the roles cannot be read, a scorer gets 503, never the cut-down row; the schedule\'s public columns need no lookup', async () => {
     // New scorers: nothing of theirs is in the access cache (30 s) yet
     const reader = await account('lateReader', ['scorer'])
     const writer = await account('lateWriter', ['scorer'])
     await sql.query('ALTER TABLE public.profiles RENAME COLUMN roles TO roles_unreadable')
     try {
-      const pub = await dbCall(reader, 'referee_database', 'select', { columns: 'id, last_name' })
+      const pub = await dbCall(reader, 'svrz_games', 'select', { columns: 'id, league, gender' })
       assert.equal(pub.status, 200, pub.text)
-      assert.ok(pub.json.data.some((row) => row.last_name === 'Zzminor'))
+      // The directory always needs the roles
+      const names = await dbCall(reader, 'referee_database', 'select', { columns: 'id, last_name' })
+      assert.equal(names.status, 503, names.text)
+      assert.equal(names.json.error.code, 'OV_DB_UNAVAILABLE')
       for (const [table, params] of [['referee_database', pickerQuery('indoor')], ['svrz_games', loaderQuery]]) {
         const r = await dbCall(reader, table, 'select', params)
         assert.equal(r.status, 503, `${table}: ${r.text}`)

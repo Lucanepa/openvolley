@@ -49,6 +49,7 @@ network, and carries `traefik.enable=false`.
  +----------------------------------------------------------------------------------------+
    /data/openvolley/pg       8 GB loop ext4  (.ovdata sentinel, data/ = PGDATA)
    /data/openvolley/storage 15 GB loop ext4  (.ovdata sentinel, scoresheets/, backup/)
+     ov-vps since 18.11.2026: both on LUKS2 volumes, see "Encryption at rest"
    /data/openvolley/backups  hourly db dumps + nightly storage tars, GPG-encrypted (public key only)
    /var/lib/openvolley-status/last_backup   (mounted read-only into ov-backend)
         |  lenovoserver's nightly borg backup (the loop images are excluded)
@@ -80,11 +81,43 @@ network, and carries `traefik.enable=false`.
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), and `OV_READONLY_PW` when set, then checks the `ov_app` login |
 | `db-browse.sh` | VM, operator | Read the database, never change it: `psql` (as `ov_readonly`, the container's socket) or `web [PORT]` (pgweb on 127.0.0.1 only, a basic-auth password per run, removed on Ctrl-C; reach it with `ssh -N -L 8091:127.0.0.1:8091 ov-vps`). `ov_readonly` reads the views of schema `ov_read`: every table of `public` without its secret columns (game PINs, token and code hashes). Changing data: the manager's Data tab (super admins, audited) |
 | `restore-db.sh` | VM, root | Restores a decrypted dump into a **fresh** database, all-or-nothing (`--single-transaction`), count check, rolls back on any failure, resets the backup count guard |
-| `host-prep.sh` | VM, as root | Idempotent host setup: loop filesystems, sentinels, `chattr +i`, fstab (`nofail`), dirs, `ovbackup` user, backup units. `--check` is read-only |
+| `host-prep.sh` | VM, as root (not on ov-vps since its volumes are encrypted, see Encryption at rest) | Idempotent host setup: loop filesystems, sentinels, `chattr +i`, fstab (`nofail`), dirs, `ovbackup` user, backup units. `--check` is read-only |
 | `backup-openvolley.sh` + `systemd/openvolley-backup*.{service,timer}` | VM, root | Hourly `pg_dump -Fc` + nightly storage tars, GPG to the public key, count-drop guard, rotation, `last_backup` |
 | `nas-pull.sh` | NAS (DSM Task Scheduler) | Pulls the encrypted files over Tailscale with a restricted read-only key, NAS-side retention, freshness check. Not set up (never was): lenovoserver's borg backup covers `/data/openvolley/backups` |
 | `publish-pkgs.sh --resign` + `systemd/openvolley-pkgs-resign.{service,timer}` | lenovoserver, weekly, from its own clean checkout of main (`~/ov-ops/pkgs-resign`) | Signs the APT index of get.openvolley.app anew (its `Release` is valid 30 days, `Valid-Until`), so a host that replays an old index cannot keep clients on an old version for longer, and the index never expires between releases. Re-signs and syncs `apt/dists/` only, refuses when the index would change. Install the timer **before** the first publish with `Valid-Until`: without it APT users get "Release file is expired" 30 days after the last publish. `OV_PKGS_KUMA_PUSH_URL` (push monitor, heartbeat ~8 days) alerts on a failed or missing run |
 | `restore-test.sh` + `systemd/openvolley-restore-test.{service,timer}` | lenovoserver, weekly | Decrypts the newest dump (default: `/data/openvolley/backups`, read through group `ovbackup`), restores into a throwaway Postgres, boots the backend image against it (default: the tag `build-image.sh --ship local` recorded), checks `/health` and row-count floors, tears down |
+
+## Encryption at rest (ov-vps, since 18.11.2026)
+
+On ov-vps the database and the files are on LUKS2 volumes (aes-xts-plain64,
+512-bit key) instead of plain loop images:
+
+| Mount | Image | Mapper |
+|---|---|---|
+| `/data/openvolley/pg` (10 GB) | `/var/lib/openvolley/pg-crypt.img` | `/dev/mapper/ov-pg` |
+| `/data/openvolley/storage` (20 GB) | `/var/lib/openvolley/storage-crypt.img` | `/dev/mapper/ov-storage` |
+
+- **The VPS never stores the key.** It lives on lenovoserver
+  (`~/ov-ops/secrets/ov-vps-luks.key`, 0400), with a copy on the NAS
+  (`/volume1/backups/openvolley/keys/`). It is sent over ssh stdin only to
+  open the volumes. Without it the live volumes cannot be opened; the
+  GPG backups (their own key) are the other way back.
+- **After a reboot the volumes stay locked.** There is no fstab or crypttab
+  entry, so the bare mountpoints stay empty, ov-postgres refuses to start (no
+  `.ovdata`, exit 78, restart loop), the backend serves no data, and nothing
+  initialises an empty database. Unlock from lenovoserver:
+  `~/ov-ops/ov-vps-unlock.sh`. It opens and mounts both volumes and starts
+  ov-postgres and ov-backend (about 20 s). It is safe to run any time: an open
+  volume prints "ok".
+- **Do not run `host-prep.sh`** on this host. It refuses while a
+  `*-crypt.img` exists, because on a locked host it would lay a fresh, empty
+  plaintext filesystem on the bare mountpoint.
+- Backups, WAL archiving and restore tests are unchanged: they read the
+  mounted filesystems.
+- Move-in: `~/ov-ops/encrypt-volumes-2026-11-18.sh` copied the stopped
+  filesystems onto the opened volumes. It took 20 s of downtime, and every
+  table's row count was the same before and after. The plaintext images
+  `pg.img` and `storage.img` were kept only until the switch was confirmed.
 
 ## Runtime contract (backend <-> kit)
 

@@ -1196,6 +1196,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // The scorer's date of birth is a Swiss coin-toss rule: not asked in a Global
   // match; a licence number does instead (owner 2026-11-15)
   const scorerDobMissing = match?.global !== true && !scorerIdentified(scorerDob, scorerLicence)
+  // The referee directory ("Database" on the referee cards) is for the
+  // official match of an account that may score: the server refuses it to
+  // anyone else (backend/server.js REFEREE_DIRECTORY), and a test, easy or
+  // Global match has no use for it.
+  const refereeDatabase = !!match && !isLocalOnly(match) && access?.canScore === true
   // What the sheet carries beside a name (Global: birthdate, number or text), kept on the match
   useEffect(() => { if (match) setIdModeState(idModeOf(match)) }, [match?.idMode]) // eslint-disable-line react-hooks/exhaustive-deps
   const setIdMode = (mode) => {
@@ -4231,7 +4236,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setDob={setRef1Dob}
               email={ref1Email}
               setEmail={setRef1Email}
-              hasDatabase={match?.global !== true}
+              hasDatabase={refereeDatabase}
               selectorKey="ref1"
               onOpenDatabase={handleOpenDatabase}
               t={t}
@@ -4251,7 +4256,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setDob={setRef2Dob}
               email={ref2Email}
               setEmail={setRef2Email}
-              hasDatabase={match?.global !== true}
+              hasDatabase={refereeDatabase}
               selectorKey="ref2"
               onOpenDatabase={handleOpenDatabase}
               collapsible={true}
