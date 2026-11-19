@@ -27,9 +27,11 @@ on:
 
 jobs:
   ios:
-    # macOS 26: Xcode 27 (iOS 27 SDK) is only on this image; App Store Connect
-    # requires the iOS 27 SDK from April 2027 (ITMS-90725)
-    runs-on: macos-26
+    # xcode-27 (macOS 27, GitHub preview image): the only image with Xcode 27
+    # (iOS 27 SDK); macos-26 tops out at Xcode 26.x. App Store Connect requires
+    # the iOS 27 SDK from April 2027 (ITMS-90725). Back to macos-27 once that
+    # label is generally available.
+    runs-on: xcode-27
     timeout-minutes: 60
     defaults:
       run:
