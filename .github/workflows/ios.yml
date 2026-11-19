@@ -44,7 +44,9 @@ jobs:
       # newest stable Xcode on the image, not its default
       - name: Pick the newest Xcode
         run: |
-          x=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -n1 || true)
+          # resolve aliases first: Xcode_N.app can be a symlink to a beta install
+          x=$(for a in /Applications/Xcode_*.app; do [ -e "$a" ] && readlink -f "$a"; done \
+            | grep -viE 'beta|release_candidate|_rc' | sort -uV | tail -n1 || true)
           [ -z "$x" ] || sudo xcode-select -s "$x/Contents/Developer"
           xcodebuild -version
 
