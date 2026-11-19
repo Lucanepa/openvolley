@@ -1,0 +1,6 @@
+OpenVolley 3.5.0
+- Swiss matches: a licence number (default) or a date of birth beside each name; the sheet's column reads "Licence". An Einsatzliste brings only licences.
+- Official rosters fill the saved team and club list; the next Einsatzliste and "Add from club" add the shirt numbers.
+- "Load test roster" only in test and Easy matches (made-up licences).
+- No birthdates in accounts, sign-up, club lists, squads or rosters; stored ones are deleted, also on the device.
+- Privacy policy 1.21.
