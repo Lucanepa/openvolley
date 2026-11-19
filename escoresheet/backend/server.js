@@ -288,6 +288,8 @@ const RESTORE_PIN_IP_RATE_LIMIT_MAX = 60 // /api/match/restore-by-pin per IP (th
 const MANAGE_RATE_LIMIT_MAX = 300        // /api/admin/* and /api/saved-teams* per user and minute
 const ACTIVITY_RATE_LIMIT_MAX = 30       // POST /api/activity per user and minute (one batch per 10 s in a match)
 const ACTIVITY_MAX_BODY = 512 * 1024     // POST /api/activity body (<= 500 entries)
+const ERRORS_MAX_BODY = 64 * 1024        // POST /api/errors body (<= 20 events; lib/errorTracker.js)
+const ERRORS_RATE_LIMIT_MAX = 60         // POST /api/errors requests per address (/64) and minute (the events have their own limits)
 const OFFICIAL_CHECK_RATE_LIMIT_MAX = 120 // /api/match/official-check per user and minute
 // Invite redemption: FAILED attempts per account and per IP (/64); a success is refunded
 const redeemLimiter = createAttemptLimiter({ max: 10, windowMs: 10 * 60 * 1000 })
@@ -479,8 +481,10 @@ function getDataLayer() {
     import('./lib/retention.js'),
     import('./lib/clubApi.js'),
     import('./lib/dataAdmin.js'),
-    import('./lib/sqlWorkspace.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta, sqw]) => {
+    import('./lib/sqlWorkspace.js'),
+    import('./lib/errorTracker.js'),
+    import('./lib/errorAlerts.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta, sqw, ert, era]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -585,15 +589,69 @@ function getDataLayer() {
     const dataAdmin = dta.createDataAdmin({ pool: db.pool, audit: accounts.audit })
     // The manager's SQL tab (lib/sqlWorkspace.js): super admins; read mode as ov_readonly (roles.sql)
     const sqlWorkspace = sqw.createSqlWorkspace({ pool: db.pool, audit: accounts.audit, ...(process.env.OV_SQL_READER_ROLE ? { readerRole: process.env.OV_SQL_READER_ROLE } : {}) })
-    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi, dataAdmin, sqlWorkspace })
+    // The error tracker (db/050, lib/errorTracker.js): every page's and app's
+    // errors and the server's own; the Errors tab (super admins); the digest
+    // by mail, push and bell (lib/errorAlerts.js, scheduled below)
+    const errors = ert.createErrorTracker({
+      pool: db.pool,
+      audit: accounts.audit,
+      clubsOfMany: (client, ids) => clubs.clubsOfMany(client, ids),
+      ...(Number(process.env.ERROR_ALERT_DEBOUNCE_MS) >= 0 && process.env.ERROR_ALERT_DEBOUNCE_MS ? { debounceMs: Number(process.env.ERROR_ALERT_DEBOUNCE_MS) } : {})
+    })
+    const errorAlerts = era.createErrorAlerts({
+      tracker: errors,
+      pool: db.pool,
+      mailer,
+      to: process.env.ERROR_ALERT_EMAIL || '',
+      managerUrl: mailer.managerUrl,
+      ntfy: { url: process.env.NTFY_URL || '', topic: process.env.NTFY_TOPIC || '', token: process.env.NTFY_TOKEN || '' },
+      audit: accounts.audit,
+      // ERROR_ALERTS=log: nothing is sent, the log says what would have been
+      suppressed: String(process.env.ERROR_ALERTS || '').toLowerCase() === 'log',
+      // tests only: a shorter cooldown than the hour
+      ...(process.env.NODE_ENV !== 'production' && Number(process.env.ERROR_ALERT_COOLDOWN_MS) >= 0 && process.env.ERROR_ALERT_COOLDOWN_MS ? { cooldownMs: Number(process.env.ERROR_ALERT_COOLDOWN_MS) } : {})
+    })
+    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi, dataAdmin, sqlWorkspace, errors })
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
     // The end of the match records (db/042, lib/retention.js): the daily sweep below
     const retention = ret.createRetention({ pool: db.pool, storage, audit: accounts.audit })
-    dataLayer = { publicApi, clubApi, retention, db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    dataLayer = { errors, errorAlerts, publicApi, clubApi, retention, db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
+}
+
+// The server's own errors (lib/errorTracker.js, db/050): stored as error
+// events (source server), held until the data layer is up (at most 50).
+// The same message at most 10 times a minute (a database outage makes every
+// request fail alike, and each capture is a write). Database mode only; never
+// throws, never waits.
+const SERVER_BUILD = String(process.env.OV_REVISION || '').slice(0, 12) || null
+const pendingServerErrors = []
+const serverErrorBursts = new Map() // message -> { start, n }
+function captureServerError(err, opts = {}) {
+  if (!DB_MODE) return
+  try {
+    const key = `${opts.view || ''}|${String(err?.message || err).slice(0, 120)}`
+    const t = Date.now()
+    const burst = serverErrorBursts.get(key)
+    if (!burst || t - burst.start >= 60 * 1000) {
+      if (serverErrorBursts.size > 500) serverErrorBursts.clear()
+      serverErrorBursts.set(key, { start: t, n: 1 })
+    } else if (++burst.n > 10) {
+      return
+    }
+    const o = { build: SERVER_BUILD, ...opts }
+    if (dataLayer?.errors) void dataLayer.errors.captureServer(err, o)
+    else if (pendingServerErrors.length < 50) pendingServerErrors.push([err, o])
+  } catch { /* an error path must never fail */ }
+}
+/** "POST /api/match/:id": the route of a request, ids and codes masked (no query). */
+function routeLabel(req) {
+  let path = String(req?.url || '').split('?')[0].slice(0, 200)
+  path = path.split('/').map((seg) => (/\d/.test(seg) || seg.length > 24 ? ':id' : seg)).join('/')
+  return `${String(req?.method || '').slice(0, 8)} ${path}`
 }
 
 // Realtime (Supabase Realtime replacement): `?purpose=live` sockets get
@@ -2449,9 +2507,13 @@ const transportRefusals = { origin: 0, mediaType: 0, upgradeOrigin: 0, frames: 0
 //   (preflight), and the CORS answer refuses a foreign page. The support form
 //   (/api/contact) also takes multipart/form-data; the phone-sign and
 //   phone-pair APIs check their own body type (handleSignRequest, handlePairRequest).
+//   The error reports (/api/errors) also take text/plain: navigator.sendBeacon
+//   (a page that is closing) can send no other type across origins; a foreign
+//   page is still refused by its Origin above.
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const JSON_TYPE_RE = /^\s*application\/json\s*(;|$)/i
 const MULTIPART_TYPE_RE = /^\s*multipart\/form-data\s*;/i
+const TEXT_TYPE_RE = /^\s*text\/plain\s*(;|$)/i
 
 /** The refusal of an API write by its Origin or body type, or null. */
 function apiWriteRefusal(req, pathname) {
@@ -2463,7 +2525,7 @@ function apiWriteRefusal(req, pathname) {
   }
   if (signEndpointOf(pathname) || pairEndpointOf(pathname)) return null
   const type = String(req.headers['content-type'] || '')
-  if (JSON_TYPE_RE.test(type) || (pathname === '/api/contact' && MULTIPART_TYPE_RE.test(type))) return null
+  if (JSON_TYPE_RE.test(type) || (pathname === '/api/contact' && MULTIPART_TYPE_RE.test(type)) || (pathname === '/api/errors' && TEXT_TYPE_RE.test(type))) return null
   transportRefusals.mediaType++
   return { status: 415, code: 'OV_UNSUPPORTED_MEDIA_TYPE', message: 'The request body must be application/json' }
 }
@@ -2674,10 +2736,16 @@ function cloudHealth() {
 // and sign session (an anonymous GET did that). Async route bodies catch
 // their own errors.
 const server = createServer((req, res) => {
+  // Every answer carries its request id (X-Request-Id, exposed to the
+  // frontends' origins): a device's error report names it, and so does the
+  // server's own (lib/errorTracker.js request_id)
+  req.ovRequestId = newRequestId()
+  res.setHeader('X-Request-Id', req.ovRequestId)
   try {
     handleHttpRequest(req, res)
   } catch (err) {
     console.error(`❌ ${req.method} ${sanitizeLog(String(req.url || '').split('?')[0])} failed:`, err)
+    captureServerError(err, { view: routeLabel(req), requestId: req.ovRequestId, status: 500 })
     if (res.headersSent) res.destroy()
     else sendJson(res, 500, { success: false, error: 'Internal server error' })
   }
@@ -3499,6 +3567,7 @@ Generated by eScoresheet
   const sendNoDb = (body = { data: null, error: { message: 'Database not configured on server', code: 'OV_DB_NOT_CONFIGURED' } }) => sendJson(res, 503, body)
   const sendLayerError = (where, err, body = { data: null, error: { message: 'Service unavailable', code: 'OV_DB_UNAVAILABLE', retryable: true } }) => {
     console.error(`[${where}] error:`, err?.message || err)
+    captureServerError(err, { view: `${where} ${routeLabel(req)}`, requestId: req.ovRequestId, status: 503 })
     sendJson(res, 503, body)
   }
 
@@ -3881,6 +3950,50 @@ Generated by eScoresheet
     return
   }
 
+  // The error tracker (lib/errorTracker.js, db/050): POST /api/errors from
+  // every page and app, signed in or not; a valid Bearer session names the
+  // account (never the body). Rate limited per address here and per address,
+  // device and in total by the tracker; the address is never stored. Taken
+  // as JSON or as the text/plain of navigator.sendBeacon.
+  if (url.pathname === '/api/errors' && req.method === 'POST') {
+    if (!DB_MODE) {
+      req.resume()
+      sendNoDb()
+      return
+    }
+    const ipKey = ipBucketKey(getClientIp(req))
+    if (isRateLimited(ipKey, ERRORS_RATE_LIMIT_MAX, 'errors')) {
+      req.resume()
+      sendJson(res, 429, TOO_MANY, { 'Retry-After': '60', 'Cache-Control': 'no-store' })
+      return
+    }
+    ;(async () => {
+      const noStore = { 'Cache-Control': 'no-store' }
+      try {
+        const layer = await getDataLayer()
+        let body
+        try {
+          body = await readJsonBody(req, ERRORS_MAX_BODY)
+        } catch (err) {
+          sendBodyError(res, err)
+          return
+        }
+        let accountId = null
+        if (bearerFromHeaders(req.headers)) {
+          try {
+            accountId = (await layer.auth.verifyToken(req))?.id || null
+          } catch { /* the database: the report goes in without the account */ }
+        }
+        const r = await layer.errors.ingest({ body, accountId, ipKey })
+        sendJson(res, r.status, r.body, { ...noStore, ...(r.status >= 500 ? { 'Retry-After': '30' } : {}) })
+      } catch (err) {
+        console.error('[errors] ingest error:', err?.message || err)
+        sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '30', 'Cache-Control': 'no-store' })
+      }
+    })()
+    return
+  }
+
   // GET /api/admin/activity/export?...&format=csv|ndjson[&emails=1] — the
   // admin's activity export, streamed page by page (at most 50,000 rows),
   // on record (audited) before the first row goes; the accounts' email
@@ -4118,6 +4231,7 @@ Generated by eScoresheet
         sendJson(res, r.status, r.body, headers)
       } catch (err) {
         console.error('[manage] error:', err?.message || err)
+        captureServerError(err, { view: `manage ${routeLabel(req)}`, requestId: req.ovRequestId, status: 503 })
         sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5', ...noStore })
       }
     })()
@@ -4137,7 +4251,7 @@ Generated by eScoresheet
     }
     // Request id: echoed as X-Request-Id and printed on every rejection line,
     // so a client-side sync error can be matched to the server log.
-    const reqId = newRequestId()
+    const reqId = req.ovRequestId || newRequestId()
     res.setHeader('X-Request-Id', reqId)
     let logTable = null
     let logAction = null
@@ -7799,15 +7913,30 @@ if (DB_MODE) {
     // Activity log retention (db/016): 10 min after start, then daily
     const purgeActivity = () => layer.activity.purge()
       .then((r) => { if (r.unlinked || r.linked) console.log('[Activity] purge', JSON.stringify(r)) })
-      .catch((err) => console.warn('[Activity] purge failed:', err.message))
+      .catch((err) => { console.warn('[Activity] purge failed:', err.message); captureServerError(err, { kind: 'job.failed', view: 'activity purge' }) })
     setTimeout(purgeActivity, 10 * 60 * 1000).unref()
     setInterval(purgeActivity, 24 * 60 * 60 * 1000).unref()
+    // The error tracker (db/050): the server errors from before the data
+    // layer; retention 12 min after start, then daily; the digest (mail, push,
+    // bell; lib/errorAlerts.js) every minute, cloud only, ERROR_ALERTS=off stops it
+    for (const [err, o] of pendingServerErrors.splice(0)) void layer.errors.captureServer(err, o)
+    const purgeErrors = () => layer.errors.purge()
+      .then((r) => { if (r.events || r.groups) console.log('[Errors] purge', JSON.stringify(r)) })
+      .catch((err) => console.warn('[Errors] purge failed:', err.message))
+    setTimeout(purgeErrors, 12 * 60 * 1000).unref()
+    setInterval(purgeErrors, 24 * 60 * 60 * 1000).unref()
+    if (!IS_LOCAL && String(process.env.ERROR_ALERTS || '').toLowerCase() !== 'off') {
+      const tickMs = Number(process.env.ERROR_ALERT_TICK_MS) >= 1000 ? Number(process.env.ERROR_ALERT_TICK_MS) : 60 * 1000
+      setInterval(() => { void layer.errorAlerts.tick() }, tickMs).unref()
+      const a = layer.errorAlerts.stats()
+      console.log(`[Errors] alerts on: mail ${a.mail ? 'to ERROR_ALERT_EMAIL' : 'off (ERROR_ALERT_EMAIL or SMTP not set)'}, push ${a.push ? 'to NTFY_TOPIC' : 'off (NTFY_URL / NTFY_TOPIC not set)'}, bell for super admins${a.suppressed ? ' (ERROR_ALERTS=log: nothing is sent)' : ''}`)
+    }
     // Rosters sent ahead (db/023, db/035): deleted at expires_at, hourly,
     // also while no team or scorer calls a roster route
     layer.teams?.startSweeps?.()
     // Expired sessions, hourly
     setInterval(() => {
-      layer.auth.sweepExpiredSessions().catch((err) => console.warn('[Auth] session sweep failed:', err.message))
+      layer.auth.sweepExpiredSessions().catch((err) => { console.warn('[Auth] session sweep failed:', err.message); captureServerError(err, { kind: 'job.failed', view: 'session sweep' }) })
       layer.auth.sweepExpiredTokens().catch((err) => console.warn('[Auth] email-link sweep failed:', err.message))
     }, 60 * 60 * 1000).unref()
     // backup/backups/** older than 30 days and stale temp files: 5 min after start, then daily
@@ -7829,6 +7958,7 @@ if (DB_MODE) {
         console.log('[Storage] sweep', JSON.stringify({ ...r, backupSweep: paused ? 'paused' : 'ran' }))
       } catch (err) {
         console.error('[Storage] sweep failed:', err.message)
+        captureServerError(err, { kind: 'job.failed', view: 'storage sweep' })
       }
       // The app logs (backup/<account>/logs/**, utils/logger.js uploads):
       // 30 days, also while the backup sweep waits (they are no match record)
@@ -7848,7 +7978,7 @@ if (DB_MODE) {
     const sweepClubData = () => Promise.all([
       layer.licences.sweep(),
       layer.teams.sweep({ force: true })
-    ]).catch((err) => console.warn('[Club data] sweep failed:', err.message))
+    ]).catch((err) => { console.warn('[Club data] sweep failed:', err.message); captureServerError(err, { kind: 'job.failed', view: 'club data sweep' }) })
     setTimeout(sweepClubData, 15 * 60 * 1000).unref()
     setInterval(sweepClubData, 24 * 60 * 60 * 1000).unref()
     // Match records past their season and app_settings.retention_years
@@ -7902,7 +8032,7 @@ if (DB_MODE) {
             credentials: { username: process.env.VM_USERNAME, password: process.env.VM_PASSWORD },
             // the shared account's referee-delegate role (lib/vmSync.js VM_ROLE_FOR_GAMES)
             ...(process.env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: process.env.VM_ROLE_ATTRIBUTE_GAMES } : {})
-          }),
+          }).catch((err) => { captureServerError(err, { kind: 'job.failed', view: 'vm sync' }); throw err }),
           retryDelaysMs: vm.VM_SYNC_RETRY_DELAYS_MS,
           allowedWindow,
           catchUp: () => vm.readSyncRecord(layer.db.pool)
@@ -7939,6 +8069,21 @@ function shutdown(signal) {
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
+// A promise nobody waited for: logged and reported (lib/errorTracker.js), and
+// the server keeps running (every relay room, PIN budget and sign session
+// lives in this process; before, Node 22 ended it).
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ [Server] unhandled rejection:', reason?.stack || reason)
+  captureServerError(reason instanceof Error ? reason : new Error(String(reason?.message || reason)), { kind: 'server.unhandled' })
+})
+// An exception nothing caught: reported, then the process ends as before
+// (restart: unless-stopped brings it back; the push monitor sees the restart),
+// a moment later so the report can be written
+process.on('uncaughtException', (err) => {
+  console.error('❌ [Server] uncaught exception:', err?.stack || err)
+  captureServerError(err, { kind: 'server.uncaught' })
+  setTimeout(() => process.exit(1), 1500)
+})
 
 server.listen(PORT, () => {
   // The image's healthcheck watchdog kills this pid when /health/live stops answering

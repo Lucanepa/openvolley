@@ -110,6 +110,28 @@ export default function NotificationsBell({ app, onOpen }) {
           <ul className="max-h-[min(24rem,70dvh)] divide-y divide-stone-100 overflow-y-auto" data-testid="notifications-list">
             {list.map((n) => {
               const who = n.user?.name || n.user?.email || t('manage.notifications.deletedAccount')
+              // db/050: an error group (lib/errorAlerts.js), no account behind it
+              if (n.kind === 'error') {
+                return (
+                  <li key={n.id}>
+                    <button
+                      type="button"
+                      onClick={() => choose(n)}
+                      className={cn('flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-stone-50', FOCUS_RING, !n.read && 'bg-red-50/40')}
+                    >
+                      <span aria-hidden className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', n.read ? 'bg-transparent' : 'bg-red-600')} />
+                      <span className="min-w-0 flex-1">
+                        <span className={cn('block truncate text-sm', n.read ? 'text-stone-700' : 'font-semibold text-stone-900')}>
+                          {t(n.error?.reason === 'regression' ? 'manage.notifications.errorBackTitle' : 'manage.notifications.errorTitle', { count: n.error?.count || 1 })}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-stone-600">{n.error?.title || ''}</span>
+                        <span className="mt-0.5 block text-[11px] text-stone-400">{when(n.created_at)}</span>
+                        {!n.read && <span className="sr-only">{t('manage.notifications.unread')}</span>}
+                      </span>
+                    </button>
+                  </li>
+                )
+              }
               return (
                 <li key={n.id}>
                   <button
