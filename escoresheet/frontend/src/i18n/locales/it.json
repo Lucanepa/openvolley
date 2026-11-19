@@ -2075,7 +2075,10 @@
     "replyTo": "Le risposte arrivano a {{email}}.",
     "mailtoTitle": "Quasi fatto",
     "mailtoOpened": "La tua app email si è aperta con il messaggio. Invialo da lì.",
-    "mailtoAttach": "Aggiungi gli allegati nell'app email."
+    "mailtoAttach": "Aggiungi gli allegati nell'app email.",
+    "autoReports": "Invia automaticamente le segnalazioni di errore",
+    "autoReportsHint": "Quando qualcosa va storto, l'app invia al server di OpenVolley cosa non ha funzionato e dove (mai ciò che hai digitato), anche senza accesso. Informativa sulla privacy, sezione 5.",
+    "deviceId": "Identificativo di questo dispositivo (per una richiesta di cancellazione):"
   },
   "rosterSetup": {
     "title": "Rosa",

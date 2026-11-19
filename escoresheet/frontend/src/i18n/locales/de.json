@@ -1882,7 +1882,10 @@
     "replyTo": "Antworten gehen an {{email}}.",
     "mailtoTitle": "Fast fertig",
     "mailtoOpened": "Dein E-Mail-Programm hat sich mit der Nachricht geöffnet. Sende sie von dort.",
-    "mailtoAttach": "Hänge deine Dateien im E-Mail-Programm an."
+    "mailtoAttach": "Hänge deine Dateien im E-Mail-Programm an.",
+    "autoReports": "Fehlerberichte automatisch senden",
+    "autoReportsHint": "Wenn etwas schiefgeht, sendet die App, was schiefging und wo (nie, was du eingetippt hast), an den OpenVolley-Server, auch ohne Anmeldung. Datenschutzerklärung, Abschnitt 5.",
+    "deviceId": "Kennung dieses Geräts (für eine Löschanfrage):"
   },
   "rosterSetup": {
     "title": "Kader",

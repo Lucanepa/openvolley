@@ -1,3 +1,6 @@
+// First: the error reporter listens while the rest loads (utils/errorReport, privacy 1.22)
+import './utils/errorReport/boot'
+import { setErrorTool } from './utils/errorReport'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import DictateApp from './DictateApp'
@@ -8,6 +11,7 @@ import { setAppEntry } from './utils/appEntry'
 
 // Not the scoretable: a read-only page, it never saves a match backup (utils/appEntry)
 setAppEntry('dictate')
+setErrorTool('dictate')
 
 // styles.css locks html, body and #root (overflow: hidden) for the full-screen
 // scoring views; this page is a document and must scroll (a phone could not)

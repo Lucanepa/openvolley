@@ -112,6 +112,7 @@ import { relayMatchBundle, relaySyncTrigger } from './utils/relayMatchSync'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
 import { generateSecurePin } from './utils/stringUtils'
+import { setErrorView } from './utils/errorReport'
 
 function readStoredDisplayMode() {
   try {
@@ -194,6 +195,10 @@ export default function App() {
   const [cloudBackupLoading, setCloudBackupLoading] = useState(false)
   const [cloudBackupError, setCloudBackupError] = useState('')
   const [restorePreviewData, setRestorePreviewData] = useState(null) // { data, source: 'database'|'cloud'|'local' }
+  // The error reports name the screen that was open (utils/errorReport; this app has no router)
+  useEffect(() => {
+    setErrorView(!matchId ? 'home' : showCoinToss ? 'coinToss' : showMatchSetup ? 'matchSetup' : showManualAdjustments ? 'manualAdjustments' : showMatchEnd ? 'matchEnd' : 'scoreboard')
+  }, [matchId, showCoinToss, showMatchSetup, showManualAdjustments, showMatchEnd])
   // utils/manageNav: the user menu opens the console; sync notices and
   // MatchSetup open "restore a match" with the game number filled in (join
   // an official game with its game PIN). The console never opens over a

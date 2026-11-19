@@ -1,4 +1,35 @@
 (function () {
+  // This page's errors go to the error tracker (POST /api/errors on the same
+  // origin, lib/errorTracker.js; privacy policy 1.22 section 5): the message
+  // and the place in the script, the browser and system by name, never a
+  // value from the screen. At most 5 per page load.
+  var reported = 0;
+  function reportError(msg, file, line, col) {
+    if (reported >= 5 || !window.JSON || !window.XMLHttpRequest) return;
+    reported++;
+    try {
+      var ua = String(navigator.userAgent || '');
+      var m = function (re) { var r = ua.match(re); return r ? r[1] : null; };
+      var os = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Tizen/.test(ua) ? 'Tizen' : /Web0S|webOS/.test(ua) ? 'webOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Linux|X11/.test(ua) ? 'Linux' : null;
+      var browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrom(e|ium)\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : null;
+      var version = m(/Edg\/([\d.]+)/) || m(/Firefox\/([\d.]+)/) || m(/Chrom(?:e|ium)\/([\d.]+)/) || m(/Version\/([\d.]+)/);
+      var uid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) { var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+      var where = file ? String(file).replace(/^[a-z]+:\/\/[^/]+/i, '').split('?')[0] + ':' + (line || 0) + ':' + (col || 0) : null;
+      var w = window.innerWidth, h = window.innerHeight;
+      var event = {
+        uid: uid, client_ts: new Date().toISOString(), kind: 'js.error', level: 'error', product: 'openvolley', tool: 'tv',
+        platform: 'web', runs_as: 'tab', os_name: os, browser: browser, browser_version: version ? String(version).slice(0, 24) : null,
+        viewport: w && h ? w + 'x' + h : null, lang: /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/.test(navigator.language || '') ? navigator.language : null,
+        online: typeof navigator.onLine === 'boolean' ? navigator.onLine : null, view: '/tv', message: String(msg || 'error').slice(0, 500),
+        frames: where ? [where.slice(0, 200)] : []
+      };
+      var x = new XMLHttpRequest();
+      x.open('POST', '/api/errors', true);
+      x.setRequestHeader('Content-Type', 'application/json');
+      x.send(JSON.stringify({ events: [event] }));
+    } catch (e) { /* reporting never breaks the screen */ }
+  }
+  window.onerror = function (msg, file, line, col) { reportError(msg, file, line, col); };
   var L = {
     en: { live: 'Live', empty: 'No game is live yet. The scores appear here as soon as a game starts.', lost: 'Connection lost, retrying', fin: 'Final', to: 'Timeout', br: 'Set break', set: 'Set ' },
     de: { live: 'Live', empty: 'Noch kein Spiel l\u00e4uft. Die Spielst\u00e4nde erscheinen hier, sobald ein Spiel beginnt.', lost: 'Verbindung unterbrochen, neuer Versuch', fin: 'Beendet', to: 'Auszeit', br: 'Satzpause', set: 'Satz ' },
