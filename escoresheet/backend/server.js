@@ -484,8 +484,9 @@ function getDataLayer() {
     import('./lib/sqlWorkspace.js'),
     import('./lib/rosterSaveBack.js'),
     import('./lib/errorTracker.js'),
-    import('./lib/errorAlerts.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta, sqw, rsb, ert, era]) => {
+    import('./lib/errorAlerts.js'),
+    import('./lib/sourceMaps.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta, sqw, rsb, ert, era, smp]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -603,6 +604,8 @@ function getDataLayer() {
       pool: db.pool,
       audit: accounts.audit,
       clubsOfMany: (client, ids) => clubs.clubsOfMany(client, ids),
+      // readable stacks from the web builds' hidden source maps (lib/sourceMaps.js); ERROR_SOURCE_MAPS=off: none
+      ...(String(process.env.ERROR_SOURCE_MAPS || '').toLowerCase() === 'off' ? {} : { sourceMaps: smp.createSourceMaps() }),
       ...(Number(process.env.ERROR_ALERT_DEBOUNCE_MS) >= 0 && process.env.ERROR_ALERT_DEBOUNCE_MS ? { debounceMs: Number(process.env.ERROR_ALERT_DEBOUNCE_MS) } : {})
     })
     const errorAlerts = era.createErrorAlerts({
