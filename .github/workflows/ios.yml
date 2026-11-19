@@ -27,7 +27,9 @@ on:
 
 jobs:
   ios:
-    runs-on: macos-15
+    # macOS 26: Xcode 27 (iOS 27 SDK) is only on this image; App Store Connect
+    # requires the iOS 27 SDK from April 2027 (ITMS-90725)
+    runs-on: macos-26
     timeout-minutes: 60
     defaults:
       run:
