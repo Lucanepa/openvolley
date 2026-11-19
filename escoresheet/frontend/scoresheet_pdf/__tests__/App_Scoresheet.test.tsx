@@ -347,9 +347,16 @@ describe('App_Scoresheet: Global id mode and role name', () => {
     return data
   }
 
-  it('prints DoB for a birthdate match, ID for numbers, Info for text', () => {
-    for (const [mode, heading] of [[undefined, 'DoB'], ['number', 'ID'], ['text', 'Info']] as const) {
-      const { container, unmount } = render(<App matchData={withMatch(mode ? { idMode: mode } : {})} autoAction="preview" />)
+  it('prints Licence in a Swiss match; a Global one: DoB for birthdates, ID for numbers, Info for text', () => {
+    for (const [extra, heading] of [
+      [{}, 'Licence'],
+      [{ idMode: 'number' }, 'Licence'], // a Swiss match has no choice
+      [{ global: true }, 'DoB'],
+      [{ global: true, idMode: 'number' }, 'ID'],
+      [{ global: true, idMode: 'text' }, 'Info']
+    ] as const) {
+      const mode = (extra as any).global ? (extra as any).idMode : undefined
+      const { container, unmount } = render(<App matchData={withMatch(extra)} autoAction="preview" />)
       const header = container.querySelector('[data-testid="roster-home"]')?.textContent || ''
       expect(header).toContain(heading)
       if (mode === 'text') expect(header).toContain('9b') // the stored text is printed as it is

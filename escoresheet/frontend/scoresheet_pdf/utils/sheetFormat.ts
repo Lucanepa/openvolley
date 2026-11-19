@@ -5,6 +5,7 @@
  * utils/__tests__/sheetFormat.test.ts.
  */
 import { officialsToArray } from '../../src/domain/officials.js'
+import { ID_SHEET_HEADING, idModeOf } from '../../src/domain/idMode.js'
 import { zonedParts } from '../../src/ui/format.js'
 import { scoresheetGameId } from './scoresheetStorage'
 
@@ -21,12 +22,13 @@ function validDate(y: number, m: number, d: number): boolean {
 const isPlaceholderDob = (y: number, m: number, d: number) => y === 1900 && m === 1 && d === 1
 
 /**
- * The heading of the column beside a name: "DoB" for a birthdate (every Swiss
- * match), "ID" or "Info" when a Global match uses a number or text instead
- * (src/domain/idMode.js; the person's value is the same `dob` string).
+ * The heading of the column beside a name (src/domain/idMode.js; the person's
+ * value is the same `dob` string): "Licence" in every Swiss match (a licence
+ * number, or a date of birth when the scorer typed one); a Global match's
+ * own choice: "DoB", "ID" or "Info".
  */
 export function idHeadingOf(match: any): string {
-  return match?.idMode === 'number' ? 'ID' : match?.idMode === 'text' ? 'Info' : 'DoB'
+  return ID_SHEET_HEADING[idModeOf(match) as keyof typeof ID_SHEET_HEADING] ?? ID_SHEET_HEADING.dob
 }
 
 /** A bench official's own name for the role (Global: "Teacher"), else ''. */
