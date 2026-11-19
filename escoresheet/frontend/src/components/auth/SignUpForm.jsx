@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Check } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { confirmationLinkQueued, confirmationLinkSent, needsEmailConfirmation } from './signUpResult'
-import { licenceInput, licenceOk, licenceValue, LICENCE_NUMBER_MAX } from './licenceNumber'
+import { licenceInput, licenceOk, licenceValue } from './licenceNumber'
 import SignUpRequestsFields from './SignUpRequestsFields'
 import { fetchPublicClubs } from '../../lib/accountApi'
 import { emptyRequestChoice, requestChoiceProblem, signUpRequestsOf } from '../../domain/signUpRequests'
@@ -212,7 +212,6 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              maxLength={LICENCE_NUMBER_MAX}
               value={licence}
               onChange={e => { setLicence(licenceInput(e.target.value)); setLicenceError('') }}
               autoComplete="off"

@@ -10,7 +10,11 @@
 export const LICENCE_NUMBER_RE = /^[0-9]{4,7}$/
 export const LICENCE_NUMBER_MAX = 7
 
-/** What the field keeps of a keystroke or a paste: digits only, at most 7. */
+/**
+ * What the field keeps of a keystroke or a paste: digits only, at most 7. The
+ * input has no maxLength: the browser would cut a pasted "SV 1234567" to its
+ * first 7 characters before this sees it.
+ */
 export function licenceInput (raw) {
   return String(raw ?? '').replace(/\D+/g, '').slice(0, LICENCE_NUMBER_MAX)
 }

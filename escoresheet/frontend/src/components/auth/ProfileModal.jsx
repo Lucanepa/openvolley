@@ -7,7 +7,7 @@ import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 import RoleChips from './RoleChips'
 import PendingApprovalBanner from './PendingApprovalBanner'
 import EmailConfirmBanner from './EmailConfirmBanner'
-import { licenceInput, licenceOk, licenceValue, LICENCE_NUMBER_MAX } from './licenceNumber'
+import { licenceInput, licenceOk, licenceValue } from './licenceNumber'
 import ApprovalPinSection from './ApprovalPinSection'
 import PasskeySection from './PasskeySection'
 import AccountSecuritySection from './AccountSecuritySection'
@@ -235,7 +235,6 @@ export default function ProfileModal({ open, onClose }) {
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  maxLength={LICENCE_NUMBER_MAX}
                   value={licence}
                   onChange={e => setLicence(licenceInput(e.target.value))}
                   aria-label={t('auth.licenceNumber')}
