@@ -101,6 +101,10 @@ export const AUDIT_ACTIONS = Object.freeze([
   // db/023: team managers (a team link redeemed or removed), a team's saved
   // team and the roster of one of its games (lib/teams.js)
   'team.managers', 'team.squad', 'team.roster',
+  // db/048: an official match's roster filled the team's saved team and the
+  // club's lists (lib/rosterSaveBack.js; the game, the ids and the counts,
+  // never a name or a licence number)
+  'team.squad.match',
   // db/024: a club's licence list from VolleyManager replaced (lib/licences.js;
   // the list and the count, never a name)
   'club.licences',
