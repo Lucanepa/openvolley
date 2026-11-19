@@ -1,14 +1,16 @@
 /**
- * Referees' dates of birth (referee_database.dob, svrz_games.referee_1_dob /
- * referee_2_dob) go only to the accounts that fill a scoresheet's officials:
- * admins and accounts that can score (referee_database: indoor or beach;
- * svrz_games, the indoor schedule: indoor). The directory itself is refused
- * to every other reader (401 without a session, 403 otherwise); the schedule
- * gives them the anonymous projection (lib/publicColumns.js ANON_DB_COLUMNS)
- * and they cannot filter or order on its hidden columns. Covers /api/db selects
- * (the app screens' own queries), the rows a referee directory write returns,
- * the referees such an account adds (no date of birth stored), GET
- * /api/games/today, the live sockets, and a failed role lookup (503).
+ * No referee's date of birth since db/048 (owner 2026-11-19): the columns
+ * referee_database.dob and svrz_games.referee_1_dob / referee_2_dob stay
+ * until db/049 (installed apps still select them), but /api/db answers them
+ * as null for every caller, takes no filter or order on them (400
+ * OV_DOB_FILTER) and stores none (WRITE_DENYLIST); GET /api/games/today has
+ * none. The rows below are seeded WITH dates of birth: what an older backend
+ * may have stored between db/048 and the switch must not come out either.
+ * The directory itself stays for the accounts that fill a scoresheet's
+ * officials (admins, indoor and beach scorers): 401 without a session, 403
+ * otherwise. Covers the app screens' own queries, the rows a directory write
+ * returns, the referees a scorer adds, the live sockets and a failed role
+ * lookup (503).
  *
  * Needs PG_TEST_URL (see tests/helpers/pgTestDb.js) or OV_E2E_DOCKER=1.
  */
@@ -24,11 +26,10 @@ const MINOR_DOB = '2010-03-04'
 const ADULT_DOB = '1975-08-09'
 const BEACH_DOB = '1988-02-03'
 const ALL_DOBS = [MINOR_DOB, ADULT_DOB, BEACH_DOB]
-const day = (v) => (v == null ? v : String(v).slice(0, 10))
 // No date of birth anywhere in the answer, under any key
 const noDob = (r) => !ALL_DOBS.some((d) => r.text.includes(d))
 
-describe('referees\' dates of birth only for the roles that fill the sheet', { skip: SKIP }, () => {
+describe('the referee directory and the schedule: no dates of birth (db/048)', { skip: SKIP }, () => {
   let db, srv, sql
   let ipSeq = 1
   const users = {}
@@ -110,45 +111,49 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
     assert.equal(r.json.data, null)
     assert.ok(!/Zzminor|Zzadult|Zzbeach/.test(r.text), r.text.slice(0, 300))
   }
+  const dobFilterRefused = (r) => {
+    assert.equal(r.status, 400, r.text)
+    assert.equal(r.json.error.code, 'OV_DOB_FILTER')
+    assert.ok(noDob(r), r.text.slice(0, 300))
+  }
 
   it('without a session the directory is refused', async () => {
     for (const params of [pickerQuery('indoor'), pickerQuery('beach'), { columns: 'id, last_name' }, { columns: '*' }]) {
       refusedDirectory(await dbCall(null, 'referee_database', 'select', params), 401, 'OV_SIGN_IN_REQUIRED')
     }
+    // the schedule's public columns, as before
+    const games = await dbCall(null, 'svrz_games', 'select', loaderQuery)
+    assert.equal(games.status, 200, games.text)
+    assert.ok(noDob(games), games.text.slice(0, 300))
   })
 
-  it('an account without a role is refused the directory and reads the schedule like an anonymous reader', async () => {
+  it('an account without a role is refused the directory and reads the schedule without dates of birth', async () => {
     for (const params of [pickerQuery('indoor'), pickerQuery('beach'), { columns: 'id, last_name' }, { columns: '*' }]) {
       refusedDirectory(await dbCall(users.pending, 'referee_database', 'select', params), 403, 'OV_REFEREE_DIRECTORY')
     }
-
     const games = await dbCall(users.pending, 'svrz_games', 'select', loaderQuery)
     assert.equal(games.status, 200, games.text)
     assert.ok(noDob(games), games.text.slice(0, 300))
     const g = games.json.data.find((row) => row.game_number === '940001')
     assert.equal(g.referee_1_last_name, 'Zzminor')
-    assert.ok(!('referee_1_dob' in g) && !('referee_2_dob' in g))
+    assert.ok(g.referee_1_dob == null && g.referee_2_dob == null)
   })
 
-  it('an account without a role cannot filter or order on a date of birth', async () => {
-    for (const params of [
-      { columns: 'id, last_name', filters: [{ type: 'gte', column: 'dob', value: '2008-01-01' }] },
-      { columns: 'id, last_name', order: [{ column: 'dob', ascending: false }], limit: 1 },
-      { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: MINOR_DOB }], head: true, count: 'exact' }
-    ]) {
-      refusedDirectory(await dbCall(users.pending, 'referee_database', 'select', params), 403, 'OV_REFEREE_DIRECTORY')
+  it('nobody filters or orders on a date of birth, an admin neither', async () => {
+    for (const name of ['pending', 'manager', 'scorer', 'beachScorer', 'admin']) {
+      for (const params of [
+        { columns: 'id, last_name', filters: [{ type: 'gte', column: 'dob', value: '2008-01-01' }] },
+        { columns: 'id, last_name', order: [{ column: 'dob', ascending: false }], limit: 1 },
+        { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: MINOR_DOB }], head: true, count: 'exact' }
+      ]) dobFilterRefused(await dbCall(users[name], 'referee_database', 'select', params))
+      dobFilterRefused(await dbCall(users[name], 'svrz_games', 'select', { columns: 'id, game_number', filters: [{ type: 'eq', column: 'referee_1_dob', value: MINOR_DOB }] }))
+      dobFilterRefused(await dbCall(users[name], 'svrz_games', 'select', { columns: 'id', order: { column: 'referee_2_dob', ascending: true } }))
+      dobFilterRefused(await dbCall(users[name], 'profiles', 'select', { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: MINOR_DOB }] }))
     }
-    for (const [table, params] of [
-      ['svrz_games', { columns: 'id, game_number', filters: [{ type: 'eq', column: 'referee_1_dob', value: MINOR_DOB }] }],
-      ['svrz_games', { columns: 'id', order: { column: 'referee_2_dob', ascending: true } }]
-    ]) {
-      const r = await dbCall(users.pending, table, 'select', params)
-      assert.equal(r.status, 400, `${table} ${JSON.stringify(params)}: ${r.text}`)
-      assert.equal(r.json.error.code, 'OV_SECRET_FILTER')
-    }
+    dobFilterRefused(await dbCall(null, 'svrz_games', 'select', { columns: 'id', filters: [{ type: 'eq', column: 'referee_1_dob', value: MINOR_DOB }] }))
   })
 
-  it('a referee directory write by an account that does not score is refused, and returns no dates of birth', async () => {
+  it('a referee directory write by an account that does not score is refused; a scorer\'s returns no date of birth', async () => {
     const id = (await sql.query("SELECT id FROM public.referee_database WHERE last_name = 'Zzminor'")).rows[0].id
     // Match setup's saveReferee: add the sport to an existing referee
     for (const name of ['pending', 'manager', 'referee']) {
@@ -158,23 +163,22 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
       assert.equal(upd.status, 403, `${name}: ${upd.text}`)
       assert.ok(noDob(upd), upd.text.slice(0, 300))
     }
-    // A scorer's write returns the whole row
     const mine = await dbCall(users.scorer, 'referee_database', 'update', {
       data: { sport_type: ['indoor'] }, filters: [{ type: 'eq', column: 'id', value: id }], returning: '*'
     })
     assert.equal(mine.status, 200, mine.text)
-    assert.equal(day(mine.json.data[0].dob), MINOR_DOB)
+    assert.equal(mine.json.data[0].last_name, 'Zzminor')
+    assert.equal(mine.json.data[0].dob, null)
+    assert.ok(noDob(mine), mine.text.slice(0, 300))
   })
 
-  it('competition managers and referees do not get them either', async () => {
+  it('competition managers and referees: no directory; the schedule without dates of birth', async () => {
     for (const name of ['manager', 'referee']) {
       refusedDirectory(await dbCall(users[name], 'referee_database', 'select', pickerQuery('indoor')), 403, 'OV_REFEREE_DIRECTORY')
       const games = await dbCall(users[name], 'svrz_games', 'select', loaderQuery)
       assert.equal(games.status, 200, games.text)
       assert.ok(noDob(games), `${name}: ${games.text.slice(0, 300)}`)
-      const probe = await dbCall(users[name], 'svrz_games', 'select', { columns: 'id', filters: [{ type: 'eq', column: 'referee_1_dob', value: MINOR_DOB }] })
-      assert.equal(probe.status, 400, probe.text)
-      // The saved team screens' schedule reads need no hidden column
+      // The saved team screens' schedule reads
       const leagues = await dbCall(users[name], 'svrz_games', 'select', { columns: 'id, league, gender' })
       assert.equal(leagues.status, 200, leagues.text)
       const teams = await dbCall(users[name], 'svrz_games', 'select', { columns: 'id, team_home, team_away', filters: [{ type: 'in', column: 'league', value: ['H9'] }] })
@@ -183,72 +187,52 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
     }
   })
 
-  it('an indoor scorer and an admin read them, and may filter on them', async () => {
-    for (const name of ['scorer', 'admin']) {
-      const refs = await dbCall(users[name], 'referee_database', 'select', pickerQuery('indoor'))
+  it('an indoor scorer, a beach scorer and an admin read the directory, without dates of birth', async () => {
+    for (const [name, sport, last] of [['scorer', 'indoor', 'Zzminor'], ['admin', 'indoor', 'Zzadult'], ['beachScorer', 'beach', 'Zzbeach']]) {
+      const refs = await dbCall(users[name], 'referee_database', 'select', pickerQuery(sport))
       assert.equal(refs.status, 200, refs.text)
-      assert.equal(day(refs.json.data.find((row) => row.last_name === 'Zzminor').dob), MINOR_DOB, name)
+      const row = refs.json.data.find((r) => r.last_name === last)
+      assert.ok(row, name)
+      assert.equal(row.dob, null, name)
+      assert.ok(noDob(refs), `${name}: ${refs.text.slice(0, 300)}`)
       const games = await dbCall(users[name], 'svrz_games', 'select', loaderQuery)
       assert.equal(games.status, 200, games.text)
-      const g = games.json.data.find((row) => row.game_number === '940001')
-      assert.equal(day(g.referee_1_dob), MINOR_DOB, name)
-      assert.equal(day(g.referee_2_dob), ADULT_DOB, name)
-      const filtered = await dbCall(users[name], 'referee_database', 'select', { columns: 'last_name', filters: [{ type: 'eq', column: 'dob', value: ADULT_DOB }] })
-      assert.equal(filtered.status, 200, filtered.text)
-      assert.deepEqual(filtered.json.data.map((row) => row.last_name), ['Zzadult'])
+      assert.ok(noDob(games), `${name}: ${games.text.slice(0, 300)}`)
+      const g = games.json.data.find((r) => r.game_number === '940001')
+      assert.deepEqual([g.referee_1_last_name, g.referee_1_dob, g.referee_2_dob], ['Zzminor', null, null])
     }
   })
 
-  it('a beach scorer reads the directory\'s dates of birth (OpenBeach\'s picker), not the indoor schedule\'s', async () => {
-    const refs = await dbCall(users.beachScorer, 'referee_database', 'select', pickerQuery('beach'))
-    assert.equal(refs.status, 200, refs.text)
-    assert.equal(day(refs.json.data.find((row) => row.last_name === 'Zzbeach').dob), BEACH_DOB)
-    const games = await dbCall(users.beachScorer, 'svrz_games', 'select', loaderQuery)
-    assert.equal(games.status, 200, games.text)
-    assert.ok(noDob(games), games.text.slice(0, 300))
+  it('today\'s home games carry no referee\'s date of birth, for a scorer of the club neither', async () => {
+    for (const name of ['scorer', 'referee']) {
+      const r = await api(srv.base, '/api/games/today', { method: 'GET', proto: null, token: users[name].token })
+      assert.equal(r.status, 200, r.text)
+      const g = r.json.data.games.find((row) => row.game_number === '940002')
+      assert.equal(g.referee_1_last_name, 'Zzminor', 'the rest of the game stays')
+      assert.ok(!('referee_1_dob' in g) && !('referee_2_dob' in g))
+      assert.ok(noDob(r), r.text.slice(0, 300))
+    }
   })
 
-  it('today\'s home games carry the referees\' dates of birth for a scorer of the club only', async () => {
-    const mine = await api(srv.base, '/api/games/today', { method: 'GET', proto: null, token: users.scorer.token })
-    assert.equal(mine.status, 200, mine.text)
-    const g = mine.json.data.games.find((row) => row.game_number === '940002')
-    assert.equal(day(g.referee_1_dob), MINOR_DOB)
-    assert.equal(day(g.referee_2_dob), ADULT_DOB)
-    const ref = await api(srv.base, '/api/games/today', { method: 'GET', proto: null, token: users.referee.token })
-    assert.equal(ref.status, 200, ref.text)
-    const rg = ref.json.data.games.find((row) => row.game_number === '940002')
-    assert.equal(rg.referee_1_last_name, 'Zzminor', 'the rest of the game stays')
-    assert.equal(rg.referee_1_dob, null)
-    assert.equal(rg.referee_2_dob, null)
-    assert.ok(noDob(ref), ref.text.slice(0, 300))
-  })
-
-  it('only a scorer (or an admin) adds a referee, so the answer never depends on a stored date of birth', async () => {
-    // A unique key over the name and the date of birth (the production
-    // directory has a unique index; its columns are not in the repository)
-    await sql.query('CREATE UNIQUE INDEX test_referee_name_dob ON public.referee_database (first_name, last_name, dob)')
+  it('only a scorer (or an admin) adds a referee, and it is stored without a date of birth', async () => {
+    const add = (user, row, extra = {}) => dbCall(user, 'referee_database', 'insert', {
+      data: { country: 'CHE', sport_type: ['indoor'], created_at: new Date().toISOString(), ...row }, ...extra
+    })
     try {
-      const add = (user, row, extra = {}) => dbCall(user, 'referee_database', 'insert', {
-        data: { country: 'CHE', sport_type: ['indoor'], created_at: new Date().toISOString(), ...row }, ...extra
-      })
-      // The same referee with a wrong and with the stored date of birth: the
-      // same refusal either way, nothing stored
       for (const name of ['pending', 'manager', 'referee']) {
-        const wrong = await add(users[name], { first_name: 'Rolf', last_name: 'Zzadult', dob: '1975-08-10' })
-        const right = await add(users[name], { first_name: 'Rolf', last_name: 'Zzadult', dob: ADULT_DOB }, { returning: '*' })
-        assert.equal(wrong.status, 403, `${name}: ${wrong.text}`)
-        assert.deepEqual(right.json, wrong.json, 'the same answer either way')
+        const r = await add(users[name], { first_name: 'Rolf', last_name: 'Zzadult', dob: ADULT_DOB }, { returning: '*' })
+        assert.equal(r.status, 403, `${name}: ${r.text}`)
+        assert.ok(noDob(r), r.text.slice(0, 300))
       }
-      const stored = (await sql.query("SELECT dob::text AS dob FROM public.referee_database WHERE last_name = 'Zzadult'")).rows
-      assert.deepEqual(stored.map((row) => row.dob), [ADULT_DOB])
-      // A scorer's new referee keeps its date of birth
-      const mine = await add(users.scorer, { first_name: 'Nora', last_name: 'Zzscorer', dob: '1992-06-07' })
+      assert.equal((await sql.query("SELECT count(*)::int AS n FROM public.referee_database WHERE last_name = 'Zzadult'")).rows[0].n, 1)
+      // an older scorer app still sends the date it typed: dropped (WRITE_DENYLIST)
+      const mine = await add(users.scorer, { first_name: 'Nora', last_name: 'Zzscorer', dob: '1992-06-07' }, { returning: '*' })
       assert.equal(mine.status, 200, mine.text)
-      const kept = (await sql.query("SELECT dob::text AS dob FROM public.referee_database WHERE last_name = 'Zzscorer'")).rows
-      assert.deepEqual(kept.map((row) => row.dob), ['1992-06-07'])
+      assert.equal(mine.json.data[0].dob, null)
+      const kept = (await sql.query("SELECT dob FROM public.referee_database WHERE last_name = 'Zzscorer'")).rows
+      assert.deepEqual(kept.map((row) => row.dob), [null])
     } finally {
-      await sql.query("DELETE FROM public.referee_database WHERE (last_name = 'Zzadult' AND dob IS NULL) OR last_name = 'Zzscorer'")
-      await sql.query('DROP INDEX IF EXISTS public.test_referee_name_dob')
+      await sql.query("DELETE FROM public.referee_database WHERE last_name = 'Zzscorer'")
     }
   })
 
@@ -266,27 +250,24 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
     }
   })
 
-  it('when the roles cannot be read, a scorer gets 503, never the cut-down row; the schedule\'s public columns need no lookup', async () => {
+  it('when the roles cannot be read, the directory is 503, never a silent "no"; the schedule needs no lookup', async () => {
     // New scorers: nothing of theirs is in the access cache (30 s) yet
     const reader = await account('lateReader', ['scorer'])
     const writer = await account('lateWriter', ['scorer'])
     await sql.query('ALTER TABLE public.profiles RENAME COLUMN roles TO roles_unreadable')
     try {
-      const pub = await dbCall(reader, 'svrz_games', 'select', { columns: 'id, league, gender' })
-      assert.equal(pub.status, 200, pub.text)
-      // The directory always needs the roles
-      const names = await dbCall(reader, 'referee_database', 'select', { columns: 'id, last_name' })
-      assert.equal(names.status, 503, names.text)
-      assert.equal(names.json.error.code, 'OV_DB_UNAVAILABLE')
-      for (const [table, params] of [['referee_database', pickerQuery('indoor')], ['svrz_games', loaderQuery]]) {
-        const r = await dbCall(reader, table, 'select', params)
-        assert.equal(r.status, 503, `${table}: ${r.text}`)
+      for (const params of [{ columns: 'id, last_name' }, pickerQuery('indoor')]) {
+        const r = await dbCall(reader, 'referee_database', 'select', params)
+        assert.equal(r.status, 503, r.text)
         assert.equal(r.json.error.code, 'OV_DB_UNAVAILABLE')
         assert.equal(r.json.data, null)
       }
-      // A new referee is neither stored without its date of birth nor at all
+      const games = await dbCall(reader, 'svrz_games', 'select', loaderQuery)
+      assert.equal(games.status, 200, games.text)
+      assert.ok(noDob(games), games.text.slice(0, 300))
+      // A new referee is not stored while the roles cannot be read
       const add = await dbCall(writer, 'referee_database', 'insert', {
-        data: { first_name: 'Ida', last_name: 'Zzlate', country: 'CHE', dob: '1993-08-09', sport_type: ['indoor'] }
+        data: { first_name: 'Ida', last_name: 'Zzlate', country: 'CHE', sport_type: ['indoor'] }
       })
       assert.equal(add.status, 503, add.text)
       assert.equal(add.json.error.code, 'OV_DB_UNAVAILABLE')

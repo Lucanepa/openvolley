@@ -16,8 +16,8 @@
  *                           'scoresheets' bucket from before the cutoff day,
  *                           PDFs and the JSON files beside them, with their
  *                           public.match_scoresheets rows
- *   svrz_games              VolleyManager's assignments (referees' names and
- *                           dates of birth) of games before the cutoff day,
+ *   svrz_games              VolleyManager's assignments (referees' names; no
+ *                           dates of birth since db/048) of games before the cutoff day,
  *                           and svrz_games_removed of the same days
  *
  * The season of a match is matches.official_season (db/034), else the season

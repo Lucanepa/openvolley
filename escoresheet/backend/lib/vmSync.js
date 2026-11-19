@@ -322,17 +322,6 @@ export function formatZurichDateTime(date, tz = ZURICH_TZ) {
   }
 }
 
-/** Birthday -> 'YYYY-MM-DD' (for the date column) or null. Accepts ISO or dd.mm.yyyy. */
-export function normalizeDob(raw) {
-  if (typeof raw !== 'string') return null
-  const s = raw.trim()
-  let ymd = null
-  let m
-  if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/))) ymd = `${m[1]}-${m[2]}-${m[3]}`
-  else if ((m = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/))) ymd = `${m[3]}-${pad2(m[2])}-${pad2(m[1])}`
-  return ymd && isYmd(ymd) ? ymd : null
-}
-
 // ---------------------------------------------------------------------------
 // Secret scrubbing
 // ---------------------------------------------------------------------------
@@ -812,8 +801,11 @@ function deepGet(obj, ...keys) {
   return obj ?? null
 }
 
+// The referee's names only: VolleyManager's birthday of the person
+// (formattedAndTimezoneIndependentBirthday) is never read (db/048, owner
+// 2026-11-19: no dates of birth outside a match's own sheet)
 function extractRefereeInfo(item, convocationKey) {
-  const empty = { name: null, firstName: null, lastName: null, dob: null }
+  const empty = { name: null, firstName: null, lastName: null }
   const conv = item[convocationKey]
   if (!conv || typeof conv !== 'object') return empty
   const person = deepGet(conv, 'indoorAssociationReferee', 'indoorReferee', 'person')
@@ -821,8 +813,7 @@ function extractRefereeInfo(item, convocationKey) {
   return {
     name: person.displayName ?? null,
     firstName: person.firstName ?? null,
-    lastName: person.lastName ?? null,
-    dob: person.formattedAndTimezoneIndependentBirthday ?? null
+    lastName: person.lastName ?? null
   }
 }
 
@@ -915,11 +906,12 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
     referee_1: str(ref1.name ?? item.activeFirstHeadRefereeName),
     referee_1_first_name: str(ref1.firstName),
     referee_1_last_name: str(ref1.lastName),
-    referee_1_dob: normalizeDob(ref1.dob),
+    // always null (db/048): every sync run clears what an older run stored
+    referee_1_dob: null,
     referee_2: str(ref2.name ?? item.activeSecondHeadRefereeName),
     referee_2_first_name: str(ref2.firstName),
     referee_2_last_name: str(ref2.lastName),
-    referee_2_dob: normalizeDob(ref2.dob),
+    referee_2_dob: null,
     hall_address: str(addr.combinedAddress),
     hall_postal_code: str(addr.postalCode),
     group_display: str(groupDisplay),
@@ -965,7 +957,12 @@ export function prepareRows(items, opts = {}) {
 // Database
 // ---------------------------------------------------------------------------
 
-/** svrz_games columns written by the sync, with their Postgres types. */
+/**
+ * svrz_games columns written by the sync, with their Postgres types.
+ * referee_1_dob / referee_2_dob: always null since db/048 (an older run's
+ * value is cleared on the next run); they leave this list with db/049, which
+ * drops the columns.
+ */
 export const GAME_COLUMNS = [
   ['game_number', 'text'], ['date', 'text'], ['time', 'text'], ['datetime', 'text'],
   ['city', 'text'], ['hall', 'text'], ['match_type', 'text'], ['championship_type', 'text'],

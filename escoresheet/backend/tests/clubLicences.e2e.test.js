@@ -1,7 +1,8 @@
 /**
  * A club's licence lists from VolleyManager (db/024, lib/licences.js,
  * docs/club-licences-spec.md): the club manager's upload (replace semantics,
- * the five fields only), who reads what, the teams of each person, the
+ * the four fields only; db/048: a date of birth an older client sends is
+ * dropped, none is stored or answered), who reads what, the teams of each person, the
  * gender rule on squads and game rosters (the players only: the officials may
  * be anyone of the club), the audit and ON DELETE CASCADE.
  *
@@ -16,7 +17,8 @@ import { grantRoles } from './helpers/pgTestDb.js'
 import { zurichDay } from '../lib/clubs.js'
 
 const dayPlus = (day, n) => { const t = new Date(`${day}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10) }
-// made-up people of VBC Musterdorf (no real person)
+// made-up people of VBC Musterdorf (no real person); `dob` as an older
+// manager build still sends it (db/048: dropped)
 const ANNA = { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f' }
 const LEA = { sv_number: '100002', last_name: 'Muster', first_name: 'Lea', dob: '2006-01-31', gender: 'f' }
 const MARCO = { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: '2001-11-02', gender: 'm' }
@@ -24,9 +26,11 @@ const NOAH = { sv_number: '100004', last_name: 'Testmann', first_name: 'Noah', d
 const COACH = { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f' }
 const player = (number, p, extra = {}) => ({ number, first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.sv_number, ...extra })
 const official = (role, p) => ({ role, first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.sv_number })
-const FIVE = ['dob', 'first_name', 'gender', 'last_name', 'sv_number']
+const FOUR = ['first_name', 'gender', 'last_name', 'sv_number']
 // db/026: every person read also has `manual` (added by hand; all of these are uploaded)
-const READ = [...FIVE, 'manual'].sort()
+const READ = [...FOUR, 'manual'].sort()
+// a person as the server answers it: no date of birth (db/048)
+const four = ({ dob, ...p }) => p
 
 describe('club licence lists', { skip: SKIP }, () => {
   let db, srv, sql
@@ -94,23 +98,23 @@ describe('club licence lists', { skip: SKIP }, () => {
     await db?.drop()
   })
 
-  it('the club manager uploads a list: the five fields, a licence number twice is one person', async () => {
-    const r = await put(users.clubmgr, musterdorf.id, 'players', [ANNA, LEA, MARCO, { ...MARCO, first_name: null, dob: null }, { ...NOAH, sv_number: Number(NOAH.sv_number) }])
+  it('the club manager uploads a list: the four fields (a dob dropped), a licence number twice is one person', async () => {
+    const r = await put(users.clubmgr, musterdorf.id, 'players', [ANNA, { ...LEA, dob: '31.01.2006' }, MARCO, { ...MARCO, first_name: null, dob: 'not a date' }, { ...NOAH, sv_number: Number(NOAH.sv_number) }])
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.list, 'players')
     assert.equal(r.json.data.count, 4)
     const { rows } = await sql.query('SELECT sv_number, last_name, first_name, dob::text AS dob, gender, imported_by FROM public.club_licences WHERE club_id = $1 ORDER BY sv_number', [musterdorf.id])
     assert.deepEqual(rows.map((x) => [x.sv_number, x.last_name, x.first_name, x.dob, x.gender]), [
-      ['100001', 'Beispiel', 'Anna', '2004-05-06', 'f'],
-      ['100002', 'Muster', 'Lea', '2006-01-31', 'f'],
-      ['100003', 'Probe', 'Marco', '2001-11-02', 'm'],
+      ['100001', 'Beispiel', 'Anna', null, 'f'],
+      ['100002', 'Muster', 'Lea', null, 'f'],
+      ['100003', 'Probe', 'Marco', null, 'm'],
       ['100004', 'Testmann', 'Noah', null, 'm']
     ])
     assert.ok(rows.every((x) => x.imported_by === users.clubmgr.id))
     assert.equal((await put(users.clubmgr, musterdorf.id, 'coaches', [COACH, { ...MARCO }])).status, 200)
   })
 
-  it('refuses anything but the five fields, and bad values', async () => {
+  it('refuses anything but the four fields (and a dropped dob), and bad values', async () => {
     const bad = async (people) => {
       const r = await put(users.clubmgr, musterdorf.id, 'players', people)
       assert.equal(r.status, 400, r.text)
@@ -122,8 +126,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.match(await bad([{ ...ANNA, sv_number: '12a45' }]), /sv_number/)
     assert.match(await bad([{ ...ANNA, last_name: '  ' }]), /last_name/)
     assert.match(await bad([{ ...ANNA, last_name: 'x'.repeat(101) }]), /last_name/)
-    assert.match(await bad([{ ...ANNA, dob: '06.05.2004' }]), /dob/)
-    assert.match(await bad([{ ...ANNA, dob: '2004-02-30' }]), /dob/)
+    assert.match(await bad([{ ...ANNA, dateOfBirth: '2004-05-06' }]), /dateOfBirth: not accepted/)
     assert.match(await bad([{ ...ANNA, gender: 'D' }]), /gender/)
     assert.match(await bad(Array.from({ length: 2001 }, (_, i) => ({ sv_number: String(300000 + i), last_name: 'L' }))), /at most 2000/)
     assert.equal((await call(users.clubmgr, 'PUT', `/api/club/${musterdorf.id}/licences/players`, { list: [] })).status, 400)
@@ -161,7 +164,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     // owner decision 2: players of the team's gender (and those without one), filtered by the server
     assert.deepEqual(r.json.data.players.map((p) => p.sv_number), ['100003', '100004'])
     assert.deepEqual(Object.keys(r.json.data.players[0]).sort(), READ)
-    assert.ok(r.json.data.players.every((p) => p.manual === false && p.dob === null))
+    assert.ok(r.json.data.players.every((p) => p.manual === false && !('dob' in p)))
     // people: those players with their lists (the saved team is empty yet); an official of the club is searched for
     assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists]), [['100003', ['players', 'coaches']], ['100004', ['players']]])
     assert.deepEqual(Object.keys(r.json.data.people[0]).sort(), [...READ, 'lists'].sort())
@@ -185,16 +188,20 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.equal(c.club_id, musterdorf.id)
     assert.deepEqual(c.team_names, ['VBC Musterdorf D1', 'VBC Musterdorf H1', 'VBC Musterdorf X1'])
     assert.deepEqual(c.team_genders, { 'VBC Musterdorf D1': 'f', 'VBC Musterdorf H1': 'm', 'VBC Musterdorf X1': null })
-    // players: the players list only, as release 3.0.15 reads it (the five fields, and manual)
+    // players: the players list only, as release 3.0.15 reads it (the four fields, and manual)
     assert.deepEqual(c.players.map((p) => p.sv_number), ['100001', '100002', '100003', '100004'])
     assert.deepEqual(Object.keys(c.players[0]).sort(), READ)
     // people: the whole club once, with its lists, for the bench officials
     assert.deepEqual(c.people.map((p) => [p.last_name, p.lists]), [
       ['Beispiel', ['players']], ['Muster', ['players']], ['Probe', ['players', 'coaches']], ['Testmann', ['players']], ['Trainer', ['coaches']]
     ])
-    assert.deepEqual(c.people.find((p) => p.sv_number === '100003'), { ...MARCO, dob: null, manual: false, lists: ['players', 'coaches'] })
-    // owner decision 2: the tablet keeps no date of birth
-    assert.ok([...c.players, ...c.people].every((p) => p.dob === null))
+    assert.deepEqual(c.people.find((p) => p.sv_number === '100003'), { ...four(MARCO), manual: false, lists: ['players', 'coaches'] })
+    // no date of birth anywhere (db/048)
+    assert.ok([...c.players, ...c.people].every((p) => !('dob' in p)))
+    // the route older apps ask for dates of birth: always none
+    const dob = await call(users.scorer, 'GET', `/api/club-licences/dob?club=${musterdorf.id}&sv=100001,100003`)
+    assert.equal(dob.status, 200, dob.text)
+    assert.deepEqual(dob.json.data, { club_id: musterdorf.id, people: [] })
     const o = await call(users.otherscorer, 'GET', '/api/club-licences')
     assert.equal(o.status, 200, o.text)
     assert.deepEqual(o.json.data.clubs.map((x) => [x.club_id, x.players.length, x.people.length]), [[other.id, 0, 0]])
@@ -261,8 +268,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(by['100001'].teams.map((t) => t.name), ['VBC Musterdorf D1', 'VBC Musterdorf H1', 'VBC Musterdorf X1'])
     assert.deepEqual(by['200001'].teams.map((t) => [t.id, t.name]), [[h1.id, 'VBC Musterdorf H1']])
     assert.deepEqual(by['100004'].teams.map((t) => t.name), ['VBC Musterdorf H1'])
-    assert.equal(by['100004'].dob, null)
-    assert.deepEqual(Object.keys(by['100001']).sort(), ['dob', 'first_name', 'gender', 'hand_rows', 'id', 'last_name', 'lists', 'manual', 'row_ids', 'sv_number', 'teams'])
+    assert.deepEqual(Object.keys(by['100001']).sort(), ['first_name', 'gender', 'hand_rows', 'id', 'last_name', 'lists', 'manual', 'row_ids', 'sv_number', 'teams'])
     assert.match(by['100001'].id, /^[0-9a-f-]{36}$/)
     assert.deepEqual(by['100001'].hand_rows, [])
     assert.deepEqual([d.lists.players.manual, d.lists.coaches.manual, d.lists.scorers.manual], [0, 0, 0])

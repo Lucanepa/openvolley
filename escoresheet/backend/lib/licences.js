@@ -3,17 +3,20 @@
  * (db/024, docs/club-licences-spec.md).
  *
  * A club manager reads the XLSX export in the browser
- * (frontend src/utils/vmLicenceExport.js) and sends five fields per person:
- * licence number (Swiss Volley "SV" number), last name, first name, date of
- * birth and gender. Nothing else of the export reaches the server, and this
- * module refuses any other field. Three lists per club: players, scorers,
- * coaches; each upload replaces the imported rows of its list.
+ * (frontend src/utils/vmLicenceExport.js) and sends four fields per person:
+ * licence number (Swiss Volley "SV" number), last name, first name and
+ * gender. Nothing else of the export reaches the server, and this module
+ * refuses any other field, with one exception: `dob`, which older manager
+ * builds and Club API clients still send, is accepted and dropped (db/048,
+ * owner 2026-11-19: "ONLY licence number", no dates of birth anywhere). Three
+ * lists per club: players, scorers, coaches; each upload replaces the
+ * imported rows of its list.
  *
  * db/026 (owner 2026-11-10: "if I add somebody manually, when saving ask if I
  * want to save him/her in the club. Those from the club/recognized/linked ->
  * green shield. Those added manually -> gray shield, but can be linked
  * later."): a team or club manager may add people typed in by hand to the
- * club's lists, the same five fields (source 'manual'). An upload keeps them,
+ * club's lists, the same four fields (source 'manual'). An upload keeps them,
  * and turns those it contains into imported rows; Delete list (an empty
  * upload) removes them too. A row of the players list has `manual`: true when
  * it was added by hand; a person (every list once) when all its rows are (the
@@ -34,42 +37,36 @@
  *                                              people); an empty list deletes the whole list
  *   clubList({ clubId })                       every person once: lists, teams, row id and the
  *                                              rows added by hand
- *   addPeople({ clubId, body, userId })        { people: [{ list, ...five fields }] } (1 to 30) by
+ *   addPeople({ clubId, body, userId })        { people: [{ list, ...four fields }] } (1 to 30) by
  *                                              hand: new licence numbers only, never over a row
  *   deleteRow({ clubId, rowId, userId })       one row added by hand
  * Whoever may manage the team (lib/teams.js mayManage):
  *   teamClubPlayers({ teamId })                the team's club: its players of the team's gender
- *                                              and age class (filtered here, never in the
- *                                              browser) and the people of the team's saved team
- *                                              (`people`, the shields); dates of birth only of
- *                                              the people in the saved team who fit the team
- *                                              (fillTeamDob adds them when such a person is
- *                                              saved into a roster)
+ *                                              (filtered here, never in the browser) and the
+ *                                              people of the team's saved team (`people`, the
+ *                                              shields). No age class filter since db/048 (it
+ *                                              read the dates of birth): a youth team is offered
+ *                                              every player of its gender
  *   searchPeople({ teamId, q })                at most MAX_SEARCH_RESULTS people of the club's
  *                                              lists by name or licence number (an official may
- *                                              be anyone of the club), dates of birth as above
+ *                                              be anyone of the club)
  *   addPeople({ teamId, body, userId })        the same as the club's, to the team's club
  * Scorers (indoor canReadTeams, as GET /api/game-rosters):
  *   scorerClubPlayers({ userId })              each club of the caller: its teams, their gender,
  *                                              its players list and every person of its lists
- *                                              once, without dates of birth (the tablet's copy)
- *   scorerDob({ userId, clubId, svNumbers })   the dates of birth of the people a scorer adds to
- *                                              a roster (at most MAX_DOB_LOOKUP), of its own clubs,
- *                                              at most MAX_DOB_PER_DAY a day, audited
+ *                                              once (the tablet's copy)
+ *   scorerDob()                                GET /api/club-licences/dob of apps before db/048:
+ *                                              always { people: [] } (no dates of birth kept)
  * Everyone else (lib/teams.js, server.js):
  *   wrongGender(db, team, players)             the first player of the club's players list
  *                                              whose gender is not the team's, or null; players
  *                                              only, never the team's officials (owner 2026-11-09:
  *                                              "coaches can literally be any player/member of the
  *                                              club")
- *   fillDob(db, clubId, people)                `people` with the club's dates of birth where a
- *                                              row with a licence number of the lists has none
- *   fillTeamDob(db, team, people)              the same, only of the club's players who fit the
- *                                              team's gender and age class (rosters, squads)
  *   teamGenders(db, names)                     Map team key -> 'm' | 'f' | null (svrz_games)
  *   sweep()                                    deletes the rows of past seasons
  *
- * Personal data (names, dates of birth, licence numbers, gender): served only
+ * Personal data (names, licence numbers, gender): served only
  * through these routes, never on the /api/db allowlist, never anonymous; the
  * audit keeps the list and the count, never a name. A database without db/024
  * answers "no list" to the reads and never blocks a squad or a roster; one
@@ -87,8 +84,11 @@ import { connectClient } from './pgClient.js'
 export const LICENCE_LISTS = Object.freeze(['players', 'scorers', 'coaches'])
 export const MAX_LICENCE_PEOPLE = 2000
 export const LICENCE_NAME_MAX = 100
-// The only fields a person of a list has (owner 2026-11-09)
-export const LICENCE_FIELDS = Object.freeze(['sv_number', 'last_name', 'first_name', 'dob', 'gender'])
+// The only fields a person of a list has (owner 2026-11-09; db/048: no date of birth)
+export const LICENCE_FIELDS = Object.freeze(['sv_number', 'last_name', 'first_name', 'gender'])
+// Accepted in a person and dropped: older manager builds and Club API clients
+// still send the date of birth (db/048)
+const DROPPED_FIELDS = Object.freeze(['dob'])
 // db/026: people added by hand from a roster, at most this many per request
 export const MAX_MANUAL_PEOPLE = 30
 // ... and at most this many rows added by hand per club, and per account a day
@@ -97,14 +97,8 @@ export const MAX_MANUAL_PER_DAY = 100
 // A team manager's search of the club's people (an official): a few rows, never the list
 export const MAX_SEARCH_RESULTS = 10
 export const SEARCH_MIN_LENGTH = 3
-// The dates of birth a scorer asks for at once (the people added to one roster)
-export const MAX_DOB_LOOKUP = 30
-// ... and at most this many a day per account (both rosters of a few games;
-// every lookup is audited, so the club's lists are not read in chunks)
-export const MAX_DOB_PER_DAY = 80
 const MANUAL_FIELDS = Object.freeze(['list', ...LICENCE_FIELDS])
 const SV_RE = /^[0-9]{4,7}$/
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 // No db/024 (or db/023) yet: a relation or column that does not exist
 const MISSING = new Set(['42P01', '42703'])
 const nameSql = (alias) => `nullif(trim(coalesce(${alias}.first_name, '') || ' ' || coalesce(${alias}.last_name, '')), '')`
@@ -130,7 +124,6 @@ export const MANUAL_LIMIT = (limit, per) => fail(409, 'OV_MANUAL_LIMIT',
   per === 'club'
     ? `The club's lists hold at most ${limit} people added by hand: upload the list from VolleyManager instead`
     : `At most ${limit} people can be added by hand a day`)
-export const DOB_LIMIT = (limit) => fail(429, 'OV_DOB_LIMIT', `At most ${limit} dates of birth can be looked up a day`)
 
 /** VolleyManager's gender of a game (vmSync: 'men' | 'women' | ''; tests 'm' | 'f'): 'm', 'f', '' (none) or 'x' (another value). */
 export function scheduleGender (raw) {
@@ -170,31 +163,13 @@ export function ageClassOf (leagues) {
 }
 
 /**
- * Could a person born on `dob` (YYYY-MM-DD, or none) play in age class U<n>
- * in season `seasonYear`? Born in the season's first year minus n or later:
- * one year more than the class's own limit, so that no player of the class is
- * left out; a person without a date of birth always.
- */
-export function fitsAgeClass (dob, n, seasonYear) {
-  if (!n || !seasonYear || typeof dob !== 'string' || !DATE_RE.test(dob)) return true
-  return Number(dob.slice(0, 4)) >= seasonYear - n
-}
-
-function validDate (s) {
-  if (typeof s !== 'string' || !DATE_RE.test(s)) return false
-  const d = new Date(`${s}T00:00:00Z`)
-  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) return false
-  const y = Number(s.slice(0, 4))
-  return y >= 1900 && y <= 2100
-}
-
-/**
- * One person of a list: the five fields, trimmed. { person } or { error } (a
- * 400 answer). A field outside `fields` is refused.
+ * One person of a list: the four fields, trimmed. { person } or { error } (a
+ * 400 answer). A field outside `fields` is refused; a date of birth
+ * (DROPPED_FIELDS) is dropped, whatever it holds.
  */
 function validPerson (raw, at, fields = LICENCE_FIELDS) {
   if (!isPlainObject(raw)) return { error: invalid(`${at}: must be an object`) }
-  const extra = Object.keys(raw).find((k) => !fields.includes(k))
+  const extra = Object.keys(raw).find((k) => !fields.includes(k) && !DROPPED_FIELDS.includes(k))
   if (extra) return { error: invalid(`${at}.${extra.slice(0, 40)}: not accepted (only ${fields.join(', ')})`) }
   const sv = typeof raw.sv_number === 'number' && Number.isInteger(raw.sv_number) ? String(raw.sv_number) : (typeof raw.sv_number === 'string' ? raw.sv_number.trim() : '')
   if (!SV_RE.test(sv)) return { error: invalid(`${at}.sv_number: 4 to 7 digits`) }
@@ -207,28 +182,22 @@ function validPerson (raw, at, fields = LICENCE_FIELDS) {
     first = tidy(raw.first_name) || null
     if (first && first.length > LICENCE_NAME_MAX) return { error: invalid(`${at}.first_name: at most ${LICENCE_NAME_MAX} characters`) }
   }
-  let dob = null
-  if (raw.dob != null && raw.dob !== '') {
-    if (!validDate(raw.dob)) return { error: invalid(`${at}.dob: YYYY-MM-DD or null`) }
-    dob = raw.dob
-  }
   let gender = null
   if (raw.gender != null && raw.gender !== '') {
     if (raw.gender !== 'm' && raw.gender !== 'f') return { error: invalid(`${at}.gender: m, f or null`) }
     gender = raw.gender
   }
-  return { person: { sv_number: sv, last_name: last, first_name: first, dob, gender } }
+  return { person: { sv_number: sv, last_name: last, first_name: first, gender } }
 }
 
 /** A person named twice: the first one's fields, completed by the later one's. */
 function completeWith (cur, p) {
   cur.first_name ??= p.first_name
-  cur.dob ??= p.dob
   cur.gender ??= p.gender
 }
 
 /**
- * The people of one upload: the five fields, trimmed; a licence number twice
+ * The people of one upload: the four fields, trimmed; a licence number twice
  * is one person (the first one's fields, completed by the later ones).
  * { people } or { error } (a 400 answer). Any other field is refused: nothing
  * else of the export may be sent.
@@ -249,7 +218,7 @@ export function validateLicencePeople (people) {
 
 /**
  * The body of a hand-added batch (db/026): { people: [{ list, sv_number,
- * last_name, first_name, dob, gender }] }, 1 to 30 entries, the five fields as
+ * last_name, first_name, gender }] }, 1 to 30 entries, the four fields as
  * an upload's and the list (players, scorers, coaches). Nothing else in the
  * body or an entry. A licence number twice in one list is one person (as an
  * upload). { people } or { error } (a 400 answer).
@@ -280,7 +249,6 @@ const personOut = (r, manual) => ({
   sv_number: r.sv_number,
   last_name: r.last_name,
   first_name: r.first_name ?? null,
-  dob: r.dob ?? null,
   gender: r.gender ?? null,
   manual
 })
@@ -288,8 +256,8 @@ const byName = (a, b) => a.last_name.localeCompare(b.last_name, 'de') || String(
 const listOrder = (l) => LICENCE_LISTS.indexOf(l)
 
 /**
- * Rows of several lists ({ list, sv_number, last_name, first_name, dob,
- * gender, source }) -> every person once ({ ...the five fields, manual,
+ * Rows of several lists ({ list, sv_number, last_name, first_name, gender,
+ * source }) -> every person once ({ ...the four fields, manual,
  * lists }), in name order: the fields of the first imported row that has
  * them (players, scorers, coaches), then of the rows added by hand (so a row
  * typed in by hand never replaces what an upload says); the lists in that
@@ -310,19 +278,14 @@ export function mergeLicencePeople (rows, extra = null) {
     }
     if (!cur.lists.includes(r.list)) cur.lists.push(r.list)
     cur.first_name ??= r.first_name ?? null
-    cur.dob ??= r.dob ?? null
     cur.gender ??= r.gender ?? null
   }
   for (const p of people.values()) p.lists.sort((a, b) => listOrder(a) - listOrder(b))
   return [...people.values()].sort(byName)
 }
 
-/** The players list of `rows` (several lists): the five fields and manual (this row's, db/026), in name order. */
+/** The players list of `rows` (several lists): the four fields and manual (this row's, db/026), in name order. */
 const playersOf = (rows) => (rows || []).filter((r) => r.list === 'players').map((r) => personOut(r, r.source === 'manual')).sort(byName)
-
-// A person without the date of birth (what a scorer's tablet keeps, and a team
-// manager's answer for those not in its saved team)
-const withoutDob = (p) => ({ ...p, dob: null })
 
 /**
  * @param {object} o
@@ -387,11 +350,11 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
 
   /**
    * The club's people of one list (or every list) of the current season:
-   * rows with dob as YYYY-MM-DD, their source and row id.
+   * rows with their source and row id.
    */
   async function peopleOf (db, clubId, list = null) {
     const { rows } = await (db || pool).query(
-      `SELECT l.list, l.sv_number, l.last_name, l.first_name, l.dob::text AS dob, l.gender, ${sourceSql('l')} AS source, ${idSql('l')} AS id
+      `SELECT l.list, l.sv_number, l.last_name, l.first_name, l.gender, ${sourceSql('l')} AS source, ${idSql('l')} AS id
          FROM public.club_licences l
         WHERE l.club_id = $1 AND ($2::text IS NULL OR l.list = $2) AND ${currentSql('l', '$3')}`, [clubId, list, seasonNow()])
     return rows
@@ -411,8 +374,8 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
 
   /**
    * The licence numbers of team `team`'s saved team of this season (players
-   * and officials; lib/teams.js squad): the people whose dates of birth its
-   * managers see. Throws on a DB error.
+   * and officials; lib/teams.js squad): the people of the team's shields.
+   * Throws on a DB error.
    */
   async function squadLicences (db, team) {
     const { rows } = await (db || pool).query(
@@ -469,68 +432,18 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
   }
 
   /**
-   * `people` (roster rows { license_number, dob, ... }) with the date of birth
-   * of the club's lists where a row has a licence number of them and no date
-   * of birth (the players list first): a team manager gets the dates of birth
-   * of the club's people only once they are in a roster (owner decision 2).
-   * The others as they are; none without db/024. Throws on a DB error.
-   */
-  async function fillDob (db, clubId, people, only = null) {
-    const list = Array.isArray(people) ? people : []
-    const want = [...new Set(list.filter((p) => isPlainObject(p) && (p.dob == null || p.dob === ''))
-      .map((p) => String(p.license_number ?? '').trim()).filter((s) => SV_RE.test(s) && (!only || only.has(s))))]
-    if (!isUuid(clubId) || !want.length) return list
-    let rows
-    try {
-      ;({ rows } = await (db || pool).query(
-        `SELECT DISTINCT ON (l.sv_number) l.sv_number, l.dob::text AS dob
-           FROM public.club_licences l
-          WHERE l.club_id = $1 AND l.sv_number = ANY($2::text[]) AND l.dob IS NOT NULL AND ${currentSql('l', '$3')}
-          ORDER BY l.sv_number, (${sourceSql('l')} = 'manual'), array_position(ARRAY['players', 'scorers', 'coaches'], l.list)`,
-        [clubId, want, seasonNow()]))
-    } catch (err) {
-      if (MISSING.has(err?.code)) return list
-      throw err
-    }
-    const dobOf = new Map(rows.map((r) => [r.sv_number, r.dob]))
-    return list.map((p) => {
-      if (!isPlainObject(p) || (p.dob != null && p.dob !== '')) return p
-      const d = dobOf.get(String(p.license_number ?? '').trim())
-      return d ? { ...p, dob: d } : p
-    })
-  }
-
-  /**
    * The licence numbers of the players list of `team`'s club that fit the
-   * team: its gender (or none) and its age class (fitsAgeClass), with the
-   * team's gender and age class. Throws on a DB error (MISSING without db/024).
+   * team's gender (or have none), with the team's gender and age class (the
+   * U<n> of its leagues: shown, no longer a filter since db/048, which took
+   * the dates of birth it read). Throws on a DB error (MISSING without db/024).
    */
   async function fittingPlayers (db, team, rows = null) {
     const year = seasonNow()
     const gender = (await teamGenders(db, [team.name])).get(key(team.name)) ?? null
     const ageClass = await teamAgeClass(db, team.name, year)
     const players = (rows ?? await peopleOf(db, team.club_id, 'players')).filter((r) => r.list === 'players')
-    const fit = new Set(players.filter((r) => (!gender || !r.gender || r.gender === gender) && fitsAgeClass(r.dob, ageClass, year)).map((r) => r.sv_number))
+    const fit = new Set(players.filter((r) => !gender || !r.gender || r.gender === gender).map((r) => r.sv_number))
     return { fit, gender, ageClass }
-  }
-
-  /**
-   * fillDob for a roster of `team` (a saved team or a game roster): only the
-   * dates of birth of the club's players who fit the team (fittingPlayers), so
-   * that putting someone of another gender or age class into a roster does not
-   * reveal theirs (owner decision 2). Throws on a DB error.
-   */
-  async function fillTeamDob (db, team, people) {
-    const list = Array.isArray(people) ? people : []
-    if (!team || !isUuid(team.club_id)) return list
-    let fit
-    try {
-      ;({ fit } = await fittingPlayers(db, team))
-    } catch (err) {
-      if (MISSING.has(err?.code)) return list
-      throw err
-    }
-    return fit.size ? fillDob(db, team.club_id, list, fit) : list
   }
 
   /** db/037: deletes the rows of past seasons (server.js, daily). The number of rows; never throws. */
@@ -575,14 +488,14 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
         await client.query("DELETE FROM public.club_licences WHERE club_id = $1 AND list = $2 AND source = 'import' AND sv_number <> ALL($3::text[])",
           [clubId, list, p.map((x) => x.sv_number)])
         await client.query(
-          `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, dob, gender, imported_by, source, season)
-           SELECT $1, $2, x.sv, x.ln, x.fn, x.dob, x.g, $3, 'import', $9
-             FROM unnest($4::text[], $5::text[], $6::text[], $7::date[], $8::text[]) AS x(sv, ln, fn, dob, g)
+          `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, gender, imported_by, source, season)
+           SELECT $1, $2, x.sv, x.ln, x.fn, x.g, $3, 'import', $8
+             FROM unnest($4::text[], $5::text[], $6::text[], $7::text[]) AS x(sv, ln, fn, g)
            ON CONFLICT (club_id, list, sv_number) DO UPDATE
-              SET last_name = EXCLUDED.last_name, first_name = EXCLUDED.first_name, dob = EXCLUDED.dob, gender = EXCLUDED.gender,
+              SET last_name = EXCLUDED.last_name, first_name = EXCLUDED.first_name, gender = EXCLUDED.gender,
                   source = 'import', imported_at = EXCLUDED.imported_at, imported_by = EXCLUDED.imported_by, season = EXCLUDED.season`,
           [clubId, list, isUuid(userId) ? userId : null, p.map((x) => x.sv_number), p.map((x) => x.last_name),
-            p.map((x) => x.first_name), p.map((x) => x.dob), p.map((x) => x.gender), seasonNow()])
+            p.map((x) => x.first_name), p.map((x) => x.gender), seasonNow()])
       }
       const { rows: [n] } = await client.query(
         "SELECT count(*)::int AS manual, now() AS at FROM public.club_licences WHERE club_id = $1 AND list = $2 AND source = 'manual'", [clubId, list])
@@ -594,7 +507,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
 
   /**
    * POST /api/club/:id/licences/people and POST /api/team/:id/club-people
-   * { people: [{ list, sv_number, last_name, first_name, dob, gender }] }
+   * { people: [{ list, sv_number, last_name, first_name, gender }] } (a dob is dropped)
    * (db/026): people a manager typed in by hand (a squad's rows with a licence
    * number), added to the club's lists as 'manual' rows of the current season.
    * A licence number the club has in ANY of its lists (imported or by hand)
@@ -638,13 +551,13 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       }
       const { rows: added } = fresh.length
         ? await client.query(
-          `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, dob, gender, imported_by, source, season)
-           SELECT $1, x.list, x.sv, x.ln, x.fn, x.dob, x.g, $2, 'manual', $9
-             FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::date[], $8::text[]) AS x(list, sv, ln, fn, dob, g)
+          `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, gender, imported_by, source, season)
+           SELECT $1, x.list, x.sv, x.ln, x.fn, x.g, $2, 'manual', $8
+             FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::text[]) AS x(list, sv, ln, fn, g)
            ON CONFLICT (club_id, list, sv_number) DO NOTHING
            RETURNING list`,
           [club, isUuid(userId) ? userId : null, fresh.map((x) => x.list), fresh.map((x) => x.sv_number), fresh.map((x) => x.last_name),
-            fresh.map((x) => x.first_name), fresh.map((x) => x.dob), fresh.map((x) => x.gender), seasonNow()])
+            fresh.map((x) => x.first_name), fresh.map((x) => x.gender), seasonNow()])
         : { rows: [] }
       if (added.length) {
         const lists = {}
@@ -678,7 +591,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
 
   /**
    * GET /api/club/:id/licences: every person of the club's lists once
-   * ({ id, sv_number, last_name, first_name, dob, gender, manual, lists,
+   * ({ id, sv_number, last_name, first_name, gender, manual, lists,
    * teams, hand_rows }), and per list { count, manual, imported_at,
    * imported_by_name }: count every row, manual the hand-added ones (db/026),
    * imported_at and imported_by_name the last upload's (null when there was
@@ -782,31 +695,28 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
     }
     const squad = rows.length ? await squadLicences(pool, team) : new Set()
     const { fit, gender, ageClass } = await fittingPlayers(pool, team, rows)
-    // a date of birth only of a person of the saved team who fits the team
-    const dobIfSquad = (p) => (squad.has(p.sv_number) && fit.has(p.sv_number) ? p : withoutDob(p))
-    return { team, rows, squad, fit, gender, ageClass, dobIfSquad }
+    return { team, rows, squad, fit, gender, ageClass }
   }
 
   /**
    * GET /api/team/:id/club-players: the team's club for "Add from club", the
    * team's gender (null: no check) and age class (U<n> of its leagues, null:
-   * none). Owner decision 2: only what the team needs, decided here.
-   * `players`: the players list of the team's gender (and those without one)
-   * and age class (fitsAgeClass); `people`: the people of the team's saved
+   * none; shown only, no filter since db/048). Owner decision 2: only what
+   * the team needs, decided here. `players`: the players list of the team's
+   * gender (and those without one); `people`: the people of the team's saved
    * team and those players, once each with its `lists` (the shields of the
-   * squad's rows; an official of the club is found with searchPeople). Dates
-   * of birth only of the people in the team's saved team. Each person has
-   * `manual` (db/026: added by hand, not in any upload).
+   * squad's rows; an official of the club is found with searchPeople). Each
+   * person has `manual` (db/026: added by hand, not in any upload).
    */
   async function teamClubPlayers ({ teamId } = {}) {
     if (!isUuid(teamId)) return notFound()
     return guarded('team-club-players', async () => {
       const x = await teamRows(teamId)
       if (x.answer) return x.answer
-      const { team, rows, squad, fit, gender, ageClass, dobIfSquad } = x
+      const { team, rows, squad, fit, gender, ageClass } = x
       const players = playersOf(rows).filter((p) => fit.has(p.sv_number))
-      const people = mergeLicencePeople(rows.filter((r) => squad.has(r.sv_number) || fit.has(r.sv_number))).map(dobIfSquad)
-      return ok({ team, gender, age_class: ageClass ? `U${ageClass}` : null, players: players.map(dobIfSquad), people })
+      const people = mergeLicencePeople(rows.filter((r) => squad.has(r.sv_number) || fit.has(r.sv_number)))
+      return ok({ team, gender, age_class: ageClass ? `U${ageClass}` : null, players, people })
     })
   }
 
@@ -814,7 +724,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
    * GET /api/team/:id/club-people?q=: the people of the club's lists whose
    * name or licence number has `q` (at least SEARCH_MIN_LENGTH characters;
    * accents and case aside), at most MAX_SEARCH_RESULTS, each once with its
-   * `lists`, dates of birth as teamClubPlayers. An official may be anyone of
+   * `lists`. An official may be anyone of
    * the club (owner 2026-11-09), so a team manager finds one by name instead
    * of reading the whole lists. { people, more } (more: there were more).
    */
@@ -825,11 +735,11 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
     return guarded('search-people', async () => {
       const x = await teamRows(teamId)
       if (x.answer) return x.answer
-      const { rows, dobIfSquad } = x
+      const { rows } = x
       const hits = mergeLicencePeople(rows).filter((p) =>
         p.sv_number === needle || fold(`${p.last_name} ${p.first_name || ''} ${p.first_name || ''} ${p.last_name}`).includes(needle))
       return ok({
-        people: hits.slice(0, MAX_SEARCH_RESULTS).map(dobIfSquad),
+        people: hits.slice(0, MAX_SEARCH_RESULTS),
         more: hits.length > MAX_SEARCH_RESULTS
       })
     })
@@ -841,8 +751,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
    * (offline first): each club of the caller with its team names, each team's
    * gender, the club's players list (`players`: the roster rows; the only
    * field release 3.0.15 reads) and every person of its three lists once
-   * (`people`, with `lists`: the bench officials). No dates of birth (owner
-   * decision 2: the tablet asks for those of the people it adds, scorerDob).
+   * (`people`, with `lists`: the bench officials).
    */
   async function scorerClubPlayers ({ userId } = {}) {
     if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
@@ -869,8 +778,8 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
             club_name: c.name,
             team_names: names,
             team_genders: Object.fromEntries(names.map((n) => [n, genders.get(key(n)) ?? null])),
-            players: playersOf(own).map(withoutDob),
-            people: mergeLicencePeople(own).map(withoutDob)
+            players: playersOf(own),
+            people: mergeLicencePeople(own)
           }
         })
       })
@@ -878,37 +787,15 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
   }
 
   /**
-   * GET /api/club-licences/dob?club=<id>&sv=<n>,<n>: the dates of birth of
-   * people of the caller's club `clubId` that the scorer adds to a roster
-   * (at most MAX_DOB_LOOKUP licence numbers): { club_id, people: [{ sv_number,
-   * dob }] } (those of the lists that have one; the players list first). 404
-   * for a club the caller does not score for; 429 OV_DOB_LIMIT past
-   * MAX_DOB_PER_DAY dates of birth a day (each answer is audited with its
-   * count, the day's count is read from the audit).
+   * GET /api/club-licences/dob?club=<id>&sv=<n>,<n> (apps before db/048 ask
+   * for the dates of birth of the people a scorer adds to a roster): none is
+   * kept any more, so always { club_id, people: [] } for a signed-in caller.
+   * The query is not read further: nothing is looked up, nothing audited.
    */
-  async function scorerDob ({ userId, clubId, svNumbers } = {}) {
+  async function scorerDob ({ userId, clubId } = {}) {
     if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
-    if (!isUuid(clubId)) return notFound()
-    const list = typeof svNumbers === 'string' ? svNumbers.split(',').map((s) => s.trim()).filter(Boolean) : []
-    if (!list.length || list.length > MAX_DOB_LOOKUP || !list.every((s) => SV_RE.test(s))) return invalid(`sv: 1 to ${MAX_DOB_LOOKUP} licence numbers`)
-    return guarded('scorer-dob', async () => {
-      const mine = clubs?.clubsOf ? await clubs.clubsOf(pool, userId) : []
-      if (!mine.some((c) => c.id === clubId)) return notFound()
-      return withTx(async (client) => {
-        // one lookup of an account at a time, so that the daily count holds
-        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ov:dob:${userId}`])
-        const filled = (await fillDob(client, clubId, [...new Set(list)].map((sv) => ({ license_number: sv, dob: null })))).filter((p) => p.dob)
-        if (!filled.length) return ok({ club_id: clubId, people: [] })
-        const { rows: [n] } = await client.query(
-          `SELECT coalesce(sum((details ->> 'count')::int), 0)::int AS n FROM public.audit_log
-            WHERE actor_id = $1 AND action = 'club.licences.dob' AND at > now() - interval '1 day'`, [userId])
-        if (n.n + filled.length > MAX_DOB_PER_DAY) throw abort(DOB_LIMIT(MAX_DOB_PER_DAY))
-        // the club and the count only: never a name or a licence number
-        await audit(client, { actorId: userId, action: 'club.licences.dob', details: { club_id: clubId, count: filled.length } })
-        return ok({ club_id: clubId, people: filled.map((p) => ({ sv_number: p.license_number, dob: p.dob })) })
-      })
-    })
+    return ok({ club_id: isUuid(clubId) ? clubId : null, people: [] })
   }
 
-  return { putList, addPeople, deleteRow, clubList, teamClubPlayers, searchPeople, scorerClubPlayers, scorerDob, wrongGender, fillDob, fillTeamDob, teamGenders, sweep }
+  return { putList, addPeople, deleteRow, clubList, teamClubPlayers, searchPeople, scorerClubPlayers, scorerDob, wrongGender, teamGenders, sweep }
 }

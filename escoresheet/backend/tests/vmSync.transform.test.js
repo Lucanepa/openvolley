@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   transformGame, prepareRows, isExcludedLeague, resolveWindow, zonedTimeToUtc, zonedYmd,
-  parseVmDateTime, formatZurichDateTime, normalizeDob, addDaysYmd, isYmd, nextRunAt, buildSearchBody,
+  parseVmDateTime, formatZurichDateTime, addDaysYmd, isYmd, nextRunAt, buildSearchBody,
   windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf
 } from '../lib/vmSync.js'
 import { makeGame } from './helpers/fakeVolleyManager.js'
@@ -110,7 +110,8 @@ describe('transformGame: other fields', () => {
     assert.equal(r.referee_1, 'Muster Anna')
     assert.equal(r.referee_1_first_name, 'Anna')
     assert.equal(r.referee_1_last_name, 'Muster')
-    assert.equal(r.referee_1_dob, '1990-02-24')
+    // the birthday VolleyManager sends is never read (db/048)
+    assert.equal(r.referee_1_dob, null)
     assert.equal(r.referee_2, 'Beispiel Ben', 'falls back to activeSecondHeadRefereeName')
     assert.equal(r.referee_2_dob, null)
     assert.equal(r.linesman_1, 'Linie Lea')
@@ -170,14 +171,13 @@ describe('transformGame: other fields', () => {
     assert.equal(t(makeGame(4, { junior: false })).junior_category, false)
   })
 
-  it('normalises birthdays for the date column', () => {
-    assert.equal(normalizeDob('1990-02-24'), '1990-02-24')
-    assert.equal(normalizeDob('1990-02-24T00:00:00+01:00'), '1990-02-24')
-    assert.equal(normalizeDob('05.03.1990'), '1990-03-05', 'dd.mm.yyyy is day first')
-    assert.equal(normalizeDob('1990-02-30'), null)
-    assert.equal(normalizeDob(''), null)
-    assert.equal(normalizeDob(null), null)
-    assert.equal(t(makeGame(1, { dob1: '31.12.1985' })).referee_1_dob, '1985-12-31')
+  it('never reads a referee\'s birthday: the date columns stay null (db/048)', () => {
+    for (const [dob1, iso] of [['31.12.1985', '1985-12-31'], ['1990-02-24T00:00:00+01:00', '1990-02-24']]) {
+      const r = t(makeGame(1, { dob1 }))
+      assert.deepEqual([r.referee_1_dob, r.referee_2_dob, r.referee_1_last_name], [null, null, 'Muster'])
+      const text = JSON.stringify(r)
+      assert.ok(!text.includes(dob1) && !text.includes(iso), text)
+    }
   })
 
   it('survives a malformed item', () => {
