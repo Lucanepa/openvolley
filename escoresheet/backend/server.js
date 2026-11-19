@@ -611,7 +611,7 @@ function getDataLayer() {
       mailer,
       to: process.env.ERROR_ALERT_EMAIL || '',
       managerUrl: mailer.managerUrl,
-      ntfy: { url: process.env.NTFY_URL || '', topic: process.env.NTFY_TOPIC || '', token: process.env.NTFY_TOKEN || '' },
+      ntfy: { url: process.env.NTFY_URL || '', topic: process.env.NTFY_TOPIC || '', token: process.env.NTFY_TOKEN || '', address: process.env.NTFY_ADDRESS || '' },
       audit: accounts.audit,
       // ERROR_ALERTS=log: nothing is sent, the log says what would have been
       suppressed: String(process.env.ERROR_ALERTS || '').toLowerCase() === 'log',
