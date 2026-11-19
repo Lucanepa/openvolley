@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.4.2" date="2026-11-19">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.4.2</url>
+      <description>
+        <ul>
+          <li>Set 1 always proposes the scheduled start time; another time needs a reason.</li>
+          <li>Match setup: optional 10-minute interval after set 2 (the next start time and the break countdown follow it).</li>
+          <li>Signed out, "New match" starts a match in the Swiss format without an account; signed in, it is "SV match".</li>
+          <li>The referee directory is only for scorers: "Database" in Match setup only in official matches.</li>
+          <li>Privacy policy 1.20.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.4.1" date="2026-11-18">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.4.1</url>
       <description>
