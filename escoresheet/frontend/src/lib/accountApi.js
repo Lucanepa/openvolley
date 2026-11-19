@@ -234,17 +234,18 @@ export const clubApi = {
   /**
    * db/024: the club's licence lists -> { season, lists: { players|scorers|coaches:
    * { count, imported_at, imported_by_name } }, people: [{ sv_number, last_name,
-   * first_name, dob, gender, lists, teams: [{ id, name }] }] }
+   * first_name, gender, lists, teams: [{ id, name }] }] }
    */
   licences(clubId) {
     return apiRequest('GET', `/api/club/${enc(clubId)}/licences`)
   },
   /**
-   * Replaces one list (players | scorers | coaches) with `people`: the five
-   * fields of utils/vmLicenceExport.js only (the server refuses any other). -> { list, count, imported_at }
+   * Replaces one list (players | scorers | coaches) with `people`: the four
+   * fields of utils/vmLicenceExport.js only (licence number, names, gender;
+   * no date of birth, db/048). -> { list, count, imported_at }
    */
   putLicences(clubId, list, people) {
-    const only = (people || []).map(({ sv_number, last_name, first_name, dob, gender }) => ({ sv_number, last_name, first_name, dob, gender }))
+    const only = (people || []).map(({ sv_number, last_name, first_name, gender }) => ({ sv_number, last_name, first_name, gender }))
     return apiRequest('PUT', `/api/club/${enc(clubId)}/licences/${enc(list)}`, { people: only }, { timeoutMs: 30000 })
   },
   /** db/037: one row added by hand (a person's hand_rows[].id) -> { deleted, list } */
@@ -285,10 +286,9 @@ export const teamApi = {
   },
   /**
    * db/024: the team's club for "Add from club" -> { team, gender: 'm' | 'f' |
-   * null, age_class: 'U16' | null, players (the players list of the team's
-   * gender and age class), people (the people of the team's saved team and
-   * those players, with `lists`) }; dates of birth only of the people of the
-   * saved team (owner decision 2)
+   * null, age_class: 'U16' | null (shown only), players (the players list of
+   * the team's gender), people (the people of the team's saved team and
+   * those players, with `lists`) }; no dates of birth (db/048)
    */
   clubPlayers(teamId) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/club-players`)
@@ -303,7 +303,7 @@ export const teamApi = {
   /**
    * db/026: people typed by hand into the squad, kept in the club's lists
    * (until an upload of that list has them) -> { added, already }.
-   * people: [{ list, sv_number, last_name, first_name, dob, gender }], at most 30
+   * people: [{ list, sv_number, last_name, first_name, gender }], at most 30
    */
   addClubPeople(teamId, people) {
     return apiRequest('POST', `/api/team/${enc(teamId)}/club-people`, { people })
@@ -325,15 +325,6 @@ export const teamApi = {
  */
 export function fetchClubLicences({ timeoutMs } = {}) {
   return apiRequest('GET', '/api/club-licences', undefined, timeoutMs ? { timeoutMs } : undefined)
-}
-
-/**
- * GET /api/club-licences/dob: the dates of birth of the people a scorer adds
- * to a roster (the download has none; owner decision 2), of one of its clubs,
- * at most 30 licence numbers -> { club_id, people: [{ sv_number, dob }] }
- */
-export function fetchClubDob({ clubId, svNumbers, timeoutMs } = {}) {
-  return apiRequest('GET', `/api/club-licences/dob${query({ club: clubId, sv: (svNumbers || []).join(',') })}`, undefined, timeoutMs ? { timeoutMs } : undefined)
 }
 
 /**

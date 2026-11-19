@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { clubApi } from '../../lib/accountApi'
 import { usePanelData, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Chip, EmptyInset, KeyValue, Row, RowList, RowTool, SectionHeader, confirmDialog, dayLabel, toast } from '../../ui'
+import { Button, Chip, EmptyInset, KeyValue, Row, RowList, RowTool, SectionHeader, confirmDialog, toast } from '../../ui'
 
 const LIST_TONE = { players: 'indigo', coaches: 'emerald', scorers: 'sky' }
 
@@ -69,7 +69,6 @@ export default function ClubPersonPage({ club, personId, onBack, onOpenTeam = nu
         <KeyValue
           items={[
             { label: t('savedTeams.license'), value: <span className="tabular-nums">{person.sv_number}</span> },
-            { label: t('savedTeams.dob'), value: person.dob ? dayLabel(person.dob, { year: true }) : '–' },
             { label: t('manage.licences.gender'), value: gender || '–' }
           ]}
         />

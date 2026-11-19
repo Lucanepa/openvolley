@@ -4,10 +4,14 @@
  * club's licence lists (db/024, docs/club-licences-spec.md).
  *
  * Owner 2026-11-09: "just import dob, licence n, name, last name — that's all
- * we need", and the gender. The export carries much more (email, phone, home
- * address, nationality, categories, clubs, ...): none of it leaves this
- * module. readLicenceExport() answers the five fields per person and three
- * counts, nothing else; the rest of the file is never sent anywhere.
+ * we need", and the gender; 2026-11-19: "ONLY licence number", no dates of
+ * birth (db/048). The export carries much more (date of birth, email, phone,
+ * home address, nationality, categories, clubs, ...): none of it leaves this
+ * module. readLicenceExport() answers four fields per person (licence number,
+ * last name, first name, gender) and three counts, nothing else; the rest of
+ * the file is never sent anywhere. The date of birth column is found by its
+ * header only so that it is never taken for the licence column; its cells are
+ * never read.
  *
  * The format (a real export, translated headers in German, French and
  * English): sheet "Sheet1", a title row, a blank row, the header row (row 3),
@@ -20,9 +24,7 @@
  *
  * An XLSX file is a zip of XML parts: fflate unpacks it (into a buffer of the
  * size each part declares, checked first: a part never grows past it, as in
- * lib/xlsxCodec.js), the browser's DOMParser reads the XML. Dates: an Excel date cell (a serial number, 1900
- * system with its leap-year bug, or 1904), an ISO date (t="d" or text) or
- * DD.MM.YYYY text.
+ * lib/xlsxCodec.js), the browser's DOMParser reads the XML.
  */
 import { strFromU8, unzipSync } from 'fflate'
 
@@ -42,6 +44,7 @@ export const EXPORT_LANGUAGES = Object.freeze({
     sv_number: W('n sv'),
     last_name: W('cognome'),
     first_name: W('nome'),
+    // never read: only so that it is not taken for the licence column
     dob: W('data di nascita'),
     gender: W('sesso'),
     genders: { d: 'f', u: 'm' }
@@ -84,6 +87,9 @@ export function genderOf(value, genders = {}) {
   if (!v) return null
   return genders[v] || GENDER_OF.get(v) || null
 }
+// The headers looked for: the four fields read, and the date of birth, whose
+// column is never read (it only keeps an Excel date serial, 5 digits like a
+// licence number, from being taken for the licence column)
 const FIELDS = ['sv_number', 'last_name', 'first_name', 'dob', 'gender']
 const REQUIRED = ['sv_number', 'last_name', 'first_name']
 
@@ -100,44 +106,6 @@ export class LicenceExportError extends Error {
 /** Lowercase, trimmed, spaces collapsed, dots and colons dropped: "N. SV" -> "n sv". */
 export function normalizeHeader(value) {
   return String(value ?? '').toLowerCase().replace(/[.:]/g, ' ').replace(/\s+/g, ' ').trim()
-}
-
-const pad = (n) => String(n).padStart(2, '0')
-const validYmd = (y, m, d) => {
-  if (!(y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null
-  const t = new Date(Date.UTC(y, m - 1, d))
-  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d ? `${y}-${pad(m)}-${pad(d)}` : null
-}
-
-/**
- * An Excel date serial -> 'YYYY-MM-DD' (the time of day dropped), or null.
- * 1900 system: 1 = 1900-01-01; Excel counts a 29 February 1900 that never
- * was (serial 60, null here), so from 61 on a day comes off. 1904 system
- * (date1904): 0 = 1904-01-01.
- */
-export function excelSerialToIso(serial, { date1904 = false } = {}) {
-  const n = Math.floor(Number(serial))
-  if (!Number.isFinite(n) || n < (date1904 ? 0 : 1) || n > 2958465) return null
-  let ms
-  if (date1904) ms = Date.UTC(1904, 0, 1) + n * 86400000
-  else if (n === 60) return null
-  else ms = Date.UTC(1899, 11, n < 60 ? 31 : 30) + n * 86400000
-  const t = new Date(ms)
-  return validYmd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate())
-}
-
-/** A date of birth cell -> 'YYYY-MM-DD' or null: a serial, an ISO date (with or without a time), DD.MM.YYYY. */
-export function cellToIsoDate(value, opts = {}) {
-  if (value == null || value === '') return null
-  if (typeof value === 'number') return excelSerialToIso(value, opts)
-  const s = String(value).trim()
-  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/.exec(s)
-  if (m) return validYmd(Number(m[1]), Number(m[2]), Number(m[3]))
-  m = /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/.exec(s)
-  if (m) return validYmd(Number(m[3]), Number(m[2]), Number(m[1]))
-  // a serial stored as text
-  if (/^\d{1,6}(\.\d+)?$/.test(s)) return excelSerialToIso(Number(s), opts)
-  return null
 }
 
 /** A licence cell -> '123456' or null (4 to 7 digits; a number cell is an integer). */
@@ -174,11 +142,11 @@ function findHeader(rows) {
 
 /**
  * The people of a sheet's rows (arrays of cell values, the first row first):
- * { people: [{ sv_number, last_name, first_name, dob, gender }], rows, skipped, language }.
+ * { people: [{ sv_number, last_name, first_name, gender }], rows, skipped, language }.
  * `rows`: data rows with something in them; `skipped`: those without a
  * licence number of 4 to 7 digits or a last name. Throws LicenceExportError.
  */
-export function licencePeopleFromRows(rows, { date1904 = false } = {}) {
+export function licencePeopleFromRows(rows) {
   const header = findHeader(rows)
   if (!header) throw new LicenceExportError('OV_LICENCE_NO_HEADER', 'No header row with licence number, last name and first name', { missing: [...REQUIRED] })
   const { index, language } = header
@@ -211,17 +179,15 @@ export function licencePeopleFromRows(rows, { date1904 = false } = {}) {
       continue
     }
     const first = nameOf(row[columns.first_name]) || null
-    const dob = columns.dob === undefined ? null : cellToIsoDate(row[columns.dob], { date1904 })
     const gender = columns.gender === undefined ? null : genderOf(row[columns.gender], genders)
     // a licence number twice is one person (the server merges the same way)
     const prev = seen.get(sv)
     if (prev) {
       prev.first_name ??= first
-      prev.dob ??= dob
       prev.gender ??= gender
       continue
     }
-    const person = { sv_number: sv, last_name: last, first_name: first, dob, gender }
+    const person = { sv_number: sv, last_name: last, first_name: first, gender }
     seen.set(sv, person)
     people.push(person)
   }
@@ -289,7 +255,7 @@ const relsPathOf = (part) => {
   return `${part.slice(0, i + 1)}_rels/${part.slice(i + 1)}.rels`
 }
 
-/** The cell values of the workbook's first sheet: rows (arrays, row 1 first) and the date system. */
+/** The cell values of the workbook's first sheet: rows (arrays, row 1 first). */
 function firstSheetRows(parts) {
   const rootRels = readPart(parts, '_rels/.rels')
   let workbookPath = 'xl/workbook.xml'
@@ -300,7 +266,6 @@ function firstSheetRows(parts) {
   const workbookXml = readPart(parts, workbookPath)
   if (!workbookXml) throw new LicenceExportError('OV_LICENCE_NOT_XLSX', 'No workbook in the file')
   const workbook = parseXml(workbookXml)
-  const date1904 = els(workbook, 'workbookPr').some((p) => ['1', 'true'].includes(String(attr(p, 'date1904') || '').toLowerCase()))
   const sheet = els(workbook, 'sheet')[0]
   if (!sheet) throw new LicenceExportError('OV_LICENCE_NO_SHEET', 'The workbook has no sheet')
   const relsXml = readPart(parts, relsPathOf(workbookPath))
@@ -339,13 +304,13 @@ function firstSheetRows(parts) {
     rows[r - 1] = values
   }
   for (let i = 0; i < rows.length; i++) if (!rows[i]) rows[i] = []
-  return { rows, date1904 }
+  return { rows }
 }
 
 /**
  * Read a club administration export: a File, Blob, ArrayBuffer or
  * Uint8Array of an .xlsx file. -> { people: [{ sv_number, last_name,
- * first_name, dob, gender }], rows, skipped, language }. Nothing else of the
+ * first_name, gender }], rows, skipped, language }. Nothing else of the
  * file leaves this function. Throws LicenceExportError (code
  * OV_LICENCE_NOT_XLSX, OV_LICENCE_TOO_BIG, OV_LICENCE_NO_SHEET or
  * OV_LICENCE_NO_HEADER with `missing`).
@@ -357,6 +322,6 @@ export async function readLicenceExport(input) {
   if (!size) throw new LicenceExportError('OV_LICENCE_NOT_XLSX', 'The file is empty')
   if (size > LICENCE_EXPORT_MAX_BYTES) throw new LicenceExportError('OV_LICENCE_TOO_BIG', 'The file is too big for a club list')
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
-  const { rows, date1904 } = firstSheetRows(unzipParts(bytes))
-  return licencePeopleFromRows(rows, { date1904 })
+  const { rows } = firstSheetRows(unzipParts(bytes))
+  return licencePeopleFromRows(rows)
 }

@@ -12,7 +12,7 @@ import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import ClubShield from './ClubShield'
 import SignaturePad from '../SignaturePad'
 import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageLoadGate, PageMissing, PageSpinner, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Checkbox, Chip, DateField, EmptyInset, Field, Input, KeyValue, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn, FOCUS_RING } from '../../ui'
+import { Button, Checkbox, Chip, EmptyInset, Field, Input, KeyValue, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn, FOCUS_RING } from '../../ui'
 
 const STAFF_ROLE_KEYS = {
   Coach: 'benchRoles.coach',
@@ -374,11 +374,11 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
   })
   const setStaffRole = (key, role) => change((d) => setGameDraftStaffRole(d, key, role).draft)
   // an official typed by hand (a physiotherapist or medic from outside the club, say)
-  const [newOfficial, setNewOfficial] = useState(null) // { role, first_name, last_name, dob, license_number }
+  const [newOfficial, setNewOfficial] = useState(null) // { role, first_name, last_name, license_number }
   const addOfficial = () => {
     const o = newOfficial
     if (!o || !String(o.last_name || '').trim() || !shown) return
-    change((d) => setGameDraftOfficial(d, o.role, { first_name: o.first_name, last_name: o.last_name, dob: o.dob || null, sv_number: o.license_number || null }).draft)
+    change((d) => setGameDraftOfficial(d, o.role, { first_name: o.first_name, last_name: o.last_name, sv_number: o.license_number || null }).draft)
     setNewOfficial(null)
   }
   const { body, problems, warnings } = shown ? gameRosterBody(shown) : { body: null, problems: [], warnings: [] }
@@ -599,7 +599,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
                     {clubPlayers && (
                       <Button variant="ghost" size="sm" icon={UserPlus} onClick={() => setOfficialPicker(true)} data-testid="game-official-from-club">{t('clubPlayers.add')}</Button>
                     )}
-                    <Button variant="ghost" size="sm" icon={Plus} disabled={!!newOfficial || shown.staff.length >= GAME_ROSTER_MAX_STAFF * 3} onClick={() => setNewOfficial({ role: roleForNewOfficial(shown.staff), first_name: '', last_name: '', dob: '', license_number: '' })} data-testid="game-official-add">{t('savedTeams.addStaff')}</Button>
+                    <Button variant="ghost" size="sm" icon={Plus} disabled={!!newOfficial || shown.staff.length >= GAME_ROSTER_MAX_STAFF * 3} onClick={() => setNewOfficial({ role: roleForNewOfficial(shown.staff), first_name: '', last_name: '', license_number: '' })} data-testid="game-official-add">{t('savedTeams.addStaff')}</Button>
                   </div>
                 )}
               />
@@ -646,10 +646,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
                       <Input value={newOfficial.last_name} onChange={(e) => setNewOfficial((o) => ({ ...o, last_name: e.target.value }))} maxLength={80} required data-testid="game-official-new-last" />
                     </Field>
                   </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_10rem]">
-                    <Field label={t('savedTeams.dob')}>
-                      <DateField value={newOfficial.dob} onChange={(v) => setNewOfficial((o) => ({ ...o, dob: v }))} />
-                    </Field>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[12rem]">
                     <Field label={t('savedTeams.license')}>
                       <Input value={newOfficial.license_number} onChange={(e) => setNewOfficial((o) => ({ ...o, license_number: e.target.value }))} maxLength={40} className="tabular-nums" />
                     </Field>
@@ -794,13 +791,12 @@ function StartedRosterPage({ team, game, onBack }) {
 
 /**
  * A person of a game's roster on one line (owner 2026-11-10: "all on one
- * line (bday, licence etc)"): the name, then the date of birth and the
- * licence number, quieter; it wraps only on a narrow screen.
+ * line (bday, licence etc)"): the name, then the licence number, quieter
+ * (no date of birth since db/048); it wraps only on a narrow screen.
  */
 function PersonLine({ person }) {
   const { t } = useTranslation()
   const facts = [
-    person.dob ? dayLabel(person.dob, { year: true }) : null,
     String(person.license_number || '').trim() ? t('clubPlayers.licence', { number: String(person.license_number).trim() }) : null
   ].filter(Boolean)
   return (

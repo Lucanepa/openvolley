@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { UserPlus } from 'lucide-react'
 import KitModal from './manage/KitModal'
 import { normalizeName } from '../domain/savedTeams'
-import { Button, Checkbox, Chip, EmptyInset, Field, SearchInput, Select, cn, dayLabel } from '../ui'
+import { Button, Checkbox, Chip, EmptyInset, Field, SearchInput, Select, cn } from '../ui'
 
 const fold = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '')
 const LISTS = ['players', 'scorers', 'coaches']
@@ -41,7 +41,8 @@ const matches = (p, needle) => !needle || fold(`${p.last_name} ${p.first_name ||
  * Setup: the dates of birth the tablet's copy leaves out, asked for the
  * chosen ones only); the people as they are when it fails.
  *
- * A person is { sv_number, last_name, first_name, dob, gender, lists? }.
+ * A person is { sv_number, last_name, first_name, gender, lists? } (no date
+ * of birth since db/048).
  */
 export default function ClubPlayerPickerModal({ open, ...rest }) {
   if (!open) return null
@@ -116,7 +117,6 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
   }
   const holder = officials && role ? holderOf(role) : null
   const meta = (p) => [
-    p.dob ? dayLabel(p.dob, { year: true }) : null,
     t('clubPlayers.licence', { number: p.sv_number }),
     single && Array.isArray(p.lists) && p.lists.length ? p.lists.filter((l) => LISTS.includes(l)).map((l) => t(`manage.licences.lists.${l}`)).join(', ') : null
   ].filter(Boolean).join(' · ')

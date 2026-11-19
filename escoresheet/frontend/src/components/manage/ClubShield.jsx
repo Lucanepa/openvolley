@@ -6,9 +6,10 @@ import { cn } from '../../ui'
  * A roster row's shield (owner 2026-11-10: "Those from the club/recognized/
  * linked -> green shield. Those added manually -> gray shield, but can be
  * linked lately in case"): green, the person is in a list uploaded from
- * VolleyManager (the same licence number, or the same name and date of
- * birth); gray, typed by hand, also when kept in the club's lists by hand
- * (`manual`: green once an upload has the licence number).
+ * VolleyManager (the same licence number, or the same name when exactly one
+ * person of the club has it; no dates of birth since db/048); gray, typed by
+ * hand, also when kept in the club's lists by hand (`manual`: green once an
+ * upload has the licence number).
  *
  * `person`: the club person (clubPersonOf) or null. `fill`: what the club
  * adds to the row (clubFillOf); with `onFill` the green shield fills it in.

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import JSZip from 'jszip'
 
 // db/024: the club's licence lists. My club's upload (read in the browser,
-// five fields sent), the list of people, "Add from club" with the gender rule
+// four fields sent; db/048: never a date of birth, anywhere), the list of people, "Add from club" with the gender rule
 // for the players, and the team officials from anyone of the club (either
 // gender) in the squad editor and a game's roster. Made-up people of VBC
 // Musterdorf only.
@@ -88,7 +88,7 @@ beforeEach(() => {
 })
 
 describe('My club → Licences', () => {
-  it('reads the export in the browser, shows the preview and saves the five fields only', async () => {
+  it('reads the export in the browser, shows the preview and saves the four fields only (no date of birth)', async () => {
     api.club.putLicences.mockResolvedValue(okRes({ list: 'players', count: 2, imported_at: '2026-11-09T09:00:00Z' }))
     render(<ClubLicencesSection club={VBCM} />)
     await screen.findByTestId('licences-people')
@@ -97,13 +97,15 @@ describe('My club → Licences', () => {
     expect(tr).toHaveBeenCalledWith('manage.licences.previewCount', { count: 2 })
     expect(within(preview).getByText(/Beispiel Anna · 100001/)).toBeInTheDocument()
     expect(preview.textContent).not.toContain('example.ch')
+    // the export's birthdate column is never read or shown
+    expect(preview.textContent).not.toMatch(/2004|38113/)
     fireEvent.click(screen.getByTestId('licences-save'))
     await waitFor(() => expect(api.club.putLicences).toHaveBeenCalledTimes(1))
     const [clubId, list, people] = api.club.putLicences.mock.calls[0]
     expect([clubId, list]).toEqual(['c1', 'players'])
     expect(people).toEqual([
-      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f' },
-      { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: '2001-11-02', gender: 'm' }
+      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f' },
+      { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', gender: 'm' }
     ])
     await waitFor(() => expect(ui.toasts.map((x) => x[1])).toContain('manage.licences.saved'))
     expect(screen.queryByTestId('licences-preview')).toBeNull()
@@ -168,6 +170,9 @@ describe('the squad editor with the club\'s players (My teams)', () => {
     fireEvent.click(screen.getByTestId('save-roster'))
     await waitFor(() => expect(saveRoster).toHaveBeenCalledTimes(1))
     expect(saveRoster.mock.calls[0][0].players.map((p) => p.license_number)).toEqual([null, '100004'])
+    // no date of birth on the screen or in the body (db/048), not even the one an older squad copy holds
+    expect(screen.queryAllByLabelText(/dob|birth/i)).toEqual([])
+    expect(saveRoster.mock.calls[0][0].players.some((p) => 'dob' in p)).toBe(false)
   })
 
   it('refuses to save a player the club has with the other gender, as the server does', async () => {
@@ -213,8 +218,8 @@ describe('the squad editor with the club\'s players (My teams)', () => {
     fireEvent.click(screen.getByTestId('save-roster'))
     await waitFor(() => expect(saveRoster).toHaveBeenCalledTimes(1))
     expect(saveRoster.mock.calls[0][0].staff).toEqual([
-      { role: 'Coach', first_name: 'Anna', last_name: 'Beispiel', dob: '2004-05-06', license_number: '100001' },
-      { role: 'Assistant Coach 1', first_name: 'Tina', last_name: 'Trainer', dob: '1980-03-04', license_number: '200001' }
+      { role: 'Coach', first_name: 'Anna', last_name: 'Beispiel', license_number: '100001' },
+      { role: 'Assistant Coach 1', first_name: 'Tina', last_name: 'Trainer', license_number: '200001' }
     ])
   })
 
@@ -305,7 +310,7 @@ describe('a game\'s roster with an official from the club (My teams)', () => {
     await waitFor(() => expect(api.team.putRoster).toHaveBeenCalledTimes(1))
     const [, game, body] = api.team.putRoster.mock.calls[0]
     expect(game).toBe('950001')
-    expect(body.staff).toEqual([{ role: 'Coach', first_name: 'Tina', last_name: 'Trainer', dob: '1980-03-04', license_number: '200001' }])
+    expect(body.staff).toEqual([{ role: 'Coach', first_name: 'Tina', last_name: 'Trainer', license_number: '200001' }])
     expect(body.players.map((p) => p.last_name)).toEqual(['Probe', 'Testmann'])
   })
 })

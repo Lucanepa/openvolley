@@ -4,11 +4,13 @@
  * roster of one game picked from it. Plain data, no React, no network.
  *
  * The API shape is the saved teams' one: { number, first_name, last_name,
- * dob (YYYY-MM-DD | null), license_number, is_libero, is_captain } and staff
- * { role, first_name, last_name, dob, license_number }.
+ * license_number, is_libero, is_captain } and staff { role, first_name,
+ * last_name, license_number }. No date of birth (db/048, owner 2026-11-19:
+ * "ONLY licence number"): a squad, a game roster and an Einsatzliste import
+ * carry the licence number, never a date of birth.
  */
 
-import { STAFF_ROLES, displayDobToIso, normalizeName } from './savedTeams'
+import { STAFF_ROLES, normalizeName } from './savedTeams'
 
 // lib/teams.js (FIVB 4.1.1, VolleyManager's own limit)
 export const GAME_ROSTER_MAX_PLAYERS = 14
@@ -24,6 +26,13 @@ const nameKey = (p) => `${fold(p?.last_name)}|${fold(p?.first_name)}`
 const clean = (v) => String(v ?? '').trim()
 const swappedKey = (p) => `${fold(p?.first_name)}|${fold(p?.last_name)}`
 const licenceKey = (p) => clean(p?.license_number).toLowerCase()
+// A row without the dob an older copy (a squad or a club list cached before
+// db/048, an older draft) may still carry: nothing here passes one on
+const noDob = (row) => {
+  if (!row || typeof row !== 'object' || !('dob' in row)) return row
+  const { dob, ...rest } = row
+  return rest
+}
 
 const PDF_OFFICIAL_ROLES = [['coach', 'Coach'], ['ac1', 'Assistant Coach 1'], ['ac2', 'Assistant Coach 2']]
 
@@ -37,8 +46,8 @@ export function parsedPdfToRoster(parsed) {
       number: null,
       first_name: clean(p.firstName),
       last_name: clean(p.lastName) || clean(p.firstName),
-      dob: displayDobToIso(p.dob) || null,
-      // VolleyManager's Einsatzliste: the SV number in front of each name
+      // VolleyManager's Einsatzliste: the SV number in front of each name (its
+      // date of birth only told the parser a row; it is never kept)
       license_number: /^\d{5,6}$/.test(clean(p.licence)) ? clean(p.licence) : null,
       is_libero: false,
       is_captain: false
@@ -47,12 +56,11 @@ export function parsedPdfToRoster(parsed) {
   for (const [k, role] of PDF_OFFICIAL_ROLES) {
     const s = parsed?.[k]
     if (!s || !(clean(s.lastName) || clean(s.firstName))) continue
-    // the officials' SV number (#10001) is their licence; a year alone is no date of birth
+    // the officials' SV number (#10001) is their licence
     staff.push({
       role,
       first_name: clean(s.firstName),
       last_name: clean(s.lastName) || clean(s.firstName),
-      dob: displayDobToIso(s.dob) || null,
       license_number: /^\d{4,7}$/.test(clean(s.licence)) ? clean(s.licence) : null
     })
   }
@@ -62,7 +70,7 @@ export function parsedPdfToRoster(parsed) {
 /**
  * Merge an imported roster into the saved team's players and staff (drafts
  * keep their own fields, e.g. `key` and `id`): the same player gets the
- * imported number, date of birth and licence where the import has them, a new
+ * imported number and licence where the import has them, a new
  * player is added (active). The same player = the same licence, else the same
  * name (accents and case aside), else the same name with first and last name
  * swapped; a player twice in the import is one. Staff by role: the import fills
@@ -102,25 +110,24 @@ export function samePerson(a, b) {
 }
 
 export function mergeImportedRoster(players, staff, imported, makePlayer = (p) => p, makeStaff = (s) => s) {
-  const out = [...(players || [])]
+  const out = (players || []).map(noDob)
   let added = 0
   let updated = 0
   const { find, remember } = playerFinder(out)
   for (const p of imported?.players || []) {
     const i = find(p)
     if (i === undefined) {
-      out.push(makePlayer({ ...p, active: true }))
+      out.push(makePlayer({ ...noDob(p), active: true }))
       remember(p, out.length - 1)
       added++
       continue
     }
     const cur = out[i]
-    const next = { ...cur }
+    const next = { ...noDob(cur) }
     if (p.number != null && String(cur.number ?? '') !== String(p.number)) next.number = p.number
-    if (p.dob && cur.dob !== p.dob) next.dob = p.dob
     if (p.license_number && cur.license_number !== p.license_number) next.license_number = p.license_number
     if (cur.active === false) next.active = true
-    if (next.number !== cur.number || next.dob !== cur.dob || next.license_number !== cur.license_number || next.active !== cur.active) {
+    if (next.number !== cur.number || next.license_number !== cur.license_number || next.active !== cur.active) {
       out[i] = next
       remember(next, i)
       updated++
@@ -132,13 +139,13 @@ export function mergeImportedRoster(players, staff, imported, makePlayer = (p) =
   // same person in a second role, leaves the officials.
   const imp = (imported?.staff || []).filter((s) => s && STAFF_ROLES.includes(s.role))
   const onImport = (row) => imp.some((s) => samePerson(row, s))
-  const work = [...(staff || [])]
+  const work = (staff || []).map(noDob)
   const keep = new Set()
   for (const s of imp) {
     let i = work.findIndex((x, j) => !keep.has(j) && samePerson(x, s))
     if (i === -1) i = work.findIndex((x, j) => !keep.has(j) && x.role === s.role && !onImport(x))
     if (i === -1) {
-      work.push(makeStaff(s))
+      work.push(makeStaff(noDob(s)))
       keep.add(work.length - 1)
       added++
       continue
@@ -146,14 +153,13 @@ export function mergeImportedRoster(players, staff, imported, makePlayer = (p) =
     const cur = work[i]
     const same = samePerson(cur, s)
     const next = {
-      ...cur,
+      ...noDob(cur),
       role: s.role,
       first_name: s.first_name,
       last_name: s.last_name,
-      dob: s.dob || (same ? cur.dob : emptyLike(cur.dob)),
       license_number: s.license_number || (same ? cur.license_number : emptyLike(cur.license_number))
     }
-    if (['role', 'first_name', 'last_name', 'dob', 'license_number'].some((f) => (next[f] ?? '') !== (cur[f] ?? ''))) updated++
+    if (['role', 'first_name', 'last_name', 'license_number'].some((f) => (next[f] ?? '') !== (cur[f] ?? ''))) updated++
     work[i] = next
     keep.add(i)
   }
@@ -192,8 +198,8 @@ export function uniqueStaffRoles(staff) {
  * A game roster draft (gameRosterDraft) with an Einsatzliste for the game
  * (parsedPdfToRoster) applied: its players ticked, the others unticked. An
  * Einsatzliste has no shirt numbers: a player already offered keeps the
- * draft's number, captain and libero (licence and date of birth filled from
- * the list); one not offered yet comes without a number. Its officials are
+ * draft's number, captain and libero (the licence filled from the list); one
+ * not offered yet comes without a number. Its officials are
  * ticked in the roles it gives them (one entry per person: the draft's entry
  * moves to the role); every other official is unticked.
  * { draft, added } (added: the players not offered before).
@@ -210,14 +216,14 @@ export function applyEinsatzlisteToGameDraft(draft, imported) {
     if (i !== undefined && !used.has(i)) {
       used.add(i)
       const cur = before[i]
-      ticked.push({ ...cur, license_number: cur.license_number || p.license_number || null, dob: cur.dob || p.dob || null, picked: true })
+      ticked.push({ ...noDob(cur), license_number: cur.license_number || p.license_number || null, picked: true })
       continue
     }
     if (i !== undefined) continue // twice in the list
     let key = nameKey(p)
     while (keys.has(key)) key = `${key}|${p.license_number || added}`
     keys.add(key)
-    ticked.push({ key, number: '', first_name: p.first_name, last_name: p.last_name, dob: p.dob || null, license_number: p.license_number || null, is_libero: false, is_captain: false, picked: true })
+    ticked.push({ key, number: '', first_name: p.first_name, last_name: p.last_name, license_number: p.license_number || null, is_libero: false, is_captain: false, picked: true })
     added++
   }
   const rest = before.filter((_, i) => !used.has(i)).map((p) => ({ ...p, picked: false }))
@@ -232,13 +238,13 @@ export function applyEinsatzlisteToGameDraft(draft, imported) {
     if (i !== -1) {
       staffUsed.add(i)
       const cur = staffBefore[i]
-      staff.push({ ...cur, role: s.role, license_number: cur.license_number || s.license_number || null, dob: cur.dob || s.dob || null, picked: true })
+      staff.push({ ...noDob(cur), role: s.role, license_number: cur.license_number || s.license_number || null, picked: true })
       continue
     }
     let key = `${s.role}|${nameKey(s)}`
     while (staffKeys.has(key)) key = `${key}|${s.license_number || staff.length}`
     staffKeys.add(key)
-    staff.push({ key, role: s.role, first_name: s.first_name, last_name: s.last_name, dob: s.dob || null, license_number: s.license_number || null, picked: true })
+    staff.push({ key, role: s.role, first_name: s.first_name, last_name: s.last_name, license_number: s.license_number || null, picked: true })
   }
   // the same person once: another entry of someone the list names goes
   const restStaff = staffBefore.filter((x, j) => !staffUsed.has(j) && !staff.some((s) => samePerson(x, s))).map((x) => ({ ...x, picked: false }))
@@ -250,7 +256,7 @@ export function applyEinsatzlisteToGameDraft(draft, imported) {
 /**
  * The picker of one game's roster: every active player of the saved team
  * (and the players of a roster already sent, ticked), with their numbers.
- * Returns [{ key, number, first_name, last_name, dob, license_number,
+ * Returns [{ key, number, first_name, last_name, license_number,
  * is_libero, is_captain, picked }] and the staff the same way.
  */
 export function gameRosterDraft(squad, sent) {
@@ -267,7 +273,6 @@ export function gameRosterDraft(squad, sent) {
       number: s?.number ?? p.number ?? '',
       first_name: p.first_name || '',
       last_name: p.last_name || '',
-      dob: p.dob || null,
       license_number: p.license_number || null,
       is_libero: s ? !!s.is_libero : !!p.is_libero,
       is_captain: s ? !!s.is_captain : !!p.is_captain,
@@ -279,7 +284,7 @@ export function gameRosterDraft(squad, sent) {
     const k = nameKey(s)
     if (seen.has(k)) continue
     seen.add(k)
-    players.push({ key: k, number: s.number ?? '', first_name: s.first_name || '', last_name: s.last_name || '', dob: s.dob || null, license_number: s.license_number || null, is_libero: !!s.is_libero, is_captain: !!s.is_captain, picked: true })
+    players.push({ key: k, number: s.number ?? '', first_name: s.first_name || '', last_name: s.last_name || '', license_number: s.license_number || null, is_libero: !!s.is_libero, is_captain: !!s.is_captain, picked: true })
   }
   const sentStaff = new Map((sent?.staff || []).map((s) => [`${s.role}|${nameKey(s)}`, s]))
   const staff = []
@@ -289,7 +294,7 @@ export function gameRosterDraft(squad, sent) {
     const k = `${s.role}|${nameKey(s)}`
     if (staffSeen.has(k)) continue
     staffSeen.add(k)
-    staff.push({ key: k, role: s.role, first_name: s.first_name || '', last_name: s.last_name || '', dob: s.dob || null, license_number: s.license_number || null, picked: sent ? sentStaff.has(k) : true })
+    staff.push({ key: k, role: s.role, first_name: s.first_name || '', last_name: s.last_name || '', license_number: s.license_number || null, picked: sent ? sentStaff.has(k) : true })
   }
   // A new roster: no player ticked yet when the saved team has more than 14
   if (!sent) {
@@ -343,7 +348,7 @@ export function gameRosterBody(draft) {
     roles.add(s.role)
   }
   if (staff.length > GAME_ROSTER_MAX_STAFF) problems.push({ key: 'manage.myTeams.problems.tooManyStaff', params: { max: GAME_ROSTER_MAX_STAFF } })
-  const person = (p) => ({ first_name: clean(p.first_name), last_name: clean(p.last_name), dob: p.dob || null, license_number: clean(p.license_number) || null })
+  const person = (p) => ({ first_name: clean(p.first_name), last_name: clean(p.last_name), license_number: clean(p.license_number) || null })
   return {
     body: {
       players: players.map((p) => ({ number: /^\d{1,2}$/.test(clean(p.number)) ? Number(clean(p.number)) : null, ...person(p), is_libero: !!p.is_libero, is_captain: !!p.is_captain })),
@@ -356,13 +361,12 @@ export function gameRosterBody(draft) {
 
 // ---------------------------------------------------------------- the club's players (db/024)
 
-/** A club list person { sv_number, last_name, first_name, dob, gender } -> a player in the API shape (no number). */
+/** A club list person { sv_number, last_name, first_name, gender } -> a player in the API shape (no number). */
 export function clubPersonToPlayer(c) {
   return {
     number: null,
     first_name: clean(c?.first_name),
     last_name: clean(c?.last_name),
-    dob: c?.dob || null,
     license_number: clean(c?.sv_number) || null,
     is_libero: false,
     is_captain: false
@@ -399,8 +403,8 @@ export function wrongGenderIndexes(players, clubPlayers, gender) {
 /**
  * The squad editor's players and staff with `chosen` (club list people)
  * added: the merge rules of an import (the same licence, else name: the
- * existing row gets the licence and date of birth), new ones without a
- * number. { players, staff, added, updated }.
+ * existing row gets the licence), new ones without a number.
+ * { players, staff, added, updated }.
  */
 export function addClubPlayersToSquad(players, staff, chosen, makePlayer = (p) => p, makeStaff = (s) => s) {
   return mergeImportedRoster(players, staff, { players: (chosen || []).map(clubPersonToPlayer), staff: [] }, makePlayer, makeStaff)
@@ -422,14 +426,14 @@ export function addClubPlayersToGameDraft(draft, chosen) {
     const i = find(p)
     if (i !== undefined) {
       const cur = players[i]
-      players[i] = { ...cur, picked: true, license_number: cur.license_number || p.license_number, dob: cur.dob || p.dob }
+      players[i] = { ...noDob(cur), picked: true, license_number: cur.license_number || p.license_number }
       if (!cur.picked) ticked++
       continue
     }
     let key = nameKey(p)
     while (keys.has(key)) key = `${key}|${p.license_number || added}`
     keys.add(key)
-    players.push({ key, number: '', first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.license_number, is_libero: false, is_captain: false, picked: true })
+    players.push({ key, number: '', first_name: p.first_name, last_name: p.last_name, license_number: p.license_number, is_libero: false, is_captain: false, picked: true })
     remember(p, players.length - 1)
     added++
   }
@@ -448,7 +452,6 @@ export function clubPersonToOfficial(c, role) {
     role,
     first_name: clean(c?.first_name),
     last_name: clean(c?.last_name) || clean(c?.first_name),
-    dob: c?.dob || null,
     license_number: clean(c?.sv_number) || null
   }
 }
@@ -482,7 +485,7 @@ const emptyLike = (v) => (typeof v === 'string' ? '' : null)
 
 /**
  * The squad editor's officials with the club person `c` as `role`: the first
- * row of that role takes the person (names, date of birth, licence number;
+ * row of that role takes the person (names and licence number;
  * the row keeps its key and id), else a row is added (makeStaff). Each role
  * once. { staff, replaced }: the person the row had before, when another one.
  */
@@ -498,10 +501,9 @@ export function setSquadOfficial(staff, role, c, makeStaff = (s) => s) {
   const same = officialIsPerson(cur, c)
   const named = !!(clean(cur.first_name) || clean(cur.last_name))
   out[i] = {
-    ...cur,
+    ...noDob(cur),
     first_name: person.first_name,
     last_name: person.last_name,
-    dob: person.dob || (same ? cur.dob : emptyLike(cur.dob)),
     license_number: person.license_number || (same ? cur.license_number : emptyLike(cur.license_number))
   }
   return { staff: out, replaced: named && !same ? cur : null }
@@ -529,7 +531,7 @@ export function setGameDraftOfficial(draft, role, c) {
     at = staff.length - 1
   } else {
     const cur = staff[at]
-    staff[at] = { ...cur, role, picked: true, license_number: cur.license_number || person.license_number, dob: cur.dob || person.dob }
+    staff[at] = { ...noDob(cur), role, picked: true, license_number: cur.license_number || person.license_number }
   }
   // the one who held the role moves to a free one, unticked (each role once)
   const out = staff.map((s, j) => (j !== at && s.role === role ? { ...s, picked: false } : s))
@@ -553,26 +555,20 @@ const SV_RE = /^[0-9]{4,7}$/
 /**
  * The club person a roster row (a player or an official, the API shape or an
  * editor draft) is, or null: not in the club's lists. The same licence
- * number; else the same name (accents, case and the order of first and last
- * name aside) and the same date of birth, when that is one person of the club
- * (or one uploaded person among others kept by hand). A person kept by hand
- * (`manual`) has a gray shield too, an uploaded one a green shield.
+ * number; a row with a licence number the lists do not have is nobody of
+ * them. Without a licence number: the same name (accents, case and the order
+ * of first and last name aside) when exactly one person of the club has it
+ * (no dates of birth tell namesakes apart since db/048). A person kept by
+ * hand (`manual`) has a gray shield too, an uploaded one a green shield.
  */
 export function clubPersonOf(row, people) {
   if (!row || !Array.isArray(people) || !people.length) return null
   const lic = clean(row.license_number)
-  if (SV_RE.test(lic)) {
-    const hit = people.find((c) => clean(c?.sv_number) === lic)
-    if (hit) return hit
-  }
-  const dob = clean(row.dob)
-  if (!dob || !clean(row.last_name)) return null
+  if (SV_RE.test(lic)) return people.find((c) => clean(c?.sv_number) === lic) || null
+  if (!clean(row.last_name)) return null
   const keys = new Set([nameKey(row), swappedKey(row)])
-  const hits = people.filter((c) => c?.dob === dob && keys.has(nameKey(c)))
-  if (hits.length === 1) return hits[0]
-  // one uploaded and others kept by hand: the uploaded one
-  const uploaded = hits.filter((c) => !c.manual)
-  return uploaded.length === 1 ? uploaded[0] : null
+  const hits = people.filter((c) => c && keys.has(nameKey(c)))
+  return hits.length === 1 ? hits[0] : null
 }
 
 /** What the club person `c` adds to the row `row`: the fields the row leaves empty ({} when none). */
@@ -580,18 +576,16 @@ export function clubFillOf(row, c) {
   if (!row || !c) return {}
   const out = {}
   if (!clean(row.first_name) && clean(c.first_name)) out.first_name = clean(c.first_name)
-  if (!clean(row.dob) && c.dob) out.dob = c.dob
   if (!clean(row.license_number) && clean(c.sv_number)) out.license_number = clean(c.sv_number)
   return out
 }
 
-/** The row `row` linked to the club person `c`: its names, date of birth and licence number from the club. */
+/** The row `row` linked to the club person `c`: its names and licence number from the club. */
 export function linkRowToClubPerson(row, c) {
   return {
-    ...row,
+    ...noDob(row),
     first_name: clean(c?.first_name) || clean(row?.first_name),
     last_name: clean(c?.last_name) || clean(row?.last_name),
-    dob: c?.dob || row?.dob || emptyLike(row?.dob),
     license_number: clean(c?.sv_number) || row?.license_number || emptyLike(row?.license_number)
   }
 }
@@ -602,7 +596,7 @@ export function linkRowToClubPerson(row, c) {
  * only those with one can go there (`offer`); the others are `noLicence`
  * (their names). Players go to the players list (with the team's gender when
  * it is known), officials to the coaches list; one entry per list and licence.
- * { offer: [{ key, list, name, person: { sv_number, last_name, first_name, dob, gender } }], noLicence: [name] }
+ * { offer: [{ key, list, name, person: { sv_number, last_name, first_name, gender } }], noLicence: [name] }
  */
 export function handTypedForClub(players, staff, people, gender = null) {
   const offer = []
@@ -627,7 +621,6 @@ export function handTypedForClub(players, staff, people, gender = null) {
         sv_number: lic,
         last_name: clean(row.last_name),
         first_name: clean(row.first_name) || null,
-        dob: clean(row.dob) || null,
         gender: list === 'players' && (gender === 'm' || gender === 'f') ? gender : null
       }
     })

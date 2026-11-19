@@ -144,8 +144,8 @@ describe('saved teams console: beach', () => {
     expect(teamId).toBe('33333333-3333-4333-8333-333333333333')
     expect(body).toEqual({
       players: [
-        { id: '44444444-4444-4444-8444-444444444441', number: 1, first_name: 'Anna', last_name: 'Müller', dob: '1998-01-05', license_number: 'B-1', country: 'CHE' },
-        { id: '44444444-4444-4444-8444-444444444442', number: 2, first_name: 'Sara', last_name: 'Weber', dob: '1997-03-12', license_number: null, country: 'ITA' }
+        { id: '44444444-4444-4444-8444-444444444441', number: 1, first_name: 'Anna', last_name: 'Müller', license_number: 'B-1', country: 'CHE' },
+        { id: '44444444-4444-4444-8444-444444444442', number: 2, first_name: 'Sara', last_name: 'Weber', license_number: null, country: 'ITA' }
       ],
       staff: []
     })
@@ -172,8 +172,8 @@ describe('saved teams console: beach', () => {
     fireEvent.click(screen.getByTestId('save-roster'))
     await waitFor(() => expect(api.savedTeamsApi.putRoster).toHaveBeenCalledTimes(1))
     expect(api.savedTeamsApi.putRoster.mock.calls[0][1]).toEqual({
-      players: [{ number: 2, first_name: '', last_name: 'Bianchi', dob: null, license_number: null, country: 'ITA' }],
-      staff: [{ role: 'Coach', first_name: '', last_name: 'Kunz', dob: null, license_number: null }]
+      players: [{ number: 2, first_name: '', last_name: 'Bianchi', license_number: null, country: 'ITA' }],
+      staff: [{ role: 'Coach', first_name: '', last_name: 'Kunz', license_number: null }]
     })
   })
 
@@ -181,6 +181,6 @@ describe('saved teams console: beach', () => {
     const slots = beachSlotsFromPlayers([{ id: 'b', number: 2, last_name: 'Two' }, { id: 'x', number: null, last_name: 'Loose' }])
     expect(slots.map(s => [s.number, s.id, s.last_name])).toEqual([[1, 'x', 'Loose'], [2, 'b', 'Two']])
     expect(draftToBeachRosterBody([{ number: 1, first_name: ' ', last_name: '' }, { number: 2, first_name: 'Ana', last_name: '', country: ' che ' }], { first_name: '', last_name: ' ' }))
-      .toEqual({ players: [{ number: 2, first_name: 'Ana', last_name: '', dob: null, license_number: null, country: 'CHE' }], staff: [] })
+      .toEqual({ players: [{ number: 2, first_name: 'Ana', last_name: '', license_number: null, country: 'CHE' }], staff: [] })
   })
 })

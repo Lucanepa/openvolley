@@ -12,7 +12,7 @@ import ClubShield from './ClubShield'
 import ClubOfferModal from './ClubOfferModal'
 import SearchSelect from './SearchSelect'
 import { InlineError } from './common'
-import { Button, DateField, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
+import { Button, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
 
 const HEX = /^#[0-9a-f]{6}$/i
 const STAFF_ROLE_KEYS = {
@@ -33,7 +33,6 @@ function toPlayerDraft(p) {
     number: p?.number ?? '',
     first_name: p?.first_name || '',
     last_name: p?.last_name || '',
-    dob: p?.dob || '',
     license_number: p?.license_number || '',
     is_libero: !!p?.is_libero,
     is_captain: !!p?.is_captain,
@@ -47,7 +46,6 @@ function toStaffDraft(s) {
     role: STAFF_ROLES.includes(s?.role) ? s.role : 'Coach',
     first_name: s?.first_name || '',
     last_name: s?.last_name || '',
-    dob: s?.dob || '',
     license_number: s?.license_number || ''
   }
 }
@@ -61,7 +59,6 @@ function toSlotDraft(p, number) {
     id: p?.id,
     first_name: p?.first_name || '',
     last_name: p?.last_name || '',
-    dob: p?.dob || '',
     license_number: p?.license_number || '',
     country: p?.country || ''
   }
@@ -82,10 +79,10 @@ export function beachSlotsFromPlayers(players) {
 
 function toCoachDraft(staff) {
   const s = (Array.isArray(staff) ? staff : []).find(x => x?.role === 'Coach')
-  return s ? { id: s.id, first_name: s.first_name || '', last_name: s.last_name || '', dob: s.dob || '', license_number: s.license_number || '' } : null
+  return s ? { id: s.id, first_name: s.first_name || '', last_name: s.last_name || '', license_number: s.license_number || '' } : null
 }
 
-const emptyCoach = () => ({ first_name: '', last_name: '', dob: '', license_number: '' })
+const emptyCoach = () => ({ first_name: '', last_name: '', license_number: '' })
 
 /** Beach slots + coach → the PUT roster body: the slots with a name, and the coach when named. */
 export function draftToBeachRosterBody(slots, coach) {
@@ -97,7 +94,6 @@ export function draftToBeachRosterBody(slots, coach) {
         number: p.number,
         first_name: clean(p.first_name),
         last_name: clean(p.last_name),
-        dob: clean(p.dob) || null,
         license_number: clean(p.license_number) || null,
         country: clean(p.country).toUpperCase() || null
       }
@@ -110,7 +106,6 @@ export function draftToBeachRosterBody(slots, coach) {
         role: 'Coach',
         first_name: clean(coach.first_name),
         last_name: clean(coach.last_name),
-        dob: clean(coach.dob) || null,
         license_number: clean(coach.license_number) || null
       }]
     : []
@@ -140,7 +135,6 @@ export function draftToRosterBody(players, staff) {
         number: n === '' ? null : Number(n),
         first_name: clean(p.first_name),
         last_name: clean(p.last_name),
-        dob: clean(p.dob) || null,
         license_number: clean(p.license_number) || null,
         is_libero: !!p.is_libero,
         is_captain: !!p.is_captain,
@@ -154,7 +148,6 @@ export function draftToRosterBody(players, staff) {
         role: s.role,
         first_name: clean(s.first_name),
         last_name: clean(s.last_name),
-        dob: clean(s.dob) || null,
         license_number: clean(s.license_number) || null
       }
       if (s.id) row.id = s.id
@@ -224,10 +217,10 @@ const ROW_CARD = 'rounded-xl border border-stone-200 bg-white p-2 shadow-card'
 // The column heads line up with the card's inputs (its padding and border);
 // the last column holds the remove button, and the shield before it with the club's lists
 const HEAD_PAD = 'px-[9px] pb-1'
-const PLAYER_COLS = { plain: 'grid-cols-[7rem_4rem_1fr_1fr_9.5rem_2.25rem]', club: 'grid-cols-[7rem_4rem_1fr_1fr_9.5rem_4.75rem]' }
-const PLAYER_COLS_SM = { plain: 'sm:grid-cols-[7rem_4rem_1fr_1fr_9.5rem_2.25rem]', club: 'sm:grid-cols-[7rem_4rem_1fr_1fr_9.5rem_4.75rem]' }
-const STAFF_COLS = { plain: 'grid-cols-[11rem_1fr_1fr_9.5rem_8rem_2.25rem]', club: 'grid-cols-[11rem_1fr_1fr_9.5rem_8rem_4.75rem]' }
-const STAFF_COLS_SM = { plain: 'sm:grid-cols-[11rem_1fr_1fr_9.5rem_8rem_2.25rem]', club: 'sm:grid-cols-[11rem_1fr_1fr_9.5rem_8rem_4.75rem]' }
+const PLAYER_COLS = { plain: 'grid-cols-[7rem_4rem_1fr_1fr_2.25rem]', club: 'grid-cols-[7rem_4rem_1fr_1fr_4.75rem]' }
+const PLAYER_COLS_SM = { plain: 'sm:grid-cols-[7rem_4rem_1fr_1fr_2.25rem]', club: 'sm:grid-cols-[7rem_4rem_1fr_1fr_4.75rem]' }
+const STAFF_COLS = { plain: 'grid-cols-[11rem_1fr_1fr_8rem_2.25rem]', club: 'grid-cols-[11rem_1fr_1fr_8rem_4.75rem]' }
+const STAFF_COLS_SM = { plain: 'sm:grid-cols-[11rem_1fr_1fr_8rem_2.25rem]', club: 'sm:grid-cols-[11rem_1fr_1fr_8rem_4.75rem]' }
 
 /**
  * Edit one saved team: its fields (PATCH), its players and team officials
@@ -483,7 +476,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   }
 
   // Import Einsatzliste: the PDF's players and officials merged into the
-  // drafts (same name: its number, date of birth and licence; else added). Saving
+  // drafts (same name: its number and licence; else added). Saving
   // stays the user's step.
   const importPdf = async (file) => {
     if (!file || importing) return
@@ -563,8 +556,8 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     setRowErrors({})
     toast.success(t('clubPlayers.officialSet', { role: t(STAFF_ROLE_KEYS[role], role), name: `${c.first_name || ''} ${c.last_name}`.trim() }))
   }
-  // The gray shield: the row typed by hand takes the names, date of birth and
-  // licence number of someone uploaded from VolleyManager (green then)
+  // The gray shield: the row typed by hand takes the names and licence number
+  // of someone uploaded from VolleyManager (green then)
   const shieldOf = (row) => (clubPlayers ? clubPersonOf(row, people) : null)
   // an official's row links to anyone uploaded of the club's lists: the server's search
   const searchUploaded = clubPlayers?.search
@@ -681,7 +674,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
           coach={coach}
           rowErrors={rowErrors}
           onSlot={updateSlot}
-          onClearSlot={(number) => updateSlot(number, { first_name: '', last_name: '', dob: '', license_number: '', country: '' })}
+          onClearSlot={(number) => updateSlot(number, { first_name: '', last_name: '', license_number: '', country: '' })}
           onCoach={updateCoach}
           onAddCoach={() => setCoach(emptyCoach())}
           onRemoveCoach={() => { setCoach(null); setRosterError(''); setRowErrors({}) }}
@@ -714,7 +707,6 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                 <span>{t('savedTeams.number')}</span>
                 <span>{t('savedTeams.firstName')}</span>
                 <span>{t('savedTeams.lastName')}</span>
-                <span>{t('savedTeams.dob')}</span>
                 <span />
               </div>
               <div className="space-y-2">
@@ -739,10 +731,6 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
                         <Input value={p.last_name} onChange={e => updatePlayer(p.key, { last_name: e.target.value })} aria-label={t('savedTeams.lastName')} invalid={!!rowErrors[`players:${i}`]} required />
-                      </label>
-                      <label className="block">
-                        <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                        <DateField value={p.dob} onChange={v => updatePlayer(p.key, { dob: v })} aria-label={t('savedTeams.dob')} />
                       </label>
                       <div className="flex items-center justify-end gap-1">
                         {clubPlayers && (
@@ -791,7 +779,6 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                 <span>{t('savedTeams.role')}</span>
                 <span>{t('savedTeams.firstName')}</span>
                 <span>{t('savedTeams.lastName')}</span>
-                <span>{t('savedTeams.dob')}</span>
                 <span>{t('savedTeams.license')}</span>
                 <span />
               </div>
@@ -815,10 +802,6 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
                         <Input value={s.last_name} onChange={e => updateStaff(s.key, { last_name: e.target.value })} aria-label={t('savedTeams.lastName')} invalid={!!rowErrors[`staff:${i}`]} required />
-                      </label>
-                      <label className="block">
-                        <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                        <DateField value={s.dob} onChange={v => updateStaff(s.key, { dob: v })} aria-label={t('savedTeams.dob')} />
                       </label>
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
@@ -924,7 +907,7 @@ function BeachRoster({ slots, coach, rowErrors, onSlot, onClearSlot, onCoach, on
             return (
               <div key={p.number} className="py-2" data-testid="beach-slot">
                 <p className="mb-1 text-[13px] font-semibold text-stone-800">{t('savedTeams.beachPlayer', { number: p.number })}</p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_9.5rem_8rem_5rem_auto] sm:items-center">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_8rem_5rem_auto] sm:items-center">
                   <label className="block">
                     <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
                     <Input value={p.first_name} onChange={e => onSlot(p.number, { first_name: e.target.value })} aria-label={`${t('savedTeams.firstName')} ${p.number}`} maxLength={80} />
@@ -932,10 +915,6 @@ function BeachRoster({ slots, coach, rowErrors, onSlot, onClearSlot, onCoach, on
                   <label className="block">
                     <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
                     <Input value={p.last_name} onChange={e => onSlot(p.number, { last_name: e.target.value })} aria-label={`${t('savedTeams.lastName')} ${p.number}`} maxLength={80} invalid={!!error} />
-                  </label>
-                  <label className="block">
-                    <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                    <DateField value={p.dob} onChange={v => onSlot(p.number, { dob: v })} aria-label={`${t('savedTeams.dob')} ${p.number}`} />
                   </label>
                   <label className="block">
                     <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
@@ -972,7 +951,7 @@ function BeachRoster({ slots, coach, rowErrors, onSlot, onClearSlot, onCoach, on
         )} />
         {coach && (
           <div className="py-2" data-testid="beach-coach">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_9.5rem_8rem_auto] sm:items-center">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_8rem_auto] sm:items-center">
               <label className="block">
                 <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
                 <Input value={coach.first_name} onChange={e => onCoach({ first_name: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.firstName')}`} maxLength={80} />
@@ -980,10 +959,6 @@ function BeachRoster({ slots, coach, rowErrors, onSlot, onClearSlot, onCoach, on
               <label className="block">
                 <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
                 <Input value={coach.last_name} onChange={e => onCoach({ last_name: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.lastName')}`} maxLength={80} invalid={!!rowErrors.coach} />
-              </label>
-              <label className="block">
-                <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                <DateField value={coach.dob} onChange={v => onCoach({ dob: v })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.dob')}`} />
               </label>
               <label className="block">
                 <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
