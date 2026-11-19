@@ -179,11 +179,14 @@ describe('Global match: what is printed beside a name', () => {
     expect(name).toHaveValue('Teacher')
   })
 
-  it('a Swiss match shows no role-name box and no Info heading', async () => {
+  it('a Swiss match shows no role-name box and no Info heading: a Licence column', async () => {
     globalMatch({ global: false, test: false })
     render(<Setup matchId={1} />)
     fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
-    await screen.findAllByLabelText('matchSetup.dateOfBirth')
+    // the licence (or a date of birth) in a text field, never the date field
+    const fields = await screen.findAllByLabelText('Licence')
+    expect(fields[0]).toHaveAttribute('inputMode', 'text')
+    expect(screen.queryAllByLabelText('matchSetup.dateOfBirth')).toHaveLength(0)
     expect(screen.queryAllByTestId('bench-role-name-home')).toHaveLength(0)
   })
 })

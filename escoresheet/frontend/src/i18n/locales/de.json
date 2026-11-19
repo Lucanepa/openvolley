@@ -242,9 +242,9 @@
     "pointsPerSet": "Punkte pro Satz",
     "pointsDeciding": "Entscheidungssatz",
     "loadingScheduleGame": "Spiel wird geladen…",
-    "scorerDobForCoinToss": "Schreiber: Geburtsdatum oder Lizenznummer für die Auslosung nötig",
+    "scorerDobForCoinToss": "Schreiber: Lizenz (oder Geburtsdatum) für die Auslosung nötig",
     "guestNote": "Neues Spiel ohne Konto: Es bleibt auf diesem Gerät, mit einer Sicherung unter seinem Sicherungscode. Gespeicherte Teams, Vereinslisten und das Schiedsrichter-Verzeichnis brauchen eine Anmeldung (SV-Spiel).",
-    "dobRequiredForCoinToss": "Für die Auslosung: Gib ein Geburtsdatum oder eine Lizenznummer ein",
+    "dobRequiredForCoinToss": "Für die Auslosung: Gib die Lizenz (oder das Geburtsdatum) des Schreibers ein",
     "licenceNumber": "Lizenznummer",
     "title": "Spieleinrichtung",
     "scoresheet": "eScoresheet",
@@ -1372,7 +1372,7 @@
   },
   "restoreGlobal": {"title": "Aus der Online-Sicherung wiederherstellen", "desc": "Gib den Sicherungscode des Spiels ein (Spiel einrichten, Sicherungen). Danach fragt die App nach seiner Schiedsrichter-PIN.", "code": "Sicherungscode", "notFound": "Zu diesem Code wurde keine Sicherung gefunden.", "notGlobal": "Unter diesem Code liegt kein Spiel des Werkzeugs Global.", "button": "Sicherung suchen"},
   "toolChooser": {"title": "Wie nutzt du OpenVolley?", "swissBody": "Schweizer Ligaspiele: Anmeldung, Spielliste, Einsatzliste, Club-Kader und die Cloud.", "globalBody": "Jedes Turnier oder Freundschaftsspiel: ohne Anmeldung, Kader und Spiele aus Excel. Mannschaften und Spieler bleiben auf diesem Gerät.", "later": "Du kannst das später in den Optionen ändern, solange kein Spiel auf diesem Gerät ist."},
-  "idMode": {"title": "Neben jedem Namen", "dob": "Geburtsdaten verwenden", "number": "ID-Nummer verwenden", "text": "Text verwenden", "label": {"dob": "Geburtsdatum", "number": "ID-Nummer", "text": "Info"}},
+  "idMode": {"title": "Neben jedem Namen", "dob": "Geburtsdaten verwenden", "number": "ID-Nummer verwenden", "text": "Text verwenden", "label": {"dob": "Geburtsdatum", "number": "ID-Nummer", "text": "Info", "licence": "Lizenz"}, "hint": {"licence": "oder Geburtsdatum (tt.mm.jjjj)"}},
   "globalImport": {"templateGames": "Spiele-Vorlage (Excel)", "templateRosters": "Kader-Vorlage (Excel)", "gamesTitle": "Spiele importieren", "rostersTitle": "Kader importieren", "gamesHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Spiel: Spiel, Datum, Zeit, Halle, Ort, Liga, Heim, Gast, Best of, Schiedsrichter. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "rostersHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Person: Mannschaft, Nummer, Vorname, Nachname, Rolle (Spieler, Libero, Kapitän, Trainer ...), Geburtsdatum. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "choose": "Datei wählen", "template": "Vorlage", "errFile": "Die Datei konnte nicht gelesen werden.", "errEmpty": "Die Datei enthält keine Zeilen.", "errColumns": "Die Spalten wurden nicht gefunden. Nimm die Vorlage.", "noTeamName": "(ohne Mannschaftsname)", "counts": "{{players}} Spieler, {{staff}} Betreuer", "warnings": "{{count}} Zeilen waren nicht sauber: {{list}}", "applied": "{{count}} Spieler hinzugefügt", "gamesButton": "Spiele importieren (Excel)", "rostersButton": "Kader importieren (Excel)"},
   "home": {
     "storageWarning": "Dieser Browser darf die Daten der App löschen, und ein Spiel auf diesem Gerät hat noch nicht gesendete Änderungen. Melde dich an, damit sie synchronisiert werden, installiere die App oder füge sie dem Startbildschirm hinzu, oder schalte in den Optionen Backup-Downloads ein.",
@@ -1971,7 +1971,7 @@
       "roleTwice": "{{role}} ist zweimal da: jede Rolle der Teamoffiziellen nur einmal.",
       "tooMany": "Höchstens {{max}} Spielende.",
       "badText": "Ein Name hat mehr als {{max}} Zeichen.",
-      "badDate": "Ein Geburtsdatum ist kein Datum.",
+      "badDate": "Eine Lizenz oder ein Geburtsdatum ist ungültig: Eine Lizenz hat 4 bis 7 Ziffern, ein Datum schreibst du tt.mm.jjjj.",
       "other": "Der Kader kann nicht gesendet werden ({{problem}})."
     }
   },
@@ -3331,7 +3331,7 @@
     "matchInfoNotConfirmed": "Spielinfos nicht bestätigt",
     "firstRefereeMissing": "Name des 1. Schiedsrichters erforderlich",
     "scorerNameMissing": "Name des Schreibers erforderlich",
-    "scorerDobMissing": "Geburtsdatum oder Lizenznummer des Schreibers erforderlich",
+    "scorerDobMissing": "Lizenz (oder Geburtsdatum) des Schreibers erforderlich",
     "homeRosterIncomplete": "Heimkader unvollständig ({{count}}/6 Spieler)",
     "awayRosterIncomplete": "Gastkader unvollständig ({{count}}/6 Spieler)",
     "homeCaptainMissing": "Heimteam: kein Kapitän zugewiesen",

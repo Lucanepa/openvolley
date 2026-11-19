@@ -42,6 +42,23 @@ const row = (container, team, number) =>
   container.querySelector(`[data-team="${team}"] tr[data-player="${number}"]`)
 
 describe('RostersPanel', () => {
+  // Owner 2026-11-19: the column beside a name is the licence in a Swiss match;
+  // a Global match keeps its own heading
+  it('heads the value column "Licence" in a Swiss match, a Global match\'s own label otherwise', () => {
+    const data = baseData()
+    data.match.officials = [{ role: 'scorer', firstName: 'Sam', lastName: 'Schreiber', country: 'CHE', dob: '123456' }]
+    const { unmount } = render(<RostersPanel data={data} lineups={{ home: null, away: null }} servingTeam="home" />)
+    expect(screen.getAllByRole('columnheader', { name: 'Licence' }).length).toBeGreaterThan(0)
+    expect(screen.queryAllByRole('columnheader', { name: en.roster.dob })).toHaveLength(0)
+    expect(screen.getByText('123456')).toBeTruthy()
+    unmount()
+    const global = baseData()
+    global.match.global = true
+    global.match.idMode = 'number'
+    render(<RostersPanel data={global} lineups={{ home: null, away: null }} servingTeam="home" />)
+    expect(screen.getAllByRole('columnheader', { name: 'ID number' }).length).toBeGreaterThan(0)
+  })
+
   it('hides the Pos. column before the first lineup', () => {
     render(<RostersPanel data={baseData()} lineups={{ home: null, away: null }} servingTeam="home" />)
     expect(screen.queryAllByText('Pos.')).toHaveLength(0)

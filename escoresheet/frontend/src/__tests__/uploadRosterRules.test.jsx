@@ -20,10 +20,11 @@ vi.mock('../utils/rosterUploadMatches', () => ({ listRosterUploadMatches: vi.fn(
 vi.mock('../utils/parseRosterPdf', () => ({
   parseRosterPdf: vi.fn(async () => ({
     players: [
-      { number: 4, firstName: 'Anna', lastName: 'Muster', dob: '14/03/2008' },
+      { number: 4, firstName: 'Anna', lastName: 'Muster', dob: '14/03/2008', licence: '123456' },
       { number: 7, firstName: 'Eva', lastName: 'Beispiel', dob: '', isLfp: true },
       { number: 9, firstName: 'Lea', lastName: 'Exemple', dob: '' }
-    ]
+    ],
+    coach: { firstName: 'Tom', lastName: 'Trainer', dob: '', birthYear: '1970', licence: '7654' }
   }))
 }))
 vi.mock('react-i18next', () => ({
@@ -85,5 +86,22 @@ describe('roster upload: the roster rules', () => {
     await waitFor(() => expect(sync.updateMatchData).toHaveBeenCalled())
     const [, { pendingHomeRoster }] = sync.updateMatchData.mock.calls[0]
     expect(pendingHomeRoster.players.map(p => [p.number, p.isCaptain, p.isLfp])).toEqual([[4, true, false], [7, false, true], [9, false, false]])
+    // the Einsatzliste's licences, never its dates of birth (owner 2026-11-19)
+    expect(pendingHomeRoster.players.map(p => p.dob)).toEqual(['123456', '', ''])
+    expect(pendingHomeRoster.bench).toEqual([{ role: 'Coach', firstName: 'Tom', lastName: 'Trainer', dob: '7654' }])
+  })
+
+  it('the value field takes a licence or a date of birth (a text field); a licence of 3 digits is not sent', async () => {
+    await openImportedRoster()
+    const values = screen.getAllByLabelText('Licence')
+    expect(values[0]).toHaveValue('123456')
+    expect(values[0]).toHaveAttribute('inputMode', 'text')
+    fireEvent.change(values[1], { target: { value: '14.3.2008' } })
+    fireEvent.blur(values[1])
+    await waitFor(() => expect(values[1]).toHaveValue('14.03.2008'))
+    fireEvent.change(values[2], { target: { value: '123' } })
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }))
+    expect(await screen.findByText('uploadRoster.problems.badDate')).toBeTruthy()
+    expect(sync.updateMatchData).not.toHaveBeenCalled()
   })
 })

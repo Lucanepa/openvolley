@@ -106,3 +106,23 @@ export function typedIdValue(mode, raw) {
 export function personLicence(person) {
   return licenceOf(person?.dob) ?? licenceOf(person?.licence)
 }
+
+/**
+ * What an Einsatzliste brings beside a name (owner 2026-11-19: "for
+ * switzerland: import only the licence number from the einsatzliste"): the
+ * person's licence (parseRosterPdf `licence`, the SV number), never the date
+ * of birth the list prints (the parser reads that only to find the rows). A
+ * Global match on birthdates gets nothing there.
+ */
+export function importedIdValue(person, mode) {
+  return mode === 'dob' ? '' : (licenceOf(person?.licence) || '')
+}
+
+/**
+ * The column label of a mode in the app: `dobLabel` (the screen's own,
+ * long-translated date of birth label) for 'dob', else `idMode.label.<mode>`.
+ * @param {(key: string, fallback?: string) => string} t
+ */
+export function idLabelOf(t, mode, dobLabel) {
+  return mode === 'dob' ? dobLabel : t(`idMode.label.${mode}`, ID_LABEL_FALLBACK[mode] || ID_LABEL_FALLBACK.licence)
+}

@@ -5,7 +5,8 @@ import CaptainToggle from '../CaptainToggle'
 import { Button } from '../../ui/Button.jsx'
 import { Input } from '../../ui/Input.jsx'
 import { Select } from '../../ui/Select.jsx'
-import { DateField } from '../../ui/DateField.jsx'
+import IdField from '../IdField'
+import { idLabelOf } from '../../domain/idMode'
 import { SectionHeader } from '../../ui/SectionHeader.jsx'
 import { cn } from '../../ui/cn.js'
 
@@ -70,7 +71,10 @@ const CAPTAIN_CELL = 'flex justify-center [grid-area:cap] [&>button]:!h-11 [&>bu
 // Names: 8 px of padding (the kit's 12 cut "Bachmann" on a phone)
 const NAME = 'px-2'
 
-export default function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose, t, benchRoles, toISODate, saving = false }) {
+// idMode: what the column beside a name holds (domain/idMode): 'licence' in a
+// Swiss match (a licence, or a date of birth typed with its dots), a Global
+// match's own choice; the date field only for 'dob'.
+export default function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose, t, benchRoles, toISODate, saving = false, idMode = 'licence' }) {
   const [editingPlayers, setEditingPlayers] = useState(() =>
     players.map(p => ({ ...p })).sort((a, b) => (a.number || 0) - (b.number || 0))
   )
@@ -119,7 +123,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
   const removeLabel = t('scoreboard.reopenRoster.removePlayer', 'Remove')
   const firstNameLabel = t('scoreboard.reopenRoster.firstName', 'First name')
   const lastNameLabel = t('scoreboard.reopenRoster.lastName', 'Last name')
-  const dobLabel = t('matchSetup.dateOfBirth', 'Date of birth')
+  const dobLabel = idLabelOf(t, idMode, t('matchSetup.dateOfBirth', 'Date of birth'))
 
   return (
     <Modal
@@ -183,7 +187,10 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   placeholder={firstNameLabel}
                   className={cn('[grid-area:first]', NAME)}
                 />
-                <DateField
+                <IdField
+                  idMode={idMode}
+                  rawValue={player.dob}
+                  onRawChange={(v) => updatePlayer(idx, 'dob', v)}
                   size="md"
                   aria-label={dobLabel}
                   value={toISODate(player.dob)}
@@ -276,7 +283,10 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   placeholder={firstNameLabel}
                   className={cn('[grid-area:first]', NAME)}
                 />
-                <DateField
+                <IdField
+                  idMode={idMode}
+                  rawValue={staff.dob}
+                  onRawChange={(v) => updateBench(idx, 'dob', v)}
                   size="md"
                   aria-label={dobLabel}
                   value={toISODate(staff.dob)}

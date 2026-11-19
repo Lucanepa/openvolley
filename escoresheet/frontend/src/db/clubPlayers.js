@@ -8,19 +8,19 @@
  * officials, who may be anyone of the club's lists).
  *
  * One row per club: { clubId, clubName, teamNames, teamGenders, players:
- * [{ sv_number, last_name, first_name, dob, gender }] (the players list),
- * people: [{ ...the same five fields, lists }] (everyone of the three lists
+ * [{ sv_number, last_name, first_name, gender, manual }] (the players list),
+ * people: [{ ...the same fields, lists }] (everyone of the three lists
  * once), fetchedAt, userId }. A server before `people` (or a row kept by an
  * older app) has the players list only: people are then the players.
- * Owner decision 2: the server sends no dates of birth here (dob null);
- * withClubDob asks for those of the people added to a roster, online.
- * Personal data (names, dates of birth, licence numbers, gender): only for
+ * No date of birth is kept (owner 2026-11-19): Match Setup fills the licence
+ * (sv_number) beside a club person's name.
+ * Personal data (names, licence numbers, gender): only for
  * the account that loaded them (row.userId) and cleared on sign-out and
  * account switch (AuthContext), like the saved teams and the sent rosters.
  */
 
 import { db } from './db'
-import { fetchClubDob, fetchClubLicences } from '../lib/accountApi'
+import { fetchClubLicences } from '../lib/accountApi'
 import { accessFromRoles } from '../lib/access'
 import { currentUserId } from './savedTeams'
 
@@ -52,14 +52,14 @@ function currentAccess() {
 const LISTS = ['players', 'scorers', 'coaches']
 
 /**
- * A person of a list: the five fields only, and whether every row of the
+ * A person of a list: the licence, the names and the gender only (never a
+ * date of birth, also from an older server), and whether every row of the
  * person was added by hand (db/026 `manual`: a gray shield in Match Setup).
  */
 const personOf = (p) => ({
   sv_number: String(p.sv_number),
   last_name: p.last_name || '',
   first_name: p.first_name || null,
-  dob: p.dob || null,
   gender: p.gender === 'm' || p.gender === 'f' ? p.gender : null,
   manual: p.manual === true
 })
@@ -78,7 +78,7 @@ export function peopleOfClub(c) {
   return (Array.isArray(c?.players) ? c.players : []).filter((p) => p && p.sv_number != null).map((p) => ({ ...personOf(p), lists: ['players'] }))
 }
 
-/** One club of GET /api/club-licences -> the cache row (the five fields of each person, and its lists). */
+/** One club of GET /api/club-licences -> the cache row (the fields of each person, and its lists). */
 export function clubToRow(c, userId, fetchedAt = null) {
   const names = Array.isArray(c?.team_names) ? c.team_names.filter((n) => typeof n === 'string') : []
   const genders = c?.team_genders && typeof c.team_genders === 'object' ? c.team_genders : {}
@@ -158,28 +158,6 @@ export async function refreshClubPlayers({ access, userId, online, force = false
   } catch (e) {
     console.warn('[clubPlayers] refresh failed:', e?.message)
     return 'error'
-  }
-}
-
-/**
- * `people` (club people chosen in Match Setup) with the dates of birth of
- * club `clubId` filled in where they have none (GET /api/club-licences/dob:
- * those of the chosen people only, at most 30). Never throws: offline, on a
- * server that does not know the route, or on any error, `people` as they are
- * (the scorer types the date, or a sent roster brings it).
- */
-export async function withClubDob(clubId, people, { online, timeoutMs = 5000 } = {}) {
-  const list = Array.isArray(people) ? people : []
-  const want = [...new Set(list.filter((p) => p && !p.dob && p.sv_number != null).map((p) => String(p.sv_number)))].slice(0, 30)
-  if (!clubId || !want.length || !(online ?? isOnline())) return list
-  try {
-    const { data, error } = await fetchClubDob({ clubId, svNumbers: want, timeoutMs })
-    if (error || !Array.isArray(data?.people)) return list
-    const dobOf = new Map(data.people.filter((x) => x && x.dob).map((x) => [String(x.sv_number), x.dob]))
-    return list.map((p) => (p && !p.dob && dobOf.has(String(p.sv_number)) ? { ...p, dob: dobOf.get(String(p.sv_number)) } : p))
-  } catch (e) {
-    console.warn('[clubPlayers] dates of birth not read:', e?.message)
-    return list
   }
 }
 

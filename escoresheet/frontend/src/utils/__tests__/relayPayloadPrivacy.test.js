@@ -133,12 +133,17 @@ describe('the Scoreboard\'s sync and remarks', () => {
     expect(body).toMatch(/error: freshMatch \? 'Match scored on another device' : 'Match not found in database'/)
   })
 
-  it('an in-match roster edit notes a corrected date of birth in the remarks without the dates', () => {
+  // Owner 2026-11-19: the value is named for what it holds ("licence" in a
+  // Swiss match), and a date of birth reaches neither the remarks nor the
+  // change log
+  it('an in-match roster edit notes a corrected value in the remarks without the values, the change log without dates', () => {
     const start = src.indexOf('const diffRosters = useCallback(')
     expect(start).toBeGreaterThan(-1)
     const body = src.slice(start, src.indexOf('\n  }, [])', start))
-    expect(body).toMatch(/f\.key === 'dob' \? `Player #\$\{orig\.number\} date of birth changed \(\$\{teamLabel\}\)` : desc/)
-    expect(body).toMatch(/f === 'dob' \? `Bench official \$\{orig\.role \|\| edit\.role\} date of birth changed \(\$\{teamLabel\}\)` : desc/)
+    expect(body).toMatch(/f\.key === 'dob' \? `Player #\$\{orig\.number\} \$\{valueName\} changed \(\$\{teamLabel\}\)` : desc/)
+    expect(body).toMatch(/f === 'dob' \? `Bench official \$\{orig\.role \|\| edit\.role\} \$\{valueName\} changed \(\$\{teamLabel\}\)` : desc/)
+    expect(body).toMatch(/const shownValue = \(v\) => \(isDateValue\(v\) \? '\(date of birth\)' : v\)/)
+    expect(body.match(/=== 'dob' \? shownValue\(raw(Old|New)\)/g)).toHaveLength(4)
     // every remark line is one of these: none writes the values of a dob change
     expect(body.match(/remarkLines\.push\(/g)).toHaveLength(6)
   })

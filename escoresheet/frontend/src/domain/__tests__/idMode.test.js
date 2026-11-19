@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { idModeOf, cleanIdValue, typedIdValue, isDateValue, licenceOf, dateValueText, isPlaceholderValue, personLicence, ID_SHEET_HEADING, ID_LABEL_FALLBACK } from '../idMode'
+import { idModeOf, cleanIdValue, typedIdValue, isDateValue, licenceOf, dateValueText, isPlaceholderValue, personLicence, importedIdValue, idLabelOf, ID_SHEET_HEADING, ID_LABEL_FALLBACK } from '../idMode'
 
 describe('idMode', () => {
   it('a Swiss match (anything not Global) carries the licence, whatever idMode it has', () => {
@@ -83,5 +83,22 @@ describe('the licence value rule', () => {
     expect(personLicence({ dob: '', licence: ' 7654 ' })).toBe('7654')
     expect(personLicence({ dob: '14.03.2008' })).toBe(null)
     expect(personLicence(null)).toBe(null)
+  })
+})
+
+describe('what comes into the value', () => {
+  it('an Einsatzliste brings the licence, never the date of birth it prints (owner 2026-11-19)', () => {
+    expect(importedIdValue({ dob: '14/03/2008', licence: '123456' }, 'licence')).toBe('123456')
+    expect(importedIdValue({ dob: '14/03/2008' }, 'licence')).toBe('')
+    expect(importedIdValue({ dob: '', birthYear: '1970', licence: '7654' }, 'licence')).toBe('7654')
+    // a Global match on numbers takes the licence too; on birthdates nothing
+    expect(importedIdValue({ licence: '123456' }, 'number')).toBe('123456')
+    expect(importedIdValue({ dob: '14/03/2008', licence: '123456' }, 'dob')).toBe('')
+  })
+  it('idLabelOf: the screen\'s date label for dob, else the mode\'s', () => {
+    const t = (key, fallback) => `${key}|${fallback}`
+    expect(idLabelOf(t, 'dob', 'Date of birth')).toBe('Date of birth')
+    expect(idLabelOf(t, 'licence', 'Date of birth')).toBe('idMode.label.licence|Licence')
+    expect(idLabelOf(t, 'number', 'x')).toBe('idMode.label.number|ID number')
   })
 })

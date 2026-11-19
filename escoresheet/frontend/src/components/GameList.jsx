@@ -98,7 +98,8 @@ export default function GameList({ matches, loading, onSelectMatch, onDeleteMatc
                         {t('gameList.deleteMatchData', 'Delete match data')}
                       </button>
                     )}
-                    {onLoadTestData && (
+                    {/* practice data only into a test or Easy match (never an official one) */}
+                    {onLoadTestData && match.test === true && (
                       <button className="secondary" onClick={() => onLoadTestData(match.id)}>
                         {t('gameList.loadTestData', 'Load test data')}
                       </button>
