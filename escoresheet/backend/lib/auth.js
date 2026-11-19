@@ -145,7 +145,9 @@ const DEFAULTS = Object.freeze({
     { table: 'public.user_matches', column: 'user_id' },
     { table: 'public.match_editors', column: 'user_id' },
     // db/025: an open sign-up request (also ON DELETE CASCADE)
-    { table: 'public.account_requests', column: 'user_id' }
+    { table: 'public.account_requests', column: 'user_id' },
+    // db/050: the error reports sent while signed in
+    { table: 'public.error_events', column: 'account_id' }
   ],
   // Rows that stay when the account goes (club records: the matches it scored,
   // beach competition matches) but forget who it was: the column is set NULL

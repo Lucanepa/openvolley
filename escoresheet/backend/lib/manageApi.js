@@ -33,6 +33,7 @@
  *   *      /api/admin/data/*                         isSuperAdmin: the Data tab, every table of the
  *                                                    public schema one row at a time (lib/dataAdmin.js)
  *   GET    /api/admin/sql/schema, POST /api/admin/sql isSuperAdmin: the SQL tab (lib/sqlWorkspace.js)
+ *   GET/PATCH/DELETE /api/admin/errors[/...]        isSuperAdmin: the Errors tab (lib/errorTracker.js, db/050)
  *   GET    /api/admin/matches/:id/revisions          isAdmin: undone / edited events (db/015)
  *   GET    /api/admin/matches/:id/closures           isAdmin: the closed record of each reopen, and the re-close (db/039)
  *   GET    /api/admin/matches/:id/pin                isAdmin: the match's game PIN (audited match.pin_viewed);
@@ -162,6 +163,9 @@ const REOPEN_RE = /^\/api\/admin\/matches\/[^/]+\/reopen$/
 const DATA_RE = /^\/api\/admin\/data(\/|$)/
 // The SQL tab (lib/sqlWorkspace.js): /api/admin/sql, /api/admin/sql/schema
 const SQL_RE = /^\/api\/admin\/sql(\/|$)/
+// The Errors tab (lib/errorTracker.js, db/050): /api/admin/errors[/<id>[/events]], /api/admin/errors/events
+const ERRORS_RE = /^\/api\/admin\/errors(\/|$)/
+const ERRORS_PATH_RE = /^\/api\/admin\/errors(?:\/(events|[0-9a-fA-F-]{36})(\/events)?)?$/
 const DATA_PATH_RE = /^\/api\/admin\/data\/tables(?:\/([a-z_][a-z0-9_]{0,62})(\/rows|\/row|\/row\/delete)?)?$/
 const beachManager = (access) => accessForSport(access, 'beach').canManageTeams === true
 const ID = '([0-9a-fA-F-]{36})'
@@ -189,7 +193,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null, sqlWorkspace = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null, sqlWorkspace = null, errors = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -471,6 +475,30 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     return notFound()
   }
 
+  // The Errors tab (lib/errorTracker.js): super admins only, as the Data tab
+  // (an event names the member: name, address, roles, clubs)
+  async function errorsRoute ({ method, pathname, query, body, user, access }) {
+    if (!access?.isSuperAdmin) return FORBIDDEN()
+    if (!errors) return notFound()
+    const m = ERRORS_PATH_RE.exec(pathname)
+    if (!m) return notFound()
+    const [, head = null, tail = null] = m
+    const actorId = user.id
+    if (head === null) return method === 'GET' ? errors.listGroups({ query }) : METHOD_NOT_ALLOWED()
+    if (head === 'events') {
+      if (tail) return notFound()
+      if (method === 'GET') return errors.listEvents({ actorId, query })
+      if (method === 'DELETE') return errors.deleteEvents({ actorId, query })
+      return METHOD_NOT_ALLOWED()
+    }
+    const id = head.toLowerCase()
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) return notFound()
+    if (tail) return method === 'GET' ? errors.listEvents({ actorId, groupId: id, query }) : METHOD_NOT_ALLOWED()
+    if (method === 'GET') return errors.getGroup({ id })
+    if (method === 'PATCH') return errors.updateGroup({ actorId, id, body })
+    return METHOD_NOT_ALLOWED()
+  }
+
   /** The role check of a route: null when allowed, else the 403 answer. */
   function refuse (need, access) {
     switch (need) {
@@ -505,6 +533,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     if (family === 'beach') return beach ? beach.route({ method, pathname, query, body, user, access }) : notFound()
     if (DATA_RE.test(pathname)) return dataRoute({ method, pathname, query, body, user, access })
     if (SQL_RE.test(pathname)) return sqlRoute({ method, pathname, query, body, user, access })
+    if (ERRORS_RE.test(pathname)) return errorsRoute({ method, pathname, query, body, user, access })
     let pathKnown = false
     for (const [m, re, need, handler] of routes) {
       const match = re.exec(pathname)

@@ -346,6 +346,30 @@ export function fetchGameRosters({ games, timeoutMs } = {}) {
 }
 
 export const admin = {
+  /** The Errors tab (db/050, super admins): the groups, filtered (status open|resolved|muted|all, product, tool, source, since, q, sort). */
+  listErrors({ status, product, tool, source, os, version, since, q, sort, limit } = {}) {
+    return apiRequest('GET', `/api/admin/errors${query({ status, product, tool, source, os, version, since, q, sort, limit })}`)
+  },
+  /** One group: { group, days (14), breakdowns, stats }. */
+  getError(id) {
+    return apiRequest('GET', `/api/admin/errors/${enc(id)}`)
+  },
+  /** A group's reports, newest first, with the member (audited): { events, next }. */
+  listErrorEvents(id, { before, limit } = {}) {
+    return apiRequest('GET', `/api/admin/errors/${enc(id)}/events${query({ before, limit })}`)
+  },
+  /** One device's (or account's) reports across groups: { events, next }. */
+  listDeviceErrors({ device, account, before, limit } = {}) {
+    return apiRequest('GET', `/api/admin/errors/events${query({ device, account, before, limit })}`)
+  },
+  /** Triage: { status, mute, resolved_in_version, important, note, commit_ref } (audited). */
+  updateError(id, body) {
+    return apiRequest('PATCH', `/api/admin/errors/${enc(id)}`, body)
+  },
+  /** Delete on request: a device's or an account's reports (audited). */
+  deleteErrorEvents({ device, account } = {}) {
+    return apiRequest('DELETE', `/api/admin/errors/events${query({ device, account, confirm: 'yes' })}`)
+  },
   /** The activity log (db/016): filters match (game no. or external id), account (id), kind (prefix), level, from, to, app, before, limit. */
   listActivity({ match, account, kind, level, from, to, app, before, limit } = {}) {
     return apiRequest('GET', `/api/admin/activity${query({ match, account, kind, level, from, to, app, before, limit })}`)

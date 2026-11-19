@@ -1225,6 +1225,16 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 
 A signed-in scorer's `{ externalId }`: the game number, teams, date and venue of a match the account created or edits (built from the stored match, no PIN) to the account's own confirmed address. Needs `RESEND_API_KEY` (503 without it); 409 `OV_EMAIL_UNCONFIRMED` for an unconfirmed address, 404 for a match the account does not edit.
 
+### `POST /api/errors` and the Errors tab (`lib/errorTracker.js`, `lib/errorAlerts.js`, `db/050`)
+
+The error reports of every page and app, signed in or not, and the server's own errors (`captureServerError` in `server.js`: the route catches, `sendLayerError`, the manage catch, failed jobs, unhandled rejections and uncaught exceptions). `{ events: [<= 20] }` as JSON, or as `text/plain` from `navigator.sendBeacon`; ≤ 64 KB. A valid Bearer session names the account; the body never does. No IP address is stored (the rate limits keep it in memory: 60 requests a minute per address here; 120 events per 5 min per address, 300 an hour per device and 5000 per 5 min in total in the tracker, over them 202 and dropped). Every field is checked and sanitized again (PINs, long numbers, addresses, dates, tokens, URL queries, Postgres key values).
+
+- **Groups**: one per distinct error (product, source, kind, error name, message with ids and numbers masked, top frame without the build hash), with counts, first / last seen and version, and the triage state. At most 500 events are stored per group and day; past that only the count grows.
+- **Alerts** (every minute, cloud only): a new group, a resolved one seen again in its fix version or later (a regression), or an open one still happening a day after its last alert. A burst waits 2 minutes and goes out as one digest. Each group alerts at most once an hour, and there are at most 6 digests an hour. A failed mail is retried the next minute; the state is in the database, so a restart loses nothing. Channels: the mail to `ERROR_ALERT_EMAIL` (roles and clubs only, never a name or an address), the ntfy push (`NTFY_URL`, `NTFY_TOPIC`) and the bell of every super admin. `ERROR_ALERTS=log` sends nothing and logs instead; `off` stops the job.
+- **Errors tab** (manager, `/api/admin/errors*`, super admins only): the groups, one group's 14 days and breakdowns (OS, browser, version, tool, runs as, view), its reports with the member (name, address, roles, clubs; reading them is audited as `errors.read`), resolve (now or in a version), mute (a day, a week, 30 days, for good), important, note and commit (`errors.update`), and delete on request by device or account (`errors.delete`).
+- **Retention**: events 90 days; groups with no events that are not open are deleted 180 days after they were last seen. Account deletion takes the account's events.
+- Every answer carries `X-Request-Id`; a report names the request it failed on, and the server's own report carries the same id.
+
 ### `POST /api/contact`
 
 The support form of the app (Support & feedback) and of openvolley.app/support (`lib/contact.js`). `multipart/form-data` (a JSON object is still read, without files):

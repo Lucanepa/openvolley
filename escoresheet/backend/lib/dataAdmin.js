@@ -50,7 +50,9 @@ export const SCHEMA = 'public'
 export const READ_ONLY_TABLES = Object.freeze([
   'audit_log', 'activity_log', 'event_revisions', 'match_closures', 'match_approvals',
   'match_final_mails', 'match_scoresheets', 'deleted_matches', 'invite_redemptions',
-  'svrz_sync_log', 'svrz_games_removed'
+  'svrz_sync_log', 'svrz_games_removed',
+  // db/050: triaged in the Errors tab (audited), never edited row by row
+  'error_groups', 'error_events'
 ])
 // Never returned, searched, sorted or written: PINs, hashes, tokens and their kin
 export const SECRET_COLUMN_RE = /(^|_)(pin|pins|password|secret|token|salt|mac)(_|$)|(^|_)hash$/
