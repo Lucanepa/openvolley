@@ -32,7 +32,13 @@
  *   ERROR_ALERT_EMAIL       the digest's recipient (admin@openvolley.app); empty = no mail
  *   NTFY_URL, NTFY_TOPIC    the push (e.g. https://ntfy.example:8445, openvolley-errors); empty = no push
  *   NTFY_TOKEN              optional access token of the topic (secret)
+ *   NTFY_ADDRESS            optional: the address to connect to for NTFY_URL's host, the name
+ *                           still used for TLS and Host (the owner's ntfy is a tailnet name the
+ *                           backend's DNS resolves to public addresses: NTFY_ADDRESS=100.x.y.z)
  */
+import https from 'node:https'
+import http from 'node:http'
+import { isIP } from 'node:net'
 import { deviceLine } from './errorTracker.js'
 
 export const COOLDOWN_MS = 60 * 60 * 1000
@@ -179,7 +185,8 @@ export function renderPush(alerts, { managerUrl } = {}) {
   const product = PRODUCT_LABEL[head.group.product] || 'OpenVolley'
   const e = head.last || {}
   const title = alerts.length === 1
-    ? `${product}: ${head.reason === 'regression' ? 'error is back' : head.reason === 'ongoing' ? 'error still happening' : 'new error'}${head.count > 1 ? ` (${head.count}×)` : ''}`
+    // ASCII only: the title travels in an HTTP header
+    ? `${product}: ${head.reason === 'regression' ? 'error is back' : head.reason === 'ongoing' ? 'error still happening' : 'new error'}${head.count > 1 ? ` (${head.count}x)` : ''}`
     : `${product}: ${total} errors in ${alerts.length} kinds`
   const where = [TOOL_LABEL[e.tool] || e.tool, [e.os_name, e.os_version].filter(Boolean).join(' ') || e.platform, e.app_version].filter(Boolean).join(' · ')
   const body = cut(`${head.group.title}\n${where}`, 300) + (alerts.length > 1 ? `\n+${alerts.length - 1} more` : '')
@@ -195,19 +202,45 @@ export function renderPush(alerts, { managerUrl } = {}) {
 }
 
 /**
+ * A fetch-like POST that connects to `address` instead of resolving the
+ * URL's host (TLS and the Host header keep the name): { ok, status }.
+ */
+export function postVia(address, url, { method = 'POST', body = '', headers = {}, signal } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url)
+    const lib = u.protocol === 'https:' ? https : http
+    const family = isIP(address) || 4
+    const req = lib.request(u, {
+      method,
+      headers: { ...headers, 'Content-Length': Buffer.byteLength(body) },
+      lookup: (_host, opts, cb) => (opts && opts.all ? cb(null, [{ address, family }]) : cb(null, address, family))
+    }, (res) => {
+      res.resume()
+      res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode }))
+    })
+    req.on('error', reject)
+    signal?.addEventListener('abort', () => req.destroy(new Error('aborted')), { once: true })
+    req.end(body)
+  })
+}
+
+/**
  * @param {object} deps
  * @param {ReturnType<import('./errorTracker.js').createErrorTracker>} deps.tracker
  * @param {import('pg').Pool} deps.pool
  * @param {{ enabled: boolean, sendOps?: Function }} [deps.mailer]
  * @param {string} [deps.to]           ERROR_ALERT_EMAIL
  * @param {string} [deps.managerUrl]
- * @param {{ url?: string, topic?: string, token?: string }} [deps.ntfy]
+ * @param {{ url?: string, topic?: string, token?: string, address?: string }} [deps.ntfy]
  * @param {Function} [deps.audit]      accounts.audit
  * @param {boolean} [deps.suppressed]  TEST_MODE: log only
  */
 export function createErrorAlerts({ tracker, pool, mailer = null, to = '', managerUrl = 'https://manager.openvolley.app', ntfy = {}, audit = null, log = console, now = Date.now, suppressed = false, cooldownMs = COOLDOWN_MS, maxPerHour = MAX_PER_HOUR, fetchImpl = globalThis.fetch } = {}) {
   const recipient = typeof to === 'string' && to.includes('@') ? to.trim() : ''
   const pushUrl = ntfy?.url && ntfy?.topic ? `${String(ntfy.url).replace(/\/+$/, '')}/${encodeURIComponent(String(ntfy.topic))}` : ''
+  // NTFY_ADDRESS: connect there, keep the name (a tailnet name public DNS does not resolve to the tailnet)
+  const pushAddress = typeof ntfy?.address === 'string' && isIP(ntfy.address.trim()) ? ntfy.address.trim() : ''
+  const send = pushAddress ? (url, init) => postVia(pushAddress, url, init) : fetchImpl
   const counters = { digests: 0, mailFailed: 0, pushFailed: 0, deferred: 0, suppressed: 0, lastSentAt: null }
   let running = false
 
@@ -219,14 +252,14 @@ export function createErrorAlerts({ tracker, pool, mailer = null, to = '', manag
   }
 
   async function push(alerts) {
-    if (!pushUrl || typeof fetchImpl !== 'function') return false
+    if (!pushUrl || typeof send !== 'function') return false
     const p = renderPush(alerts, { managerUrl })
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), PUSH_TIMEOUT_MS)
     try {
       // header values are ASCII only (ntfy reads UTF-8 titles from the X-Title
       // header too, but proxies may not): the title goes RFC 2047-encoded
-      const res = await fetchImpl(pushUrl, {
+      const res = await send(pushUrl, {
         method: 'POST',
         body: p.body,
         headers: {

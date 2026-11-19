@@ -191,7 +191,7 @@ describe('error alerts: the digest', () => {
 
   it('the push: short, no name, urgent for the server, a regression or a match', () => {
     const p = renderPush([alertOf()], { managerUrl: 'https://manager.example' })
-    assert.match(p.title, /^OpenVolley: new error \(3×\)$/)
+    assert.match(p.title, /^OpenVolley: new error \(3x\)$/)
     assert.match(p.body, /scorer · Android 15 · 3\.4\.2/)
     assert.equal(p.priority, 3)
     assert.equal(renderPush([alertOf({ duringMatch: true })]).priority, 4)
@@ -281,6 +281,33 @@ describe('error alerts: one pass', () => {
     assert.equal((await alerts.tick()).suppressed, 1)
     assert.equal(tracker.calls.marked.length, 1)
     assert.match(lines.join('\n'), /alert suppressed/)
+  })
+})
+
+describe('error alerts: the push through a given address', () => {
+  it('connects to NTFY_ADDRESS and keeps the name in Host', async () => {
+    const got = []
+    const sink = createServer((req, res) => {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('end', () => { got.push({ url: req.url, host: req.headers.host, title: req.headers.title, body }); res.writeHead(200); res.end('{}') })
+    })
+    await new Promise((r) => sink.listen(0, '127.0.0.1', r))
+    try {
+      const port = sink.address().port
+      const alerts = createErrorAlerts({
+        tracker: fakeTracker([alertOf()]), pool: fakePool(), log: quiet,
+        ntfy: { url: `http://ntfy.example.invalid:${port}`, topic: 'openvolley-errors', address: '127.0.0.1' },
+        fetchImpl: async () => { throw new Error('must not resolve the name') }
+      })
+      const r = await alerts.tick()
+      assert.equal(r.pushed, true)
+      assert.equal(got[0].url, '/openvolley-errors')
+      assert.equal(got[0].host, `ntfy.example.invalid:${port}`)
+      assert.match(got[0].title, /^OpenVolley: new error/)
+    } finally {
+      await new Promise((r) => sink.close(r))
+    }
   })
 })
 
