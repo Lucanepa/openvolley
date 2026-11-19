@@ -405,7 +405,8 @@ BEGIN
     FROM scrub_n s WHERE u.id = s.id;
   GET DIAGNOSTICS n = ROW_COUNT;
   IF to_regclass('public.profiles') IS NOT NULL THEN
-    UPDATE public.profiles p SET first_name = 'Rehearsal', last_name = format('User %s', s.rn), dob = NULL
+    -- (a dob, NULL since db/048, and license_number go with the columns pass below)
+    UPDATE public.profiles p SET first_name = 'Rehearsal', last_name = format('User %s', s.rn)
       FROM scrub_n s WHERE p.user_id = s.id;
   END IF;
   RAISE NOTICE 'scrubbed % account(s); kept %', n, keep;

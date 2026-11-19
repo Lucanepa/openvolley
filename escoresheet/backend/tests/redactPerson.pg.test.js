@@ -1,9 +1,10 @@
 /**
  * scripts/redact-person.mjs (privacy policy section 19): one person erased
- * from every stored copy, or their date of birth corrected, as the owner
- * role in one transaction; closed matches stay closed; a namesake with
- * another date of birth is left; a register line (digest only) runs again
- * after a restore.
+ * from every stored copy, as the owner role in one transaction; closed
+ * matches stay closed; the person is found by name (db/048: no dates of
+ * birth to tell namesakes apart; --match limits it to matches); a register
+ * line (digest only) runs again after a restore, one written before db/048
+ * with a date of birth still by that date where a record has one.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -17,8 +18,8 @@ import { createTestDatabase, SKIP_PG } from './helpers/pgTestDb.js'
 import { redactPerson, redactValue, matcherOf, nameTextRe, personDigest, parseArgs, dateOf, REDACTED } from '../scripts/redact-person.mjs'
 
 describe('redact-person: the walk', () => {
-  const who = { first: 'Mia', last: 'Example', dob: '2011-03-02' }
-  it('redacts the person in nested JSON and free text, keeps the number and a namesake', () => {
+  const who = { first: 'Mia', last: 'Example' }
+  it('redacts the person in nested JSON and free text by name, keeps the number and the others', () => {
     const roster = [
       { number: 4, firstName: 'mia', lastName: ' Example ', dob: '2011-03-02', licence: '123456', libero: '' },
       { number: 9, firstName: 'Mia', lastName: 'Example', dob: '2009-01-01' },
@@ -26,17 +27,17 @@ describe('redact-person: the walk', () => {
     ]
     const { value, hits } = redactValue({ players: roster, remarks: 'Set 2, A 3:1, Mia Example (#4) and Example, Mia again; Miao Example stays' },
       { match: matcherOf(who), textRe: nameTextRe(who) })
-    assert.equal(hits, 2)
+    assert.equal(hits, 3)
     assert.deepEqual(value.players[0], { number: 4, firstName: REDACTED, lastName: REDACTED, dob: null, licence: null, libero: '' })
-    assert.deepEqual(value.players[1], roster[1], 'another date of birth: a namesake')
+    assert.deepEqual(value.players[1], { number: 9, firstName: REDACTED, lastName: REDACTED, dob: null }, 'the name: no date tells them apart any more')
     assert.deepEqual(value.players[2], roster[2])
     assert.equal(value.remarks, `Set 2, A 3:1, ${REDACTED} (#4) and ${REDACTED} again; Miao Example stays`)
   })
 
-  it('finds prefixed columns (referee_1_first_name ...) and corrects a date', () => {
+  it('finds prefixed columns (referee_1_first_name ...)', () => {
     const row = { referee_1_first_name: 'Mia', referee_1_last_name: 'Example', referee_1_dob: '2011-03-02', referee_2_first_name: 'Ada', referee_2_last_name: 'Other' }
-    const { value } = redactValue(row, { match: matcherOf(who), mode: 'correct', setDob: '2011-03-20' })
-    assert.equal(value.referee_1_dob, '2011-03-20')
+    const { value } = redactValue(row, { match: matcherOf(who) })
+    assert.deepEqual([value.referee_1_first_name, value.referee_1_last_name, value.referee_1_dob], [REDACTED, REDACTED, null])
     assert.equal(value.referee_2_first_name, 'Ada')
   })
 
@@ -49,7 +50,7 @@ describe('redact-person: the walk', () => {
     assert.deepEqual(value.range, entry.range)
   })
 
-  it('a date of birth kept in the display form (DD.MM.YYYY, DD/MM/YYYY) is the same date', () => {
+  it('a register line of before db/048 (with a date of birth): its date also in the display form (DD.MM.YYYY, DD/MM/YYYY)', () => {
     assert.equal(dateOf('2.3.2011'), '2011-03-02')
     assert.equal(dateOf('02/03/2011'), '2011-03-02')
     assert.equal(dateOf('2011-03-02T00:00:00Z'), '2011-03-02')
@@ -58,15 +59,19 @@ describe('redact-person: the walk', () => {
       { role: 'referee1', firstName: 'Mia', lastName: 'Example', dob: '02.03.2011' },
       { role: 'referee2', firstName: 'Mia', lastName: 'Example', dob: '05.05.2008' }
     ]
-    const { value, hits } = redactValue({ officials }, { match: matcherOf(who) })
+    const line = { digest: personDigest({ first: 'Mia', last: 'Example', dob: '2011-03-02' }), nameDigest: personDigest(who), withDob: true }
+    const { value, hits } = redactValue({ officials }, { match: matcherOf(line) })
     assert.equal(hits, 1)
     assert.equal(value.officials[0].lastName, REDACTED)
     assert.deepEqual(value.officials[1], officials[1], 'another date in the display form: a namesake')
+    // where no date is left (db/048), the name
+    assert.equal(redactValue({ officials: [{ ...officials[1], dob: null }] }, { match: matcherOf(line) }).hits, 1)
   })
 
   it('the arguments', () => {
     assert.match(parseArgs([]).error, /--first/)
-    assert.match(parseArgs(['--first', 'A', '--last', 'B', '--dob', '1.2.2011']).error, /YYYY-MM-DD/)
+    assert.match(parseArgs(['--first', 'A', '--last', 'B', '--dob', '2011-02-01']).error, /--dob: gone with db\/048/)
+    assert.match(parseArgs(['--first', 'A', '--last', 'B', '--set-dob', '2011-02-01']).error, /--set-dob: gone with db\/048/)
     assert.deepEqual(parseArgs(['--first', 'A', '--last', 'B', '--match', 'm1', '--apply']).matches, ['m1'])
   })
 })
@@ -109,7 +114,7 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
     await owner.query(`INSERT INTO public.svrz_games (game_number, referee_1, referee_1_first_name, referee_1_last_name, referee_1_dob)
       VALUES ('5101', 'Example Mia', 'Mia', 'Example', '2011-03-02')`)
     // the app role cannot do it: the match is closed
-    const r = await tx(() => redactPerson(owner, { who: { first: 'Mia', last: 'Example', dob: '2011-03-02' } }))
+    const r = await tx(() => redactPerson(owner, { who: { first: 'Mia', last: 'Example' } }))
     assert.deepEqual(r.matches, [id])
     assert.equal(r.tables.matches, 1)
     assert.equal(r.tables.events, 1)
@@ -118,7 +123,7 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
     const { rows: [m] } = await owner.query('SELECT players_home, players_away, remarks, closed_at FROM public.matches WHERE id = $1', [id])
     assert.ok(m.closed_at, 'still closed')
     assert.deepEqual(m.players_home[0], { number: 4, firstName: REDACTED, lastName: REDACTED, dob: null })
-    assert.equal(m.players_home[1].dob, '2008-05-05', 'the namesake stays')
+    assert.deepEqual(m.players_home[1], { number: 7, firstName: REDACTED, lastName: REDACTED, dob: null }, 'by name: a namesake is left out with --match only')
     assert.equal(m.players_away[0].firstName, 'Lea')
     assert.equal(m.remarks, `Set 1, 10:02, A 3:1, #4 ${REDACTED} substituted`)
     const { rows: [e] } = await owner.query('SELECT payload FROM public.events WHERE match_id = $1', [id])
@@ -128,24 +133,24 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
     assert.deepEqual(g, { referee_1: REDACTED, referee_1_first_name: REDACTED, referee_1_dob: null })
   })
 
-  it('corrects a date of birth everywhere, nothing else', async () => {
+  it('--match: only those matches (a namesake elsewhere is left)', async () => {
     const id = await seed('rp-2')
-    const r = await tx(() => redactPerson(owner, { who: { first: 'Mia', last: 'Example', dob: '2011-03-02' }, mode: 'correct', setDob: '2011-03-20', matches: ['rp-2'] }))
+    const other = await seed('rp-2b')
+    const r = await tx(() => redactPerson(owner, { who: { first: 'Mia', last: 'Example' }, matches: ['rp-2'] }))
     assert.deepEqual(r.matches, [id])
     const { rows: [m] } = await owner.query('SELECT players_home, remarks FROM public.matches WHERE id = $1', [id])
-    assert.equal(m.players_home[0].dob, '2011-03-20')
-    assert.equal(m.players_home[0].firstName, 'Mia')
-    assert.match(m.remarks, /Mia Example/)
-    // --match: the other match's roster was not touched
-    const { rows: [o] } = await owner.query("SELECT players_home FROM public.matches WHERE external_id = 'rp-1'")
-    assert.equal(o.players_home[0].firstName, REDACTED)
+    assert.equal(m.players_home[0].firstName, REDACTED)
+    assert.doesNotMatch(m.remarks, /Mia Example/)
+    const { rows: [o] } = await owner.query('SELECT players_home, remarks FROM public.matches WHERE id = $1', [other])
+    assert.equal(o.players_home[0].firstName, 'Mia')
+    assert.match(o.remarks, /Mia Example/)
   })
 
   it('a register line (digest only) erases the structured copies again after a restore', async () => {
     const id = await seed('rp-3')
     const line = { mode: 'erase', digest: personDigest({ first: 'Mia', last: 'Example', dob: '2011-03-02' }), nameDigest: personDigest({ first: 'Mia', last: 'Example' }), withDob: true }
     assert.equal(JSON.stringify(line).includes('Example'), false)
-    const r = await tx(() => redactPerson(owner, { who: line, mode: 'erase' }))
+    const r = await tx(() => redactPerson(owner, { who: line }))
     assert.ok(r.matches.includes(id))
     const { rows: [m] } = await owner.query('SELECT players_home FROM public.matches WHERE id = $1', [id])
     assert.equal(m.players_home[0].lastName, REDACTED)
@@ -157,7 +162,7 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
     const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'redact-person.mjs')
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-redact-'))
     const register = path.join(dir, 'register.jsonl')
-    const run = (...args) => execFileSync(process.execPath, [script, '--first', 'Mia', '--last', 'Example', '--dob', '2011-03-02', '--match', 'rp-4', ...args],
+    const run = (...args) => execFileSync(process.execPath, [script, '--first', 'Mia', '--last', 'Example', '--match', 'rp-4', ...args],
       { env: { ...process.env, OV_MIGRATE_DATABASE_URL: tdb.url }, encoding: 'utf8' })
     const roster = async () => (await owner.query("SELECT players_home FROM public.matches WHERE external_id = 'rp-4'")).rows[0].players_home[0]
     const audits = async () => (await owner.query("SELECT details FROM public.audit_log WHERE action = 'person.redact'")).rows
