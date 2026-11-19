@@ -18,7 +18,7 @@
  * manager's squad and game rosters refuse it).
  */
 
-import { normalizeName } from './savedTeams'
+import { normalizeName, savedNumberFinder } from './savedTeams'
 import { licenceOf } from './idMode'
 
 const fold = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '')
@@ -55,15 +55,27 @@ export function rosterHasPerson(roster, c) {
 
 /**
  * The roster with `chosen` (club people) added: one already in it stays as it
- * is, the others come without a number and with their licence. { roster, added }.
+ * is, the others come with their licence and the number the side's saved
+ * team (`savedTeam`, the tablet's copy) has for them (by licence, else name;
+ * owner 2026-11-19), else without one; never a number the roster has.
+ * { roster, added, numbered }.
  */
-export function addClubPlayersToRoster(roster, chosen) {
+export function addClubPlayersToRoster(roster, chosen, savedTeam = null) {
   const out = [...(roster || [])]
   let added = 0
+  let numbered = 0
+  const numberOf = savedTeam ? savedNumberFinder(savedTeam) : () => null
+  const taken = new Set(out.map((p) => p?.number).filter((n) => n !== null && n !== undefined && n !== '').map(Number))
   for (const c of chosen || []) {
     if (rosterHasPerson(out, c)) continue
+    const n = numberOf({ licence: clubLicence(c), firstName: c.first_name, lastName: c.last_name })
+    const number = n !== null && !taken.has(n) ? n : null
+    if (number !== null) {
+      taken.add(number)
+      numbered++
+    }
     out.push({
-      number: null,
+      number,
       firstName: String(c.first_name || '').trim(),
       lastName: String(c.last_name || '').trim(),
       dob: clubLicence(c),
@@ -73,7 +85,7 @@ export function addClubPlayersToRoster(roster, chosen) {
     })
     added++
   }
-  return { roster: out, added }
+  return { roster: out, added, numbered }
 }
 
 /**

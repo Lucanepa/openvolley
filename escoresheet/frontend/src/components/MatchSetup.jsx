@@ -59,7 +59,7 @@ import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule, teamContactEmail, withTeamContacts } from '../domain/officials'
 import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
-import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
+import { savedTeamToRoster, findSavedTeamSuggestions, fillNumbersFromSaved, savedNumberFinder } from '../domain/savedTeams'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rosterSearchOutcome, rowToPendingRoster } from '../db/gameRosters'
 import { useSentRosterRefresh } from '../hooks/useSentRosterRefresh'
@@ -1186,6 +1186,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // club's lists, other matches' rosters on the device and the referee
   // directory stay out; the public schedule and the Einsatzliste import stay.
   const guestMatch = isGuestMatch(match)
+  // The saved teams on this device (the account's copy, offline first): the
+  // shirt numbers an Einsatzliste import and "Add from club" fill in (owner
+  // 2026-11-19; the server keeps the latest official match's numbers in them,
+  // backend lib/rosterSaveBack.js). Read again whenever the copy changes.
+  const savedTeamRows = useLiveQuery(async () => (guestMatch || !access?.canReadTeams ? [] : getSavedTeams({ userId: user?.id ?? null })),
+    [guestMatch, access?.canReadTeams, user?.id])
+  // Online, Match Setup asks for a fresh copy (at most every 10 minutes,
+  // db/savedTeams.js SAVED_TEAMS_MAX_AGE_MS): the numbers of the team's last
+  // match. Nothing waits for it; offline the device's copy answers.
+  useEffect(() => {
+    if (guestMatch || !access?.canReadTeams || !user?.id) return
+    refreshSavedTeams({ access, userId: user.id }).catch(() => { /* offline first: keep the copy */ })
+  }, [guestMatch, access, user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The saved team of a side: the one of the side's team name (the
+  // schedule's league and season first), else the schedule suggestion; the
+  // newest copy of it. None for a guest match.
+  const savedTeamOf = (side) => {
+    if (guestMatch) return null
+    const rows = savedTeamRows || []
+    const name = side === 'home' ? home : away
+    const byName = name ? findSavedTeamSuggestions(rows, { home: name, league, scheduledAt: date ? `${date}T${time || '12:00'}:00` : null }).home : null
+    const suggested = savedSuggestion?.[side] || null
+    return byName || (suggested ? rows.find((r) => r.id === suggested.id) || suggested : null)
+  }
   // What the sheet carries beside a name (Swiss: the licence; Global: birthdate, number or text), kept on the match
   useEffect(() => { if (match) setIdModeState(idModeOf(match)) }, [match?.idMode, match?.global]) // eslint-disable-line react-hooks/exhaustive-deps
   const setIdMode = (mode) => {
@@ -1199,14 +1223,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     home: clubTeams.home ? clubGenderWarnings(homeRoster, clubTeams.home.players, clubGender) : [],
     away: clubTeams.away ? clubGenderWarnings(awayRoster, clubTeams.away.players, clubGender) : []
   }), [clubTeams, homeRoster, awayRoster, clubGender])
-  // The chosen club players join the side's roster without a number; one
-  // already in it stays as it is. In the roster editor only its Save keeps them.
+  // The chosen club players join the side's roster with the number the
+  // side's saved team has for them (else none); one already in it stays as
+  // it is. In the roster editor only its Save keeps them.
   const addFromClub = (side, chosen) => {
     setClubPicker(null)
-    const { roster, added } = addClubPlayersToRoster(side === 'home' ? homeRoster : awayRoster, chosen)
+    const { roster, added, numbered } = addClubPlayersToRoster(side === 'home' ? homeRoster : awayRoster, chosen, savedTeamOf(side))
     if (side === 'home') setHomeRoster(roster)
     else setAwayRoster(roster)
     toast.success(t('clubPlayers.added', { count: added }))
+    if (numbered) toast.info(t('savedTeams.numbersFilled', { count: numbered }))
   }
   // A bench official from the club: the role's row takes the person (names
   // and date of birth), else a row of that role is added; each role once
@@ -1259,7 +1285,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const bench = side === 'home' ? benchHome : benchAway
     const team = (side === 'home' ? home : away) || club?.clubName || ''
     // the club's people come with their licence (sv_number) and never a date
-    // of birth (owner 2026-11-19)
+    // of birth (owner 2026-11-19); the saved team's number beside each (looked
+    // up while the players' picker of the side is open only)
+    const savedTeam = clubPicker === side && club ? savedTeamOf(side) : null
+    const numberOf = savedTeam ? savedNumberFinder(savedTeam) : null
     return (
       <>
         <ClubPlayerPickerModal
@@ -1269,6 +1298,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           players={players}
           title={t('clubPlayers.titleTeam', { team })}
           isTaken={(c) => rosterHasPerson(roster, c)}
+          numberOf={numberOf ? (c) => numberOf({ licence: c.sv_number, firstName: c.first_name, lastName: c.last_name }) : undefined}
         />
         <ClubPlayerPickerModal
           open={officialPicker === side && !!club}
@@ -3844,7 +3874,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       const parsedData = await parseRosterPdf(file)
 
       // Replace all players with imported ones (overwrite mode)
-      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
+      // An Einsatzliste has no shirt numbers: the side's saved team gives them
+      // (by licence, else name; owner 2026-11-19), the 14 or fewer and the
+      // player pool of more alike
+      const { roster: mergedPlayers, filled: numbersFilled } = fillNumbersFromSaved(parsedData.players.map(parsedPlayer => ({
         id: null,
         number: parsedPlayer.number || null,
         firstName: parsedPlayer.firstName || '',
@@ -3853,7 +3886,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         libero: '',
         isCaptain: false,
         isLfp: parsedPlayer.isLfp || false
-      }))
+      })), savedTeamOf('home'))
+      if (numbersFilled) toast.info(t('savedTeams.numbersFilled', { count: numbersFilled }))
 
       setHomeRoster(mergedPlayers)
 
@@ -3926,7 +3960,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       const parsedData = await parseRosterPdf(file)
 
       // Replace all players with imported ones (overwrite mode)
-      const mergedPlayers = parsedData.players.map(parsedPlayer => ({
+      // An Einsatzliste has no shirt numbers: the side's saved team gives them
+      // (by licence, else name; owner 2026-11-19), the 14 or fewer and the
+      // player pool of more alike
+      const { roster: mergedPlayers, filled: numbersFilled } = fillNumbersFromSaved(parsedData.players.map(parsedPlayer => ({
         id: null,
         number: parsedPlayer.number || null,
         firstName: parsedPlayer.firstName || '',
@@ -3935,7 +3972,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         libero: '',
         isCaptain: false,
         isLfp: parsedPlayer.isLfp || false
-      }))
+      })), savedTeamOf('away'))
+      if (numbersFilled) toast.info(t('savedTeams.numbersFilled', { count: numbersFilled }))
 
       setAwayRoster(mergedPlayers)
 

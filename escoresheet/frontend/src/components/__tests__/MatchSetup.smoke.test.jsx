@@ -7,7 +7,8 @@
  * Choose players in the roster editor writes nothing before its Save.
  * A roster of more than 14 players is not ready for the coin toss.
  * "Add from club" (db/024, the device's copy): a bench official from anyone
- * of the club's lists, of either gender.
+ * of the club's lists, of either gender. An Einsatzliste and "Add from club"
+ * take the shirt numbers of the side's saved team (owner 2026-11-19).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react'
@@ -19,8 +20,8 @@ vi.mock('react-i18next', () => ({
   })
 }))
 vi.mock('../../contexts/AlertContext', () => ({ useAlert: () => ({ showAlert: vi.fn(), showConfirm: vi.fn() }) }))
-const auth = vi.hoisted(() => ({ user: null }))
-vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: auth.user, profile: null, getCachedProfile: () => null }) }))
+const auth = vi.hoisted(() => ({ user: null, access: undefined }))
+vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: auth.user, profile: null, getCachedProfile: () => null, access: auth.access }) }))
 
 // useLiveQuery: run the query once per deps change (no Dexie observation)
 vi.mock('dexie-react-hooks', async () => {
@@ -117,6 +118,7 @@ beforeEach(() => {
   store.tables = {}
   store.nextId = 100
   auth.user = null
+  auth.access = undefined
   globalThis.ResizeObserver ||= class { observe() {} unobserve() {} disconnect() {} }
 })
 afterEach(() => {
@@ -631,5 +633,70 @@ describe('MatchSetup smoke render', () => {
     fireEvent.blur(b)
     await waitFor(() => expect(b).toHaveValue('14.03.2008'))
     expect(a).toHaveValue('123456')
+  })
+
+  // Owner 2026-11-19: the server keeps each official match's numbers in the
+  // team's saved team; the device's copy fills them into an Einsatzliste
+  // (none on the list) and into "Add from club", never a number taken
+  it('an Einsatzliste and Add from club take the numbers of the side\'s saved team', async () => {
+    auth.user = { id: 'u1' }
+    auth.access = { canReadTeams: true, canScore: true }
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_numbers', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991410, ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    // the saved team on the device, fresh (no download)
+    store.tables.saved_teams_meta = new Map([['bundle', { key: 'bundle', userId: 'u1', version: '1', fetchedAt: new Date().toISOString(), competitions: [] }]])
+    store.tables.saved_teams = new Map([['st1', {
+      id: 'st1', name: 'Home V', svrzTeamName: 'Home V', nameKey: 'home v', svrzKey: 'home v',
+      competition: { id: 'c1', season: '2026/27', archived: false, sport: 'indoor' },
+      players: [
+        { id: 'p1', number: 9, first_name: 'Marco', last_name: 'Probe', license_number: '100003', active: true },
+        { id: 'p2', number: 4, first_name: 'Lea', last_name: 'Müller', license_number: null, active: true },
+        { id: 'p3', number: 12, first_name: 'Ida', last_name: 'Taken', license_number: '100005', active: true }
+      ],
+      staff: []
+    }]])
+    store.tables.club_players = new Map([['c1', {
+      clubId: 'c1', clubName: 'VBC Home', teamNames: ['Home V'], teamGenders: { 'Home V': 'm' }, userId: 'u1', fetchedAt: '2026-11-09T10:00:00Z',
+      players: [{ sv_number: '100005', last_name: 'Taken', first_name: 'Ida', gender: null }],
+      people: [{ sv_number: '100005', last_name: 'Taken', first_name: 'Ida', gender: null, lists: ['players'] }]
+    }]])
+    const { parseRosterPdf } = await import('../../utils/parseRosterPdf')
+    parseRosterPdf.mockResolvedValue({
+      players: [
+        { firstName: 'Marco', lastName: 'Probe', licence: '100003', number: null },
+        // by name (accents aside), no licence on the saved team
+        { firstName: 'Lea', lastName: 'Muller', licence: '100004', number: null },
+        { firstName: 'Neu', lastName: 'Unbekannt', licence: '100006', number: null },
+        // the list's own number stays
+        { firstName: 'Own', lastName: 'Number', licence: '100007', number: 12 }
+      ],
+      coach: null, ac1: null, ac2: null
+    })
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
+    const input = await waitFor(() => {
+      const el = document.querySelector('input[type="file"][accept=".pdf"]')
+      expect(el).toBeTruthy()
+      return el
+    })
+    fireEvent.change(input, { target: { files: [new File(['%PDF'], 'einsatzliste.pdf', { type: 'application/pdf' })] } })
+    fireEvent.click(await screen.findByRole('button', { name: 'matchSetup.importPdf' }))
+    const lastNames = () => [...document.querySelectorAll('.roster-grid:not(.roster-add) input.cell-last')].map((i) => i.value)
+    const numbersOf = () => [...document.querySelectorAll('.roster-grid:not(.roster-add) input[aria-label="Player number"]')].map((i) => i.value)
+    await waitFor(() => expect(lastNames()).toHaveLength(4))
+    const byName = Object.fromEntries(lastNames().map((n, i) => [n, numbersOf()[i]]))
+    expect(byName).toEqual({ Probe: '9', Muller: '4', Unbekannt: '', Number: '12' })
+    // "Add from club": the saved team's 12 is taken in the roster: none
+    fireEvent.click(screen.getByTestId('add-from-club-home'))
+    const picker = await screen.findByTestId('club-picker')
+    expect(picker.textContent).toContain('clubPlayers.shirtNumber')
+    fireEvent.click(within(picker).getAllByRole('checkbox')[0])
+    fireEvent.click(screen.getByTestId('club-picker-add'))
+    await waitFor(() => expect(lastNames()).toContain('Taken'))
+    const after = Object.fromEntries(lastNames().map((n, i) => [n, numbersOf()[i]]))
+    expect(after.Taken).toBe('')
   })
 })

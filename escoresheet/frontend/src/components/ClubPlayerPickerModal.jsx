@@ -41,6 +41,10 @@ const matches = (p, needle) => !needle || fold(`${p.last_name} ${p.first_name ||
  * Setup: the dates of birth the tablet's copy leaves out, asked for the
  * chosen ones only); the people as they are when it fails.
  *
+ * `numberOf(person)`: the shirt number the team's saved team has for the
+ * person (owner 2026-11-19: the server keeps the latest official match's),
+ * shown beside the licence; null or absent: none.
+ *
  * A person is { sv_number, last_name, first_name, gender, lists? } (no date
  * of birth since db/048).
  */
@@ -49,7 +53,7 @@ export default function ClubPlayerPickerModal({ open, ...rest }) {
   return <PickerBody {...rest} />
 }
 
-function PickerBody({ onClose, onPick, players = [], title, isTaken = () => false, zIndex, mode = 'players', roles = [], initialRole = null, rolesOf = () => [], holderOf = () => null, initialQuery = '', search = null, resolve = null }) {
+function PickerBody({ onClose, onPick, players = [], title, isTaken = () => false, zIndex, mode = 'players', roles = [], initialRole = null, rolesOf = () => [], holderOf = () => null, initialQuery = '', search = null, resolve = null, numberOf = null }) {
   const { t } = useTranslation()
   const officials = mode === 'officials'
   const link = mode === 'link'
@@ -116,7 +120,12 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
     else onPick(out)
   }
   const holder = officials && role ? holderOf(role) : null
+  const shirt = (p) => {
+    const n = typeof numberOf === 'function' ? numberOf(p) : null
+    return n === null || n === undefined || n === '' ? null : t('clubPlayers.shirtNumber', { number: n })
+  }
   const meta = (p) => [
+    shirt(p),
     t('clubPlayers.licence', { number: p.sv_number }),
     single && Array.isArray(p.lists) && p.lists.length ? p.lists.filter((l) => LISTS.includes(l)).map((l) => t(`manage.licences.lists.${l}`)).join(', ') : null
   ].filter(Boolean).join(' · ')

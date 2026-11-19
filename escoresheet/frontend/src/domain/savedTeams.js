@@ -366,6 +366,72 @@ export function findSavedTeamSuggestions(teams, { home, away, league, scheduledA
   return { home: pick(home), away: pick(away) }
 }
 
+// ---------------------------------------------------------------- shirt numbers from a saved team
+// Owner 2026-11-19: "next games ... the numbers can be automatically filled
+// with roster (einsatzliste) import". An Einsatzliste has no shirt numbers;
+// the saved team has them: the server keeps the latest official match's
+// numbers in it (backend lib/rosterSaveBack.js), and the tablet has a copy.
+
+const foldName = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '')
+
+/**
+ * The shirt number a saved team (API team or cache row) knows for a person:
+ * numberOf({ licence, firstName, lastName }) is the number of the saved
+ * team's active player with that licence; else of the one active player of
+ * that name (accents and case aside, also with first and last name swapped),
+ * not of another licence; null when the saved team does not tell. With
+ * `inactive`, a player set inactive answers too (after the active ones), when
+ * no active player wears the number.
+ */
+export function savedNumberFinder(team, { inactive = false } = {}) {
+  const all = (Array.isArray(team?.players) ? team.players : []).filter(p => p && toNumberOrNull(p.number) !== null)
+  const active = all.filter(p => p.active !== false)
+  const worn = new Set(active.map(p => toNumberOrNull(p.number)))
+  const list = inactive ? [...active, ...all.filter(p => p.active === false && !worn.has(toNumberOrNull(p.number)))] : active
+  const byLicence = new Map()
+  const byName = new Map()
+  for (const p of list) {
+    const lic = licenceOf(p.license_number)
+    if (lic && !byLicence.has(lic)) byLicence.set(lic, p)
+    const k = `${foldName(p.last_name)}|${foldName(p.first_name)}`
+    if (!byName.has(k)) byName.set(k, [])
+    byName.get(k).push(p)
+  }
+  return ({ licence = null, firstName = '', lastName = '' } = {}) => {
+    const lic = licenceOf(licence)
+    if (lic && byLicence.has(lic)) return toNumberOrNull(byLicence.get(lic).number)
+    if (!foldName(lastName)) return null
+    const keys = [...new Set([`${foldName(lastName)}|${foldName(firstName)}`, `${foldName(firstName)}|${foldName(lastName)}`])]
+    const hits = [...new Set(keys.flatMap(k => byName.get(k) || []))]
+      .filter(p => !lic || !licenceOf(p.license_number))
+    return hits.length === 1 ? toNumberOrNull(hits[0].number) : null
+  }
+}
+
+/**
+ * Match Setup roster rows ({ number, firstName, lastName, dob: the licence or
+ * a date }) with the saved team's numbers where a row has none (an
+ * Einsatzliste, a club person): { roster, filled }. A number the roster has
+ * already (or a row before it got) is not given twice. `team` null: the rows
+ * as they are.
+ */
+export function fillNumbersFromSaved(roster, team) {
+  const list = Array.isArray(roster) ? roster : []
+  if (!team) return { roster: list, filled: 0 }
+  const numberOf = savedNumberFinder(team)
+  const taken = new Set(list.map(p => toNumberOrNull(p?.number)).filter(n => n !== null))
+  let filled = 0
+  const out = list.map(p => {
+    if (!p || toNumberOrNull(p.number) !== null) return p
+    const n = numberOf({ licence: p.dob, firstName: p.firstName, lastName: p.lastName })
+    if (n === null || taken.has(n)) return p
+    taken.add(n)
+    filled++
+    return { ...p, number: n }
+  })
+  return { roster: out, filled }
+}
+
 /** Does a roster or bench hold anything a load would overwrite? */
 export function rosterHasContent(roster, bench) {
   const anyPlayer = (Array.isArray(roster) ? roster : []).some(p =>
