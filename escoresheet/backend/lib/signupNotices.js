@@ -329,6 +329,18 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
       : { id: r.subject_user_id, email: null, name: null }
   }
 
+  // An error notice's details (lib/errorAlerts.js ring): what the bell shows
+  function errorOf (d) {
+    const x = d && typeof d === 'object' ? d : {}
+    return {
+      title: typeof x.title === 'string' ? x.title : null,
+      count: Number.isFinite(Number(x.count)) ? Number(x.count) : null,
+      reason: typeof x.reason === 'string' ? x.reason : null,
+      kind: typeof x.kind === 'string' ? x.kind : null,
+      tools: Array.isArray(x.tools) ? x.tools.filter((t) => typeof t === 'string') : []
+    }
+  }
+
   async function list ({ userId, app } = {}) {
     if (!isUuid(userId)) return ok({ notifications: [], unread: 0 })
     const a = mailApp(app)
@@ -356,7 +368,9 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
           target: r.target,
           user: r.subject_user_id ? subjectOf(r) : null,
           parts: Array.isArray(r.details?.parts) ? r.details.parts : [],
-          open: r.open === true
+          open: r.open === true,
+          // db/050: an error group (lib/errorAlerts.js), without a subject account
+          ...(r.kind === 'error' ? { error: errorOf(r.details) } : {})
         })),
         unread: c?.n ?? 0
       })

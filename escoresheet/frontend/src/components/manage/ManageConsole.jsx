@@ -1,6 +1,6 @@
 import { Suspense, lazy, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, ArrowLeft, CircleHelp, ClipboardList, Database, FileText, SquareTerminal, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
+import { Activity, ArrowLeft, Bug, CircleHelp, ClipboardList, Database, FileText, SquareTerminal, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ConsoleShell, ConsolePanel, RowListCards, cn, consoleHeaderBtn } from '../../ui'
 import { PageLoadGate, PageSpinner } from './common'
@@ -16,6 +16,7 @@ import ScoresheetsPanel from './ScoresheetsPanel'
 import AuditPanel from './AuditPanel'
 import ActivityPanel from './ActivityPanel'
 import DataPanel from './DataPanel'
+import ErrorsPanel from './ErrorsPanel'
 // the SQL tab brings the code editor (CodeMirror): loaded when the tab first opens
 const SqlPanel = lazy(() => import('./sql/SqlPanel'))
 import SavedTeamsPanel from './SavedTeamsPanel'
@@ -65,7 +66,11 @@ const TABS = [
   // tab list leaves it out
   { id: 'data', icon: Database, superAdmin: true },
   // a Postgres console (lib/sqlWorkspace.js): super admins only, like Data
-  { id: 'sql', icon: SquareTerminal, superAdmin: true }
+  { id: 'sql', icon: SquareTerminal, superAdmin: true },
+  // every page's, app's and the server's own errors (db/050, lib/errorTracker.js):
+  // super admins only (a report names the member); OpenVolley's console only,
+  // with both products in it
+  { id: 'errors', icon: Bug, superAdmin: true }
 ]
 
 /**
@@ -253,6 +258,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {visited.has('activity') && <ConsolePanel id="activity" current={current}><PanelGate><ActivityPanel app={scope} initialMatch={(() => { try { return decodeURIComponent(routeOf('activity')) } catch { return routeOf('activity') } })()} /></PanelGate></ConsolePanel>}
         {visited.has('teams') && <ConsolePanel id="teams" current={current}><PanelGate><SavedTeamsPanel userId={user.id} sport={scope} {...pageProps('teams')} /></PanelGate></ConsolePanel>}
         {visited.has('data') && <ConsolePanel id="data" current={current}><PanelGate><DataPanel {...pageProps('data')} /></PanelGate></ConsolePanel>}
+        {visited.has('errors') && <ConsolePanel id="errors" current={current}><ErrorsPanel {...pageProps('errors')} /></ConsolePanel>}
         {visited.has('sql') && <ConsolePanel id="sql" current={current}><Suspense fallback={<PageSpinner />}><SqlPanel /></Suspense></ConsolePanel>}
         {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><PanelGate><TournamentsPanel {...pageProps('tournaments')} /></PanelGate></ConsolePanel>}
         </RowListCards.Provider>

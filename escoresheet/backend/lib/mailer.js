@@ -62,6 +62,8 @@
  *                                            | scoresheet_no_pdf | scoresheet_reopened (its notices)
  *                                            (vars: the approval notices' values, see T)
  *                                            skipped: 'budget' | 'inbox' | 'disabled'
+ *   mailer.sendOps({ to, subject, text, html }) -> Promise<{ sent, skipped? }>   a mail to the operator
+ *                                            (lib/errorAlerts.js), rendered by the caller; own budget OPS_PER_HOUR
  *   mailer.stats()                 -> { enabled, budgets, inboxDropped, failed, lastDropAt, ... }
  *   budgetsFromEnv(env)            -> { budgets, warnings }  the hourly budgets the environment sets (BUDGET_ENV)
  *   mailer.close()
@@ -84,6 +86,8 @@ export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
 export const DEFAULT_FROM_NAME_BEACH = 'OpenBeach'
 export const MAIL_APPS = Object.freeze(['indoor', 'beach'])
+// The operator's own mails per hour (sendOps: the error digests, at most 6 an hour by themselves)
+export const OPS_PER_HOUR = 20
 
 // The brands of the account mails: the name in the text and signature, and
 // the default link host and sender name. Fixed here: a client chooses only
@@ -969,6 +973,7 @@ export function disabledMailer(reason = 'not configured') {
     managerUrlFor: (app) => MAIL_BRANDS[mailApp(app)].managerUrl,
     fromFor: () => null,
     async send() { return { sent: false, skipped: 'disabled' } },
+    async sendOps() { return { sent: false, skipped: 'disabled' } },
     stats() { return { enabled: false, reason } },
     close() {}
   }
@@ -1032,6 +1037,8 @@ export function createMailer(o = {}) {
   }
   const budgets = Object.fromEntries(Object.keys(DEFAULT_BUDGETS).map((name) => [name, hourlyBudget(budgetMax(name), o.now)]))
   const perInbox = inboxCounter(Number.isInteger(o.maxPerInbox) && o.maxPerInbox > 0 ? o.maxPerInbox : DEFAULT_MAX_PER_INBOX, o.now)
+  // The operator's own mails (sendOps): their own small budget, never one of the users'
+  const opsBudget = hourlyBudget(Number.isInteger(o.opsPerHour) && o.opsPerHour > 0 ? o.opsPerHour : OPS_PER_HOUR, o.now)
   const counters = { sent: 0, failed: 0, inboxDropped: 0, lastDropAt: null, lastFailureAt: null }
   const managerUrl = String(o.managerUrl || DEFAULT_MANAGER_URL).replace(/\/+$/, '')
   const brands = {
@@ -1091,6 +1098,40 @@ export function createMailer(o = {}) {
     return { sent: true }
   }
 
+  /**
+   * A mail to the operator (lib/errorAlerts.js: the error digest), rendered
+   * by the caller, in English only: not one of the users' mail kinds, no
+   * template, its own budget (OPS_PER_HOUR). Throws when the send fails.
+   */
+  async function sendOps({ to, subject, text, html } = {}) {
+    if (typeof to !== 'string' || !to.includes('@')) throw new Error('mailer: no recipient')
+    if (typeof subject !== 'string' || !subject || typeof text !== 'string') throw new Error('mailer: an ops mail needs a subject and a text')
+    if (!opsBudget.take()) {
+      counters.lastDropAt = new Date().toISOString()
+      log.warn(`[mail] hourly ops budget (${opsBudget.max}) used up; mail to ${maskEmail(to)} dropped`)
+      return { sent: false, skipped: 'budget' }
+    }
+    try {
+      await transport.sendMail({
+        from: brands.indoor.from,
+        to,
+        subject: subject.replace(/[\r\n]+/g, ' ').slice(0, 200),
+        text,
+        ...(typeof html === 'string' ? { html } : {}),
+        headers: { 'Auto-Submitted': 'auto-generated', 'X-Auto-Response-Suppress': 'All' },
+        disableFileAccess: true,
+        disableUrlAccess: true
+      })
+    } catch (err) {
+      opsBudget.refund()
+      counters.failed++
+      counters.lastFailureAt = new Date().toISOString()
+      throw err
+    }
+    counters.sent++
+    return { sent: true }
+  }
+
   /** Counters for monitoring (no addresses): the internal /health body shows them. */
   function stats() {
     const b = Object.fromEntries(Object.entries(budgets).map(([k, v]) => [k, v.snapshot()]))
@@ -1116,6 +1157,7 @@ export function createMailer(o = {}) {
     fromFor: (app) => brands[mailApp(app)].from,
     budgets,
     send,
+    sendOps,
     stats,
     close() { try { transport.close?.() } catch { /* already closed */ } }
   }

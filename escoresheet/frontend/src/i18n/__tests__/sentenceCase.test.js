@@ -36,6 +36,8 @@ const PROPER = new Set([
   'Documents',
   // the store that updates a Play install (androidUpdate.fromPlay)
   'Google', 'Play',
+  // Point Hub, the scoreboard product (the Errors tab's tool names)
+  'Hub',
 ])
 
 // Title-Cased words after the first one, ignoring placeholders, words after a

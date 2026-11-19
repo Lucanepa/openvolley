@@ -80,6 +80,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   // an admin's read of a match's or an account's activity, and every export
   // (lib/activityLog.js; the filters and the row count, never a row)
   'activity.read', 'activity.export',
+  // db/050: the error tracker (lib/errorTracker.js, lib/errorAlerts.js): a super
+  // admin read events naming members, triaged a group, deleted on request; a digest went out
+  'errors.read', 'errors.update', 'errors.delete', 'errors.alert',
   // a stored scoresheet PDF opened past the uploader-only rule (lib/scoresheets.js),
   // and an admin's "Rebuild PDF": the sheet drawn again from the match's data
   'scoresheet.read', 'scoresheet.rebuild', 'scoresheet.vector',
