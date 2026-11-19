@@ -87,6 +87,12 @@ function whenLine(a) {
   return last ? f(last) : first ? f(first) : ''
 }
 
+/** The top 5 frames, each in its readable form where a source map gave one (lib/sourceMaps.js). */
+function readableFrames(e) {
+  const frames = Array.isArray(e?.frames) ? e.frames.slice(0, 5) : []
+  return frames.map((f, i) => (Array.isArray(e.frames_source) && e.frames_source[i]) || f)
+}
+
 /** One group of a digest as plain lines. */
 function groupLines(a, managerUrl) {
   const g = a.group
@@ -102,7 +108,7 @@ function groupLines(a, managerUrl) {
   if (e.view) lines.push(`   Where: ${e.view}`)
   if (e.match_external_id) lines.push(`   Match: ${e.match_external_id}`)
   if (e.request_id) lines.push(`   Request id: ${e.request_id}`)
-  const frames = Array.isArray(e.frames) ? e.frames.slice(0, 5) : []
+  const frames = readableFrames(e)
   if (frames.length) lines.push('   Stack:', ...frames.map((f) => `     ${f}`))
   const crumbs = Array.isArray(e.breadcrumbs) ? e.breadcrumbs.slice(-8) : []
   if (crumbs.length) lines.push('   Before it:', ...crumbs.map((b) => `     ${b.t ? String(b.t).slice(11, 19) + '  ' : ''}${b.c}: ${b.m}`))
@@ -141,7 +147,7 @@ export function renderDigest(alerts, { managerUrl } = {}) {
   const card = (a) => {
     const g = a.group
     const e = a.last || {}
-    const frames = Array.isArray(e.frames) ? e.frames.slice(0, 5) : []
+    const frames = readableFrames(e)
     const crumbs = Array.isArray(e.breadcrumbs) ? e.breadcrumbs.slice(-8) : []
     const reasonBg = a.reason === 'regression' ? '#b45309' : a.reason === 'ongoing' ? '#57534e' : '#e2001a'
     return '<div style="border:1px solid #e7e5e4;border-left:4px solid ' + reasonBg + ';border-radius:8px;padding:12px 14px;margin:0 0 14px">' +

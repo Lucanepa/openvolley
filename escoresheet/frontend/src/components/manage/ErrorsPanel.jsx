@@ -258,7 +258,13 @@ function EventRows({ events, open, setOpen, onOpenDevice, onOpenGroup }) {
               <div className="space-y-3 text-xs">
                 <p className="break-words font-mono text-stone-800">{e.error_name ? `${e.error_name}: ` : ''}{e.message}</p>
                 {e.frames?.length > 0 && (
-                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-stone-900 p-3 text-[11px] leading-relaxed text-stone-100">{e.frames.join('\n')}</pre>
+                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-stone-900 p-3 text-[11px] leading-relaxed text-stone-100">
+                    {e.frames.map((f, i) => {
+                      const readable = e.frames_source?.[i]
+                      // the source map's position (lib/sourceMaps.js), the minified one on hover
+                      return <span key={i} className="block" title={readable ? f : undefined}>{readable || f}</span>
+                    })}
+                  </pre>
                 )}
                 {e.breadcrumbs?.length > 0 && (
                   <div>

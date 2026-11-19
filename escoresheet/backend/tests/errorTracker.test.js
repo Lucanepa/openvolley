@@ -382,6 +382,8 @@ describe('error tracker end to end', { skip: SKIP }, () => {
       ERROR_ALERT_TICK_MS: '1000',
       ERROR_ALERT_DEBOUNCE_MS: '0',
       ERROR_ALERT_COOLDOWN_MS: '0',
+      // no source maps from the real sites in a test
+      ERROR_SOURCE_MAPS: 'off',
       NTFY_URL: `http://127.0.0.1:${ntfy.address().port}`,
       NTFY_TOPIC: 'openvolley-errors',
       ...smtp.env()

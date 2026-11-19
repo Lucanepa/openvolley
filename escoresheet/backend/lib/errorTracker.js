@@ -446,7 +446,7 @@ export function deviceLine(e) {
  * @param {{ pool: import('pg').Pool, audit?: Function, clubsOfMany?: Function, log?: Console, now?: () => number,
  *           dailyEventsPerGroup?: number, debounceMs?: number, remindAfterMs?: number, rateLimits?: object }} deps
  */
-export function createErrorTracker({ pool, audit = null, clubsOfMany = null, log = console, now = Date.now, dailyEventsPerGroup = DAILY_EVENTS_PER_GROUP, debounceMs = ALERT_DEBOUNCE_MS, remindAfterMs = REMIND_AFTER_MS, rateLimits = RATE_LIMITS } = {}) {
+export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sourceMaps = null, log = console, now = Date.now, dailyEventsPerGroup = DAILY_EVENTS_PER_GROUP, debounceMs = ALERT_DEBOUNCE_MS, remindAfterMs = REMIND_AFTER_MS, rateLimits = RATE_LIMITS } = {}) {
   const limits = {
     ip: createWindowCounter({ ...rateLimits.ip, now }),
     device: createWindowCounter({ ...rateLimits.device, now }),
@@ -812,10 +812,30 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, log
         device: deviceLine(r),
         member: r.account_id ? members.get(String(r.account_id)) || { id: String(r.account_id), name: null, email: null, roles: [], clubs: [] } : null
       }))
+      await addSourceFrames(events.slice(0, 5))
       const last = rows[rows.length - 1]
       return answer(200, { events, next: rows.length === limit && last ? String(last.id) : null })
     } catch (err) {
       return dbError('events', err)
+    }
+  }
+
+  /**
+   * Readable frames (lib/sourceMaps.js) for some events: e.frames_source,
+   * one entry per frame (null where none was found). Within a few seconds
+   * altogether; never throws.
+   */
+  async function addSourceFrames(events, budgetMs = 5000) {
+    if (!sourceMaps) return
+    const deadline = now() + budgetMs
+    for (const e of events) {
+      if (!Array.isArray(e?.frames) || !e.frames.length || e.source === 'server') continue
+      const left = deadline - now()
+      if (left <= 0) break
+      try {
+        const found = await sourceMaps.symbolicate(e.frames, { product: e.product, tool: e.tool, budgetMs: left })
+        if (found.some(Boolean)) e.frames_source = found
+      } catch { /* the minified frames stay */ }
     }
   }
 
@@ -953,12 +973,17 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, log
         accounts: Number(s?.accounts) || 0,
         guests: Number(s?.guests) || 0,
         duringMatch: s?.during_match === true,
-        last: last ? { ...last, id: String(last.id), at: iso(last.at), client_ts: iso(last.client_ts), device: deviceLine(last) } : null,
+        last: last ? await withSourceFrames({ ...last, id: String(last.id), at: iso(last.at), client_ts: iso(last.client_ts), device: deviceLine(last) }) : null,
         // roles + clubs only: a mail or a push never names the member
         members: [...members.values()].map((m) => ({ roles: m.roles, clubs: m.clubs.map((c) => c.name) }))
       })
     }
     return out
+  }
+
+  async function withSourceFrames(e) {
+    await addSourceFrames([e], 3000)
+    return e
   }
 
   /** After a sent digest: the cooldown starts, nothing is owed. */

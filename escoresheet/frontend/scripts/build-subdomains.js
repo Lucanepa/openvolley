@@ -428,6 +428,12 @@ async function buildSubdomain(subdomain, basePath = '/') {
         outDir,
         emptyOutDir: true,
         target: BUILD_TARGET,
+        // Hidden source maps on the web builds Cloudflare Pages makes (CF_PAGES=1;
+        // OV_SOURCEMAPS=1 by hand): next to each bundle, with no sourceMappingURL
+        // comment, so browsers never fetch them; the backend's error tracker reads
+        // them to show readable stacks (lib/sourceMaps.js). The code is open
+        // source. Never in the desktop / SEA packages (release.yml builds here too).
+        sourcemap: process.env.CF_PAGES === '1' || process.env.OV_SOURCEMAPS === '1' ? 'hidden' : false,
         rolldownOptions: {
           input: tempIndexPath,
           output: {
