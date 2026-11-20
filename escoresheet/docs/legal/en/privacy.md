@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.23 · As of 20 November 2026
+**OpenVolley and OpenBeach** · Version 1.24 · As of 20 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -745,6 +745,16 @@ correct officials. Names are public (section 8). VolleyManager also sends the
 referees' dates of birth; the server does not read or keep them (since
 19 November 2026; those kept before were deleted). The assignments are kept
 like the match records (section 16).
+
+**Referees' licence numbers:** since 20 November 2026 the server also keeps
+the licence number (the Swiss Volley number) that VolleyManager sends for the
+1st and 2nd referee. These numbers are not public: only the administrators
+and the accounts that score indoor matches can see them, so that the scorer
+app fills them in beside the referees when it loads an official match. They
+are deleted with the assignments (the season of the game and the 2 seasons
+after it, section 16), or earlier on request, together with the referee's
+name (section 19). Once on a scoresheet, they are part of the match record
+(section 7).
 
 **Referee directory:** a shared directory with first and last name, country
 and sport, so the scorer does not have to enter officials again each time; no

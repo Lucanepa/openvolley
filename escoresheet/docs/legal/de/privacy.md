@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.23 · Stand: 20. November 2026
+**OpenVolley und OpenBeach** · Version 1.24 · Stand: 20. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -840,14 +840,25 @@ und 2. Schiedsrichter mit ihren Namen, Linienrichter, Aufgebote. Dafür
 verwendet der Server ein Konto im VolleyManager. Zweck: offizielle Spiele mit
 den richtigen Offiziellen laden. Namen sind öffentlich (Abschnitt 8).
 VolleyManager schickt auch die Geburtsdaten der Schiedsrichterinnen und
-Schiedsrichter; der Server liest und speichert sie nicht (seit dem
-19. November 2026; die vorher gespeicherten wurden gelöscht). Die Ansetzungen
+Schiedsrichter; der Server liest und speichert sie nicht (seit
+dem 19. November 2026; die vorher gespeicherten wurden gelöscht). Die Ansetzungen
 werden wie die Spielaufzeichnungen aufbewahrt (Abschnitt 16).
+
+**Lizenznummern der Schiedsrichterinnen und Schiedsrichter:** Seit
+dem 20. November 2026 speichert der Server auch die Lizenznummer (die Nummer
+von Swiss Volley), die VolleyManager für den 1. und 2. Schiedsrichter
+schickt. Diese Nummern sind nicht öffentlich: Nur die Administration und die
+Konten, die Hallenspiele schreiben, sehen sie, damit die Scorer-App sie beim
+Laden eines offiziellen Spiels neben den Schiedsrichtern einträgt. Sie werden
+mit den Ansetzungen gelöscht (die Saison des Spiels und die 2 folgenden
+Saisons, Abschnitt 16), oder früher auf Anfrage, zusammen mit dem Namen
+(Abschnitt 19). Stehen sie in einem Spielbericht, gehören sie zur
+Spielaufzeichnung (Abschnitt 7).
 
 **Schiedsrichter-Verzeichnis:** Ein gemeinsames Verzeichnis mit Vor- und
 Nachname, Land und Sportart, damit die Schreiberin oder der Schreiber
-Offizielle nicht jedes Mal neu erfassen muss; keine Geburtsdaten (die vor dem
-19. November 2026 gespeicherten wurden gelöscht). Konten, die schreiben,
+Offizielle nicht jedes Mal neu erfassen muss; keine Geburtsdaten (die vor
+dem 19. November 2026 gespeicherten wurden gelöscht). Konten, die schreiben,
 können Einträge hinzufügen; ändern und löschen kann die Administration. Das Verzeichnis sehen nur die
 Administration und die Konten, die schreiben, um die Offiziellen eines
 offiziellen Spiels einzutragen; es ist nicht öffentlich, und Test- und
