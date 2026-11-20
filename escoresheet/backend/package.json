@@ -12,18 +12,18 @@
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {
-    "@simplewebauthn/server": "^14.0.3",
+    "@simplewebauthn/server": "^14.1.0",
     "bcryptjs": "^3.0.3",
-    "node-ical": "^0.27.3",
+    "node-ical": "^0.27.6",
     "nodemailer": "^10.5.0",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
-    "ws": "^8.21.0"
+    "ws": "^8.22.2"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
     "postject": "^1.0.0-alpha.6",
-    "smtp-server": "^3.19.17"
+    "smtp-server": "^3.21.4"
   },
   "engines": {
     "node": ">=22.0.0"
