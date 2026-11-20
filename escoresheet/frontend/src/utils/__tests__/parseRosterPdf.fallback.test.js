@@ -45,7 +45,8 @@ vi.mock('pdfjs-dist', () => pdf.modern)
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => pdf.legacy)
 
 import {
-  missingModernPdfFeatures, supportsModuleWorker, pdfReaderPlan, retryOnMainThread, withTimeout,
+  missingModernPdfFeatures, missingLegacyPdfFeatures, addLegacyPdfPolyfills,
+  supportsModuleWorker, pdfReaderPlan, retryOnMainThread, withTimeout,
   parseRosterPdf, resetPdfReaderFallback, rosterPdfErrorText, pdfTimeoutError, PDF_TIMEOUT_CODE
 } from '../parseRosterPdf'
 
@@ -54,8 +55,25 @@ const modernGlobal = () => ({
   Promise: { withResolvers () {}, try () {} },
   URL: { parse () {} },
   Uint8Array: Object.assign(function () {}, { fromBase64 () {}, prototype: { toHex () {} } }),
-  Map: { prototype: { getOrInsertComputed () {} } }
+  Map: { prototype: { getOrInsertComputed () {}, getOrInsert () {} } },
+  Math: { sumPrecise () {} },
+  ArrayBuffer: { prototype: { transferToFixedLength () {} } }
 })
+// A Chrome 107-118 WebView: none of the newer features (pdf.js 6's legacy
+// build is built for Chrome 125 and takes Promise.withResolvers from it)
+const oldWebViewGlobal = () => {
+  const g = modernGlobal()
+  delete g.Promise.withResolvers
+  delete g.Promise.try
+  delete g.URL.parse
+  delete g.Uint8Array.prototype.toHex
+  delete g.Uint8Array.fromBase64
+  delete g.Map.prototype.getOrInsertComputed
+  delete g.Map.prototype.getOrInsert
+  delete g.Math.sumPrecise
+  delete g.ArrayBuffer.prototype.transferToFixedLength
+  return g
+}
 // Workers: one that reads the `type` option (module workers), one that never does (Chrome < 80)
 function ModuleWorker (url, opts) { void opts?.type; throw new DOMException('about:blank cannot be accessed', 'SecurityError') }
 function ClassicWorker (url) { this.url = url; this.terminate = vi.fn() }
@@ -78,7 +96,52 @@ describe('choosing how to read the PDF', () => {
     delete old.Uint8Array.prototype.toHex
     delete old.Promise.withResolvers
     expect(missingModernPdfFeatures(old)).toEqual(['Promise.withResolvers', 'Uint8Array.prototype.toHex'])
-    expect(missingModernPdfFeatures({})).toHaveLength(6)
+    expect(missingModernPdfFeatures({})).toHaveLength(8)
+    // pdf.js 6 no longer brings these two along
+    const noSum = modernGlobal()
+    delete noSum.Math.sumPrecise
+    delete noSum.Map.prototype.getOrInsert
+    expect(missingModernPdfFeatures(noSum)).toEqual(['Map.prototype.getOrInsert', 'Math.sumPrecise'])
+  })
+
+  it('lists what the legacy build takes from the engine and it lacks', () => {
+    expect(missingLegacyPdfFeatures(modernGlobal())).toEqual([])
+    const g = modernGlobal()
+    delete g.Uint8Array.prototype.toHex
+    expect(missingLegacyPdfFeatures(g)).toEqual([])
+    expect(missingLegacyPdfFeatures(oldWebViewGlobal())).toEqual(['Promise.withResolvers', 'ArrayBuffer.prototype.transferToFixedLength'])
+  })
+
+  it('adds those two where they are missing, working as the built-ins do, and nothing where they are not', async () => {
+    class OldPromise extends Promise {}
+    Object.defineProperty(OldPromise, 'withResolvers', { value: undefined, configurable: true, writable: true })
+    class OldBuffer extends ArrayBuffer {}
+    Object.defineProperty(OldBuffer.prototype, 'transferToFixedLength', { value: undefined, configurable: true, writable: true })
+    const g = { Promise: OldPromise, ArrayBuffer: OldBuffer }
+    expect(missingLegacyPdfFeatures(g)).toHaveLength(2)
+    addLegacyPdfPolyfills(g)
+    expect(missingLegacyPdfFeatures(g)).toEqual([])
+
+    const { promise, resolve } = OldPromise.withResolvers()
+    expect(promise).toBeInstanceOf(OldPromise)
+    resolve(7)
+    await expect(promise).resolves.toBe(7)
+    const rejected = OldPromise.withResolvers()
+    rejected.reject(new Error('no'))
+    await expect(rejected.promise).rejects.toThrow('no')
+
+    const buf = new OldBuffer(8)
+    new Uint8Array(buf).set([1, 2, 3, 4, 5, 6, 7, 8])
+    const cut = buf.transferToFixedLength(3)
+    expect(cut.byteLength).toBe(3)
+    expect([...new Uint8Array(cut)]).toEqual([1, 2, 3])
+    expect([...new Uint8Array(buf.transferToFixedLength(10))]).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 0, 0])
+
+    // an engine that has them keeps its own
+    const own = modernGlobal()
+    const { withResolvers } = own.Promise
+    addLegacyPdfPolyfills(own)
+    expect(own.Promise.withResolvers).toBe(withResolvers)
   })
 
   it('tells module workers from classic ones without starting one', () => {
@@ -91,11 +154,18 @@ describe('choosing how to read the PDF', () => {
     expect(pdfReaderPlan({ globalObject: modernGlobal(), WorkerCtor: ModuleWorker })).toEqual({ build: 'modern', worker: 'module', missing: [] })
   })
 
-  it('legacy build in a module worker on an engine without toHex (a Chrome 107–139 WebView)', () => {
+  it('legacy build in a module worker on an engine without toHex (a Chrome 119–139 WebView)', () => {
     const g = modernGlobal()
     delete g.Uint8Array.prototype.toHex
     delete g.Uint8Array.fromBase64
     expect(pdfReaderPlan({ globalObject: g, WorkerCtor: ModuleWorker })).toEqual({ build: 'legacy', worker: 'module', missing: ['Uint8Array.prototype.toHex', 'Uint8Array.fromBase64'] })
+  })
+
+  it('legacy build on the main thread on a Chrome 107-118 WebView (the polyfills reach only that thread)', () => {
+    expect(pdfReaderPlan({ globalObject: oldWebViewGlobal(), WorkerCtor: ModuleWorker })).toMatchObject({ build: 'legacy', worker: 'main-thread' })
+    const g = modernGlobal()
+    delete g.ArrayBuffer.prototype.transferToFixedLength
+    expect(pdfReaderPlan({ globalObject: g, WorkerCtor: ModuleWorker })).toMatchObject({ build: 'legacy', worker: 'main-thread' })
   })
 
   it('legacy build on the main thread without module workers, or without workers at all', () => {
