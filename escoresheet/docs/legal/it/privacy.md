@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.23 · Aggiornata al 20 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.24 · Aggiornata al 20 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -816,6 +816,16 @@ VolleyManager invia anche le date di nascita degli arbitri; il server non le
 legge e non le conserva (dal 19 novembre 2026; quelle conservate prima sono
 state cancellate). Le designazioni sono conservate come i verbali delle
 partite (sezione 16).
+
+**Numeri di licenza degli arbitri:** dal 20 novembre 2026 il server conserva
+anche il numero di licenza (il numero di Swiss Volley) che VolleyManager
+invia per il 1° e il 2° arbitro. Questi numeri non sono pubblici: solo gli
+amministratori e gli account che refertano partite indoor li vedono, affinché
+l'app di refertazione li inserisca accanto agli arbitri quando carica una
+partita ufficiale. Sono cancellati con le designazioni (la stagione della
+partita e le 2 stagioni successive, sezione 16), o prima su richiesta,
+insieme al nome dell'arbitro (sezione 19). Una volta in un referto, fanno
+parte del verbale della partita (sezione 7).
 
 **Elenco degli arbitri:** un elenco comune con nome e cognome, paese e sport,
 affinché il segnapunti non debba inserire ogni volta gli ufficiali di gara;

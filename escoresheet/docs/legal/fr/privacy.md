@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.23 · État au 20 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.24 · État au 20 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -863,6 +863,16 @@ aussi les dates de naissance des arbitres ; le serveur ne les lit pas et ne
 les conserve pas (depuis le 19 novembre 2026 ; celles conservées auparavant
 ont été effacées). Les convocations sont conservées comme les procès-verbaux
 de match (section 16).
+
+**Numéros de licence des arbitres :** depuis le 20 novembre 2026, le serveur
+conserve aussi le numéro de licence (le numéro Swiss Volley) que
+VolleyManager envoie pour le 1er et le 2e arbitre. Ces numéros ne sont pas
+publics : seuls les administrateurs et les comptes qui marquent des matchs en
+salle les voient, afin que l'application de marquage les inscrive à côté des
+arbitres lorsqu'elle charge un match officiel. Ils sont effacés avec les
+convocations (la saison du match et les 2 saisons suivantes, section 16), ou
+plus tôt sur demande, avec le nom de l'arbitre (section 19). Une fois sur une
+feuille de match, ils font partie du procès-verbal du match (section 7).
 
 **Répertoire des arbitres :** un répertoire commun avec prénom et nom, pays
 et sport, afin que le marqueur n'ait pas à saisir les officiels à chaque
