@@ -19,6 +19,7 @@ import IdField from './IdField'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { isLocalOnly, isGuestMatch, usesKeyStore } from '../domain/matchKind'
+import { championshipTypeFields } from '../domain/championshipType'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -1746,8 +1747,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         if (match.league) setLeague(match.league)
         if (match.match_type_1) setType1(match.match_type_1)
         if (match.match_type_1_other) setType1Other(match.match_type_1_other)
-        if (match.championshipType) setChampionshipType(match.championshipType)
-        if (match.championshipTypeOther) setChampionshipTypeOther(match.championshipTypeOther)
+        // a value typed by hand in the old Edit match info ("Regional") maps to
+        // the select's own (domain/championshipType): the sheet ticks only that
+        const ct = championshipTypeFields(match)
+        if (ct.championshipType) setChampionshipType(ct.championshipType)
+        if (ct.championshipTypeOther) setChampionshipTypeOther(ct.championshipTypeOther)
         if (match.match_type_2) setType2(match.match_type_2)
         if (match.match_type_3) setType3(match.match_type_3)
         if (match.match_type_3_other) setType3Other(match.match_type_3_other)
@@ -3429,7 +3433,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // a schedule row without a value keeps a usable one (the sheet's category
     // boxes stay empty for a missing one)
     setType1(matchData.type1 || 'championship')
-    setChampionshipType(matchData.championshipType || 'regional')
+    const ct = championshipTypeFields({ championshipType: matchData.championshipType })
+    setChampionshipType(ct.championshipType || 'regional')
+    if (ct.championshipType === 'other') setChampionshipTypeOther(ct.championshipTypeOther)
     if (matchData.type2) setType2(matchData.type2)
     setType3(matchData.type3 || 'senior')
     setType3Other(matchData.type3 === 'other' ? (matchData.type3Other || '') : '')

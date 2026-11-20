@@ -119,6 +119,23 @@ function toISODate(dateStr) {
  * Allows editing of all match data: scores, teams, players, bench officials,
  * sanctions, timeouts, substitutions, and match officials.
  */
+// The change log's label of a match field: its own key, or the label the
+// field has on screen (the three match-type selects, the game number and the
+// date had no key of their own and logged "Match match_type_1").
+const MATCH_FIELD_LABEL_KEYS = {
+  gameN: 'manualAdjustmentsEditor.gameNumber',
+  match_type_1: 'matchSetup.matchType',
+  match_type_2: 'manualAdjustmentsEditor.matchTypeGender',
+  match_type_3: 'matchSetup.matchLevel',
+  scheduledAt: 'manualAdjustmentsEditor.scheduledDateTime'
+}
+
+export function matchFieldLabel(t, field) {
+  const key = MATCH_FIELD_LABEL_KEYS[field]
+  if (key) return t(key)
+  return t(`manualAdjustmentsEditor.${field}`, `Match ${field}`)
+}
+
 export default function ManualAdjustments({ matchId, onClose, onSave, initialTab = 'corrections', tabIds = null }) {
   const { t } = useTranslation()
   // A phone: the two teams one above the other, an official's name on one
@@ -288,7 +305,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       if (!prev) return prev
       const oldValue = prev[field]
       if (oldValue !== value) {
-        recordFieldChange('match', field, oldValue, value, t(`manualAdjustmentsEditor.${field}`, `Match ${field}`))
+        recordFieldChange('match', field, oldValue, value, matchFieldLabel(t, field))
       }
       return { ...prev, [field]: value }
     })
