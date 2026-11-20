@@ -93,6 +93,8 @@ beforeAll(() => {
   window.innerHeight = 800
 })
 beforeEach(async () => {
+  // these tests use the list of cards (its Reopen set), not the correction board
+  localStorage.setItem('ov.corrections.view', 'list')
   cleanup()
   localStorage.removeItem('displayMode')
   await Promise.all(db.tables.map(t => t.clear()))

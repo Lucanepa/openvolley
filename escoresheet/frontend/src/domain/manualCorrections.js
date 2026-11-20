@@ -43,7 +43,7 @@ import {
   displaySetNumber, describeEvent, remarkText, tr, sanctionLabel, otherTeam,
   isTeamSanctionType, teamLabel
 } from './describe'
-import { getSetResult, scoreFromPointEvents, getFirstServeForSet, setTargetsOf, pointsToWinFor } from './rules'
+import { getSetResult, scoreFromPointEvents, getFirstServeForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from './rules'
 import { rotateLineup, pointSubEventsForTeam } from './rotation'
 import { swapTeamDesignation as swapTeamDesignationPatch, regularSetIndexes } from './coinToss'
 import { actualStartLines, actualStartReason, remarkClock } from './remarks'
@@ -116,7 +116,10 @@ export const ERROR_DEFAULTS = {
   removePointNotLast: 'The penalty point can only be removed while it is the last point of the set being played.',
   cancelledPoint: 'This point was cancelled when the game went back: remove that going back instead.',
   noScoreChange: 'Nothing to change.',
-  endBeforeStart: 'Set {{set}} cannot end before it starts.'
+  endBeforeStart: 'Set {{set}} cannot end before it starts.',
+  pointEndsSet: 'This point ends set {{set}}: give it with the point button on the scoreboard.',
+  pointChangesCourts: 'This point takes set {{set}} to {{n}}, where the teams change courts: give it with the point button on the scoreboard.',
+  noPointToRemove: '{{team}} has no point in set {{set}} to remove.'
 }
 
 export const NOTE_DEFAULTS = {
@@ -1238,6 +1241,80 @@ export function planAdjustFinalScore(events, sets, { setIndex, team, delta } = {
   return done(events, finishPlan(plan, events, ctx, 'addPoint', point), ctx)
 }
 
+// ─────────────────── score (correction board, live) ───────────────────
+
+/**
+ * The correction board's "+" (owner 2026-11-20, DataProject's manual
+ * amendments): a missed point for `team`. A finished set follows the final
+ * score rule (planAdjustFinalScore: at the end only, the winner never
+ * changes). In the set being played the point goes in at the current score
+ * with the side-out rotation and the automatic libero exit, as the point
+ * button writes it (`penaltySeq`: the point a sanction gives, circled on the
+ * sheet). A point that would end the set, or take the deciding set to its
+ * change of courts, is refused: the point button runs those flows (set end,
+ * interval, change of courts).
+ */
+export function planAddPoint(events, sets, { setIndex, team, penaltySeq = null } = {}, ctx = {}) {
+  const set = setNumber(setIndex, ctx)
+  if (team !== 'home' && team !== 'away') return fail('chooseTarget')
+  const row = (sets || []).find(s => s.index === setIndex)
+  if (row?.finished || setIsFinished(events, setIndex)) {
+    if (penaltySeq != null) return fail('pointNowOnlyLive')
+    return planAdjustFinalScore(events, sets, { setIndex, team, delta: 1 }, ctx)
+  }
+  const targets = setTargetsOf(ctx.match)
+  const cur = scoreFromPointEvents(events, setIndex)
+  const at = { home: cur.homePoints, away: cur.awayPoints }
+  const next = { ...at, [team]: at[team] + 1 }
+  if (getSetResult(next.home, next.away, setIndex, { targets }).winner) return fail('pointEndsSet', { set })
+  const switchAt = courtSwitchPointOf(targets)
+  if (setIndex === 5 && !ctx.match?.set5CourtSwitched && Math.max(at.home, at.away) < switchAt && Math.max(next.home, next.away) >= switchAt) {
+    return fail('pointChangesCourts', { set, n: switchAt })
+  }
+  const tl = scoreTimeline(events, setIndex)
+  const ins = tl.length ? insertionAt(events, setIndex, tl.length - 1, tl) : null
+  if (!ins) return fail('noSuchScore', { set })
+  const points = setEvents(events, setIndex).filter(e => e.type === 'point')
+  const last = points[points.length - 1]
+  const server = last ? last.payload?.team : getFirstServeForSet(setIndex, ctx.match || {})
+  const payload = { team, score: next, ...(penaltySeq != null ? { penaltySeq } : {}) }
+  const point = newRow(ctx, { type: 'point', setIndex, seq: ins.seq, ts: ins.ts, payload })
+  const plan = emptyPlan()
+  plan.affectedSets = [setIndex]
+  plan.add = [point]
+  if (server !== team) plan.add.push(...rotationRows(events, setIndex, team, ins.seq, ins.ts, ctx))
+  plan.update = renumberUpdates(ins)
+  return done(events, finishPlan(plan, events, ctx, 'addPoint', point), ctx)
+}
+
+/**
+ * The correction board's "−": the team's latest point of the set. A finished
+ * set follows the final score rule (its last point only, the winner never
+ * changes). In the set being played the team's latest point goes with its
+ * rotation and rally start, and everything after it is recalculated
+ * (planRemoveEntry).
+ */
+export function planRemovePoint(events, sets, { setIndex, team } = {}, ctx = {}) {
+  if (team !== 'home' && team !== 'away') return fail('chooseTarget')
+  const row = (sets || []).find(s => s.index === setIndex)
+  if (row?.finished || setIsFinished(events, setIndex)) return planAdjustFinalScore(events, sets, { setIndex, team, delta: -1 }, ctx)
+  const points = setEvents(events, setIndex).filter(e => e.type === 'point' && e.payload?.team === team)
+  const last = points[points.length - 1]
+  if (!last) return fail('noPointToRemove', { set: setNumber(setIndex, ctx), team: teamLabel(team, ctx)?.name || '?' })
+  return planRemoveEntry(events, last.id, ctx)
+}
+
+/**
+ * The correction board's "Last point went to the wrong team": the set's last
+ * point changes team (planSetPointTeam), with its rotation and serve.
+ */
+export function planLastPointOtherTeam(events, { setIndex } = {}, ctx = {}) {
+  const points = setEvents(events, setIndex).filter(e => e.type === 'point')
+  const last = points[points.length - 1]
+  if (!last) return fail('noPointToRemove', { set: setNumber(setIndex, ctx), team: '' })
+  return planSetPointTeam(events, last.id, otherTeam(last.payload?.team), ctx)
+}
+
 /**
  * The side-out rotation a point writes for `team` (its line-up rotated, and
  * the automatic libero exit when the libero would reach the front row), read
@@ -1362,7 +1439,9 @@ export function planRotateTeam(events, { setIndex, team, direction = 1 } = {}, c
   plan.update = renumberUpdates(ins)
   plan.before = lu.payload.lineup
   plan.after = lineup
-  return done(events, finishPlan(plan, events, ctx, 'rotateTeam', row), ctx)
+  // the log's "(was: …)": the line-up before, I to VI as the new one reads
+  const from = POSITIONS.map(p => lu.payload.lineup[p] ?? '–').join(' · ')
+  return done(events, finishPlan(plan, events, ctx, 'rotateTeam', row, { from }), ctx)
 }
 
 // ───────────────────────── player numbers ─────────────────────────

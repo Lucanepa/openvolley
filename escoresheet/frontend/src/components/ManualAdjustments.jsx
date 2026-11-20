@@ -25,6 +25,8 @@ import IdField from './IdField'
 import { idLabelOf, idModeOf, isDateValue } from '../domain/idMode'
 import { formatDateTimeLocal, parseLocalToISO } from '../utils/timeUtils'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
+import CorrectionBoard, { boardFits } from './corrections/CorrectionBoard.jsx'
+import { LayoutDashboard } from 'lucide-react'
 import { DialogHelpButton } from './help/HelpButton.jsx'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { TEAM_COLOUR_MARK, coloursTooClose, discRing, effectiveTeamColour, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
@@ -153,6 +155,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   const [changes, setChanges] = useState([])
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState(initialTab)
+  // the correction board over the corrections tab (match end: opt-in, the list stays the default here)
+  const [showBoard, setShowBoard] = useState(false)
 
   // Editable state - Match
   const [editedMatch, setEditedMatch] = useState(null)
@@ -903,6 +907,29 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       {/* Content */}
       <div className="p-4 sm:p-6" style={{ maxWidth: activeTab === 'corrections' ? '960px' : '1400px', margin: '0 auto' }}>
         {/* ==================== CORRECTIONS TAB ==================== */}
+        {activeTab === 'corrections' && !closed && boardFits() && (
+          <div className="ov-kit mb-3 flex justify-end">
+            <Button variant="toolbar" size="md" icon={LayoutDashboard} onClick={() => setShowBoard(true)} data-testid="corrections-open-board">
+              {t('correctionBoard.boardView', 'Board')}
+            </Button>
+          </div>
+        )}
+        {activeTab === 'corrections' && showBoard && !closed && (
+          <CorrectionBoard
+            mode="review"
+            matchId={matchId}
+            events={data.events}
+            match={data.match}
+            sets={data.sets}
+            homeTeam={data.homeTeam}
+            awayTeam={data.awayTeam}
+            homePlayers={data.homePlayers}
+            awayPlayers={data.awayPlayers}
+            hooks={{ notifyScoresheetUpdate: notifyScoresheet, afterApply: afterCorrection }}
+            onClose={() => setShowBoard(false)}
+            onShowList={() => setShowBoard(false)}
+          />
+        )}
         {activeTab === 'corrections' && (
           <CorrectionsPanel
             mode="review"

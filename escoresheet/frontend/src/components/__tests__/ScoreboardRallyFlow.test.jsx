@@ -53,6 +53,8 @@ beforeAll(() => {
   window.innerHeight = 800
 })
 beforeEach(async () => {
+  // these tests use the list of cards (its Reopen set), not the correction board
+  localStorage.setItem('ov.corrections.view', 'list')
   cleanup()
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})

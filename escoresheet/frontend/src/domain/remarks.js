@@ -31,6 +31,24 @@ export function removeRemarkLine(remarks, line) {
 const pad2 = (n) => String(n).padStart(2, '0')
 
 /**
+ * The remarks text after a correction plan's removals and additions
+ * (services/corrections/applyCorrectionPlan writes it; the correction board
+ * draws its draft with it).
+ */
+export function remarksAfter(remarks, plan) {
+  // remarksSet: the whole text, when one line was edited in place
+  let out = plan?.remarksSet !== undefined ? String(plan.remarksSet) : (remarks || '')
+  // a line rewritten where it stands (a renumbered player's remark)
+  for (const { from, to } of plan?.remarkReplace || []) {
+    if (!from || from === to) continue
+    out = out.split('\n').map(l => (l === from ? to : l)).join('\n')
+  }
+  for (const line of plan?.remarkRemove || []) out = removeRemarkLine(out, line)
+  for (const line of plan?.remarkAdd || []) out = appendRemark(out, line)
+  return out
+}
+
+/**
  * The Zürich wall-clock time "HH:MM" of a remark (24 h), as the sheet prints
  * times: the gym's clock on a device in any zone (stress test 2026-10-25).
  */
