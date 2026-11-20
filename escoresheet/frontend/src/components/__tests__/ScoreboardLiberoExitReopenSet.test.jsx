@@ -40,15 +40,29 @@ const filterRejections = (reason, promise) => {
 }
 
 // The scoring screen's work after a test's last check: a point or a Reopen
-// set also pushes the live state (snapshot, cloud lookup) and logs the
+// set also pushes the live state (snapshot reads, cloud lookup) and logs the
 // change, none of it awaited by the click. It ran on past the test: into the
 // next test's emptied database, and after the last test into the worker's
 // shutdown (CI 2026-11-20: "Closing rpc while onUserConsoleLog was
-// pending"). The screen logs as it works, so after the unmount each test
-// waits until nothing has been logged for a while: its work is through.
+// pending"). That work is IndexedDB reads and writes with logs between them,
+// so after the unmount each test waits until no IndexedDB transaction is
+// open and nothing has been logged for a while: its work is through.
 const CONSOLE_METHODS = ['log', 'info', 'warn', 'error', 'debug']
 let consoleSpies = []
 const consoleCalls = () => consoleSpies.reduce((n, spy) => n + spy.mock.calls.length, 0)
+// IndexedDB transactions opened and not yet complete or aborted (Dexie's,
+// on fake-indexeddb's IDBDatabase)
+let openTransactions = 0
+const realTransaction = IDBDatabase.prototype.transaction
+function countedTransaction(...args) {
+  const tx = realTransaction.apply(this, args)
+  openTransactions++
+  let open = true
+  const close = () => { if (open) { open = false; openTransactions-- } }
+  tx.addEventListener('complete', close)
+  tx.addEventListener('abort', close)
+  return tx
+}
 async function untilQuiet({ quietMs = 750, maxMs = 20000 } = {}) {
   const start = Date.now()
   let seen = consoleCalls()
@@ -56,15 +70,16 @@ async function untilQuiet({ quietMs = 750, maxMs = 20000 } = {}) {
   while (Date.now() - start < maxMs) {
     await new Promise(r => setTimeout(r, 50))
     const now = consoleCalls()
-    if (now !== seen) { seen = now; since = Date.now() } else if (Date.now() - since >= quietMs) return
+    if (now !== seen || openTransactions > 0) { seen = now; since = Date.now() } else if (Date.now() - since >= quietMs) return
   }
-  throw new Error(`the scoring screen still logged after ${maxMs} ms`)
+  throw new Error(`the scoring screen was still at work after ${maxMs} ms (${openTransactions} open transactions)`)
 }
 
 let saved
 beforeAll(() => {
   // passed through (the logs still show), only counted
   consoleSpies = CONSOLE_METHODS.map((m) => vi.spyOn(console, m))
+  IDBDatabase.prototype.transaction = countedTransaction
   rejectionListeners = process.listeners('unhandledRejection')
   process.removeAllListeners('unhandledRejection')
   process.on('unhandledRejection', filterRejections)
@@ -88,6 +103,7 @@ afterEach(async () => {
 })
 afterAll(() => {
   cleanup()
+  IDBDatabase.prototype.transaction = realTransaction
   window.innerWidth = saved.width
   window.innerHeight = saved.height
   process.removeListener('unhandledRejection', filterRejections)
