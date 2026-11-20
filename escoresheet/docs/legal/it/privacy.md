@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.21 · Aggiornata al 19 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.22 · Aggiornata al 20 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -51,6 +51,11 @@ la versione inglese.
   clicchi o digiti resta sul tuo dispositivo, salvo un riassunto senza il
   testo digitato se includi la diagnostica in una richiesta di supporto
   (sezioni 5 e 13).
+- Quando qualcosa va storto, le app, le pagine web e il server inviano una
+  segnalazione di errore al mio server, anche senza accesso: cosa non ha
+  funzionato e dove nel programma, i passi subito prima (mai ciò che hai
+  digitato), l'app e la sua versione, il sistema operativo, il browser e le
+  dimensioni dello schermo. Puoi disattivarla nelle opzioni (sezione 5).
 - Il server si trova in Svizzera: lo noleggio da Infomaniak a Ginevra e lo
   gestisco io stesso. Cloudflare (USA) distribuisce i siti web e inoltra il
   traffico al server.
@@ -104,7 +109,8 @@ entrambe le leggi.
   IndexedDB): i dati delle partite per l'uso offline, le tue impostazioni e,
   se hai effettuato l'accesso, un token di accesso.
 - **Nessun tracciamento, nessuna pubblicità, nessuna analisi.** Non ci sono
-  strumenti di analisi, invii di segnalazioni di errore a terzi, pubblicità,
+  strumenti di analisi, invii di segnalazioni di errore a terzi (le segnalazioni di errore vanno
+  solo al mio server, sezione 5), pubblicità,
   profilazione né decisioni individuali automatizzate. Non vendo dati.
 - **Nessun contenuto di terzi.** Caratteri e codice dei programmi provengono
   dai nostri siti, non da server di terzi. Le eccezioni sono indicate
@@ -139,6 +145,8 @@ squadre, liste squadra (con numeri di licenza, e date di nascita dove il
 segnapunti le ha digitate), set, eventi della partita, elenchi di ufficiali di
 gara, impostazioni e i registri dell'app (vedi sotto). Le
 partite restano salvate finché non le cancelli o non cancelli i dati dell'app.
+Senza accesso, al mio server vanno solo le segnalazioni di errore (vedi
+sotto).
 
 **Trasmissione in diretta, anche senza accesso.** Appena una partita è
 creata, le app browser e Android la inviano (squadre, liste squadra,
@@ -190,6 +198,42 @@ sono visibili solo agli amministratori. Quando una partita viene cancellata
 sul server, le sue voci vengono cancellate con essa. Per quanto tempo le voci
 restano è indicato nella sezione 16; su richiesta le cancello prima
 (sezione 19).
+
+**Segnalazioni di errore (da novembre 2026).** Quando si verifica un errore,
+l'app o la pagina web invia una segnalazione al mio server, con o senza
+accesso: l'app di refertazione, le pagine per arbitro, panchina, livescore,
+referto, lista squadra, dettatura, manager e TV, e OpenBeach. Una
+segnalazione contiene il messaggio d'errore e il punto nel programma (nomi
+dei file e numeri di riga), la schermata o la pagina aperta, gli ultimi
+passi prima dell'errore (schermate aperte, i pulsanti toccati (con il loro
+nome interno, non il testo), gli indirizzi del server chiamati e il loro
+esito; mai ciò che hai digitato né il contenuto di un campo di inserimento),
+l'app (OpenVolley o OpenBeach), lo strumento e la sua versione, il sistema
+operativo e la sua versione, il browser o la vista web e la sua versione,
+come gira l'app (scheda del browser, app web installata, app desktop o
+mobile), il modello del dispositivo dove il sistema lo indica, le dimensioni
+dello schermo e della finestra, la lingua e il fuso orario, se il
+dispositivo era online, l'identificativo casuale del dispositivo (lo stesso
+del registro attività), un identificativo casuale della visita,
+l'identificativo esterno della partita aperta e, se hai effettuato
+l'accesso, il tuo account. **Mai contenuti** sono PIN, password, token di
+accesso, testo digitato, indirizzi e-mail, date di nascita, numeri di
+telefono, immagini delle firme e il tuo indirizzo IP; il server rimuove di
+nuovo questi valori, qualunque cosa invii un dispositivo. Il server registra
+i propri errori nello stesso modo (la richiesta e il punto nel programma,
+senza contenuti).
+Solo gli amministratori con tutti i diritti vedono le segnalazioni, nel
+manager; lì vedono anche nome, indirizzo e-mail, ruoli e società di un
+account connesso, e l'apertura delle segnalazioni viene registrata nel
+registro delle modifiche (sezione 14). Gli amministratori vengono informati
+dei nuovi errori per e-mail, con i ruoli e le società degli account
+interessati ma mai un nome o un indirizzo, e con una notifica push sul
+telefono tramite un servizio di notifica sul mio computer (solo strumento,
+versione, sistema operativo e messaggio d'errore). Le segnalazioni restano
+90 giorni (sezione 16). Puoi disattivarle nelle opzioni (Supporto e
+feedback: «Invia automaticamente le segnalazioni di errore»); le
+segnalazioni già inviate restano fino alla scadenza, oppure le cancello su
+richiesta (indica l'identificativo del dispositivo mostrato lì).
 
 **Cronologia degli eventi (OpenVolley dalla versione 2.4.0).** Quando un
 punto o un altro evento viene annullato o corretto, l'app annota l'evento
@@ -867,6 +911,10 @@ richiesta.
   non riuscite della banca dati vengono registrate senza i loro valori. I
   registri vengono sovrascritti in base alla dimensione (al massimo 10 file
   da 20 MB per servizio), di regola dopo alcuni giorni o poche settimane.
+- **Segnalazioni di errore:** gli errori del server stesso vengono salvati
+  come segnalazioni di errore (sezione 5), senza contenuti e senza indirizzi
+  IP. L'indirizzo IP di un dispositivo che invia segnalazioni viene usato
+  solo in memoria, per limitarne il numero.
 - **Cloudflare** tratta indirizzo IP, indirizzo richiesto e identificativo del
   browser di ogni richiesta e li conserva secondo le proprie regole.
 - **Indirizzi IP solo nella memoria di lavoro:** per proteggersi dagli abusi
@@ -963,6 +1011,7 @@ ricevi una copia di queste garanzie.
 | Registri dell'app caricati | 30 giorni; cancellati con il tuo account |
 | Registro attività di una partita (server) | 24 mesi, al più tardi fino alla cancellazione della partita; prima su richiesta |
 | Registro attività senza partita (server) | 90 giorni; le voci registrate con il tuo account vengono cancellate con esso |
+| Segnalazioni di errore (server) | 90 giorni; quelle inviate con l'accesso vengono cancellate con il tuo account; prima su richiesta |
 | Cronologia degli eventi (eventi annullati e corretti) | Con la partita, come parte del verbale della partita |
 | Registro attività sul dispositivo | Voci caricate 180 giorni (al massimo 100 000); voci non ancora caricate fino al caricamento (al massimo 200 000); al massimo 30 file giornalieri e 50 MB |
 | Registro d'uso (solo sul dispositivo) | OpenVolley dalla 2.4.0: 30 giorni, al massimo 50 000 voci |
@@ -1093,7 +1142,8 @@ Se si applica il RGPD, mi baso su:
   approvazioni, registro attività, cronologia degli eventi e osservazioni),
   squadre salvate ed elenchi delle società completati dalle liste delle
   partite ufficiali, invio del referto finale a ufficiali di gara e società, livescore per il
-  pubblico, organizzazione di tornei, diagnosi dei problemi,
+  pubblico, organizzazione di tornei, diagnosi dei problemi (anche le
+  segnalazioni di errore delle app, che puoi disattivare),
   sicurezza e protezione dagli abusi, copie di sicurezza;
 - **consenso** (art. 6 par. 1 lett. a RGPD): ricerca di aggiornamenti
   dell'app Android installata direttamente;

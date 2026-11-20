@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.21 · As of 19 November 2026
+**OpenVolley and OpenBeach** · Version 1.22 · As of 20 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -45,6 +45,11 @@ version is binding.
   passwords. When you are signed in it goes to the server. What you click or
   type stays on your device, except for a summary without the text you typed
   when you include diagnostics with a support request (sections 5 and 13).
+- When something goes wrong, the apps, the web pages and the server send an
+  error report to my server, also without signing in: what went wrong and
+  where in the program, the steps just before it (never what you typed), the
+  app and its version, the operating system, the browser and the screen size.
+  You can switch this off in the options (section 5).
 - The server is in Switzerland: I rent it from Infomaniak in Geneva and run it
   myself. Cloudflare (USA) delivers the websites and forwards the traffic to the
   server.
@@ -95,7 +100,8 @@ information both laws require.
   match data for offline use, your settings and, when you are signed in, a
   sign-in token.
 - **No tracking, no ads, no analytics.** There are no analytics tools, no
-  error reports to third parties, no advertising, no profiling and no
+  error reports to third parties (error reports go only to my own server,
+  section 5), no advertising, no profiling and no
   automated individual decisions. I do not sell data.
 - **No third-party content.** Fonts and program code come from our own sites,
   not from other servers. I name the exceptions explicitly (section 12, and
@@ -128,7 +134,8 @@ for their data processing.
 matches, teams, rosters (with licence numbers, and dates of birth where the
 scorer typed them), sets, match events, lists of officials, settings and the
 app's logs (see below). Matches stay stored until
-you delete them or clear the app data.
+you delete them or clear the app data. Without signing in, only error
+reports go to my server (see below).
 
 **Live transfer, also without signing in.** As soon as a match is created,
 the browser and Android apps send it (teams, rosters, score, events) to my
@@ -176,6 +183,38 @@ accounts that entered the game PIN and the administrators; entries without a
 match are seen only by the administrators. When a match is deleted on the
 server, its entries are deleted with it. How long entries are kept is in
 section 16; I delete them earlier on request (section 19).
+
+**Error reports (since November 2026).** When an error occurs, the app or
+web page sends a report to my server, signed in or not: the scorer app, the
+referee, bench, livescore, scoresheet, roster, dictation, manager and TV
+pages, and OpenBeach. A report contains the error message and the place in
+the program (file names and line numbers), the screen or page that was open,
+the last steps before the error (screens opened, which buttons were tapped
+(by their internal name, not their text), the server addresses called and
+their result; never what you typed or the content of an input field), the
+app (OpenVolley or OpenBeach), the tool and its version, the operating
+system and its version, the browser or web view and its version, how the app
+runs (browser tab, installed web app, desktop or mobile app), the device
+model where the system names it, the screen and window size, the language
+and time zone, whether the device was online, the random device identifier
+(the same as in the activity log), a random identifier of the visit, the
+external identifier of the open match, and, when you are signed in, your
+account. **Never contained** are PINs, passwords, sign-in tokens, text you
+typed, email addresses, dates of birth, phone numbers, signature images and
+your IP address; the server removes such values again, whatever a device
+sends. The server records its own errors the same way (the request and the
+place in the program, without content).
+Only the administrators with full rights see the reports, in the manager;
+there they also see the name, email address, roles and clubs of a signed-in
+account, and opening the reports is recorded in the change log (section 14).
+The administrators are told about new errors by email, naming the roles and
+clubs of the accounts concerned but never a name or an address, and by a
+push message to their phone through a notification service on my own
+computer (the tool, version, operating system and error message only).
+Reports are kept 90 days (section 16). You can switch them off in the
+options (Support & feedback: "Send error reports automatically"); reports
+already sent stay until they expire, or I delete them on request (give the
+device identifier shown there).
 
 **Event history (OpenVolley from version 2.4.0).** When a point or another
 event is undone or corrected, the app records the old event (for a change
@@ -797,6 +836,10 @@ look up earlier answers; earlier on request.
   Slow and failed database queries are logged without their values. The logs
   are overwritten by size (at most 10 files of 20 MB per service), usually
   after days to a few weeks.
+- **Error reports:** the server's own errors are stored as error reports
+  (section 5), without content and without IP addresses. The IP address of a
+  device that sends reports is used only in memory, to limit how many it may
+  send.
 - **Cloudflare** processes the IP address, address and browser identifier of
   every request and keeps them under its own rules.
 - **IP addresses in memory only:** to protect against misuse the server
@@ -888,6 +931,7 @@ copy of these safeguards.
 | Uploaded app logs | 30 days; deleted with your account |
 | Activity log of a match (server) | 24 months, at the latest until the match is deleted; earlier on request |
 | Activity log without a match (server) | 90 days; entries recorded under your account are deleted with it |
+| Error reports (server) | 90 days; those sent while you were signed in are deleted with your account; earlier on request |
 | Event history (undone and corrected events) | With the match, as part of the match record |
 | Activity log on the device | Uploaded entries 180 days (at most 100,000); entries not yet uploaded until they are uploaded (at most 200,000); at most 30 daily files and 50 MB |
 | Interaction log (on the device only) | OpenVolley from 2.4.0: 30 days, at most 50,000 entries |
@@ -1004,7 +1048,8 @@ Where the GDPR applies, I rely on:
   history, remarks), saved teams and club lists filled from official match
   rosters, delivering the final scoresheet to officials and clubs,
   livescore for the public, running tournaments,
-  troubleshooting, security and protection against misuse, backups.
+  troubleshooting (also the error reports of the apps,
+  which you can switch off), security and protection against misuse, backups.
 - **Consent** (Art. 6(1)(a) GDPR): the update check of the directly installed
   Android app.
 - **Health data** (an injury or illness recorded in a match, section 7): the

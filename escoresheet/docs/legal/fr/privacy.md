@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.21 · État au 19 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.22 · État au 20 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -54,6 +54,12 @@ version anglaise fait foi.
   tu cliques ou tapes reste sur ton appareil, sauf un résumé sans le texte
   saisi si tu joins les diagnostics à une demande de support (sections 5
   et 13).
+- Quand quelque chose ne va pas, les applications, les pages web et le
+  serveur envoient un rapport d'erreur à mon serveur, aussi sans connexion :
+  ce qui n'a pas fonctionné et où dans le programme, les étapes juste avant
+  (jamais ce que tu as tapé), l'application et sa version, le système
+  d'exploitation, le navigateur et la taille de l'écran. Tu peux le
+  désactiver dans les options (section 5).
 - Le serveur se trouve en Suisse : je le loue chez Infomaniak à Genève et
   l'exploite moi-même. Cloudflare (États-Unis) diffuse les sites web et
   transmet le trafic au serveur.
@@ -111,7 +117,8 @@ Cette déclaration contient les informations exigées par les deux lois.
   données des matchs pour le mode hors ligne, tes réglages et, si tu es
   connecté, un jeton de connexion.
 - **Pas de suivi, pas de publicité, pas d'analyse.** Il n'y a ni outil
-  d'analyse, ni envoi de rapports d'erreur à des tiers, ni publicité, ni
+  d'analyse, ni envoi de rapports d'erreur à des tiers (les rapports d'erreur vont
+  uniquement à mon propre serveur, section 5), ni publicité, ni
   profilage, ni décision individuelle automatisée. Je ne vends pas de données.
 - **Pas de contenus de tiers.** Les polices et le code des programmes
   viennent de nos propres sites, pas de serveurs tiers. Les exceptions sont
@@ -147,7 +154,8 @@ appareil : matchs, équipes, listes d'équipe (avec numéros de licence, et
 dates de naissance là où le marqueur les a tapées), sets, événements du
 match, listes d'officiels, réglages et les journaux de l'application (voir
 ci-dessous). Les matchs restent enregistrés jusqu'à ce que
-tu les supprimes ou effaces les données de l'application.
+tu les supprimes ou effaces les données de l'application. Sans connexion,
+seuls les rapports d'erreur sont envoyés à mon serveur (voir ci-dessous).
 
 **Transmission en direct, même sans connexion.** Dès qu'un match est créé,
 les applications navigateur et Android l'envoient (équipes, listes d'équipe,
@@ -202,6 +210,43 @@ sans match ne sont visibles que pour les administrateurs. Lorsqu'un match est
 supprimé sur le serveur, ses entrées sont supprimées avec lui. La durée de
 conservation figure à la section 16 ; sur demande, je les supprime plus tôt
 (section 19).
+
+**Rapports d'erreur (depuis novembre 2026).** Quand une erreur se produit,
+l'application ou la page web envoie un rapport à mon serveur, que tu sois
+connecté ou non : l'application de marquage, les pages arbitre, banc,
+livescore, feuille de match, liste d'équipe, dictée, manager et TV, ainsi
+qu'OpenBeach. Un rapport contient le message d'erreur et l'endroit dans le
+programme (noms de fichiers et numéros de ligne), l'écran ou la page
+ouverte, les dernières étapes avant l'erreur (écrans ouverts, boutons
+touchés (par leur nom interne, pas leur texte), adresses du serveur appelées
+et leur résultat ; jamais ce que tu as tapé ni le contenu d'un champ de
+saisie), l'application (OpenVolley ou OpenBeach), l'outil et sa version, le
+système d'exploitation et sa version, le navigateur ou la vue web et sa
+version, la façon dont l'application fonctionne (onglet du navigateur,
+application web installée, application de bureau ou mobile), le modèle de
+l'appareil quand le système le donne, la taille de l'écran et de la fenêtre,
+la langue et le fuseau horaire, si l'appareil était en ligne, l'identifiant
+aléatoire de l'appareil (le même que dans le journal d'activité), un
+identifiant aléatoire de la visite, l'identifiant externe du match ouvert
+et, si tu es connecté, ton compte. **Jamais contenus :** NIP, mots de passe,
+jetons de connexion, texte tapé, adresses e-mail, dates de naissance,
+numéros de téléphone, images de signature et ton adresse IP ; le serveur
+retire de nouveau ces valeurs, quoi qu'un appareil envoie. Le serveur
+enregistre ses propres erreurs de la même façon (la requête et l'endroit
+dans le programme, sans contenu).
+Seuls les administrateurs disposant de tous les droits voient les rapports,
+dans le manager ; ils y voient aussi le nom, l'adresse e-mail, les rôles et
+les clubs d'un compte connecté, et l'ouverture des rapports est inscrite au
+journal des modifications (section 14). Les administrateurs sont informés
+des nouvelles erreurs par e-mail, avec les rôles et les clubs des comptes
+concernés mais jamais un nom ou une adresse, et par une notification push
+sur leur téléphone via un service de notification sur mon propre ordinateur
+(uniquement l'outil, la version, le système d'exploitation et le message
+d'erreur). Les rapports sont conservés 90 jours (section 16). Tu peux les
+désactiver dans les options (Support et avis : « Envoyer automatiquement les
+rapports d'erreur ») ; les rapports déjà envoyés restent jusqu'à leur
+expiration, ou je les efface sur demande (indique l'identifiant de
+l'appareil affiché à cet endroit).
 
 **Historique des événements (OpenVolley à partir de la version 2.4.0).**
 Lorsqu'un point ou un autre événement est annulé ou corrigé, l'application
@@ -920,6 +965,10 @@ précédentes ; plus tôt sur demande.
   base de données sont journalisées sans leurs valeurs. Les journaux sont
   écrasés selon leur taille (au plus 10 fichiers de 20 Mo par service), en
   général après quelques jours à quelques semaines.
+- **Rapports d'erreur :** les erreurs du serveur lui-même sont enregistrées
+  comme rapports d'erreur (section 5), sans contenu et sans adresses IP.
+  L'adresse IP d'un appareil qui envoie des rapports n'est utilisée qu'en
+  mémoire, pour en limiter le nombre.
 - **Cloudflare** traite l'adresse IP, l'adresse demandée et l'identifiant du
   navigateur de chaque requête et les conserve selon ses propres règles.
 - **Adresses IP uniquement en mémoire vive :** pour se protéger des abus, le
@@ -1017,6 +1066,7 @@ prestataires. Tu peux me demander une copie de ces garanties.
 | Journaux de l'application téléversés | 30 jours ; effacés avec ton compte |
 | Journal d'activité d'un match (serveur) | 24 mois, au plus tard jusqu'à la suppression du match ; plus tôt sur demande |
 | Journal d'activité sans match (serveur) | 90 jours ; les entrées enregistrées sous ton compte sont effacées avec lui |
+| Rapports d'erreur (serveur) | 90 jours ; ceux envoyés pendant que tu étais connecté sont effacés avec ton compte ; plus tôt sur demande |
 | Historique des événements (événements annulés et corrigés) | Avec le match, comme partie du procès-verbal du match |
 | Journal d'activité sur l'appareil | Entrées envoyées 180 jours (au plus 100 000) ; entrées pas encore envoyées jusqu'à leur envoi (au plus 200 000) ; au plus 30 fichiers quotidiens et 50 Mo |
 | Journal d'utilisation (uniquement sur l'appareil) | OpenVolley à partir de 2.4.0 : 30 jours, au plus 50 000 entrées |
@@ -1155,7 +1205,8 @@ Lorsque le RGPD s'applique, je me fonde sur :
   des événements et remarques), les équipes enregistrées et les listes des
   clubs complétées à partir des listes des matchs officiels, l'envoi de la
   feuille de match finale aux officiels et aux clubs, le livescore pour le public, l'organisation de tournois, le
-  dépannage, la sécurité et la protection contre les abus, les sauvegardes ;
+  dépannage (y compris les rapports d'erreur des applications, que tu peux
+  désactiver), la sécurité et la protection contre les abus, les sauvegardes ;
 - **le consentement** (art. 6, par. 1, let. a RGPD) : recherche de mises à
   jour de l'application Android installée directement ;
 - **pour les données de santé** (une blessure ou une maladie consignée dans

@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.21 · Stand: 19. November 2026
+**OpenVolley und OpenBeach** · Version 1.22 · Stand: 20. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -51,6 +51,11 @@ Massgebend ist die englische Fassung.
   tippst, bleibt auf deinem Gerät, ausser einer Zusammenfassung ohne den
   eingetippten Text, wenn du einer Support-Anfrage die Diagnosedaten
   mitsendest (Abschnitte 5 und 13).
+- Wenn etwas schiefgeht, senden die Apps, die Webseiten und der Server einen
+  Fehlerbericht an meinen Server, auch ohne Anmeldung: was schiefging und wo
+  im Programm, die Schritte kurz davor (nie, was du eingetippt hast), die App
+  und ihre Version, das Betriebssystem, der Browser und die Bildschirmgrösse.
+  Du kannst das in den Optionen ausschalten (Abschnitt 5).
 - Der Server steht in der Schweiz: Ich miete ihn bei Infomaniak in Genf und
   betreibe ihn selbst. Cloudflare (USA) liefert die Websites aus und leitet den
   Verkehr zum Server weiter.
@@ -105,7 +110,8 @@ Beachturnier, beachte ich zusätzlich die Datenschutz-Grundverordnung der EU
   (localStorage und IndexedDB): Spieldaten für den Offline-Betrieb, deine
   Einstellungen und, wenn du angemeldet bist, ein Anmelde-Token.
 - **Kein Tracking, keine Werbung, keine Analyse.** Es gibt keine
-  Analyse-Werkzeuge, keine Fehlerberichte an Drittanbieter, keine
+  Analyse-Werkzeuge, keine Fehlerberichte an Drittanbieter (Fehlerberichte gehen nur an
+  meinen eigenen Server, Abschnitt 5), keine
   Werbung, kein Profiling und keine automatisierten Einzelentscheidungen.
   Ich verkaufe keine Daten.
 - **Keine fremden Inhalte.** Schriften und Programmcode kommen von den eigenen
@@ -139,7 +145,8 @@ Datenbearbeitung verantwortlich sind.
 Teams, Kaderlisten (mit Lizenznummern und Geburtsdaten, wo die Schreiberin
 oder der Schreiber sie eingetippt hat), Sätze, Spielereignisse, Listen von
 Offiziellen, Einstellungen und die Protokolle der App (siehe unten). Spiele
-bleiben gespeichert, bis du sie löschst oder die App-Daten löschst.
+bleiben gespeichert, bis du sie löschst oder die App-Daten löschst. Ohne
+Anmeldung gehen nur Fehlerberichte an meinen Server (siehe unten).
 
 **Live-Übertragung, auch ohne Anmeldung.** Sobald ein Spiel angelegt ist,
 senden die Browser- und die Android-App es (Teams, Kaderlisten, Spielstand,
@@ -190,6 +197,41 @@ Administration lesen; Einträge ohne Spiel sieht nur die Administration. Wird
 ein Spiel auf dem Server gelöscht, werden seine Einträge mitgelöscht. Wie
 lange die Einträge bleiben, steht in Abschnitt 16; auf Anfrage lösche ich sie
 früher (Abschnitt 19).
+
+**Fehlerberichte (seit November 2026).** Tritt ein Fehler auf, sendet die
+App oder Webseite einen Bericht an meinen Server, mit oder ohne Anmeldung:
+die Scorer-App, die Seiten für Schiedsrichter, Bank, Livescore,
+Spielbericht, Kader, Diktat, Manager und TV sowie OpenBeach. Ein Bericht
+enthält die Fehlermeldung und die Stelle im Programm (Dateinamen und
+Zeilennummern), den offenen Bildschirm oder die offene Seite, die letzten
+Schritte vor dem Fehler (geöffnete Bildschirme, welche Schaltflächen
+angetippt wurden (nach ihrem internen Namen, nicht ihrer Beschriftung), die
+aufgerufenen Serveradressen und ihr Ergebnis; nie, was du eingetippt hast,
+und nie den Inhalt eines Eingabefelds), die App (OpenVolley oder OpenBeach),
+das Werkzeug und seine Version, das Betriebssystem und seine Version, den
+Browser oder die Web-Ansicht und ihre Version, wie die App läuft
+(Browser-Tab, installierte Web-App, Desktop- oder Handy-App), das
+Gerätemodell, wo das System es nennt, die Bildschirm- und Fenstergrösse,
+Sprache und Zeitzone, ob das Gerät online war, die zufällige Gerätekennung
+(dieselbe wie im Aktivitätsprotokoll), eine zufällige Kennung des Besuchs,
+die externe Kennung des offenen Spiels und, wenn du angemeldet bist, dein
+Konto. **Nie enthalten** sind PINs, Passwörter, Anmelde-Token, eingetippter
+Text, E-Mail-Adressen, Geburtsdaten, Telefonnummern, Unterschriftsbilder und
+deine IP-Adresse; der Server entfernt solche Werte nochmals, egal was ein
+Gerät sendet. Seine eigenen Fehler hält der Server genauso fest (die Anfrage
+und die Stelle im Programm, ohne Inhalte).
+Nur die Administratorinnen und Administratoren mit vollen Rechten sehen die
+Berichte, im Manager; dort sehen sie bei einem angemeldeten Konto auch Name,
+E-Mail-Adresse, Rollen und Vereine, und das Öffnen der Berichte wird im
+Änderungsprotokoll festgehalten (Abschnitt 14). Über neue Fehler werden sie
+per E-Mail informiert, mit den Rollen und Vereinen der betroffenen Konten,
+aber nie mit Namen oder Adressen, und mit einer Push-Nachricht aufs Handy
+über einen Benachrichtigungsdienst auf meinem eigenen Computer (nur
+Werkzeug, Version, Betriebssystem und Fehlermeldung). Berichte bleiben 90
+Tage (Abschnitt 16). Du kannst sie in den Optionen ausschalten (Support und
+Feedback: «Fehlerberichte automatisch senden»); bereits gesendete Berichte
+bleiben, bis ihre Frist abläuft, oder ich lösche sie auf Anfrage (gib die
+dort angezeigte Gerätekennung an).
 
 **Ereignisgeschichte (OpenVolley ab Version 2.4.0).** Wird ein Punkt oder ein
 anderes Ereignis rückgängig gemacht oder korrigiert, hält die App das alte
@@ -894,6 +936,10 @@ ich frühere Antworten nachschlagen kann; auf Anfrage früher.
   Datenbankabfragen werden ohne ihre Werte protokolliert. Die Protokolle
   werden nach Grösse überschrieben (höchstens 10 Dateien zu 20 MB pro
   Dienst), in der Regel nach Tagen bis wenigen Wochen.
+- **Fehlerberichte:** Die eigenen Fehler des Servers werden als
+  Fehlerberichte gespeichert (Abschnitt 5), ohne Inhalte und ohne
+  IP-Adressen. Die IP-Adresse eines Geräts, das Berichte sendet, wird nur im
+  Arbeitsspeicher verwendet, um ihre Anzahl zu begrenzen.
 - **Cloudflare** verarbeitet bei jeder Anfrage IP-Adresse, Adresse und
   Browser-Kennung und bewahrt sie nach seinen eigenen Regeln auf.
 - **IP-Adressen nur im Arbeitsspeicher:** Zum Schutz vor Missbrauch begrenzt
@@ -991,6 +1037,7 @@ Anfrage erhältst du eine Kopie dieser Garantien.
 | Hochgeladene App-Protokolle | 30 Tage; mit deinem Konto gelöscht |
 | Aktivitätsprotokoll eines Spiels (Server) | 24 Monate, längstens bis das Spiel gelöscht wird; auf Anfrage früher |
 | Aktivitätsprotokoll ohne Spiel (Server) | 90 Tage; die unter deinem Konto aufgezeichneten Einträge werden mit dem Konto gelöscht |
+| Fehlerberichte (Server) | 90 Tage; die mit Anmeldung gesendeten werden mit deinem Konto gelöscht; auf Anfrage früher |
 | Ereignisgeschichte (rückgängig gemachte und korrigierte Ereignisse) | Mit dem Spiel, als Teil des Spielberichts |
 | Aktivitätsprotokoll auf dem Gerät | Übertragene Einträge 180 Tage (höchstens 100 000); noch nicht übertragene bis zur Übertragung (höchstens 200 000); höchstens 30 Tagesdateien und 50 MB |
 | Bedienprotokoll (nur auf dem Gerät) | OpenVolley ab 2.4.0: 30 Tage, höchstens 50 000 Einträge |
@@ -1128,7 +1175,8 @@ Soweit die DSGVO gilt, stütze ich mich auf:
   Aktivitätsprotokoll und Ereignisgeschichte, Bemerkungen), aus den Kadern
   offizieller Spiele ergänzte gespeicherte Teams und Vereinslisten,
   Zustellung des fertigen Spielberichts an Offizielle und Vereine,
-  Livescore für das Publikum, Organisation von Turnieren, Fehlersuche,
+  Livescore für das Publikum, Organisation von Turnieren, Fehlersuche
+  (auch die Fehlerberichte der Apps, die du ausschalten kannst),
   Sicherheit und Missbrauchsschutz, Datensicherungen.
 - **Einwilligung** (Art. 6 Abs. 1 lit. a DSGVO): Update-Prüfung der direkt
   installierten Android-App.
