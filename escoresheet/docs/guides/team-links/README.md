@@ -10,6 +10,9 @@ Two printable guides for clubs that use team links (db/023, `docs/team-managers-
 Standard German with Swiss spelling (ss), "du" as in the app. The screenshots (`img/`) come from a
 local test stack with made-up data (club VBC Musterdorf, schedule, players): a phone at 390 × 844
 for the manager, a tablet at 1280 × 800 for the scorer, German UI. No real club or person is in them.
+`t2-squad.jpg` and `t4-roster.jpg` were taken again on 20.11.2026 (licence numbers, no dates of birth)
+from a local manager build of main whose API calls a Playwright route answered with the same made-up
+club, team, squad and games (no backend involved).
 
 The manager site's menu is a **Mein Verein** tree now: a club manager taps Mein Verein, then
 Anfragen, Mitglieder, Teams, Lizenzen, Einladungscodes or API (on a phone in the row above the

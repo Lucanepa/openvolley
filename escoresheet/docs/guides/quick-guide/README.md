@@ -66,6 +66,12 @@ Take them from an isolated test stack (never production), with made-up accounts 
 
 The 15.11.2026 pictures were taken with Playwright driving the recorder harness of the support videos
 (the app's language switched in place for each picture, so all four languages show the same moment).
+`04-matchinfo` and `05-roster` were taken again on 20.11.2026 (the Licence field instead of the date of
+birth): a local build of main (`CAPACITOR=true`, `VITE_BACKEND_URL` and `VITE_CLOUD_API_URL` at
+`http://127.0.0.1:9`, every other host blocked), "New match" signed out in each language, the Match info
+typed in by hand and the Volley Bergtal roster added row by row; 1280 px wide at scale 2, the viewport
+just tall enough for the officials' Licence fields. Step 4's picture is 76% wide so that page 2 keeps
+room above the footer.
 
 ## New PDFs
 
