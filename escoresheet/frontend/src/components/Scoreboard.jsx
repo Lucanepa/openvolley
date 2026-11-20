@@ -108,10 +108,9 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
-import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, officialsAsRoles, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { setSummaryFit } from './scoreboard/setSummaryFit'
 import { BENCH_FIT_BOX, BENCH_FIT_GRID, watchBenchFit } from './scoreboard/benchFit'
-import { isUprightOnlyDevice } from './referee/refereeLayout'
 import { dragPointer } from './scoreboard/dragPointer'
 import CountdownSeconds from './scoreboard/CountdownSeconds'
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
@@ -1376,13 +1375,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Get the active display mode (either forced or auto-detected)
   const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
-  // Bench officials as role-only boxes (SB_OFFICIAL_CHIP: C, AC1...) on every
-  // phone or tablet, in the app and in a browser alike, and in the Tablet
-  // display mode; only a computer (mouse or touchpad as its main pointer)
-  // keeps the name rows (owner, 20.11.2026: the web app on the tablet still
-  // listed names, its 1280px wide screen being detected "desktop").
-  const touchFirstDevice = useMemo(() => isUprightOnlyDevice(), [])
-  const officialChips = activeDisplayMode === 'tablet' || touchFirstDevice
+  // Bench officials as role-only boxes (SB_OFFICIAL_CHIP: C, AC1...) under a
+  // desktop-sized window and in the Tablet display mode (officialsAsRoles)
+  const officialChips = officialsAsRoles({ displayMode: activeDisplayMode, width: viewportWidth })
   // The phone layout (PhoneScoreboard) replaces the desktop / tablet body.
   // A phone in the automatic mode keeps it when turned sideways (the screen
   // stays mounted, dialogs and countdowns included), under a notice to hold

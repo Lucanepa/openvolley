@@ -76,6 +76,21 @@ export function detectDisplayMode({ width, height, hasTouch = false }) {
   return 'desktop'
 }
 
+/** The narrowest window (CSS px) whose side columns list the bench officials' names. */
+export const OFFICIAL_NAMES_MIN_WIDTH = 1440
+
+/**
+ * True when the side columns show the bench officials as role-only boxes
+ * (C, AC1...) instead of name rows: on any window under
+ * OFFICIAL_NAMES_MIN_WIDTH, a tablet's or a small laptop's, and always in the
+ * Tablet display mode. By the window's size, not the device (owner,
+ * 20.11.2026: the web app on a tablet listed the names, the app did not).
+ * @param {{ displayMode: string, width: number }} s the active display mode and the viewport width
+ */
+export function officialsAsRoles({ displayMode, width }) {
+  return displayMode === 'tablet' || !(width >= OFFICIAL_NAMES_MIN_WIDTH)
+}
+
 /**
  * True when the scoring screen shows the phone layout: the Phone display
  * mode, or the automatic mode on a portrait viewport under PHONE_MAX_WIDTH.
