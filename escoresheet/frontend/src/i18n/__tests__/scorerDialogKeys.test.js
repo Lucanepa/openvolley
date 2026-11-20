@@ -15,7 +15,9 @@ const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k
 const marks = s => (String(s).match(/\{\{\s*[\w.]+\s*\}\}|<\/?[a-z]+\s*\/?>/g) || []).sort()
 
 const REFEREE_KEYS = ['iosFullscreenTip', 'selectSetter', 'noLineup', 'exitAdvanced', 'advanced', 'scorerAttention', 'acknowledge']
-const ACTION_LOG_KEYS = ['excSubstitution', 'excSub', 'delaySanction', 'rally', 'decision', 'pointCancelled', 'lineupChanged', 'liberoExchShort', 'liberoRedesShort', 'disqualifShort']
+// the last action's short types on the scoring screen (the action log they
+// also named is the History now: history.*)
+const ACTION_LOG_KEYS = ['excSubstitution', 'delaySanction']
 
 const required = [
   ...Object.keys(en.scoreboard.dialogs).map(k => `scoreboard.dialogs.${k}`),
