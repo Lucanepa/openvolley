@@ -27,7 +27,7 @@ export default defineConfig({
     // A hook waits on an import or a database clear, not on a timer: past the
     // default 10 s only with the machine loaded (OpenBeach, 2026-10-08)
     hookTimeout: 30000,
-    include: ['src/**/*.test.{js,jsx}', 'scoresheet_pdf/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{js,jsx}', 'scoresheet_pdf/**/*.test.{ts,tsx}', 'scripts/**/*.test.js'],
     coverage: {
       reporter: ['text', 'html'],
       include: ['src/utils/**', 'src/hooks/**']

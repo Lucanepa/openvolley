@@ -42,7 +42,7 @@ Either way `scripts/release-play.sh` signs the `.aab` with whatever
 
 ```bash
 cd escoresheet/frontend
-# bump PATCH first (scripts/bump-version.js), commit, tag android-v<version>
+# set the release version first (node scripts/bump-version.js: calendar YY.M.N), commit, tag android-v<version>
 scripts/release-play.sh      # -> android/app/build/play/OpenVolley-<versionCode>.aab
 ```
 
