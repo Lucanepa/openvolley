@@ -40,7 +40,7 @@ vi.mock('../../lib/apiClient', () => ({
   }
 }))
 
-import LoadOfficialMatchModal, { levelFromSchedule, mapSupabaseToMatchFormat } from '../LoadOfficialMatchModal'
+import LoadOfficialMatchModal, { levelFromSchedule, mapSupabaseToMatchFormat, matchDataFromSchedule } from '../LoadOfficialMatchModal'
 
 // svrz_games.datetime is TEXT like "2026-10-17T11:30:00.000000+00:00"
 const isoInDays = (days) => {
@@ -217,6 +217,16 @@ describe('the level from a schedule row', () => {
     expect(mapSupabaseToMatchFormat({ game_number: 1, match_format: null }).bestOf).toBeNull()
     expect(mapSupabaseToMatchFormat({ game_number: 1 }).bestOf).toBeNull()
     expect(mapSupabaseToMatchFormat({ game_number: 1, match_format: 4 }).bestOf).toBeNull()
+  })
+
+  it('the referees\' licence numbers (db/051) go to the match data; a row without them (an older backend) has none', () => {
+    const row = { game_number: 1, referee_1_first_name: 'Rita', referee_1_last_name: 'Pfeife', referee_1_licence: '512345', referee_2_last_name: 'Linie', referee_2_licence: '623456' }
+    const data = matchDataFromSchedule(mapSupabaseToMatchFormat(row))
+    expect(data).toMatchObject({ referee1First: 'Rita', referee1Last: 'Pfeife', referee1Licence: '512345', referee2Last: 'Linie', referee2Licence: '623456' })
+    expect(data.referee1Dob).toBeUndefined()
+    const old = matchDataFromSchedule(mapSupabaseToMatchFormat({ game_number: 2, referee_1_last_name: 'Pfeife' }))
+    expect(old.referee1Licence).toBeUndefined()
+    expect(old.referee2Licence).toBeUndefined()
   })
 
   it('a row of game 406970 maps to championship, women, senior, regional', () => {

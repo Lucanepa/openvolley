@@ -32,6 +32,8 @@ const here = dirname(fileURLToPath(import.meta.url))
 const SCHEMA_SQL = readFileSync(join(here, 'fixtures', 'svrz_schema.sql'), 'utf8')
 const MIGRATION_SQL = readFileSync(join(here, '..', 'db', '003_svrz_games_local_time.sql'), 'utf8')
 const SYNC_041_SQL = readFileSync(join(here, '..', 'db', '041_schedule_sync.sql'), 'utf8')
+// the referees' licence numbers the sync writes (db/051)
+const LICENCES_051_SQL = readFileSync(join(here, '..', 'db', '051_referee_licences.sql'), 'utf8')
 
 const http = { sleep: async () => {}, backoffMs: 1, timeoutMs: 5000 }
 const creds = { username: FAKE_USER, password: FAKE_PASSWORD }
@@ -82,6 +84,8 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
       // idempotent, and on a restored database it may have run already
       await c.query(SYNC_041_SQL)
       await c.query(SYNC_041_SQL)
+      await c.query(LICENCES_051_SQL)
+      await c.query(LICENCES_051_SQL)
       await admin.query(`CREATE ROLE "${noRlsRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`)
       for (const r of PG_TEST_TEMPLATE ? [noRlsRole] : [appRole, noRlsRole]) {
         await c.query(`GRANT USAGE ON SCHEMA public TO "${r}";
@@ -145,6 +149,16 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     r = await sync(createFakeVolleyManager({ games }))
     assert.deepEqual([r.created, r.updated, r.unchanged], [0, 0, 3])
 
+    // db/051: the referees' licence numbers (person.associationId) come with a change
+    games[0] = makeGame(5001, { startingDateTime: '2026-03-29T18:00:00Z', sv1: 512345, ref2: true, sv2: '623456' })
+    r = await sync(createFakeVolleyManager({ games }))
+    assert.deepEqual([r.created, r.updated, r.unchanged], [0, 1, 2])
+    const { rows: lic } = await q(`SELECT game_number, referee_1_licence, referee_2_licence FROM public.svrz_games ORDER BY game_number`)
+    assert.deepEqual(lic.map((x) => [x.game_number, x.referee_1_licence, x.referee_2_licence]), [['5001', '512345', '623456'], ['5002', null, null], ['5003', null, null]])
+    games[0] = makeGame(5001, { startingDateTime: '2026-03-29T18:00:00Z' })
+    r = await sync(createFakeVolleyManager({ games }))
+    assert.deepEqual([r.created, r.updated, r.unchanged], [0, 1, 2])
+
     // One game moved, one new
     games[2] = makeGame(5003, { startingDateTime: '2026-10-10T17:30:00.000Z' })
     games.push(makeGame(5005))
@@ -154,9 +168,9 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     assert.equal(moved.time, '19:30')
 
     const { rows: log } = await q('SELECT status, games_fetched, games_created, games_updated, games_unchanged, errors, finished_at FROM public.svrz_sync_log ORDER BY id')
-    assert.equal(log.length, 3)
+    assert.equal(log.length, 5)
     assert.ok(log.every((l) => l.status === 'success' && l.finished_at && l.errors === 0))
-    assert.deepEqual([log[2].games_fetched, log[2].games_created, log[2].games_updated, log[2].games_unchanged], [5, 1, 1, 2])
+    assert.deepEqual([log[4].games_fetched, log[4].games_created, log[4].games_updated, log[4].games_unchanged], [5, 1, 1, 2])
   })
 
   it('a game VolleyManager no longer returns leaves the schedule, so no rule finds it, and comes back with VolleyManager', async () => {

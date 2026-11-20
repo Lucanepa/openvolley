@@ -158,8 +158,11 @@ export function mapSupabaseToMatchFormat(row) {
     bestOf: knownMatchFormat(row.match_format),
     referee1First: row.referee_1_first_name,
     referee1Last: row.referee_1_last_name,
+    // db/051: the referees' licence numbers (VolleyManager), for scorers only
+    referee1Licence: row.referee_1_licence,
     referee2First: row.referee_2_first_name,
     referee2Last: row.referee_2_last_name,
+    referee2Licence: row.referee_2_licence,
     hallAddress: row.hall_address,
     hallPostalCode: row.hall_postal_code,
     linesman1: row.linesman_1,
@@ -202,8 +205,10 @@ export function matchDataFromSchedule(match) {
     bestOf: match.bestOf,
     referee1First: match.referee1First,
     referee1Last: match.referee1Last,
+    referee1Licence: match.referee1Licence,
     referee2First: match.referee2First,
     referee2Last: match.referee2Last,
+    referee2Licence: match.referee2Licence,
     linesman1: match.linesman1,
     linesman2: match.linesman2,
     groupDisplay: match.groupDisplay

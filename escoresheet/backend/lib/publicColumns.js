@@ -209,7 +209,8 @@ const REFEREE_DATABASE_COLUMNS = Object.freeze({
 
 // The official-match loader (LoadOfficialMatchModal). No referee_1_dob /
 // referee_2_dob: NULL since db/048, dropped by db/049 (an app that selects
-// them gets null, pgQuery nullColumns).
+// them gets null, pgQuery nullColumns). No referee_1_licence /
+// referee_2_licence (db/051): OFFICIALS_ONLY_COLUMNS.
 const SVRZ_GAMES_COLUMNS = Object.freeze(Object.fromEntries([
   'id', 'game_number', 'datetime', 'date', 'time', 'team_home', 'team_away', 'league', 'gender',
   'hall', 'city', 'hall_address', 'hall_postal_code', 'match_type', 'match_level',
@@ -423,6 +424,41 @@ export const DOB_COLUMNS = Object.freeze({
   referee_database: Object.freeze(['dob']),
   svrz_games: Object.freeze(['referee_1_dob', 'referee_2_dob'])
 })
+
+/**
+ * db/051: the referees' licence numbers of the schedule. /api/db answers them
+ * only to the accounts that fill a sheet's officials in the table's sport
+ * (server.js: admins and indoor scorers); never anonymously (they are not in
+ * ANON_DB_COLUMNS), and any other session gets the rows without them and no
+ * filter or order on them (400 OV_SECRET_FILTER). GET /api/games/today the
+ * same (lib/clubs.js todayGames `licences`).
+ */
+export const OFFICIALS_ONLY_COLUMNS = Object.freeze({
+  svrz_games: Object.freeze(['referee_1_licence', 'referee_2_licence'])
+})
+
+/** `data` (a row, rows or null) without the keys `cols` (a reader who may not see them). */
+export function withoutColumns(data, cols) {
+  if (!cols?.length) return data
+  const one = (row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !cols.some((c) => has(row, c))) return row
+    const out = { ...row }
+    for (const c of cols) delete out[c]
+    return out
+  }
+  return Array.isArray(data) ? data.map(one) : one(data)
+}
+
+/** The first filter or order of `params` on one of `cols`, or null. */
+export function columnFilterOf(params, cols) {
+  if (!cols?.length) return null
+  for (const term of [...asList(params?.filters), ...asList(params?.order)]) {
+    const col = term && typeof term === 'object' && typeof term.column === 'string' ? term.column.trim() : null
+    const base = col ? col.split('->>')[0] : null
+    if (base && cols.includes(base)) return base
+  }
+  return null
+}
 
 /** `data` (a row, rows or null) of `table` with its DOB_COLUMNS null where present. */
 export function withoutDobColumns(table, data) {
