@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   transformGame, prepareRows, isExcludedLeague, resolveWindow, zonedTimeToUtc, zonedYmd,
   parseVmDateTime, formatZurichDateTime, addDaysYmd, isYmd, nextRunAt, buildSearchBody,
-  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf, GAME_COLUMNS
+  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf, GAME_COLUMNS, refereeLicenceOf
 } from '../lib/vmSync.js'
 import { makeGame } from './helpers/fakeVolleyManager.js'
 
@@ -178,6 +178,23 @@ describe('transformGame: other fields', () => {
       const text = JSON.stringify(r)
       assert.ok(!text.includes(dob1) && !text.includes(iso), text)
     }
+  })
+
+  it('the referees\' licence numbers: person.associationId, else externalId, 4 to 7 digits (db/051)', () => {
+    assert.equal(refereeLicenceOf({ associationId: '512345' }), '512345')
+    assert.equal(refereeLicenceOf({ associationId: 512345 }), '512345')
+    assert.equal(refereeLicenceOf({ associationId: ' 51 2345 ' }), '512345')
+    assert.equal(refereeLicenceOf({ associationId: null, externalId: '4321' }), '4321')
+    assert.equal(refereeLicenceOf({ associationId: 'SV-1234', externalId: 1234567 }), '1234567')
+    for (const p of [{ associationId: '123' }, { associationId: '12345678' }, { associationId: 'abc', externalId: 'x1' }, { associationId: {} }, {}, null, 'x']) {
+      assert.equal(refereeLicenceOf(p), null, JSON.stringify(p))
+    }
+    const r = t(makeGame(1, { sv1: 512345, ref2: true, sv2: '623456' }))
+    assert.deepEqual([r.referee_1_licence, r.referee_2_licence, r.referee_2_last_name], ['512345', '623456', 'Beispiel'])
+    // no convocation (a name only) or no number: none
+    const none = t(makeGame(2, { sv1: '12' }))
+    assert.deepEqual([none.referee_1_licence, none.referee_2_licence, none.referee_2], [null, null, 'Beispiel Ben'])
+    assert.ok(GAME_COLUMNS.some(([c]) => c === 'referee_1_licence') && GAME_COLUMNS.some(([c]) => c === 'referee_2_licence'))
   })
 
   it('survives a malformed item', () => {

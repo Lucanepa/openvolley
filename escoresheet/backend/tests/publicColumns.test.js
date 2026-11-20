@@ -9,6 +9,9 @@ import { EventEmitter } from 'node:events'
 import {
   LIVE_COLUMNS,
   ANON_DB_COLUMNS,
+  OFFICIALS_ONLY_COLUMNS,
+  withoutColumns,
+  columnFilterOf,
   ANON_DB_FILTER_COLUMNS,
   projectRow,
   projectRows,
@@ -160,6 +163,33 @@ describe('publicColumns: anonymous /api/db reads', () => {
     }
     assert.deepEqual(anonSelectCheck('match_live_state', { columns: '*' }), { needsMore: true, badFilter: null })
     assert.ok(ANON_DB_FILTER_COLUMNS.matches.every((c) => ANON_DB_COLUMNS.matches[c] === true))
+  })
+})
+
+describe('publicColumns: the referees\' licence numbers (db/051)', () => {
+  it('never public: not in the anonymous projection, no anonymous filter on them', () => {
+    const cols = OFFICIALS_ONLY_COLUMNS.svrz_games
+    assert.deepEqual([...cols], ['referee_1_licence', 'referee_2_licence'])
+    for (const c of cols) {
+      assert.equal(c in ANON_DB_COLUMNS.svrz_games, false, c)
+      assert.equal(ANON_DB_FILTER_COLUMNS.svrz_games.includes(c), false, c)
+    }
+    const game = { id: 1, game_number: '951001', referee_1_last_name: 'Pfeife', referee_1_licence: '512345', referee_2_licence: '623456' }
+    assert.deepEqual(projectRows(ANON_DB_COLUMNS, 'svrz_games', game), { id: 1, game_number: '951001', referee_1_last_name: 'Pfeife' })
+    assert.equal(anonSelectCheck('svrz_games', { columns: 'id', filters: [{ type: 'eq', column: 'referee_1_licence', value: '512345' }] }).badFilter, 'referee_1_licence')
+  })
+
+  it('withoutColumns / columnFilterOf: the rows of a session that may not see them', () => {
+    const cols = OFFICIALS_ONLY_COLUMNS.svrz_games
+    const row = { game_number: '951001', referee_1_licence: '512345', referee_2_licence: null }
+    assert.deepEqual(withoutColumns([row, null], cols), [{ game_number: '951001' }, null])
+    assert.deepEqual(withoutColumns(row, cols), { game_number: '951001' })
+    assert.equal(withoutColumns(row, null), row)
+    assert.equal(withoutColumns(null, cols), null)
+    assert.equal(columnFilterOf({ filters: [{ type: 'eq', column: 'league', value: 'H2' }], order: { column: ' referee_2_licence ' } }, cols), 'referee_2_licence')
+    assert.equal(columnFilterOf({ filters: [{ type: 'eq', column: 'referee_1_licence->>x', value: 1 }] }, cols), 'referee_1_licence')
+    assert.equal(columnFilterOf({ filters: [{ type: 'eq', column: 'league', value: 'H2' }], order: [{ column: 'datetime' }] }, cols), null)
+    assert.equal(columnFilterOf({}, cols), null)
   })
 })
 

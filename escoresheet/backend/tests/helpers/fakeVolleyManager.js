@@ -171,7 +171,12 @@ export function createFakeVolleyManager({
   return { fetch, calls, baseUrl: FAKE_BASE, role: () => role, setRole: (r) => { role = r } }
 }
 
-/** A VM search item with the fields transformGame reads (winSets: league.numberOfWinSets; junior: isJuniorLeagueCategory, left out when undefined). */
+/**
+ * A VM search item with the fields transformGame reads (winSets:
+ * league.numberOfWinSets; junior: isJuniorLeagueCategory, left out when
+ * undefined; sv1 / sv2: the referees' person.associationId, left out when
+ * undefined; ref2: a second referee's convocation instead of the name only).
+ */
 export function makeGame(n, {
   startingDateTime = '2026-10-10T16:00:00.000Z',
   leagueName = '3. Liga',
@@ -183,6 +188,9 @@ export function makeGame(n, {
   dob1 = '1990-02-24',
   winSets = 'three_win_sets',
   junior,
+  sv1,
+  sv2,
+  ref2 = false,
   ...extra
 } = {}) {
   const leagueCategory = { name: leagueName, shortName, ...(junior === undefined ? {} : { isJuniorLeagueCategory: junior }) }
@@ -198,8 +206,9 @@ export function makeGame(n, {
       }
     },
     activeRefereeConvocationFirstHeadReferee: {
-      indoorAssociationReferee: { indoorReferee: { person: { displayName: 'Muster Anna', firstName: 'Anna', lastName: 'Muster', formattedAndTimezoneIndependentBirthday: dob1 } } }
+      indoorAssociationReferee: { indoorReferee: { person: { displayName: 'Muster Anna', firstName: 'Anna', lastName: 'Muster', formattedAndTimezoneIndependentBirthday: dob1, ...(sv1 === undefined ? {} : { associationId: sv1 }) } } }
     },
+    ...(ref2 ? { activeRefereeConvocationSecondHeadReferee: { indoorAssociationReferee: { indoorReferee: { person: { displayName: 'Beispiel Ben', firstName: 'Ben', lastName: 'Beispiel', ...(sv2 === undefined ? {} : { associationId: sv2 }) } } } } } : {}),
     activeSecondHeadRefereeName: 'Beispiel Ben',
     activeFirstLinesmanRefereeName: 'Linie Lea',
     isSupervised: true,

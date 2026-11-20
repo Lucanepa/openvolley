@@ -801,11 +801,28 @@ function deepGet(obj, ...keys) {
   return obj ?? null
 }
 
-// The referee's names only: VolleyManager's birthday of the person
-// (formattedAndTimezoneIndependentBirthday) is never read (db/048, owner
-// 2026-11-19: no dates of birth outside a match's own sheet)
+/**
+ * A referee's licence number (db/051) of VolleyManager's person: its
+ * `associationId`, the Swiss Volley number (SV-Nr.), else `externalId`, which
+ * holds the same number (svrz_rc's games sync reads the same field of the same
+ * search, checked against the SVRZ referee register); 4 to 7 digits, spaces
+ * aside, else null.
+ */
+export function refereeLicenceOf(person) {
+  if (!person || typeof person !== 'object') return null
+  for (const v of [person.associationId, person.externalId]) {
+    if (typeof v !== 'string' && typeof v !== 'number') continue
+    const t = String(v).replace(/\s+/g, '')
+    if (/^[0-9]{4,7}$/.test(t)) return t
+  }
+  return null
+}
+
+// The referee's names and licence number: VolleyManager's birthday of the
+// person (formattedAndTimezoneIndependentBirthday) is never read (db/048,
+// owner 2026-11-19: no dates of birth outside a match's own sheet)
 function extractRefereeInfo(item, convocationKey) {
-  const empty = { name: null, firstName: null, lastName: null }
+  const empty = { name: null, firstName: null, lastName: null, licence: null }
   const conv = item[convocationKey]
   if (!conv || typeof conv !== 'object') return empty
   const person = deepGet(conv, 'indoorAssociationReferee', 'indoorReferee', 'person')
@@ -813,7 +830,8 @@ function extractRefereeInfo(item, convocationKey) {
   return {
     name: person.displayName ?? null,
     firstName: person.firstName ?? null,
-    lastName: person.lastName ?? null
+    lastName: person.lastName ?? null,
+    licence: refereeLicenceOf(person)
   }
 }
 
@@ -906,9 +924,12 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
     referee_1: str(ref1.name ?? item.activeFirstHeadRefereeName),
     referee_1_first_name: str(ref1.firstName),
     referee_1_last_name: str(ref1.lastName),
+    // db/051: null without a convocation (a name alone carries no number)
+    referee_1_licence: ref1.licence,
     referee_2: str(ref2.name ?? item.activeSecondHeadRefereeName),
     referee_2_first_name: str(ref2.firstName),
     referee_2_last_name: str(ref2.lastName),
+    referee_2_licence: ref2.licence,
     hall_address: str(addr.combinedAddress),
     hall_postal_code: str(addr.postalCode),
     group_display: str(groupDisplay),
@@ -955,7 +976,9 @@ export function prepareRows(items, opts = {}) {
 // ---------------------------------------------------------------------------
 
 /**
- * svrz_games columns written by the sync, with their Postgres types. No
+ * svrz_games columns written by the sync, with their Postgres types
+ * (referee_1_licence / referee_2_licence: db/051, so a backend with this list
+ * needs that migration; deploy.sh runs it before the switch). No
  * referee_1_dob / referee_2_dob: NULL since db/048, never written again, and
  * db/049 drops them (the sync never names them, so it runs before and after
  * that migration alike).
@@ -966,8 +989,8 @@ export const GAME_COLUMNS = [
   ['gender', 'text'], ['match_level', 'text'], ['league', 'text'], ['league_category', 'text'], ['junior_category', 'boolean'],
   ['match_format', 'integer'],
   ['team_home', 'text'], ['team_away', 'text'],
-  ['referee_1', 'text'], ['referee_1_first_name', 'text'], ['referee_1_last_name', 'text'],
-  ['referee_2', 'text'], ['referee_2_first_name', 'text'], ['referee_2_last_name', 'text'],
+  ['referee_1', 'text'], ['referee_1_first_name', 'text'], ['referee_1_last_name', 'text'], ['referee_1_licence', 'text'],
+  ['referee_2', 'text'], ['referee_2_first_name', 'text'], ['referee_2_last_name', 'text'], ['referee_2_licence', 'text'],
   ['hall_address', 'text'], ['hall_postal_code', 'text'], ['group_display', 'text'], ['phase_name', 'text'],
   ['linesman_1', 'text'], ['linesman_2', 'text'],
   ['is_supervised', 'boolean'], ['has_supervised_referee', 'boolean'], ['convocations', 'jsonb']

@@ -981,6 +981,15 @@ the backend reads them as NULL whether the table has them or not (`lib/pgQuery.j
 runs**: an older backend's catalog still lists the columns while `deploy.sh` migrates before the
 switch (its `*` selects fail until it reloads, its selects naming a dob column fail for good, its
 schedule sync names referee_1_dob).
+
+**`db/051`: the referees' licence numbers.** The schedule sync (`lib/vmSync.js`) stores the first
+and second referee's licence (VolleyManager `person.associationId`, the SV number; else
+`externalId`; 4 to 7 digits, else NULL) in `svrz_games.referee_1_licence` / `referee_2_licence`.
+They are not public: `/api/db` answers them only to admins and indoor scorers (never anonymously:
+not in `ANON_DB_COLUMNS`; any other session, and one whose roles cannot be read, gets the rows without them and 400 `OV_SECRET_FILTER`
+on a filter or order), `GET /api/games/today` the same; Match Setup's "Load official match" fills
+referee 1 / 2's value with them. The migration runs before the switch (the new sync names the
+columns), and is safe for the old backend.
 Rosters sent ahead with a signature before db/048 lose it once, at their next send (the roster
 hash no longer has the `dob` key). Tests: `tests/migration048.pg.test.js`,
 `tests/scrubSheetBirthdates.pg.test.js`.
