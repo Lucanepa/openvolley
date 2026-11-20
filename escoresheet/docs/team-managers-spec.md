@@ -111,7 +111,18 @@ apps feed it too).
   number nobody holds. A missing licence is filled in; another licence than the saved team's stays
   the saved team's (counted). New people come without captain or libero; **nobody is removed**;
   the captain and libero flags stay; a player set inactive who played is active again. Officials
-  are added or completed, never removed; their role stays the saved team's. A person that would
+  are added or completed, never removed. **Their role follows the latest match** (owner
+  2026-11-20): on the team's latest official match an official of the saved team takes the role the
+  sheet names (Coach, Assistant Coach 1 / 2, Physiotherapist, Medic); an older match changes no
+  role (its new officials come with the match's role). An official of the saved team who is not on
+  that match and held a role it gave to someone else takes the role left over by the moves: the
+  role the one who took theirs had before, when nobody holds it now, else where that one's own
+  role went, and so on (the coach misses a game and the assistant coaches: the two swap; the next
+  match swaps them back). Nothing left over (a new official took the role, or the role left over is
+  held already): they keep their role. The saved team allows a role twice (`validateRoster`); only
+  the match sheet and a game roster name each role once, and nobody gets a role no sheet gave
+  anyone. Audit counts `roles` (set by the match) and `moved` (moved to the role left over). A
+  person that would
   break the saved team's rules is left out, never the whole save: a player of the other gender in
   the club's players list, more than 40 players or 10 officials, twice in the roster, a name too
   long.

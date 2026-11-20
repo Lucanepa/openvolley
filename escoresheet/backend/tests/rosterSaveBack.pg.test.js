@@ -168,6 +168,25 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     assert.deepEqual(numbers(h1), { Muster: 10, Beispiel: null, Ohnelizenz: 3, Datum: 5, Neu: 4 })
   })
 
+  it('the latest match\'s officials take its roles; the earlier match written again changes none back', async () => {
+    // 960002 names the coach Assistant Coach 1 and the medic Coach (the sheet's roles)
+    await raw.query('UPDATE public.matches SET bench_home = $2 WHERE id = $1',
+      [second, JSON.stringify([b('Coach', 'Mia', 'Medic', '5002'), b('Assistant Coach 1', 'Carla', 'Trainer', '5001')])])
+    const before = await squadOf(H1)
+    const r = await saveBack.run(second)
+    const home = r.sides.find((s) => s.side === 'home')
+    assert.deepEqual([home.latest, home.changed, home.counts.roles, home.counts.added], [true, true, 2, 0])
+    const h1 = await squadOf(H1)
+    assert.deepEqual(h1.staff.map((s) => [s.last_name, s.role, s.license_number]), [['Trainer', 'Assistant Coach 1', '5001'], ['Medic', 'Coach', '5002']])
+    assert.deepEqual(h1.staff.map((s) => s.id), before.staff.map((s) => s.id), 'the same people, nobody replaced')
+    const { rows: [a] } = await raw.query("SELECT details FROM public.audit_log WHERE action = 'team.squad.match' AND match_id = $1 ORDER BY at DESC, id DESC LIMIT 1", [second])
+    assert.equal(a.details.roles, 2)
+    // 960001 (earlier: Trainer Coach, Medic Medic) written again: no role changes back
+    const again = await saveBack.run(first)
+    assert.deepEqual(again.sides.map((s) => [s.latest, s.changed]), [[false, false], [false, false]])
+    assert.deepEqual((await squadOf(H1)).staff.map((s) => [s.last_name, s.role]), [['Trainer', 'Assistant Coach 1'], ['Medic', 'Coach']])
+  })
+
   it('a test match and a match without a game number are never touched', async () => {
     const before = JSON.stringify(await squadOf(H1))
     const t = await match(960003, { test: true, home: H1, away: H2, playersHome: [p(99, 'Test', 'Person', '100099')] })
