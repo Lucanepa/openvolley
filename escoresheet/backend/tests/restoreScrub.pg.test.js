@@ -31,6 +31,10 @@ describe('restore.sh --scrub-except', { skip: SKIP_PG }, () => {
     db = await createTestDatabase('scrub')
     sql = new pg.Client({ connectionString: db.url })
     await sql.connect()
+    // a dump from before db/049 still has the date-of-birth columns: the scrub takes them too
+    await sql.query(`ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS dob date;
+      ALTER TABLE public.referee_database ADD COLUMN IF NOT EXISTS dob date;
+      ALTER TABLE public.svrz_games ADD COLUMN IF NOT EXISTS referee_1_dob date`)
     keep = (await sql.query("INSERT INTO auth.users (email) VALUES ('keeper@example.invalid') RETURNING id")).rows[0].id
     other = (await sql.query("INSERT INTO auth.users (email, raw_user_meta_data) VALUES ('player.parent@example.invalid', '{\"first_name\":\"Anna\"}') RETURNING id")).rows[0].id
     await sql.query("INSERT INTO public.profiles (user_id, first_name, last_name, dob) VALUES ($1, 'Kim', 'Keeper', '1990-01-01'), ($2, 'Anna', 'Example', '2011-05-05')", [keep, other])

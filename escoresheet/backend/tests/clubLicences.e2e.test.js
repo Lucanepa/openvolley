@@ -103,7 +103,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.list, 'players')
     assert.equal(r.json.data.count, 4)
-    const { rows } = await sql.query('SELECT sv_number, last_name, first_name, dob::text AS dob, gender, imported_by FROM public.club_licences WHERE club_id = $1 ORDER BY sv_number', [musterdorf.id])
+    const { rows } = await sql.query("SELECT sv_number, last_name, first_name, to_jsonb(l) ->> 'dob' AS dob, gender, imported_by FROM public.club_licences l WHERE club_id = $1 ORDER BY sv_number", [musterdorf.id])
     assert.deepEqual(rows.map((x) => [x.sv_number, x.last_name, x.first_name, x.dob, x.gender]), [
       ['100001', 'Beispiel', 'Anna', null, 'f'],
       ['100002', 'Muster', 'Lea', null, 'f'],

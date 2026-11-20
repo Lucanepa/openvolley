@@ -59,7 +59,7 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
       ('940006', 'VBC Musterdorf H1', 'VBC Fifth H1', '2L Herren', 'm', 'Halle Musterdorf', 'Zürich', 5, '${today}T00:00:01')`)
     // the game page's where and who (owner 2026-11-10): address and referees of one game
     await sql.query(`UPDATE public.svrz_games SET hall_address = 'Sportweg 1', hall_postal_code = '8000',
-      referee_1 = 'Rita Referee', referee_1_dob = '1980-01-02', referee_2 = 'Sam Second' WHERE game_number = '940001'`)
+      referee_1 = 'Rita Referee', referee_2 = 'Sam Second' WHERE game_number = '940001'`)
     // A roster of a game long past: the first write sweeps it (14 days)
     await sql.query(`INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, kickoff)
       VALUES ('939999', $1, 'home', 'VBC Musterdorf H1', '[]', '[]', $2)`, [season, `${dayPlus(today, -30)}T18:00:00`])

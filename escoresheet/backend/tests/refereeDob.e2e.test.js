@@ -1,11 +1,11 @@
 /**
- * No referee's date of birth since db/048 (owner 2026-11-19): the columns
- * referee_database.dob and svrz_games.referee_1_dob / referee_2_dob stay
- * until db/049 (installed apps still select them), but /api/db answers them
- * as null for every caller, takes no filter or order on them (400
- * OV_DOB_FILTER) and stores none (WRITE_DENYLIST); GET /api/games/today has
- * none. The rows below are seeded WITH dates of birth: what an older backend
- * may have stored between db/048 and the switch must not come out either.
+ * No referee's date of birth since db/048 (owner 2026-11-19): db/049 dropped
+ * referee_database.dob and svrz_games.referee_1_dob / referee_2_dob, but
+ * installed apps still select them, so /api/db answers them as null for every
+ * caller (pgQuery nullColumns), takes no filter or order on them (400
+ * OV_DOB_FILTER) and stores none (WRITE_DENYLIST, nullColumns); GET
+ * /api/games/today has none. An older app's dates of birth (a referee it
+ * adds) never come out either.
  * The directory itself stays for the accounts that fill a scoresheet's
  * officials (admins, indoor and beach scorers): 401 without a session, 403
  * otherwise. Covers the app screens' own queries, the rows a directory write
@@ -75,14 +75,14 @@ describe('the referee directory and the schedule: no dates of birth (db/048)', {
     sql = new pg.Client({ connectionString: db.url })
     await sql.connect()
     srv = await bootServer({ DATABASE_URL: db.url, TRUST_PROXY: 'cloudflare', TRUST_PROXY_FROM: '127.0.0.1/32,::1/128' })
-    await sql.query(`INSERT INTO public.referee_database (first_name, last_name, country, dob, sport_type) VALUES
-      ('Mia', 'Zzminor', 'CHE', $1, '["indoor"]'::json),
-      ('Rolf', 'Zzadult', 'CHE', $2, '["indoor"]'::json),
-      ('Sina', 'Zzbeach', 'CHE', $3, '["beach"]'::json)`, [MINOR_DOB, ADULT_DOB, BEACH_DOB])
+    await sql.query(`INSERT INTO public.referee_database (first_name, last_name, country, sport_type) VALUES
+      ('Mia', 'Zzminor', 'CHE', '["indoor"]'::json),
+      ('Rolf', 'Zzadult', 'CHE', '["indoor"]'::json),
+      ('Sina', 'Zzbeach', 'CHE', '["beach"]'::json)`)
     await sql.query(`INSERT INTO public.svrz_games (game_number, datetime, league, gender, team_home, team_away,
-      referee_1_first_name, referee_1_last_name, referee_1_dob, referee_2_first_name, referee_2_last_name, referee_2_dob) VALUES
-      ('940001', '2099-01-01T18:00:00', 'H9', 'men', 'VBC Testdorf H1', 'VBC Other H1', 'Mia', 'Zzminor', $1, 'Rolf', 'Zzadult', $2),
-      ('940002', '${today}T18:00:00', 'H9', 'men', 'VBC Testdorf H1', 'VBC Third H1', 'Mia', 'Zzminor', $1, 'Rolf', 'Zzadult', $2)`, [MINOR_DOB, ADULT_DOB])
+      referee_1_first_name, referee_1_last_name, referee_2_first_name, referee_2_last_name) VALUES
+      ('940001', '2099-01-01T18:00:00', 'H9', 'men', 'VBC Testdorf H1', 'VBC Other H1', 'Mia', 'Zzminor', 'Rolf', 'Zzadult'),
+      ('940002', '${today}T18:00:00', 'H9', 'men', 'VBC Testdorf H1', 'VBC Third H1', 'Mia', 'Zzminor', 'Rolf', 'Zzadult')`)
     await account('pending') // sign-up: no role
     await account('manager', ['competition_manager'])
     await account('referee', ['referee'])
@@ -229,7 +229,7 @@ describe('the referee directory and the schedule: no dates of birth (db/048)', {
       const mine = await add(users.scorer, { first_name: 'Nora', last_name: 'Zzscorer', dob: '1992-06-07' }, { returning: '*' })
       assert.equal(mine.status, 200, mine.text)
       assert.equal(mine.json.data[0].dob, null)
-      const kept = (await sql.query("SELECT dob FROM public.referee_database WHERE last_name = 'Zzscorer'")).rows
+      const kept = (await sql.query("SELECT to_jsonb(r) ->> 'dob' AS dob FROM public.referee_database r WHERE last_name = 'Zzscorer'")).rows
       assert.deepEqual(kept.map((row) => row.dob), [null])
     } finally {
       await sql.query("DELETE FROM public.referee_database WHERE last_name = 'Zzscorer'")

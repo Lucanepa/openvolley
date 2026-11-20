@@ -108,12 +108,15 @@ describe('TodayGamesModal', () => {
   // gap-fe-unread-dialogs-3: the copy on the device keeps what the list and a
   // pick need, never the referees' dates of birth (minors among them)
   it('the day\'s copy keeps no referee dates of birth; a pick from it still names the referees', async () => {
+    // (an older backend's answer with dates of birth: db/048 cleared them, db/049 dropped the columns)
     api.fetchTodayGames.mockResolvedValue(answer({ day: TODAY, clubs: ['VBC Musterdorf'], games: [{ ...GAME, referee_1_dob: '2009-04-05', referee_2_first_name: 'Rolf', referee_2_last_name: 'Zweit', referee_2_dob: '1980-01-02' }] }))
     const onPick = vi.fn()
     const first = render(<TodayGamesModal open userId="u1" onPick={onPick} onManual={noop} onClose={noop} />)
     fireEvent.click((await screen.findAllByTestId('today-game'))[0])
-    // online: the fresh answer, dates included (the scorer fills the sheet's officials)
-    expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ referee1Dob: '2009-04-05', referee2Dob: '1980-01-02' }))
+    // online: the fresh answer, never a date of birth (the scorer's value beside a referee is the licence)
+    expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ referee1First: 'Rita', referee2Last: 'Zweit' }))
+    expect(onPick.mock.lastCall[0].referee1Dob).toBeUndefined()
+    expect(onPick.mock.lastCall[0].referee2Dob).toBeUndefined()
     const stored = localStorage.getItem('ov:todayGames')
     expect(stored).not.toContain('2009-04-05')
     expect(stored).not.toContain('1980-01-02')

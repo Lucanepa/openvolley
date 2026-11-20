@@ -915,8 +915,8 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       assert.deepEqual(dbUser.raw_app_meta_data, { provider: 'email', providers: ['email'] })
 
       const { rows: [p] } = await pool.query(
-        `SELECT first_name, last_name, country, dob, license_number, roles, sport_type::text AS sport_type
-           FROM public.profiles WHERE user_id = $1`, [user.id])
+        `SELECT first_name, last_name, country, to_jsonb(p) ->> 'dob' AS dob, license_number, roles, sport_type::text AS sport_type
+           FROM public.profiles p WHERE user_id = $1`, [user.id])
       assert.deepEqual({ ...p }, {
         first_name: 'Ada', last_name: 'Lovelace', country: 'CHE', dob: null, license_number: '123456',
         roles: [], sport_type: 'indoor' // new accounts are pending (db/007)
@@ -965,7 +965,7 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       }, { ip })
       assert.equal(none.status, 200, 'an empty licence number and an older app\'s date of birth in any form are fine: dropped')
       const { rows: [np] } = await pool.query(
-        "SELECT p.license_number, p.dob, u.raw_user_meta_data FROM public.profiles p JOIN auth.users u ON u.id = p.user_id WHERE u.email = 'nolicence@example.ch'")
+        "SELECT p.license_number, to_jsonb(p) ->> 'dob' AS dob, u.raw_user_meta_data FROM public.profiles p JOIN auth.users u ON u.id = p.user_id WHERE u.email = 'nolicence@example.ch'")
       assert.deepEqual([np.license_number, np.dob, np.raw_user_meta_data.dob, np.raw_user_meta_data.license_number], [null, null, undefined, undefined])
     })
 

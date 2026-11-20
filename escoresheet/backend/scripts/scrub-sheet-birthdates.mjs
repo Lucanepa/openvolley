@@ -6,9 +6,9 @@
  *
  *   1. leftovers: a date of birth the OLD backend stored between db/048 and
  *      the switch to the new image (profiles, referee_database, svrz_games,
- *      competition_players / _staff, club_licences: NULL; game_rosters: the
- *      key dob goes). auth.users is the owner role's only: its count is
- *      printed with what to run (normally 0).
+ *      competition_players / _staff, club_licences: NULL; a column db/049
+ *      dropped is skipped; game_rosters: the key dob goes). auth.users is the
+ *      owner role's only: its count is printed with what to run (normally 0).
  *   2. the recorded PDFs (public.match_scoresheets) of every match recorded
  *      before db/048 ran: each match's PDFs replaced in place by one vector
  *      PDF of its scrubbed record, "Birthdates removed" printed on it as a
@@ -53,7 +53,7 @@ export const REASON = 'Birthdates removed'
 const USAGE = 'Usage: node scripts/scrub-sheet-birthdates.mjs [--apply] [--limit N]\n' +
   'Needs DATABASE_URL, the storage root (STORAGE_ROOT / STORAGE_DIR, default /data/storage), OV_RENDER_URL and OV_RENDER_TOKEN, the backend\'s.'
 
-// db/048's step 1, for the rows the old backend may have written since
+// db/048's step 1, for the rows the old backend may have written since (a column db/049 dropped is skipped)
 const LEFTOVER_COLUMNS = [
   ['public.profiles', 'dob'],
   ['public.referee_database', 'dob'],

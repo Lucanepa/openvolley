@@ -30,7 +30,7 @@
  *
  * No date of birth (db/048, owner 2026-11-19: "ONLY licence number"): a dob
  * sent by an older manager or scorer app is dropped, none is written or
- * answered (the columns stay NULL until db/049 drops them).
+ * answered (db/049 dropped the columns).
  */
 
 import { randomUUID } from 'node:crypto'

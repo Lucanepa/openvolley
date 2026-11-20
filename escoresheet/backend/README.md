@@ -971,7 +971,15 @@ docker compose exec ov-backend node scripts/scrub-sheet-birthdates.mjs --apply  
 A count under `auth_users` in its first line (an account signed up through the old backend in the
 deploy window) is cleared by the owner role:
 `UPDATE auth.users SET raw_user_meta_data = raw_user_meta_data - 'dob' WHERE raw_user_meta_data ? 'dob';`.
-The dob columns stay NULL until a later `db/049` drops them (installed apps still select them).
+**`db/049` drops the dob columns** (`049_drop_birthdate_columns.sql`: profiles, referee_database,
+svrz_games referee_1/2, competition_players, competition_staff, club_licences; their indexes go with
+them, the directory's unique (first_name, last_name, dob) index is not replaced; the ov_read views of
+those tables are dropped for `apply-roles.sh` to rebuild). Installed apps still select some of them:
+the backend reads them as NULL whether the table has them or not (`lib/pgQuery.js` `nullColumns` =
+`publicColumns.js` `DOB_COLUMNS`), so **deploy a backend with `nullColumns` before the migration
+runs**: an older backend's catalog still lists the columns while `deploy.sh` migrates before the
+switch (its `*` selects fail until it reloads, its selects naming a dob column fail for good, its
+schedule sync names referee_1_dob).
 Rosters sent ahead with a signature before db/048 lose it once, at their next send (the roster
 hash no longer has the `dob` key). Tests: `tests/migration048.pg.test.js`,
 `tests/scrubSheetBirthdates.pg.test.js`.

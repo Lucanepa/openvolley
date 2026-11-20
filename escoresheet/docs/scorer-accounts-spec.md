@@ -377,7 +377,7 @@ CREATE TABLE IF NOT EXISTS public.competition_players (
   number          integer     CHECK (number IS NULL OR number BETWEEN 0 AND 99),
   first_name      text        NOT NULL DEFAULT '' CHECK (length(first_name) <= 80),
   last_name       text        NOT NULL CHECK (length(last_name) BETWEEN 1 AND 80),
-  dob             date,       -- NULL since db/048 (no dates of birth), dropped by db/049
+  dob             date,       -- NULL since db/048 (no dates of birth); db/049 dropped it
   license_number  text        CHECK (license_number IS NULL OR length(license_number) <= 40),
   is_libero       boolean     NOT NULL DEFAULT false,
   is_captain      boolean     NOT NULL DEFAULT false,
@@ -392,7 +392,7 @@ CREATE TABLE IF NOT EXISTS public.competition_staff (
   role            text        NOT NULL CHECK (role IN ('Coach', 'Assistant Coach 1', 'Assistant Coach 2', 'Physiotherapist', 'Medic')),
   first_name      text        NOT NULL DEFAULT '' CHECK (length(first_name) <= 80),
   last_name       text        NOT NULL CHECK (length(last_name) BETWEEN 1 AND 80),
-  dob             date,       -- NULL since db/048, dropped by db/049
+  dob             date,       -- NULL since db/048; db/049 dropped it
   license_number  text        CHECK (license_number IS NULL OR length(license_number) <= 40),
   sort_order      integer     NOT NULL DEFAULT 0
 );
