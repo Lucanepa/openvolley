@@ -2266,7 +2266,7 @@
   "auth": {
     "deleteAccountWhatStays": "Die Spiele, die du geschrieben hast, und ihre Matchblätter: Sie sind die offiziellen Spielberichte der Vereine, und dein Name bleibt darauf als Schreiber. Auf diesem Gerät gespeicherte Spiele bleiben darauf.",
     "deleteAccountWhatStaysTitle": "Bleibt erhalten, ohne dein Konto",
-    "deleteAccountWhatGoes": "Dein Konto und Profil, deine Anmeldungen, deine Liste «Meine Spiele», deine Bearbeitungsrechte an Spielen, deine Cloud-Backups und Protokolle sowie dein Zugriff auf die Matchblätter, die du hochgeladen hast. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 7 Monaten.",
+    "deleteAccountWhatGoes": "Dein Konto und Profil, deine Anmeldungen, deine Liste «Meine Spiele», deine Bearbeitungsrechte an Spielen, deine Cloud-Backups und Protokolle sowie dein Zugriff auf die Matchblätter, die du hochgeladen hast. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 6 Monaten.",
     "deleteAccountWhatGoesTitle": "Vom Server gelöscht",
     "signIn": "Anmelden",
     "signUp": "Registrieren",
@@ -3868,7 +3868,7 @@
       "deleteTitle": "Konto von {{name}} löschen?",
       "deleteBody": "Das ist endgültig und lässt sich nicht rückgängig machen. Die Person wird auf allen Geräten abgemeldet.",
       "deleteWhatGoesTitle": "Vom Server gelöscht",
-      "deleteWhatGoes": "Das Konto und Profil (E-Mail-Adresse, Passwort, Name, Lizenznummer), seine Anmeldungen, Rollen, Vereine und Rechte als Vereinsverantwortliche/r, die Liste «Meine Spiele», Bearbeitungsrechte an Spielen, die Genehmigungs-PIN, die Cloud-Backups und Protokolle sowie der Zugriff auf die hochgeladenen Matchblätter. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 7 Monaten.",
+      "deleteWhatGoes": "Das Konto und Profil (E-Mail-Adresse, Passwort, Name, Lizenznummer), seine Anmeldungen, Rollen, Vereine und Rechte als Vereinsverantwortliche/r, die Liste «Meine Spiele», Bearbeitungsrechte an Spielen, die Genehmigungs-PIN, die Cloud-Backups und Protokolle sowie der Zugriff auf die hochgeladenen Matchblätter. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 6 Monaten.",
       "deleteWhatStaysTitle": "Bleibt erhalten, ohne das Konto",
       "deleteWhatStays": "Die offiziellen Spiele, die es geschrieben hat, und ihre Matchblätter, mit dem Namen des Schreibers, wie er darauf steht; seine Genehmigungen; die gespeicherten Teams, Turniere, Vereine und Einladungscodes, die es erstellt hat; und das Protokoll, das diese Löschung ohne die E-Mail-Adresse festhält.",
       "deleteTypeEmail": "Zur Bestätigung {{email}} eingeben",

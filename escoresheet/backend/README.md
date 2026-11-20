@@ -743,9 +743,10 @@ snapshots (`deploy/backup-openvolley.sh`). Retention:
 | NAS pull (`deploy/nas-pull.sh`): dumps / file archives | 30 days (`NP_KEEP_DB_DAYS`) / 90 days (`NP_KEEP_FILES_DAYS`) |
 | NAS btrfs snapshots of that folder (Synology Snapshot Replication) | 7 daily, 4 weekly, 6 monthly |
 
-So the last copy is gone about 7 months after the deletion (a monthly NAS
-snapshot taken up to a month later, still holding a dump from before it, is
-kept 6 months). A restore from one of these backups brings the account back:
+So the last copy is gone about 6 months after the deletion (owner decision
+2026-11-20, as the privacy policy says, section 18: the monthly NAS snapshots
+are kept 6 months; one taken shortly after the deletion can still hold a dump
+from before it). A restore from one of these backups brings the account back:
 after restoring, delete it again (or re-run the deletion for every account
 deleted since the dump was taken). The delete dialog says this in one line
 (`auth.deleteAccountWhatGoes`).
