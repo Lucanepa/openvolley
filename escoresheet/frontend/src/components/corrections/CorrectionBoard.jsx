@@ -14,7 +14,7 @@
 // The list of cards (CorrectionsPanel) stays one tap away ("List"): phones
 // get it by default, and it holds what the board leaves out (Reopen set, the
 // event log, the correction log).
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Plus, Minus, X, Undo2, RotateCw, RotateCcw, ArrowLeftRight, Repeat, ListChecks, LayoutList,
@@ -152,6 +152,64 @@ function CourtTile({ pos, number, libero, captain, serving, changed, disabled, o
   )
 }
 
+// The paper sheet's set box, drawn from the draft (loaded when first shown;
+// the chunk is precached like every other script)
+const SetPreview = lazy(() => import('../../../scoresheet_pdf/SetPreview'))
+
+/**
+ * Save's review: the changes as sentences, their notes and "Check these
+ * entries", and the set box as the scoresheet will print it after them (the
+ * sets the changes touch; the board's set when none names one).
+ */
+function SaveReview({ t, lines, steps, issues, draft, homeTeam, awayTeam, currentSet, busy, onBack, onSave }) {
+  const notes = steps.flatMap(s => s.plan.notes || [])
+  const played = new Set((draft.events || []).map(e => e?.setIndex ?? 1))
+  const touched = [...new Set(steps.flatMap(s => [s.plan.log?.setIndex, ...(s.plan.affectedSets || [])]).filter(n => Number.isInteger(n) && played.has(n)))].sort((a, b) => a - b)
+  const sets = touched.length ? touched : (played.has(currentSet) ? [currentSet] : [])
+  const [shown, setShown] = useState(() => (sets.includes(currentSet) ? currentSet : sets[0] ?? null))
+  const matchData = useMemo(() => ({
+    match: draft.match, homeTeam, awayTeam, homePlayers: draft.players.home, awayPlayers: draft.players.away, sets: draft.sets, events: draft.events
+  }), [draft, homeTeam, awayTeam])
+  return (
+    <SheetCard t={t} onClose={onBack}
+      title={tr(t, 'correctionBoard.saveTitle', 'Save {{count}} changes?', { count: lines.length })}
+      footer={(
+        <>
+          <Button variant="secondary" size="lg" onClick={onBack} disabled={busy}>{tr(t, 'correctionBoard.backToBoard', 'Back to the board')}</Button>
+          <Button variant="positive" size="lg" loading={busy} onClick={onSave} data-testid="board-save-confirm">{tr(t, 'correctionBoard.save', 'Save')}</Button>
+        </>
+      )}>
+      <div className="space-y-3 text-sm" data-testid="board-save-review">
+        <ol className="list-decimal space-y-1 pl-5 text-stone-800">{lines.map(l => <li key={l.index}>{l.text}</li>)}</ol>
+        {notes.map((n, i) => <p key={`n${i}`} className="text-amber-800">{tr(t, n.key, n.text, n.params)}</p>)}
+        {issues.length > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
+            <p className="font-medium text-amber-900">{tr(t, 'corrections.section.issues', 'Check these entries')}</p>
+            <ul className="mt-1 list-disc pl-5 text-amber-900">{issues.slice(0, 6).map(i => <li key={i.sig}>{issueText(i, t)}</li>)}</ul>
+          </div>
+        )}
+        {shown != null && (
+          <section className="space-y-2" data-testid="board-save-preview">
+            <div className="flex flex-wrap items-center gap-3">
+              <h3 className="text-sm font-semibold text-stone-900">{tr(t, 'correctionBoard.previewTitle', 'On the scoresheet after your changes')}</h3>
+              {sets.length > 1 && (
+                <SegmentedControl ariaLabel={tr(t, 'corrections.setFilter', 'Show set')} value={String(shown)} onChange={(v) => setShown(Number(v))}
+                  options={sets.map(n => ({ value: String(n), label: tr(t, 'corrections.term.set', 'Set {{n}}', { n: displaySetNumber(n, draft.match) }) }))} />
+              )}
+            </div>
+            <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-50 p-2">
+              <Suspense fallback={<p className="p-4 text-sm text-stone-500">{tr(t, 'correctionBoard.previewLoading', 'Drawing the set…')}</p>}>
+                <SetPreview matchData={matchData} setIndex={shown} />
+              </Suspense>
+            </div>
+          </section>
+        )}
+        <p className="text-xs text-stone-500">{tr(t, 'correctionBoard.saveHint', 'Each change is listed in the correction log for the referee.')}</p>
+      </div>
+    </SheetCard>
+  )
+}
+
 export default function CorrectionBoard({
   mode = 'live',
   matchId,
@@ -181,6 +239,7 @@ export default function CorrectionBoard({
   const [form, setForm] = useState(null) // { kind, preset?, editEvent?, ... }
   const [sheet, setSheet] = useState(null) // { kind: 'player'|'timeout'|'list', ... }
   const [busy, setBusy] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
   // the board's own Save changes the match too: not "changed under the board" while it writes
   const stale = base.fp !== fingerprint && !busy
 
@@ -307,29 +366,15 @@ export default function CorrectionBoard({
     console.error('[correction board] write failed', err)
     toast.error(tr(t, 'corrections.saveError', 'The correction could not be saved: {{message}}', { message: err?.message || '' }))
   })
-  const save = async () => {
+  // Save opens the review: the changes in words and the set as it will print
+  // (scoresheet_pdf/SetPreview, drawn from the draft), then one write
+  const save = () => {
+    if (!steps.length || !editable) return
+    setReviewing(true)
+  }
+  const commit = async () => {
     if (!steps.length || !editable) return
     const combined = combinedPlan(base.draft, steps)
-    const notes = steps.flatMap(s => s.plan.notes || [])
-    const ok = await confirmDialog({
-      title: tr(t, 'correctionBoard.saveTitle', 'Save {{count}} changes?', { count: lines.length }),
-      message: (
-        <div className="space-y-2 text-sm">
-          <ol className="list-decimal space-y-1 pl-5 text-stone-800">{lines.map(l => <li key={l.index}>{l.text}</li>)}</ol>
-          {notes.map((n, i) => <p key={`n${i}`} className="text-amber-800">{tr(t, n.key, n.text, n.params)}</p>)}
-          {issues.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
-              <p className="font-medium text-amber-900">{tr(t, 'corrections.section.issues', 'Check these entries')}</p>
-              <ul className="mt-1 list-disc pl-5 text-amber-900">{issues.slice(0, 6).map(i => <li key={i.sig}>{issueText(i, t)}</li>)}</ul>
-            </div>
-          )}
-          <p className="text-xs text-stone-500">{tr(t, 'correctionBoard.saveHint', 'Each change is listed in the correction log for the referee.')}</p>
-        </div>
-      ),
-      confirmLabel: tr(t, 'correctionBoard.save', 'Save'),
-      cancelLabel: tr(t, 'correctionBoard.backToBoard', 'Back to the board')
-    })
-    if (!ok) return
     await runConfirm(async () => {
       if (mode === 'review' && planChangesSheet(combined) && signedAfterMatch(await db.matches.get(matchId))) {
         const clear = await confirmDialog({
@@ -346,6 +391,7 @@ export default function CorrectionBoard({
         const res = await applyCorrectionPlan(combined, { matchId, db, mode, hooks })
         await hooks.afterApply?.(res, combined)
         toast.success(lines.length === 1 ? lines[0].text : tr(t, 'correctionBoard.saved', '{{count}} changes saved', { count: lines.length }))
+        setReviewing(false)
         onClose?.({ saved: true })
       } finally {
         setBusy(false)
@@ -767,6 +813,12 @@ export default function CorrectionBoard({
         </div>
       </div>
 
+      {reviewing && (
+        <BoardDialog onClose={() => { if (!busy) setReviewing(false) }} width={1080} label={tr(t, 'correctionBoard.saveTitle', 'Save {{count}} changes?', { count: lines.length })}>
+          <SaveReview t={t} lines={lines} steps={steps} issues={issues} draft={draft} homeTeam={homeTeam} awayTeam={awayTeam}
+            currentSet={setIndex} busy={busy} onBack={() => setReviewing(false)} onSave={commit} />
+        </BoardDialog>
+      )}
       {sheetView}
       {formView && <BoardDialog onClose={() => setForm(null)} label={form?.kind}>{formView}</BoardDialog>}
     </div>

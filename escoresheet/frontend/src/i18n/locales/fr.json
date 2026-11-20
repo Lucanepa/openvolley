@@ -6364,7 +6364,9 @@
     "stale": "Le match a changé pendant que le tableau était ouvert. Recommence à partir du match tel qu’il est maintenant.",
     "startAgain": "Recommencer",
     "rallyInPlay": "Un échange est en cours : enregistre d’abord son point, puis corrige.",
-    "penaltyPointRefused": "La sanction donne un point que le tableau ne peut pas ajouter ({{why}}). Enregistre plutôt la sanction sur le tableau de marque."
+    "penaltyPointRefused": "La sanction donne un point que le tableau ne peut pas ajouter ({{why}}). Enregistre plutôt la sanction sur le tableau de marque.",
+    "previewTitle": "Sur la feuille de match après tes modifications",
+    "previewLoading": "Dessin du set…"
   },
   "picker": {
     "calendar": "Calendrier",

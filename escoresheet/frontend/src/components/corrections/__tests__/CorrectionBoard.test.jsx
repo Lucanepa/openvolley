@@ -72,6 +72,13 @@ describe('CorrectionBoard', () => {
     expect(applied.plans).toHaveLength(0) // nothing written yet
 
     fireEvent.click(screen.getByTestId('board-save'))
+    // the review: the changes in words and the set box as it will print, from the draft
+    const review = await screen.findByTestId('board-save-review')
+    expect(within(review).getAllByRole('listitem')).toHaveLength(2)
+    const box = await within(review).findByTestId('set-preview-row', {}, { timeout: 10000 })
+    expect(box.getAttribute('data-set-index')).toBe('2')
+    expect(applied.plans).toHaveLength(0)
+    fireEvent.click(screen.getByTestId('board-save-confirm'))
     await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
     const plan = applied.plans[0]
     expect(plan.logs).toHaveLength(2)
@@ -81,6 +88,17 @@ describe('CorrectionBoard', () => {
     expect(leftIsHome ? sc.homePoints : sc.awayPoints).toBe(left0 + 1)
     expect(leftIsHome ? sc.awayPoints : sc.homePoints).toBe(right0 - 1)
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledWith({ saved: true }))
+  })
+
+  it('Back to the board from the review keeps the changes, nothing written', async () => {
+    setup()
+    const left0 = scoreOf('left')
+    fireEvent.click(screen.getByTestId('board-plus-left'))
+    fireEvent.click(screen.getByTestId('board-save'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to the board' }))
+    expect(screen.queryByTestId('board-save-review')).toBeNull()
+    expect(scoreOf('left')).toBe(left0 + 1)
+    expect(applied.plans).toHaveLength(0)
   })
 
   it('a time-out is added from its slot and removed from it', async () => {
@@ -158,6 +176,7 @@ describe('CorrectionBoard', () => {
     expect(Number(screen.getByTestId(`board-score-${awaySide}`).textContent)).toBe(19)
     saveCorrectionView('board')
     fireEvent.click(screen.getByTestId('board-save'))
+    fireEvent.click(await screen.findByTestId('board-save-confirm'))
     await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
     expect(applied.plans[0].logs[0].text).toMatch(/entered after the match/)
     // the live default view is not changed from the match end
