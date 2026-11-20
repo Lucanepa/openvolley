@@ -410,11 +410,13 @@ export function anonSelectCheck(table, params) {
 }
 
 /**
- * db/048: the date-of-birth columns that stay until db/049 drops them
- * (installed apps still select them). /api/db never answers them with a value
- * (withoutDobColumns) and takes no filter or order on them
- * (dobColumnFilter), for any caller: they are NULL since db/048, and a value
- * an older backend stored meanwhile is neither handed out nor probed.
+ * db/048: the date-of-birth columns that /api/db still knows although nothing
+ * keeps one (installed apps still select them). pgQuery reads them as NULL,
+ * named or with '*', and never writes them (server.js passes this as its
+ * nullColumns), whether the table still has them or not: db/049 can drop
+ * them while those apps are in use. /api/db takes no filter or order on them
+ * (dobColumnFilter: 400 OV_DOB_FILTER, pgQuery refuses it too), for any
+ * caller; withoutDobColumns nulls them in an answer all the same.
  */
 export const DOB_COLUMNS = Object.freeze({
   profiles: Object.freeze(['dob']),

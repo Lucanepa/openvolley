@@ -40,6 +40,12 @@
  *   back as 409 OV_MATCH_CLOSED / OV_GAME_TAKEN (cfg.errorMap).
  * - `internal: true` (trusted server code only) skips redaction, the secret
  *   bans and the protocol gate.
+ * - cfg.nullColumns (server.js: the dates of birth, db/048 / db/049): columns
+ *   that read as NULL (named or with '*') and are never written, filtered,
+ *   ordered on or used as an upsert target, whether the table still has them
+ *   or not. The real column is never read, so dropping it (db/049) changes
+ *   nothing for a caller, also while this process's catalog still lists it;
+ *   the installed apps that still select them keep working.
  *
  * Usage (server.js loads this lazily, only when DATABASE_URL is set):
  *   const { createPgQuery } = await import('./lib/pgQuery.js')
@@ -66,6 +72,9 @@ export const DEFAULT_CONFIG = Object.freeze({
     events: ['game_pin'],
     match_live_state: ['game_pin', 'connection_pins']
   },
+  // Read as NULL, never written, filtered, ordered on or used as conflict
+  // target, whether the table has them or not (internal callers too).
+  nullColumns: {},
   // `update` of these columns merges a JSON object into the stored object.
   // Server copy of JSONB_COLUMNS (frontend/src/db/matchRepository.js:24).
   mergeJsonColumns: {
@@ -315,6 +324,17 @@ export function createPgQuery (options = {}) {
   }
   const NO_SECRETS = new Set()
   const secretsFor = (table, internal) => (internal ? NO_SECRETS : (secretSets.get(table) || NO_SECRETS))
+  const nullSets = new Map()
+  for (const [table, cols] of Object.entries(cfg.nullColumns || {})) {
+    const set = new Set()
+    for (const c of cols) {
+      if (!IDENT_RE.test(c)) throw new Error(`pgQuery: invalid column name in nullColumns.${table}: ${c}`)
+      set.add(c)
+    }
+    nullSets.set(table, set)
+  }
+  const NO_NULLS = new Set()
+  const nullsFor = (table) => nullSets.get(table) || NO_NULLS
 
   // ------------------------------------------------------------------ catalog
   let catalog = null
@@ -506,6 +526,7 @@ export function createPgQuery (options = {}) {
     if (mentionsSecret(raw, secrets)) fail('OV_SECRET_FILTER', 'secret column')
     const ref = parseColumnRef(raw)
     if (!ref) fail('OV_INVALID_FILTER', `unsupported column reference "${safeText(raw)}"`)
+    if (nullsFor(t.name).has(ref.column)) fail('OV_DOB_FILTER', `"${ref.column}" reads as NULL: no filter or order on it`)
     const col = requireColumn(t, ref.column)
     if (!ref.jsonKey) return { col, sql: `t.${quoteIdent(col.name)}`, isText: false }
     if (!col.isJson) fail('OV_INVALID_FILTER', `"${col.name}" is not a JSON column`)
@@ -606,19 +627,30 @@ export function createPgQuery (options = {}) {
     return t.order.filter(c => !secrets.has(c.toLowerCase()))
   }
 
-  /** Columns for select/returning: '*' expands, secrets are dropped, unknown names fail. */
+  /**
+   * Columns for select/returning: '*' expands, secrets are dropped, unknown
+   * names fail. A null column (cfg.nullColumns) is one whether the table has
+   * it or not ('*' too: in its place while the table has it, else after the
+   * others); columnSql reads it as NULL.
+   */
   function projection (t, raw, secrets, what) {
     const items = parseColumnList(raw, { what })
+    const nulls = nullsFor(t.name)
     const out = []
     for (const item of items) {
-      const names = item === '*' ? visibleColumns(t, secrets) : [item]
+      const names = item === '*' ? [...visibleColumns(t, secrets), ...[...nulls].filter(c => !t.columns.has(c))] : [item]
       for (const n of names) {
         if (secrets.has(n.toLowerCase())) continue
-        requireColumn(t, n)
+        if (!nulls.has(n)) requireColumn(t, n)
         if (!out.includes(n)) out.push(n)
       }
     }
     return out
+  }
+
+  /** The select list entry of column `c` of `t`: NULL for a null column (its value is never read). */
+  function columnSql (t, c) {
+    return nullsFor(t.name).has(c) ? `NULL AS ${quoteIdent(c)}` : `t.${quoteIdent(c)}`
   }
 
   function findEmbed (table, raw) {
@@ -634,7 +666,7 @@ export function createPgQuery (options = {}) {
     const secrets = secretsFor(t.name, opts.internal)
     const embed = findEmbed(t.name, params.columns)
     const cols = projection(t, embed ? '*' : params.columns, secrets, 'select')
-    const selectParts = cols.map(c => `t.${quoteIdent(c)}`)
+    const selectParts = cols.map(c => columnSql(t, c))
     let from = `${qTable(t.name)} AS t`
     if (embed) {
       const et = tableDef(cat, embed.table)
@@ -1051,6 +1083,10 @@ export function createPgQuery (options = {}) {
   }
 
   async function runWrite (cat, t, action, params, opts, ctx) {
+    // A null column (cfg.nullColumns) is never written: left out of every row
+    for (const c of nullsFor(t.name)) {
+      if (params.data != null) params = { ...params, data: dropColumn(params.data, c) }
+    }
     // A column the loaded catalog lacks may have come with a migration since:
     // the catalog is read again first; what it still lacks is dropped (writeRows)
     if (action !== 'delete' && namesUnknownColumn(t, params.data)) t = await freshTableDef(t)
@@ -1138,6 +1174,7 @@ export function createPgQuery (options = {}) {
           for (const c of target) {
             if (mentionsSecret(c, secrets)) fail('OV_SECRET_FILTER', 'secret column')
             if (!IDENT_RE.test(c)) fail('OV_INVALID_CONFLICT', `unsupported onConflict item "${safeText(c)}"`)
+            if (nullsFor(t.name).has(c)) fail('OV_DOB_FILTER', `"${c}" reads as NULL: no conflict target`)
             requireColumn(t, c, 'onConflict column')
           }
         } else {
@@ -1258,7 +1295,8 @@ export function createPgQuery (options = {}) {
 
     // RETURNING: all visible columns when anything needs rows, else just a count.
     const needRows = wantReturning || collectChanges || postCheck
-    let retCols = needRows ? visibleColumns(t, secrets) : []
+    // (never a null column: its value is never read; returningCols answers it as null)
+    let retCols = needRows ? visibleColumns(t, secrets).filter(c => !nullsFor(t.name).has(c)) : []
     // Server code may narrow the change rows (e.g. a restore deleting thousands of events).
     if (needRows && !wantReturning && !postCheck && Array.isArray(opts.changeColumns)) {
       const narrowed = retCols.filter(c => opts.changeColumns.includes(c))
@@ -1321,7 +1359,8 @@ export function createPgQuery (options = {}) {
       if (postCheck) await assertChildrenScoped(client, cat, t.name, rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] })))
       let data = null
       if (wantReturning && !params.head) {
-        const projected = rows.map(r => Object.fromEntries(returningCols.map(c => [c, r[c]])))
+        const nulls = nullsFor(t.name)
+        const projected = rows.map(r => Object.fromEntries(returningCols.map(c => [c, nulls.has(c) ? null : r[c]])))
         data = (params.single || params.maybeSingle) ? singleOf(projected, !!params.single) : projected
       }
       return { rows, n, data }

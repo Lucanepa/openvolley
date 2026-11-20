@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   transformGame, prepareRows, isExcludedLeague, resolveWindow, zonedTimeToUtc, zonedYmd,
   parseVmDateTime, formatZurichDateTime, addDaysYmd, isYmd, nextRunAt, buildSearchBody,
-  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf
+  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf, GAME_COLUMNS
 } from '../lib/vmSync.js'
 import { makeGame } from './helpers/fakeVolleyManager.js'
 
@@ -110,10 +110,9 @@ describe('transformGame: other fields', () => {
     assert.equal(r.referee_1, 'Muster Anna')
     assert.equal(r.referee_1_first_name, 'Anna')
     assert.equal(r.referee_1_last_name, 'Muster')
-    // the birthday VolleyManager sends is never read (db/048)
-    assert.equal(r.referee_1_dob, null)
+    // the birthday VolleyManager sends is never read (db/048); no date column at all (db/049)
+    assert.ok(!('referee_1_dob' in r) && !('referee_2_dob' in r))
     assert.equal(r.referee_2, 'Beispiel Ben', 'falls back to activeSecondHeadRefereeName')
-    assert.equal(r.referee_2_dob, null)
     assert.equal(r.linesman_1, 'Linie Lea')
     assert.equal(r.linesman_2, '')
     assert.equal(r.is_supervised, true)
@@ -171,10 +170,11 @@ describe('transformGame: other fields', () => {
     assert.equal(t(makeGame(4, { junior: false })).junior_category, false)
   })
 
-  it('never reads a referee\'s birthday: the date columns stay null (db/048)', () => {
+  it('never reads a referee\'s birthday: no date column is written (db/048, db/049)', () => {
     for (const [dob1, iso] of [['31.12.1985', '1985-12-31'], ['1990-02-24T00:00:00+01:00', '1990-02-24']]) {
       const r = t(makeGame(1, { dob1 }))
-      assert.deepEqual([r.referee_1_dob, r.referee_2_dob, r.referee_1_last_name], [null, null, 'Muster'])
+      assert.deepEqual([r.referee_1_dob, r.referee_2_dob, r.referee_1_last_name], [undefined, undefined, 'Muster'])
+      assert.ok(!GAME_COLUMNS.some(([c]) => /dob/.test(c)), 'the sync never names a dob column')
       const text = JSON.stringify(r)
       assert.ok(!text.includes(dob1) && !text.includes(iso), text)
     }
