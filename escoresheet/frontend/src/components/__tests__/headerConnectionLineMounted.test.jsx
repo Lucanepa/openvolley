@@ -25,7 +25,7 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: null, pro
 import MainHeader from '../MainHeader'
 
 const match = { id: 7, gameNumber: 921357, gamePin: '123456', scheduledAt: '2026-11-14T18:20:00.000Z' }
-const matchInfoData = { match, homeTeam: { name: 'Volley Zürich' }, awayTeam: { name: 'Volley Luzern' } }
+const matchInfoData = { match, homeTeam: { name: 'VBC Musterau' }, awayTeam: { name: 'VC Beispielstadt' } }
 
 function Screen() {
   const [open, setOpen] = useState(false)

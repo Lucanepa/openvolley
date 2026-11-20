@@ -524,7 +524,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
       <span className="sg-teams flex min-w-0 flex-wrap items-baseline gap-x-1.5">
         {/* real spaces between the words: copied text, screen
             readers and the phone card read "home vs away" (the gap
-            and margin alone gave "vsVolley Luzern") */}
+            and margin alone gave "vsVC Beispielstadt") */}
         <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>{' '}
         <span className="max-w-full truncate">
           <span className="text-stone-400">{t('common.vs', 'vs')}</span>{' '}

@@ -38,8 +38,8 @@ describe('QRCodeModal', () => {
   afterEach(() => clearBackendOverride())
 
   it('shows the team names of the scorer\'s match (homeName/awayName)', () => {
-    render(<QRCodeModal role="referee" match={{ homeName: 'VBC Zürich', awayName: 'Volley Bern' }} matchSeedKey="match_1_abc" onClose={() => {}} />)
-    expect(screen.getByText('VBC Zürich vs Volley Bern')).toBeTruthy()
+    render(<QRCodeModal role="referee" match={{ homeName: 'VBC Musterau', awayName: 'VC Beispielstadt' }} matchSeedKey="match_1_abc" onClose={() => {}} />)
+    expect(screen.getByText('VBC Musterau vs VC Beispielstadt')).toBeTruthy()
   })
 
   it('builds LAN links on the local server, with team for a bench', () => {

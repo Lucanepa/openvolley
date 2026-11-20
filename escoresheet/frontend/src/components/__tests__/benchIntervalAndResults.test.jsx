@@ -23,8 +23,8 @@ const base = (match = {}) => ({
     id: 'm1', status: 'live', coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossConfirmed: true, firstServe: 'home', bestOf: 5,
     homeShortName: 'ZÜRICH', awayShortName: 'LUZERN', ...match
   },
-  homeTeam: { name: 'VBC Zürich', color: '#e2001a' },
-  awayTeam: { name: 'Volley Luzern', color: '#3b82f6' },
+  homeTeam: { name: 'VBC Musterau', color: '#e2001a' },
+  awayTeam: { name: 'VC Beispielstadt', color: '#3b82f6' },
   homePlayers: players([1, 10, 88, 14, 99, 12]),
   awayPlayers: players([2, 11, 55, 66, 98, 13])
 })

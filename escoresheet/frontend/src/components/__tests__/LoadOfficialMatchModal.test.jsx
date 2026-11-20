@@ -100,7 +100,7 @@ describe('LoadOfficialMatchModal league list', () => {
   })
 
   // UI tour 14.11 (o00c): a lone "Men ♂" path line sat under the selectors
-  // before a league was chosen, and a game read "vsVolley Luzern" (no space
+  // before a league was chosen, and a game read "vsVC Beispielstadt" (no space
   // in the text, only a margin)
   it('shows the selection path only with a league, and a game reads "home vs away"', async () => {
     render(<LoadOfficialMatchModal open onClose={() => {}} onSelectMatch={() => {}} />)

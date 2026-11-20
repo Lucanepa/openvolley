@@ -319,8 +319,8 @@ describe('diagnostics report: app log and match', () => {
       ev(6, 'substitution', { team: 'away', playerIn: 5, playerOut: 12 }),
       ev(7, 'remark', { text: 'Ball 7 was flat, Anna Muster saw it' })
     ]
-    const lines = matchSection({ row, sets: [{ index: 1, homePoints: 25, awayPoints: 23, finished: true }, { index: 2, homePoints: 0, awayPoints: 1, finished: false }], events, homeTeam: { name: 'VBC Musterdorf' }, awayTeam: { name: 'Volley Zürich' }, unsent: '2 (2 event)' }, clock).join('\n')
-    expect(lines).toMatch(/Teams:\s+VBC Musterdorf \(home, A\) – Volley Zürich \(away, B\)/)
+    const lines = matchSection({ row, sets: [{ index: 1, homePoints: 25, awayPoints: 23, finished: true }, { index: 2, homePoints: 0, awayPoints: 1, finished: false }], events, homeTeam: { name: 'VBC Musterdorf' }, awayTeam: { name: 'VC Beispielstadt' }, unsent: '2 (2 event)' }, clock).join('\n')
+    expect(lines).toMatch(/Teams:\s+VBC Musterdorf \(home, A\) – VC Beispielstadt \(away, B\)/)
     expect(lines).toMatch(/Sets \(home:away\):\s+set 1 25:23, set 2 0:1 \(running\)/)
     expect(lines).toMatch(/Serving:\s+away \(won the last point\)/)
     expect(lines).toMatch(/Line-up home:\s+I 1 · II 7 · III 12 · IV 3 · V 9 · VI 14 \(seq 3\)/)

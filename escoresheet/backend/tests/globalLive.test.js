@@ -136,13 +136,13 @@ describe('one court and one game', () => {
   it('a league game from its public live row: home and away from the match, the sets mapped', () => {
     const s = gameSummary({
       game_n: 4242, status: 'live', match_status: 'live', scheduled_at: new Date('2027-01-10T19:00:00Z'),
-      home_team: { name: 'VBC Zürich' }, away_team: JSON.stringify({ name: 'Volley Luzern' }), match_info: { hall: 'Saalsporthalle' },
-      team_a_name: 'Volley Luzern', team_b_name: 'VBC Zürich', points_a: 7, points_b: 10, sets_won_a: 0, sets_won_b: 1,
+      home_team: { name: 'VBC Musterau' }, away_team: JSON.stringify({ name: 'VC Beispielstadt' }), match_info: { hall: 'Saalsporthalle' },
+      team_a_name: 'VC Beispielstadt', team_b_name: 'VBC Musterau', points_a: 7, points_b: 10, sets_won_a: 0, sets_won_b: 1,
       side_a: 'left', serving_team: 'right', current_set: 2, best_of: 5,
       set_results: [{ index: 1, pointsA: 20, pointsB: 25 }], lineup_a: { I: 7 }
     }, 'T')
     assert.equal(s.id, 'game-4242')
-    assert.deepEqual(s.home, { name: 'VBC Zürich', short: null, color: null })
+    assert.deepEqual(s.home, { name: 'VBC Musterau', short: null, color: null })
     assert.deepEqual(s.points, { home: 10, away: 7 })
     assert.deepEqual(s.setsWon, { home: 1, away: 0 })
     assert.deepEqual(s.sets, [{ home: 25, away: 20 }])
@@ -155,8 +155,8 @@ describe('one court and one game', () => {
 
   it('a league game with the scorer\'s set_results ({ set, home, away, a, b }): home / away as written', () => {
     const s = gameSummary({
-      game_n: 4243, status: 'live', match_status: 'interval', home_team: { name: 'VBC Zürich' }, away_team: { name: 'Volley Luzern' },
-      team_a_name: 'Volley Luzern', team_b_name: 'VBC Zürich', points_a: 0, points_b: 0, sets_won_a: 1, sets_won_b: 1, current_set: 3,
+      game_n: 4243, status: 'live', match_status: 'interval', home_team: { name: 'VBC Musterau' }, away_team: { name: 'VC Beispielstadt' },
+      team_a_name: 'VC Beispielstadt', team_b_name: 'VBC Musterau', points_a: 0, points_b: 0, sets_won_a: 1, sets_won_b: 1, current_set: 3,
       set_results: [{ set: 2, home: 12, away: 25, a: 25, b: 12 }, { set: 1, home: 27, away: 25, a: 25, b: 27 }]
     }, 'T')
     assert.deepEqual(s.sets, [{ home: 27, away: 25 }, { home: 12, away: 25 }])

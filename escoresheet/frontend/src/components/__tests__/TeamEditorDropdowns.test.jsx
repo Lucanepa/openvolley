@@ -31,7 +31,7 @@ const CLUBS = [
   { id: 'c-must', name: 'VBC Musterdorf', teams: [{ id: 't-h1', name: 'VBC Musterdorf H1' }, { id: 't-d2', name: 'VBC Musterdorf D2' }] },
   { id: 'c-msh', name: 'VBC Mustershausen', teams: [] }
 ]
-const SCHEDULE = ['VBC Musterdorf D2', 'VBC Musterdorf H1', 'VBC Mustershausen H1', 'Volley Zürichsee D1']
+const SCHEDULE = ['VBC Musterdorf D2', 'VBC Musterdorf H1', 'VBC Mustershausen H1', 'VC Mühlestadt D1']
 const COMP = { id: 'c1', name: 'Liga', season: '2026/27', gender: 'men', vm_leagues: [], sport: 'indoor' }
 const team = (over = {}) => ({ id: 't1', competition_id: 'c1', name: '', short_name: null, club: null, color: null, svrz_team_name: null, players: [], staff: [], ...over })
 const t = (k, o) => (o?.name ? `${k}|${o.name}` : k)
@@ -89,11 +89,11 @@ describe('the saved team editor', () => {
     fireEvent.click(screen.getByTestId('team-vm-scope'))
     expect(screen.getByTestId('team-vm-scope')).toHaveTextContent('savedTeams.svrzClubOnly|VBC Musterdorf')
     // typing filters, accents and case aside
-    fireEvent.change(vm, { target: { value: 'zuri' } })
-    expect(options(screen.getByRole('listbox'))).toEqual(['Volley Zürichsee D1'])
+    fireEvent.change(vm, { target: { value: 'muhle' } })
+    expect(options(screen.getByRole('listbox'))).toEqual(['VC Mühlestadt D1'])
     fireEvent.keyDown(vm, { key: 'ArrowDown' })
     fireEvent.keyDown(vm, { key: 'Enter' })
-    expect(vm).toHaveValue('Volley Zürichsee D1')
+    expect(vm).toHaveValue('VC Mühlestadt D1')
     // a named team keeps its name
     expect(screen.getByDisplayValue('Herren 1')).toBeInTheDocument()
     // a name the schedule does not have is kept as typed

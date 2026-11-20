@@ -76,7 +76,8 @@ import {
   getNextTestMatchStartTime,
   getTestHomeTeamShortName,
   getTestAwayTeamShortName,
-  getTestTeamByExternalId
+  getTestTeamByExternalId,
+  seedTeamPatch
 } from './constants/testSeeds'
 import { cleanIdValue } from './domain/idMode'
 import { apiFrom, apiMatchRestoreByPin, writingDevice } from './lib/apiClient'
@@ -3015,10 +3016,13 @@ export default function App() {
             createdAt: timestamp
           }
         } else {
-          // Update shortName if it doesn't match the seed definition
-          if (team.shortName !== definition.shortName) {
-            await db.teams.update(team.id, { shortName: definition.shortName })
-            team = { ...team, shortName: definition.shortName }
+          // The seed definition's name and short name win (a device seeded
+          // with the teams of before takes the made-up ones, 2026-11-20); the
+          // colour stays as the scorer may have set it
+          const patch = seedTeamPatch(team, definition)
+          if (patch) {
+            await db.teams.update(team.id, patch)
+            team = { ...team, ...patch }
           }
           const playerCount = await db.players.where('teamId').equals(team.id).count()
           if (playerCount === 0) {

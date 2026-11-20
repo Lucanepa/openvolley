@@ -128,8 +128,8 @@ describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
 
   it('no game number: the real team names in its place, never "match" or the placeholders', () => {
     const quick = { homeShortName: 'HOME', awayShortName: 'AWAY', league: 'Friendly', scheduledAt: local(2026, 10, 7, 20, 0) }
-    const name = buildScoresheetFilename({ match: quick, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'Volley Spada Academica Zürich' } })
-    expect(name).toBe('VBC-Musterdorf-H1_vs_Volley-Spada-Academica-Zuerich_Friendly_2026-10-07.pdf')
+    const name = buildScoresheetFilename({ match: quick, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'VC Mühlestadt Academica' } })
+    expect(name).toBe('VBC-Musterdorf-H1_vs_VC-Muehlestadt-Academica_Friendly_2026-10-07.pdf')
     expect(name).not.toMatch(/match|HOME|AWAY/)
   })
 

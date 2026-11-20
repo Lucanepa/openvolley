@@ -74,12 +74,15 @@ export function getNextTestMatchStartTime(now = new Date()) {
   return new Date(kickoff).toISOString()
 }
 
-// Test Team Seed Data
+// Test Team Seed Data: made-up clubs (owner 2026-11-20: no real club names;
+// they were "VBC Zürich" / "Volley Luzern"). A device that has the seed teams
+// of before takes the new names (App.jsx ensureSeedTestTeams, by seedKey), so
+// its test match does too; the colours stay.
 export const TEST_TEAM_SEED_DATA = [
   {
     seedKey: 'test-team-home',
-    name: 'VBC Zürich',
-    shortName: 'ZÜRICH',
+    name: 'VBC Musterau',
+    shortName: 'MUS',
     color: '#3b82f6',
     players: [
       { number: 1, firstName: 'Luca', lastName: 'Keller', dob: '100211', libero: '', isCaptain: true, isLfp: true },
@@ -98,8 +101,8 @@ export const TEST_TEAM_SEED_DATA = [
   },
   {
     seedKey: 'test-team-away',
-    name: 'Volley Luzern',
-    shortName: 'LUZERN',
+    name: 'VC Beispielstadt',
+    shortName: 'BSP',
     color: '#dc2626', // the red preset (DEFAULT_HOME_COLOUR)
     players: [
       { number: 1, firstName: 'Tom', lastName: 'Weber', dob: '100803', libero: 'libero1', isCaptain: false, isLfp: true },
@@ -117,6 +120,19 @@ export const TEST_TEAM_SEED_DATA = [
     ]
   }
 ]
+
+/**
+ * What a stored seed team takes from its seed definition: { name?, shortName? }
+ * when they differ (a device seeded with the teams of before), else null. The
+ * colour is left as it is.
+ */
+export function seedTeamPatch(team, definition) {
+  if (!team || !definition) return null
+  const patch = {}
+  if (team.name !== definition.name) patch.name = definition.name
+  if (team.shortName !== definition.shortName) patch.shortName = definition.shortName
+  return Object.keys(patch).length ? patch : null
+}
 
 // The seed team of the test match's team external ids (the ids stay as they are:
 // test teams stored on a device are found by them)
