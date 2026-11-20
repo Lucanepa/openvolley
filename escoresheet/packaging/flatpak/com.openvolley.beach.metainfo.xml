@@ -67,6 +67,15 @@
   </screenshots>
 
   <releases>
+    <release version="3.1.1" date="2026-11-20">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.1.1</url>
+      <description>
+        <ul>
+          <li>Error reports: when something goes wrong, the app sends what went wrong and where (never what you typed) to the OpenVolley server, also without signing in. You can switch it off in Support &amp; feedback.</li>
+          <li>Privacy policy 1.22.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.1.0" date="2026-11-19">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.1.0</url>
       <description>
