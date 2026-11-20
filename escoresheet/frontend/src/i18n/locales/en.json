@@ -2465,7 +2465,7 @@
   "auth": {
     "deleteAccountWhatStays": "The matches you scored and their scoresheets: they are the clubs' official match records, and your name stays on them as the scorer. Matches saved on this device stay on it.",
     "deleteAccountWhatStaysTitle": "Kept, without your account",
-    "deleteAccountWhatGoes": "Your account and profile, your sign-ins, your My matches list, your editor rights on matches, your cloud backups and logs, and your access to the scoresheets you uploaded. Encrypted server backups keep a copy until they expire, after about 7 months at most.",
+    "deleteAccountWhatGoes": "Your account and profile, your sign-ins, your My matches list, your editor rights on matches, your cloud backups and logs, and your access to the scoresheets you uploaded. Encrypted server backups keep a copy until they expire, after about 6 months at most.",
     "deleteAccountWhatGoesTitle": "Deleted from the server",
     "signIn": "Sign in",
     "signUp": "Sign up",
@@ -3890,7 +3890,7 @@
       "deleteTitle": "Delete the account of {{name}}?",
       "deleteBody": "This is permanent and cannot be undone. The person is signed out on every device.",
       "deleteWhatGoesTitle": "Deleted from the server",
-      "deleteWhatGoes": "The account and profile (email address, password, name, licence number), its sign-ins, roles, clubs and club manager rights, the My matches list, editor rights on matches, the approval PIN, the cloud backups and logs, and the access to the scoresheets it uploaded. Encrypted server backups keep a copy until they expire, after about 7 months at most.",
+      "deleteWhatGoes": "The account and profile (email address, password, name, licence number), its sign-ins, roles, clubs and club manager rights, the My matches list, editor rights on matches, the approval PIN, the cloud backups and logs, and the access to the scoresheets it uploaded. Encrypted server backups keep a copy until they expire, after about 6 months at most.",
       "deleteWhatStaysTitle": "Kept, without the account",
       "deleteWhatStays": "The official matches it scored and their scoresheets, with the scorer's name as written on them; the approvals it gave; the saved teams, tournaments, clubs and invite codes it created; and the audit log, which records this deletion without the email address.",
       "deleteTypeEmail": "Type {{email}} to confirm",

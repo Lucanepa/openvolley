@@ -3884,7 +3884,7 @@
       "deleteTitle": "Konto von {{name}} löschen?",
       "deleteBody": "Das ist endgültig und lässt sich nicht rückgängig machen. Die Person wird auf allen Geräten abgemeldet.",
       "deleteWhatGoesTitle": "Vom Server gelöscht",
-      "deleteWhatGoes": "Das Konto und Profil (E-Mail-Adresse, Passwort, Name, Lizenznummer), seine Anmeldungen, Rollen, Vereine und Rechte als Vereinsverantwortliche/r, die Liste «Meine Spiele», Bearbeitungsrechte an Spielen, die Genehmigungs-PIN, die Cloud-Backups und Protokolle sowie der Zugriff auf die hochgeladenen Matchblätter. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 7 Monaten.",
+      "deleteWhatGoes": "Das Konto und Profil (E-Mail-Adresse, Passwort, Name, Lizenznummer), seine Anmeldungen, Rollen, Vereine und Rechte als Vereinsverantwortliche/r, die Liste «Meine Spiele», Bearbeitungsrechte an Spielen, die Genehmigungs-PIN, die Cloud-Backups und Protokolle sowie der Zugriff auf die hochgeladenen Matchblätter. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 6 Monaten.",
       "deleteWhatStaysTitle": "Bleibt erhalten, ohne das Konto",
       "deleteWhatStays": "Die offiziellen Spiele, die es geschrieben hat, und ihre Matchblätter, mit dem Namen des Schreibers, wie er darauf steht; seine Genehmigungen; die gespeicherten Teams, Turniere, Vereine und Einladungscodes, die es erstellt hat; und das Protokoll, das diese Löschung ohne die E-Mail-Adresse festhält.",
       "deleteTypeEmail": "Zur Bestätigung {{email}} eingeben",

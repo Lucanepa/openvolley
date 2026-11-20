@@ -311,7 +311,7 @@ export default function ProfileModal({ open, onClose }) {
               <div>
                 <dt className="font-semibold text-stone-800">{t('auth.deleteAccountWhatGoesTitle', 'Deleted from the server')}</dt>
                 <dd className="mt-0.5 text-stone-600">
-                  {t('auth.deleteAccountWhatGoes', 'Your account and profile, your sign-ins, your My matches list, your editor rights on matches, your cloud backups and logs, and your access to the scoresheets you uploaded. Encrypted server backups keep a copy until they expire, after about 7 months at most.')}
+                  {t('auth.deleteAccountWhatGoes', 'Your account and profile, your sign-ins, your My matches list, your editor rights on matches, your cloud backups and logs, and your access to the scoresheets you uploaded. Encrypted server backups keep a copy until they expire, after about 6 months at most.')}
                 </dd>
               </div>
               <div>

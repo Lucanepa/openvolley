@@ -2458,7 +2458,7 @@
   "auth": {
     "deleteAccountWhatStays": "Les matchs que tu as marqués et leurs feuilles de match : ce sont les procès-verbaux officiels des clubs, et ton nom y reste comme marqueur. Les matchs enregistrés sur cet appareil y restent.",
     "deleteAccountWhatStaysTitle": "Conservé, sans ton compte",
-    "deleteAccountWhatGoes": "Ton compte et ton profil, tes connexions, ta liste « Mes matchs », tes droits d’édition sur des matchs, tes sauvegardes et journaux dans le cloud, et ton accès aux feuilles de match que tu as téléversées. Les sauvegardes chiffrées du serveur en gardent une copie jusqu’à leur expiration, au plus tard après environ 7 mois.",
+    "deleteAccountWhatGoes": "Ton compte et ton profil, tes connexions, ta liste « Mes matchs », tes droits d’édition sur des matchs, tes sauvegardes et journaux dans le cloud, et ton accès aux feuilles de match que tu as téléversées. Les sauvegardes chiffrées du serveur en gardent une copie jusqu’à leur expiration, au plus tard après environ 6 mois.",
     "deleteAccountWhatGoesTitle": "Supprimé du serveur",
     "signIn": "Se connecter",
     "signUp": "S'inscrire",
@@ -3883,7 +3883,7 @@
       "deleteTitle": "Supprimer le compte de {{name}} ?",
       "deleteBody": "C’est définitif et irréversible. La personne est déconnectée sur tous ses appareils.",
       "deleteWhatGoesTitle": "Supprimé du serveur",
-      "deleteWhatGoes": "Le compte et le profil (adresse e-mail, mot de passe, nom, numéro de licence), ses connexions, rôles, clubs et droits de responsable du club, la liste « Mes matchs », les droits d’édition sur des matchs, le PIN d'approbation, les sauvegardes et journaux dans le cloud, et l’accès aux feuilles de match qu’il a téléversées. Les sauvegardes chiffrées du serveur en gardent une copie jusqu’à leur expiration, au plus tard après environ 7 mois.",
+      "deleteWhatGoes": "Le compte et le profil (adresse e-mail, mot de passe, nom, numéro de licence), ses connexions, rôles, clubs et droits de responsable du club, la liste « Mes matchs », les droits d’édition sur des matchs, le PIN d'approbation, les sauvegardes et journaux dans le cloud, et l’accès aux feuilles de match qu’il a téléversées. Les sauvegardes chiffrées du serveur en gardent une copie jusqu’à leur expiration, au plus tard après environ 6 mois.",
       "deleteWhatStaysTitle": "Conservé, sans le compte",
       "deleteWhatStays": "Les matchs officiels qu’il a marqués et leurs feuilles de match, avec le nom du marqueur tel qu’il y figure ; les approbations qu’il a données ; les équipes enregistrées, tournois, clubs et codes d’invitation qu’il a créés ; et le journal, qui enregistre cette suppression sans l’adresse e-mail.",
       "deleteTypeEmail": "Saisis {{email}} pour confirmer",
