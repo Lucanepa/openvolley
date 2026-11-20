@@ -1,17 +1,6 @@
 # cargo audit settings for the desktop app (read by the Dependency audit workflow).
 [advisories]
-# zip 4.6.1 comes only through tauri-plugin-updater ~2.13 and is compiled only for
-# Windows, where the updater unpacks the downloaded update. The updater verifies the
-# update's minisign signature (our key, tauri.conf.json) before it extracts anything,
-# so a crafted archive needs our signing key. tauri-plugin-updater 2.14 has zip 9 but
-# needs tauri 2.13+ and a newer Rust: remove these six with that upgrade.
-ignore = [
-  "RUSTSEC-2026-0367", # zip: SUID/SGID bits kept on extraction
-  "RUSTSEC-2026-0368", # zip: symlink targets outside the destination
-  "RUSTSEC-2026-0369", # zip: permissions applied through symlinks
-  "RUSTSEC-2026-0429", # zip: abort on a symlink entry with a large declared size
-  # 17.11.2026, same reasoning: the updater reads its signed archive through the central
-  # directory (no ZipStreamReader) and update archives carry no AES-encrypted entries.
-  "RUSTSEC-2026-0545", # zip: AES entries returned without checking their authentication code
-  "RUSTSEC-2026-0548", # zip: ZipStreamReader names can differ from the central directory
-]
+# No ignored advisories. The six zip 4.6.1 advisories (RUSTSEC-2026-0367/0368/0369/
+# 0429/0545/0548) went with tauri-plugin-updater 2.14.1, which uses zip 9 (#265,
+# 20.11.2026). Add an entry here only with the reason it cannot be fixed yet.
+ignore = []
