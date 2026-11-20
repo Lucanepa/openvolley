@@ -51,6 +51,8 @@ export const READ_ONLY_TABLES = Object.freeze([
   'audit_log', 'activity_log', 'event_revisions', 'match_closures', 'match_approvals',
   'match_final_mails', 'match_scoresheets', 'deleted_matches', 'invite_redemptions',
   'svrz_sync_log', 'svrz_games_removed',
+  // db/052: people erased on request (keyed hashes); a deleted row would undo an erasure
+  'redacted_people',
   // db/050: triaged in the Errors tab (audited), never edited row by row
   'error_groups', 'error_events'
 ])

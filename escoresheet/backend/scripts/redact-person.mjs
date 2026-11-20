@@ -31,20 +31,39 @@
  *            are listed; --drop-files removes them (a PDF is not rewritten:
  *            the scorer or an admin makes a new one from the corrected record)
  *
+ * The schedule sync (data-map F27): the daily VolleyManager sync rewrites
+ * every game from yesterday to 14 days ahead, so it would write an erased
+ * referee's name and licence number back while VolleyManager still lists
+ * them. A request without --match therefore also registers the person in
+ * public.redacted_people (db/052): keyed hashes of the name and of every
+ * licence number the run erased (svrz_games referee_N_licence, club_licences
+ * sv_number, a sheet's licence ...), HMAC with a key derived from
+ * OV_PIN_SECRET (lib/redactedPeople.js), never the name or the number. The
+ * sync (lib/vmSync.js) writes NULL for a registered 1st or 2nd referee
+ * (names and licence number) and line judge, namesakes included, as this run
+ * erased them. So --apply needs OV_PIN_SECRET, the backend's (the stack's
+ * .env), without --match; a dry run without it says so. With --match the
+ * schedule is left as it is (it has no match of its own) and nothing is
+ * registered: name the person without --match for that. Rotating
+ * OV_PIN_SECRET makes the entries unmatchable: run each request again by name.
+ *
  * Not reached: the account (profiles, auth.users: the account's own
  * deletion or the admin's), the per-account backup copies (encrypted, gone
  * after 30 days), copies on the devices, mails already sent, and the
  * encrypted backups (up to about 6 months). The backup note: --register FILE
- * appends the request (mode, the digest) to a register kept
- * outside the database; after a restore from a backup older than the request,
- * --reapply FILE runs every request of it again (structured fields: the
- * free-text names need the name, i.e. a new run with --first/--last). It
- * reads every row of the record tables (in blocks of pages, locking only the
- * rows it changes): best before the restored server takes traffic again.
+ * appends the request (mode, the digest, the keyed hashes it registered) to a
+ * register kept outside the database; after a restore from a backup older
+ * than the request, --reapply FILE runs every request of it again
+ * (structured fields: the free-text names need the name, i.e. a new run with
+ * --first/--last) and registers its keyed hashes for the sync again (no key
+ * needed; a line written before db/052 has none: run that request again by
+ * name). It reads every row of the record tables (in blocks of pages,
+ * locking only the rows it changes): best before the restored server takes
+ * traffic again.
  *
  * Usage (on the host, the owner role's connection as for scripts/migrate.mjs;
- * the storage root for the files):
- *   OV_MIGRATE_DATABASE_URL=postgres://ov_owner@... STORAGE_ROOT=/data/storage \
+ * the backend's OV_PIN_SECRET; the storage root for the files):
+ *   OV_MIGRATE_DATABASE_URL=postgres://ov_owner@... OV_PIN_SECRET=... STORAGE_ROOT=/data/storage \
  *     node scripts/redact-person.mjs --first Mia --last Example \
  *       [--match <external_id>]... [--drop-files] \
  *       [--actor <admin account uuid>] [--register FILE] [--apply]
@@ -57,14 +76,17 @@ import pg from 'pg'
 import { createHash } from 'node:crypto'
 import { appendFileSync, readFileSync } from 'node:fs'
 import { createStorage, storageOptionsFromEnv } from '../lib/storage.js'
+import { isEntry, normLicence, normName, personEntries, redactedPeopleKey, registerEntries } from '../lib/redactedPeople.js'
 
 export const REDACTED = '[redacted]'
 
 const FIRST_RE = /^(.*?)(first_?name|firstname|given_?name|vorname)$/i
 const LAST_SUFFIXES = ['last_name', 'lastName', 'lastname', 'surname', 'family_name', 'familyName', 'nachname']
 const DOB_SUFFIXES = ['dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date']
-const ERASE_SUFFIXES = ['licence', 'license', 'licenceNumber', 'licenseNumber', 'licence_number', 'license_number',
-  'sv_number', 'svNumber', 'email', 'phone', 'mobile']
+// The licence numbers among them: registered for the schedule sync (db/052)
+const LICENCE_SUFFIXES = ['licence', 'license', 'licenceNumber', 'licenseNumber', 'licence_number', 'license_number',
+  'sv_number', 'svNumber']
+const ERASE_SUFFIXES = [...LICENCE_SUFFIXES, 'email', 'phone', 'mobile']
 
 /** Records: redacted in place. Lists: the person's row is deleted (a correction edits it). */
 export const RECORD_TABLES = ['matches', 'match_closures', 'events', 'event_revisions', 'activity_log', 'audit_log',
@@ -75,9 +97,8 @@ const SCAN_PAGES = 64
 // The tables whose rows belong to one match (for --match), by column
 const MATCH_COLUMN = { matches: 'id', match_closures: 'match_id', events: 'match_id', event_revisions: 'match_id', match_live_state: 'match_id', audit_log: 'match_id' }
 
-export function norm (s) {
-  return typeof s === 'string' ? s.normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('de-CH') : ''
-}
+/** The name normalisation (lib/redactedPeople.js keys the register with the same one). */
+export const norm = normName
 
 /** The digest kept in the audit log and the register: never the name. */
 export function personDigest ({ first, last, dob = '' }) {
@@ -111,7 +132,8 @@ function groupsOf (o) {
       first: 'first',
       last: 'last',
       dob: DOB_SUFFIXES.filter((x) => x in o),
-      erase: ERASE_SUFFIXES.filter((x) => x in o)
+      erase: ERASE_SUFFIXES.filter((x) => x in o),
+      licence: LICENCE_SUFFIXES.filter((x) => x in o)
     })
   }
   for (const k of Object.keys(o)) {
@@ -124,7 +146,8 @@ function groupsOf (o) {
       first: k,
       last,
       dob: DOB_SUFFIXES.map((s) => p + s).filter((x) => x in o),
-      erase: ERASE_SUFFIXES.map((s) => p + s).filter((x) => x in o)
+      erase: ERASE_SUFFIXES.map((s) => p + s).filter((x) => x in o),
+      licence: LICENCE_SUFFIXES.map((s) => p + s).filter((x) => x in o)
     })
   }
   return out
@@ -162,8 +185,10 @@ export function nameTextRe (who) {
  * Walk one JSON value and redact the person in it (names "[redacted]", a date
  * of birth a sheet still carries, licence, e-mail and phone null). Returns
  * { value, hits } (value is a new copy when anything changed, else the same).
+ * `licences` (a Set): gets the licence numbers erased (4 to 7 digits), for
+ * the register of the schedule sync.
  */
-export function redactValue (value, { match, textRe = null }) {
+export function redactValue (value, { match, textRe = null, licences = null }) {
   let hits = 0
   const walk = (v) => {
     if (typeof v === 'string') {
@@ -190,6 +215,7 @@ export function redactValue (value, { match, textRe = null }) {
       const dob = g.dob.map((k) => dateOf(v[k])).find(Boolean) || null
       if (!match(v[g.first], v[g.last], dob)) continue
       hits++
+      if (licences) for (const k of g.licence) { const n = normLicence(v[k]); if (n) licences.add(n) }
       set(g.first, REDACTED)
       set(g.last, REDACTED)
       for (const k of [...g.dob, ...g.erase]) set(k, null)
@@ -216,7 +242,8 @@ function likeOf (s) {
 /**
  * Run one request in `client`'s open transaction. `who`: { first, last }
  * or a register line ({ digest, nameDigest, withDob }).
- * Returns { tables: { name: rows }, matches: [ids], hits }.
+ * Returns { tables: { name: rows }, matches: [ids], hits, licences: [the
+ * licence numbers erased] } (the licences for registerPerson; never printed).
  */
 export async function redactPerson (client, { who, matches = [] } = {}) {
   await client.query("SELECT set_config('ov.allow_closed', 'on', true), set_config('ov.admin', 'on', true)")
@@ -229,6 +256,7 @@ export async function redactPerson (client, { who, matches = [] } = {}) {
   }
   const tables = {}
   const touchedMatches = new Set()
+  const licences = new Set()
   let hits = 0
   for (const table of [...RECORD_TABLES, ...LIST_TABLES]) {
     const { rows: [reg] } = await client.query('SELECT to_regclass($1)::oid AS oid', [`public.${table}`])
@@ -261,7 +289,7 @@ export async function redactPerson (client, { who, matches = [] } = {}) {
         `SELECT to_jsonb(t) AS row_ FROM public.${table} t WHERE t.ctid = $1::tid FOR UPDATE`, [ctid])
       if (!locked) return false // changed by another session since the read: the next pass finds it
       const before = locked.row_
-      const { value: after, hits: h } = redactValue(before, { match, textRe: isList ? null : textRe })
+      const { value: after, hits: h } = redactValue(before, { match, textRe: isList ? null : textRe, licences })
       if (!h) return true
       hits += h
       n++
@@ -306,7 +334,18 @@ export async function redactPerson (client, { who, matches = [] } = {}) {
     }
     if (n) tables[table] = n
   }
-  return { tables, matches: [...touchedMatches], hits }
+  return { tables, matches: [...touchedMatches], hits, licences: [...licences] }
+}
+
+/**
+ * Register a person for the schedule sync (db/052) in `client`'s open
+ * transaction: keyed hashes of `who`'s name and of `licences` (key:
+ * redactedPeopleKey(OV_PIN_SECRET)), or a register line's `entries` as they
+ * are. Returns { entries, registered } (registered: the new rows).
+ */
+export async function registerPerson (client, { key = null, who = {}, licences = [], entries = null } = {}) {
+  const list = entries ? entries.filter(isEntry) : (key ? personEntries(key, { first: who.first, last: who.last, licences }) : [])
+  return { entries: list, registered: await registerEntries(client, list) }
 }
 
 /** The stored scoresheet files (PDF and its JSON) of these matches: paths. */
@@ -320,11 +359,12 @@ export async function filesOf (client, matchIds) {
   return rows.flatMap((r) => [r.path, r.path.replace(/\.pdf$/i, '.json')])
 }
 
-const USAGE = `Usage: OV_MIGRATE_DATABASE_URL=postgres://ov_owner@... node scripts/redact-person.mjs
+const USAGE = `Usage: OV_MIGRATE_DATABASE_URL=postgres://ov_owner@... OV_PIN_SECRET=... node scripts/redact-person.mjs
   --first NAME --last NAME [--match EXTERNAL_ID]...
   [--drop-files] [--actor ACCOUNT_UUID] [--register FILE] [--apply]
   | --reapply FILE [--apply]   (reads every row: best before the restored server takes traffic)
-Dry run unless --apply. See the header of this file.`
+Dry run unless --apply. OV_PIN_SECRET (the backend's) registers the person for the
+schedule sync (db/052); --apply without --match needs it. See the header of this file.`
 
 export function parseArgs (argv) {
   const o = { matches: [], apply: false, dropFiles: false }
@@ -351,6 +391,20 @@ async function main () {
   if (o.help) { console.log(USAGE); return 0 }
   const url = process.env.OV_MIGRATE_DATABASE_URL
   if (!url) { console.error(`OV_MIGRATE_DATABASE_URL is not set (the owner role's connection).\n${USAGE}`); return 2 }
+  // A request by name without --match reaches the schedule: register it for the sync (db/052)
+  const bySchedule = !o.reapply && !o.matches.length
+  let key = null
+  if (bySchedule) {
+    try {
+      key = redactedPeopleKey(process.env.OV_PIN_SECRET)
+    } catch (err) {
+      if (o.apply) {
+        console.error(`${err.message}: the person is registered so that the schedule sync does not write them back (db/052). Use the backend's.\n${USAGE}`)
+        return 2
+      }
+      console.log('Note: OV_PIN_SECRET is not set; --apply needs it to register the person for the schedule sync (db/052).')
+    }
+  }
   // a register's corrections of a date of birth (before db/048) have nothing left to correct
   const requests = o.reapply
     ? readFileSync(o.reapply, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)).filter((r) => r.mode !== 'correct')
@@ -362,21 +416,36 @@ async function main () {
     await client.query('BEGIN')
     const report = []
     const matchIds = new Set()
+    let unregistered = 0
     for (const req of requests) {
       const who = req.who || { digest: req.digest, nameDigest: req.nameDigest, withDob: req.withDob }
       const r = await redactPerson(client, { who, matches: req.matches || [] })
       r.matches.forEach((m) => matchIds.add(m))
       const digest = req.digest || personDigest(who)
-      report.push({ mode: req.mode, digest, tables: r.tables, matches: r.matches.length })
+      // the schedule sync's register (db/052): the name and the licences erased, or a line's entries again
+      const reg = req.who
+        ? await registerPerson(client, { key, who: req.who, licences: r.licences })
+        : await registerPerson(client, { entries: Array.isArray(req.entries) ? req.entries : [] })
+      if (!req.who && !Array.isArray(req.entries) && !(req.matches || []).length) unregistered++
+      report.push({ mode: req.mode, digest, tables: r.tables, matches: r.matches.length, entries: reg.entries, registered: reg.registered })
       await client.query(
         `INSERT INTO public.audit_log (actor_id, action, details) VALUES ($1, 'person.redact', $2::jsonb)`,
         [/^[0-9a-f-]{36}$/i.test(o.actor || '') ? o.actor : null,
-          JSON.stringify({ mode: req.mode, digest, reapply: !!o.reapply, tables: r.tables, matches: r.matches.length })])
+          JSON.stringify({ mode: req.mode, digest, reapply: !!o.reapply, tables: r.tables, matches: r.matches.length, registered: reg.registered })])
     }
     const files = await filesOf(client, [...matchIds])
     if (o.apply) await client.query('COMMIT')
     else await client.query('ROLLBACK')
-    for (const r of report) console.log(`${r.mode} ${r.digest.slice(0, 16)}: ${r.matches} matches; rows per table ${JSON.stringify(r.tables)}`)
+    for (const r of report) {
+      console.log(`${r.mode} ${r.digest.slice(0, 16)}: ${r.matches} matches; rows per table ${JSON.stringify(r.tables)}; ` +
+        `schedule sync register (db/052): ${r.registered} new of ${r.entries.length} keyed hash(es)`)
+    }
+    if (!bySchedule && !o.reapply) {
+      console.log('--match: the schedule (svrz_games) is left as it is and nothing is registered for its sync; name the person without --match for that.')
+    }
+    if (unregistered) {
+      console.log(`${unregistered} register line(s) of before db/052 hold no keyed hashes: run those requests again by name (--first/--last) so the schedule sync leaves them out.`)
+    }
     console.log(o.apply ? 'Applied (one transaction).' : 'Dry run: nothing changed (--apply writes).')
     if (files.length) {
       if (o.dropFiles && o.apply) {
@@ -394,7 +463,9 @@ async function main () {
       const req = requests[0]
       appendFileSync(o.register, JSON.stringify({
         at: new Date().toISOString(), mode: req.mode, matches: req.matches,
-        digest: personDigest(req.who), nameDigest: personDigest(req.who), withDob: false
+        digest: personDigest(req.who), nameDigest: personDigest(req.who), withDob: false,
+        // the keyed hashes of db/052, for --reapply after a restore (no name, no number)
+        entries: report[0].entries
       }) + '\n', { mode: 0o600 })
       console.log(`Recorded in the register ${o.register} (no name).`)
     }

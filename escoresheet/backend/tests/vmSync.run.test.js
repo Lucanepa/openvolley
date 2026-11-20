@@ -6,10 +6,13 @@ import { main as cliMain, parseArgs, EXIT } from '../scripts/vm-sync.mjs'
 import {
   createFakeVolleyManager, makeGame, FAKE_USER, FAKE_PASSWORD, FAKE_CSRF, FAKE_SESSION_1, FAKE_SESSION_2
 } from './helpers/fakeVolleyManager.js'
+import { personEntries, redactedPeopleKey } from '../lib/redactedPeople.js'
 
 const http = { sleep: async () => {}, backoffMs: 1, timeoutMs: 2000 }
 const creds = { username: FAKE_USER, password: FAKE_PASSWORD }
 const NOW = new Date('2026-10-05T04:00:00Z')
+// the register's key (db/052) in these tests; never a real secret
+const PIN_SECRET = 'v'.repeat(40)
 
 function memLogger() {
   const lines = []
@@ -20,10 +23,11 @@ function memLogger() {
 /**
  * pg Pool stand-in: one shared advisory-lock table, a log table and a
  * recorder. `failUpsert` makes the upsert statement throw; `stored` are the
- * svrz_games rows ({ game_number, datetime }) the window holds before the run.
+ * svrz_games rows ({ game_number, datetime }) the window holds before the run;
+ * `register` the rows of public.redacted_people ({ kind, hash: hex }, db/052).
  */
-function fakePool({ failUpsert = null, failLogInsert = false, failClose = false, stored = [] } = {}) {
-  const state = { lockHeldBy: null, log: new Map(), nextId: 1, queries: [], released: [], staleClosed: 0, clients: [], stored, removed: [] }
+function fakePool({ failUpsert = null, failLogInsert = false, failClose = false, stored = [], register = [] } = {}) {
+  const state = { lockHeldBy: null, log: new Map(), nextId: 1, queries: [], released: [], staleClosed: 0, clients: [], stored, removed: [], upserted: [] }
   let clientSeq = 0
   const closeRow = (params) => {
     const [id, fetched, created, updated, unchanged, errors, status, message, withoutFormat, removed] = params
@@ -65,9 +69,12 @@ function fakePool({ failUpsert = null, failLogInsert = false, failClose = false,
           }
           if (/INSERT INTO public\.svrz_games \(/.test(text)) {
             if (failUpsert) throw new Error(failUpsert)
-            const n = JSON.parse(params[0]).length
-            return { rows: [{ created: n, updated: 0, unchanged: 0 }] }
+            const rows = JSON.parse(params[0])
+            state.upserted.push(...rows)
+            return { rows: [{ created: rows.length, updated: 0, unchanged: 0 }] }
           }
+          if (/to_regclass\('public\.redacted_people'\)/.test(text)) return { rows: [{ ok: true }] }
+          if (/FROM public\.redacted_people/.test(text)) return { rows: register }
           if (/SELECT game_number, datetime FROM public\.svrz_games/.test(text)) return { rows: state.stored }
           if (/DELETE FROM public\.svrz_games_removed/.test(text)) return { rowCount: 0 }
           if (/DELETE FROM public\.svrz_games g/.test(text)) {
@@ -324,6 +331,39 @@ describe('runVmSync (fake pool, fake VolleyManager)', () => {
     assert.equal(r.status, 'failed')
     assert.match(pool.state.log.get(r.logId).message, /not the referee-delegate role/)
     assert.ok(!vm.calls.some((c) => c.method === 'POST' && c.path.includes('searchForManagingAssociation')))
+  })
+
+  it('a person erased on request (db/052) is written as NULL; the others as VolleyManager has them', async () => {
+    const key = redactedPeopleKey(PIN_SECRET)
+    const register = personEntries(key, { first: 'Anna', last: 'Muster', licences: ['512345'] })
+    const vm = createFakeVolleyManager({ games: [makeGame(1, { sv1: '512345', ref2: true, sv2: '623456' }), makeGame(2)] })
+    const pool = fakePool({ register })
+    const logger = memLogger()
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger, pageDelayMs: 0, redactionSecret: PIN_SECRET })
+    assert.equal(r.status, 'success', r.message)
+    assert.equal(r.withheld, 2)
+    assert.match(pool.state.log.get(r.logId).message, /2 referee \/ line judge place\(s\) left empty \(erased on request\)/)
+    const [g1, g2] = pool.state.upserted
+    assert.deepEqual([g1.referee_1, g1.referee_1_first_name, g1.referee_1_last_name, g1.referee_1_licence], [null, null, null, null])
+    assert.deepEqual([g1.referee_2_last_name, g1.referee_2_licence, g1.linesman_1], ['Beispiel', '623456', 'Linie Lea'])
+    assert.deepEqual(g1.convocations, [])
+    assert.equal(g2.referee_1, null)
+    assert.equal(g2.referee_2, 'Beispiel Ben')
+    assert.equal(/Muster/.test(logger.lines.join('\n')), false, 'the log names nobody')
+  })
+
+  it('a register with entries and no OV_PIN_SECRET fails the run before anything is written', async () => {
+    const register = personEntries(redactedPeopleKey(PIN_SECRET), { first: 'Anna', last: 'Muster' })
+    const vm = createFakeVolleyManager({ games: [makeGame(1)] })
+    const pool = fakePool({ register })
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), pageDelayMs: 0 })
+    assert.equal(r.status, 'failed')
+    assert.match(pool.state.log.get(r.logId).message, /erased on request \(db\/052\) has 1 entry and OV_PIN_SECRET is not set/)
+    assert.deepEqual(pool.state.upserted, [])
+    assert.equal(pool.state.lockHeldBy, null, 'lock released')
+    // an empty register needs no secret
+    const ok = await runVmSync({ pool: fakePool(), fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), pageDelayMs: 0 })
+    assert.equal(ok.status, 'success', ok.message)
   })
 
   it('programming errors throw', async () => {

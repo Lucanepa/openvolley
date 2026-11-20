@@ -837,7 +837,27 @@ correct, so `--match` narrows a namesake's records), `--drop-files` to remove th
 entry, `--register FILE` (kept outside the database, next to the backups'
 keys) and, after a restore from a backup older than a request,
 `--reapply FILE`. See the script's header for what it reaches and what not.
-Tests: `tests/redactPerson.pg.test.js`.
+A request without `--match` also registers the person for the schedule sync
+(`db/052`, `public.redacted_people`): the daily VolleyManager sync rewrites
+every game from yesterday to 14 days ahead and would otherwise write an erased
+referee's name and licence number back while VolleyManager still lists them
+(data-map F27). The register keeps keyed hashes only (HMAC-SHA256 with a key
+derived from `OV_PIN_SECRET`, HKDF info `ov-redacted-person-v1`,
+`lib/redactedPeople.js`): of the normalised first and last name and of every
+licence number the run erased. The sync writes NULL for a registered 1st or
+2nd referee (names and licence number) and line judge, and takes their names
+out of `convocations`; namesakes stay empty too, as the run erased them. So
+`--apply` without `--match` needs the backend's `OV_PIN_SECRET` in the
+environment (refused with exit 2 without it; a dry run says so). With
+`--match` the schedule is not touched and nothing is registered. The register
+file's line carries the keyed hashes, so `--reapply` puts them back after a
+restore without the secret (a line written before db/052 has none: run that
+request again by name). Rotating `OV_PIN_SECRET` makes the entries
+unmatchable: run each request again by name. The sync fails (writes nothing)
+when the register has entries and it has no `OV_PIN_SECRET`; the backend
+always has one in database mode. Tests: `tests/redactPerson.pg.test.js`,
+`tests/redactedPeople.test.js`, `tests/vmSync.run.test.js`,
+`tests/vmSync.pg.test.js`.
 
 ### Still open (accepted, with impact)
 
@@ -990,6 +1010,17 @@ not in `ANON_DB_COLUMNS`; any other session, and one whose roles cannot be read,
 on a filter or order), `GET /api/games/today` the same; Match Setup's "Load official match" fills
 referee 1 / 2's value with them. The migration runs before the switch (the new sync names the
 columns), and is safe for the old backend.
+
+**`db/052`: the register of people erased on request.** `public.redacted_people` (`hash` bytea, 32
+bytes, primary key; `kind` `'name'` or `'licence'`; `created_at`): keyed hashes that
+`scripts/redact-person.mjs` writes and the schedule sync reads, so a referee erased on request is
+not written back from VolleyManager ("Retention of match records and requests about one person"; `lib/redactedPeople.js`).
+`ov_app` may only read it (the migration and `roles.sql` take INSERT, UPDATE and DELETE back), the
+Data tab lists it read-only (`lib/dataAdmin.js` `READ_ONLY_TABLES`), the hash column is out of the
+SQL browser's views (the `...hash` rule), and it is not on the `/api/db` allowlist. Kept as long as
+the service runs (no retention). A new, empty table: safe for the old backend, which never reads
+it; `deploy.sh` runs it before the switch like every migration, and the new backend's schema check
+expects it.
 Rosters sent ahead with a signature before db/048 lose it once, at their next send (the roster
 hash no longer has the `dob` key). Tests: `tests/migration048.pg.test.js`,
 `tests/scrubSheetBirthdates.pg.test.js`.
@@ -1394,7 +1425,7 @@ Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only
 | `012_app_memberships.sql` | after 011 | OpenVolley / OpenBeach separation: `auth.app_memberships` (backfill: every existing account becomes an indoor member, nobody gets beach), `invite_codes.sport`, `audit_log.app` (NULL = indoor), the sport lock on `matches.sport_type` (SQLSTATE `OVS01`), and db/007's close entry and db/011's void entry with the match's app. Idempotent; grants itself to `ov_app` when the role exists, `roles.sql` covers it too (`../docs/app-separation-spec.md`). |
 | `013_beach_official_index.sql` | after 012 | The official-game index without beach rows: beach game numbers restart with every tournament (uniqueness per tournament in 014). Indoor keeps the same key. Idempotent; `lib/officialGame.js` answers "free" for beach from this backend on (`../docs/beach-tournaments-spec.md`). |
 | `014_beach_tournaments.sql` | after 013 | OpenBeach tournaments: `beach_tournaments`, `beach_tournament_managers`, `beach_courts`, `beach_draws`, `beach_entries`, `beach_pools`/`beach_pool_members`, `beach_tmatches`, and `matches.tournament_match_id` (unique, beach only, server-only). None on the `/api/db` allowlist. Idempotent; grants itself to `ov_app` when the role exists, `roles.sql` covers it too. |
-| `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, `auth.app_tokens` DML (when 010 ran), `auth.approval_pins` DML (when 011 ran), `auth.app_memberships` SELECT/INSERT/DELETE (when 012 ran), no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
+| `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync; SELECT only on `redacted_people`, db/052; the logs append-only), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, `auth.app_tokens` DML (when 010 ran), `auth.approval_pins` DML (when 011 ran), `auth.app_memberships` SELECT/INSERT/DELETE (when 012 ran), no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
 
 **A database already running** gets a new `db/NNN_*.sql` file by hand, in number order, as `ov_owner`, then `roles.sql` (RUNBOOK-hetzner.md, "Apply a new db migration"). `restore.sh` only picks the files up on a restore. For `006`:
 
