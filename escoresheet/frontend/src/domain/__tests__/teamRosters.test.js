@@ -61,13 +61,13 @@ describe('mergeImportedRoster', () => {
 
   it('no duplicates: the same licence, accents, swapped names, a player twice in the import', () => {
     const mine = [
-      { key: 1, number: 28, first_name: 'Oskar', last_name: 'Bizard', dob: '', license_number: '123456', active: true },
-      { key: 2, number: 17, first_name: 'Federico', last_name: 'Felician', dob: '', license_number: '', active: true },
+      { key: 1, number: 28, first_name: 'Oskar', last_name: 'Probst', dob: '', license_number: '123456', active: true },
+      { key: 2, number: 17, first_name: 'Federico', last_name: 'Musteran', dob: '', license_number: '', active: true },
       { key: 3, number: 6, first_name: 'Fischer', last_name: 'David', dob: '', license_number: '', active: true }
     ]
     const r = mergeImportedRoster(mine, [], { players: [
-      { number: null, first_name: 'Oscar', last_name: 'Bizard', dob: '2005-10-29', license_number: '123456' }, // spelled otherwise, same licence
-      { number: null, first_name: 'Federico', last_name: 'Felicián', dob: '1996-01-17', license_number: '234567' }, // accent
+      { number: null, first_name: 'Oscar', last_name: 'Probst', dob: '2005-10-29', license_number: '123456' }, // spelled otherwise, same licence
+      { number: null, first_name: 'Federico', last_name: 'Musterán', dob: '1996-01-17', license_number: '234567' }, // accent
       { number: null, first_name: 'David', last_name: 'Fischer', dob: '2003-09-30', license_number: '345678' }, // first and last swapped by hand
       { number: null, first_name: 'Neu', last_name: 'Neue', dob: null, license_number: '456789' },
       { number: null, first_name: 'Neu', last_name: 'Neue', dob: null, license_number: '456789' } // twice in the PDF

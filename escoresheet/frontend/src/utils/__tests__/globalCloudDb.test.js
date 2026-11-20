@@ -14,8 +14,8 @@ const match = (over = {}) => ({
 })
 const data = (over = {}) => ({
   match: match(over),
-  homeTeam: { name: 'Munich IS', shortName: 'MIS', color: '#1d4ed8' },
-  awayTeam: { name: 'Zurich IS', shortName: 'ZIS', color: '#dc2626' },
+  homeTeam: { name: 'Bergtal IS', shortName: 'BIS', color: '#1d4ed8' },
+  awayTeam: { name: 'Seeblick IS', shortName: 'SIS', color: '#dc2626' },
   homePlayers: [{ firstName: 'Anna', number: 7 }], awayPlayers: [],
   sets: [{ index: 2, homePoints: 10, awayPoints: 8, finished: false }, { index: 1, homePoints: 25, awayPoints: 20, finished: true }],
   events: [{ id: 1, type: 'point', stateSnapshot: { big: true }, stateBefore: {} }]
@@ -44,7 +44,7 @@ describe('globalCloudDb', () => {
 
   it('the summary: teams, finished sets in order, sets won, status', () => {
     const s = cloudSummary(data())
-    expect(s.home).toEqual({ name: 'Munich IS', short: 'MIS', color: '#1d4ed8' })
+    expect(s.home).toEqual({ name: 'Bergtal IS', short: 'BIS', color: '#1d4ed8' })
     expect(s.sets).toEqual([{ home: 25, away: 20 }])
     expect(s.setsWon).toEqual({ home: 1, away: 0 })
     expect(s.status).toBe('live')
@@ -63,7 +63,7 @@ describe('globalCloudDb', () => {
     expect(body.key).toBe(KEY)
     expect(body.pin).toBe('316271')
     expect(body.organizer).toBe('ABCDE23456')
-    expect(body.summary.home.name).toBe('Munich IS')
+    expect(body.summary.home.name).toBe('Bergtal IS')
     expect('pdf' in body).toBe(false)
     expect(update).toHaveBeenCalledWith(4, { cloudShareToken: 'T'.repeat(22) })
   })

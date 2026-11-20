@@ -181,7 +181,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   // A phone held upright (under 640 px): the screen takes its content's
   // height, sizes in rem (they follow the Android font size) and labels that
   // fit on one line. It was the tablet layout squeezed: names cut to
-  // "VBC Züri…", Back over the title, buttons on three lines, the ball in a
+  // "VBC Muster…", Back over the title, buttons on three lines, the ball in a
   // tall empty middle (the owner, 2026-10-21).
   const phone = usePhoneWidth()
   // The libero select's empty option in a portrait row (its column head is

@@ -33,13 +33,13 @@ describe('hashes and checks', () => {
 describe('sanitizeSummary', () => {
   it('keeps the listed fields only, bounded', () => {
     const s = sanitizeSummary({
-      home: { name: ' Munich IS ', short: 'MUNICH-INTERNATIONAL', color: '#1d4ed8', players: ['Anna'] },
+      home: { name: ' Bergtal IS ', short: 'BERGTAL-INTERNATIONAL', color: '#1d4ed8', players: ['Anna'] },
       away: { name: 'x'.repeat(200), color: 'red' },
       setsWon: { home: '2', away: -1 },
       sets: [{ home: 25, away: 20, events: [1] }, null, { home: 'a', away: 1000 }, {}, {}, {}, {}],
       status: 'hacked', hall: 'Hall 1', league: 'U18', scheduledAt: '2027-05-05T09:00:00Z', gameNumber: 12, officials: [{ lastName: 'Ref' }]
     })
-    assert.deepEqual(s.home, { name: 'Munich IS', short: 'MUNICH-INTER', color: '#1d4ed8' })
+    assert.deepEqual(s.home, { name: 'Bergtal IS', short: 'BERGTAL-INTE', color: '#1d4ed8' })
     assert.equal(s.away.name.length, 80)
     assert.equal(s.away.color, null)
     assert.deepEqual(s.setsWon, { home: 2, away: 0 })

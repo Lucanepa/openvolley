@@ -16,8 +16,8 @@ vi.mock('react-i18next', () => ({
 import RestorePreview from '../RestorePreview'
 
 const data = {
-  homeTeam: { name: 'VBC Rämi D1' },
-  awayTeam: { name: 'VBC Einsiedeln D2' },
+  homeTeam: { name: 'VBC Rebberg D1' },
+  awayTeam: { name: 'VBC Klosterau D2' },
   sets: [{ index: 1, homePoints: 12, awayPoints: 9, finished: false }],
   events: [
     { setIndex: 1, seq: 1, type: 'lineup', payload: { team: 'home', lineup: { I: 2, II: 13, III: 4, IV: 7, V: 10, VI: 17 } } },
@@ -48,7 +48,7 @@ describe('RestorePreview', () => {
 
   it('the two team columns are cells of one grid, so a wrapped name moves both line-ups together', () => {
     const { container } = render(<RestorePreview data={data} source="local" />)
-    const names = screen.getAllByTitle(/VBC (Rämi D1|Einsiedeln D2)/)
+    const names = screen.getAllByTitle(/VBC (Rebberg D1|Klosterau D2)/)
     expect(names).toHaveLength(2)
     expect(names[0].parentElement).toBe(names[1].parentElement)
     expect(names[0].parentElement.className).toContain('grid-cols-2')

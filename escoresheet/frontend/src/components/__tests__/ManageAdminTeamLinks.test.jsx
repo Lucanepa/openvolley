@@ -18,10 +18,10 @@ import InvitesPanel from '../manage/InvitesPanel'
 
 beforeEach(() => {
   vi.clearAllMocks()
-  api.clubs.list.mockResolvedValue({ data: { clubs: [{ id: 'c1', name: 'VBC Limmattal' }, { id: 'c2', name: 'VBC Other' }] }, error: null, status: 200 })
+  api.clubs.list.mockResolvedValue({ data: { clubs: [{ id: 'c1', name: 'VBC Flussau' }, { id: 'c2', name: 'VBC Other' }] }, error: null, status: 200 })
   api.admin.listInvites.mockResolvedValue({ data: { invites: [] }, error: null, status: 200 })
   api.club.listInvites.mockResolvedValue({ data: { invites: [] }, error: null, status: 200 })
-  api.club.teams.mockResolvedValue({ data: { teams: [{ id: 't2', name: 'VBC Limmattal HU23' }, { id: 't1', name: 'VBC Limmattal D1' }] }, error: null, status: 200 })
+  api.club.teams.mockResolvedValue({ data: { teams: [{ id: 't2', name: 'VBC Flussau HU23' }, { id: 't1', name: 'VBC Flussau D1' }] }, error: null, status: 200 })
   api.club.createTeamLink.mockResolvedValue({ data: { code: 'ABCDEFGHJKMN', invite: { id: 'i1', role: 'team_manager' } }, error: null, status: 201 })
 })
 
@@ -38,7 +38,7 @@ describe('InvitesPanel: an admin\'s team link', () => {
     fireEvent.change(await within(dialog).findByTestId('invite-club'), { target: { value: 'c1' } })
     await waitFor(() => expect(api.club.teams).toHaveBeenCalledWith('c1'))
     const team = within(dialog).getByTestId('invite-team')
-    await waitFor(() => expect(within(team).getAllByRole('option').map((o) => o.textContent)).toEqual(['manage.invites.pickTeam', 'VBC Limmattal D1', 'VBC Limmattal HU23']))
+    await waitFor(() => expect(within(team).getAllByRole('option').map((o) => o.textContent)).toEqual(['manage.invites.pickTeam', 'VBC Flussau D1', 'VBC Flussau HU23']))
     expect(within(dialog).getByTestId('invite-max-uses').value).toBe('3')
     fireEvent.change(team, { target: { value: 't2' } })
     expect(create.disabled).toBe(false)
@@ -69,7 +69,7 @@ describe('InvitesPanel: an admin\'s team link', () => {
     fireEvent.click(await screen.findByRole('button', { name: /manage\.invites\.new/ }))
     expect(within(await screen.findByRole('dialog')).queryByRole('option', { name: 'access.roles.team_manager' })).toBeNull()
     unmount()
-    render(<InvitesPanel app="indoor" club={{ id: 'c1', name: 'VBC Limmattal' }} />)
+    render(<InvitesPanel app="indoor" club={{ id: 'c1', name: 'VBC Flussau' }} />)
     fireEvent.click(await screen.findByRole('button', { name: /manage\.invites\.new/ }))
     expect(within(await screen.findByRole('dialog')).queryByRole('option', { name: 'access.roles.team_manager' })).toBeNull()
   })

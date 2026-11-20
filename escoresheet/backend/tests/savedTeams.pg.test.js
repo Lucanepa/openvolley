@@ -227,7 +227,7 @@ describe('savedTeams on Postgres', { skip: SKIP_PG }, () => {
       const indoor = await st.createCompetition({ actorId: cm, body: { name: 'No sport', season: '2026/27' } })
       assert.equal(indoor.status, 201)
       assert.equal(indoor.body.data.competition.sport, 'indoor')
-      const r = await st.createCompetition({ actorId: cm, body: { name: 'Coop Beachtour', season: '2026', gender: 'women', sport: 'beach', vm_leagues: [] } })
+      const r = await st.createCompetition({ actorId: cm, body: { name: 'Sunset Beachtour', season: '2026', gender: 'women', sport: 'beach', vm_leagues: [] } })
       assert.equal(r.status, 201, JSON.stringify(r.body))
       beachComp = r.body.data.competition
       assert.equal(beachComp.sport, 'beach')
@@ -269,7 +269,7 @@ describe('savedTeams on Postgres', { skip: SKIP_PG }, () => {
     })
 
     it('a beach roster round trip: a pair with countries and a coach', async () => {
-      const t = await st.createTeam({ actorId: cm, body: { competition_id: beachComp.id, name: 'Müller / Weber', short_name: 'MÜLLER/WEBER', club: 'BC Zürich', color: '#3b82f6' } })
+      const t = await st.createTeam({ actorId: cm, body: { competition_id: beachComp.id, name: 'Müller / Weber', short_name: 'MÜLLER/WEBER', club: 'BC Seeblick', color: '#3b82f6' } })
       assert.equal(t.status, 201, JSON.stringify(t.body))
       beachTeam = t.body.data.team
       assert.equal(beachTeam.sport, 'beach')
@@ -292,7 +292,7 @@ describe('savedTeams on Postgres', { skip: SKIP_PG }, () => {
       assert.deepEqual(put2.body.data.team.players.map((p) => p.id), r.players.map((p) => p.id))
       assert.equal(put2.body.data.team.players[1].country, 'ITA')
       // PATCH answers sport and country too
-      const pt = await st.updateTeam({ id: beachTeam.id, body: { club: 'BC Bern' } })
+      const pt = await st.updateTeam({ id: beachTeam.id, body: { club: 'BC Bergtal' } })
       assert.equal(pt.body.data.team.sport, 'beach')
       assert.equal(pt.body.data.team.players[1].country, 'ITA')
     })
@@ -365,7 +365,7 @@ describe('savedTeams on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(indoor.body.data.version, max(indoor))
       assert.equal(all.body.data.version, [indoor.body.data.version, beach.body.data.version].sort().at(-1))
       await new Promise((resolve) => setTimeout(resolve, 5))
-      await st.updateTeam({ id: beachTeam.id, body: { club: 'BC Basel' } })
+      await st.updateTeam({ id: beachTeam.id, body: { club: 'BC Sandhafen' } })
       assert.ok((await st.getBundle({ sport: 'beach' })).body.data.version > beach.body.data.version, 'a beach change moves the beach version')
       assert.equal((await st.getBundle()).body.data.version, indoor.body.data.version, 'and not the indoor one')
 

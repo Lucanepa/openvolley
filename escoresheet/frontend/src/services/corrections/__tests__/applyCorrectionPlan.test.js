@@ -63,7 +63,7 @@ describe('applyCorrectionPlan', () => {
 
     const match = await db.matches.get(matchId)
     expect(match.manualChanges.at(-1)).toMatchObject({ action: 'addTimeout', setIndex: 1, team: 'away', by: 'scorer' })
-    expect(match.manualChanges.at(-1).text).toBe(`Added: Time-out · Volley Bern (B) · Set 1 · B ${away}:12 A (entered after the match)`)
+    expect(match.manualChanges.at(-1).text).toBe(`Added: Time-out · Volley Talberg (B) · Set 1 · B ${away}:12 A (entered after the match)`)
 
     const jobs = await db.sync_queue.toArray()
     const inserts = jobs.filter(j => j.resource === 'event' && j.action === 'insert')
@@ -233,8 +233,8 @@ describe('applyCorrectionPlan', () => {
         ]
       }]
     })
-    const homeTeamId = await db.teams.add({ name: 'VC Smash' })
-    const awayTeamId = await db.teams.add({ name: 'Volley Bern' })
+    const homeTeamId = await db.teams.add({ name: 'VC Seehafen' })
+    const awayTeamId = await db.teams.add({ name: 'Volley Talberg' })
     const matchId = await db.matches.add({
       ...MATCH, id: undefined, seed_key: SEED, homeTeamId, awayTeamId, homeCourtCaptain: 5,
       remarks: `First line\n${remark}\nLast line`
@@ -262,7 +262,7 @@ describe('applyCorrectionPlan', () => {
     expect(match.homeCourtCaptain).toBe(17)
     // the line stays where it was, rewritten
     expect(match.remarks).toBe(`First line\n${remark.replace('no. 5', 'no. 17')}\nLast line`)
-    expect(match.manualChanges.at(-1)).toMatchObject({ action: 'renumberPlayer', text: 'Player #5 of VC Smash renumbered to #17 (entered after the match)' })
+    expect(match.manualChanges.at(-1)).toMatchObject({ action: 'renumberPlayer', text: 'Player #5 of VC Seehafen renumbered to #17 (entered after the match)' })
 
     const jobs = await db.sync_queue.toArray()
     const matchJob = jobs.find(j => j.resource === 'match' && j.action === 'update' && j.payload.players_home)
@@ -288,7 +288,7 @@ describe('applyCorrectionPlan', () => {
     expect(ct.payload.firstServe).toBe('away')
     const job = (await db.sync_queue.toArray()).find(j => j.resource === 'match' && j.payload.coin_toss)
     expect(job.payload.coin_toss).toEqual({ team_a: 'home', team_b: 'away', serve_a: false, confirmed: true, first_serve: 'away' })
-    expect(match.manualChanges.at(-1).text).toBe('Coin toss corrected: Team A is VC Smash, Volley Bern (B) serves first (entered after the match)')
+    expect(match.manualChanges.at(-1).text).toBe('Coin toss corrected: Team A is VC Seehafen, Volley Talberg (B) serves first (entered after the match)')
   })
 
   it('the match update of a coin toss correction carries cloud columns only (the server refuses an unknown one, and the log with it)', async () => {

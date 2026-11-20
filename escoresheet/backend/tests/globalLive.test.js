@@ -6,8 +6,8 @@ import { createGlobalLive, courtSummary, isLiveCode, gameSummary, screenNumber, 
 
 const CODE = 'ABCD2345'
 const live = (over = {}) => ({
-  team_a_name: 'Munich IS', team_a_short: 'MIS', team_a_color: '#1d4ed8',
-  team_b_name: 'Zurich IS', team_b_short: 'ZIS', team_b_color: '#dc2626',
+  team_a_name: 'Bergtal IS', team_a_short: 'BIS', team_a_color: '#1d4ed8',
+  team_b_name: 'Seeblick IS', team_b_short: 'SIS', team_b_color: '#dc2626',
   sets_won_a: 1, sets_won_b: 0, points_a: 12, points_b: 9, current_set: 2, best_of: 5,
   side_a: 'left', serving_team: 'left', match_status: 'live',
   timeout_active: false, set_interval_active: false,
@@ -16,7 +16,7 @@ const live = (over = {}) => ({
 })
 const entry = (over = {}) => ({
   match: { coinTossTeamA: 'home', hall: 'Hall 1', scheduledAt: '2027-11-05T09:00:00Z', gameN: 3, refereePin: '123456', officials: [{ lastName: 'Ref' }] },
-  homeTeam: { name: 'Munich IS' }, awayTeam: { name: 'Zurich IS' },
+  homeTeam: { name: 'Bergtal IS' }, awayTeam: { name: 'Seeblick IS' },
   homePlayers: [{ firstName: 'Anna', lastName: 'Muster', dob: '2009-01-01' }],
   sets: [{ index: 1, homePoints: 25, awayPoints: 20, finished: true }, { index: 2, homePoints: 12, awayPoints: 9, finished: false }],
   ...over
@@ -32,8 +32,8 @@ describe('isLiveCode', () => {
 describe('courtSummary', () => {
   it('keeps the score summary only, home and away as on the scoresheet', () => {
     const s = courtSummary(live(), entry(), '2027-11-05T09:30:00.000Z')
-    assert.deepEqual(s.home, { name: 'Munich IS', short: 'MIS', color: '#1d4ed8' })
-    assert.deepEqual(s.away, { name: 'Zurich IS', short: 'ZIS', color: '#dc2626' })
+    assert.deepEqual(s.home, { name: 'Bergtal IS', short: 'BIS', color: '#1d4ed8' })
+    assert.deepEqual(s.away, { name: 'Seeblick IS', short: 'SIS', color: '#dc2626' })
     assert.deepEqual(s.setsWon, { home: 1, away: 0 })
     assert.deepEqual(s.points, { home: 12, away: 9 })
     assert.deepEqual(s.sets, [{ home: 25, away: 20 }])
@@ -45,9 +45,9 @@ describe('courtSummary', () => {
   })
 
   it('maps team A back to away when the coin toss gave A to the away team', () => {
-    const s = courtSummary(live({ team_a_name: 'Zurich IS', team_b_name: 'Munich IS', points_a: 5, points_b: 8, side_a: 'right', serving_team: 'left' }), entry({ match: { coinTossTeamA: 'away' } }))
+    const s = courtSummary(live({ team_a_name: 'Seeblick IS', team_b_name: 'Bergtal IS', points_a: 5, points_b: 8, side_a: 'right', serving_team: 'left' }), entry({ match: { coinTossTeamA: 'away' } }))
     assert.deepEqual(s.points, { home: 8, away: 5 })
-    assert.equal(s.home.name, 'Munich IS')
+    assert.equal(s.home.name, 'Bergtal IS')
     assert.equal(s.serving, 'home') // left serves, A stands right: B (home) serves
   })
 

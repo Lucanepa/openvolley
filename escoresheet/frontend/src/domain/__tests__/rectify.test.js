@@ -284,8 +284,8 @@ describe('rectify: everything editable before play resumes', () => {
   it('describes the head and a cancelled point in the words of the sheet', () => {
     const { events } = subMatch()
     const after = applyPlanToEvents(events, plan(events, base(events)))
-    expect(describeEvent(after.find(e => e.type === 'rectification'), after, ctxFor()).text).toBe('Game taken back · VC Smash (A) · 4 point(s) of A cancelled, point to B · Set 2 · A 1:4 B')
-    expect(describeEvent(after.find(e => e.type === 'cancelled_point'), after, ctxFor()).title).toBe('Point cancelled: VC Smash')
+    expect(describeEvent(after.find(e => e.type === 'rectification'), after, ctxFor()).text).toBe('Game taken back · VC Seehafen (A) · 4 point(s) of A cancelled, point to B · Set 2 · A 1:4 B')
+    expect(describeEvent(after.find(e => e.type === 'cancelled_point'), after, ctxFor()).title).toBe('Point cancelled: VC Seehafen')
   })
 
   it('finalizing an empty plan on the result changes nothing', () => {

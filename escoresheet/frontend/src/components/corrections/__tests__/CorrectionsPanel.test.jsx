@@ -62,9 +62,9 @@ describe('CorrectionsPanel (review mode)', () => {
     // at the match end the set is chosen explicitly
     expect(screen.getByText('Fill in the fields above.')).toBeTruthy()
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Set' })).getByRole('radio', { name: 'Set 2' }))
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /Volley Bern/ }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /Volley Talberg/ }))
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Sanction' })).getByRole('radio', { name: /Delay warning/ }))
-    expect(screen.getByText(/^Delay warning — Team · Volley Bern \(B\) · Set 2 · B 0:0 A$/)).toBeTruthy()
+    expect(screen.getByText(/^Delay warning — Team · Volley Talberg \(B\) · Set 2 · B 0:0 A$/)).toBeTruthy()
     expect(screen.getByText('D in the Warning column · Team B · Set 2 · B 0:0 A')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
@@ -84,7 +84,7 @@ describe('CorrectionsPanel (review mode)', () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: 'Add sanction' }))
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Set' })).getByRole('radio', { name: 'Set 1' }))
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /VC Smash/ }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /VC Seehafen/ }))
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Sanction' })).getByRole('radio', { name: /Delay warning/ }))
     const confirm = screen.getByRole('button', { name: 'Confirm' })
     fireEvent.click(confirm)
@@ -98,12 +98,12 @@ describe('CorrectionsPanel (review mode)', () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: 'Add time-out' }))
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Set' })).getByRole('radio', { name: 'Set 1' }))
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /Volley Bern/ }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /Volley Talberg/ }))
     const select = screen.getByLabelText('At score')
     const option = [...select.options].find(o => o.textContent === 'B 10:12 A')
     fireEvent.change(select, { target: { value: option.value } })
-    expect(screen.getByText('"T" at B 10:12 A in the time-out box of Volley Bern, set 1.')).toBeTruthy()
-    expect(screen.getByText('Time-out · Volley Bern (B) · Set 1 · B 10:12 A')).toBeTruthy()
+    expect(screen.getByText('"T" at B 10:12 A in the time-out box of Volley Talberg, set 1.')).toBeTruthy()
+    expect(screen.getByText('Time-out · Volley Talberg (B) · Set 1 · B 10:12 A')).toBeTruthy()
   })
 
   it('set times: kit time fields, nothing to save until a time changes, then the new times', async () => {
@@ -132,10 +132,10 @@ describe('CorrectionsPanel (review mode)', () => {
     setup()
     const firstSet = screen.getAllByRole('button', { name: 'Correct final score' })[0]
     fireEvent.click(firstSet)
-    fireEvent.click(screen.getByRole('radio', { name: /\+1.*Volley Bern/ }))
-    // 25:21 keeps VC Smash the winner
+    fireEvent.click(screen.getByRole('radio', { name: /\+1.*Volley Talberg/ }))
+    // 25:21 keeps VC Seehafen the winner
     expect(screen.getByText('Final score A 25:20 B becomes A 25:21 B.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('radio', { name: /\+1.*VC Smash/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /\+1.*VC Seehafen/ }))
     expect(screen.getByText('A 26:20 B is not a possible final score of set 1.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Confirm' }).disabled).toBe(true)
   })
@@ -152,7 +152,7 @@ describe('CorrectionsPanel: a correction after the sheet was signed (fe-home-opt
   const addDelayWarning = () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add sanction' }))
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Set' })).getByRole('radio', { name: 'Set 1' }))
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /VC Smash/ }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /VC Seehafen/ }))
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Sanction' })).getByRole('radio', { name: /Delay warning/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
   }

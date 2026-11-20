@@ -1,4 +1,4 @@
-// Owner, 15.11: Team A corrected before set 1 started (Wädi made B) kept Wädi
+// Owner, 15.11: Team A corrected before set 1 started (Seevolley made B) kept Seevolley
 // on the left in set 1. Before set 1's first rally a new Team A is the coin
 // toss done again: team A on the left in set 1. After it, only the letters
 // change (owner 2026-10-09, domain/coinToss).
@@ -7,7 +7,7 @@ import { planCoinToss, setOnePlayed } from '../manualCorrections'
 import { getLeftTeamLabelForSet } from '../rules'
 
 const MATCH = { id: 1, bestOf: 5, firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossServeA: true, coinTossServeB: false, status: 'live' }
-const ctx = (match) => ({ match, homeTeam: { name: 'Wädivolley HU23' }, awayTeam: { name: 'VBC Rämi' }, matchId: 1, players: { home: [], away: [] }, liveSetIndex: 1 })
+const ctx = (match) => ({ match, homeTeam: { name: 'Seevolley HU23' }, awayTeam: { name: 'VBC Rebberg' }, matchId: 1, players: { home: [], away: [] }, liveSetIndex: 1 })
 const coinToss = { id: 1, matchId: 1, setIndex: 1, type: 'coin_toss', seq: 1, payload: { teamA: 'home', teamB: 'away', serveA: true, serveB: false, firstServe: 'home' } }
 const leftTeam = (match, set) => {
   const label = getLeftTeamLabelForSet(set, match)
@@ -15,13 +15,13 @@ const leftTeam = (match, set) => {
 }
 
 describe('coin toss corrected before set 1 started', () => {
-  it('the new team A starts set 1 on the left (Wädi made B moves to the right)', () => {
-    expect(leftTeam(MATCH, 1)).toBe('home') // Wädi (home) is A, on the left
+  it('the new team A starts set 1 on the left (Seevolley made B moves to the right)', () => {
+    expect(leftTeam(MATCH, 1)).toBe('home') // Seevolley (home) is A, on the left
     const plan = planCoinToss([coinToss], { teamA: 'away' }, ctx(MATCH))
     expect(plan.error).toBeUndefined()
     const after = { ...MATCH, ...plan.matchPatch }
     expect(after.coinTossTeamA).toBe('away')
-    expect(leftTeam(after, 1)).toBe('away') // Rämi, now A, on the left
+    expect(leftTeam(after, 1)).toBe('away') // Rebberg, now A, on the left
     expect(leftTeam(after, 2)).toBe('home')
     // the same team still serves first
     expect(after.firstServe).toBe('home')
@@ -41,7 +41,7 @@ describe('coin toss corrected before set 1 started', () => {
     const plan = planCoinToss([coinToss, rally], { teamA: 'away' }, ctx(MATCH))
     const after = { ...MATCH, ...plan.matchPatch }
     expect(after.coinTossTeamA).toBe('away')
-    expect(leftTeam(after, 1)).toBe('home') // Wädi stays left, now as B
+    expect(leftTeam(after, 1)).toBe('home') // Seevolley stays left, now as B
     expect(plan.notes.map(n => n.key)).not.toContain('corrections.note.coinTossRedone')
   })
 })

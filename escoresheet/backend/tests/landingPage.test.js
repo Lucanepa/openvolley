@@ -56,9 +56,9 @@ describe('landing page', () => {
 
   it('lists active matches only when there are some', () => {
     assert.doesNotMatch(render(), /Active matches/)
-    const html = render({ matches: [{ home: 'Volley Näfels', away: 'Lausanne UC', updatedAt: 1 }, { home: 'A', away: 'B' }] })
+    const html = render({ matches: [{ home: 'Volley Mühletal', away: 'Beispielstadt UC', updatedAt: 1 }, { home: 'A', away: 'B' }] })
     assert.match(html, /Active matches/)
-    assert.match(html, /Volley Näfels vs Lausanne UC/)
+    assert.match(html, /Volley Mühletal vs Beispielstadt UC/)
     assert.match(html, /21:45:53/)
   })
 

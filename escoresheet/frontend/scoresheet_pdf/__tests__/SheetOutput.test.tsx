@@ -56,7 +56,7 @@ function fixture({ match: matchOver = {}, ...over }: Record<string, any> = {}) {
     match: {
       id: 7, status: 'live', bestOf: 5,
       coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossServeA: true, coinTossServeB: false,
-      homeShortName: 'MUST-H1', awayShortName: 'SPADA', gameNumber: '382208', league: '2L',
+      homeShortName: 'MUST-H1', awayShortName: 'SPATZ', gameNumber: '382208', league: '2L',
       scheduledAt: local(2026, 10, 7, 20, 0), city: 'Zürich', hall: 'KS Musterdorf',
       officials: [
         { role: '1st referee', firstName: 'Claudia', lastName: 'Moser', country: 'CHE', dob: '19.04.1982' },
@@ -70,7 +70,7 @@ function fixture({ match: matchOver = {}, ...over }: Record<string, any> = {}) {
       ...matchOver
     },
     homeTeam: { name: 'VBC Musterdorf H1' },
-    awayTeam: { name: 'Volley Spada Academica H1' },
+    awayTeam: { name: 'Volley Spatz Academica H1' },
     homePlayers: [12, 3, 1, 7].map(n => ({ number: n, firstName: 'Anna', lastName: `Home${n}`, dob: '1998-03-0' + (n % 9 || 1), isCaptain: n === 7 })),
     awayPlayers: [2, 4].map(n => ({ number: n, first_name: 'X', lastName: `Away${n}`, dob: `0${n}/03/1998` })),
     sets: [],
@@ -167,7 +167,7 @@ describe('the generated sheet', () => {
     // 1, 3, 7, 12 in shirt-number order, ISO dates as DD.MM.YYYY
     expect(home).toMatch(/01\.03\.19981Home1, A\.03\.03\.19983Home3, A\.07\.03\.19987Home7, A\.03\.03\.199812Home12, A\./)
     // the away short name was empty: the team name
-    expect(text).toContain('BVolley Spada Academica H1LicenceNoName')
+    expect(text).toContain('BVolley Spatz Academica H1LicenceNoName')
     expect(text).toContain('02.03.19982Away2, X.')
     expect(text).not.toContain('Lic.')
   })
@@ -257,7 +257,7 @@ describe('Save PDF', () => {
     expect(props.creator).toBe('OpenVolley eScoresheet')
     // a viewer shows the scoresheet's name, as the file is named (owner 2026-10-13)
     expect(props.title).toBe('game382208_2L_2026-10-07')
-    expect(props.subject).toBe('OpenVolley eScoresheet: VBC Musterdorf H1 vs Volley Spada Academica H1, 07.10.2026, game 382208')
+    expect(props.subject).toBe('OpenVolley eScoresheet: VBC Musterdorf H1 vs Volley Spatz Academica H1, 07.10.2026, game 382208')
     expect(JSON.stringify(pdfCalls)).not.toMatch(/swiss/i)
     // a browser: the notice names the file and where it went
     await waitFor(() => expect(view.getByTestId('pdf-notice').textContent).toContain("browser's download folder"))

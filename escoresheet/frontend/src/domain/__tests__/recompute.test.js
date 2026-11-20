@@ -146,7 +146,7 @@ describe('recompute after a correction', () => {
     const keys = plan.newIssues.map(i => i.key)
     expect(keys).toContain('corrections.issue.subOutNotOnCourt')
     expect(plan.newIssues.find(i => i.key === 'corrections.issue.subOutNotOnCourt').text)
-      .toMatch(/^Set 1, A \d+:\d+ B: substitution of VC Smash, #2 for #7: #7 is not on court\.$/)
+      .toMatch(/^Set 1, A \d+:\d+ B: substitution of VC Seehafen, #2 for #7: #7 is not on court\.$/)
     const after = applyPlanToEvents(events, plan)
     // #2 never left: he is on court in every later home line-up of set 1
     for (const lu of lineupsOf(after, 1, 'home').filter(e => e.seq > first.seq)) {
@@ -186,7 +186,7 @@ describe('recompute after a correction', () => {
     })
     const issues = matchIssues(events, ctx)
     expect(issues.map(i => i.key)).toEqual(['corrections.issue.timeoutLimit', 'corrections.issue.sanctionLadder'])
-    expect(issues[1].text).toBe('Set 1, B 3:3 A: Delay warning of Volley Bern: by the rules this is a delay penalty.')
+    expect(issues[1].text).toBe('Set 1, B 3:3 A: Delay warning of Volley Talberg: by the rules this is a delay penalty.')
   })
 
   it('a finished set whose last point changes team: the set end follows the new winner, the score is flagged', () => {

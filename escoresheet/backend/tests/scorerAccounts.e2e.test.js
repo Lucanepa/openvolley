@@ -383,7 +383,7 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     expectCode(await call(users.anna, 'POST', '/api/saved-teams/competitions', { name: 'Tour', season: '2026', sport: 'beach' }), 403, 'OV_FORBIDDEN')
     expectCode(await call(users.cm, 'POST', '/api/saved-teams/competitions', { name: 'Tour', season: '2026', sport: 'beach' }), 403, 'OV_FORBIDDEN')
     expectCode(await call(beachCm, 'POST', '/api/saved-teams/competitions', { name: 'Liga', season: '2026/27' }), 403, 'OV_FORBIDDEN')
-    const bc = await call(beachCm, 'POST', '/api/saved-teams/competitions', { name: 'Coop Beachtour', season: '2026', gender: 'women', sport: 'beach' })
+    const bc = await call(beachCm, 'POST', '/api/saved-teams/competitions', { name: 'Sunset Beachtour', season: '2026', gender: 'women', sport: 'beach' })
     assert.equal(bc.status, 201, bc.text)
     assert.equal(bc.json.data.competition.sport, 'beach')
     expectCode(await call(users.cm, 'POST', '/api/saved-teams/teams', { competition_id: bc.json.data.competition.id, name: 'Müller / Weber' }), 403, 'OV_FORBIDDEN')

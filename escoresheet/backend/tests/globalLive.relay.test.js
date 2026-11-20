@@ -24,8 +24,8 @@ function sync(room, match = {}) {
     type: 'sync-match-data',
     matchId: 1,
     match: { id: 1, seed_key: room, status: 'live', test: true, gamePin: '515253', refereePin: '316271', coinTossTeamA: 'home', hall: 'Hall 1', ...match },
-    homeTeam: { id: 1, name: 'Munich IS' },
-    awayTeam: { id: 2, name: 'Zurich IS' },
+    homeTeam: { id: 1, name: 'Bergtal IS' },
+    awayTeam: { id: 2, name: 'Seeblick IS' },
     homePlayers: [{ id: 1, firstName: 'Anna', lastName: 'Muster', number: 7 }],
     awayPlayers: [],
     sets: [{ id: 1, index: 1, homePoints: 25, awayPoints: 20, finished: true }, { id: 2, index: 2, homePoints: 3, awayPoints: 1, finished: false }],
@@ -33,7 +33,7 @@ function sync(room, match = {}) {
   }
 }
 const liveState = (over = {}) => ({
-  team_a_name: 'Munich IS', team_b_name: 'Zurich IS', sets_won_a: 1, sets_won_b: 0, points_a: 3, points_b: 1,
+  team_a_name: 'Bergtal IS', team_b_name: 'Seeblick IS', sets_won_a: 1, sets_won_b: 0, points_a: 3, points_b: 1,
   current_set: 2, best_of: 5, side_a: 'left', serving_team: 'left', match_status: 'live', lineup_a: { I: 7 }, ...over
 })
 
@@ -83,7 +83,7 @@ describe('Global live page through the relay', () => {
     assert.equal(courts.length, 1)
     assert.deepEqual(courts[0].points, { home: 3, away: 1 })
     assert.deepEqual(courts[0].sets, [{ home: 25, away: 20 }])
-    assert.equal(courts[0].home.name, 'Munich IS')
+    assert.equal(courts[0].home.name, 'Bergtal IS')
     assert.equal(courts[0].hall, 'Hall 1')
     const text = JSON.stringify(r.json)
     for (const leak of ['Anna', 'Muster', '515253', '316271', room, 'lineup']) assert.equal(text.includes(leak), false, leak)
@@ -144,7 +144,7 @@ describe('Global live page through the relay', () => {
     const code = 'PUSH2345'
     const court = 'a'.repeat(32)
     const push = (body) => fetch(`${srv.base}/api/global/live/${code}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) })
-    const r = await push({ court, liveState: liveState({ points_a: 7 }), match: { coinTossTeamA: 'home', hall: 'Hall 3' }, homeTeam: { name: 'Munich IS' }, awayTeam: { name: 'Zurich IS' }, sets: [{ index: 1, homePoints: 25, awayPoints: 22, finished: true }], homePlayers: [{ lastName: 'Muster' }] })
+    const r = await push({ court, liveState: liveState({ points_a: 7 }), match: { coinTossTeamA: 'home', hall: 'Hall 3' }, homeTeam: { name: 'Bergtal IS' }, awayTeam: { name: 'Seeblick IS' }, sets: [{ index: 1, homePoints: 25, awayPoints: 22, finished: true }], homePlayers: [{ lastName: 'Muster' }] })
     assert.equal(r.status, 200)
     let p = await page(srv.base, code)
     assert.equal(p.json.data.courts.length, 1)

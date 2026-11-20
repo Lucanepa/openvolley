@@ -55,7 +55,7 @@ describe('teams and score', () => {
     expect(teamLetter('home', { coinTossTeamA: 'away' })).toBe('B')
     expect(teamLetter('away', { coinTossTeamA: 'away' })).toBe('A')
     expect(teamLetter('home', {})).toBe('A')
-    expect(teamLabel('away', ctx)).toMatchObject({ name: 'Volley Bern', letter: 'B' })
+    expect(teamLabel('away', ctx)).toMatchObject({ name: 'Volley Talberg', letter: 'B' })
   })
   it('writes the concerned team first, Team A first otherwise', () => {
     expect(formatScore({ home: 11, away: 17 }, 'away', ctx)).toBe('B 17:11 A')
@@ -98,7 +98,7 @@ describe('describeEvent', () => {
   it('a time-out: requesting team first', () => {
     const d = describeEvent(find(e => e.type === 'timeout'), events, ctx)
     expect(d.title).toBe('Time-out')
-    expect(d.teamText).toBe('Volley Bern (B)')
+    expect(d.teamText).toBe('Volley Talberg (B)')
     expect(d.score).toMatch(/^B \d+:\d+ A$/)
   })
 
@@ -106,8 +106,8 @@ describe('describeEvent', () => {
     const d = describeEvent(find(e => e.type === 'sanction' && e.payload.type === 'penalty'), events, ctx)
     expect(d.title).toBe('Penalty — Player #8 (bench)')
     expect(d.code).toBe('(8)')
-    expect(d.detail).toBe('+1 point to Volley Bern')
-    expect(d.text).toMatch(/^Penalty — Player #8 \(bench\) · VC Smash \(A\) · Set 1 · A \d+:\d+ B · \+1 point to Volley Bern$/)
+    expect(d.detail).toBe('+1 point to Volley Talberg')
+    expect(d.text).toMatch(/^Penalty — Player #8 \(bench\) · VC Seehafen \(A\) · Set 1 · A \d+:\d+ B · \+1 point to Volley Talberg$/)
   })
 
   it('team sanctions read "Team"', () => {
@@ -133,7 +133,7 @@ describe('describeEvent', () => {
 
   it('a set end reads who won and the final score A first', () => {
     const d = describeEvent(find(e => e.type === 'set_end'), events, ctx)
-    expect(d.title).toBe('Set 1 won by VC Smash')
+    expect(d.title).toBe('Set 1 won by VC Seehafen')
     expect(d.score).toBe('A 25:20 B')
   })
 
@@ -183,7 +183,7 @@ describe('describeEvent', () => {
     expect(describeEvent(libero, events, short).text).toBe('Libero #7 in for #1 · B · Set 1 · B 0:0 A')
     for (const e of events) {
       const d = describeEvent(e, events, short)
-      if (d) expect(d.text).not.toMatch(/VC Smash|Volley Bern/)
+      if (d) expect(d.text).not.toMatch(/VC Seehafen|Volley Talberg/)
     }
   })
 

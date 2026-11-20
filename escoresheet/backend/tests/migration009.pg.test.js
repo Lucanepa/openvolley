@@ -72,7 +72,7 @@ describe('db/009_beach_saved_teams.sql', { skip: SKIP_PG }, () => {
   it("a 2.1.0-style INSERT without sport is indoor; the season format follows the sport", async () => {
     const { rows: [c] } = await raw.query("INSERT INTO public.competitions (name, season, gender, category, vm_leagues, created_by) VALUES ('Old client', '2026/27', null, null, '{}', null) RETURNING sport")
     assert.equal(c.sport, 'indoor')
-    const { rows: [b] } = await raw.query("INSERT INTO public.competitions (name, season, sport) VALUES ('Coop Beachtour', '2026', 'beach') RETURNING id, sport")
+    const { rows: [b] } = await raw.query("INSERT INTO public.competitions (name, season, sport) VALUES ('Sunset Beachtour', '2026', 'beach') RETURNING id, sport")
     assert.equal(b.sport, 'beach')
     ids.beach = b.id
     await expectCode("INSERT INTO public.competitions (name, season, sport) VALUES ('X', '2026/27', 'beach')", [], '23514')

@@ -245,11 +245,11 @@ describe('SanctionsResultsModal', () => {
 
   it('a long club name wraps inside the results table instead of widening it', () => {
     const data = baseData()
-    data.homeTeam = { ...data.homeTeam, name: 'Volleyballclub Kantonsschule Schaffhausen Damen 1' }
+    data.homeTeam = { ...data.homeTeam, name: 'Volleyballclub Kantonsschule Musterhausen Damen 1' }
     render(<SanctionsResultsModal open onClose={() => {}} data={data} teamAKey="home" leftIsHome onSign={() => {}} />)
     const table = document.querySelector('[data-set-row="1"]').closest('table')
     expect(table.style.tableLayout).toBe('fixed')
-    const head = screen.getByText('Volleyballclub Kantonsschule Schaffhausen Damen 1').closest('th')
+    const head = screen.getByText('Volleyballclub Kantonsschule Musterhausen Damen 1').closest('th')
     expect(head.style.whiteSpace).toBe('normal')
   })
 

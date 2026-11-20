@@ -8055,12 +8055,12 @@ if (DB_MODE) {
     }
     // VolleyManager -> svrz_games, daily at 22:30 UTC (replaces the Supabase
     // vm-sync Edge Function). Cloud only; needs VM credentials; VM_SYNC=off disables.
-    // The VolleyManager account is shared with svrz_rc and wiedisync and has ONE
+    // The VolleyManager account is shared with svrz_rc and a club app and has ONE
     // active role (lib/vmSync.js VM_ROLE_FOR_GAMES). 22:30 UTC is inside svrz_rc's
     // referee-role window (22:00-00:59 UTC: its games sync, the same role as this
-    // one), which wiedisync's club-role jobs keep out of, so switching roles here
+    // one), which the club app's club-role jobs keep out of, so switching roles here
     // can never make one of them read under the wrong role. Listed in svrz_rc's
-    // infrastructure.md and wiedisync's INFRA.md ("The shared VolleyManager
+    // infrastructure.md and the club app's INFRA.md ("The shared VolleyManager
     // account"); move it only together with those tables.
     // A run that is no success (failed, partial, no game written) is tried
     // again after 15, 30 and 60 minutes, and a backend that starts with the

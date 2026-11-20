@@ -224,10 +224,10 @@ describe('easyMatchPrefill', () => {
     expect(easyMatchPrefill('?easy&bestOf=7').bestOf).toBe(5)
   })
   it('cuts a long name before an emoji, never through it (a lone surrogate made Save PDF fail)', () => {
-    const name = 'Volleyballclub Schaffhausen-Neuhausen am Rheinfall Damen 2 🏐'
+    const name = 'Volleyballclub Musterhausen-Beispielau am Seeblick Damen 2 🏐'
     expect(name.length).toBe(61)
-    const p = easyMatchPrefill(`?easy=1&home=${encodeURIComponent(name)}&homeShort=${encodeURIComponent('VBCSHAF🏐')}`)
-    expect(p.homeName).toBe('Volleyballclub Schaffhausen-Neuhausen am Rheinfall Damen 2 ')
-    expect(p.homeShort).toBe('VBCSHAF')
+    const p = easyMatchPrefill(`?easy=1&home=${encodeURIComponent(name)}&homeShort=${encodeURIComponent('VBCMUST🏐')}`)
+    expect(p.homeName).toBe('Volleyballclub Musterhausen-Beispielau am Seeblick Damen 2 ')
+    expect(p.homeShort).toBe('VBCMUST')
   })
 })

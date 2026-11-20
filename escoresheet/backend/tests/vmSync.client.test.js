@@ -112,7 +112,7 @@ describe('login flow against a fake VolleyManager', () => {
   })
 
   it('switches the shared account into the referee-delegate role before the referee page', async () => {
-    // another job (wiedisync at 04:30 UTC) left the account in a club role
+    // another job (a club app at 04:30 UTC) left the account in a club role
     const vm = createFakeVolleyManager({ startRole: 'club' })
     const { csrfToken } = await vmLogin(creds, { fetch: vm.fetch, baseUrl: vm.baseUrl, http })
     assert.equal(csrfToken, FAKE_CSRF)

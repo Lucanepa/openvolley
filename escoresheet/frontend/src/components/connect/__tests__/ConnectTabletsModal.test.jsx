@@ -66,7 +66,7 @@ const MATCH = {
   id: 7,
   seed_key: 'match_1759740000000_ab12cd',
   homeName: 'VBC Musterau',
-  awayName: 'Volley Bern',
+  awayName: 'Volley Talberg',
   gameNumber: 4711,
   refereePin: '123456',
   homeTeamPin: '234567',

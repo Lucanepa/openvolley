@@ -77,7 +77,7 @@ export const SYNC_STALE_AFTER_MS = 26 * 3600000
 /**
  * When retries and catch-up runs may start (UTC, VM_SYNC_WINDOW_UTC): the
  * shared account's referee-role hours (svrz_rc's 22:00-00:59 UTC games
- * window, which wiedisync's club-role jobs keep out of). 'any' once
+ * window, which a club app's club-role jobs keep out of). 'any' once
  * OpenVolley has an account of its own.
  */
 export const DEFAULT_RUN_WINDOW_UTC = '22:00-01:00'
@@ -89,10 +89,10 @@ export const ADVISORY_LOCK_KEY = '8031737197922709091'
 
 /**
  * The VolleyManager role the referee-game search needs. The account is shared
- * (svrz_rc and wiedisync log into the same one), and VolleyManager keeps the
+ * (svrz_rc and a club app log into the same one), and VolleyManager keeps the
  * active role per ACCOUNT, not per session: whichever job or person last picked
  * a role decides what this login may read. Under a club role the referee page
- * answers 403 (which is how this sync failed most days from 2026-10-23: wiedisync's
+ * answers 403 (which is how this sync failed most days from 2026-10-23: the club app's
  * 04:30 UTC job leaves the account in its club role). So the login switches into
  * this role itself, as svrz_rc's games sync does (svrz_rc server/index.ts,
  * "VolleyManager roles").

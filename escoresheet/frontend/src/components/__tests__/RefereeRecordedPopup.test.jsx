@@ -78,8 +78,8 @@ function bundle(events) {
   return {
     success: true,
     match: { id: 'match_seed', status: 'live', coinTossTeamA: 'home', firstServe: 'home' },
-    homeTeam: { name: 'VC Smash', color: '#ef4444' },
-    awayTeam: { name: 'Volley Bern', color: '#3b82f6' },
+    homeTeam: { name: 'VC Seehafen', color: '#ef4444' },
+    awayTeam: { name: 'Volley Talberg', color: '#3b82f6' },
     homePlayers: [1, 2, 3, 4, 5, 6, 7].map(n => ({ number: n, lastName: `H${n}` })),
     awayPlayers: [1, 2, 3, 4, 5, 6].map(n => ({ number: n, lastName: `A${n}` })),
     sets: [{ index: 1, homePoints: 1, awayPoints: 0, finished: false }],
@@ -125,7 +125,7 @@ describe('Referee: recorded by the scorer', () => {
     const to = ev(3, 'timeout', { team: 'away' })
     await scorerRecorded([...BASE, to])
     expect(within(popup()).getByText('Time-out')).toBeTruthy()
-    expect(within(popup()).getByText('Volley Bern (B)')).toBeTruthy()
+    expect(within(popup()).getByText('Volley Talberg (B)')).toBeTruthy()
 
     // a substitution and a card while it is open: the same popup, three entries
     const sub = ev(4, 'substitution', { team: 'away', playerIn: 4, playerOut: 2, isExceptional: true })
@@ -135,7 +135,7 @@ describe('Referee: recorded by the scorer', () => {
     expect(items.map(li => li.textContent)).toEqual([
       expect.stringContaining('Time-out'),
       expect.stringContaining('Exceptional substitution#4 in for #2'),
-      expect.stringContaining('PenaltyPlayer #3 · +1 point to Volley Bern')
+      expect.stringContaining('PenaltyPlayer #3 · +1 point to Volley Talberg')
     ])
     expect(screen.getAllByTestId('referee-recorded-popup')).toHaveLength(1)
 

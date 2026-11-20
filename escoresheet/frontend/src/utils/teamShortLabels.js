@@ -4,9 +4,9 @@
 // A configured short name wins: the match's (homeShortName / awayShortName,
 // set in match setup or by the server) and else the team's own (teams.shortName).
 // Without one, a label is derived from the name, without the club-type words
-// most Swiss names start with: "VBC Einsiedeln D2" -> "Einsiedeln D2". The
+// most Swiss names start with: "VBC Klosterau D2" -> "Klosterau D2". The
 // old fallback (the first 3 letters) gave "VBC" to both teams of
-// "VBC Einsiedeln D2 - VBC Rämi D1" (2026-10-21).
+// "VBC Klosterau D2 - VBC Rebberg D1" (2026-10-21).
 //
 // The two labels never read the same: equal configured names fall back to
 // the derived ones, then to the full names, and two teams of the same name
@@ -21,7 +21,7 @@ const CLUB_WORDS = new Set([
 const blank = (v) => v == null || String(v).trim() === ''
 const same = (a, b) => String(a).trim().toLocaleLowerCase() === String(b).trim().toLocaleLowerCase()
 
-/** "VBC Einsiedeln D2" -> "Einsiedeln D2"; a name of club words only stays whole */
+/** "VBC Klosterau D2" -> "Klosterau D2"; a name of club words only stays whole */
 export function deriveTeamShortLabel(name) {
   if (blank(name)) return ''
   const words = String(name).trim().split(/\s+/)

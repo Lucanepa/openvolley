@@ -439,7 +439,7 @@ describe('remarks (db/017)', () => {
 // on the sheet only "Regional" was X'd (owner 2026-10-24)
 describe('the match type, gender and level', () => {
   const INFO = {
-    hall: 'Kantonsschule Rämibühl Halle G', city: 'Zürich', league: '2L',
+    hall: 'Kantonsschule Musterbühl Halle G', city: 'Zürich', league: '2L',
     championship_type: 'regional', championship_type_other: '',
     match_type_1: 'championship', match_type_1_other: '',
     match_type_2: 'women', match_type_3: 'senior', match_type_3_other: '', best_of: 5

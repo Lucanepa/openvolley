@@ -914,7 +914,7 @@
 /* Load match from schedule (LoadOfficialMatchModal): on a phone each game is
    a card, game #, date and time on its first line and each team on a line
    of its own below, so the names get the dialog's width (a row of four
-   columns cut both names, "VBC Einsiedel..." / "vs Volley Luz...": the owner,
+   columns cut both names, "VBC Klostera..." / "vs Volley Talb...": the owner,
    2026-10-21). Wider, the rows keep the table and its head. */
 .schedule-games {
   container-type: inline-size;
