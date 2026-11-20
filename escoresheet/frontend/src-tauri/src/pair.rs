@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use rand::TryRngCore;
+use rand::TryRng; // rand 0.10: was TryRngCore (try_fill_bytes)
 use serde_json::{json, Map, Value};
 use tokio::sync::oneshot;
 use unicode_normalization::UnicodeNormalization;
@@ -125,7 +125,7 @@ pub fn is_pair_page_path(path: &str) -> bool {
 
 fn random_bytes<const N: usize>() -> [u8; N] {
     let mut bytes = [0u8; N];
-    rand::rngs::OsRng.try_fill_bytes(&mut bytes).expect("the OS random source");
+    rand::rngs::SysRng.try_fill_bytes(&mut bytes).expect("the OS random source");
     bytes
 }
 
@@ -1124,6 +1124,25 @@ mod tests {
         assert_eq!(code_from_bytes(&[255, 255, 255, 255, 255]), "99999999");
         // the same symbols as the JS core for the same bytes
         assert_eq!(code_from_bytes(&[1, 2, 3, 4, 5]), "AEBAGBAF");
+    }
+
+    #[test]
+    fn secrets_and_codes_come_from_the_os_source() {
+        // random_bytes(): getrandom's SysRng (the system CSPRNG). The 32-byte
+        // secrets are the token shape and all different; the codes are 8
+        // symbols of the alphabet and over 2000 of them every symbol shows up
+        let mut secrets = std::collections::HashSet::new();
+        let mut symbols = std::collections::HashSet::new();
+        for _ in 0..2000 {
+            let s = base64url(&random_bytes::<32>());
+            assert!(is_secret_shape(Some(&json!(s))).is_some(), "{s}");
+            assert!(secrets.insert(s));
+            let c = code_from_bytes(&random_bytes::<5>());
+            assert_eq!(c.len(), 8);
+            assert_eq!(normalize_code(&json!(c)).as_deref(), Some(c.as_str()));
+            symbols.extend(c.bytes());
+        }
+        assert_eq!(symbols.len(), CODE_ALPHABET.len());
     }
 
     #[tokio::test]

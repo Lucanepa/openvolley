@@ -5,7 +5,9 @@
 //! (the SSID is encoded in the system code page: ASCII only) and WPA2 (8-63
 //! printable characters; exactly 64 would be read as a raw hex key).
 
-use rand::{Rng, TryRngCore};
+// rand 0.10: `Rng` is the generator trait (was `RngCore`) and `RngExt` holds
+// `random_range` (was `Rng`).
+use rand::{Rng, RngExt};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credentials {
@@ -23,9 +25,18 @@ fn pick(rng: &mut impl Rng, alphabet: &[u8], n: usize) -> String {
     (0..n).map(|_| alphabet[rng.random_range(0..alphabet.len())] as char).collect()
 }
 
+/// The OS random source as an infallible `Rng`: `SysRng` is getrandom's
+/// stateless interface to the system CSPRNG (rand 0.9's `OsRng`, renamed in
+/// 0.10; nothing to seed) and `UnwrapErr` panics if it ever fails (0.9's
+/// `OsRng.unwrap_err()`), so a failure is never replaced by weaker randomness.
+/// The concrete type is spelled out so a test pins it.
+fn os_rng() -> rand::rand_core::UnwrapErr<rand::rngs::SysRng> {
+    rand::rand_core::UnwrapErr(rand::rngs::SysRng)
+}
+
 /// A fresh name and password from the OS random source.
 pub fn generate() -> Credentials {
-    generate_with(&mut rand::rngs::OsRng.unwrap_err())
+    generate_with(&mut os_rng())
 }
 
 pub fn generate_with(rng: &mut impl Rng) -> Credentials {
@@ -100,6 +111,43 @@ mod tests {
         }
         // the OS source works and differs between calls
         assert_ne!(generate(), generate());
+    }
+
+    #[test]
+    fn generate_draws_from_the_os_source() {
+        // generate() uses getrandom's SysRng (the system CSPRNG), never a
+        // seeded or thread-local generator: this stops compiling if os_rng()
+        // returns anything else
+        fn system_csprng(_: &rand::rand_core::UnwrapErr<rand::rngs::SysRng>) {}
+        fn crypto_rng(_: &impl rand::CryptoRng) {}
+        let rng = os_rng();
+        system_csprng(&rng);
+        crypto_rng(&rng);
+
+        // at least 64 bits per password: 12 symbols of 55 (~69 bits)
+        let bits = PASSWORD_LEN as f64 * (PASSWORD_ALPHABET.len() as f64).log2();
+        assert!(bits >= 64.0, "{bits}");
+
+        // 2000 passwords from the OS source: valid, all different, only the
+        // alphabet's symbols and every one of them (24000 draws of 55: a
+        // missing symbol has a chance of about 1e-190)
+        let mut seen_passwords = std::collections::HashSet::new();
+        let mut seen_symbols = std::collections::HashSet::new();
+        let mut seen_ssid_symbols = std::collections::HashSet::new();
+        for _ in 0..2000 {
+            let c = generate();
+            Credentials::checked(&c.ssid, &c.password).expect("valid");
+            assert_eq!(c.password.len(), PASSWORD_LEN);
+            assert!(c.password.bytes().all(|b| PASSWORD_ALPHABET.contains(&b)), "{}", c.password);
+            let suffix = &c.ssid[SSID_PREFIX.len()..];
+            assert_eq!(suffix.len(), 4);
+            assert!(suffix.bytes().all(|b| SSID_ALPHABET.contains(&b)), "{}", c.ssid);
+            seen_symbols.extend(c.password.bytes());
+            seen_ssid_symbols.extend(suffix.bytes());
+            assert!(seen_passwords.insert(c.password));
+        }
+        assert_eq!(seen_symbols.len(), PASSWORD_ALPHABET.len());
+        assert_eq!(seen_ssid_symbols.len(), SSID_ALPHABET.len());
     }
 
     #[test]

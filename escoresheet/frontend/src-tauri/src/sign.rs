@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use rand::TryRngCore;
+use rand::TryRng; // rand 0.10: was TryRngCore (try_fill_bytes)
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::oneshot;
@@ -164,7 +164,7 @@ pub fn base64url(bytes: &[u8]) -> String {
 
 fn new_secret() -> String {
     let mut bytes = [0u8; 32];
-    rand::rngs::OsRng.try_fill_bytes(&mut bytes).expect("the OS random source");
+    rand::rngs::SysRng.try_fill_bytes(&mut bytes).expect("the OS random source");
     base64url(&bytes)
 }
 
@@ -959,6 +959,25 @@ mod tests {
         let s = new_secret();
         assert!(is_secret_shape(Some(&json!(s))).is_some());
         assert_ne!(new_secret(), s);
+    }
+
+    #[test]
+    fn secrets_are_32_os_random_bytes() {
+        // new_secret(): 32 bytes of getrandom's SysRng (the system CSPRNG) as
+        // 43 base64url characters. 1000 of them: the token shape, only the
+        // base64url alphabet, all different, and the 256 bits are not stuck
+        // (every one of the 64 symbols turns up in 43000 characters)
+        let mut seen = std::collections::HashSet::new();
+        let mut symbols = std::collections::HashSet::new();
+        for _ in 0..1000 {
+            let s = new_secret();
+            assert_eq!(s.len(), 43);
+            assert!(is_secret_shape(Some(&json!(s))).is_some(), "{s}");
+            assert!(s.bytes().all(|b| B64URL.contains(&b)), "{s}");
+            symbols.extend(s.bytes());
+            assert!(seen.insert(s));
+        }
+        assert_eq!(symbols.len(), 64);
     }
 
     fn ctx() -> Value {

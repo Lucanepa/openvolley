@@ -939,7 +939,7 @@ pub fn quit_on_signals<R: Runtime>(_app: &AppHandle<R>) {}
 pub fn tray_supported() -> Result<(), String> {
     let lib_ok = ["libayatana-appindicator3.so.1", "libappindicator3.so.1"]
         .iter()
-        .any(|name| unsafe { libloading::Library::new(name) }.is_ok());
+        .any(|name| unsafe { libloading::Library::new(*name) }.is_ok());
     if !lib_ok {
         return Err("libayatana-appindicator3 (or libappindicator3) is not installed".into());
     }

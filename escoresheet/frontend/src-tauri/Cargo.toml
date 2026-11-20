@@ -41,9 +41,12 @@ rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 mime_guess = "2"
 local-ip-address = "0.6"
 futures-util = "0.3"
-# OS randomness for the tablet Wi-Fi password (hotspot.rs). Already in the
-# tree (0.9 through axum's tungstenite), so this adds no new crate.
-rand = "0.9"
+# OS randomness (getrandom's SysRng) for the tablet Wi-Fi password
+# (netshare/creds.rs) and the Sign on phone / Pair a phone secrets (sign.rs,
+# pair.rs); the thread RNG (seeded from it) for the room-claim salt
+# (relay.rs). 0.10 is the line tungstenite 0.30 is on; until axum moves to it,
+# 0.9 stays in the tree through axum's tungstenite 0.29.
+rand = "0.10"
 # Sign on phone (sign.rs): SHA-256 of the session secrets (0.11 is in the
 # tree through rust-embed) and NFC for the context the phone page shows, the same
 # as String.prototype.normalize('NFC') in electron/signSessionCore.cjs.
@@ -70,9 +73,10 @@ webkit2gtk = "2.0"
 # network (hotspot/linux.rs). On the tokio runtime the app already runs.
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 # probe for libayatana-appindicator3 / libappindicator3 before building the
-# tray: tray-icon panics when neither loads (lifecycle.rs). In the tree
-# through tray-icon, no new crate.
-libloading = "0.7"
+# tray: tray-icon panics when neither loads (lifecycle.rs). 0.9 is the line
+# libappindicator-sys 0.10 is on; until tray-icon moves to it, 0.7 stays in
+# the tree through tray-icon's libappindicator-sys 0.9.
+libloading = "0.9"
 
 # Mobile Hotspot (WinRT tethering) and the Wi-Fi Direct legacy access point
 # (hotspot/windows.rs). Same version as tauri's (wry/webview2-com), so only
