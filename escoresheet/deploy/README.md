@@ -42,7 +42,7 @@ network, and carries `traefik.enable=false`.
  |  ov-backend   openvolley-backend:<git-sha>      256 MB, 1 CPU, pids 256, read-only,    |
  |      |        :8080 HTTP + WebSocket upgrade     user node, no caps, tmpfs /tmp         |
  |      | network ov-internal (internal: true, no egress)                                  |
- |  ov-postgres  postgres:17.11-alpine             256 MB, 0.5 CPU, pids 128, read-only,  |
+ |  ov-postgres  postgres:17.12-alpine             256 MB, 0.5 CPU, pids 128, read-only,  |
  |               uid 70, refuses to start without /ovpg/.ovdata                            |
  |  ov-pkgs      caddy:2.11.7-alpine (ov-pkgs-edge) 64 MB, 0.25 CPU, read-only, nobody,   |
  |               get.openvolley.app: static APT + F-Droid repos from /data/openvolley/pkgs |
@@ -75,7 +75,7 @@ network, and carries `traefik.enable=false`.
 | `homebrew/bump-cask.sh`, `homebrew/Casks/*.rb` | lenovoserver (or any machine), after `publish-pkgs.sh --desktop` | Writes the macOS casks `openvolley` / `openbeach` (version + SHA-256 of the release's `.dmg`) into a checkout of the tap `Lucanepa/homebrew-tap`; you review, commit and push there. See [macOS](#macos-unsigned-homebrew-tap) |
 | `tests/bump-cask.test.sh` | any machine | Offline tests of `bump-cask.sh` |
 | `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` (OpenVolley and `--app beach`) with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the per-app APT hold-back, GitHub's "Latest" and the OpenBeach fallback (stubbed `gh`), APT names, the Android certificate per app id, `install.sh` and the landing page |
-| `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
+| `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.5-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
 | `build-image.sh` | build machine (lenovoserver) | Builds `openvolley-backend:<git-sha>` from the committed tree (`git archive HEAD`, allowlist `Dockerfile.backend.dockerignore`), refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`); `--ship local` does the archive and the prune with `sudo` when the VM is lenovoserver itself |
 | `check-edge.sh` | any machine, before go-live and after each Cloudflare/DNS change | Read-only: CAA (only pki.goog, letsencrypt.org, ssl.com + iodef), DMARC p=quarantine/reject with rua, TLS 1.0/1.1 refused and 1.2 accepted, http->https redirect and HSTS on backend., app., get. (RUNBOOK-hetzner.md "Edge and mail domain") |
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), and `OV_READONLY_PW` when set, then checks the `ov_app` login |
@@ -461,8 +461,8 @@ cd ~/src/homebrew-tap && git diff && git commit -am "openvolley <version>" && gi
 
 ### Release procedure
 
-Not on match days (Friday 17:00 to Sunday): an update downloads in the background and installs
-when the scorer quits the app, and it should not be the first thing a venue sees on a Saturday.
+Any day (owner 20.11.2026: no match-day freeze). An update downloads in the background and
+installs when the scorer quits the app, never during a match.
 
 1. Desktop: bump the version (`escoresheet/frontend/package.json`) and tag `desktop-v<version>`.
    CI builds and creates the GitHub release; the release job fails if the tag and

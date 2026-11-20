@@ -949,7 +949,7 @@ node scripts/scoresheet-records.mjs --apply    # record
 
 **After `db/048` and the backend that reads it** (owner 2026-11-19: no birthdates outside a
 match's own sheet, the past sheets scrubbed too; privacy 1.21). `db/048_no_birthdates.sql` runs
-with `deploy/deploy.sh <image>` like every migration (not in the match-day freeze; it is safe for
+with `deploy/deploy.sh <image>` like every migration (it is safe for
 the old backend: it adds `profiles.license_number`, NULLs the dob columns, strips the `dob` keys
 of the account metadata and the sent rosters, and takes the date values out of the stored match
 records, closed matches included). Then, in the new backend's container, the stored files:

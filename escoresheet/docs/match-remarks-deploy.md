@@ -34,7 +34,7 @@ status and every other match field still reach the server.
 | Clients | OpenVolley and OpenBeach: every committed change of the remarks queues one match update `{ remarks }` (a Dexie hook on `matches`, so every screen is covered); the approval queues the remarks as approved just before its own job and waits for them (a refused remarks job does not hold it); backup restores send the backup's remarks (a backup from an older app has none and leaves the server's alone); restore from the server (game number + PIN) brings them back. The sync console lines show `[N characters]` instead of the text. The activity log keeps the length only, as before. **Old clients keep working**: they never send the column. |
 | Self-hosters | Anyone running their own backend runs 017 the same way before updating their clients. LAN relay / venue mode has no database and is not affected. |
 
-Respect the deploy freeze (`RUNBOOK-hetzner.md`).
+Deploy when no match is live (`RUNBOOK-hetzner.md`, Match-day rules).
 
 ## 1. Before
 

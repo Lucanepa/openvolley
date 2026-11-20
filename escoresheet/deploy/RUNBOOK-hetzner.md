@@ -373,17 +373,18 @@ itself, so it still alerts when the VPS is down):
 
 ---
 
-## Match-day rules (deploy freeze)
+## Match-day rules
 
-From **Friday 17:00 to Sunday 23:59**: no `build-image.sh --ship`, no `docker compose up`, no edits
-in `/opt/openvolley`, no `host-prep.sh`, no Postgres image bump, no `publish-pkgs.sh --desktop`
-(desktop apps download an update within 6 hours and install it when the scorer quits). Relay rooms live in memory, so any
-backend restart during a match drops every live room. On Friday: check `/health`, the probe
-history, `systemctl list-timers 'openvolley-*'` and the newest file in `/data/openvolley/backups`.
+There is no weekend deploy freeze any more (owner 20.11.2026): a release can go out any day.
+What stays: relay rooms live in memory, so a backend restart drops every live room. `deploy.sh`
+therefore refuses while the running backend reports live relay rooms (`/health` `activeRooms`;
+`--any-time` overrides), and a Postgres image bump or a `docker compose up` by hand should wait
+until no match is being scored. Before a weekend: check `/health`, the probe history,
+`systemctl list-timers 'openvolley-*'` and the newest file in `/data/openvolley/backups`.
 
 ## Updating
 
-Backend release (Monday to Friday, before 17:00): build and load the image, then `deploy.sh` on
+Backend release (any day, not while a match is live): build and load the image, then `deploy.sh` on
 the production host does the rest ("Apply a new db migration" below):
 
 ```bash
@@ -489,11 +490,11 @@ production host; the image is loaded first with `build-image.sh --ship`:
 ov-vps$ sudo /opt/openvolley/deploy.sh openvolley-backend:<NEW>
 ```
 
-It refuses inside the match-day freeze and while the running backend has live relay rooms
+It refuses while the running backend has live relay rooms
 (`--any-time` overrides), then: a fresh dump (`openvolley-backup.service`; refused when the unit
 did not run, e.g. without `/etc/openvolley/backup.conf`), the migrations of the NEW image (the
 running backend keeps serving), `roles.sql` of the new image through `apply-roles.sh`,
-`scripts/check-schema.mjs` of the new image as `ov_owner`, the freeze and live-room check once
+`scripts/check-schema.mjs` of the new image as `ov_owner`, the live-room check once
 more, the switch (`up -d --wait ov-backend`, previous tag in `DEPLOYED.log`), `/health` 200 and
 `scripts/check-schema.mjs` in the new container. A failure up to the switch changes no
 container (a failed migration changed nothing; the ones before it stay applied). When the switch
