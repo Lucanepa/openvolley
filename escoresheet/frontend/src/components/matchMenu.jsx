@@ -2,6 +2,8 @@ import {
   Users, RectangleVertical, ScrollText, NotebookPen, ClipboardList,
   Wrench, UserPen, KeyRound, Download, Settings, OctagonX, History, FilePen, Keyboard, MonitorCog
 } from 'lucide-react'
+// the Set preview row's icon
+import { TableProperties } from 'lucide-react'
 
 /**
  * The scorer's "Match" menu (scoreboard toolbar, and the action sheet of the
@@ -41,6 +43,8 @@ export function matchMenuSections(t, actions) {
         ...row('sanctions', RectangleVertical, t('scoreboard.menu.showSanctionsResults', 'Show sanctions and results'), actions.showSanctions),
         ...row('action-log', ScrollText, t('scoreboard.menu.showActionLog', 'Show action log'), actions.showActionLog),
         ...row('remarks', NotebookPen, t('scoreboard.menu.openRemarksRecording', 'Open remarks recording'), actions.openRemarks),
+        // the set as the paper sheet prints it (components/setPreview)
+        ...row('set-preview', TableProperties, t('setPreview.menu', 'Set preview'), actions.showSetPreview),
         ...row('match-setup', ClipboardList, t('scoreboard.menu.showMatchSetup', 'Show match setup'), actions.openMatchSetup),
         ...row('edit-match-info', FilePen, t('scoreboard.menu.editMatchInfo', 'Edit match info'), actions.editMatchInfo)
       ]

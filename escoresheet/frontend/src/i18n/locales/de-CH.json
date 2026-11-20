@@ -1995,6 +1995,17 @@
     "checkTheMatch": "Spiil vor em Genehmige prüefe:",
     "remarksClipped": "BEMERKIGE: De Text passt nöd is Fäld; s PDF druckt en vollständig uf Siite 2."
   },
+  "setPreview": {
+    "menu": "Satzvorschau",
+    "title": "Satzvorschau",
+    "description": "De Satz, wie er uf em Matchblatt druckt wird. Er wird bi jedem Ballwächsel aktualisiert.",
+    "sets": "Sätz",
+    "setTab": "Satz {{n}}",
+    "zoomOut": "Verchliinere",
+    "zoomIn": "Vergröössere",
+    "fit": "A d Breiti aapasse",
+    "loading": "Satzvorschau wird glade..."
+  },
   "scoresheetSite": {
     "archiveTitle": "Archiv vo de Matchblätter",
     "listTitle": "Matchblätter",

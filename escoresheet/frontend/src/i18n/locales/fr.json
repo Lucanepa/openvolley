@@ -1994,6 +1994,17 @@
     "checkTheMatch": "Vérifier le match avant de l'approuver :",
     "remarksClipped": "REMARQUES : le texte ne tient pas dans la case ; le PDF l’imprime en entier en page 2."
   },
+  "setPreview": {
+    "menu": "Aperçu du set",
+    "title": "Aperçu du set",
+    "description": "Le set tel qu'il s'imprime sur la feuille de match. Il se met à jour à chaque échange.",
+    "sets": "Sets",
+    "setTab": "Set {{n}}",
+    "zoomOut": "Réduire",
+    "zoomIn": "Agrandir",
+    "fit": "Ajuster à la largeur",
+    "loading": "Chargement de l'aperçu du set..."
+  },
   "scoresheetSite": {
     "archiveTitle": "Archive des feuilles de match",
     "listTitle": "Feuilles de match",

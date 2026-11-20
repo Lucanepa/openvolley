@@ -20,6 +20,7 @@ import { matchMenuSections, toMenuListSections } from './matchMenu'
 import { openPhonePair, phonePairMatchOf } from './phonePair/phonePairStore'
 import { useScoreboardDisplay } from './scoreboard/useScoreboardDisplay'
 import SanctionsResultsModal from './SanctionsResultsModal'
+import SetPreviewModal from './setPreview/SetPreviewModal.jsx'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
@@ -592,6 +593,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [showRemarks, setShowRemarks] = useState(false)
   const [remarksText, setRemarksText] = useState('')
   const remarksTextareaRef = useRef(null)
+  // Set preview (components/setPreview): the set as the paper sheet prints it
+  const [showSetPreview, setShowSetPreview] = useState(false)
   const [showRosters, setShowRosters] = useState(false)
   const [reopenRosterTeam, setReopenRosterTeam] = useState(null) // 'home' | 'away' | null
   const [reopenRosterConfirm, setReopenRosterConfirm] = useState(null) // 'home' | 'away' | null (confirmation step)
@@ -14311,6 +14314,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     showSanctions: () => setShowSanctions(true),
     showActionLog: () => setShowLogs(true),
     openRemarks: () => setShowRemarks(true),
+    showSetPreview: () => setShowSetPreview(true),
     openMatchSetup: onOpenMatchSetup && data?.match?.easy !== true ? () => onOpenMatchSetup() : undefined,
     // match details (hall, date, officials ...) can be edited at any time (owner 15.11)
     editMatchInfo: onOpenMatchInfo && data?.match?.easy !== true ? () => onOpenMatchInfo() : undefined,
@@ -20532,6 +20536,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             />
           </div>
         </Modal>
+      )}
+
+      {/* Set preview: the set as the paper sheet prints it, live (Match menu) */}
+      {showSetPreview && (
+        <SetPreviewModal data={data} onClose={() => setShowSetPreview(false)} />
       )}
 
       {/* Go back: the rules' going back in one place (Match menu) */}
