@@ -27,10 +27,13 @@ date of birth; the backend drops one that a client sends (`lib/auth.js`,
 `WRITE_DENYLIST`) and vmSync no longer reads VolleyManager's birthday. The
 columns `profiles.dob`, `referee_database.dob`, `svrz_games.referee_1_dob` /
 `referee_2_dob`, `competition_players.dob`, `competition_staff.dob` and
-`club_licences.dob` are **dropped by db/049** (openvolley#293); installed apps
-that still select them get them as null from `/api/db` (`lib/pgQuery.js`
-nullColumns, openvolley#288), which refuses a filter or order on them (400
-`OV_DOB_FILTER`). db/048 deleted what was stored, past match records
+`club_licences.dob` are **dropped by db/049** (openvolley#293). Of these
+tables `/api/db` serves `profiles`, `referee_database` and `svrz_games`: an
+installed app that still selects their dob columns gets them as null
+(`lib/pgQuery.js` nullColumns = `lib/publicColumns.js` `DOB_COLUMNS`,
+openvolley#288), and a filter or order on them is refused (400
+`OV_DOB_FILTER`); the other three are not served by `/api/db` (their own
+endpoints drop a `dob` sent, see 4.5d, 4.9). db/048 deleted what was stored, past match records
 included (rosters, benches, officials, pending rosters, manual changes,
 remarks, events, revisions, closures, live state, beach rows: a date value
 under a dob-like key becomes null, a licence number stays);
