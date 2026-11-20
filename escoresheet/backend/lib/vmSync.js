@@ -906,12 +906,9 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
     referee_1: str(ref1.name ?? item.activeFirstHeadRefereeName),
     referee_1_first_name: str(ref1.firstName),
     referee_1_last_name: str(ref1.lastName),
-    // always null (db/048): every sync run clears what an older run stored
-    referee_1_dob: null,
     referee_2: str(ref2.name ?? item.activeSecondHeadRefereeName),
     referee_2_first_name: str(ref2.firstName),
     referee_2_last_name: str(ref2.lastName),
-    referee_2_dob: null,
     hall_address: str(addr.combinedAddress),
     hall_postal_code: str(addr.postalCode),
     group_display: str(groupDisplay),
@@ -958,10 +955,10 @@ export function prepareRows(items, opts = {}) {
 // ---------------------------------------------------------------------------
 
 /**
- * svrz_games columns written by the sync, with their Postgres types.
- * referee_1_dob / referee_2_dob: always null since db/048 (an older run's
- * value is cleared on the next run); they leave this list with db/049, which
- * drops the columns.
+ * svrz_games columns written by the sync, with their Postgres types. No
+ * referee_1_dob / referee_2_dob: NULL since db/048, never written again, and
+ * db/049 drops them (the sync never names them, so it runs before and after
+ * that migration alike).
  */
 export const GAME_COLUMNS = [
   ['game_number', 'text'], ['date', 'text'], ['time', 'text'], ['datetime', 'text'],
@@ -969,8 +966,8 @@ export const GAME_COLUMNS = [
   ['gender', 'text'], ['match_level', 'text'], ['league', 'text'], ['league_category', 'text'], ['junior_category', 'boolean'],
   ['match_format', 'integer'],
   ['team_home', 'text'], ['team_away', 'text'],
-  ['referee_1', 'text'], ['referee_1_first_name', 'text'], ['referee_1_last_name', 'text'], ['referee_1_dob', 'date'],
-  ['referee_2', 'text'], ['referee_2_first_name', 'text'], ['referee_2_last_name', 'text'], ['referee_2_dob', 'date'],
+  ['referee_1', 'text'], ['referee_1_first_name', 'text'], ['referee_1_last_name', 'text'],
+  ['referee_2', 'text'], ['referee_2_first_name', 'text'], ['referee_2_last_name', 'text'],
   ['hall_address', 'text'], ['hall_postal_code', 'text'], ['group_display', 'text'], ['phase_name', 'text'],
   ['linesman_1', 'text'], ['linesman_2', 'text'],
   ['is_supervised', 'boolean'], ['has_supervised_referee', 'boolean'], ['convocations', 'jsonb']
