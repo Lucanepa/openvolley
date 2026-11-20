@@ -139,7 +139,7 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     assert.deepEqual(r.json.data.players.map((p) => [p.sv_number, p.manual]), [['100001', false], ['100009', true], ['100002', false], ['100003', true]])
     // no date of birth (db/048), whatever was sent with it
     const { dob, ...marco } = MARCO
-    assert.deepEqual(r.json.data.players.find((p) => p.sv_number === '100003'), { ...marco, manual: true })
+    assert.deepEqual(r.json.data.players.find((p) => p.sv_number === '100003'), { ...marco, manual: true, from_match: false })
     // people: those players (the team's saved team is empty)
     assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists, p.manual]), [
       ['100001', ['players'], false], ['100009', ['players'], true], ['100002', ['players'], false], ['100003', ['players'], true]
@@ -150,7 +150,7 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     assert.deepEqual([lists.players.count, lists.players.manual], [4, 2])
     assert.deepEqual([lists.coaches.count, lists.coaches.manual], [2, 1])
     // a list with nothing uploaded: no upload time, no uploader
-    assert.deepEqual(lists.scorers, { count: 1, manual: 1, imported_at: null, imported_by_name: null })
+    assert.deepEqual(lists.scorers, { count: 1, manual: 1, from_match: 0, imported_at: null, imported_by_name: null })
     // the upload's time and uploader, not the hand-added rows'
     assert.equal(lists.players.imported_by_name, 'clubmgr Test')
     assert.equal(lists.coaches.imported_by_name, 'clubmgr Test')
@@ -163,6 +163,35 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     const club = s.json.data.clubs[0]
     assert.deepEqual(club.players.filter((p) => p.manual).map((p) => p.sv_number), ['100009', '100003'])
     assert.deepEqual(club.people.filter((p) => p.manual).map((p) => p.sv_number), ['100009', '100003', '100004', '100005'])
+  })
+
+  it('a row from an official match\'s roster (db/048) reads as from_match, its own count and hand row source; removed one by one', async () => {
+    // a made-up player saved from a match roster (lib/rosterSaveBack.js addFromMatch writes these)
+    await sql.query("INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, source) VALUES ($1, 'players', '100007', 'Spielmann', 'Pia', 'match')", [musterdorf.id])
+    const r = await call(users.coach, 'GET', `/api/team/${h1.id}/club-players`)
+    assert.equal(r.status, 200, r.text)
+    assert.deepEqual(r.json.data.players.map((p) => [p.sv_number, p.manual, p.from_match]), [
+      ['100001', false, false], ['100009', true, false], ['100002', false, false], ['100003', true, false], ['100007', true, true]
+    ])
+    const c = await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/licences`)
+    assert.equal(c.status, 200, c.text)
+    const { lists, people } = c.json.data
+    // manual: every row no upload brought; from_match: those of a match
+    assert.deepEqual([lists.players.count, lists.players.manual, lists.players.from_match], [5, 3, 1])
+    assert.deepEqual([lists.coaches.manual, lists.coaches.from_match, lists.scorers.from_match], [1, 0, 0])
+    const pia = people.find((p) => p.sv_number === '100007')
+    assert.deepEqual([pia.manual, pia.from_match, pia.hand_rows.map((h) => [h.list, h.source])], [true, true, [['players', 'match']]])
+    assert.deepEqual(people.find((p) => p.sv_number === '100003').hand_rows.map((h) => h.source), ['manual'])
+    assert.equal(people.find((p) => p.sv_number === '100001').from_match, false)
+    // the scoring tablet's copy has the flag too
+    const s = (await call(users.scorer, 'GET', '/api/club-licences')).json.data.clubs[0]
+    assert.deepEqual(s.players.filter((p) => p.from_match).map((p) => p.sv_number), ['100007'])
+    assert.deepEqual(s.people.filter((p) => p.from_match).map((p) => p.sv_number), ['100007'])
+    // a club manager removes it like a row added by hand
+    const del = await call(users.clubmgr, 'DELETE', `/api/club/${musterdorf.id}/licences/rows/${pia.hand_rows[0].id}`)
+    assert.equal(del.status, 200, del.text)
+    assert.deepEqual(del.json.data, { deleted: true, list: 'players' })
+    assert.equal((await rowsOf(musterdorf.id)).some((x) => x.sv_number === '100007'), false)
   })
 
   it('who may: whoever may manage the team, the club\'s managers and admins; nobody else', async () => {

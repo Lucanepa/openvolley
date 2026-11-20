@@ -4594,11 +4594,14 @@
     },
     "licences": {
       "personNoTeams": "In no saved squad of the club yet.",
-      "notHandAdded": "Only people added by hand are removed one by one. Upload the list again for the others.",
+      "notHandAdded": "Only people added by hand or from a match are removed one by one. Upload the list again for the others.",
       "handRows": "Entries added by hand",
+      "matchRows": "Entries from a match",
+      "mixedRows": "Entries added by hand or from a match",
       "removeRow": "Remove",
       "removeRowTitle": "Remove {{name}} from the {{list}} list?",
       "removeRowBody": "Only this entry added by hand goes. Squads and rosters that have the person stay as they are.",
+      "removeMatchRowBody": "Only this entry from a match goes. Squads and rosters that have the person stay as they are. An official match with the person adds them again.",
       "rowRemoved": "{{name}} removed from the {{list}} list.",
       "personTeams": "Teams",
       "title": "Licences",
@@ -4607,6 +4610,9 @@
       "manual": "Added by hand",
       "manualCount_one": "{{count}} added by hand",
       "manualCount_other": "{{count}} added by hand",
+      "fromMatch": "From a match",
+      "fromMatchCount_one": "{{count}} from a match",
+      "fromMatchCount_other": "{{count}} from a match",
       "lists": {
         "players": "Players",
         "scorers": "Scorers",
@@ -6525,7 +6531,9 @@
         "hand": "Typed by hand: not in the club's lists",
         "handLink": "Typed by hand: tap to link to someone of the club",
         "manual": "In the club's lists, added by hand: green once VolleyManager's list has the licence number",
-        "manualLink": "In the club's lists, added by hand: tap to link to someone of VolleyManager's lists"
+        "manualLink": "In the club's lists, added by hand: tap to link to someone of VolleyManager's lists",
+        "match": "In the club's lists, from a match: green once VolleyManager's list has the licence number",
+        "matchLink": "In the club's lists, from a match: tap to link to someone of VolleyManager's lists"
       },
       "offer": {
         "title": "Save in the club too?",

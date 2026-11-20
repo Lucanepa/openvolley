@@ -259,12 +259,15 @@ export function validateManualPeople (body) {
   return { people: [...byKey.values()] }
 }
 
-const personOut = (r, manual) => ({
+// manual: no upload brought the row(s); from_match: an official match's
+// roster did, all of them (db/048: "From a match" in My club, not "Added by hand")
+const personOut = (r, manual, fromMatch) => ({
   sv_number: r.sv_number,
   last_name: r.last_name,
   first_name: r.first_name ?? null,
   gender: r.gender ?? null,
-  manual
+  manual,
+  from_match: fromMatch
 })
 const byName = (a, b) => a.last_name.localeCompare(b.last_name, 'de') || String(a.first_name || '').localeCompare(String(b.first_name || ''), 'de') || a.sv_number.localeCompare(b.sv_number)
 const listOrder = (l) => LICENCE_LISTS.indexOf(l)
@@ -272,22 +275,27 @@ const listOrder = (l) => LICENCE_LISTS.indexOf(l)
 /**
  * Rows of several lists ({ list, sv_number, last_name, first_name, gender,
  * source }) -> every person once ({ ...the four fields, manual,
- * lists }), in name order: the fields of the first imported row that has
- * them (players, scorers, coaches), then of the rows added by hand (so a row
- * typed in by hand never replaces what an upload says); the lists in that
- * order; manual when every row of the person is (db/026). `extra(sv)` adds
- * fields to a person (the teams of My club).
+ * from_match, lists }), in name order: the fields of the first imported row
+ * that has them (players, scorers, coaches), then of the rows added by hand
+ * (so a row typed in by hand never replaces what an upload says); the lists
+ * in that order; manual when every row of the person is (db/026), from_match
+ * when every row came from an official match's roster (db/048). `extra(sv)`
+ * adds fields to a person (the teams of My club).
  */
 export function mergeLicencePeople (rows, extra = null) {
   const people = new Map()
   const manualOf = new Map()
+  const matchOf = new Map()
   const valid = (rows || []).filter((x) => LICENCE_LISTS.includes(x?.list))
-  for (const r of valid) manualOf.set(r.sv_number, (manualOf.get(r.sv_number) ?? true) && notUploaded(r.source))
+  for (const r of valid) {
+    manualOf.set(r.sv_number, (manualOf.get(r.sv_number) ?? true) && notUploaded(r.source))
+    matchOf.set(r.sv_number, (matchOf.get(r.sv_number) ?? true) && r.source === 'match')
+  }
   const rank = (r) => (notUploaded(r.source) ? 10 : 0) + listOrder(r.list)
   for (const r of [...valid].sort((a, b) => rank(a) - rank(b))) {
     const cur = people.get(r.sv_number)
     if (!cur) {
-      people.set(r.sv_number, { ...personOut(r, manualOf.get(r.sv_number)), lists: [r.list], ...(extra ? extra(r.sv_number) : {}) })
+      people.set(r.sv_number, { ...personOut(r, manualOf.get(r.sv_number), matchOf.get(r.sv_number)), lists: [r.list], ...(extra ? extra(r.sv_number) : {}) })
       continue
     }
     if (!cur.lists.includes(r.list)) cur.lists.push(r.list)
@@ -298,8 +306,8 @@ export function mergeLicencePeople (rows, extra = null) {
   return [...people.values()].sort(byName)
 }
 
-/** The players list of `rows` (several lists): the four fields and manual (this row's, db/026), in name order. */
-const playersOf = (rows) => (rows || []).filter((r) => r.list === 'players').map((r) => personOut(r, notUploaded(r.source))).sort(byName)
+/** The players list of `rows` (several lists): the four fields, manual and from_match (this row's, db/026, db/048), in name order. */
+const playersOf = (rows) => (rows || []).filter((r) => r.list === 'players').map((r) => personOut(r, notUploaded(r.source), r.source === 'match')).sort(byName)
 
 /**
  * @param {object} o
@@ -678,7 +686,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       if (!c) throw abort(notFound())
       const { rows: [r] } = await client.query('SELECT list, source FROM public.club_licences WHERE club_id = $1 AND id = $2', [clubId, rowId])
       if (!r) throw abort(notFound())
-      if (!notUploaded(r.source)) throw abort(fail(409, 'OV_NOT_HAND_ADDED', 'Only a person added by hand is removed one by one; upload the list again for the others'))
+      if (!notUploaded(r.source)) throw abort(fail(409, 'OV_NOT_HAND_ADDED', 'Only a person added by hand or from a match is removed one by one; upload the list again for the others'))
       await client.query('DELETE FROM public.club_licences WHERE club_id = $1 AND id = $2', [clubId, rowId])
       // the club and the list only: never a name or a licence number
       await audit(client, { actorId: userId, action: 'club.licences.manual_delete', details: { club_id: clubId, list: r.list } })
@@ -688,13 +696,15 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
 
   /**
    * GET /api/club/:id/licences: every person of the club's lists once
-   * ({ id, sv_number, last_name, first_name, gender, manual, lists,
-   * teams, hand_rows }), and per list { count, manual, imported_at,
-   * imported_by_name }: count every row, manual the hand-added ones (db/026),
-   * imported_at and imported_by_name the last upload's (null when there was
-   * none). id: the person's first imported row, else its first row (db/037:
-   * the person page's key; kept across uploads), row_ids: all its rows;
-   * hand_rows: its rows added by hand ({ id, list }, deleteRow). teams: the
+   * ({ id, sv_number, last_name, first_name, gender, manual, from_match,
+   * lists, teams, hand_rows }), and per list { count, manual, from_match,
+   * imported_at, imported_by_name }: count every row, manual those no upload
+   * brought (by hand, db/026, or from a match, db/048), from_match those of
+   * them from an official match's roster, imported_at and imported_by_name
+   * the last upload's (null when there was none). id: the person's first
+   * imported row, else its first row (db/037: the person page's key; kept
+   * across uploads), row_ids: all its rows; hand_rows: its rows no upload
+   * brought ({ id, list, source: 'manual' | 'match' }, deleteRow). teams: the
    * club's teams whose saved team of this season (lib/teams.js squad) has a
    * player or an official with that licence number. The current season's
    * rows only (db/037).
@@ -710,12 +720,13 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
         rows = await peopleOf(pool, clubId)
         ;({ rows: summary } = await pool.query(
           `WITH r AS (SELECT l.*, ${sourceSql('l')} AS src FROM public.club_licences l WHERE l.club_id = $1 AND ${currentSql('l', '$2')}),
-                n AS (SELECT list, count(*)::int AS count, (count(*) FILTER (WHERE src <> 'import'))::int AS manual FROM r GROUP BY list),
+                n AS (SELECT list, count(*)::int AS count, (count(*) FILTER (WHERE src <> 'import'))::int AS manual,
+                             (count(*) FILTER (WHERE src = 'match'))::int AS from_match FROM r GROUP BY list),
                 i AS (SELECT DISTINCT ON (r.list) r.list, r.imported_at, ${nameSql('p')} AS imported_by_name
                         FROM r LEFT JOIN public.profiles p ON p.user_id = r.imported_by
                        WHERE r.src = 'import'
                        ORDER BY r.list, r.imported_at DESC)
-           SELECT n.list, n.count, n.manual, i.imported_at, i.imported_by_name FROM n LEFT JOIN i ON i.list = n.list`, [clubId, seasonNow()]))
+           SELECT n.list, n.count, n.manual, n.from_match, i.imported_at, i.imported_by_name FROM n LEFT JOIN i ON i.list = n.list`, [clubId, seasonNow()]))
       } catch (err) {
         if (!MISSING.has(err?.code)) throw err
       }
@@ -756,7 +767,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
         if (r.id) idsOf.set(r.sv_number, [...(idsOf.get(r.sv_number) || []), r.id])
         if (notUploaded(r.source) && r.id) {
           if (!handOf.has(r.sv_number)) handOf.set(r.sv_number, [])
-          handOf.get(r.sv_number).push({ id: r.id, list: r.list })
+          handOf.get(r.sv_number).push({ id: r.id, list: r.list, source: r.source })
         }
       }
       // one entry per licence number: its fields from the first imported list that has them
@@ -769,8 +780,8 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       const lists = Object.fromEntries(LICENCE_LISTS.map((l) => {
         const s = summary.find((x) => x.list === l)
         return [l, s
-          ? { count: s.count, manual: s.manual, imported_at: iso(s.imported_at), imported_by_name: s.imported_by_name ?? null }
-          : { count: 0, manual: 0, imported_at: null, imported_by_name: null }]
+          ? { count: s.count, manual: s.manual, from_match: s.from_match, imported_at: iso(s.imported_at), imported_by_name: s.imported_by_name ?? null }
+          : { count: 0, manual: 0, from_match: 0, imported_at: null, imported_by_name: null }]
       }))
       return ok({ season, lists, people })
     })

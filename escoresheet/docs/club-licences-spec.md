@@ -293,7 +293,10 @@ Assistant Coaches to `coaches` (a physiotherapist or a medic does not go). `lib/
   upload's row least of all); an upload keeps them and turns those it contains into uploaded rows;
   Delete list removes them; a club manager removes one (section 9's delete, 409
   `OV_NOT_HAND_ADDED` only for uploaded rows). The gray shield and `manual: true` in every read,
-  as a row by hand.
+  as a row by hand, with `from_match: true` when every row of the person came from a match (owner
+  2026-11-20: My club and the shields say "From a match", not "Added by hand"); My club's read also
+  counts them per list (`lists.<list>.from_match`, part of `manual`) and gives each of a person's
+  `hand_rows` its `source` (`manual` or `match`).
 - At most `MAX_MANUAL_PER_CLUB` (300) rows no upload brought per club (by hand and from matches
   together): those past it are left out, counted (`club_capped` in the audit), never an error. No
   daily cap (no account writes them). Audited with the saved team as `team.squad.match`

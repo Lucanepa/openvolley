@@ -368,12 +368,12 @@ describe('club data: only what each role needs', { skip: SKIP }, () => {
       await sql.query(`INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, dob, gender, source)
         VALUES ($1, 'players', $2, 'Erfunden', 'Nemo', '2000-02-02', 'm', 'manual')`, [clubs.Alpha.id, COACHY.sv_number])
       const s = (await call(users.scorerA, 'GET', '/api/club-licences')).json.data.clubs.find((x) => x.club_id === clubs.Alpha.id)
-      assert.deepEqual(s.players.find((x) => x.sv_number === COACHY.sv_number), { sv_number: COACHY.sv_number, last_name: 'Erfunden', first_name: 'Nemo', gender: 'm', manual: true })
+      assert.deepEqual(s.players.find((x) => x.sv_number === COACHY.sv_number), { sv_number: COACHY.sv_number, last_name: 'Erfunden', first_name: 'Nemo', gender: 'm', manual: true, from_match: false })
       const p = s.people.find((x) => x.sv_number === COACHY.sv_number)
       assert.deepEqual([p.last_name, p.first_name, p.lists, p.manual], ['Coachmann', 'Ueli', ['players', 'coaches'], false])
       const c = (await people()).find((x) => x.sv_number === COACHY.sv_number)
       assert.ok(!('dob' in c), 'a date of birth still in the table (a row of before) is never answered')
-      assert.deepEqual(c.hand_rows.map((h) => h.list), ['players'])
+      assert.deepEqual(c.hand_rows.map((h) => [h.list, h.source]), [['players', 'manual']])
     })
 
     it('a person keeps its page id across uploads', async () => {

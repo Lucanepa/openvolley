@@ -4572,11 +4572,14 @@
     },
     "licences": {
       "personNoTeams": "Noch in keinem gespeicherten Kader des Vereins.",
-      "notHandAdded": "Nur von Hand eingetragene Personen werden einzeln entfernt. Lade für die anderen die Liste neu hoch.",
+      "notHandAdded": "Nur von Hand oder aus einem Spiel eingetragene Personen werden einzeln entfernt. Lade für die anderen die Liste neu hoch.",
       "handRows": "Von Hand eingetragen",
+      "matchRows": "Aus einem Spiel eingetragen",
+      "mixedRows": "Von Hand oder aus einem Spiel eingetragen",
       "removeRow": "Entfernen",
       "removeRowTitle": "{{name}} aus der Liste {{list}} entfernen?",
       "removeRowBody": "Nur dieser von Hand eingetragene Eintrag wird entfernt. Kader und Aufstellungen mit der Person bleiben, wie sie sind.",
+      "removeMatchRowBody": "Nur dieser Eintrag aus einem Spiel wird entfernt. Kader und Aufstellungen mit der Person bleiben, wie sie sind. Ein offizielles Spiel mit der Person trägt sie wieder ein.",
       "rowRemoved": "{{name}} aus der Liste {{list}} entfernt.",
       "personTeams": "Teams",
       "title": "Lizenzen",
@@ -4585,6 +4588,9 @@
       "manual": "Von Hand eingetragen",
       "manualCount_one": "{{count}} von Hand eingetragen",
       "manualCount_other": "{{count}} von Hand eingetragen",
+      "fromMatch": "Aus einem Spiel",
+      "fromMatchCount_one": "{{count}} aus einem Spiel",
+      "fromMatchCount_other": "{{count}} aus Spielen",
       "lists": {
         "players": "Spieler",
         "scorers": "Schreiber",
@@ -6507,7 +6513,9 @@
         "hand": "Von Hand eingetragen: nicht in den Listen des Vereins",
         "handLink": "Von Hand eingetragen: tippen, um mit jemandem aus dem Verein zu verknüpfen",
         "manual": "In den Listen des Vereins, von Hand eingetragen: grün, sobald die Liste aus VolleyManager die Lizenznummer hat",
-        "manualLink": "In den Listen des Vereins, von Hand eingetragen: tippen, um mit jemandem aus den Listen von VolleyManager zu verknüpfen"
+        "manualLink": "In den Listen des Vereins, von Hand eingetragen: tippen, um mit jemandem aus den Listen von VolleyManager zu verknüpfen",
+        "match": "In den Listen des Vereins, aus einem Spiel: grün, sobald die Liste aus VolleyManager die Lizenznummer hat",
+        "matchLink": "In den Listen des Vereins, aus einem Spiel: tippen, um mit jemandem aus den Listen von VolleyManager zu verknüpfen"
       },
       "offer": {
         "title": "Auch im Verein speichern?",

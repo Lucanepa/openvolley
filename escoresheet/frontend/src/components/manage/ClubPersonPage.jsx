@@ -13,9 +13,10 @@ const LIST_TONE = { players: 'indigo', coaches: 'emerald', scorers: 'sky' }
  * page (team, club, game, player etc)"; db/037: the row id, never the
  * licence number, is in the URL): the five fields, the lists, whether added
  * by hand, and the club's teams that have the person in their squad (each
- * opens in My teams with `onOpenTeam`). A row added by hand (hand_rows) is
- * removed here, one list at a time; an uploaded one only by uploading its
- * list again.
+ * opens in My teams with `onOpenTeam`). A row no upload brought (hand_rows:
+ * added by hand, or from an official match's roster, db/048) is removed
+ * here, one list at a time; an uploaded one only by uploading its list
+ * again.
  */
 export default function ClubPersonPage({ club, personId, onBack, onOpenTeam = null }) {
   const { t } = useTranslation()
@@ -32,12 +33,16 @@ export default function ClubPersonPage({ club, personId, onBack, onOpenTeam = nu
   const gender = person.gender === 'f' ? t('manage.licences.woman') : person.gender === 'm' ? t('manage.licences.man') : null
   const teams = Array.isArray(person.teams) ? person.teams : []
   const handRows = Array.isArray(person.hand_rows) ? person.hand_rows : []
+  // db/048: a row from an official match's roster (source 'match'), else added by hand
+  const isMatchRow = (row) => row?.source === 'match'
+  const matchRows = handRows.filter(isMatchRow).length
+  const handTitle = matchRows === 0 ? 'manage.licences.handRows' : matchRows === handRows.length ? 'manage.licences.matchRows' : 'manage.licences.mixedRows'
   const removeRow = async (row) => {
     if (busy) return
     const list = t(`manage.licences.lists.${row.list}`)
     const ok = await confirmDialog({
       title: t('manage.licences.removeRowTitle', { name, list }),
-      message: t('manage.licences.removeRowBody'),
+      message: t(isMatchRow(row) ? 'manage.licences.removeMatchRowBody' : 'manage.licences.removeRowBody'),
       confirmLabel: t('manage.licences.removeRow'),
       cancelLabel: t('common.cancel', 'Cancel'),
       tone: 'danger'
@@ -63,7 +68,7 @@ export default function ClubPersonPage({ club, personId, onBack, onOpenTeam = nu
       <OfflineBanner online={online} />
       <div className="mb-3 flex flex-wrap gap-1.5">
         {(person.lists || []).map((l) => <Chip key={l} tone={LIST_TONE[l] || 'stone'}>{t(`manage.licences.lists.${l}`)}</Chip>)}
-        {person.manual && <Chip tone="amber">{t('manage.licences.manual')}</Chip>}
+        {person.manual && <Chip tone="amber">{t(person.from_match ? 'manage.licences.fromMatch' : 'manage.licences.manual')}</Chip>}
       </div>
       <div className="mb-6 rounded-2xl border border-stone-200/70 bg-white p-4 shadow-card sm:p-5">
         <KeyValue
@@ -75,7 +80,7 @@ export default function ClubPersonPage({ club, personId, onBack, onOpenTeam = nu
       </div>
       {handRows.length > 0 && (
         <div className="mb-6">
-          <SectionHeader title={t('manage.licences.handRows')} count={handRows.length} />
+          <SectionHeader title={t(handTitle)} count={handRows.length} />
           <RowList data-testid="club-person-hand-rows">
             {handRows.map((row) => (
               <Row
@@ -83,6 +88,7 @@ export default function ClubPersonPage({ club, personId, onBack, onOpenTeam = nu
                 stripe={false}
                 toolsIndent="sm:pl-2"
                 title={t(`manage.licences.lists.${row.list}`)}
+                meta={<span>{t(isMatchRow(row) ? 'manage.licences.fromMatch' : 'manage.licences.manual')}</span>}
                 tools={<RowTool onClick={() => removeRow(row)} disabled={busy || !online} data-testid="club-person-remove-row">{t('manage.licences.removeRow')}</RowTool>}
               />
             ))}

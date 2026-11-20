@@ -4587,11 +4587,14 @@
     },
     "licences": {
       "personNoTeams": "Dans aucun effectif enregistré du club pour l’instant.",
-      "notHandAdded": "Seules les personnes ajoutées à la main sont retirées une à une. Téléverse à nouveau la liste pour les autres.",
+      "notHandAdded": "Seules les personnes ajoutées à la main ou d’un match sont retirées une à une. Téléverse à nouveau la liste pour les autres.",
       "handRows": "Entrées ajoutées à la main",
+      "matchRows": "Entrées d’un match",
+      "mixedRows": "Entrées ajoutées à la main ou d’un match",
       "removeRow": "Retirer",
       "removeRowTitle": "Retirer {{name}} de la liste {{list}} ?",
       "removeRowBody": "Seule cette entrée ajoutée à la main est retirée. Les effectifs et les alignements avec cette personne restent tels quels.",
+      "removeMatchRowBody": "Seule cette entrée d’un match est retirée. Les effectifs et les alignements avec cette personne restent tels quels. Un match officiel avec cette personne l’ajoute à nouveau.",
       "rowRemoved": "{{name}} retiré de la liste {{list}}.",
       "personTeams": "Équipes",
       "title": "Licences",
@@ -4600,6 +4603,9 @@
       "manual": "Ajouté à la main",
       "manualCount_one": "{{count}} ajoutée à la main",
       "manualCount_other": "{{count}} ajoutées à la main",
+      "fromMatch": "D’un match",
+      "fromMatchCount_one": "{{count}} d’un match",
+      "fromMatchCount_other": "{{count}} de matchs",
       "lists": {
         "players": "Joueurs",
         "scorers": "Marqueurs",
@@ -6518,7 +6524,9 @@
         "hand": "Saisi à la main : pas dans les listes du club",
         "handLink": "Saisi à la main : toucher pour relier à une personne du club",
         "manual": "Dans les listes du club, ajouté à la main : vert dès que la liste de VolleyManager a le numéro de licence",
-        "manualLink": "Dans les listes du club, ajouté à la main : toucher pour relier à une personne des listes de VolleyManager"
+        "manualLink": "Dans les listes du club, ajouté à la main : toucher pour relier à une personne des listes de VolleyManager",
+        "match": "Dans les listes du club, d’un match : vert dès que la liste de VolleyManager a le numéro de licence",
+        "matchLink": "Dans les listes du club, d’un match : toucher pour relier à une personne des listes de VolleyManager"
       },
       "offer": {
         "title": "Enregistrer aussi dans le club ?",

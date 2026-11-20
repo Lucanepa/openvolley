@@ -11,6 +11,9 @@ export const LICENCE_LISTS = ['players', 'scorers', 'coaches']
 export const MAX_LICENCE_PEOPLE = 2000
 const PAGE = 100
 const fold = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '')
+// A list's rows added by hand: `manual` counts every row no upload brought,
+// `from_match` (db/048; 0 from an older server) those of an official match's roster
+const handCount = (s) => Math.max(0, (s.manual || 0) - (s.from_match || 0))
 
 /**
  * My club → Licences (db/024, docs/club-licences-spec.md): the club's lists
@@ -166,7 +169,8 @@ export default function ClubLicencesSection({ club, onOpenPerson = null }) {
                 meta={s.count > 0
                   ? <>
                       <span>{t('manage.licences.people', { count: s.count })}</span>
-                      {s.manual > 0 && <span>{t('manage.licences.manualCount', { count: s.manual })}</span>}
+                      {handCount(s) > 0 && <span>{t('manage.licences.manualCount', { count: handCount(s) })}</span>}
+                      {s.from_match > 0 && <span>{t('manage.licences.fromMatchCount', { count: s.from_match })}</span>}
                       {s.imported_at && <span>{t('manage.licences.updated', { when: dayLabel(s.imported_at, { year: true }), name: s.imported_by_name || '–' })}</span>}
                     </>
                   : <span>{t('manage.licences.notUploaded')}</span>}
@@ -216,7 +220,7 @@ export default function ClubLicencesSection({ club, onOpenPerson = null }) {
                   </>}
                   chips={<>
                     {p.lists.map((l) => <Chip key={l} tone={l === 'players' ? 'indigo' : l === 'coaches' ? 'emerald' : 'sky'}>{t(`manage.licences.lists.${l}`)}</Chip>)}
-                    {p.manual && <Chip tone="amber">{t('manage.licences.manual')}</Chip>}
+                    {p.manual && <Chip tone="amber">{t(p.from_match ? 'manage.licences.fromMatch' : 'manage.licences.manual')}</Chip>}
                     {p.teams.map((team) => <Chip key={team.id}>{team.name}</Chip>)}
                   </>}
                 />
