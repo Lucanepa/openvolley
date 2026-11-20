@@ -4593,11 +4593,14 @@
     },
     "licences": {
       "personNoTeams": "Non ancora in nessuna rosa salvata della società.",
-      "notHandAdded": "Solo le persone aggiunte a mano si rimuovono una alla volta. Per le altre carica di nuovo la lista.",
+      "notHandAdded": "Solo le persone aggiunte a mano o da una partita si rimuovono una alla volta. Per le altre carica di nuovo la lista.",
       "handRows": "Voci aggiunte a mano",
+      "matchRows": "Voci da una partita",
+      "mixedRows": "Voci aggiunte a mano o da una partita",
       "removeRow": "Rimuovi",
       "removeRowTitle": "Rimuovere {{name}} dalla lista {{list}}?",
       "removeRowBody": "Si rimuove solo questa voce aggiunta a mano. Le rose e le formazioni con la persona restano come sono.",
+      "removeMatchRowBody": "Si rimuove solo questa voce da una partita. Le rose e le formazioni con la persona restano come sono. Una partita ufficiale con la persona la aggiunge di nuovo.",
       "rowRemoved": "{{name}} rimosso dalla lista {{list}}.",
       "personTeams": "Squadre",
       "title": "Licenze",
@@ -4606,6 +4609,9 @@
       "manual": "Aggiunto a mano",
       "manualCount_one": "{{count}} aggiunta a mano",
       "manualCount_other": "{{count}} aggiunte a mano",
+      "fromMatch": "Da una partita",
+      "fromMatchCount_one": "{{count}} da una partita",
+      "fromMatchCount_other": "{{count}} da partite",
       "lists": {
         "players": "Giocatori",
         "scorers": "Segnapunti",
@@ -6524,7 +6530,9 @@
         "hand": "Inserito a mano: non nelle liste della società",
         "handLink": "Inserito a mano: tocca per collegarlo a una persona della società",
         "manual": "Nelle liste della società, aggiunto a mano: verde quando la lista di VolleyManager ha il numero di licenza",
-        "manualLink": "Nelle liste della società, aggiunto a mano: tocca per collegarlo a una persona delle liste di VolleyManager"
+        "manualLink": "Nelle liste della società, aggiunto a mano: tocca per collegarlo a una persona delle liste di VolleyManager",
+        "match": "Nelle liste della società, da una partita: verde quando la lista di VolleyManager ha il numero di licenza",
+        "matchLink": "Nelle liste della società, da una partita: tocca per collegarlo a una persona delle liste di VolleyManager"
       },
       "offer": {
         "title": "Salvare anche nella società?",

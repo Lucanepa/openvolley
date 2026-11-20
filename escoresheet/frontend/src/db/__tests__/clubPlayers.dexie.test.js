@@ -36,7 +36,7 @@ describe('the clubs\' players on the device', () => {
 
   it('keeps the licence, names and gender of each player (and whether added by hand), never a date of birth, for this account only', async () => {
     const row = clubToRow({ ...answer().clubs[0], players: [{ sv_number: 100001, last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', email: 'anna@example.ch' }] }, 'u1')
-    expect(row.players).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f', manual: false }])
+    expect(row.players).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f', manual: false, from_match: false }])
     await storeClubPlayers(answer(), 'u1')
     const rows = await db.club_players.toArray()
     expect(rows).toHaveLength(1)
@@ -68,21 +68,27 @@ describe('the clubs\' players on the device', () => {
   it('keeps everyone of the club\'s lists once with their lists (the bench officials); an older answer: the players', async () => {
     const people = [
       { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', lists: ['players'] },
-      { sv_number: 200001, last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f', lists: ['coaches', 'nonsense'], phone: '000', manual: true }
+      { sv_number: 200001, last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f', lists: ['coaches', 'nonsense'], phone: '000', manual: true },
+      // db/048: from an official match's roster (only with manual: an older or odd answer says nothing more)
+      { sv_number: '100007', last_name: 'Spielmann', first_name: 'Pia', gender: null, lists: ['players'], manual: true, from_match: true },
+      { sv_number: '100008', last_name: 'Zweifel', first_name: 'Zora', gender: 'f', lists: ['players'], from_match: true }
     ]
     const row = clubToRow({ ...answer().clubs[0], people }, 'u1')
-    // db/026: `manual` (every row of the person added by hand) is kept for Match Setup's gray shield
+    // db/026: `manual` (every row of the person added by hand) is kept for Match Setup's gray shield,
+    // db/048 `from_match` for its "from a match" label
     expect(row.people).toEqual([
-      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f', manual: false, lists: ['players'] },
-      { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', gender: 'f', manual: true, lists: ['coaches'] }
+      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f', manual: false, from_match: false, lists: ['players'] },
+      { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', gender: 'f', manual: true, from_match: false, lists: ['coaches'] },
+      { sv_number: '100007', last_name: 'Spielmann', first_name: 'Pia', gender: null, manual: true, from_match: true, lists: ['players'] },
+      { sv_number: '100008', last_name: 'Zweifel', first_name: 'Zora', gender: 'f', manual: false, from_match: false, lists: ['players'] }
     ])
     // the players list stays as it was (the roster rows)
     expect(row.players.map((p) => p.sv_number)).toEqual(['100001'])
     await storeClubPlayers({ ...answer(), clubs: [{ ...answer().clubs[0], people }] }, 'u1')
     const club = clubOfTeam(await db.club_players.toArray(), 'VBC Musterdorf H1', 'u1')
-    expect(club.people.map((p) => p.last_name)).toEqual(['Beispiel', 'Trainer'])
+    expect(club.people.map((p) => p.last_name)).toEqual(['Beispiel', 'Trainer', 'Spielmann', 'Zweifel'])
     // a server (or a row kept) before `people`: the players are the people
-    expect(clubToRow(answer().clubs[0], 'u1').people).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f', manual: false, lists: ['players'] }])
+    expect(clubToRow(answer().clubs[0], 'u1').people).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f', manual: false, from_match: false, lists: ['players'] }])
     const older = clubToRow({ ...answer().clubs[0], people }, 'u1')
     delete older.people
     expect(clubOfTeam([older], 'VBC Musterdorf H1', 'u1').people.map((p) => p.lists)).toEqual([['players']])

@@ -8,8 +8,9 @@ import { cn } from '../../ui'
  * linked lately in case"): green, the person is in a list uploaded from
  * VolleyManager (the same licence number, or the same name when exactly one
  * person of the club has it; no dates of birth since db/048); gray, typed by
- * hand, also when kept in the club's lists by hand (`manual`: green once an
- * upload has the licence number).
+ * hand, also when kept in the club's lists by hand or from an official
+ * match's roster (`manual`, `from_match`: green once an upload has the
+ * licence number).
  *
  * `person`: the club person (clubPersonOf) or null. `fill`: what the club
  * adds to the row (clubFillOf); with `onFill` the green shield fills it in.
@@ -42,12 +43,15 @@ export default function ClubShield({ person, fill = {}, onLink = null, onFill = 
       </span>
     )
   }
-  // in the club's lists by hand, or not there at all
+  // in the club's lists by hand or from a match, or not there at all
   const kept = !!person
-  const label = kept
-    ? t(onLink ? 'clubPlayers.shield.manualLink' : 'clubPlayers.shield.manual')
-    : t(onLink ? 'clubPlayers.shield.handLink' : 'clubPlayers.shield.hand')
-  const state = kept ? 'manual' : 'hand'
+  const fromMatch = kept && person.from_match === true
+  const label = fromMatch
+    ? t(onLink ? 'clubPlayers.shield.matchLink' : 'clubPlayers.shield.match')
+    : kept
+      ? t(onLink ? 'clubPlayers.shield.manualLink' : 'clubPlayers.shield.manual')
+      : t(onLink ? 'clubPlayers.shield.handLink' : 'clubPlayers.shield.hand')
+  const state = fromMatch ? 'match' : kept ? 'manual' : 'hand'
   if (onLink) {
     return (
       <button type="button" onClick={onLink} aria-label={label} title={label} style={plain} className={cn(base, button, 'text-stone-400 hover:text-stone-600', className)} data-testid="club-shield" data-shield={state}>

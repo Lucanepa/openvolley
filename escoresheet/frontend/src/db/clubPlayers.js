@@ -53,15 +53,18 @@ const LISTS = ['players', 'scorers', 'coaches']
 
 /**
  * A person of a list: the licence, the names and the gender only (never a
- * date of birth, also from an older server), and whether every row of the
- * person was added by hand (db/026 `manual`: a gray shield in Match Setup).
+ * date of birth, also from an older server), whether no upload brought any
+ * row of the person (db/026 `manual`: a gray shield in Match Setup) and
+ * whether an official match's roster brought all of them (db/048
+ * `from_match`: the shield says "from a match"; false from an older server).
  */
 const personOf = (p) => ({
   sv_number: String(p.sv_number),
   last_name: p.last_name || '',
   first_name: p.first_name || null,
   gender: p.gender === 'm' || p.gender === 'f' ? p.gender : null,
-  manual: p.manual === true
+  manual: p.manual === true,
+  from_match: p.manual === true && p.from_match === true
 })
 
 /**

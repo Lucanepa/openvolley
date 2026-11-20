@@ -28,7 +28,7 @@ const player = (number, p, extra = {}) => ({ number, first_name: p.first_name, l
 const official = (role, p) => ({ role, first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.sv_number })
 const FOUR = ['first_name', 'gender', 'last_name', 'sv_number']
 // db/026: every person read also has `manual` (added by hand; all of these are uploaded)
-const READ = [...FOUR, 'manual'].sort()
+const READ = [...FOUR, 'manual', 'from_match'].sort()
 // a person as the server answers it: no date of birth (db/048)
 const four = ({ dob, ...p }) => p
 
@@ -152,7 +152,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     const own = await call(users.othermgr, 'GET', `/api/club/${other.id}/licences`)
     assert.equal(own.status, 200, own.text)
     assert.deepEqual(own.json.data.people, [])
-    assert.deepEqual(own.json.data.lists.players, { count: 0, manual: 0, imported_at: null, imported_by_name: null })
+    assert.deepEqual(own.json.data.lists.players, { count: 0, manual: 0, from_match: 0, imported_at: null, imported_by_name: null })
   })
 
   it('the team manager reads the club\'s players of its team\'s gender only, without dates of birth', async () => {
@@ -195,7 +195,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(c.people.map((p) => [p.last_name, p.lists]), [
       ['Beispiel', ['players']], ['Muster', ['players']], ['Probe', ['players', 'coaches']], ['Testmann', ['players']], ['Trainer', ['coaches']]
     ])
-    assert.deepEqual(c.people.find((p) => p.sv_number === '100003'), { ...four(MARCO), manual: false, lists: ['players', 'coaches'] })
+    assert.deepEqual(c.people.find((p) => p.sv_number === '100003'), { ...four(MARCO), manual: false, from_match: false, lists: ['players', 'coaches'] })
     // no date of birth anywhere (db/048)
     assert.ok([...c.players, ...c.people].every((p) => !('dob' in p)))
     // the route older apps ask for dates of birth: always none
@@ -268,7 +268,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(by['100001'].teams.map((t) => t.name), ['VBC Musterdorf D1', 'VBC Musterdorf H1', 'VBC Musterdorf X1'])
     assert.deepEqual(by['200001'].teams.map((t) => [t.id, t.name]), [[h1.id, 'VBC Musterdorf H1']])
     assert.deepEqual(by['100004'].teams.map((t) => t.name), ['VBC Musterdorf H1'])
-    assert.deepEqual(Object.keys(by['100001']).sort(), ['first_name', 'gender', 'hand_rows', 'id', 'last_name', 'lists', 'manual', 'row_ids', 'sv_number', 'teams'])
+    assert.deepEqual(Object.keys(by['100001']).sort(), ['first_name', 'from_match', 'gender', 'hand_rows', 'id', 'last_name', 'lists', 'manual', 'row_ids', 'sv_number', 'teams'])
     assert.match(by['100001'].id, /^[0-9a-f-]{36}$/)
     assert.deepEqual(by['100001'].hand_rows, [])
     assert.deepEqual([d.lists.players.manual, d.lists.coaches.manual, d.lists.scorers.manual], [0, 0, 0])
