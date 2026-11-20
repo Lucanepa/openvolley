@@ -118,8 +118,7 @@ body {
 
 .app-root {
   position: relative;
-  height: 100vh;
-  height: 100dvh;
+  height: var(--ov-vh100);
   width: 100%;
   max-width: 100%;
   display: flex;
@@ -127,7 +126,7 @@ body {
   overflow: hidden;
   /* Respect iOS/Android notches & rounded corners (0 on non-notch devices).
      Requires viewport-fit=cover on the viewport meta. box-sizing:border-box
-     (global) keeps the shell at 100dvh while insetting content. */
+     (global) keeps the shell at the full height while insetting content. */
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px);
@@ -3623,7 +3622,7 @@ button.start-rally-button {
 .match-record.centre-dialogs .modal-wrapper-roll-up>div,
 .match-record.centre-dialogs .sb-anchored-popover>div {
   transform-origin: center !important;
-  max-height: calc(85dvh / 1.5);
+  max-height: calc(var(--ov-vh100) * 0.85 / 1.5);
   max-width: calc((100vw - 24px) / 1.5);
   overflow-y: auto;
 }
@@ -3633,7 +3632,7 @@ button.start-rally-button {
 .match-record.phone-layout .sb-anchored-popover>div {
   transform: scale(1.25) !important;
   transform-origin: center !important;
-  max-height: calc(80dvh / 1.25);
+  max-height: calc(var(--ov-vh100) * 0.8 / 1.25);
   max-width: calc((100vw - 24px) / 1.25);
   overflow-y: auto;
 }
@@ -4023,8 +4022,7 @@ body.ios-fullscreen {
   right: 0 !important;
   bottom: 0 !important;
   width: 100% !important;
-  height: 100vh !important;
-  height: 100dvh !important;
+  height: var(--ov-vh100) !important;
   /* Dynamic viewport height for iOS */
   overflow: hidden !important;
   z-index: 9999 !important;
@@ -4037,8 +4035,7 @@ body.ios-fullscreen #root {
   right: 0 !important;
   bottom: 0 !important;
   width: 100% !important;
-  height: 100vh !important;
-  height: 100dvh !important;
+  height: var(--ov-vh100) !important;
   overflow: auto !important;
 }
 

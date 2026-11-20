@@ -862,7 +862,7 @@ export default function BenchApp() {
 
     return (
       <div style={{
-        height: '100dvh',
+        height: 'var(--ov-vh100, 100vh)',
         background: 'var(--bg)',
         color: 'var(--text)',
         display: 'flex',
@@ -911,7 +911,7 @@ export default function BenchApp() {
 
     return (
       <div style={{
-        minHeight: '100dvh',
+        minHeight: 'var(--ov-vh100, 100vh)',
         background: 'var(--bg)',
         color: 'var(--text)',
         display: 'flex',
@@ -970,7 +970,7 @@ export default function BenchApp() {
   if (selectedMatch && !selectedTeam) {
     return (
       <div style={{
-        minHeight: '100dvh',
+        minHeight: 'var(--ov-vh100, 100vh)',
         background: 'var(--bg)',
         color: 'var(--text)',
         display: 'flex',
@@ -1034,7 +1034,7 @@ export default function BenchApp() {
   // Initial game selection
   return (
     <div style={{
-      minHeight: '100dvh',
+      minHeight: 'var(--ov-vh100, 100vh)',
       background: 'var(--bg)',
       color: 'var(--text)',
       display: 'flex',

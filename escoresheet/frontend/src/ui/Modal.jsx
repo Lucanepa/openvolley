@@ -121,7 +121,7 @@ function useOverlay({ open, onClose, panelRef, dismissible = true }) {
  *
  * - layout="plain" (default): `p-5` panel, title row with the × glyph.
  * - layout="sections": ruled header / scrolling body / footer.
- * - sheet: bottom sheet below sm (rounded-t-2xl, 92dvh), centred dialog on sm+.
+ * - sheet: bottom sheet below sm (rounded-t-2xl, 92% of the window height), centred dialog on sm+.
  *   Always sectioned.
  * - dismissible={false}: backdrop click does nothing (forms with unsaved input);
  *   Escape and the × still close.
@@ -161,7 +161,7 @@ export function Modal({
 
   const panelClass = sheet
     // App.tsx:771 — sm:max-w-* replaces the size; phone gets the full width.
-    ? cn('bg-white w-full h-[92dvh] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col', SHEET_SIZES[size] ?? SHEET_SIZES.xl)
+    ? cn('bg-white w-full h-[calc(var(--ov-vh100)*0.92)] sm:h-auto sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col', SHEET_SIZES[size] ?? SHEET_SIZES.xl)
     : sectioned
       // App.tsx:6437
       ? cn('bg-white rounded-2xl shadow-xl w-full max-h-[85vh] flex flex-col', width)
@@ -295,7 +295,7 @@ export function ActionSheet({ open, onClose, title, closeLabel = 'Schliessen', r
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="relative w-full max-w-md rounded-t-2xl lg:rounded-2xl border border-stone-200 bg-white p-2 shadow-xl max-h-[80dvh] overflow-y-auto outline-none"
+        className="relative w-full max-w-md rounded-t-2xl lg:rounded-2xl border border-stone-200 bg-white p-2 shadow-xl max-h-[calc(var(--ov-vh100)*0.8)] overflow-y-auto outline-none"
         style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))' }}
       >
         <div className="flex items-center justify-between pl-4 pt-1">

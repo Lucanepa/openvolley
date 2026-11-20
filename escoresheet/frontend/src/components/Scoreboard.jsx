@@ -14547,7 +14547,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        height: '100dvh',
+        height: 'var(--ov-vh100, 100vh)',
         background: 'var(--bg)',
         color: 'var(--text)',
         padding: '20px',
@@ -25375,7 +25375,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       width={900}
       hideCloseButton={true}
       // the window's height, not 85vh (a phone keeps Confirm in view)
-      panelStyle={{ maxHeight: 'calc(100dvh - 2rem)' }}
+      panelStyle={{ maxHeight: 'calc(var(--ov-vh100, 100vh) - 2rem)' }}
     >
       <div className="lineup-modal">
         <div className="lineup-modal__body">

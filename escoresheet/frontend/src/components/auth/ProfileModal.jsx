@@ -295,7 +295,7 @@ export default function ProfileModal({ open, onClose }) {
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="profile-delete-title"
-            className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
+            className="max-h-[calc(var(--ov-vh100)-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
             <h3 id="profile-delete-title" className="text-lg font-bold text-stone-900">

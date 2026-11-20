@@ -4599,7 +4599,7 @@ export default function App() {
                 onClose={() => { setRestorePreviewData(null); setRestoreError('') }}
                 width={700}
                 // The window's height, not 85vh: on a laptop the whole preview fits
-                panelStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(100dvh - 2rem)' }}
+                panelStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(var(--ov-vh100, 100vh) - 2rem)' }}
               >
                 {/* Scrolling body; the footer stays below it, in view on a phone */}
                 <div className="ov-kit -mx-5 min-h-0 flex-1 overflow-y-auto px-5 pb-4">

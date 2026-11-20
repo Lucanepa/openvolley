@@ -49,7 +49,7 @@ export default function BenchRequestCards({ queue, teams, rallyInPlay, donePairs
     <div
       className="ov-kit no-print"
       data-bench-request-cards=""
-      style={{ position: 'fixed', top: `calc(env(safe-area-inset-top, 0px) + ${top}px)`, right: 8, zIndex: 40, width: 'min(300px, calc(100vw - 16px))', maxHeight: `calc(100dvh - ${top + 16}px)`, overflowY: 'auto' }}
+      style={{ position: 'fixed', top: `calc(env(safe-area-inset-top, 0px) + ${top}px)`, right: 8, zIndex: 40, width: 'min(300px, calc(100vw - 16px))', maxHeight: `calc(var(--ov-vh100, 100vh) - ${top + 16}px)`, overflowY: 'auto' }}
     >
       <button
         type="button"

@@ -319,7 +319,7 @@ export default function SqlPanel() {
         </div>
       </div>
       <Modal open={sheetOpen} onClose={() => setSheetOpen(false)} title={t('manage.sql.tables')} sheet closeLabel={t('common.close', 'Close')}>
-        <div className="h-[70dvh]">{schemaBrowser}</div>
+        <div className="h-[calc(var(--ov-vh100)*0.7)]">{schemaBrowser}</div>
       </Modal>
     </section>
   )

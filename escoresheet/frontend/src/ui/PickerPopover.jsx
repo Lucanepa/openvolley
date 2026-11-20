@@ -133,7 +133,7 @@ export function PickerPopover({ open, onClose, anchorRef, label, id, className, 
         // Transparent (not hidden) until placed: a hidden panel cannot take the focus.
         style={{ position: 'fixed', top: pos ? pos.top : 0, left: pos ? pos.left : 0, opacity: pos ? 1 : 0 }}
         className={cn(
-          'max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] overflow-auto rounded-xl border border-stone-200/70 bg-white p-3 text-stone-800 shadow-xl',
+          'max-w-[calc(100vw-16px)] max-h-[calc(var(--ov-vh100)-16px)] overflow-auto rounded-xl border border-stone-200/70 bg-white p-3 text-stone-800 shadow-xl',
           className,
         )}
       >

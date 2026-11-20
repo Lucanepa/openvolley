@@ -172,6 +172,26 @@
   --ring: var(--ov-focus);   /* legacy :focus-visible outline reads var(--ring) */
 }
 
+/* --ov-vh100: the window's full height. 100dvh (the visible height, without
+   the phone browser's toolbars) where the browser has it, else 100vh. Every
+   screen and dialog height uses it, never dvh itself: the build allows
+   WebView/Chrome 105-107 (build-target.js, browser-check.js), which has no
+   dvh, so a raw 100dvh there drops the whole declaration (an inline style
+   too) and the screen loses its height (the phone scoring screen went
+   blank). A plain `height: 100vh; height: 100dvh` fallback does not survive
+   the build either: the minifier keeps only the last one. Inline styles
+   write var(--ov-vh100, 100vh), in case they draw before the stylesheet;
+   fractions are calc(var(--ov-vh100) * 0.9). src/__tests__/viewportUnits.test.js
+   keeps raw dvh/svh/lvh out of the sources. */
+:root {
+  --ov-vh100: 100vh;
+}
+@supports (height: 100dvh) {
+  :root {
+    --ov-vh100: 100dvh;
+  }
+}
+
 /* Expose the tokens to Tailwind's utility engine (bg-background, text-foreground, ...). */
 @theme inline {
   --color-background: var(--background);
