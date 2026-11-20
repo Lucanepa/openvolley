@@ -250,7 +250,9 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(sent.captain_signature, SIG)
     assert.equal(sent.team_name, 'VBC Musterdorf H1')
     assert.equal(sent.players.length, 8)
-    assert.equal(sent.players[0].dob, '2001-02-03')
+    // no date of birth (db/048): the one the test's older client sent is dropped
+    assert.ok(sent.players.every((x) => !('dob' in x)))
+    assert.equal(sent.players[0].license_number, null)
     assert.equal(sent.season, season)
 
     const o = await call(users.otherscorer, 'GET', '/api/game-rosters')

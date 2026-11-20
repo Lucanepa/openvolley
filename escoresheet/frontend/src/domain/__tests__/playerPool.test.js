@@ -18,9 +18,22 @@ describe('buildPlayerPool', () => {
     expect(pool.find(e => e.lastName === 'Meier').lastMatch).toBe(false)
   })
 
-  it('keeps two players of one name apart when their dates of birth differ', () => {
-    const pool = buildPlayerPool({ saved: [p(1, 'Huber', 'Sara', { dob: '01.01.2000' })], earlier: [[p(2, 'Huber', 'Sara', { dob: '05.05.2005' })]] })
+  // Owner 2026-11-19: the licence tells people apart, a date of birth never
+  it('keeps two players of one name apart when their licences differ', () => {
+    const pool = buildPlayerPool({ saved: [p(1, 'Huber', 'Sara', { dob: '123456' })], earlier: [[p(2, 'Huber', 'Sara', { dob: '654321' })]] })
     expect(pool).toHaveLength(2)
+  })
+
+  it('one licence is one player, whatever the spelling of the name', () => {
+    const pool = buildPlayerPool({ imported: [p(null, 'Müller', 'Lea', { dob: '123456' })], saved: [p(7, 'Mueller', 'Léa', { dob: '123456' })] })
+    expect(pool).toHaveLength(1)
+    expect(pool[0]).toMatchObject({ number: 7, lastName: 'Müller', dob: '123456', sources: ['imported', 'saved'] })
+  })
+
+  it('same name: a licence on one side only, or a date of birth, is the same player', () => {
+    const pool = buildPlayerPool({ current: [p(4, 'Huber', 'Sara', { dob: '14.03.2008' })], saved: [p(4, 'Huber', 'Sara', { dob: '123456' })], earlier: [[p(4, 'Huber', 'Sara', { dob: '01.01.2005' })]] })
+    expect(pool).toHaveLength(1)
+    expect(pool[0].dob).toBe('14.03.2008') // the first source's value
   })
 
   it('keys a player without a name by the number, and drops empty rows', () => {
@@ -50,12 +63,13 @@ describe('buildPlayerPool: dates of birth and marks across sources', () => {
     expect(pool[0].sources).toEqual(['imported', 'saved'])
   })
 
-  it('another date of birth is still another person', () => {
+  it('another date of birth is no longer another person (only another licence is)', () => {
     const pool = buildPlayerPool({
       imported: [p(5, 'Keller', 'Luca', { dob: '05/01/1998' })],
       saved: [p(6, 'Keller', 'Luca', { dob: '06.01.1999' })]
     })
-    expect(pool).toHaveLength(2)
+    expect(pool).toHaveLength(1)
+    expect(pool[0].number).toBe(5)
   })
 
   it('libero and captain marks come from a later source when the first has none', () => {

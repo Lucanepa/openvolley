@@ -3,7 +3,7 @@
  * 4.7 and 5.5, db/007): competitions, their teams, and each team's players
  * and officials, for MatchSetup's "Load saved team".
  *
- * Personal data (dates of birth, licence numbers): served only through
+ * Personal data (names, licence numbers): served only through
  * /api/saved-teams*, never on the /api/db allowlist, never anonymous, never in
  * a public projection. Who may read (approved scorers, competition managers,
  * admins) and write (competition managers, admins) is decided by the server.
@@ -27,6 +27,10 @@
  * so a 2.1.0 client never sees a beach row. A beach team is a pair (players
  * numbered 1 and 2, no libero/captain/active flags, an optional country) with
  * at most one Coach.
+ *
+ * No date of birth (db/048, owner 2026-11-19: "ONLY licence number"): a dob
+ * sent by an older manager or scorer app is dropped, none is written or
+ * answered (the columns stay NULL until db/049 drops them).
  */
 
 import { randomUUID } from 'node:crypto'
@@ -52,16 +56,9 @@ const SEASON_RE = /^(\d{4})\/(\d{2})$/
 const BEACH_SEASON_RE = /^\d{4}$/
 const COUNTRY_RE = /^[A-Z]{3}$/
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
-
-function validDate (s) {
-  if (typeof s !== 'string' || !DATE_RE.test(s)) return false
-  const d = new Date(`${s}T00:00:00Z`)
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
-}
 
 /**
  * Optional text: undefined (absent) stays undefined, null/'' become null,
@@ -192,9 +189,7 @@ export function validateRoster (body, { sport = 'indoor' } = {}) {
     const last = optText(raw.last_name, 80, { required: true })
     if (last.error) return { error: invalid(`${label}[${i}].last_name: ${last.error}`) }
     out.last_name = last.value
-    if (raw.dob == null || raw.dob === '') out.dob = null
-    else if (!validDate(raw.dob)) return { error: invalid(`${label}[${i}].dob: YYYY-MM-DD or null`) }
-    else out.dob = raw.dob
+    // raw.dob (an older app's) is dropped: no date of birth is kept (db/048)
     const lic = optText(raw.license_number ?? null, 40)
     if (lic.error) return { error: invalid(`${label}[${i}].license_number: ${lic.error}`) }
     out.license_number = lic.value ?? null
@@ -312,14 +307,14 @@ const teamOut = (r) => ({
   staff: r.staff ?? []
 })
 
-// players / staff of team `alias` as JSON arrays, in sort order (dob as YYYY-MM-DD)
+// players / staff of team `alias` as JSON arrays, in sort order (no date of birth, db/048)
 const ROSTER_SQL = (alias) => `
   coalesce((SELECT json_agg(json_build_object('id', p.id, 'number', p.number, 'first_name', p.first_name,
-            'last_name', p.last_name, 'dob', p.dob, 'license_number', p.license_number, 'is_libero', p.is_libero,
+            'last_name', p.last_name, 'license_number', p.license_number, 'is_libero', p.is_libero,
             'is_captain', p.is_captain, 'active', p.active, 'sort_order', p.sort_order, 'country', p.country) ORDER BY p.sort_order, p.id)
        FROM public.competition_players p WHERE p.team_id = ${alias}.id), '[]'::json) AS players,
   coalesce((SELECT json_agg(json_build_object('id', s.id, 'role', s.role, 'first_name', s.first_name,
-            'last_name', s.last_name, 'dob', s.dob, 'license_number', s.license_number, 'sort_order', s.sort_order) ORDER BY s.sort_order, s.id)
+            'last_name', s.last_name, 'license_number', s.license_number, 'sort_order', s.sort_order) ORDER BY s.sort_order, s.id)
        FROM public.competition_staff s WHERE s.team_id = ${alias}.id), '[]'::json) AS staff`
 
 // A delete of a competition with teams or a team with people: its name typed as ?confirm=
@@ -657,19 +652,19 @@ export function createSavedTeams ({ pool, audit = null, logger = console, clock 
       for (const r of rows) {
         if (table === 'competition_players') {
           await client.query(
-            `INSERT INTO public.competition_players (id, team_id, number, first_name, last_name, dob, license_number, is_libero, is_captain, active, sort_order, country)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            `INSERT INTO public.competition_players (id, team_id, number, first_name, last_name, license_number, is_libero, is_captain, active, sort_order, country)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              ON CONFLICT (id) DO UPDATE SET number = EXCLUDED.number, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
-               dob = EXCLUDED.dob, license_number = EXCLUDED.license_number, is_libero = EXCLUDED.is_libero,
+               license_number = EXCLUDED.license_number, is_libero = EXCLUDED.is_libero,
                is_captain = EXCLUDED.is_captain, active = EXCLUDED.active, sort_order = EXCLUDED.sort_order, country = EXCLUDED.country`,
-            [r.id, id, r.number, r.first_name, r.last_name, r.dob, r.license_number, r.is_libero, r.is_captain, r.active, r.sort_order, r.country ?? null])
+            [r.id, id, r.number, r.first_name, r.last_name, r.license_number, r.is_libero, r.is_captain, r.active, r.sort_order, r.country ?? null])
         } else {
           await client.query(
-            `INSERT INTO public.competition_staff (id, team_id, role, first_name, last_name, dob, license_number, sort_order)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO public.competition_staff (id, team_id, role, first_name, last_name, license_number, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
-               dob = EXCLUDED.dob, license_number = EXCLUDED.license_number, sort_order = EXCLUDED.sort_order`,
-            [r.id, id, r.role, r.first_name, r.last_name, r.dob, r.license_number, r.sort_order])
+               license_number = EXCLUDED.license_number, sort_order = EXCLUDED.sort_order`,
+            [r.id, id, r.role, r.first_name, r.last_name, r.license_number, r.sort_order])
         }
       }
     }
@@ -727,11 +722,14 @@ export function createSavedTeams ({ pool, audit = null, logger = console, clock 
     }
   }
 
-  /** One saved team with its players and staff (lib/teams.js, a team manager's squad). */
-  async function getTeam ({ id } = {}) {
+  /**
+   * One saved team with its players and staff (lib/teams.js, a team manager's
+   * squad). `client`: inside the caller's transaction (lib/rosterSaveBack.js).
+   */
+  async function getTeam ({ id, client = null } = {}) {
     if (!isUuid(id)) return notFound()
     return guarded('get-team', async () => {
-      const team = await teamById(pool, id)
+      const team = await teamById(client || pool, id)
       return team ? ok({ team }) : notFound()
     })
   }

@@ -2353,7 +2353,7 @@ export default function App() {
 
     const fetchOfficialByExternalId = async (table, externalId) => {
       if (!externalId) return null
-      const { data, error } = await apiFrom(table).select('first_name,last_name,country,dob').eq('external_id', externalId).maybeSingle()
+      const { data, error } = await apiFrom(table).select('first_name,last_name,country').eq('external_id', externalId).maybeSingle()
       if (error) {
         console.warn(`Unable to load ${table} ${externalId}:`, error.message)
         return null
@@ -2403,7 +2403,7 @@ export default function App() {
         const firstName = record.firstName || record.first_name || fetched?.first_name || template.fallback.firstName || ''
         const lastName = record.lastName || record.last_name || fetched?.last_name || template.fallback.lastName || ''
         const country = record.country || fetched?.country || template.fallback.country || 'CHE'
-        const dob = record.dob || fetched?.dob || template.fallback.dob || '01.01.1900'
+        const dob = record.dob || template.fallback.dob || ''
 
         return {
           role: template.role,
@@ -2431,7 +2431,7 @@ export default function App() {
           firstName: entry.firstName || fallback.firstName || '',
           lastName: entry.lastName || fallback.lastName || '',
           country: entry.country || fallback.country || 'CHE',
-          dob: entry.dob || fallback.dob || '01.01.1900'
+          dob: entry.dob || fallback.dob || ''
         }
       })
     }
@@ -2539,17 +2539,6 @@ export default function App() {
   const firstNames = ['Max', 'Luca', 'Tom', 'Jonas', 'Felix', 'Noah', 'David', 'Simon', 'Daniel', 'Michael', 'Anna', 'Sarah', 'Lisa', 'Emma', 'Sophie', 'Laura', 'Julia', 'Maria', 'Nina', 'Sara']
   const lastNames = ['Müller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Schulz', 'Hoffmann', 'Koch', 'Bauer', 'Richter', 'Klein', 'Wolf', 'Schröder', 'Neumann', 'Schwarz', 'Zimmermann', 'Braun']
 
-  function randomDate(start, end) {
-    const startDate = new Date(start).getTime()
-    const endDate = new Date(end).getTime()
-    const randomTime = startDate + Math.random() * (endDate - startDate)
-    const date = new Date(randomTime)
-    const day = String(date.getDate()).padStart(2, '0')
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const year = date.getFullYear()
-    return `${day}/${month}/${year}`
-  }
-
   function formatISODateToDisplay(dateString) {
     if (!dateString) return null
     const date = new Date(dateString)
@@ -2581,7 +2570,7 @@ export default function App() {
     return shuffled.slice(0, totalPlayers).map((number, idx) => {
       const firstName = firstNames[Math.floor(Math.random() * firstNames.length)]
       const lastName = lastNames[Math.floor(Math.random() * lastNames.length)]
-      const dob = randomDate('1990-01-01', '2005-12-31')
+      const dob = String(100000 + Math.floor(Math.random() * 900000)) // a made-up licence number
 
       // Assign libero roles
       let libero = ''
@@ -3193,28 +3182,28 @@ export default function App() {
         firstName: firstRef?.firstName || 'Claudia',
         lastName: firstRef?.lastName || 'Moser',
         country: firstRef?.country || 'CHE',
-        dob: firstRef?.dob ? formatISODateToDisplay(firstRef.dob) : formatISODateToDisplay('1982-04-19')
+        dob: firstRef?.dob ? formatISODateToDisplay(firstRef.dob) : '101247'
       },
       {
         role: '2nd referee',
         firstName: secondRef?.firstName || 'Martin',
         lastName: secondRef?.lastName || 'Kunz',
         country: secondRef?.country || 'CHE',
-        dob: secondRef?.dob ? formatISODateToDisplay(secondRef.dob) : formatISODateToDisplay('1979-09-02')
+        dob: secondRef?.dob ? formatISODateToDisplay(secondRef.dob) : '101284'
       },
       {
         role: 'scorer',
         firstName: primaryScorer?.firstName || 'Petra',
         lastName: primaryScorer?.lastName || 'Schneider',
         country: primaryScorer?.country || 'CHE',
-        dob: primaryScorer?.dob ? formatISODateToDisplay(primaryScorer.dob) : formatISODateToDisplay('1990-01-15')
+        dob: primaryScorer?.dob ? formatISODateToDisplay(primaryScorer.dob) : '101321'
       },
       {
         role: 'assistant scorer',
         firstName: assistantScorer?.firstName || 'Lukas',
         lastName: assistantScorer?.lastName || 'Baumann',
         country: assistantScorer?.country || 'CHE',
-        dob: assistantScorer?.dob ? formatISODateToDisplay(assistantScorer.dob) : formatISODateToDisplay('1988-06-27')
+        dob: assistantScorer?.dob ? formatISODateToDisplay(assistantScorer.dob) : '101358'
       },
       { role: 'line judge 1', name: 'Andrea Müller' },
       { role: 'line judge 2', name: 'Thomas Fischer' }

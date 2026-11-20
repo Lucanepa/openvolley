@@ -11,6 +11,7 @@ import {
   formatPersonName,
   formatSheetDate,
   gameNumberOf,
+  idHeadingOf,
   isPlaceholderTeamName,
   localDateStamp,
   normalizeOfficials,
@@ -36,6 +37,26 @@ describe('formatDob (field-spec 12.3)', () => {
     expect(formatDob('unknown')).toBe('unknown')
     expect(formatDob('31.02.2001')).toBe('31.02.2001')
     expect(formatDob('1990')).toBe('1990')
+  })
+  it('prints a licence number as it is (a Swiss match: licence or date of birth)', () => {
+    expect(formatDob('123456')).toBe('123456')
+    expect(formatDob('1234567890')).toBe('1234567890')
+  })
+})
+
+describe('idHeadingOf', () => {
+  it('"Licence" in every Swiss match, whatever idMode it carries', () => {
+    expect(idHeadingOf({})).toBe('Licence')
+    expect(idHeadingOf(null)).toBe('Licence')
+    expect(idHeadingOf({ global: false, idMode: 'number' })).toBe('Licence')
+    expect(idHeadingOf({ test: true })).toBe('Licence')
+  })
+  it('a Global match: its own choice, DoB by default', () => {
+    expect(idHeadingOf({ global: true })).toBe('DoB')
+    expect(idHeadingOf({ global: true, idMode: 'dob' })).toBe('DoB')
+    expect(idHeadingOf({ global: true, idMode: 'number' })).toBe('ID')
+    expect(idHeadingOf({ global: true, idMode: 'text' })).toBe('Info')
+    expect(idHeadingOf({ global: true, idMode: 'licence' })).toBe('DoB')
   })
 })
 

@@ -32,7 +32,7 @@ import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // statically. It is only *instantiated* in DATABASE_URL mode.
 import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch, jsonTooDeep } from './lib/realtimeHub.js'
 // What anonymous readers (live sockets, /api/db without a session) may see.
-import { projectLiveRow, projectLiveSummaryRow, hasAnonPolicy, anonSelectCheck, relayBundleView, relayMatchView, relayLiveStateView, publicLiveState, coveredLiveLineupTeam, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, projectRows, ANON_DB_COLUMNS } from './lib/publicColumns.js'
+import { projectLiveRow, projectLiveSummaryRow, hasAnonPolicy, anonSelectCheck, relayBundleView, relayMatchView, relayLiveStateView, publicLiveState, coveredLiveLineupTeam, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, withoutDobColumns, dobColumnFilter } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
 import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, isConnectionPinMatch, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
 // Bench requests (line-up, time-out, substitution) from a bench tablet to the scorer
@@ -482,9 +482,11 @@ function getDataLayer() {
     import('./lib/clubApi.js'),
     import('./lib/dataAdmin.js'),
     import('./lib/sqlWorkspace.js'),
+    import('./lib/rosterSaveBack.js'),
     import('./lib/errorTracker.js'),
-    import('./lib/errorAlerts.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta, sqw, ert, era]) => {
+    import('./lib/errorAlerts.js'),
+    import('./lib/sourceMaps.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta, sqw, rsb, ert, era, smp]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -561,6 +563,12 @@ function getDataLayer() {
     // A club's licence lists (db/024, lib/licences.js): My club, "Add from club", the gender check
     const licences = lic.createLicences({ pool: db.pool, audit: accounts.audit, clubs })
     teams = tms.createTeams({ pool: db.pool, audit: accounts.audit, savedTeams, clubs, licences })
+    // An official match's rosters fill the teams' saved teams and the clubs'
+    // lists (lib/rosterSaveBack.js, owner 2026-11-19), after each matches write
+    // (saveBack.note below). OV_SAVE_BACK_TEST_MS: tests only, a shorter quiet
+    // time; never in production
+    const saveBackQuietMs = process.env.NODE_ENV !== 'production' && Number(process.env.OV_SAVE_BACK_TEST_MS) > 0 ? Number(process.env.OV_SAVE_BACK_TEST_MS) : undefined
+    const saveBack = rsb.createRosterSaveBack({ pool: db.pool, teams, savedTeams, licences, audit: accounts.audit, ...(saveBackQuietMs ? { quietMs: saveBackQuietMs } : {}) })
     requests = arq.createAccountRequests({ pool: db.pool, accounts, access })
     const beach = bt.createBeachTournaments({ pool: db.pool, accounts })
     // Undo / delete / edit history of events (db/015)
@@ -596,6 +604,8 @@ function getDataLayer() {
       pool: db.pool,
       audit: accounts.audit,
       clubsOfMany: (client, ids) => clubs.clubsOfMany(client, ids),
+      // readable stacks from the web builds' hidden source maps (lib/sourceMaps.js); ERROR_SOURCE_MAPS=off: none
+      ...(String(process.env.ERROR_SOURCE_MAPS || '').toLowerCase() === 'off' ? {} : { sourceMaps: smp.createSourceMaps() }),
       ...(Number(process.env.ERROR_ALERT_DEBOUNCE_MS) >= 0 && process.env.ERROR_ALERT_DEBOUNCE_MS ? { debounceMs: Number(process.env.ERROR_ALERT_DEBOUNCE_MS) } : {})
     })
     const errorAlerts = era.createErrorAlerts({
@@ -604,7 +614,7 @@ function getDataLayer() {
       mailer,
       to: process.env.ERROR_ALERT_EMAIL || '',
       managerUrl: mailer.managerUrl,
-      ntfy: { url: process.env.NTFY_URL || '', topic: process.env.NTFY_TOPIC || '', token: process.env.NTFY_TOKEN || '' },
+      ntfy: { url: process.env.NTFY_URL || '', topic: process.env.NTFY_TOPIC || '', token: process.env.NTFY_TOKEN || '', address: process.env.NTFY_ADDRESS || '' },
       audit: accounts.audit,
       // ERROR_ALERTS=log: nothing is sent, the log says what would have been
       suppressed: String(process.env.ERROR_ALERTS || '').toLowerCase() === 'log',
@@ -616,7 +626,7 @@ function getDataLayer() {
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
     // The end of the match records (db/042, lib/retention.js): the daily sweep below
     const retention = ret.createRetention({ pool: db.pool, storage, audit: accounts.audit })
-    dataLayer = { errors, errorAlerts, publicApi, clubApi, retention, db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    dataLayer = { errors, errorAlerts, publicApi, clubApi, retention, db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, saveBack, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -715,7 +725,11 @@ const OWNER_SCOPED_TABLES = new Set(['profiles', 'user_matches'])
 // default (it is part of the official-game key when scheduled_at is empty, so
 // a client must not pick the season through it).
 const WRITE_DENYLIST = {
-  profiles: ['roles', 'user_id', 'id'],
+  // dob: no date of birth is kept (db/048, owner 2026-11-19); an older app's
+  // profile save still sends one. license_number (db/048) is the owner's
+  profiles: ['roles', 'user_id', 'id', 'dob'],
+  // db/048: the referee directory keeps names, country and sports only
+  referee_database: ['dob'],
   user_matches: ['user_id', 'id'],
   // tournament_match_id (db/014): the link to a beach tournament match is the server's
   matches: ['created_by', 'closed_at', 'closed_by', 'first_closed_at', 'official_game_exempt', 'released_at', 'created_at', 'tournament_match_id'],
@@ -741,23 +755,20 @@ async function isAdminUser(layer, userId) {
   }
 }
 
-// Referees' dates of birth (referee_database.dob, svrz_games.referee_1_dob /
-// referee_2_dob): only the accounts that fill a scoresheet's officials need
-// them (Match setup's referee picker, the official-match loader), i.e. admins
-// and the accounts that can score in one of the table's sports. svrz_games is
-// the indoor (VolleyManager) schedule; the directory serves OpenBeach too. Any
-// other session reads these tables like an anonymous caller (ANON_DB_COLUMNS).
-const REFEREE_DOB_SPORTS = { referee_database: ['indoor', 'beach'], svrz_games: ['indoor'] }
+// The referee directory (referee_database: names, country, sports; no date
+// of birth since db/048) is for the accounts that fill a scoresheet's
+// officials (Match setup's referee picker), i.e. admins and the accounts that
+// can score indoor or beach (it serves OpenBeach too).
+const REFEREE_DIRECTORY_SPORTS = Object.freeze(['indoor', 'beach'])
 
 /**
- * May this account read the full rows of `table` (REFEREE_DOB_SPORTS)?
+ * Does this account fill a scoresheet's officials (REFEREE_DIRECTORY_SPORTS)?
  * THROWS when the roles cannot be read (callers answer 503, never "no").
  */
-async function readsRefereeDob(layer, userId, table) {
+async function fillsOfficials(layer, userId) {
   const a = await layer.access.get(userId)
   if (a.isAdmin) return true
-  // the rule of GET /api/games/today's dates of birth too (lib/manageApi.js)
-  return REFEREE_DOB_SPORTS[table].some((sport) => accessForSport(a, sport).canScore === true)
+  return REFEREE_DIRECTORY_SPORTS.some((sport) => accessForSport(a, sport).canScore === true)
 }
 
 /**
@@ -4324,7 +4335,7 @@ Generated by eScoresheet
           if (refereeDirectoryWriteAllowed(table, action, params)) {
             let scorer
             try {
-              scorer = await readsRefereeDob(layer, authUser.id, table)
+              scorer = await fillsOfficials(layer, authUser.id)
             } catch (err) {
               console.warn('[DB] access check failed:', err?.message)
               logRejected(503, 'OV_DB_UNAVAILABLE')
@@ -4340,13 +4351,21 @@ Generated by eScoresheet
           }
         }
 
-        // Anonymous reads of tables with personal data (matches: rosters with
-        // dates of birth, signatures, officials; referee_database and
-        // svrz_games: referees' dates of birth) get the public columns only
-        // (lib/publicColumns.js ANON_DB_COLUMNS), and may filter/order on
-        // plain columns only. Full referee rows need a role that fills the
-        // sheet's officials (REFEREE_DOB_SPORTS); any other session reads them
-        // like an anonymous caller. A signed-in caller reads full matches /
+        // db/048: no filter or order on a date-of-birth column (they are NULL;
+        // a value an older backend stored meanwhile is not probed either)
+        const dobFilter = dobColumnFilter(table, params)
+        if (dobFilter) {
+          logRejected(400, 'OV_DOB_FILTER')
+          sendJson(res, 400, { data: null, error: { message: 'Dates of birth are not kept: this column cannot be used as a filter', code: 'OV_DOB_FILTER' } })
+          return
+        }
+
+        // Anonymous reads of tables with personal data (matches: rosters,
+        // signatures, officials; svrz_games: the columns of before db/048,
+        // when it kept the referees' dates of birth) get the public columns
+        // only (lib/publicColumns.js ANON_DB_COLUMNS), and may filter/order on
+        // plain columns only. The referee directory needs a role that fills
+        // the sheet's officials (fillsOfficials, below). A signed-in caller reads full matches /
         // events rows only of the matches it created or edits (an admin: all);
         // other matches' rows get the anonymous projection, and a filter on a
         // non-public column then only matches its own rows (no probing of
@@ -4359,12 +4378,11 @@ Generated by eScoresheet
         let sessionReader = null
         // events: who may ask for voided rows too (params.include_voided, lib/pgQuery.js)
         let includeVoided = null
-        // May `userId` see referees' dates of birth in `table`? null: the
-        // roles could not be read, already answered 503 (never a silent "no",
-        // which would hand a scorer the cut-down row).
-        const refereeDobFor = async (userId) => {
+        // May `userId` read the referee directory? null: the roles could not
+        // be read, already answered 503 (never a silent "no").
+        const officialsFillerFor = async (userId) => {
           try {
-            return await readsRefereeDob(layer, userId, table)
+            return await fillsOfficials(layer, userId)
           } catch (err) {
             console.warn('[DB] access check failed:', err?.message)
             logRejected(503, 'OV_DB_UNAVAILABLE')
@@ -4373,7 +4391,7 @@ Generated by eScoresheet
           }
         }
         // The referee directory is read only by the accounts that fill a
-        // scoresheet's officials (REFEREE_DOB_SPORTS: admins, indoor and beach
+        // scoresheet's officials (fillsOfficials: admins, indoor and beach
         // scorers), i.e. Match setup's "Database" picker of an official match.
         // Nobody else, signed in or not, gets even the names: 401 without a
         // session, 403 for any other account. A test or easy match has no use
@@ -4396,7 +4414,7 @@ Generated by eScoresheet
             sendJson(res, 401, { data: null, error: { message: code === 'invalid_token' ? 'Invalid or expired session. Please sign in again.' : 'Sign in as a scorer to read the referee directory', code } })
             return
           }
-          const full = await refereeDobFor(reader.id)
+          const full = await officialsFillerFor(reader.id)
           if (full === null) return
           if (!full) {
             logRejected(403, 'OV_REFEREE_DIRECTORY')
@@ -4434,13 +4452,7 @@ Generated by eScoresheet
               return
             }
             sessionReader = reader
-            // The referee tables: a session alone is not enough
-            let fullReader = reader
-            if (reader && Object.hasOwn(REFEREE_DOB_SPORTS, table)) {
-              const full = await refereeDobFor(reader.id)
-              if (full === null) return
-              if (!full) fullReader = null
-            }
+            const fullReader = reader
             if (!fullReader) {
               if (check.badFilter) {
                 logRejected(400, 'OV_SECRET_FILTER')
@@ -4455,21 +4467,6 @@ Generated by eScoresheet
               includeVoided = 'all'
             }
           }
-        }
-        // Referee directory writes of an account that may not read the dates
-        // of birth (none since only scorers and admins write it; kept as a
-        // floor for the rules above): the rows
-        // they return (params.returning) get the same projection, and a new
-        // referee is stored with the public columns only. Its own date of
-        // birth would otherwise be checked against the stored ones by a
-        // unique key that includes it ("already there" or not).
-        let dobBlindWriter = false
-        if (isWrite && Object.hasOwn(REFEREE_DOB_SPORTS, table) &&
-            (action === 'insert' || (params.returning != null && params.returning !== false))) {
-          const full = await refereeDobFor(authUser.id)
-          if (full === null) return
-          anonView = !full
-          dobBlindWriter = !full
         }
 
         // Strip columns a client may never write; owner-scoped rows get the
@@ -4489,7 +4486,6 @@ Generated by eScoresheet
         if (p.data !== undefined) p.data = sanitizeWriteData(p.data)
         // A match whose status leaves 'setup' drops the teams' uploaded rosters (lib/uploadedRoster.js)
         if (table === 'matches' && action === 'update') p.data = withPendingRostersCleared(p.data)
-        if (dobBlindWriter && p.data !== undefined) p.data = projectRows(ANON_DB_COLUMNS, table, p.data)
         // PINs at rest (lib/pinHash.js): game_pin / connection_pins values are
         // stored hashed when OV_PIN_SECRET is set.
         if (p.data !== undefined && layer.pins.enabled) {
@@ -4657,7 +4653,11 @@ Generated by eScoresheet
         }
         if (r.status === 200 && r.changes?.length) {
           publishChanges(r.changes)
-          if (table === 'matches') await layer.accounts.auditClaimedGames({ actorId: authUser.id, changes: r.changes })
+          if (table === 'matches') {
+            await layer.accounts.auditClaimedGames({ actorId: authUser.id, changes: r.changes })
+            // an official match's rosters to its teams' saved teams and clubs' lists, later (lib/rosterSaveBack.js)
+            layer.saveBack?.note(r.changes)
+          }
         }
         if (r.status === 200 && pinWrites) await pinWrites.done()
         // 4xx/5xx from pgQuery (OV_UNSCOPED_EXTERNAL_ID, OV_CLIENT_TOO_OLD,
@@ -4665,7 +4665,8 @@ Generated by eScoresheet
         // (they can quote row values).
         if (r.status >= 400) logRejected(r.status, r.body?.error?.code)
         // redactSecrets is belt and braces: pgQuery never returns secret columns.
-        const redacted = redactSecrets(table, r.body.data)
+        // db/048: a date-of-birth column kept until db/049 is answered as null
+        const redacted = withoutDobColumns(table, redactSecrets(table, r.body.data))
         // Anonymous: public columns; a match's rosters only with the match
         // token of its PIN check (referee/bench fallback, lib/matchAccess.js).
         // The token is bound to its role: the role's connection must still be on.
@@ -4758,6 +4759,7 @@ Generated by eScoresheet
             if (pinWrites) await pinWrites.done()
             publishChanges(r.changes)
             await layer.accounts.auditClaimedGames({ actorId: user.id, changes: r.changes })
+            layer.saveBack?.note(r.changes)
             // A backup restored onto a device is that device's take-over (db/019):
             // it scores the match from now on, the previous device is told.
             await claimScorerDevice(layer, { external_id: body?.match?.external_id, device: body?.device }, matchOwner, user.id, 'match/restore')
@@ -7934,6 +7936,12 @@ if (DB_MODE) {
     // Rosters sent ahead (db/023, db/035): deleted at expires_at, hourly,
     // also while no team or scorer calls a roster route
     layer.teams?.startSweeps?.()
+    // An official match's rosters to the saved teams and club lists
+    // (lib/rosterSaveBack.js): what waited when the last process stopped, a
+    // minute after start
+    setTimeout(() => {
+      layer.saveBack?.catchUp().then((n) => { if (n) console.log(`[Save-back] ${n} recent official match(es) queued`) })
+    }, 60 * 1000).unref()
     // Expired sessions, hourly
     setInterval(() => {
       layer.auth.sweepExpiredSessions().catch((err) => { console.warn('[Auth] session sweep failed:', err.message); captureServerError(err, { kind: 'job.failed', view: 'session sweep' }) })

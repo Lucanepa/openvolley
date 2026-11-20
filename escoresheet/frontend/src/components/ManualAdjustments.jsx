@@ -15,7 +15,9 @@ import { buildSetEndMatchPayload } from '../utils/eventSync'
 import { signedAfterMatch } from '../services/corrections/applyCorrectionPlan'
 import { Button } from '../ui/Button.jsx'
 import { confirmDialog } from '../ui/uiStore.js'
-import { DateField, DateTimeField } from '../ui/DateField.jsx'
+import { DateTimeField } from '../ui/DateField.jsx'
+import IdField from './IdField'
+import { idLabelOf, idModeOf, isDateValue } from '../domain/idMode'
 import { formatDateTimeLocal, parseLocalToISO } from '../utils/timeUtils'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { DialogHelpButton } from './help/HelpButton.jsx'
@@ -79,6 +81,9 @@ function lastSetIndex(sets) {
  * Convert various date formats to ISO yyyy-MM-dd for HTML date inputs
  * Handles: DD.MM.YYYY, DD/MM/YYYY, MM/DD/YYYY, ISO format
  */
+// An official's value in the change log: a licence as it is, a date of birth never
+const shownId = (v) => (isDateValue(v) ? '(date of birth)' : v)
+
 function toISODate(dateStr) {
   if (!dateStr) return ''
 
@@ -177,6 +182,10 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
 
     return { match, homeTeam, awayTeam, sets, homePlayers, awayPlayers, events: sortedEvents }
   }, [matchId])
+  // What the officials' value holds (domain/idMode): the licence (or a date of
+  // birth) in a Swiss match; a Global match's own choice
+  const idMode = idModeOf(data?.match)
+  const idLabel = idLabelOf(t, idMode, t('manualAdjustmentsEditor.dob', 'Date of birth'))
 
   // Initialize the Teams / Match info editors ONCE: corrections are written
   // straight away (the panel) and re-run the live query, which must not wipe
@@ -257,7 +266,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
         field,
         before: from,
         after,
-        description: `${label}: ${from || '(empty)'} → ${after || '(empty)'}`,
+        // a date of birth is never written into the change log (owner 2026-11-19)
+        description: field.endsWith('.dob') ? `${label}: ${shownId(from) || '(empty)'} → ${shownId(after) || '(empty)'}` : `${label}: ${from || '(empty)'} → ${after || '(empty)'}`,
         inPlace: true
       }]
     })
@@ -1282,11 +1292,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                       aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st referee')} ${t('manualAdjustmentsEditor.country', 'Country')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
-                    <DateField
+                    <IdField
+                      idMode={idMode}
+                      rawValue={editedOfficials.ref1.dob}
+                      onRawChange={(v) => updateOfficial('ref1', 'dob', v)}
                       size="bare"
                       value={toISODate(editedOfficials.ref1.dob)}
                       onChange={(v) => updateOfficial('ref1', 'dob', v)}
-                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st referee')} ${t('manualAdjustmentsEditor.dob', 'Date of birth')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st referee')} ${idLabel}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1320,11 +1333,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                       aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd referee')} ${t('manualAdjustmentsEditor.country', 'Country')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
-                    <DateField
+                    <IdField
+                      idMode={idMode}
+                      rawValue={editedOfficials.ref2.dob}
+                      onRawChange={(v) => updateOfficial('ref2', 'dob', v)}
                       size="bare"
                       value={toISODate(editedOfficials.ref2.dob)}
                       onChange={(v) => updateOfficial('ref2', 'dob', v)}
-                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd referee')} ${t('manualAdjustmentsEditor.dob', 'Date of birth')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd referee')} ${idLabel}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1350,11 +1366,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                       aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.lastName', 'Last name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
-                    <DateField
+                    <IdField
+                      idMode={idMode}
+                      rawValue={editedOfficials.scorer.dob}
+                      onRawChange={(v) => updateOfficial('scorer', 'dob', v)}
                       size="bare"
                       value={toISODate(editedOfficials.scorer.dob)}
                       onChange={(v) => updateOfficial('scorer', 'dob', v)}
-                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.dob', 'Date of birth')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${idLabel}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1380,11 +1399,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                       aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant scorer')} ${t('manualAdjustmentsEditor.lastName', 'Last name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
-                    <DateField
+                    <IdField
+                      idMode={idMode}
+                      rawValue={editedOfficials.asstScorer.dob}
+                      onRawChange={(v) => updateOfficial('asstScorer', 'dob', v)}
                       size="bare"
                       value={toISODate(editedOfficials.asstScorer.dob)}
                       onChange={(v) => updateOfficial('asstScorer', 'dob', v)}
-                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant scorer')} ${t('manualAdjustmentsEditor.dob', 'Date of birth')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant scorer')} ${idLabel}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>

@@ -885,13 +885,14 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
   })
 
   describe('sign-up', () => {
-    it('creates auth.users + profiles in one go, strips roles, mirrors handle_new_user', async () => {
+    it('creates auth.users + profiles in one go, strips roles and a date of birth, keeps the licence number', async () => {
       const auth = makeAuth()
       const r = await auth.handleAuthRequest('sign-up', {
         email: ' New.Scorer@Example.ch ',
         password: 'pw12345678',
         metadata: {
-          first_name: 'Ada', last_name: 'Lovelace', dob: '1990-02-03',
+          // an older app still sends dob (db/048: dropped, never stored)
+          first_name: 'Ada', last_name: 'Lovelace', dob: '1990-02-03', license_number: ' 123456 ',
           roles: ['admin', 'super_admin'], role: 'service_role', sport_type: 'indoor'
         }
       }, { ip: nextIp() })
@@ -902,20 +903,22 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       assert.equal(user.email, 'new.scorer@example.ch')
       assert.equal(user.user_metadata.roles, undefined)
       assert.equal(user.user_metadata.role, undefined)
+      assert.equal(user.user_metadata.dob, undefined)
       assert.equal(user.role, 'authenticated')
 
       const { rows: [dbUser] } = await pool.query('SELECT * FROM auth.users WHERE id = $1', [user.id])
       assert.match(dbUser.encrypted_password, /^\$2b\$10\$/)
       assert.ok(dbUser.email_confirmed_at, 'auto-confirmed')
       assert.equal(dbUser.raw_user_meta_data.roles, undefined)
+      assert.equal(dbUser.raw_user_meta_data.dob, undefined)
       assert.equal(dbUser.raw_user_meta_data.first_name, 'Ada')
       assert.deepEqual(dbUser.raw_app_meta_data, { provider: 'email', providers: ['email'] })
 
       const { rows: [p] } = await pool.query(
-        `SELECT first_name, last_name, country, to_char(dob, 'YYYY-MM-DD') AS dob, roles, sport_type::text AS sport_type
+        `SELECT first_name, last_name, country, dob, license_number, roles, sport_type::text AS sport_type
            FROM public.profiles WHERE user_id = $1`, [user.id])
       assert.deepEqual({ ...p }, {
-        first_name: 'Ada', last_name: 'Lovelace', country: 'CHE', dob: '1990-02-03',
+        first_name: 'Ada', last_name: 'Lovelace', country: 'CHE', dob: null, license_number: '123456',
         roles: [], sport_type: 'indoor' // new accounts are pending (db/007)
       })
 
@@ -948,10 +951,22 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       assert.equal(r.status, 422)
       const { rows } = await pool.query(`SELECT count(*)::int AS n FROM auth.users WHERE email = 'badenum@example.ch'`)
       assert.equal(rows[0].n, 0, 'no half-created account')
-      const dob = await auth.handleAuthRequest('sign-up', {
-        email: 'baddob@example.ch', password: 'pw12345678', metadata: { dob: '31.12.1990' }
+      // the licence number: 4 to 7 digits, else 422 and no account; empty is none
+      for (const [i, license_number] of ['12a456', '123', '12345678', 123.5, { n: 1 }].entries()) {
+        const bad = await auth.handleAuthRequest('sign-up', {
+          email: `badlicence${i}@example.ch`, password: 'pw12345678', metadata: { license_number }
+        }, { ip })
+        assert.equal(bad.status, 422, JSON.stringify(license_number))
+        assert.equal(bad.body.error.code, 'validation_failed')
+      }
+      assert.equal((await pool.query(`SELECT count(*)::int AS n FROM auth.users WHERE email LIKE 'badlicence%'`)).rows[0].n, 0)
+      const none = await auth.handleAuthRequest('sign-up', {
+        email: 'nolicence@example.ch', password: 'pw12345678', metadata: { license_number: '', dob: '31.12.1990' }
       }, { ip })
-      assert.equal(dob.status, 422)
+      assert.equal(none.status, 200, 'an empty licence number and an older app\'s date of birth in any form are fine: dropped')
+      const { rows: [np] } = await pool.query(
+        "SELECT p.license_number, p.dob, u.raw_user_meta_data FROM public.profiles p JOIN auth.users u ON u.id = p.user_id WHERE u.email = 'nolicence@example.ch'")
+      assert.deepEqual([np.license_number, np.dob, np.raw_user_meta_data.dob, np.raw_user_meta_data.license_number], [null, null, undefined, undefined])
     })
 
     it('profile is read-only: updates (including roles) are ignored', async () => {

@@ -624,7 +624,7 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     }
   })
 
-  it('the referee directory is refused without a scorer role; svrz_games reads get no referee dates of birth', async () => {
+  it('the referee directory is refused without a scorer role; nobody gets a referee\'s date of birth (db/048)', async () => {
     const DOB1 = '1971-05-06'
     const DOB2 = '1984-07-08'
     const c = new pg.Client({ connectionString: db.url })
@@ -659,17 +659,19 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     // svrz_games' dob cannot be probed through a filter
     const probe = await api(srv.base, '/api/db', { proto: null, body: { table: 'svrz_games', action: 'select', params: { columns: 'id', filters: [{ type: 'eq', column: 'referee_1_dob', value: DOB1 }] } } })
     assert.equal(probe.status, 400, probe.text)
-    assert.equal(probe.json.error.code, 'OV_SECRET_FILTER')
-    // The intended reader: a scorer of the sport gets the dates of birth
-    // (the referee picker's prefill; tests/refereeDob.e2e.test.js has the rest)
+    assert.equal(probe.json.error.code, 'OV_DOB_FILTER')
+    // A scorer of the sport reads the rows, the dates of birth as null (db/048;
+    // the rows above stand for a value an older backend stored meanwhile;
+    // tests/refereeDob.e2e.test.js has the rest)
     const gameOf = (t) => api(srv.base, '/api/db', { token: t, proto: null, body: { table: 'svrz_games', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'game_number', value: 'E2E-DOB' }], single: true } } })
     const refsOf = (t) => api(srv.base, '/api/db', { token: t, proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'last_name, dob', filters: [{ type: 'eq', column: 'last_name', value: 'Dobtest' }] } } })
     const mine = await gameOf(token)
     assert.equal(mine.status, 200, mine.text)
-    assert.equal(String(mine.json.data.referee_2_dob).slice(0, 10), DOB2)
+    assert.deepEqual([mine.json.data.referee_1_last_name, mine.json.data.referee_1_dob, mine.json.data.referee_2_dob], ['Dobtest', null, null])
     const myRefs = await refsOf(token)
     assert.equal(myRefs.status, 200, myRefs.text)
-    assert.equal(String(myRefs.json.data[0].dob).slice(0, 10), DOB1)
+    assert.deepEqual(myRefs.json.data, [{ last_name: 'Dobtest', dob: null }])
+    assert.equal(leaks(mine.text) || leaks(myRefs.text), false)
     // A signed-in account without a role reads the schedule like an anonymous
     // caller, and is refused the directory
     const roleless = await otherAccount([])

@@ -104,6 +104,10 @@ export const AUDIT_ACTIONS = Object.freeze([
   // db/023: team managers (a team link redeemed or removed), a team's saved
   // team and the roster of one of its games (lib/teams.js)
   'team.managers', 'team.squad', 'team.roster',
+  // db/048: an official match's roster filled the team's saved team and the
+  // club's lists (lib/rosterSaveBack.js; the game, the ids and the counts,
+  // never a name or a licence number)
+  'team.squad.match',
   // db/024: a club's licence list from VolleyManager replaced (lib/licences.js;
   // the list and the count, never a name)
   'club.licences',
@@ -115,8 +119,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   // saved team deleted, or a saved team's roster replaced (lib/savedTeams.js;
   // the ids, the name and the counts, never a person)
   'club.licences.manual_delete',
-  // db/037: dates of birth a scorer looked up for a roster (lib/licences.js
-  // scorerDob; the club and the count, never a name; the day's cap reads it)
+  // db/037: a scorer's lookup in the club's lists for a roster (the club and
+  // the count, never a name). No longer written since db/048 (no dates of
+  // birth are kept); kept so that older entries can still be filtered
   'club.licences.dob',
   // db/037: the official games whose saved teams a scorer without a club was
   // given (lib/savedTeams.js ownTeams; the game numbers, never a person)

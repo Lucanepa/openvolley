@@ -11,13 +11,12 @@
  *                                               (db/024: 400 OV_WRONG_GENDER for a player of the
  *                                               club's players list with the other gender than the team's;
  *                                               the players only: an official may be anyone of the club);
- *                                               one transaction under a lock on the team; the club's
- *                                               dates of birth fill the empty ones (lib/licences.js fillTeamDob)
+ *                                               one transaction under a lock on the team
  *   games({ teamId })                           the team's games from today, each with its roster summary
  *   getRoster({ teamId, game })                 the team's roster of game `game`, or null
  *   putRoster({ actorId, teamId, game, body })  { players, staff, coach_signature?, captain_signature? }, until
- *                                               kick-off (409 OV_GAME_STARTED after it; OV_WRONG_GENDER and
- *                                               the dates of birth as putSquad)
+ *                                               kick-off (409 OV_GAME_STARTED after it; OV_WRONG_GENDER as
+ *                                               putSquad)
  *   deleteRoster({ actorId, teamId, game })     until kick-off too (409 OV_GAME_STARTED)
  * Club managers of the club (and admins):
  *   clubTeams({ clubId })                       the club's teams with their managers
@@ -26,14 +25,17 @@
  * Scorers (indoor canReadTeams, the read right of the saved teams):
  *   scorerRosters({ userId, games })            the sent rosters the scoring tablet keeps
  *   markUsed({ userId, body })                  accepted in Match Setup (who, which match)
- * Everyone else (lib/accounts.js, lib/manageApi.js):
+ * Everyone else (lib/accounts.js, lib/manageApi.js, lib/rosterSaveBack.js):
  *   managedTeamsOf(client, userId, { all })     [{ id, name, club_id, club_name, via }] (/api/me; all: admins)
+ *   ensureSquad(client, { team, year })         the season's saved team of a team, made when there is none
  *   mayManage({ userId, access, teamId })       may the account act for the team?
  *   teamOfClub(clubId, teamId)                  is the team one of the club's?
  *
- * Personal data (names, dates of birth, licence numbers): served only through
+ * Personal data (names, licence numbers): served only through
  * these routes, never on the /api/db allowlist, never anonymous; the audit
- * keeps game numbers, sides and counts only. Owner 2026-11-15 (replacing "no
+ * keeps game numbers, sides and counts only. No date of birth (db/048, owner
+ * 2026-11-19: "ONLY licence number"): one sent by an older manager is dropped
+ * (lib/savedTeams.js validateRoster), none is stored or answered. Owner 2026-11-15 (replacing "no
  * lock" of 2026-11-08): the team sends, changes and deletes a roster until its
  * game's kick-off, and reads it after; the scorer still accepts it after
  * kick-off (markUsed). db/035: it is read and
@@ -147,8 +149,8 @@ export function teamInviteBody (body, now = Date.now()) {
 }
 
 /**
- * A game roster body { players, staff }: the saved-team rules (names, dates
- * of birth, licence numbers, one captain, distinct numbers), and for one game
+ * A game roster body { players, staff }: the saved-team rules (names,
+ * licence numbers, one captain, distinct numbers; a dob is dropped), and for one game
  * at most 14 players (more than 12 only with 2 liberos), every one with a
  * shirt number, at most 2 liberos, at most 5 team officials with each role once. { players, staff } (as stored)
  * or { error } (a 400 answer).
@@ -189,7 +191,9 @@ export function validateGameRoster (body) {
     if (!ok) return { error: invalid(`${k}: needs ${needs}`) }
     signatures[k] = raw
   }
-  const person = (p) => ({ first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.license_number })
+  // No dob (db/048): the roster's hash (rosterHash) changed with it, so a
+  // signature given ahead before db/048 is dropped once, at the next send
+  const person = (p) => ({ first_name: p.first_name, last_name: p.last_name, license_number: p.license_number })
   return {
     players: v.players.map((p) => ({ number: p.number, ...person(p), is_libero: p.is_libero, is_captain: p.is_captain })),
     staff: v.staff
@@ -457,7 +461,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
           city: g.city ?? null,
           // the game page's where and who (owner 2026-11-10: "at the top where,
           // when, referees"); the referees' names only, as the public match
-          // assignments show them (no dates of birth)
+          // assignments show them
           hall_address: g.hall_address ?? null,
           hall_postal_code: g.hall_postal_code ?? null,
           referees: [[g.referee_1, g.referee_1_first_name, g.referee_1_last_name], [g.referee_2, g.referee_2_first_name, g.referee_2_last_name]]
@@ -536,12 +540,6 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       // the officials are not checked: they may be anyone of the club
       const wrong = licences ? await licences.wrongGender(client, x.team, v.players) : null
       if (wrong) throw abort(WRONG_GENDER(wrong.index, wrong.gender))
-      // the dates of birth of the club's people the roster leaves empty (owner
-      // decision 2: a team manager sees them once the person is in a roster)
-      if (licences) {
-        v.players = await licences.fillTeamDob(client, x.team, v.players)
-        v.staff = await licences.fillTeamDob(client, x.team, v.staff)
-      }
       const n = String(x.game.game_number)
       const actor = isUuid(actorId) ? actorId : null
       // db/035: a signature made ahead belongs to the players and staff it was
@@ -659,10 +657,36 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
    * PUT /api/team/:teamId/squad { players, staff }: the saved team's whole
    * roster; creates it when there is none. One transaction, the look-up and
    * the creation under a lock on the team (two first saves at once make one
-   * saved team, be-races-4). The dates of birth of the club's people the
-   * roster leaves empty come from the club's lists (owner decision 2: a team
-   * manager sees them once the person is in the squad).
+   * saved team, be-races-4). No date of birth (db/048).
    */
+  /**
+   * The saved team of `team` ({ name, club_name? }: a club's team, or any
+   * team of the schedule) in season `year`, on `client` (in the caller's
+   * transaction): found as squadId finds it, else made the way a team
+   * manager's first save makes it (competitionFor, createTeam; without a
+   * club name when the team is no club's). Under the lock on the team's name
+   * and season, held to the end of the transaction: two first saves at once
+   * make one saved team (be-races-4), and a squad save and an official
+   * match's roster (lib/rosterSaveBack.js) take turns. { id, created } or
+   * { answer } (a savedTeams answer that is not a success).
+   */
+  async function ensureSquad (client, { actorId = null, team, year }) {
+    const label = seasonLabel(year)
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ov:squad:${label}:${key(team.name)}`])
+    const id = await squadId(client, team, label)
+    if (id) return { id, created: false }
+    const comp = await competitionFor(client, actorId, team, label, year)
+    if (comp.answer) return { answer: comp.answer }
+    const club = String(team.club_name ?? '').trim()
+    const made = await savedTeams.createTeam({
+      actorId,
+      client,
+      body: { competition_id: comp.id, name: team.name.slice(0, 120), ...(club ? { club: club.slice(0, 120) } : {}), svrz_team_name: team.name }
+    })
+    if (made.status !== 201) return { answer: made }
+    return { id: made.body.data.team.id, created: true }
+  }
+
   async function putSquad ({ actorId, teamId, body } = {}) {
     const v = validateRoster(body, { sport: 'indoor' })
     if (v.error) return v.error
@@ -675,29 +699,16 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       if (wrong) throw abort(WRONG_GENDER(wrong.index, wrong.gender))
       const year = seasonOf(clock())
       const label = seasonLabel(year)
-      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ov:squad:${label}:${key(team.name)}`])
-      let id = await squadId(client, team, label)
-      if (!id) {
-        const comp = await competitionFor(client, actorId, team, label, year)
-        if (comp.answer) throw abort(comp.answer)
-        const made = await savedTeams.createTeam({
-          actorId,
-          client,
-          body: { competition_id: comp.id, name: team.name.slice(0, 120), club: team.club_name.slice(0, 120), svrz_team_name: team.name }
-        })
-        if (made.status !== 201) throw abort(made)
-        id = made.body.data.team.id
-      }
-      const filled = licences
-        ? { ...body, players: await licences.fillTeamDob(client, team, body.players), staff: await licences.fillTeamDob(client, team, body.staff) }
-        : body
+      const squadOf = await ensureSquad(client, { actorId, team, year })
+      if (squadOf.answer) throw abort(squadOf.answer)
+      const id = squadOf.id
       const { rows: before } = await client.query(
         `SELECT btrim(license_number) AS lic FROM public.competition_players WHERE team_id = $1
          UNION SELECT btrim(license_number) FROM public.competition_staff WHERE team_id = $1`, [id])
-      const put = await savedTeams.putRoster({ id, body: filled, client })
+      const put = await savedTeams.putRoster({ id, body, client })
       if (put.status !== 200) throw abort(put)
       // who came and went, by licence number (never a name): a squad change
-      // that reveals a date of birth can be traced to its account
+      // can be traced to its account
       const was = new Set(before.map((r) => r.lic).filter(Boolean))
       const now = new Set([...v.players, ...v.staff].map((p) => String(p?.license_number ?? '').trim()).filter(Boolean))
       await audit(client, {
@@ -926,7 +937,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
 
   return {
     managedTeamsOf, mayManage, teamOfClub,
-    teamDetail, games, getRoster, putRoster, deleteRoster, squad, putSquad,
+    teamDetail, games, getRoster, putRoster, deleteRoster, squad, putSquad, ensureSquad,
     clubTeams, removeManager, scorerRosters, markUsed, sweep, startSweeps
   }
 }

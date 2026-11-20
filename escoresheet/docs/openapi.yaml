@@ -29,7 +29,7 @@ components:
       type: object
       required: [players, staff]
       properties:
-        players: { type: array, items: { type: object, required: [last_name], properties: { number: { type: integer, minimum: 0, maximum: 99 }, first_name: { type: string }, last_name: { type: string }, dob: { type: string, format: date, nullable: true }, is_libero: { type: boolean }, is_captain: { type: boolean }, active: { type: boolean } } } }
+        players: { type: array, description: "No date of birth (db/048): a dob an older client sends is accepted and dropped; none is answered.", items: { type: object, required: [last_name], properties: { number: { type: integer, minimum: 0, maximum: 99 }, first_name: { type: string }, last_name: { type: string }, license_number: { type: string, nullable: true }, is_libero: { type: boolean }, is_captain: { type: boolean }, active: { type: boolean } } } }
         staff: { type: array, items: { type: object } }
         coach_signature: { type: string, nullable: true, description: PNG data URL }
         captain_signature: { type: string, nullable: true }
@@ -37,7 +37,7 @@ components:
       type: object
       required: [people]
       properties:
-        people: { type: array, items: { type: object, properties: { sv_number: { type: string, description: 4 to 7 digits }, last_name: { type: string }, first_name: { type: string }, dob: { type: string, format: date }, gender: { type: string } } } }
+        people: { type: array, items: { type: object, properties: { sv_number: { type: string, description: 4 to 7 digits }, last_name: { type: string }, first_name: { type: string, nullable: true }, gender: { type: string, enum: [m, f], nullable: true } }, description: "Four fields only; a dob an older client sends is accepted and dropped (db/048)." } }
 paths:
   /api/public/v1/matches:
     get:

@@ -203,8 +203,10 @@ const DEFAULTS = Object.freeze({
   // Extra metadata keys copied verbatim into same-named profile columns when
   // that column exists (the live profiles table has sport_type, 001 did not).
   extraProfileFields: ['sport_type'],
-  // Metadata keys a client may never set.
-  strippedMetadataKeys: ['roles', 'role'],
+  // Metadata keys a client may never set. dob: no date of birth is kept
+  // (db/048, owner 2026-11-19); an older app's is dropped at sign-up and
+  // never answered.
+  strippedMetadataKeys: ['roles', 'role', 'dob'],
   maxMetadataBytes: 4096,
 
   sessionTtlSec: 30 * DAY,
@@ -291,7 +293,8 @@ const TOKEN_BYTES = 32
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/ // base64url of 32 bytes, no padding
 const BCRYPT_RE = /^\$2[aby]\$(\d{2})\$[./A-Za-z0-9]{53}$/
 // one strict address (lib/emailAddress.js)
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+// profiles.license_number (db/048)
+const LICENSE_RE = /^[0-9]{4,7}$/
 
 /** 32 random bytes, base64url (43 chars). Returned to the client once, never stored. */
 export function generateToken() {
@@ -1349,10 +1352,14 @@ export function createAuth(options = {}) {
     if (utf8Length(JSON.stringify(meta)) > cfg.maxMetadataBytes) {
       return fail(422, 'User metadata is too large', 'validation_failed')
     }
-    if (meta.dob != null && meta.dob !== '' && (typeof meta.dob !== 'string' || !DATE_RE.test(meta.dob))) {
-      return fail(422, 'Invalid date of birth', 'validation_failed')
+    // The licence number (db/048): optional, 4 to 7 digits; '' or null is none
+    if (meta.license_number === '' || meta.license_number === null) delete meta.license_number
+    else if (meta.license_number !== undefined) {
+      const lic = typeof meta.license_number === 'number' && Number.isInteger(meta.license_number) ? String(meta.license_number)
+        : (typeof meta.license_number === 'string' ? meta.license_number.trim() : null)
+      if (lic === null || !LICENSE_RE.test(lic)) return fail(422, 'Invalid licence number (4 to 7 digits)', 'validation_failed')
+      meta.license_number = lic
     }
-    if (meta.dob === '') meta.dob = null
     // db/025: what the account asks for (checked before the password is hashed)
     const asked = cfg.signUpRequests ? cfg.signUpRequests.parse(body.requests, { app: requestApp(body) }) : { rows: [] }
     if (asked.error) return fail(422, asked.error, 'validation_failed')
@@ -1412,7 +1419,7 @@ export function createAuth(options = {}) {
             put('first_name', name(meta.first_name))
             put('last_name', name(meta.last_name))
             put('country', text(meta.country) ?? cfg.defaultCountry)
-            put('dob', meta.dob ?? null)
+            put('license_number', meta.license_number ?? null)
             put('roles', [...cfg.defaultRoles])
             for (const f of cfg.extraProfileFields) {
               if (meta[f] != null && !(f in prof)) put(f, text(meta[f]))

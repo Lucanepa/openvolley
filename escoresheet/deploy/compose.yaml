@@ -272,6 +272,15 @@ services:
       # set = on. Empty = off, every PDF the raster capture as before.
       OV_RENDER_URL: ${OV_RENDER_URL:-}
       OV_RENDER_TOKEN: ${OV_RENDER_TOKEN:-}
+      # The error tracker's digest (db/050, lib/errorAlerts.js, env.example):
+      # all optional. No ERROR_ALERT_EMAIL = no mail, no NTFY_URL = no push;
+      # the bell always rings. ERROR_ALERTS=log sends nothing, off stops it.
+      ERROR_ALERTS: ${ERROR_ALERTS:-}
+      ERROR_ALERT_EMAIL: ${ERROR_ALERT_EMAIL:-}
+      NTFY_URL: ${NTFY_URL:-}
+      NTFY_TOPIC: ${NTFY_TOPIC:-}
+      NTFY_TOKEN: ${NTFY_TOKEN:-}
+      NTFY_ADDRESS: ${NTFY_ADDRESS:-}
     volumes:
       - type: bind
         source: ${OV_STORAGE_HOST_DIR:?set OV_STORAGE_HOST_DIR in .env}

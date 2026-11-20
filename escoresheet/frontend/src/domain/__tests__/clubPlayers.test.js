@@ -7,6 +7,8 @@ import { describe, it, expect } from 'vitest'
 import { addClubPlayersToGameDraft, addClubPlayersToSquad, clubPersonToOfficial, clubPersonToPlayer, clubPlayersForGender, gameRosterBody, gameRosterDraft, mergeImportedRoster, officialIsPerson, officialOfRole, officialRolesOf, playerFinder, setGameDraftOfficial, setSquadOfficial, wrongGenderIndexes } from '../teamRosters'
 import { addClubPlayersToRoster, benchOfficialOfRole, benchRolesOf, clubGenderWarnings, matchGenderOf, offeredClubPlayers, rosterHasPerson, setBenchOfficial } from '../clubPlayers'
 
+// `dob` as a club list cached before db/048 still has it: the manager's
+// helpers (domain/teamRosters.js) never pass it on
 const ANNA = { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f' }
 const LEA = { sv_number: '100002', last_name: 'Muster', first_name: 'Léa', dob: '2006-01-31', gender: 'f' }
 const MARCO = { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: '2001-11-02', gender: 'm' }
@@ -16,7 +18,7 @@ const CLUB = [ANNA, LEA, MARCO, KIM]
 
 describe('the club\'s players for a team (manager)', () => {
   it('a club person is a player without a number', () => {
-    expect(clubPersonToPlayer(ANNA)).toEqual({ number: null, first_name: 'Anna', last_name: 'Beispiel', dob: '2004-05-06', license_number: '100001', is_libero: false, is_captain: false })
+    expect(clubPersonToPlayer(ANNA)).toEqual({ number: null, first_name: 'Anna', last_name: 'Beispiel', license_number: '100001', is_libero: false, is_captain: false })
   })
 
   it('offers the team\'s gender and those without one; everyone while the team\'s gender is unknown', () => {
@@ -44,8 +46,9 @@ describe('the club\'s players for a team (manager)', () => {
     const r = addClubPlayersToSquad(squad, [], [ANNA, LEA, MARCO], make)
     expect(r.added).toBe(1)
     expect(r.players).toHaveLength(3)
-    // Anna by name: she gets the licence and the date of birth, keeps her number
-    expect(r.players[0]).toMatchObject({ key: 'a', number: 4, license_number: '100001', dob: '2004-05-06' })
+    // Anna by name: she gets the licence (never a date of birth), keeps her number
+    expect(r.players[0]).toMatchObject({ key: 'a', number: 4, license_number: '100001' })
+    expect(r.players.every((p) => !('dob' in p))).toBe(true)
     // Lea by licence (her name has an accent in the list): active again
     expect(r.players[1]).toMatchObject({ key: 'b', number: 7, active: true })
     expect(r.players[2]).toMatchObject({ key: 'n1', number: '', first_name: 'Marco', last_name: 'Probe', license_number: '100003', active: true })
@@ -79,21 +82,24 @@ describe('the club\'s players in Match Setup', () => {
     expect(offeredClubPlayers(CLUB, null).hidden).toBe(0)
   })
 
-  it('adds the chosen ones without a number, nobody twice', () => {
+  it('adds the chosen ones without a number and with their licence (never a date of birth), nobody twice', () => {
     const roster = [{ number: 4, firstName: 'Marco', lastName: 'Probe', dob: '02.11.2001', libero: '', isCaptain: true, isLfp: false }]
     expect(rosterHasPerson(roster, MARCO)).toBe(true)
     expect(rosterHasPerson(roster, { first_name: 'Probe', last_name: 'Marco' })).toBe(true)
+    // the same licence under another spelling is the same person
+    expect(rosterHasPerson([{ firstName: 'Ana', lastName: 'Beyspiel', dob: '100001' }], ANNA)).toBe(true)
     const r = addClubPlayersToRoster(roster, [MARCO, KIM])
     expect(r.added).toBe(1)
-    expect(r.roster).toEqual([roster[0], { number: null, firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '', libero: '', isCaptain: false, isLfp: false }])
+    expect(r.roster).toEqual([roster[0], { number: null, firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '100004', libero: '', isCaptain: false, isLfp: false }])
   })
 
-  it('warns about a roster player the club has with the other gender (by name and date of birth), never for a test match', () => {
+  it('warns about a roster player the club has with the other gender (by licence, else by name), never for a test match', () => {
     const roster = [
-      { number: 1, firstName: 'Marco', lastName: 'Probe', dob: '02.11.2001' },
+      { number: 1, firstName: 'Marco', lastName: 'Probe', dob: '100003' },
       { number: 2, firstName: 'Anna', lastName: 'Beispiel', dob: '06.05.2004' },
       { number: 3, firstName: 'Lea', lastName: 'Muster', dob: '' },
-      { number: 4, firstName: 'Anna', lastName: 'Beispiel', dob: '01.01.1999' }
+      // the same name with another licence: someone else
+      { number: 4, firstName: 'Anna', lastName: 'Beispiel', dob: '999999' }
     ]
     expect(clubGenderWarnings(roster, CLUB, 'm')).toEqual([
       { index: 1, name: 'Anna Beispiel', gender: 'f' },
@@ -101,15 +107,18 @@ describe('the club\'s players in Match Setup', () => {
     ])
     expect(clubGenderWarnings(roster, CLUB, 'f')).toEqual([{ index: 0, name: 'Marco Probe', gender: 'm' }])
     expect(clubGenderWarnings(roster, CLUB, null)).toEqual([])
-    // the same name twice in the list with both genders and no date to tell them apart: nothing
-    const twins = [{ ...MARCO, sv_number: '1', dob: null }, { ...MARCO, sv_number: '2', dob: null, gender: 'f' }]
+    // the same name twice in the list with both genders and no licence to tell them apart: nothing
+    const twins = [{ ...MARCO, sv_number: '1001', dob: null }, { ...MARCO, sv_number: '1002', dob: null, gender: 'f' }]
     expect(clubGenderWarnings([{ firstName: 'Marco', lastName: 'Probe', dob: '' }], twins, 'm')).toEqual([])
+    // a date of birth tells nobody apart (owner 2026-11-19); the licence does
+    expect(clubGenderWarnings([{ firstName: 'Marco', lastName: 'Probe', dob: '02.11.2001' }], twins, 'm')).toEqual([])
+    expect(clubGenderWarnings([{ firstName: 'Marco', lastName: 'Probe', dob: '1002' }], twins, 'm')).toEqual([{ index: 0, name: 'Marco Probe', gender: 'f' }])
   })
 })
 
 describe('team officials from the club (manager)', () => {
-  it('a club person is an official of the role, with licence and date of birth; matched by licence, else by name', () => {
-    expect(clubPersonToOfficial(TINA, 'Coach')).toEqual({ role: 'Coach', first_name: 'Tina', last_name: 'Trainer', dob: '1980-03-04', license_number: '200001' })
+  it('a club person is an official of the role, with the licence (no date of birth); matched by licence, else by name', () => {
+    expect(clubPersonToOfficial(TINA, 'Coach')).toEqual({ role: 'Coach', first_name: 'Tina', last_name: 'Trainer', license_number: '200001' })
     expect(officialIsPerson({ first_name: 'tina', last_name: 'TRAINER' }, TINA)).toBe(true)
     expect(officialIsPerson({ first_name: 'Trainer', last_name: 'Tina' }, TINA)).toBe(true)
     expect(officialIsPerson({ first_name: 'Someone', last_name: 'Else', license_number: '200001' }, TINA)).toBe(true)
@@ -125,24 +134,25 @@ describe('team officials from the club (manager)', () => {
     expect(officialRolesOf(staff, MARCO)).toEqual(['Coach'])
     expect(officialOfRole(staff, 'Medic')).toBeNull()
     let seq = 0
-    const make = (s) => ({ key: `n${++seq}`, ...s, dob: s.dob || '', license_number: s.license_number || '' })
+    const make = (s) => ({ key: `n${++seq}`, ...s, license_number: s.license_number || '' })
     // a woman as the coach of any team: no gender rule for officials
     const coach = setSquadOfficial(staff, 'Coach', ANNA, make)
     expect(coach.replaced).toMatchObject({ first_name: 'Marco' })
     expect(coach.staff).toHaveLength(2)
-    expect(coach.staff[0]).toEqual({ key: 'a', id: 's1', role: 'Coach', first_name: 'Anna', last_name: 'Beispiel', dob: '2004-05-06', license_number: '100001' })
-    // the empty medic row takes Kim (no date of birth in the list)
+    // Marco's old date of birth does not stay on Anna's row
+    expect(coach.staff[0]).toEqual({ key: 'a', id: 's1', role: 'Coach', first_name: 'Anna', last_name: 'Beispiel', license_number: '100001' })
+    // the empty medic row takes Kim
     const medic = setSquadOfficial(coach.staff, 'Medic', KIM, make)
     expect(medic.replaced).toBeNull()
-    expect(medic.staff[1]).toEqual({ key: 'b', role: 'Medic', first_name: 'Kim', last_name: 'Ohnegeschlecht', dob: '', license_number: '100004' })
+    expect(medic.staff[1]).toEqual({ key: 'b', role: 'Medic', first_name: 'Kim', last_name: 'Ohnegeschlecht', license_number: '100004' })
     // a role without a row: added
     const ac = setSquadOfficial(medic.staff, 'Assistant Coach 1', TINA, make)
     expect(ac.staff).toHaveLength(3)
-    expect(ac.staff[2]).toEqual({ key: 'n1', role: 'Assistant Coach 1', first_name: 'Tina', last_name: 'Trainer', dob: '1980-03-04', license_number: '200001' })
+    expect(ac.staff[2]).toEqual({ key: 'n1', role: 'Assistant Coach 1', first_name: 'Tina', last_name: 'Trainer', license_number: '200001' })
     // the same person again keeps what the row has and the list does not
-    const again = setSquadOfficial([{ key: 'c', role: 'Coach', first_name: 'Kim', last_name: 'Ohnegeschlecht', dob: '2000-01-01', license_number: '' }], 'Coach', KIM, make)
+    const again = setSquadOfficial([{ key: 'c', id: 's9', role: 'Coach', first_name: 'Kim', last_name: 'Ohnegeschlecht', license_number: '' }], 'Coach', KIM, make)
     expect(again.replaced).toBeNull()
-    expect(again.staff[0]).toMatchObject({ dob: '2000-01-01', license_number: '100004' })
+    expect(again.staff[0]).toEqual({ key: 'c', id: 's9', role: 'Coach', first_name: 'Kim', last_name: 'Ohnegeschlecht', license_number: '100004' })
   })
 
   it('a game roster: the person ticked in the role, the one before unticked; the body has each role once', () => {
@@ -162,12 +172,13 @@ describe('team officials from the club (manager)', () => {
     const r2 = setGameDraftOfficial(r.draft, 'Assistant Coach 1', ANNA)
     expect(r2.replaced).toBeNull()
     expect(r2.draft.staff).toHaveLength(3)
-    expect(r2.draft.staff[2]).toMatchObject({ key: 'Assistant Coach 1|beispiel|anna', role: 'Assistant Coach 1', first_name: 'Anna', license_number: '100001', dob: '2004-05-06', picked: true })
+    expect(r2.draft.staff[2]).toMatchObject({ key: 'Assistant Coach 1|beispiel|anna', role: 'Assistant Coach 1', first_name: 'Anna', license_number: '100001', picked: true })
+    expect(r2.draft.staff.every((s) => !('dob' in s))).toBe(true)
     const { body, problems } = gameRosterBody(r2.draft)
     expect(problems).toEqual([])
     expect(body.staff).toEqual([
-      { role: 'Coach', first_name: 'Tina', last_name: 'Trainer', dob: '1980-03-04', license_number: '200001' },
-      { role: 'Assistant Coach 1', first_name: 'Anna', last_name: 'Beispiel', dob: '2004-05-06', license_number: '100001' }
+      { role: 'Coach', first_name: 'Tina', last_name: 'Trainer', license_number: '200001' },
+      { role: 'Assistant Coach 1', first_name: 'Anna', last_name: 'Beispiel', license_number: '100001' }
     ])
     // no gender rule for officials (players only)
     expect(wrongGenderIndexes(body.players, CLUB, 'm')).toEqual([])
@@ -188,21 +199,21 @@ describe('bench officials from the club (Match Setup)', () => {
     expect(benchOfficialOfRole(bench, 'Assistant Coach 1')).toBeNull()
   })
 
-  it('the role\'s row takes the person (DD.MM.YYYY), else a row of that role is added; either gender', () => {
+  it('the role\'s row takes the person and the licence, else a row of that role is added; either gender', () => {
     const coach = setBenchOfficial(bench, 'Coach', TINA)
     expect(coach.replaced).toMatchObject({ firstName: 'Marco' })
     expect(coach.bench).toEqual([
-      { role: 'Coach', firstName: 'Tina', lastName: 'Trainer', dob: '04.03.1980' },
+      { role: 'Coach', firstName: 'Tina', lastName: 'Trainer', dob: '200001' },
       bench[1]
     ])
     const ac = setBenchOfficial(coach.bench, 'Assistant Coach 1', KIM)
     expect(ac.replaced).toBeNull()
-    expect(ac.bench[1]).toEqual({ role: 'Assistant Coach 1', firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '' })
+    expect(ac.bench[1]).toEqual({ role: 'Assistant Coach 1', firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '100004' })
     const medic = setBenchOfficial(ac.bench, 'Medic', ANNA)
     expect(medic.bench).toHaveLength(3)
-    expect(medic.bench[2]).toEqual({ role: 'Medic', firstName: 'Anna', lastName: 'Beispiel', dob: '06.05.2004' })
-    // the same person again keeps the date of birth the list does not have
-    expect(setBenchOfficial([{ role: 'Coach', firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '01.01.2000' }], 'Coach', KIM).bench[0].dob).toBe('01.01.2000')
+    expect(medic.bench[2]).toEqual({ role: 'Medic', firstName: 'Anna', lastName: 'Beispiel', dob: '100001' })
+    // the same person again: the list's licence (a date of birth typed gives way)
+    expect(setBenchOfficial([{ role: 'Coach', firstName: 'Kim', lastName: 'Ohnegeschlecht', dob: '01.01.2000' }], 'Coach', KIM).bench[0].dob).toBe('100004')
   })
 
   it('the players picker keeps the gender filter, the warning stays for players', () => {

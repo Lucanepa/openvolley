@@ -4,6 +4,17 @@ Status: first build in main (PR #94, db/024, release 3.0.15). The 2026-11-09 fee
 note in the picker; team officials from anyone of the club) on `feat/licence-export-reminder`.
 People added by hand (section 8, db/026, privacy 1.12) on `fix/manager-list-cards`.
 
+**db/048 (owner 2026-11-19, privacy 1.21): no dates of birth.** "for switzerland: import only the
+licence number from the einsatzliste etc. also on club manager/team manager etc: ONLY licence
+number." The lists keep **four fields** (licence number, last name, first name, gender); the export's
+date of birth column is never read, `club_licences.dob` is NULL (db/048 cleared it) until db/049
+drops it, and a `dob` an older manager build or Club API client sends is accepted and dropped
+(never a 400). `fillDob`, `fillTeamDob`, the date-of-birth lookup with its caps and audit and the
+age-class filter (`fitsAgeClass`) are gone: a youth team is offered every player of its gender
+(`age_class` is still answered, for the label). `GET /api/club-licences/dob` answers
+`{ club_id, people: [] }` for the apps that still ask. The sections below are updated to this;
+the owner quotes of 2026-11-09 stay as they were said.
+
 Owner, 2026-11-09:
 
 - In My club, club managers see their club's people ("trainers, players etc.") with their
@@ -25,19 +36,20 @@ Owner, 2026-11-09 (feedback on the first build):
   (coach, assistant coaches, physiotherapist, medic) is chosen from anyone of the club's three
   lists, of either gender, and the gender rule never applies to officials.
 
-## 1. What is kept: five fields
+## 1. What is kept: four fields
 
 Per person of a list: **licence number** (the Swiss Volley "SV" number, 4 to 7 digits), **last
-name**, **first name**, **date of birth**, **gender** (`m` / `f`). Nothing else.
+name**, **first name**, **gender** (`m` / `f`). Nothing else (db/048: no date of birth).
 
-The exports also carry email addresses, phone numbers, home addresses, nationality, categories,
-clubs and dates. None of it is read into the app, sent or stored:
+The exports also carry dates of birth, email addresses, phone numbers, home addresses,
+nationality, categories, clubs and dates. None of it is read into the app, sent or stored:
 
-- The file is read **in the browser** (`frontend/src/utils/vmLicenceExport.js`, jszip and the
-  browser's XML parser). The function answers the five fields per person and three counts (rows
+- The file is read **in the browser** (`frontend/src/utils/vmLicenceExport.js`, fflate and the
+  browser's XML parser). The function answers the four fields per person and three counts (rows
   read, rows left out, the language of the headers); the file itself never leaves the device.
-- The request carries the five fields only (`clubApi.putLicences` picks them again).
-- The server refuses any other field in the body (400, `people[i].<field>: not accepted`).
+- The request carries the four fields only (`clubApi.putLicences` picks them again).
+- The server refuses any other field in the body (400, `people[i].<field>: not accepted`), except
+  `dob`, which it accepts and drops (older clients).
 
 ### The export format
 
@@ -54,11 +66,11 @@ name):
 | fr | `N° SV`, `No SV`, `N. SV` | `Nom` | `Prénom` | `Date de naissance` | `Sexe` (`F` f, `H`/`M` m) |
 | en | `SV no.`, `SV No`, `SV number` | `Last name`, `Surname` | `First name` | `Date of birth` | `Gender`, `Sex` (`F`/`W` f, `M` m) |
 
+- The date of birth header is recognised only so that its column (Excel date serials, five
+  digits like a licence number) is never taken for the licence column; its cells are never read.
 - No licence header: the column whose non-empty values are all 4 to 7 digit numbers.
 - A file without a licence, last name or first name column is refused with a message naming what
   is missing.
-- Dates: an Excel date cell (a serial number; the 1900 system with Excel's 29 February 1900, or
-  the 1904 system), an ISO date (`t="d"` or text) or `DD.MM.YYYY` text. Anything else: no date.
 - A row without a 4 to 7 digit licence number or a last name is left out and counted ("2 rows
   left out"). A licence number twice in one file is one person.
 
@@ -67,8 +79,8 @@ name):
 | Who | What | Where |
 |---|---|---|
 | Club managers of the club (db/020), admins | uploads each list; every person once, with its lists and teams | My club → Licences |
-| Team managers of a team (db/023), the club's managers, admins | the club's players of the team's gender and age class, the people of the team's saved team, a name search over the three lists for the officials (a few rows), the team's gender; dates of birth only of the people in the team's saved team (section 9) | My teams → "Add from club" |
-| Scorers of the club (indoor saved-teams read right; their `account_clubs`) | the three lists of each of their clubs (the **players** list and everyone once) **without dates of birth**, the team names and each team's gender; the date of birth of each person they add to a roster, on demand (section 9) | the scoring tablet's copy, Match Setup |
+| Team managers of a team (db/023), the club's managers, admins | the club's players of the team's gender, the people of the team's saved team, a name search over the three lists for the officials (a few rows), the team's gender (section 9) | My teams → "Add from club" |
+| Scorers of the club (indoor saved-teams read right; their `account_clubs`) | the three lists of each of their clubs (the **players** list and everyone once), the team names and each team's gender (section 9) | the scoring tablet's copy, Match Setup |
 
 Never public, never anonymous, never on the `/api/db` allowlist. Another club's manager, a team
 manager outside its own teams and a scorer of another club see nothing of it.
@@ -76,12 +88,12 @@ manager outside its own teams and a scorer of another club see nothing of it.
 ### My club → Licences
 
 - Upload: the list (Players, Scorers, Coaches) and the `.xlsx` file. A preview says how many
-  people were read, that only licence number, name, date of birth and gender are kept, how many
+  people were read, that only licence number, name and gender are kept, how many
   rows were left out and whom the upload replaces; **Save list** sends it. At most 2000 people per
   list.
 - Per list: how many people, when it was updated and by whom; **Delete list** (an empty upload:
   everyone of the list, those added by hand too, section 8).
-- Everyone of the three lists once: name, licence, date of birth, gender, list chips and team
+- Everyone of the three lists once: name, licence, gender, list chips and team
   chips. A person's teams are the club's teams whose saved team of this season (the squad of My
   teams) has a player or an official with that licence number. Search by name or licence, filter
   by list and gender. Works at 390 px.
@@ -91,10 +103,10 @@ manager outside its own teams and a scorer of another club see nothing of it.
 **Players.** In the squad editor and in a game's roster dialog: a picker (search, several at once)
 over the club's players list. When the team's gender is known, only players of that gender (and
 those the list gives no gender) are offered; the picker says nothing about it (no note). Chosen
-players come with licence number, names and date of birth, without a shirt number. The merge rules
-of the Einsatzliste import decide who is already there (the same licence, else the same name, also
-with first and last name swapped): nobody is added twice, a player found gets the licence and date
-of birth. In a game's roster a player found is ticked.
+players come with licence number and names, without a shirt number. The merge rules of the
+Einsatzliste import decide who is already there (the same licence, else the same name, also with
+first and last name swapped): nobody is added twice, a player found gets the licence. In a game's
+roster a player found is ticked.
 
 **Team officials.** "Add from club" in the officials part of the squad editor and of a game's
 roster dialog: a picker over **everyone of the club's three lists** (players, scorers, coaches;
@@ -102,8 +114,8 @@ each person once, its lists shown), with **no gender filter**. The picker asks f
 (coach, assistant coach 1 and 2, physiotherapist, medic; it starts at the first role nobody holds)
 and one person:
 
-- Squad editor: the first official row of that role takes the person (names, date of birth,
-  licence number); without such a row, a row of that role is added.
+- Squad editor: the first official row of that role takes the person (names, licence number);
+  without such a row, a row of that role is added.
 - Game roster: the person is ticked in that role (added when the squad does not have them in it),
   and whoever was ticked in that role before is unticked: each role once.
 - Someone already in the chosen role is shown as already there and cannot be chosen again; the
@@ -125,9 +137,8 @@ nothing; a mixed gender or both genders make it unknown, and an unknown gender c
 - **Match Setup (scorer).** Never a block (**D2**). The game's gender is the schedule's (the
   match's gender, from the official game); a test match has none. A roster player who is in the
   club's list with the other gender gets a warning in the roster panel ("Anna Beispiel is
-  registered with the club as a woman, and this is a men's game"). Match Setup's roster rows have
-  no licence numbers, so a player is matched by name and, when both have one, the date of birth.
-  The bench officials get no warning.
+  registered with the club as a woman, and this is a men's game"). A roster player is matched by
+  licence number when both have one, else by name. The bench officials get no warning.
 
 ## 4. API (lib/licences.js, db/024)
 
@@ -138,15 +149,15 @@ has them.
 
 | Route | Who | |
 |---|---|---|
-| `PUT /api/club/:id/licences/:list` | the club's managers, admins | `{ people: [{ sv_number, last_name, first_name, dob, gender }] }`, at most 2000; replaces the uploaded people of that list in one transaction, keeps those added by hand (section 8); an empty list deletes the whole list. `{ list, count, manual, imported_at }` (`count`: the upload's people, `manual`: those by hand the list keeps) |
-| `GET /api/club/:id/licences` | the club's managers, admins | `{ season, lists: { players, scorers, coaches: { count, manual, imported_at, imported_by_name } }, people: [{ sv_number, last_name, first_name, dob, gender, manual, lists, teams: [{ id, name }] }] }`: `count` everyone of the list, `manual` those by hand; `imported_at` and `imported_by_name` the last upload's (`null` without one) |
+| `PUT /api/club/:id/licences/:list` | the club's managers, admins | `{ people: [{ sv_number, last_name, first_name, gender }] }` (a `dob` is accepted and dropped), at most 2000; replaces the uploaded people of that list in one transaction, keeps those added by hand (section 8); an empty list deletes the whole list. `{ list, count, manual, imported_at }` (`count`: the upload's people, `manual`: those by hand the list keeps) |
+| `GET /api/club/:id/licences` | the club's managers, admins | `{ season, lists: { players, scorers, coaches: { count, manual, imported_at, imported_by_name } }, people: [{ sv_number, last_name, first_name, gender, manual, lists, teams: [{ id, name }] }] }`: `count` everyone of the list, `manual` those by hand; `imported_at` and `imported_by_name` the last upload's (`null` without one) |
 | `POST /api/club/:id/licences/people` | the club's managers, admins | section 8 |
 | `DELETE /api/club/:id/licences/rows/:rowId` | the club's managers, admins | one row added by hand (section 9) |
-| `GET /api/team/:id/club-players` | whoever may manage the team | `{ team, gender: 'm' \| 'f' \| null, age_class: 'U16' \| null, players, people }`: `players` the players list of the team's gender and age class (five fields and `manual`), `people` the people of the team's saved team and those players once `{ sv_number, last_name, first_name, dob, gender, manual, lists }`; `dob` only of the people of the saved team (section 9) |
-| `GET /api/team/:id/club-people?q=` | whoever may manage the team | at least 3 characters: at most 10 people of the three lists by name or licence number, `dob` as above. `{ people, more }` |
+| `GET /api/team/:id/club-players` | whoever may manage the team | `{ team, gender: 'm' \| 'f' \| null, age_class: 'U16' \| null, players, people }`: `players` the players list of the team's gender (four fields and `manual`; `age_class` is shown only, no filter since db/048), `people` the people of the team's saved team and those players once `{ sv_number, last_name, first_name, gender, manual, lists }` (section 9) |
+| `GET /api/team/:id/club-people?q=` | whoever may manage the team | at least 3 characters: at most 10 people of the three lists by name or licence number. `{ people, more }` |
 | `POST /api/team/:id/club-people` | whoever may manage the team | section 8, to the team's club |
-| `GET /api/club-licences` | indoor `canReadTeams` (scorers) | `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }`: the caller's clubs, `players` and `people` as above, `dob` always `null` (section 9) |
-| `GET /api/club-licences/dob?club=&sv=` | the same | at most 30 licence numbers of one of the caller's clubs: `{ club_id, people: [{ sv_number, dob }] }` (404 for another club) |
+| `GET /api/club-licences` | indoor `canReadTeams` (scorers) | `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }`: the caller's clubs, `players` and `people` as above (section 9) |
+| `GET /api/club-licences/dob?club=&sv=` | the same | since db/048 always `{ club_id, people: [] }` (apps before it ask; nothing is looked up or audited) |
 
 `players` keeps the shape of the first build (plus `manual`): the apps of release 3.0.15 read only
 `players` (the roster rows), and keep working; `people` is new. An app reading a server without
@@ -154,7 +165,8 @@ has them.
 from the club.
 
 Audit: `club.licences` with `{ club_id, list, count }`, `club.licences.manual` with `{ club_id,
-team_id, added, lists }` (section 8), never a name or a licence number.
+team_id, added, lists }` (section 8), never a name or a licence number. (`club.licences.dob` is no
+longer written since db/048; older entries stay filterable.)
 
 ## 5. The scoring tablet: offline first
 
@@ -167,7 +179,7 @@ team_id, added, lists }` (section 8), never a name or a licence number.
 2. **Match Setup reads the device.** For a team whose name is one of the scorer's club teams, the
    roster editor offers **Add from club** for the players (the players list, filtered by the
    game's gender, see 3) with the warning, and **Add from club** for the bench officials (anyone
-   of the three lists, either gender: the role's row takes the names and the date of birth, else
+   of the three lists, either gender: the role's row takes the names and the licence number, else
    a row of that role is added; each role once). Nothing waits on the network; without a copy
    (never online, another club's team) the buttons are not there and every other way to fill a
    roster stays.
@@ -176,9 +188,10 @@ team_id, added, lists }` (section 8), never a name or a licence number.
 ## 6. Data and retention
 
 - `club_licences(club_id, list, sv_number, last_name, first_name, dob, gender, imported_at,
-  imported_by, source, season, id)`, primary key `(club_id, list, sv_number)`; `source` `import`
-  or `manual` (db/026; `imported_at`/`imported_by` of a manual row: when and by whom it was
-  added); `season` the season of the upload or of the row by hand, `id` a row id (db/037).
+  imported_by, source, season, id)`, primary key `(club_id, list, sv_number)` (`dob` NULL since
+  db/048, dropped by db/049); `source` `import`, `manual` (db/026: `imported_at`/`imported_by` of
+  a manual row: when and by whom it was added) or `match` (db/048: a person of an official match's
+  roster, the roster save-back, section 8); `season` the season of the upload or of the row by hand, `id` a row id (db/037).
 - **Each upload replaces the uploaded people of that list.** A person who left the club is gone
   with the next upload. Those added by hand stay until Delete list (section 8) or until a club
   manager removes them one by one (section 9).
@@ -192,7 +205,8 @@ team_id, added, lists }` (section 8), never a name or a licence number.
 
 ## 7. Decisions
 
-- **L1** (owner) Five fields only, read in the browser; nothing else of the export is sent.
+- **L1** (owner) Four fields only (db/048: the date of birth went), read in the browser; nothing
+  else of the export is sent.
 - **L2** (owner) The gender rule: refused in the manager, a warning in Match Setup (**D2**).
 - **L3** Team gender from the schedule; unknown (no games, mixed, both) checks nothing. A player
   the list gives no gender is offered to every team and never refused.
@@ -220,23 +234,23 @@ but can be linked later."
   offered. The roster is saved either way, then the ticked ones are added; those left unticked
   are not asked again for that team while the page is open (in memory only: never in the
   browser's storage, db/037). Nobody is added without that answer.
-- **What.** The five fields of an upload (section 1) and the list; the row is `source = 'manual'`,
+- **What.** The four fields of an upload (section 1) and the list; the row is `source = 'manual'`,
   `imported_by` the account that added it. A licence number any of the club's lists already has
   (uploaded or by hand) is left as it is: nothing of the club's lists is overwritten by hand, and
   a row by hand never stands for someone of another list (db/037).
 - **Shields.** Each row of the squad editor and of a game's roster has one. The row is a club
-  person by the same licence number, else by the same name (accents, case and order aside) and
-  date of birth. Green: a person of an uploaded list (`manual: false`); a dot on it when the
+  person by the same licence number, else by the same name (accents, case and order aside) when
+  exactly one person of the club has it (db/048: no date of birth to tell them apart). Green: a person of an uploaded list (`manual: false`); a dot on it when the
   club has a field the row lacks (tap: filled in). Gray: typed by hand, also a person kept by hand
   (`manual: true`, every row of the person by hand; in every read: `players` and `people`, My
   club, where it is tagged "Added by hand", and the tablet's copy). In the squad editor the gray
   shield links the row to someone of the uploaded lists (the search starts at its last name, or
-  with everyone when that finds nobody; the row takes names, date of birth and licence number).
+  with everyone when that finds nobody; the row takes names and licence number).
 - **Match Setup.** The same shields from the tablet's copy (offline; it keeps `manual`), beside
   Delete in the one-line rows (landscape; the stacked rows of a tablet held upright leave them
-  out). Its rows have no licence number: a club person by name and, when both have one, date of
-  birth. The gray shield links the row (names and date of birth), the green one with a dot fills
-  in the first name or date of birth. No "save in the club" there: scorers do not manage teams.
+  out). A club person by licence number, else by name. The gray shield links the row (names and
+  licence number), the green one with a dot fills in the first name or the licence number. No
+  "save in the club" there: scorers do not manage teams.
 - **Linked later.** An upload replaces only the uploaded rows of its list. A row by hand whose
   licence number the upload has becomes an uploaded row with VolleyManager's fields (green from
   then on, and gone with a later upload that no longer has it); the others stay by hand. Delete
@@ -249,9 +263,9 @@ but can be linked later."
 | `POST /api/team/:id/club-people` | whoever may manage the team (its team managers, the club's managers, admins) | to the team's club (404 for an unknown team) |
 | `POST /api/club/:id/licences/people` | the club's managers, admins | to that club (404 for an unknown club) |
 
-Body (both): `{ people: [{ list, sv_number, last_name, first_name, dob, gender }] }`, 1 to 30
-people, `list` one of `players`, `scorers`, `coaches`, the five fields as an upload's (section 1);
-any other field in the body or in a person is refused (400 `OV_INVALID_REQUEST`, nothing stored).
+Body (both): `{ people: [{ list, sv_number, last_name, first_name, gender }] }`, 1 to 30
+people, `list` one of `players`, `scorers`, `coaches`, the four fields as an upload's (section 1;
+a `dob` is accepted and dropped); any other field in the body or in a person is refused (400 `OV_INVALID_REQUEST`, nothing stored).
 A licence number twice in one list in one request is one person. Answer 200 `{ club_id, added,
 already }`: the people of the request added, and those the list had already. Audit (only when
 someone was added): `club.licences.manual` with `{ club_id, team_id (null for the club's route),
@@ -262,27 +276,47 @@ manager. Without 026 the new backend reads every row as uploaded and answers 503
 routes and to an upload (Delete list still works); a backend of before 026 works on it (its
 upload replaces the rows by hand too).
 
+### People of official matches (db/048, owner 2026-11-19)
+
+"so that we can create a big database (at the end of the day it is last name first name number
+and licence n, super public) and next games the 'load from club' works". After the coin toss of an
+official match, the backend adds the people of each team's roster with a licence number (4 to 7
+digits) to the lists of the team's club (the team in `club_teams`; `backend/lib/rosterSaveBack.js`,
+docs/team-managers-spec.md "Filled from official matches"): players to `players`, Coach and
+Assistant Coaches to `coaches` (a physiotherapist or a medic does not go). `lib/licences.js`
+`addFromMatch`:
+
+- `source = 'match'`, `imported_by` NULL (no account writes them), the current season, the names
+  of the match's roster, **no gender** (a roster does not say it; without one it never refuses
+  anyone, section 3).
+- The rules of a row by hand: a licence number any list of the club has is left as it is (an
+  upload's row least of all); an upload keeps them and turns those it contains into uploaded rows;
+  Delete list removes them; a club manager removes one (section 9's delete, 409
+  `OV_NOT_HAND_ADDED` only for uploaded rows). The gray shield and `manual: true` in every read,
+  as a row by hand.
+- At most `MAX_MANUAL_PER_CLUB` (300) rows no upload brought per club (by hand and from matches
+  together): those past it are left out, counted (`club_capped` in the audit), never an error. No
+  daily cap (no account writes them). Audited with the saved team as `team.squad.match`
+  (`club_added`, `club_capped`), never a name.
+
 ## 9. Only what each role needs (db/037)
 
 Owner decision 2 (rollout audit, 2026-11): a team manager gets only the people its team needs,
-filtered on the server, and dates of birth only once a person is in a roster; the scoring tablets
-keep no dates of birth.
+filtered on the server. Since db/048 nobody gets a date of birth (none is kept).
 
 - **Team managers.** `players`: the players list of the team's gender (and those the list gives
-  no gender) and age class: a team whose leagues this season name one `U<n>` ("U16 Juniorinnen")
-  gets the players born in the season's first year minus n or later (one year more than the
-  class's own limit, so nobody of the class is left out) and those without a date of birth.
-  `people`: the people of the team's saved team and those players. An official may be anyone of
-  the club: the picker asks the server's name search (`GET /api/team/:id/club-people?q=`, at
-  least 3 characters, at most 10 rows). Dates of birth only of the people of the team's saved
-  team; saving a squad or a game roster fills in the club's date of birth of each row with a
-  licence number of the lists and none of its own (lib/licences.js fillDob).
-- **Scorers.** `GET /api/club-licences` sends no dates of birth. Match Setup asks for those of
-  the people it adds from the club (`GET /api/club-licences/dob`, online; offline the scorer
-  types them or a sent roster brings them).
+  no gender). The age-class filter (players born late enough for the `U<n>` of the team's
+  leagues) went with db/048, which took the dates of birth it read: a youth team is offered every
+  player of its gender; `age_class` is still answered for the label. `people`: the people of the
+  team's saved team and those players. An official may be anyone of the club: the picker asks the
+  server's name search (`GET /api/team/:id/club-people?q=`, at least 3 characters, at most 10
+  rows). Saving a squad or a game roster no longer fills in anything from the lists.
+- **Scorers.** `GET /api/club-licences` sends the four fields. `GET /api/club-licences/dob`
+  answers `{ club_id, people: [] }` (older apps ask; the scorer types a date of birth on a
+  match's own sheet if one is wanted).
 - **Rows by hand.** A licence number of any list of the club is not added by hand again; `manual`
-  of a row of the players list is that row's own; a person's names, date of birth and gender come
-  from its uploaded rows first. At most 300 rows by hand per club and 100 per account a day (409
+  of a row of the players list is that row's own; a person's names and gender come from its
+  uploaded rows first. At most 300 rows by hand per club and 100 per account a day (409
   `OV_MANUAL_LIMIT`). My club's page of a person lists its rows by hand, each with Remove
   (`DELETE /api/club/:id/licences/rows/:rowId`, 409 `OV_NOT_HAND_ADDED` for an uploaded row;
   audit `club.licences.manual_delete` with `{ club_id, list }`).

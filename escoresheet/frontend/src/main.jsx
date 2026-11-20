@@ -28,6 +28,7 @@ import { initTheme } from './utils/theme'
 import { isNativeApp } from './utils/backendConfig'
 import { unlockOrientation } from './utils/nativeOrientation'
 import { startNativeFileHousekeeping } from './utils/nativeBackup'
+import { startDobCleanup } from './db/dobCleanup'
 
 // The scoretable: the only page that saves automatic match backups
 setAppEntry('scorer')
@@ -67,6 +68,10 @@ startActivityLog({ db })
 // start, and on Android the first start's move of the files older versions
 // left in the public Documents folder into the app's own (utils/nativeBackup)
 startNativeFileHousekeeping()
+
+// The one-time clean-up of dates of birth on this device (db/dobCleanup,
+// owner 2026-11-19): after the first paint, never awaited
+startDobCleanup({ db })
 
 // Portrait data entry: <body> carries ov-form-stack while a tablet is held
 // upright, which switches on the one-field-per-row rules in tailwind.css for

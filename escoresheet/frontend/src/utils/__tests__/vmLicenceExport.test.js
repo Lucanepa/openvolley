@@ -1,10 +1,11 @@
 // The club administration export of VolleyManager, read in the browser
 // (db/024, docs/club-licences-spec.md): small made-up workbooks written with
 // jszip here, in the layout of a real export (title row, blank row, header
-// row 3, then one row per person, many columns that must be ignored).
+// row 3, then one row per person, many columns that must be ignored, the
+// date of birth among them: db/048, owner 2026-11-19 "ONLY licence number").
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
-import { readLicenceExport, licencePeopleFromRows, excelSerialToIso, cellToIsoDate, normalizeHeader, LicenceExportError } from '../vmLicenceExport'
+import { readLicenceExport, licencePeopleFromRows, normalizeHeader, LicenceExportError } from '../vmLicenceExport'
 
 const serialOf = (iso) => (Date.UTC(...iso.split('-').map((n, i) => Number(n) - (i === 1 ? 1 : 0))) - Date.UTC(1899, 11, 30)) / 86400000
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -54,34 +55,7 @@ const ITALIAN = [
   [100003, 'Probe', 'Marco', { date: serialOf('2001-11-02') + 0.5 }, 'U', 'Italia', '', 'Senior', 'marco@example.ch', '+41 00 000 00 03', 'Musterweg 3']
 ]
 
-describe('excel dates', () => {
-  it('1900 system with its leap-year bug', () => {
-    expect(excelSerialToIso(1)).toBe('1900-01-01')
-    expect(excelSerialToIso(59)).toBe('1900-02-28')
-    expect(excelSerialToIso(60)).toBeNull() // the 29 February 1900 Excel counts
-    expect(excelSerialToIso(61)).toBe('1900-03-01')
-    expect(excelSerialToIso(45000)).toBe('2023-03-15')
-    expect(excelSerialToIso(serialOf('2004-05-06') + 0.75)).toBe('2004-05-06')
-    expect(excelSerialToIso(0)).toBeNull()
-    expect(excelSerialToIso(-3)).toBeNull()
-  })
-
-  it('1904 system', () => {
-    expect(excelSerialToIso(0, { date1904: true })).toBe('1904-01-01')
-    expect(excelSerialToIso(43538, { date1904: true })).toBe('2023-03-15')
-  })
-
-  it('a date of birth cell: serial, ISO, DD.MM.YYYY, anything else none', () => {
-    expect(cellToIsoDate(serialOf('2006-01-31'))).toBe('2006-01-31')
-    expect(cellToIsoDate('2006-01-31T00:00:00')).toBe('2006-01-31')
-    expect(cellToIsoDate('2006-01-31')).toBe('2006-01-31')
-    expect(cellToIsoDate('31.01.2006')).toBe('2006-01-31')
-    expect(cellToIsoDate('1.2.2006')).toBe('2006-02-01')
-    expect(cellToIsoDate('31.02.2006')).toBeNull()
-    expect(cellToIsoDate('soon')).toBeNull()
-    expect(cellToIsoDate('')).toBeNull()
-  })
-
+describe('headers', () => {
   it('headers: lowercase, trimmed, spaces collapsed, no dots or colons', () => {
     expect(normalizeHeader(' N. SV ')).toBe('n sv')
     expect(normalizeHeader('SV-Nr.')).toBe('sv-nr')
@@ -91,22 +65,22 @@ describe('excel dates', () => {
 })
 
 describe('readLicenceExport', () => {
-  it('Italian: the five fields only, nothing else of the row', async () => {
+  it('Italian: the four fields only, nothing else of the row (no date of birth)', async () => {
     const r = await readLicenceExport(await xlsx(ITALIAN))
     expect(r.language).toBe('it')
     expect(r.rows).toBe(3)
     expect(r.skipped).toBe(0)
     expect(r.people).toEqual([
-      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f' },
-      { sv_number: '100002', last_name: 'Muster', first_name: 'Lea Sofia', dob: '2006-01-31', gender: 'f' },
-      { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: '2001-11-02', gender: 'm' }
+      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f' },
+      { sv_number: '100002', last_name: 'Muster', first_name: 'Lea Sofia', gender: 'f' },
+      { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', gender: 'm' }
     ])
     expect(Object.keys(r).sort()).toEqual(['language', 'people', 'rows', 'skipped'])
     const text = JSON.stringify(r)
-    for (const leak of ['example.ch', '+41', 'Musterweg', 'Svizzera', 'Italia', 'U23', 'FdO']) expect(text).not.toContain(leak)
+    for (const leak of ['example.ch', '+41', 'Musterweg', 'Svizzera', 'Italia', 'U23', 'FdO', String(Math.floor(serialOf('2004-05-06'))), '2004', 'dob']) expect(text).not.toContain(leak)
   })
 
-  it('German: SV-Nr., Name = last name, Vorname, DD.MM.YYYY and ISO dates, inline strings', async () => {
+  it('German: SV-Nr., Name = last name, Vorname, inline strings; the Geburtsdatum column is never read', async () => {
     const r = await readLicenceExport(await xlsx([
       ['Spielerliste'],
       [],
@@ -117,10 +91,11 @@ describe('readLicenceExport', () => {
     ], { inline: true }))
     expect(r.language).toBe('de')
     expect(r.people).toEqual([
-      { sv_number: '200001', last_name: 'Testmann', first_name: 'Noah', dob: '2007-04-03', gender: 'm' },
-      { sv_number: '200002', last_name: 'Muster-Probe', first_name: 'Mia', dob: '2005-12-24', gender: 'f' },
-      { sv_number: '200003', last_name: 'Beispiel', first_name: null, dob: null, gender: 'f' }
+      { sv_number: '200001', last_name: 'Testmann', first_name: 'Noah', gender: 'm' },
+      { sv_number: '200002', last_name: 'Muster-Probe', first_name: 'Mia', gender: 'f' },
+      { sv_number: '200003', last_name: 'Beispiel', first_name: null, gender: 'f' }
     ])
+    expect(JSON.stringify(r)).not.toMatch(/2007|2005|dob/)
   })
 
   it('French: Nom is the last name and Prénom the first name (not the Italian Nome)', async () => {
@@ -133,8 +108,8 @@ describe('readLicenceExport', () => {
     ]))
     expect(r.language).toBe('fr')
     expect(r.people).toEqual([
-      { sv_number: '300001', last_name: 'Exemple', first_name: 'Chloé', dob: '2003-07-14', gender: 'f' },
-      { sv_number: '300002', last_name: 'Modèle', first_name: 'Hugo', dob: '2002-02-02', gender: 'm' }
+      { sv_number: '300001', last_name: 'Exemple', first_name: 'Chloé', gender: 'f' },
+      { sv_number: '300002', last_name: 'Modèle', first_name: 'Hugo', gender: 'm' }
     ])
     // a French export with the Italian licence header keeps the French columns
     const mixed = await readLicenceExport(await xlsx([['N. SV', 'Nom', 'Prénom'], [300003, 'Essai', 'Léa']]))
@@ -148,7 +123,17 @@ describe('readLicenceExport', () => {
       [400001, 'Sample', 'Sam', { date: 36000 }, 'M']
     ], { date1904: true, sheetFile: 'data.xml' }))
     expect(r.language).toBe('en')
-    expect(r.people).toEqual([{ sv_number: '400001', last_name: 'Sample', first_name: 'Sam', dob: excelSerialToIso(36000, { date1904: true }), gender: 'm' }])
+    expect(r.people).toEqual([{ sv_number: '400001', last_name: 'Sample', first_name: 'Sam', gender: 'm' }])
+  })
+
+  it('the date of birth column is never taken for the licence column (an Excel date is 5 digits too)', async () => {
+    // no licence header: the column of 4 to 7 digit numbers is the licence,
+    // never the Geburtsdatum column (date serials) before it
+    const ok = await readLicenceExport(await xlsx([
+      ['Geburtsdatum', 'Name', 'Vorname', 'Ausweis'],
+      [{ date: serialOf('2004-05-06') }, 'Muster', 'Max', 500001]
+    ]))
+    expect(ok.people).toEqual([{ sv_number: '500001', last_name: 'Muster', first_name: 'Max', gender: null }])
   })
 
   it('rows without a usable licence number or last name are skipped and counted; a licence twice is one person', async () => {
@@ -163,7 +148,7 @@ describe('readLicenceExport', () => {
     ]))
     expect(r.rows).toBe(5)
     expect(r.skipped).toBe(3)
-    expect(r.people).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f' }])
+    expect(r.people).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f' }])
   })
 
   it('a licence column with another header: the column whose values are all licence numbers', async () => {

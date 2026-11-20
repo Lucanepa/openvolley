@@ -10,6 +10,7 @@
  */
 
 import { seasonOf, seasonLabel } from './season'
+import { licenceOf } from './idMode'
 
 export const STAFF_ROLES = ['Coach', 'Assistant Coach 1', 'Assistant Coach 2', 'Physiotherapist', 'Medic']
 export const MAX_PLAYERS = 40
@@ -95,7 +96,10 @@ export function teamUpdatedAt(team) { return team?.updatedAt ?? team?.updated_at
 export function teamCompetitionId(team) { return team?.competitionId ?? team?.competition_id ?? team?.competition?.id ?? null }
 
 /**
- * A saved team → MatchSetup roster + bench.
+ * A saved team → MatchSetup roster + bench. The value beside each name is the
+ * saved licence number (a Swiss match: licence or date of birth,
+ * domain/idMode); a saved date of birth never comes into the match (owner
+ * 2026-11-19).
  * @returns {{ roster: object[], bench: object[], meta: {name: string, shortName: string, color: string}, warnings: {key: string, params: object}[] }}
  */
 export function savedTeamToRoster(team) {
@@ -118,7 +122,7 @@ export function savedTeamToRoster(team) {
       number: toNumberOrNull(p.number),
       firstName: p.first_name || '',
       lastName: p.last_name || '',
-      dob: isoToDisplayDob(p.dob),
+      dob: licenceOf(p.license_number) || '',
       libero,
       isCaptain,
       isLfp: false
@@ -128,7 +132,7 @@ export function savedTeamToRoster(team) {
 
   const bench = sortByOrder(team?.staff)
     .filter(s => s && STAFF_ROLES.includes(s.role))
-    .map(s => ({ role: s.role, firstName: s.first_name || '', lastName: s.last_name || '', dob: isoToDisplayDob(s.dob) }))
+    .map(s => ({ role: s.role, firstName: s.first_name || '', lastName: s.last_name || '', dob: licenceOf(s.license_number) || '' }))
   if (!bench.some(b => b.role === 'Coach')) bench.unshift({ role: 'Coach', firstName: '', lastName: '', dob: '' })
 
   return {
@@ -160,15 +164,21 @@ export function sameTypedName(typed, name) {
  * number a roster player now wears loses the number, and a kept captain is
  * not one when the roster names one.
  *
- * A saved player is the roster player with the same number, last and first
- * name (its date of birth may be corrected), else the same last and first
- * name (a new number) and no other date of birth; it keeps its id and
- * licence number. Another first name is another person, also with the same
- * number, last name or date of birth (a sibling, a twin, who wears the
- * other's former number never takes over the other's record and licence): a
- * new row without a licence number. Staff: the bench replaces them; an
- * official keeps its id and licence number with the same role, last name and
- * first name (or none on the bench), else the same names in another role.
+ * The value beside a roster name is a licence or a date of birth
+ * (domain/idMode): a licence goes to license_number, a date of birth is never
+ * written (owner 2026-11-19: no birthdates outside the sheet), and the body
+ * carries no dob at all, so the saved dates of birth go too.
+ *
+ * A saved player is the roster player with the same licence; else the same
+ * number, last and first name; else the same last and first name (a new
+ * number). Never one with another licence than the row's. Another first name
+ * is another person, also with the same number or last name (a sibling, a
+ * twin, who wears the other's former number never takes over the other's
+ * record and licence): a new row. A saved player keeps its id, and its
+ * licence when the row has none. Staff: the bench replaces them; an official
+ * keeps its id and licence with the same licence, else the same role, last
+ * name and first name (or none on the bench), else the same names in another
+ * role.
  */
 export function rosterToSavedRoster(roster, bench, existingTeam = null) {
   const existingPlayers = Array.isArray(existingTeam?.players) ? existingTeam.players : []
@@ -178,16 +188,21 @@ export function rosterToSavedRoster(roster, bench, existingTeam = null) {
   const playerKey = (number, lastName) => `${toNumberOrNull(number) ?? ''}|${normalizeName(lastName)}`
   const free = (p) => p?.id && !usedIds.has(p.id)
   const sameFirst = (saved, row) => normalizeName(saved?.first_name) === normalizeName(row?.firstName)
+  // the row's licence and the saved one's, when both have one, are the same
+  const licenceFits = (saved, licence) => !licence || !licenceOf(saved?.license_number) || licenceOf(saved.license_number) === licence
   const findPlayer = (p) => {
-    const byNumber = existingPlayers.find(e => free(e) && playerKey(e.number, e.last_name) === playerKey(p.number, p.lastName) && sameFirst(e, p))
+    const licence = licenceOf(p.dob)
+    if (licence) {
+      const byLicence = existingPlayers.find(e => free(e) && licenceOf(e.license_number) === licence)
+      if (byLicence) return byLicence
+    }
+    const byNumber = existingPlayers.find(e => free(e) && licenceFits(e, licence) && playerKey(e.number, e.last_name) === playerKey(p.number, p.lastName) && sameFirst(e, p))
     if (byNumber) return byNumber
     const last = normalizeName(p.lastName)
     const first = normalizeName(p.firstName)
     if (!last || !first) return null
-    const dob = displayDobToIso(p.dob)
-    return existingPlayers.find(e => free(e) &&
-      normalizeName(e.last_name) === last && sameFirst(e, p) &&
-      !(dob && e.dob && String(e.dob).slice(0, 10) !== dob)) || null
+    return existingPlayers.find(e => free(e) && licenceFits(e, licence) &&
+      normalizeName(e.last_name) === last && sameFirst(e, p)) || null
   }
 
   const chosen = (Array.isArray(roster) ? roster : [])
@@ -199,8 +214,7 @@ export function rosterToSavedRoster(roster, bench, existingTeam = null) {
         number: toNumberOrNull(p.number),
         first_name: String(p.firstName || '').trim(),
         last_name: String(p.lastName || '').trim(),
-        dob: displayDobToIso(p.dob),
-        license_number: match?.license_number ?? null,
+        license_number: licenceOf(p.dob) ?? match?.license_number ?? null,
         is_libero: p.libero === 'libero1' || p.libero === 'libero2',
         is_captain: !!p.isCaptain,
         active: true
@@ -221,7 +235,6 @@ export function rosterToSavedRoster(roster, bench, existingTeam = null) {
         number: active && number !== null && takenNumbers.has(number) ? null : number,
         first_name: p.first_name || '',
         last_name: p.last_name || '',
-        dob: p.dob || null,
         license_number: p.license_number ?? null,
         is_libero: !!p.is_libero,
         is_captain: active && !!p.is_captain && !rosterCaptain,
@@ -240,16 +253,17 @@ export function rosterToSavedRoster(roster, bench, existingTeam = null) {
   const staff = (Array.isArray(bench) ? bench : [])
     .filter(b => b && STAFF_ROLES.includes(b.role) && (String(b.lastName || '').trim() || String(b.firstName || '').trim()))
     .map(b => {
-      const free = (s) => s?.id && !usedStaff.has(s.id) && normalizeName(s.last_name) === normalizeName(b.lastName)
-      const match = existingStaff.find(s => free(s) && s.role === b.role && (sameFirst(s, b) || !normalizeName(b.firstName))) ||
+      const licence = licenceOf(b.dob)
+      const free = (s) => s?.id && !usedStaff.has(s.id) && licenceFits(s, licence) && normalizeName(s.last_name) === normalizeName(b.lastName)
+      const match = (licence ? existingStaff.find(s => s?.id && !usedStaff.has(s.id) && licenceOf(s.license_number) === licence) : null) ||
+        existingStaff.find(s => free(s) && s.role === b.role && (sameFirst(s, b) || !normalizeName(b.firstName))) ||
         (normalizeName(b.firstName) ? existingStaff.find(s => free(s) && sameFirst(s, b)) : null) || null
       if (match) usedStaff.add(match.id)
       const row = {
         role: b.role,
         first_name: String(b.firstName || '').trim(),
         last_name: String(b.lastName || '').trim(),
-        dob: displayDobToIso(b.dob),
-        license_number: match?.license_number ?? null
+        license_number: licence ?? match?.license_number ?? null
       }
       if (match) row.id = match.id
       return row
@@ -350,6 +364,72 @@ export function findSavedTeamSuggestions(teams, { home, away, league, scheduledA
   }
 
   return { home: pick(home), away: pick(away) }
+}
+
+// ---------------------------------------------------------------- shirt numbers from a saved team
+// Owner 2026-11-19: "next games ... the numbers can be automatically filled
+// with roster (einsatzliste) import". An Einsatzliste has no shirt numbers;
+// the saved team has them: the server keeps the latest official match's
+// numbers in it (backend lib/rosterSaveBack.js), and the tablet has a copy.
+
+const foldName = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '')
+
+/**
+ * The shirt number a saved team (API team or cache row) knows for a person:
+ * numberOf({ licence, firstName, lastName }) is the number of the saved
+ * team's active player with that licence; else of the one active player of
+ * that name (accents and case aside, also with first and last name swapped),
+ * not of another licence; null when the saved team does not tell. With
+ * `inactive`, a player set inactive answers too (after the active ones), when
+ * no active player wears the number.
+ */
+export function savedNumberFinder(team, { inactive = false } = {}) {
+  const all = (Array.isArray(team?.players) ? team.players : []).filter(p => p && toNumberOrNull(p.number) !== null)
+  const active = all.filter(p => p.active !== false)
+  const worn = new Set(active.map(p => toNumberOrNull(p.number)))
+  const list = inactive ? [...active, ...all.filter(p => p.active === false && !worn.has(toNumberOrNull(p.number)))] : active
+  const byLicence = new Map()
+  const byName = new Map()
+  for (const p of list) {
+    const lic = licenceOf(p.license_number)
+    if (lic && !byLicence.has(lic)) byLicence.set(lic, p)
+    const k = `${foldName(p.last_name)}|${foldName(p.first_name)}`
+    if (!byName.has(k)) byName.set(k, [])
+    byName.get(k).push(p)
+  }
+  return ({ licence = null, firstName = '', lastName = '' } = {}) => {
+    const lic = licenceOf(licence)
+    if (lic && byLicence.has(lic)) return toNumberOrNull(byLicence.get(lic).number)
+    if (!foldName(lastName)) return null
+    const keys = [...new Set([`${foldName(lastName)}|${foldName(firstName)}`, `${foldName(firstName)}|${foldName(lastName)}`])]
+    const hits = [...new Set(keys.flatMap(k => byName.get(k) || []))]
+      .filter(p => !lic || !licenceOf(p.license_number))
+    return hits.length === 1 ? toNumberOrNull(hits[0].number) : null
+  }
+}
+
+/**
+ * Match Setup roster rows ({ number, firstName, lastName, dob: the licence or
+ * a date }) with the saved team's numbers where a row has none (an
+ * Einsatzliste, a club person): { roster, filled }. A number the roster has
+ * already (or a row before it got) is not given twice. `team` null: the rows
+ * as they are.
+ */
+export function fillNumbersFromSaved(roster, team) {
+  const list = Array.isArray(roster) ? roster : []
+  if (!team) return { roster: list, filled: 0 }
+  const numberOf = savedNumberFinder(team)
+  const taken = new Set(list.map(p => toNumberOrNull(p?.number)).filter(n => n !== null))
+  let filled = 0
+  const out = list.map(p => {
+    if (!p || toNumberOrNull(p.number) !== null) return p
+    const n = numberOf({ licence: p.dob, firstName: p.firstName, lastName: p.lastName })
+    if (n === null || taken.has(n)) return p
+    taken.add(n)
+    filled++
+    return { ...p, number: n }
+  })
+  return { roster: out, filled }
 }
 
 /** Does a roster or bench hold anything a load would overwrite? */

@@ -12,9 +12,9 @@
  *            Never rosters, officials, signatures, approvals, connection data,
  *            PINs, event payloads or state snapshots.
  *
- *   ANON_DB  POST /api/db selects without a valid session (server.js); for
- *            referee_database / svrz_games also those of a session without a
- *            role that fills the sheet's officials (REFEREE_DOB_SPORTS). The
+ *   ANON_DB  POST /api/db selects without a valid session (server.js; the
+ *            referee directory is not read at all without a role that fills
+ *            the sheet's officials, server.js fillsOfficials). The
  *            public pages read these: the referee/bench fallback when the
  *            relay has no copy of the match (rosters: numbers, names, libero
  *            and captain flags, bench roles), the public scoresheet archive
@@ -196,9 +196,8 @@ export const LIVE_COLUMNS = Object.freeze({
   })
 })
 
-// The referee picker's suggestions; dates of birth only for an admin or an
-// account that can score (server.js REFEREE_DOB_SPORTS). Any other account
-// also writes only these columns of a referee it adds.
+// The referee picker's suggestions (server.js fillsOfficials). No date of
+// birth: dob is NULL since db/048 and never written (WRITE_DENYLIST).
 const REFEREE_DATABASE_COLUMNS = Object.freeze({
   id: true,
   first_name: true,
@@ -208,8 +207,9 @@ const REFEREE_DATABASE_COLUMNS = Object.freeze({
   created_at: true
 })
 
-// The official-match loader (LoadOfficialMatchModal); the referees' dates of
-// birth only for an admin or an indoor scorer (server.js REFEREE_DOB_SPORTS).
+// The official-match loader (LoadOfficialMatchModal). referee_1_dob /
+// referee_2_dob stay out: NULL since db/048 (vmSync no longer reads them),
+// the columns go with db/049.
 const SVRZ_GAMES_COLUMNS = Object.freeze(Object.fromEntries([
   'id', 'game_number', 'datetime', 'date', 'time', 'team_home', 'team_away', 'league', 'gender',
   'hall', 'city', 'hall_address', 'hall_postal_code', 'match_type', 'match_level',
@@ -407,6 +407,43 @@ export function anonSelectCheck(table, params) {
     }
   }
   return { needsMore, badFilter }
+}
+
+/**
+ * db/048: the date-of-birth columns that stay until db/049 drops them
+ * (installed apps still select them). /api/db never answers them with a value
+ * (withoutDobColumns) and takes no filter or order on them
+ * (dobColumnFilter), for any caller: they are NULL since db/048, and a value
+ * an older backend stored meanwhile is neither handed out nor probed.
+ */
+export const DOB_COLUMNS = Object.freeze({
+  profiles: Object.freeze(['dob']),
+  referee_database: Object.freeze(['dob']),
+  svrz_games: Object.freeze(['referee_1_dob', 'referee_2_dob'])
+})
+
+/** `data` (a row, rows or null) of `table` with its DOB_COLUMNS null where present. */
+export function withoutDobColumns(table, data) {
+  const cols = has(DOB_COLUMNS, table) ? DOB_COLUMNS[table] : null
+  if (!cols) return data
+  const one = (row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !cols.some((c) => has(row, c) && row[c] != null)) return row
+    const out = { ...row }
+    for (const c of cols) if (has(out, c)) out[c] = null
+    return out
+  }
+  return Array.isArray(data) ? data.map(one) : one(data)
+}
+
+/** The first filter or order of `params` on a DOB_COLUMNS column of `table`, or null. */
+export function dobColumnFilter(table, params) {
+  const cols = has(DOB_COLUMNS, table) ? DOB_COLUMNS[table] : null
+  if (!cols) return null
+  for (const term of [...asList(params?.filters), ...asList(params?.order)]) {
+    const col = term && typeof term === 'object' && typeof term.column === 'string' ? term.column.trim() : null
+    if (col && cols.includes(col)) return col
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------

@@ -17,8 +17,8 @@ const fold = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu,
  * from VolleyManager's club administration (players, scorers, coaches). The
  * club manager picks the list and the exported .xlsx file; the file is read
  * here, in the browser (utils/vmLicenceExport.js), and only the licence
- * number, last name, first name, date of birth and gender of each person
- * are sent. Each upload replaces that list. Below, everyone of the lists
+ * number, last name, first name and gender of each person are sent (no date
+ * of birth: owner 2026-11-19, "ONLY licence number"). Each upload replaces that list. Below, everyone of the lists
  * once, with the club's teams whose players include them.
  */
 export default function ClubLicencesSection({ club, onOpenPerson = null }) {
@@ -140,7 +140,7 @@ export default function ClubLicencesSection({ club, onOpenPerson = null }) {
           )}
           <ul className="m-0 list-none space-y-0.5 p-0 text-xs text-stone-700">
             {preview.people.slice(0, 5).map((p) => (
-              <li key={p.sv_number} className="[overflow-wrap:anywhere]">{p.last_name} {p.first_name || ''} · {p.sv_number}{p.dob ? ` · ${dayLabel(p.dob, { year: true })}` : ''}{p.gender ? ` · ${genderLabel(p.gender)}` : ''}</li>
+              <li key={p.sv_number} className="[overflow-wrap:anywhere]">{p.last_name} {p.first_name || ''} · {p.sv_number}{p.gender ? ` · ${genderLabel(p.gender)}` : ''}</li>
             ))}
             {preview.people.length > 5 && <li>…</li>}
           </ul>
@@ -212,7 +212,6 @@ export default function ClubLicencesSection({ club, onOpenPerson = null }) {
                   title={`${p.last_name} ${p.first_name || ''}`.trim()}
                   meta={<>
                     <span className="tabular-nums">{t('clubPlayers.licence', { number: p.sv_number })}</span>
-                    {p.dob && <span>{dayLabel(p.dob, { year: true })}</span>}
                     {p.gender && <span>{genderLabel(p.gender)}</span>}
                   </>}
                   chips={<>

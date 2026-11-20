@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.20 · État au 19 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.21 · État au 19 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -35,12 +35,20 @@ version anglaise fait foi.
   tout le monde sur livescore.openvolley.app, sauf si c'est désactivé
   (section 7).
 - Une feuille de match électronique contient des données sur les joueuses et
-  joueurs, l'encadrement et les officiels : noms, numéros de maillot, dates de
-  naissance et signatures. Seuls les noms des équipes, le score et les numéros
+  joueurs, l'encadrement et les officiels : noms, numéros de maillot, numéros
+  de licence et signatures. Une date de naissance ne figure sur la feuille
+  d'un match que si le marqueur en tape une (dans l'outil Global,
+  l'organisatrice ou l'organisateur choisit ce qui figure à côté d'un nom).
+  Seuls les noms des équipes, le score et les numéros
   de maillot sont publics ; en beach-volley aussi les noms des joueuses et
   joueurs, ainsi que les noms des arbitres des matchs officiels.
   **Les dates de naissance, numéros de licence et signatures ne sont jamais
   publics.**
+- Aucune date de naissance n'est conservée ailleurs : ni avec les comptes,
+  ni dans les listes des clubs, les équipes enregistrées, les listes envoyées
+  à l'avance, le répertoire des arbitres ou les convocations. Celles
+  enregistrées avant le 19 novembre 2026 ont été effacées, aussi des feuilles
+  de match passées (section 16).
 - L'application OpenVolley tient un journal d'activité de chaque match, sans
   NIP ni mots de passe. Si tu es connecté, il est envoyé au serveur. Ce que
   tu cliques ou tapes reste sur ton appareil, sauf un résumé sans le texte
@@ -135,9 +143,10 @@ responsables de leurs traitements de données.
 ## 5. Les applications de marquage (navigateur, bureau, Android)
 
 **Sans connexion**, l'application enregistre tout uniquement sur ton
-appareil : matchs, équipes, listes d'équipe avec dates de naissance, sets,
-événements du match, listes d'officiels, réglages et les journaux de
-l'application (voir ci-dessous). Les matchs restent enregistrés jusqu'à ce que
+appareil : matchs, équipes, listes d'équipe (avec numéros de licence, et
+dates de naissance là où le marqueur les a tapées), sets, événements du
+match, listes d'officiels, réglages et les journaux de l'application (voir
+ci-dessous). Les matchs restent enregistrés jusqu'à ce que
 tu les supprimes ou effaces les données de l'application.
 
 **Transmission en direct, même sans connexion.** Dès qu'un match est créé,
@@ -150,8 +159,8 @@ sur le réseau local.
 **Avec connexion**, l'application synchronise tes matchs avec le serveur
 (section 7). Elle téléverse en plus :
 
-- des **copies de sauvegarde** d'un match (complètes, avec listes d'équipe,
-  dates de naissance et signatures). Seul ton compte peut les lire. Elles
+- des **copies de sauvegarde** d'un match (complètes, avec listes d'équipe
+  et signatures). Seul ton compte peut les lire. Elles
   sont effacées après 30 jours ;
 - des **journaux de l'application** (messages techniques ; ils peuvent
   contenir des noms et des numéros de match). Seul ton compte peut les
@@ -219,8 +228,9 @@ au-delà de 50 000 entrées.
 **Application de bureau.** L'application de bureau enregistre en plus des
 fichiers de sauvegarde automatiques des matchs dans ton dossier utilisateur
 (Linux : `~/.local/share/OpenVolley/backups`, Windows :
-`%APPDATA%\OpenVolley\backups`). Ils contiennent les noms et les dates de
-naissance, mais aucun NIP, et sont effacés après 30 jours. À partir de la
+`%APPDATA%\OpenVolley\backups`). Ils contiennent les noms (et les dates de
+naissance là où le marqueur les a tapées), mais aucun NIP, et sont effacés
+après 30 jours. À partir de la
 version 2.4.0, l'application de bureau OpenVolley écrit en outre un fichier
 journal technique (`desktop.log`) dans le dossier `OpenVolley/logs` :
 démarrage et fermeture, recherches et téléchargements de mises à jour, liens
@@ -264,15 +274,20 @@ tournois ou valider des résultats en tant qu'officiel. Les comptes s'ouvrent
 sur `manager.openvolley.app` et `manager-beach.openvolley.app`.
 
 **Données :** adresse e-mail, mot de passe (enregistré uniquement sous forme
-de hachage, jamais en clair), prénom et nom, pays, date de naissance
-(facultative), la langue choisie à l'inscription (pour les e-mails du
+de hachage, jamais en clair), prénom et nom, pays, numéro de licence
+(facultatif : ton numéro de licence Swiss Volley, 4 à 7 chiffres), la langue
+choisie à l'inscription (pour les e-mails du
 compte), rôles (par exemple marqueur, arbitre, gestionnaire de
 compétition), les applications concernées (salle, beach), dates de création,
 de dernière connexion et de confirmation de l'e-mail. Les indications saisies
 à l'inscription sont aussi conservées en copie avec le compte.
 
 **But :** connexion, déblocage des fonctions de ton rôle et préremplissage
-de tes propres données sur la feuille de match (nom, pays, date de naissance).
+de tes propres données sur la feuille de match (nom, pays, numéro de licence).
+
+**Pas de date de naissance :** l'inscription et le profil n'en demandent pas,
+et le serveur n'en conserve aucune (depuis le 19 novembre 2026 ; les dates de
+naissance saisies auparavant ont été effacées, section 16).
 
 **Les nouveaux comptes** n'ont d'abord aucun rôle. Un administrateur les
 valide, ou tu utilises un code d'invitation. Le système enregistre qui a
@@ -371,16 +386,22 @@ les mêmes subsistent que lorsque tu le supprimes toi-même.
 
 **Contenu d'un match :** numéro du match, ligue, salle et localité, équipes
 (nom, nom court, couleur), listes d'équipe avec numéro de maillot, prénom et
-nom, date de naissance et indication libéro ou capitaine, encadrement
-(fonction, nom, date de naissance), officiels (arbitres, marqueur, juges de
-ligne avec nom, pays, date de naissance ; arbitres avec une adresse e-mail
-facultative ; le marqueur avec un numéro de licence facultatif à la place de
-la date de naissance), une adresse e-mail de contact facultative par équipe, **signatures** (images dessinées sur
+nom, numéro de licence et indication libéro ou capitaine, encadrement
+(fonction, nom, numéro de licence), officiels (arbitres, marqueur, juges de
+ligne avec nom, pays et numéro de licence ; arbitres avec une adresse e-mail
+facultative), une adresse e-mail de contact facultative par équipe, **signatures** (images dessinées sur
 l'appareil ou sur un téléphone), tirage au sort, déroulement du match avec tous les événements,
 remplacements et sanctions, résultats et corrections ultérieures, ainsi que
 les **remarques** (la case des remarques de la feuille de match : ce
 qu'écrit le marqueur et les lignes qu'ajoute l'application, par exemple pour
 un remplacement forcé ou un libéro qui ne peut plus jouer).
+
+**Numéro de licence ou date de naissance :** dans la version suisse, c'est le
+numéro de licence qui figure à côté d'un nom. Le marqueur peut y taper à la
+place une date de naissance ; elle figure alors seulement sur la feuille de ce
+match. Dans l'outil Global, l'organisatrice ou l'organisateur du tournoi
+choisit ce qui figure à côté d'un nom : la date de naissance, un numéro
+d'identité ou un texte.
 
 **Données de santé dans un match :** un remplacement ou un changement de
 libéro parce qu'une joueuse ou un joueur est blessé ou malade, et une blessure
@@ -401,11 +422,13 @@ match (section 16).
 d'équipe sur la page des listes d'équipe (`roster.openvolley.app`) et dans le site de gestion (section 10), les
 gestionnaires de compétition au moyen des équipes enregistrées (section 10)
 et les convocations officielles de Swiss Volley (section 11). Les joueuses et
-joueurs ne saisissent pas eux-mêmes leurs données.
+joueurs ne saisissent pas eux-mêmes leurs données. Une Einsatzliste importée
+dans la préparation du match remplit les noms, numéros de maillot et numéros
+de licence ; ses dates de naissance ne sont pas reprises.
 
 **But :** une feuille de match électronique pour les matchs officiels :
 saisie pendant le match, procès-verbal officiel du match, contrôle de la
-qualification et de la catégorie d'âge, livescore.
+qualification (numéro de licence), livescore.
 
 **Qui voit quoi :**
 
@@ -670,9 +693,9 @@ Sur `manager.openvolley.app` et `manager-beach.openvolley.app`, les
 gestionnaires de compétition peuvent préparer des équipes et des tournois.
 
 **Équipes enregistrées :** nom de l'équipe, club, joueuses et joueurs avec
-numéro, prénom et nom, date de naissance, numéro de licence, libéro/capitaine
-et (beach) pays ; encadrement avec fonction, nom, date de naissance et numéro
-de licence. Visibles pour les gestionnaires de compétition et les
+numéro, prénom et nom, numéro de licence, libéro/capitaine et (beach) pays ;
+encadrement avec fonction, nom et numéro de licence ; pas de dates de
+naissance. Visibles pour les gestionnaires de compétition et les
 administrateurs du sport concerné. Dans OpenVolley, un compte de marqueur ne
 voit que les équipes enregistrées de ses propres matchs de la saison en cours
 (les équipes de ses clubs et leurs adversaires, et les matchs qu'il a saisis
@@ -681,14 +704,26 @@ quelques matchs par semaine, chacun consigné dans le journal des
 modifications. Les applications de marquage mettent ces équipes en cache et
 les effacent à la déconnexion.
 
+**Complétées à partir des matchs officiels (OpenVolley) :** après le tirage
+au sort d'un match officiel en salle (jamais un match de test ni un match
+Easy), le serveur ajoute les personnes de la liste de chaque équipe à
+l'équipe enregistrée de cette équipe pour la saison : prénom et nom, numéro
+de maillot et numéro de licence. Une personne qui y figure déjà (le même
+numéro de licence, sinon le même nom) garde son entrée et reçoit le numéro du
+dernier match ; une joueuse ou un joueur de l'équipe enregistrée qui avait ce
+numéro le perd. Personne n'est retiré, et les indications libéro et capitaine
+de l'équipe enregistrée restent. Les personnes avec un numéro de licence sont
+aussi ajoutées aux listes de licences du club (ci-dessous), si celles-ci
+n'ont pas encore ce numéro de licence.
+
 **Responsables d'équipe (OpenVolley) :** les responsables d'un club peuvent
 donner un lien à l'entraîneur ou au responsable d'une équipe de leur club ; la
 personne qui l'ouvre et se connecte gère cette équipe. Le serveur enregistre
 quel compte gère quelle équipe, qui l'a ajouté et quand. Un responsable
 d'équipe modifie l'équipe enregistrée et peut envoyer à l'avance la liste de
 chaque match de l'équipe : joueuses et joueurs avec numéro, prénom et nom,
-date de naissance, numéro de licence et libéro/capitaine, ainsi que
-l'encadrement avec fonction, nom, date de naissance et numéro de licence.
+numéro de licence et libéro/capitaine, ainsi que l'encadrement avec
+fonction, nom et numéro de licence ; pas de dates de naissance.
 S'ils le souhaitent, l'entraîneur et le capitaine peuvent signer cette liste à
 l'avance ; les signatures sont enregistrées avec elle sous forme d'images.
 
@@ -709,28 +744,25 @@ acceptée, à la déconnexion et au plus tard 36 heures après le match.
 peuvent charger les listes des joueuses et joueurs, des marqueurs et des
 entraîneurs du club depuis l'administration du club de VolleyManager. Le
 fichier est lu dans le navigateur : seuls le numéro de licence, le nom, le
-prénom, la date de naissance et le sexe de chaque personne sont conservés ;
-rien d'autre du fichier n'est envoyé au serveur. Les listes sont visibles pour
-les responsables du club et les administrateurs. Un responsable d'équipe du
-club voit les joueuses et joueurs du sexe et de la catégorie d'âge de son
-équipe, avec les dates de naissance seulement des personnes de sa propre
-équipe, et trouve les officiels d'équipe (un entraîneur peut être n'importe
-quelle personne des listes du club) par une recherche par nom qui montre
-quelques personnes à la fois. Les appareils des marqueurs du club
-téléchargent les listes sans dates de naissance, afin que la préparation du
-match puisse ajouter des joueurs et des officiels d'équipe sans internet ; la
-date de naissance d'une personne ajoutée à une liste d'équipe n'est obtenue
-que pour cette personne (au plus 80 par jour et par compte, chaque fois
-consigné dans le journal des modifications). Le
+prénom et le sexe de chaque personne sont conservés ; la colonne de la date
+de naissance n'est pas lue, et rien d'autre du fichier n'est envoyé au
+serveur. Les listes sont visibles pour les responsables du club et les
+administrateurs. Un responsable d'équipe du club voit les joueuses et joueurs
+du sexe de son équipe et trouve les officiels d'équipe (un entraîneur peut
+être n'importe quelle personne des listes du club) par une recherche par nom
+qui montre quelques personnes à la fois. Les appareils des marqueurs du club
+téléchargent les listes, afin que la préparation du match puisse ajouter des
+joueurs et des officiels d'équipe sans internet. Le
 sexe sert à ce qu'aucune joueuse ni aucun joueur ne soit inscrit dans une
 équipe de l'autre sexe ; il n'est pas vérifié pour les officiels d'équipe.
 Chaque chargement remplace les personnes du chargement précédent de cette
 liste ; les listes sont supprimées avec le club, et celles des saisons passées
 sont supprimées chaque jour. Les listes peuvent aussi
 contenir des personnes qu'un responsable d'équipe ou un responsable du club a
-ajoutées à la main depuis l'effectif d'une équipe (numéro de licence, noms,
-date de naissance et sexe uniquement) ; un chargement les conserve, et elles
-sont supprimées avec leur liste ou le club. Sur un appareil de marquage,
+ajoutées à la main depuis l'effectif d'une équipe, et des personnes de la
+liste d'un match officiel (ci-dessus), avec numéro de licence, noms et sexe
+uniquement ; un chargement les conserve, et elles sont supprimées avec leur
+liste ou le club. Sur un appareil de marquage,
 chaque téléchargement remplace la copie, et elle est supprimée à la
 déconnexion.
 
@@ -742,10 +774,10 @@ fonctionner dès qu'il est révoqué, qu'il expire ou que cette personne ne gèr
 plus le club. Avec lui, le logiciel du club lit et, si le jeton le permet,
 écrit les équipes du club, les listes envoyées à l'avance pour ses matchs, ses
 équipes enregistrées et ses listes de licences, avec les données décrites
-ci-dessus (noms, dates de naissance, numéros de licence), ainsi que les matchs
-du club tels que les montre l'interface publique (section 8). Seul un jeton
-qui peut aussi les écrire lit les noms, dates de naissance et numéros de
-licence, et un tel jeton exige le mot de passe de la personne responsable. Le serveur ne
+ci-dessus (noms, numéros de maillot, numéros de licence), ainsi que les
+matchs du club tels que les montre l'interface publique (section 8). Seul un
+jeton qui peut aussi les écrire lit les noms et numéros de licence, et un tel
+jeton exige le mot de passe de la personne responsable. Le serveur ne
 conserve du jeton qu'une empreinte, son nom, ses droits, l'équipe,
 l'expiration et la dernière utilisation ; le journal des modifications
 indique qui l'a créé ou révoqué, chaque modification faite avec lui et
@@ -762,7 +794,7 @@ numéros de licence ni les dates de naissance.
 **But :** réutiliser les listes d'équipe, préparer à l'avance la liste d'un match, ajouter les joueuses et
 joueurs et les officiels d'équipe d'un club à une liste et vérifier le sexe des joueuses et joueurs par
 rapport à celui de l'équipe, organiser des tournois, rattacher les joueuses et joueurs par numéro de
-licence lors d'une importation.
+licence lors d'une importation, remplir les numéros de maillot pour le prochain match.
 
 Ces données sont conservées jusqu'à ce qu'un gestionnaire les supprime, même
 si le compte qui les a créées est supprimé.
@@ -772,18 +804,19 @@ si le compte qui les a créées est supprimé.
 **Convocations de Swiss Volley :** chaque jour, le serveur reprend les
 convocations officielles du VolleyManager de Swiss Volley, pour la période
 d'hier à 14 jours à l'avance : équipes, salle et adresse, ligue, 1er et
-2e arbitre avec nom et date de naissance, juges de ligne, convocations. Le
-serveur utilise pour cela un compte VolleyManager. But : charger les matchs
-officiels avec les bons officiels. Les noms sont publics (section 8) ; les
-dates de naissance ne sont visibles que pour les administrateurs et les
-comptes qui marquent pour ce sport. Les convocations sont conservées comme les
-procès-verbaux de match (section 16).
+2e arbitre avec leurs noms, juges de ligne, convocations. Le serveur utilise
+pour cela un compte VolleyManager. But : charger les matchs officiels avec
+les bons officiels. Les noms sont publics (section 8). VolleyManager envoie
+aussi les dates de naissance des arbitres ; le serveur ne les lit pas et ne
+les conserve pas (depuis le 19 novembre 2026 ; celles conservées auparavant
+ont été effacées). Les convocations sont conservées comme les procès-verbaux
+de match (section 16).
 
-**Répertoire des arbitres :** un répertoire commun avec prénom et nom, pays,
-date de naissance et sport, afin que le marqueur n'ait pas à saisir les
-officiels à chaque fois. Les comptes connectés peuvent ajouter des entrées
-(une date de naissance seulement un compte qui marque) ; les administrateurs
-peuvent les modifier et les supprimer. Seuls les administrateurs et les
+**Répertoire des arbitres :** un répertoire commun avec prénom et nom, pays
+et sport, afin que le marqueur n'ait pas à saisir les officiels à chaque
+fois ; pas de dates de naissance (celles conservées avant le 19 novembre 2026
+ont été effacées). Les comptes qui marquent peuvent ajouter des entrées ; les
+administrateurs peuvent les modifier et les supprimer. Seuls les administrateurs et les
 comptes qui marquent voient le répertoire, pour saisir les officiels d'un
 match officiel ; il n'est pas public, et les matchs de test et les matchs
 Easy ne l'affichent pas.
@@ -938,7 +971,7 @@ besoin pour l'exploitation. Ils traitent les données sur mandat.
 **Important concernant Cloudflare :** la connexion chiffrée de ton appareil
 se termine chez Cloudflare ; de là, elle se poursuit chiffrée jusqu'à mon
 serveur. Cloudflare peut donc techniquement voir le contenu des requêtes, y
-compris les listes d'équipe et les dates de naissance. Cloudflare ne peut
+compris les listes d'équipe. Cloudflare ne peut
 utiliser les données que pour fournir son service.
 
 **Sont responsables de manière indépendante :** GitHub, Inc. (États-Unis) pour
@@ -973,7 +1006,7 @@ prestataires. Tu peux me demander une copie de ces garanties.
 | Responsables de club | Jusqu'à ce que les administrateurs les retirent, que le club soit supprimé ou que tu supprimes ton compte |
 | Responsables d'équipe | Jusqu'à ce qu'un responsable de club ou un administrateur les retire, que l'équipe ou le club soit supprimé ou que tu supprimes ton compte |
 | Liste envoyée à l'avance (joueuses et joueurs, encadrement, signatures) | Jusqu'à ce qu'un marqueur l'accepte, au plus tard 14 jours après le match ; la mention de l'acceptation 14 jours après le match |
-| Listes de licences d'un club (numéro de licence, noms, date de naissance, sexe) | Jusqu'au prochain chargement de cette liste, sa suppression par un responsable du club ou la suppression du club, au plus tard jusqu'à la fin de la saison ; personnes ajoutées à la main : jusqu'à la suppression de la liste ou du club, au plus tard jusqu'à la fin de la saison ; sur un appareil de marquage jusqu'au prochain téléchargement ou à la déconnexion |
+| Listes de licences d'un club (numéro de licence, noms, sexe) | Jusqu'au prochain chargement de cette liste, sa suppression par un responsable du club ou la suppression du club, au plus tard jusqu'à la fin de la saison ; personnes ajoutées à la main ou depuis la liste d'un match : jusqu'à la suppression de la liste ou du club, au plus tard jusqu'à la fin de la saison ; sur un appareil de marquage jusqu'au prochain téléchargement ou à la déconnexion |
 | Adresse e-mail d'un arbitre ou d'une équipe pour un match | Avec le match, comme partie de la feuille de match |
 | Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
 | Feuille d'un match de test par e-mail | Non conservée sur le serveur |
@@ -995,14 +1028,42 @@ prestataires. Tu peux me demander une copie de ces garanties.
 | Sauvegardes | Jusqu'à environ 6 mois (section 18) |
 | Données sur ton appareil | Jusqu'à ce que tu les supprimes ; fichiers de sauvegarde des applications de bureau et Android 30 jours |
 
+**Dates de naissance effacées (19 novembre 2026).** Depuis, aucune date de
+naissance n'est conservée en dehors de la feuille de match d'un match, et là
+seulement si le marqueur en a tapé une (section 7). Les dates de naissance
+enregistrées auparavant ont été effacées sur le serveur : dans les comptes
+(le profil et la copie conservée de l'inscription), les listes de licences
+des clubs, les équipes enregistrées, les listes envoyées à l'avance, le
+répertoire des arbitres, les convocations de Swiss Volley et les
+procès-verbaux des matchs passés (listes d'équipe, encadrement, officiels,
+listes chargées par les équipes, les entrées et remarques des corrections,
+l'historique des événements). Les numéros de licence restent. Les PDF des
+feuilles de match enregistrés sont refaits à partir des procès-verbaux
+corrigés ; un fichier qui ne peut pas être refait ainsi (par exemple une
+feuille de match de beach-volley) reste tel quel jusqu'à ce que je l'aie
+vérifié, et n'est pas effacé sans cette vérification. Ce que je ne peux pas
+atteindre : les e-mails déjà envoyés (par exemple une feuille de match
+finale) ; les sauvegardes chiffrées, qui gardent des copies plus anciennes
+jusqu'à environ 6 mois (section 18) ; et les copies hors de mon serveur,
+comme les données sur des appareils et les fichiers de sauvegarde sur un
+ordinateur, une clé USB ou dans le dossier « Documents » d'Android, jusqu'à
+ce qu'ils soient écrasés ou effacés (une application de marquage mise à jour
+retire les dates de naissance des matchs suisses de son appareil qui ne sont
+pas en cours). Les matchs Global ne sont pas concernés : leur organisatrice
+ou organisateur choisit ce qui figure à côté d'un nom, et leurs fichiers et
+copies dans le cloud sont conservés comme décrit à la section 7.
+
 ## 17. Mineurs
 
-Beaucoup de joueuses et joueurs sont mineurs. Leurs données (nom, numéro, date
-de naissance) ne sont pas saisies par eux-mêmes, mais par les clubs, les
+Beaucoup de joueuses et joueurs sont mineurs. Leurs données (nom, numéro,
+numéro de licence) ne sont pas saisies par eux-mêmes, mais par les clubs, les
 responsables d'équipe, les marqueurs ou les organisateurs. Ceux-ci doivent
 être autorisés à saisir les données et en informer les joueuses et joueurs et
-leurs parents. La date de naissance sert au contrôle de la qualification et de
-la catégorie d'âge sur la feuille de match officielle et n'est jamais publique.
+leurs parents. La date de naissance d'une joueuse ou d'un joueur ne figure
+que sur la feuille d'un match où le marqueur en tape une (dans l'outil
+Global, si l'organisatrice ou l'organisateur l'a choisie), jamais dans les
+listes des clubs, les équipes enregistrées ou les listes envoyées à
+l'avance ; elle n'est jamais publique, le numéro de licence non plus.
 
 Dans l'outil Global, l'organisatrice ou l'organisateur du tournoi, ou la
 personne qui saisit les données, est responsable de la même manière. Les
@@ -1063,7 +1124,7 @@ clôturée est le procès-verbal officiel d'un match, auquel les clubs, la
 fédération et les officiels ont un intérêt. J'efface ou anonymise tes données
 qui s'y trouvent dans la mesure où le procès-verbal n'en a pas besoin, et je
 t'explique ce qui subsiste et pourquoi. Une rectification (par exemple
-d'une date de naissance erronée) ou un effacement se fait dans toutes les
+d'un nom mal orthographié) ou un effacement se fait dans toutes les
 copies sur le serveur à la fois : dans les procès-verbaux avec leur
 historique et leurs journaux, dans les listes des clubs et les équipes
 enregistrées, dans le répertoire des arbitres et dans les convocations. Le
@@ -1083,18 +1144,20 @@ pays.
 
 Lorsque le RGPD s'applique, je me fonde sur :
 
-- **le contrat** (art. 6, par. 1, let. b RGPD) : compte, synchronisation,
-  e-mails liés au compte, support, fonctions que tu utilises, la sauvegarde en ligne et la copie dans le cloud de l'outil Global ;
+- **le contrat** (art. 6, par. 1, let. b RGPD) : compte (avec le numéro de
+  licence facultatif), synchronisation, e-mails liés au compte, support,
+  fonctions que tu utilises, la sauvegarde en ligne et la copie dans le cloud de l'outil Global ;
 - **l'intérêt légitime** (art. 6, par. 1, let. f RGPD) : des procès-verbaux
   de match officiels corrects et vérifiables pour les clubs, la fédération et
-  les officiels (listes d'équipe, dates de naissance pour le contrôle de la
+  les officiels (listes d'équipe, numéros de licence et, là où le marqueur en
+  tape une sur la feuille, la date de naissance pour le contrôle de la
   qualification, signatures, validations, journal d'activité, historique
-  des événements et remarques), l'envoi de la feuille de match finale aux officiels et aux
-  clubs, le livescore pour le public, l'organisation de tournois, le
+  des événements et remarques), les équipes enregistrées et les listes des
+  clubs complétées à partir des listes des matchs officiels, l'envoi de la
+  feuille de match finale aux officiels et aux clubs, le livescore pour le public, l'organisation de tournois, le
   dépannage, la sécurité et la protection contre les abus, les sauvegardes ;
-- **le consentement** (art. 6, par. 1, let. a RGPD) : date de naissance
-  facultative dans le compte, recherche de mises à jour de l'application
-  Android installée directement ;
+- **le consentement** (art. 6, par. 1, let. a RGPD) : recherche de mises à
+  jour de l'application Android installée directement ;
 - **pour les données de santé** (une blessure ou une maladie consignée dans
   un match, section 7) : les règles de jeu exigent l'enregistrement d'un tel
   remplacement et d'un libéro qui ne peut plus jouer. Selon le RGPD, je me

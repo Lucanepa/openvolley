@@ -5,13 +5,13 @@ import 'fake-indexeddb/auto'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../../lib/accountApi', () => ({
-  fetchClubLicences: vi.fn(),
-  fetchClubDob: vi.fn()
+  fetchClubLicences: vi.fn()
 }))
 
 import { db } from '../db'
-import { fetchClubDob, fetchClubLicences } from '../../lib/accountApi'
-import { clearClubPlayers, clubOfTeam, clubToRow, refreshClubPlayers, resetClubPlayersThrottle, storeClubPlayers, withClubDob } from '../clubPlayers'
+import { fetchClubLicences } from '../../lib/accountApi'
+import * as clubPlayers from '../clubPlayers'
+import { clearClubPlayers, clubOfTeam, clubToRow, refreshClubPlayers, resetClubPlayersThrottle, storeClubPlayers } from '../clubPlayers'
 import { accessFromRoles } from '../../lib/access'
 
 const scorer = accessFromRoles(['scorer'])
@@ -34,9 +34,9 @@ describe('the clubs\' players on the device', () => {
     resetClubPlayersThrottle()
   })
 
-  it('keeps the five fields of each player (and whether added by hand), for this account only', async () => {
+  it('keeps the licence, names and gender of each player (and whether added by hand), never a date of birth, for this account only', async () => {
     const row = clubToRow({ ...answer().clubs[0], players: [{ sv_number: 100001, last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', email: 'anna@example.ch' }] }, 'u1')
-    expect(row.players).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', manual: false }])
+    expect(row.players).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f', manual: false }])
     await storeClubPlayers(answer(), 'u1')
     const rows = await db.club_players.toArray()
     expect(rows).toHaveLength(1)
@@ -73,8 +73,8 @@ describe('the clubs\' players on the device', () => {
     const row = clubToRow({ ...answer().clubs[0], people }, 'u1')
     // db/026: `manual` (every row of the person added by hand) is kept for Match Setup's gray shield
     expect(row.people).toEqual([
-      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', manual: false, lists: ['players'] },
-      { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f', manual: true, lists: ['coaches'] }
+      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f', manual: false, lists: ['players'] },
+      { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', gender: 'f', manual: true, lists: ['coaches'] }
     ])
     // the players list stays as it was (the roster rows)
     expect(row.players.map((p) => p.sv_number)).toEqual(['100001'])
@@ -82,7 +82,7 @@ describe('the clubs\' players on the device', () => {
     const club = clubOfTeam(await db.club_players.toArray(), 'VBC Musterdorf H1', 'u1')
     expect(club.people.map((p) => p.last_name)).toEqual(['Beispiel', 'Trainer'])
     // a server (or a row kept) before `people`: the players are the people
-    expect(clubToRow(answer().clubs[0], 'u1').people).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', manual: false, lists: ['players'] }])
+    expect(clubToRow(answer().clubs[0], 'u1').people).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f', manual: false, lists: ['players'] }])
     const older = clubToRow({ ...answer().clubs[0], people }, 'u1')
     delete older.people
     expect(clubOfTeam([older], 'VBC Musterdorf H1', 'u1').people.map((p) => p.lists)).toEqual([['players']])
@@ -103,31 +103,10 @@ describe('the clubs\' players on the device', () => {
   })
 })
 
-// Owner decision 2: the tablet's copy has no dates of birth; those of the
-// people added to a roster are asked for (online), never the whole club's
-describe('the dates of birth of the people added', () => {
-  const people = [
-    { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: null, gender: 'f' },
-    { sv_number: '100002', last_name: 'Muster', first_name: 'Lea', dob: '2006-01-31', gender: 'f' },
-    { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: null, gender: 'm' }
-  ]
-  beforeEach(() => fetchClubDob.mockReset())
-
-  it('asks for those without one, of that club, and fills them in', async () => {
-    fetchClubDob.mockResolvedValue({ data: { club_id: 'c1', people: [{ sv_number: '100001', dob: '2004-05-06' }] }, error: null, status: 200 })
-    const out = await withClubDob('c1', people, { online: true })
-    expect(fetchClubDob).toHaveBeenCalledWith(expect.objectContaining({ clubId: 'c1', svNumbers: ['100001', '100003'] }))
-    expect(out.map((p) => p.dob)).toEqual(['2004-05-06', '2006-01-31', null])
-  })
-
-  it('offline, without a club or when the server says no: the people as they are', async () => {
-    expect(await withClubDob('c1', people, { online: false })).toEqual(people)
-    expect(await withClubDob(null, people, { online: true })).toEqual(people)
-    fetchClubDob.mockResolvedValue({ data: null, error: { status: 404 }, status: 404 })
-    expect(await withClubDob('c1', people, { online: true })).toEqual(people)
-    // offline on the way (apiRequest answers, it never throws)
-    fetchClubDob.mockResolvedValue({ data: null, error: { network: true }, status: 0 })
-    expect(await withClubDob('c1', people, { online: true })).toEqual(people)
-    expect(fetchClubDob).toHaveBeenCalledTimes(2)
+// Owner 2026-11-19: no date of birth comes from the club (Match Setup fills
+// the licence beside a club person's name): nothing asks the server for one
+describe('no dates of birth from the club', () => {
+  it('the device never asks for the dates of birth of the people added', () => {
+    expect(clubPlayers.withClubDob).toBeUndefined()
   })
 })

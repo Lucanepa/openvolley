@@ -369,7 +369,8 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.equal(bundle.status, 200, bundle.text)
     assert.equal(bundle.headers.get('cache-control'), 'no-store')
     const team = bundle.json.data.teams.find((x) => x.id === teamId)
-    assert.equal(team.players[0].dob, '2004-05-06')
+    // db/048: the date of birth the request sent is dropped, the licence stays
+    assert.deepEqual([team.players[0].license_number, 'dob' in team.players[0]], ['LIC-9', false])
     assert.equal(team.short_name, 'VBC')
 
     // beach (docs/beach-saved-teams-spec.md), filtered by ?sport=; since db/012
@@ -418,7 +419,7 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.equal(beachBundle.status, 200, beachBundle.text)
     assert.equal(beachBundle.json.data.sport, 'beach')
     assert.ok(beachBundle.json.data.competitions.every((x) => x.sport === 'beach'))
-    assert.equal(beachBundle.json.data.teams.find((x) => x.id === bt.json.data.team.id).players[0].dob, '1998-01-05')
+    assert.ok(!('dob' in beachBundle.json.data.teams.find((x) => x.id === bt.json.data.team.id).players[0]), 'no date of birth (db/048)')
     // a 2.1.0 client (no ?sport=) never sees a beach row
     const plain = await call(users.anna, 'GET', '/api/saved-teams')
     assert.equal(plain.json.data.competitions.some((x) => x.sport === 'beach' || x.id === bc.json.data.competition.id), false)

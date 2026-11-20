@@ -45,10 +45,11 @@ async function resolvePage(n, result) {
 }
 import { PICKER_RESULTS } from '../pickerLayout'
 
+// the directory's rows since db/048: no date of birth
 const rows = [
-  { id: 'a1', first_name: 'Anna', last_name: 'Müller', country: 'CHE', dob: '01.01.1990' },
-  { id: 'b2', first_name: 'Jean-Philippe', last_name: 'Schwarzenbach-Delacroix', country: 'FRA', dob: '02.02.1985' },
-  { id: 'c3', first_name: 'Luca', last_name: 'Keller', country: 'CHE', dob: '' }
+  { id: 'a1', first_name: 'Anna', last_name: 'Müller', country: 'CHE' },
+  { id: 'b2', first_name: 'Jean-Philippe', last_name: 'Schwarzenbach-Delacroix', country: 'FRA' },
+  { id: 'c3', first_name: 'Luca', last_name: 'Keller', country: 'CHE' }
 ]
 
 // The box contract (pickerLayout.js): jsdom cannot measure, so assert the
@@ -100,27 +101,28 @@ describe('RefereeSelector', () => {
     expectFixedBox()
   })
 
-  it('two directory rows with one name are told apart (country, year of birth) and keyed by their id', async () => {
+  it('two directory rows with one name: keyed by their id, a licence number shown where a row has one, never a date of birth', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     const onSelect = vi.fn()
     render(<RefereeSelector open onClose={() => {}} onSelect={onSelect} />)
     await resolvePage(0, { data: [
+      // an older server still answering a date of birth: never shown or picked
       { id: 's1', first_name: 'Sam', last_name: 'Sample', country: 'CHE', dob: '01.01.1980' },
-      { id: 's2', first_name: 'Sam', last_name: 'Sample', country: 'CHE', dob: '06.06.2007' },
-      { id: 's3', first_name: 'Sam', last_name: 'Sample', country: 'CHE', dob: '07.07.2007' },
+      { id: 's2', first_name: 'Sam', last_name: 'Sample', country: 'CHE', licence: '123456' },
+      { id: 's3', first_name: 'Sam', last_name: 'Sample', country: 'CHE' },
       ...rows
     ], error: null })
     const same = screen.getAllByRole('button', { name: /Sample, Sam/ })
     expect(same).toHaveLength(3)
-    expect(same[0]).toHaveTextContent('1980')
-    // the same year twice: the whole date
-    expect(same[1]).toHaveTextContent('06.06.2007')
-    expect(same[2]).toHaveTextContent('07.07.2007')
-    expect(new Set(same.map(b => b.textContent)).size).toBe(3)
+    expect(same[0].textContent).toBe('Sample, Sam')
+    expect(same[1]).toHaveTextContent('123456')
+    expect(same[2].textContent).toBe('Sample, Sam')
+    for (const b of same) expect(b.textContent).not.toMatch(/1980/)
     // a name of its own shows no detail
     expect(screen.getByRole('button', { name: /Müller, Anna/ }).textContent).toBe('Müller, Anna')
-    fireEvent.click(same[1])
-    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ dob: '06.06.2007' }))
+    fireEvent.click(same[0])
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect.mock.calls[0][0]).not.toHaveProperty('dob')
     expect(errors.mock.calls.some(([m]) => /same key/i.test(String(m)))).toBe(false)
     errors.mockRestore()
   })
@@ -171,10 +173,10 @@ describe('RefereeSelector', () => {
 
   it('reads the whole directory past the 1000-row cap and lists it by last name', async () => {
     const page1 = Array.from({ length: 1000 }, (_, i) => ({
-      id: `id${String(i).padStart(4, '0')}`, first_name: `F${i}`, last_name: `Name${String(i).padStart(4, '0')}`, country: 'CHE', dob: ''
+      id: `id${String(i).padStart(4, '0')}`, first_name: `F${i}`, last_name: `Name${String(i).padStart(4, '0')}`, country: 'CHE'
     }))
     // The 1001st row by id sorts first by last name
-    const page2 = [{ id: 'id9999', first_name: 'Beat', last_name: 'Aebi', country: 'CHE', dob: '' }]
+    const page2 = [{ id: 'id9999', first_name: 'Beat', last_name: 'Aebi', country: 'CHE' }]
     render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
     await resolvePage(0, { data: page1, error: null })
     expect(api.queries[0]).toEqual({ order: [['id', true]], gt: null, limit: 1000 })

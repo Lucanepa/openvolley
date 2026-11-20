@@ -377,7 +377,7 @@ CREATE TABLE IF NOT EXISTS public.competition_players (
   number          integer     CHECK (number IS NULL OR number BETWEEN 0 AND 99),
   first_name      text        NOT NULL DEFAULT '' CHECK (length(first_name) <= 80),
   last_name       text        NOT NULL CHECK (length(last_name) BETWEEN 1 AND 80),
-  dob             date,
+  dob             date,       -- NULL since db/048 (no dates of birth), dropped by db/049
   license_number  text        CHECK (license_number IS NULL OR length(license_number) <= 40),
   is_libero       boolean     NOT NULL DEFAULT false,
   is_captain      boolean     NOT NULL DEFAULT false,
@@ -392,7 +392,7 @@ CREATE TABLE IF NOT EXISTS public.competition_staff (
   role            text        NOT NULL CHECK (role IN ('Coach', 'Assistant Coach 1', 'Assistant Coach 2', 'Physiotherapist', 'Medic')),
   first_name      text        NOT NULL DEFAULT '' CHECK (length(first_name) <= 80),
   last_name       text        NOT NULL CHECK (length(last_name) BETWEEN 1 AND 80),
-  dob             date,
+  dob             date,       -- NULL since db/048, dropped by db/049
   license_number  text        CHECK (license_number IS NULL OR length(license_number) <= 40),
   sort_order      integer     NOT NULL DEFAULT 0
 );
@@ -637,7 +637,8 @@ Roster validation (400 `OV_INVALID_REQUEST`, `details` names the row index):
 - `last_name` is required.
 - `number` is an int 0–99 or null, unique among `active` players.
 - At most one `is_captain` among active players.
-- `dob` is `YYYY-MM-DD` or null.
+- `dob`: none since db/048 (owner 2026-11-19, no dates of birth outside a match's own sheet).
+  A `dob` an older app sends is accepted and dropped; none is stored or answered.
 - Staff `role` is in the 5 MatchSetup bench roles.
 - `sort_order` is the array index (the server sets it).
 
@@ -646,9 +647,10 @@ Bundle { version: string, fetched_at: ISO,
          competitions: [{ id, name, season, gender, category, vm_leagues: string[], archived, updated_at }],
          teams: [{ id, competition_id, name, short_name, club, color, svrz_team_name, updated_at,
                    players: [Player], staff: [Staff] }] }
-Player { id?, number, first_name, last_name, dob, license_number, is_libero, is_captain, active, sort_order }
+Player { id?, number, first_name, last_name, license_number, is_libero, is_captain, active, sort_order }
 Staff  { id?, role: 'Coach'|'Assistant Coach 1'|'Assistant Coach 2'|'Physiotherapist'|'Medic',
-         first_name, last_name, dob, license_number, sort_order }
+         first_name, last_name, license_number, sort_order }
+(db/048: no dob; before it both had dob as YYYY-MM-DD or null)
 ```
 The bundle includes archived competitions (with the flag). Pickers hide them.
 
@@ -661,7 +663,7 @@ The bundle includes archived competitions (with the flag). Pickers hide them.
 - `src/domain/season.js`: `seasonOf`, `seasonLabel`, matching section 2. Pure and tested.
 - `src/domain/savedTeams.js`: pure and tested.
   - `savedTeamToRoster(team) → { roster, bench, meta, warnings }`. `roster` items are `{ number, firstName, lastName, dob: 'DD.MM.YYYY'|'', libero: ''|'libero1'|'libero2', isCaptain, isLfp: false }`. Only active players, ordered by `sort_order`. The first libero is `libero1`, the second `libero2`, and further ones get `''` plus the `tooManyLiberos` warning. Only one captain. `bench` is the staff mapped to `{ role, firstName, lastName, dob }`, always containing a `Coach` entry (`{role:'Coach', firstName:'', lastName:'', dob:''}` if none). `meta` is `{ name, shortName, color }`.
-  - `rosterToSavedRoster(roster, bench, existingTeam)` builds the PUT body. It keeps `id` and `license_number` of an existing player when `number` and lower-cased `last_name` match, and of staff by `role` + `last_name`. DOB is converted to ISO with the same rules as MatchSetup's `formatDobForSync`.
+  - `rosterToSavedRoster(roster, bench, existingTeam)` builds the PUT body. It keeps `id` and `license_number` of an existing player when `number` and lower-cased `last_name` match, and of staff by `role` + `last_name`. DOB is converted to ISO with the same rules as MatchSetup's `formatDobForSync`. (Since db/048 the saved team keeps no date of birth: the value beside a name goes to `license_number` when it is a licence, and a date is never sent.)
   - `findSavedTeamSuggestions(teams, { home, away, league, gender, scheduledAt })` returns `{ home: team|null, away: team|null }`. Normalise as lowercase, trim and collapse spaces. Candidates are non-archived teams whose `svrz_team_name` or `name` equals the schedule team name. Rank: a competition whose `vm_leagues` includes `league` first, then a competition season equal to `seasonLabel(seasonOf(scheduledAt))`, then the most recent `updated_at`.
 
 ### 6.2 API client
@@ -728,7 +730,7 @@ UI rules: follow `/volleyui` (sentence case, `h-9` admin controls, one primary p
   - `getSavedTeams()`: all cached rows. Returns `[]` when `meta.userId` is not the current user.
   - `clearSavedTeams()`.
   - Called: after the profile loads when `canReadTeams` (non-forced), when the picker opens, after `ov-access-changed`, and after every CM write (forced).
-- The cached rows contain DOBs and licence numbers. They are cleared on sign-out and account switch, and never sent anywhere else.
+- The cached rows contain names and licence numbers (no DOBs since db/048). They are cleared on sign-out and account switch, and never sent anywhere else.
 
 ### 6.7 Sync queue (`src/hooks/useSyncQueue.js`)
 1. **Closing order.** A job with `resource === 'match' && action === 'update' && ['approved','final'].includes(payload?.status)` returns `null` (dependency wait, as the existing ones do) while an **older** (`id <`) job of the same match (`jobMatchKey`) with `resource` `set` or `event` is `queued`, `sending` or `error`. Old `failed` children do not hold it. Without this, `RESOURCE_ORDER` (match first) would close the match before its last set or events arrive. An older match update of the match (the `ended` update with the result, the remarks) holds it too, also while it is parked: an `error` or `failed` one is requeued at once (trimmed against newer sent updates first), once per closing job. One refused again (`failed`) then no longer holds it; one that failed again on its way (`error`) holds it until it is through.
@@ -918,7 +920,6 @@ savedTeams.addStaff            Add official
 savedTeams.number              No.
 savedTeams.firstName           First name
 savedTeams.lastName            Last name
-savedTeams.dob                 Date of birth
 savedTeams.license             Licence
 savedTeams.libero              Libero
 savedTeams.captain             Captain
@@ -1050,7 +1051,7 @@ New suites:
 - **R5 `match_live_state` is not locked by closing.** It is ephemeral display data; only the approval rule applies to it. Say so in the README. *Superseded after review:* 007 locks it with `match_live_state_closed_guard` (livescore must not show a closed match as live), and the relay publishes nothing for a closed match. The relay itself stays PIN-gated (sockets carry no session), outside the approved-scorer rule; it stores nothing.
 - **R6 (after review) the declared key.** The client declares the season through `scheduled_at`; `created_at` is server-only on `/api/db`. An exemption ends when the match's key changes (`ov_matches_guard`). For indoor games in `svrz_games` the server also checks VolleyManager's season for a new key. A match sent without `game_n` is not an official game for the server.
 - **R6 Pending accounts' queued jobs** are refused and retried hourly (up to 24 times). After approval, `ov-access-changed` requeues them. A device that stays offline across the approval needs one profile refresh first.
-- **R7 Personal data in Dexie** (DOB, licence) on shared venue tablets: cleared on sign-out and account switch only. Venue tablets should sign out after use (documented in the user guide).
+- **R7 Personal data in Dexie** (names, licence; DOB until db/048) on shared venue tablets: cleared on sign-out and account switch only. Venue tablets should sign out after use (documented in the user guide).
 - **R8 Production migration.** It needs the 4 existing matches checked. If any is `approved`/`final` it becomes closed (intended). Duplicates are only reported. Roles are untouched: the one admin and one scorer keep theirs. Do not run it on production as part of this work (owner runs it).
 - **R9 Access cache is per process** (30 s). There is one backend process today. Role changes invalidate it immediately in the same process.
 - **R10 Invite hashes are unsalted SHA-256 of 60-bit random codes.** That is acceptable for short-lived, use-limited codes. Revoke on suspicion.

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Check } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { confirmationLinkQueued, confirmationLinkSent, needsEmailConfirmation } from './signUpResult'
-import DateOfBirthInput from './DateOfBirthInput'
+import { licenceInput, licenceOk, licenceValue } from './licenceNumber'
 import SignUpRequestsFields from './SignUpRequestsFields'
 import { fetchPublicClubs } from '../../lib/accountApi'
 import { emptyRequestChoice, requestChoiceProblem, signUpRequestsOf } from '../../domain/signUpRequests'
@@ -13,9 +13,12 @@ import { LegalSentence } from '../../legal/LegalLinks'
 export const MIN_PASSWORD_LENGTH = 10
 
 /**
- * The sign-up form: name, country, date of birth (starts empty), email,
- * password + confirmation. Accounts are made on manager.openvolley.app only;
- * the scorer apps link there (CreateAccountLink).
+ * The sign-up form: first and last name (required), country, email, password
+ * + confirmation and an optional licence number (4 to 7 digits). No date of
+ * birth (owner 2026-11-19: "the scorers/referees etc can sign up with their
+ * name, last name, email and licence number (not mandatory)"). Accounts are
+ * made on manager.openvolley.app only; the scorer apps link there
+ * (CreateAccountLink).
  *
  * Our backend lets a new account sign in at once: it either confirms the
  * address at sign-up (no mail server) or mails a confirmation link
@@ -47,9 +50,9 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [country, setCountry] = useState('CHE')
-  // Empty until the user types one: never today's date
-  const [dob, setDob] = useState('')
-  const [dobError, setDobError] = useState('')
+  // The licence number (db/048): optional, digits only
+  const [licence, setLicence] = useState('')
+  const [licenceError, setLicenceError] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -75,15 +78,16 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
     if (askRoles) loadClubs()
   }, [askRoles, loadClubs])
 
-  const dobInvalidText = t('auth.dobInvalid', 'Enter the date of birth as DD.MM.YYYY.')
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
-    // null: unfinished or impossible (DateOfBirthInput); '' is fine (optional)
-    if (dob === null) {
-      setDobError(dobInvalidText)
+    if (!firstName.trim() || !lastName.trim()) {
+      setError(t('auth.nameRequired'))
+      return
+    }
+    if (!licenceOk(licence)) {
+      setLicenceError(t('auth.licenceNumberInvalid'))
       return
     }
     if (password !== confirmPassword) {
@@ -107,7 +111,7 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       country,
-      dob: dob || null
+      licenceNumber: licenceValue(licence)
     }, { requests })
 
     if (signUpError) {
@@ -184,10 +188,10 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
         {/* Two per row on a wide screen, one per row in portrait / on a phone */}
         <div className="grid grid-cols-2 gap-3 stack:grid-cols-1">
           <Field label={t('auth.firstName', 'First name')}>
-            <Input size="lg" type="text" value={firstName} onChange={e => setFirstName(e.target.value)} autoComplete="given-name" />
+            <Input size="lg" type="text" value={firstName} onChange={e => setFirstName(e.target.value)} autoComplete="given-name" required maxLength={80} />
           </Field>
           <Field label={t('auth.lastName', 'Last name')}>
-            <Input size="lg" type="text" value={lastName} onChange={e => setLastName(e.target.value)} autoComplete="family-name" />
+            <Input size="lg" type="text" value={lastName} onChange={e => setLastName(e.target.value)} autoComplete="family-name" required maxLength={80} />
           </Field>
         </div>
 
@@ -202,8 +206,17 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
               options={[{ value: 'CHE', label: 'CHE' }]}
             />
           </Field>
-          <Field label={t('auth.dob', 'Date of birth')} error={dobError}>
-            <DateOfBirthInput value={dob} onChange={(iso) => { setDob(iso); setDobError('') }} />
+          <Field label={t('auth.licenceNumber')} hint={t('auth.licenceNumberHint')} error={licenceError}>
+            <Input
+              size="lg"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={licence}
+              onChange={e => { setLicence(licenceInput(e.target.value)); setLicenceError('') }}
+              autoComplete="off"
+              data-testid="signup-licence"
+            />
           </Field>
         </div>
 

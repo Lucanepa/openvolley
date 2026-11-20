@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.20 · Stand: 19. November 2026
+**OpenVolley und OpenBeach** · Version 1.21 · Stand: 19. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -33,11 +33,19 @@ Massgebend ist die englische Fassung.
   die den Live-Bildschirm-Code haben, bei Global-Spielen auch für alle auf
   livescore.openvolley.app, ausser es ist ausgeschaltet (Abschnitt 7).
 - Ein elektronischer Spielbericht enthält Daten von Spielerinnen und Spielern,
-  Betreuungspersonen und Offiziellen: Namen, Rückennummern, Geburtsdaten und
-  Unterschriften. Öffentlich sind nur Teamnamen, Spielstand und Rückennummern,
+  Betreuungspersonen und Offiziellen: Namen, Rückennummern, Lizenznummern und
+  Unterschriften. Ein Geburtsdatum steht nur auf dem Spielbericht eines Spiels,
+  wenn die Schreiberin oder der Schreiber eines eintippt (im Global-Werkzeug
+  wählt die Veranstalterin oder der Veranstalter, was neben einem Namen steht).
+  Öffentlich sind nur Teamnamen, Spielstand und Rückennummern,
   bei Beachvolleyball auch die Namen der Spielerinnen und Spieler, sowie die
   Namen der Schiedsrichterinnen und Schiedsrichter offizieller Spiele.
   **Geburtsdaten, Lizenznummern und Unterschriften sind nie öffentlich.**
+- Sonst wird nirgends ein Geburtsdatum gespeichert: nicht bei Konten,
+  Vereinslisten, gespeicherten Teams, im Voraus geschickten Kadern, im
+  Schiedsrichter-Verzeichnis oder in den Spielansetzungen. Die vor dem
+  19. November 2026 gespeicherten wurden gelöscht, auch aus vergangenen
+  Spielberichten (Abschnitt 16).
 - Die OpenVolley-App führt ein Aktivitätsprotokoll jedes Spiels, ohne PINs
   und Passwörter. Mit Anmeldung geht es auf den Server. Was du anklickst oder
   tippst, bleibt auf deinem Gerät, ausser einer Zusammenfassung ohne den
@@ -128,7 +136,8 @@ Datenbearbeitung verantwortlich sind.
 ## 5. Die Scorer-Apps (Browser, Desktop, Android)
 
 **Ohne Anmeldung** speichert die App alles nur auf deinem Gerät: Spiele,
-Teams, Kaderlisten mit Geburtsdaten, Sätze, Spielereignisse, Listen von
+Teams, Kaderlisten (mit Lizenznummern und Geburtsdaten, wo die Schreiberin
+oder der Schreiber sie eingetippt hat), Sätze, Spielereignisse, Listen von
 Offiziellen, Einstellungen und die Protokolle der App (siehe unten). Spiele
 bleiben gespeichert, bis du sie löschst oder die App-Daten löschst.
 
@@ -141,8 +150,8 @@ Die Desktop-App verwendet dafür ihr eigenes Relay im lokalen Netz.
 **Mit Anmeldung** synchronisiert die App deine Spiele mit dem Server
 (Abschnitt 7). Zusätzlich lädt sie hoch:
 
-- **Sicherungskopien** eines Spiels (vollständig, mit Kaderlisten,
-  Geburtsdaten und Unterschriften). Nur dein Konto kann sie lesen. Sie werden
+- **Sicherungskopien** eines Spiels (vollständig, mit Kaderlisten und
+  Unterschriften). Nur dein Konto kann sie lesen. Sie werden
   nach 30 Tagen gelöscht.
 - **App-Protokolle** (technische Meldungen der App; sie können Namen und
   Spielnummern enthalten). Nur dein Konto kann sie lesen. Sie werden nach
@@ -205,8 +214,9 @@ angezeigten PINs auf und wird nach 30 Tagen oder ab 50 000 Einträgen gelöscht.
 **Desktop-App.** Die Desktop-App speichert zusätzlich automatische
 Sicherungsdateien der Spiele in deinem Benutzerordner (Linux:
 `~/.local/share/OpenVolley/backups`, Windows: `%APPDATA%\OpenVolley\backups`).
-Sie enthalten Namen und Geburtsdaten, aber keine PINs, und werden nach
-30 Tagen gelöscht. Ab Version 2.4.0 schreibt die Desktop-App von OpenVolley
+Sie enthalten Namen (und Geburtsdaten, wo die Schreiberin oder der Schreiber
+sie eingetippt hat), aber keine PINs, und werden nach 30 Tagen gelöscht.
+Ab Version 2.4.0 schreibt die Desktop-App von OpenVolley
 ausserdem eine technische Protokolldatei (`desktop.log`) in den Ordner
 `OpenVolley/logs`: Start und Beenden, Update-Prüfungen und -Downloads,
 geöffnete Links und Downloads (Adresse ohne Parameter, Speicherort), die
@@ -247,7 +257,8 @@ Konten werden auf `manager.openvolley.app` und `manager-beach.openvolley.app`
 eröffnet.
 
 **Daten:** E-Mail-Adresse, Passwort (nur als Hash gespeichert, nie im
-Klartext), Vor- und Nachname, Land, Geburtsdatum (freiwillig), die bei der Eröffnung gewählte Sprache
+Klartext), Vor- und Nachname, Land, Lizenznummer (freiwillig: deine
+Lizenznummer von Swiss Volley, 4 bis 7 Ziffern), die bei der Eröffnung gewählte Sprache
 (für die E-Mails an das Konto), Rollen
 (zum Beispiel Schreiber/in, Schiedsrichter/in, Wettbewerbsmanager/in), die
 Apps, für die das Konto gilt (Halle, Beach), Zeitpunkte von Eröffnung,
@@ -255,7 +266,11 @@ letzter Anmeldung und E-Mail-Bestätigung. Deine Angaben bei der
 Registrierung werden zusätzlich als Kopie beim Konto gespeichert.
 
 **Zweck:** Anmeldung, Freischalten der Funktionen deiner Rolle und Vorausfüllen
-deiner eigenen Angaben im Spielbericht (Name, Land, Geburtsdatum).
+deiner eigenen Angaben im Spielbericht (Name, Land, Lizenznummer).
+
+**Kein Geburtsdatum:** Registrierung und Profil fragen nicht danach, und der
+Server speichert keines (seit dem 19. November 2026; vorher eingegebene
+Geburtsdaten wurden gelöscht, Abschnitt 16).
 
 **Neue Konten** haben zunächst keine Rolle. Eine Administratorin oder ein
 Administrator schaltet sie frei, oder du löst einen Einladungscode ein. Dabei
@@ -354,11 +369,10 @@ selbst.
 
 **Inhalt eines Spiels:** Spielnummer, Liga, Halle und Ort, Teams (Name,
 Kurzname, Farbe), Kaderlisten mit Rückennummer, Vor- und Nachname,
-Geburtsdatum und Kennzeichnung als Libero oder Captain, Betreuungspersonen
-(Funktion, Name, Geburtsdatum), Offizielle (Schiedsrichter, Schreiber,
-Linienrichter mit Name, Land, Geburtsdatum; Schiedsrichterinnen und Schiedsrichter
-freiwillig mit E-Mail-Adresse; die Schreiberin oder der Schreiber freiwillig mit
-Lizenznummer statt Geburtsdatum), pro Team freiwillig eine
+Lizenznummer und Kennzeichnung als Libero oder Captain, Betreuungspersonen
+(Funktion, Name, Lizenznummer), Offizielle (Schiedsrichter, Schreiber,
+Linienrichter mit Name, Land und Lizenznummer; Schiedsrichterinnen und
+Schiedsrichter freiwillig mit E-Mail-Adresse), pro Team freiwillig eine
 Kontakt-E-Mail-Adresse, **Unterschriften** (als Bild,
 auf dem Gerät oder auf einem Telefon gezeichnet), Platzwahl, Spielverlauf mit allen Ereignissen,
 Wechseln und Sanktionen, Resultate und nachträgliche Korrekturen sowie die
@@ -366,6 +380,13 @@ Wechseln und Sanktionen, Resultate und nachträgliche Korrekturen sowie die
 oder der Schreiber einträgt und die Zeilen, die die App hinzufügt, zum
 Beispiel bei einem erzwungenen Wechsel oder wenn ein Libero nicht mehr spielen
 kann).
+
+**Lizenznummer oder Geburtsdatum:** In der Schweizer Version steht neben einem
+Namen die Lizenznummer. Die Schreiberin oder der Schreiber kann dort
+stattdessen ein Geburtsdatum eintippen; es steht dann nur auf dem
+Spielbericht dieses Spiels. Im Global-Werkzeug wählt die Veranstalterin oder
+der Veranstalter des Turniers, was neben einem Namen steht: das Geburtsdatum,
+eine Ausweisnummer oder ein Text.
 
 **Gesundheitsdaten in einem Spiel:** Ein Wechsel oder ein Libero-Wechsel, weil
 eine Spielerin oder ein Spieler verletzt oder krank ist, und eine Verletzung,
@@ -386,11 +407,13 @@ Empfänger (unten). Rechtsgrundlage: Abschnitt 20; aufbewahrt mit dem Spiel
 Teamverantwortliche über die Kaderlisten-Seite (`roster.openvolley.app`) und im Manager (Abschnitt 10),
 Wettbewerbsmanagerinnen und -manager über gespeicherte Teams (Abschnitt 10),
 und die offiziellen Ansetzungen von Swiss Volley (Abschnitt 11).
-Spielerinnen und Spieler geben ihre Daten nicht selbst ein.
+Spielerinnen und Spieler geben ihre Daten nicht selbst ein. Eine in der
+Spielvorbereitung importierte Einsatzliste füllt Namen, Rückennummern und
+Lizenznummern aus; die Geburtsdaten darauf werden nicht übernommen.
 
 **Zweck:** ein elektronischer Spielbericht für offizielle Spiele: Erfassung
 während des Spiels, die offizielle Spielaufzeichnung, Kontrolle der
-Spielberechtigung und Alterskategorie, Livescore.
+Spielberechtigung (Lizenznummer), Livescore.
 
 **Wer was sieht:**
 
@@ -652,8 +675,8 @@ Auf `manager.openvolley.app` und `manager-beach.openvolley.app` können
 Wettbewerbsmanagerinnen und -manager Teams und Turniere vorbereiten.
 
 **Gespeicherte Teams:** Teamname, Verein, Spielerinnen und Spieler mit Nummer,
-Vor- und Nachname, Geburtsdatum, Lizenznummer, Libero/Captain und (Beach)
-Land; Betreuungspersonen mit Funktion, Name, Geburtsdatum und Lizenznummer.
+Vor- und Nachname, Lizenznummer, Libero/Captain und (Beach) Land;
+Betreuungspersonen mit Funktion, Name und Lizenznummer; keine Geburtsdaten.
 Sichtbar für die Wettbewerbsverantwortlichen und die Administration der
 jeweiligen Sportart. In OpenVolley sieht ein Schreiber-Konto nur die
 gespeicherten Teams seiner eigenen Spiele der laufenden Saison (die Teams
@@ -662,14 +685,26 @@ bearbeitet); ein Konto ohne Verein nur kurz vor dem Spiel und für wenige
 Spiele pro Woche, jedes im Änderungsprotokoll festgehalten. Die Scorer-Apps
 speichern diese Teams zwischen und löschen sie beim Abmelden.
 
+**Aus offiziellen Spielen ergänzt (OpenVolley):** Nach der Platzwahl eines
+offiziellen Hallenspiels (nie eines Test- oder Easy-Spiels) fügt der Server
+die Personen des Kaders jedes Teams dem gespeicherten Team dieses Teams für
+die Saison hinzu: Vor- und Nachname, Rückennummer und Lizenznummer. Wer schon
+darin ist (dieselbe Lizenznummer, sonst derselbe Name), behält den Eintrag und
+erhält die Nummer des letzten Spiels; eine Spielerin oder ein Spieler des
+gespeicherten Teams, die oder der diese Nummer hatte, verliert sie. Niemand
+wird entfernt, und die Libero- und Captain-Kennzeichnungen des gespeicherten
+Teams bleiben. Personen mit Lizenznummer kommen ausserdem in die Lizenzlisten
+des Vereins (unten), wenn diese die Lizenznummer noch nicht haben.
+
 **Teamverantwortliche (OpenVolley):** Die Vereinsverantwortlichen können der
 Trainerin, dem Trainer oder den Teamverantwortlichen eines Teams ihres Vereins
 einen Link geben; wer ihn öffnet und sich anmeldet, verwaltet dieses Team.
 Gespeichert wird, welches Konto welches Team verwaltet, wer es hinzugefügt hat
 und wann. Teamverantwortliche bearbeiten das gespeicherte Team und können den
 Kader jedes Spiels des Teams im Voraus schicken: Spielerinnen und Spieler mit
-Nummer, Vor- und Nachname, Geburtsdatum, Lizenznummer und Libero/Captain sowie
-Betreuungspersonen mit Funktion, Name, Geburtsdatum und Lizenznummer. Wenn sie
+Nummer, Vor- und Nachname, Lizenznummer und Libero/Captain sowie
+Betreuungspersonen mit Funktion, Name und Lizenznummer; keine Geburtsdaten.
+Wenn sie
 wollen, können Trainerin oder Trainer und Captain diesen Kader im Voraus
 unterschreiben; die Unterschriften werden als Bilder mit ihm gespeichert.
 
@@ -690,27 +725,25 @@ beim Abmelden und spätestens 36 Stunden nach dem Spiel.
 können die Listen der Spielerinnen und Spieler, Schreiberinnen und Schreiber
 sowie Trainerinnen und Trainer ihres Vereins aus der Vereinsadministration von
 VolleyManager hochladen. Die Datei wird im Browser gelesen: Gespeichert werden
-nur Lizenznummer, Nachname, Vorname, Geburtsdatum und Geschlecht jeder Person;
-nichts anderes aus der Datei wird an den Server geschickt. Die Listen sind für
-die Vereinsverantwortlichen und die Administration sichtbar. Teamverantwortliche
-des Vereins sehen die Spielerinnen und Spieler des Geschlechts und der
-Alterskategorie ihres Teams, Geburtsdaten nur der Personen des eigenen Teams,
-und finden Teamoffizielle (Trainerin oder Trainer kann jede Person der Listen
-des Vereins sein) über eine Namenssuche, die jeweils wenige Personen zeigt.
-Die Geräte der Schreiberinnen und Schreiber des Vereins laden die Listen ohne
-Geburtsdaten, damit die Spielvorbereitung ohne Internet Spielerinnen und
-Spieler sowie Teamoffizielle hinzufügen kann; das Geburtsdatum einer Person,
-die einem Kader hinzugefügt wird, wird nur für diese Person abgerufen
-(höchstens 80 pro Tag und Konto, jedes Mal im Änderungsprotokoll
-festgehalten). Das Geschlecht dient dazu, dass keine Spielerin und kein Spieler in ein
+nur Lizenznummer, Nachname, Vorname und Geschlecht jeder Person; die Spalte
+mit dem Geburtsdatum wird nicht gelesen, und nichts anderes aus der Datei wird
+an den Server geschickt. Die Listen sind für die Vereinsverantwortlichen und
+die Administration sichtbar. Teamverantwortliche des Vereins sehen die
+Spielerinnen und Spieler des Geschlechts ihres Teams und finden
+Teamoffizielle (Trainerin oder Trainer kann jede Person der Listen des Vereins
+sein) über eine Namenssuche, die jeweils wenige Personen zeigt. Die Geräte der
+Schreiberinnen und Schreiber des Vereins laden die Listen, damit die
+Spielvorbereitung ohne Internet Spielerinnen und Spieler sowie
+Teamoffizielle hinzufügen kann. Das Geschlecht dient dazu, dass keine Spielerin und kein Spieler in ein
 Team des anderen Geschlechts eingetragen wird; bei Teamoffiziellen wird es
 nicht geprüft. Jeder Upload ersetzt die Personen des vorherigen Uploads dieser
 Liste; mit dem Verein werden die Listen gelöscht, und die Listen vergangener
 Saisons werden täglich gelöscht. Die Listen können auch
 Personen enthalten, die Teamverantwortliche oder Vereinsverantwortliche von
-Hand aus dem Kader eines Teams hinzugefügt haben (nur Lizenznummer, Namen,
-Geburtsdatum und Geschlecht); ein Upload behält sie, und sie werden mit ihrer
-Liste oder dem Verein gelöscht. Auf dem Gerät ersetzt jeder Download die
+Hand aus dem Kader eines Teams hinzugefügt haben, und Personen aus dem Kader
+eines offiziellen Spiels (oben), nur mit Lizenznummer, Namen und Geschlecht;
+ein Upload behält sie, und sie werden mit ihrer Liste oder dem Verein
+gelöscht. Auf dem Gerät ersetzt jeder Download die
 Kopie, beim Abmelden wird sie gelöscht.
 
 **Vereins-API (OpenVolley):** Die Vereinsverantwortlichen können API-Tokens
@@ -721,9 +754,9 @@ nicht mehr, sobald es widerrufen wird, abläuft oder diese Person den Verein
 nicht mehr verwaltet. Damit liest die Software des Vereins und, wenn das Token
 es erlaubt, schreibt sie die Teams des Vereins, die im Voraus geschickten
 Kader seiner Spiele, seine gespeicherten Teams und seine Lizenzlisten mit den
-oben beschriebenen Daten (Namen, Geburtsdaten, Lizenznummern), dazu die
+oben beschriebenen Daten (Namen, Rückennummern, Lizenznummern), dazu die
 Spiele des Vereins so, wie sie die öffentliche Schnittstelle zeigt
-(Abschnitt 8). Namen, Geburtsdaten und Lizenznummern liest nur ein Token,
+(Abschnitt 8). Namen und Lizenznummern liest nur ein Token,
 das sie auch schreiben darf, und ein solches Token braucht das Passwort der
 verantwortlichen Person. Der Server speichert vom Token nur einen
 Fingerabdruck, seinen Namen, seine Rechte, das Team, den Ablauf und die
@@ -741,7 +774,7 @@ Lizenznummern oder Geburtsdaten.
 **Zweck:** Kaderlisten wiederverwenden, den Kader eines Spiels im Voraus vorbereiten, Spielerinnen und Spieler
 sowie Teamoffizielle des Vereins zu einem Kader hinzufügen und das Geschlecht der Spielerinnen und Spieler
 mit dem des Teams vergleichen, Turniere organisieren, Spielerinnen und Spieler beim Import anhand der
-Lizenznummer zuordnen.
+Lizenznummer zuordnen, die Rückennummern für das nächste Spiel ausfüllen.
 
 Diese Daten bleiben gespeichert, bis eine Managerin oder ein Manager sie
 löscht, auch wenn das Konto, das sie angelegt hat, gelöscht wird.
@@ -751,18 +784,19 @@ löscht, auch wenn das Konto, das sie angelegt hat, gelöscht wird.
 **Spielansetzungen von Swiss Volley:** Der Server übernimmt täglich die
 offiziellen Spielansetzungen aus dem VolleyManager von Swiss Volley, für den
 Zeitraum von gestern bis 14 Tage voraus: Teams, Halle und Adresse, Liga, 1.
-und 2. Schiedsrichter mit Name und Geburtsdatum, Linienrichter, Aufgebote.
-Dafür verwendet der Server ein Konto im VolleyManager. Zweck: offizielle
-Spiele mit den richtigen Offiziellen laden. Namen sind öffentlich (Abschnitt
-8), Geburtsdaten sehen nur die Administration und die Konten, die für diese
-Sportart schreiben. Die Ansetzungen werden wie die Spielaufzeichnungen
-aufbewahrt (Abschnitt 16).
+und 2. Schiedsrichter mit ihren Namen, Linienrichter, Aufgebote. Dafür
+verwendet der Server ein Konto im VolleyManager. Zweck: offizielle Spiele mit
+den richtigen Offiziellen laden. Namen sind öffentlich (Abschnitt 8).
+VolleyManager schickt auch die Geburtsdaten der Schiedsrichterinnen und
+Schiedsrichter; der Server liest und speichert sie nicht (seit dem
+19. November 2026; die vorher gespeicherten wurden gelöscht). Die Ansetzungen
+werden wie die Spielaufzeichnungen aufbewahrt (Abschnitt 16).
 
 **Schiedsrichter-Verzeichnis:** Ein gemeinsames Verzeichnis mit Vor- und
-Nachname, Land, Geburtsdatum und Sportart, damit die Schreiberin oder der
-Schreiber Offizielle nicht jedes Mal neu erfassen muss. Angemeldete Konten
-können Einträge hinzufügen (ein Geburtsdatum nur ein Konto, das schreibt);
-ändern und löschen kann die Administration. Das Verzeichnis sehen nur die
+Nachname, Land und Sportart, damit die Schreiberin oder der Schreiber
+Offizielle nicht jedes Mal neu erfassen muss; keine Geburtsdaten (die vor dem
+19. November 2026 gespeicherten wurden gelöscht). Konten, die schreiben,
+können Einträge hinzufügen; ändern und löschen kann die Administration. Das Verzeichnis sehen nur die
 Administration und die Konten, die schreiben, um die Offiziellen eines
 offiziellen Spiels einzutragen; es ist nicht öffentlich, und Test- und
 Easy-Spiele zeigen es nicht an.
@@ -911,7 +945,7 @@ brauche. Sie bearbeiten die Daten in meinem Auftrag.
 **Wichtig zu Cloudflare:** Die verschlüsselte Verbindung deines Geräts endet
 bei Cloudflare; von dort läuft sie verschlüsselt weiter zu meinem Server.
 Cloudflare kann den Inhalt der Anfragen deshalb technisch einsehen, auch
-Kaderlisten und Geburtsdaten. Cloudflare darf die Daten nur für die
+Kaderlisten. Cloudflare darf die Daten nur für die
 Erbringung seines Dienstes verwenden.
 
 **Eigenständig verantwortlich** sind: GitHub, Inc. (USA) für Downloads und
@@ -946,7 +980,7 @@ Anfrage erhältst du eine Kopie dieser Garantien.
 | Vereinsverantwortliche | Bis die Administration sie entfernt, der Verein gelöscht wird oder du dein Konto löschst |
 | Teamverantwortliche | Bis Vereinsverantwortliche oder die Administration sie entfernen, das Team oder der Verein gelöscht wird oder du dein Konto löschst |
 | Im Voraus geschickter Kader (Spielerinnen und Spieler, Betreuungspersonen, Unterschriften) | Bis eine Schreiberin oder ein Schreiber ihn übernimmt, spätestens 14 Tage nach dem Spiel; der Vermerk der Übernahme 14 Tage nach dem Spiel |
-| Lizenzlisten eines Vereins (Lizenznummer, Namen, Geburtsdatum, Geschlecht) | Bis zum nächsten Upload dieser Liste, ihrer Löschung durch Vereinsverantwortliche oder der Löschung des Vereins, spätestens bis zum Ende der Saison; von Hand hinzugefügte Personen: bis zur Löschung der Liste oder des Vereins, spätestens bis zum Ende der Saison; auf einem Gerät bis zum nächsten Download oder Abmelden |
+| Lizenzlisten eines Vereins (Lizenznummer, Namen, Geschlecht) | Bis zum nächsten Upload dieser Liste, ihrer Löschung durch Vereinsverantwortliche oder der Löschung des Vereins, spätestens bis zum Ende der Saison; von Hand oder aus einem Spielkader hinzugefügte Personen: bis zur Löschung der Liste oder des Vereins, spätestens bis zum Ende der Saison; auf einem Gerät bis zum nächsten Download oder Abmelden |
 | E-Mail-Adresse einer Schiedsrichterin, eines Schiedsrichters oder eines Teams beim Spiel | Mit dem Spiel, als Teil des Spielberichts |
 | Versand des fertigen Spielberichts (Zeitpunkt, Anzahl Empfänger, ohne Adressen) | Mit dem Spiel |
 | Spielbericht eines Testspiels per E-Mail | Auf dem Server nicht gespeichert |
@@ -968,15 +1002,42 @@ Anfrage erhältst du eine Kopie dieser Garantien.
 | Datensicherungen | Bis etwa 6 Monate (Abschnitt 18) |
 | Daten auf deinem Gerät | Bis du sie löschst; Sicherungsdateien der Desktop- und Android-App 30 Tage |
 
+**Geburtsdaten gelöscht (19. November 2026).** Seither wird kein Geburtsdatum
+ausserhalb des Spielberichts eines Spiels gespeichert, und dort nur, wenn die
+Schreiberin oder der Schreiber eines eingetippt hat (Abschnitt 7). Die vorher
+gespeicherten Geburtsdaten wurden auf dem Server gelöscht: bei den Konten
+(Profil und die gespeicherte Kopie der Registrierung), in den Lizenzlisten der
+Vereine, den gespeicherten Teams, den im Voraus geschickten Kadern, im
+Schiedsrichter-Verzeichnis, in den Spielansetzungen von Swiss Volley und in
+den vergangenen Spielaufzeichnungen (Kaderlisten, Betreuungspersonen,
+Offizielle, von Teams hochgeladene Kader, die Einträge und Bemerkungen von
+Korrekturen, die Ereignisgeschichte). Lizenznummern bleiben. Die gespeicherten
+Spielbericht-PDFs werden aus den bereinigten Aufzeichnungen neu erstellt; eine
+Datei, die so nicht neu erstellt werden kann (zum Beispiel ein
+Beach-Spielbericht), bleibt, bis ich sie geprüft habe, und wird ohne diese
+Prüfung nicht gelöscht. Nicht erreichen kann ich: bereits versandte E-Mails
+(zum Beispiel einen fertigen Spielbericht); die verschlüsselten
+Datensicherungen, die ältere Kopien bis etwa 6 Monate behalten (Abschnitt 18);
+und Kopien ausserhalb meines Servers, etwa Daten auf Geräten und
+Sicherungsdateien auf einem Computer, einem USB-Stick oder im Android-Ordner
+«Dokumente», bis sie überschrieben oder gelöscht werden (eine aktualisierte
+Scorer-App entfernt die Geburtsdaten der Schweizer Spiele auf ihrem Gerät, die
+nicht gerade laufen). Global-Spiele sind nicht betroffen: Dort wählt die
+Veranstalterin oder der Veranstalter, was neben einem Namen steht, und ihre
+Dateien und Cloud-Kopien bleiben wie in Abschnitt 7 beschrieben.
+
 ## 17. Minderjährige
 
 Viele Spielerinnen und Spieler sind minderjährig. Ihre Daten (Name, Nummer,
-Geburtsdatum) geben nicht sie selbst ein, sondern Vereine, Teamverantwortliche,
+Lizenznummer) geben nicht sie selbst ein, sondern Vereine, Teamverantwortliche,
 Schreiberinnen und Schreiber oder Veranstalter. Diese sind dafür
 verantwortlich, dass sie die Daten erfassen dürfen und die Spielerinnen und
-Spieler und deren Eltern darüber informieren. Das Geburtsdatum dient der
-Kontrolle der Spielberechtigung und Alterskategorie auf dem offiziellen
-Spielbericht und ist nie öffentlich.
+Spieler und deren Eltern darüber informieren. Das Geburtsdatum einer Spielerin
+oder eines Spielers steht nur auf dem Spielbericht eines Spiels, wenn die
+Schreiberin oder der Schreiber eines eintippt (im Global-Werkzeug, wenn die
+Veranstalterin oder der Veranstalter es gewählt hat), nie in den
+Vereinslisten, gespeicherten Teams oder im Voraus geschickten Kadern; es ist
+nie öffentlich, die Lizenznummer auch nicht.
 
 Im Global-Werkzeug ist die Turnierveranstalterin oder der Turnierveranstalter
 bzw. die Person, die die Daten erfasst, in gleicher Weise verantwortlich. Eltern
@@ -1036,7 +1097,7 @@ ist die offizielle Aufzeichnung eines Spiels, an der Vereine, Verband und
 Offizielle ein Interesse haben. Ich lösche oder anonymisiere deine Daten
 darin, soweit sie für die Aufzeichnung nicht nötig sind, und erkläre dir,
 was aus welchem Grund bestehen bleibt. Eine Berichtigung (zum Beispiel eines
-falschen Geburtsdatums) oder eine Löschung erfolgt in allen Kopien auf dem
+falsch geschriebenen Namens) oder eine Löschung erfolgt in allen Kopien auf dem
 Server zugleich: in den Spielaufzeichnungen mit ihrer Geschichte und ihren
 Protokollen, in den Vereinslisten und gespeicherten Teams, im
 Schiedsrichter-Verzeichnis und in den Spielansetzungen. Rückennummer und
@@ -1055,19 +1116,22 @@ in der EU oder im EWR wohnst, auch bei der Datenschutzbehörde deines Landes.
 
 Soweit die DSGVO gilt, stütze ich mich auf:
 
-- **Vertrag** (Art. 6 Abs. 1 lit. b DSGVO): Konto, Synchronisierung,
-  E-Mails zum Konto, Support, die Funktionen, die du nutzt, die
-  Online-Sicherung und die Cloud-Kopie des Global-Werkzeugs.
+- **Vertrag** (Art. 6 Abs. 1 lit. b DSGVO): Konto (mit der freiwilligen
+  Lizenznummer), Synchronisierung, E-Mails zum Konto, Support, die
+  Funktionen, die du nutzt, die Online-Sicherung und die Cloud-Kopie des
+  Global-Werkzeugs.
 - **Berechtigtes Interesse** (Art. 6 Abs. 1 lit. f DSGVO): korrekte und
   überprüfbare offizielle Spielaufzeichnungen für Vereine, Verband und
-  Offizielle (Kaderlisten, Geburtsdaten zur Kontrolle der Spielberechtigung,
-  Unterschriften, Freigaben, Aktivitätsprotokoll und Ereignisgeschichte,
-  Bemerkungen),
+  Offizielle (Kaderlisten, Lizenznummern und, wo die Schreiberin oder der
+  Schreiber eines auf dem Spielbericht eintippt, das Geburtsdatum zur
+  Kontrolle der Spielberechtigung, Unterschriften, Freigaben,
+  Aktivitätsprotokoll und Ereignisgeschichte, Bemerkungen), aus den Kadern
+  offizieller Spiele ergänzte gespeicherte Teams und Vereinslisten,
   Zustellung des fertigen Spielberichts an Offizielle und Vereine,
   Livescore für das Publikum, Organisation von Turnieren, Fehlersuche,
   Sicherheit und Missbrauchsschutz, Datensicherungen.
-- **Einwilligung** (Art. 6 Abs. 1 lit. a DSGVO): freiwilliges Geburtsdatum im
-  Konto, Update-Prüfung der direkt installierten Android-App.
+- **Einwilligung** (Art. 6 Abs. 1 lit. a DSGVO): Update-Prüfung der direkt
+  installierten Android-App.
 - **Gesundheitsdaten** (eine Verletzung oder Krankheit, die in einem Spiel
   festgehalten wird, Abschnitt 7): Die Spielregeln verlangen die Aufzeichnung
   eines solchen Wechsels und eines Liberos, der nicht mehr spielen kann. Nach

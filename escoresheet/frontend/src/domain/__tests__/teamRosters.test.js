@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { gameRosterBody, gameRosterDraft, mergeImportedRoster, parsedPdfToRoster } from '../teamRosters'
 
+// `dob` as a squad cached before db/048 may still hold it: never passed on
 const squad = {
   players: [
     { id: 'a', number: 4, first_name: 'Anna', last_name: 'Muster', dob: '2001-02-03', license_number: 'L4', is_captain: true, is_libero: false, active: true },
@@ -11,7 +12,7 @@ const squad = {
 }
 
 describe('parsedPdfToRoster', () => {
-  it('turns the PDF reader\'s players and officials into the API shape (ISO dates)', () => {
+  it('turns the PDF reader\'s players and officials into the API shape, without the dates of birth', () => {
     const r = parsedPdfToRoster({
       players: [{ number: 12, firstName: 'Lea', lastName: 'Keller', dob: '05/06/2003' }, { number: 'x', firstName: '', lastName: '' }],
       coach: { firstName: 'Max', lastName: 'Trainer', dob: '01/01/1975' },
@@ -19,8 +20,12 @@ describe('parsedPdfToRoster', () => {
       ac2: { firstName: 'Ida', lastName: 'Zwei', dob: '' }
     })
     // an Einsatzliste never has shirt numbers: none comes through
-    expect(r.players).toEqual([{ number: null, first_name: 'Lea', last_name: 'Keller', dob: '2003-06-05', license_number: null, is_libero: false, is_captain: false }])
-    expect(r.staff.map(s => [s.role, s.last_name, s.dob])).toEqual([['Coach', 'Trainer', '1975-01-01'], ['Assistant Coach 2', 'Zwei', null]])
+    expect(r.players).toEqual([{ number: null, first_name: 'Lea', last_name: 'Keller', license_number: null, is_libero: false, is_captain: false }])
+    expect(r.staff).toEqual([
+      { role: 'Coach', first_name: 'Max', last_name: 'Trainer', license_number: null },
+      { role: 'Assistant Coach 2', first_name: 'Ida', last_name: 'Zwei', license_number: null }
+    ])
+    expect(JSON.stringify(r)).not.toMatch(/2003|1975|dob/)
   })
 })
 
@@ -47,7 +52,8 @@ describe('mergeImportedRoster', () => {
     const r = mergeImportedRoster(squad.players, squad.staff, imported)
     expect(r.players.map(p => [p.last_name, p.number, p.active])).toEqual([['Muster', 5, true], ['Libero', 7, true], ['Reserve', 9, true], ['Neue', 11, true]])
     expect(r.players[0].id).toBe('a') // kept
-    expect(r.players[2].dob).toBe('2004-04-04')
+    // no date of birth comes in from the import, none stays from the squad's older copy
+    expect([...r.players, ...r.staff].some((p) => 'dob' in p)).toBe(false)
     expect(r.staff.map(s => s.role)).toEqual(['Coach', 'Assistant Coach 1'])
     expect(r.added).toBe(2)
     expect(r.updated).toBe(2)
@@ -101,10 +107,11 @@ describe('gameRosterDraft and gameRosterBody', () => {
     const { body, problems } = gameRosterBody(d)
     expect(problems).toEqual([])
     expect(body.players).toEqual([
-      { number: 4, first_name: 'Anna', last_name: 'Muster', dob: '2001-02-03', license_number: 'L4', is_libero: false, is_captain: true },
-      { number: 7, first_name: 'Bea', last_name: 'Libero', dob: '2002-03-04', license_number: null, is_libero: true, is_captain: false }
+      { number: 4, first_name: 'Anna', last_name: 'Muster', license_number: 'L4', is_libero: false, is_captain: true },
+      { number: 7, first_name: 'Bea', last_name: 'Libero', license_number: null, is_libero: true, is_captain: false }
     ])
-    expect(body.staff).toEqual([{ role: 'Coach', first_name: 'Chris', last_name: 'Coach', dob: '1980-01-01', license_number: null }])
+    expect(body.staff).toEqual([{ role: 'Coach', first_name: 'Chris', last_name: 'Coach', license_number: null }])
+    expect([...d.players, ...d.staff].some((p) => 'dob' in p)).toBe(false)
   })
 
   it('more than 14 active players: nobody is ticked yet', () => {

@@ -105,6 +105,12 @@ describe('audit wording', () => {
     expect(auditDetailsLine({ action: 'approval_pin.locked', details: { failures: 5, disabled: false } }))
       .toBe('5 wrong PINs')
   })
+  it('an official match\'s roster added to the saved team: the game and the counts, no names', () => {
+    expect(auditDetailsLine({ action: 'team.squad.match', details: { game_number: '960001', side: 'home', added: 3, numbers: 2, skipped: 1, club_added: 2 } }, tMock))
+      .toBe('#960001 · added 3 · numbers 2 · left out 1 · Licences +2')
+    expect(auditDetailsLine({ action: 'team.squad.match', details: { game_number: '960001', added: 0, numbers: 1, skipped: 0, club_added: 0 } }, tMock))
+      .toBe('#960001 · added 0 · numbers 1 · left out 0')
+  })
   it('the action labels exist in every locale', async () => {
     const locales = await Promise.all(['en', 'de', 'de-CH', 'fr', 'it'].map(l => import(`../../i18n/locales/${l}.json`)))
     for (const l of locales) {

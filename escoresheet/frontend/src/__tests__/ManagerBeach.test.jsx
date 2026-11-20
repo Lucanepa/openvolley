@@ -232,7 +232,8 @@ describe('ManagerApp as OpenBeach\'s manager', () => {
     renderBeach()
     const page = screen.getByTestId('manager-sign-up')
     expect(within(page).getByText('managerBeach.signUpBody')).toBeInTheDocument()
-    for (const [label, value] of Object.entries({ Email: 'ivo@club.ch', Password: 'secret1234', 'Confirm password': 'secret1234' })) {
+    // first and last name are required (db/048: name, email and an optional licence number)
+    for (const [label, value] of Object.entries({ 'First name': 'Ivo', 'Last name': 'Muster', Email: 'ivo@club.ch', Password: 'secret1234', 'Confirm password': 'secret1234' })) {
       fireEvent.change(within(page).getByLabelText(label), { target: { value } })
     }
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
