@@ -75,7 +75,7 @@ network, and carries `traefik.enable=false`.
 | `homebrew/bump-cask.sh`, `homebrew/Casks/*.rb` | lenovoserver (or any machine), after `publish-pkgs.sh --desktop` | Writes the macOS casks `openvolley` / `openbeach` (version + SHA-256 of the release's `.dmg`) into a checkout of the tap `Lucanepa/homebrew-tap`; you review, commit and push there. See [macOS](#macos-unsigned-homebrew-tap) |
 | `tests/bump-cask.test.sh` | any machine | Offline tests of `bump-cask.sh` |
 | `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` (OpenVolley and `--app beach`) with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the per-app APT hold-back, GitHub's "Latest" and the OpenBeach fallback (stubbed `gh`), APT names, the Android certificate per app id, `install.sh` and the landing page |
-| `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.5-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
+| `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:24.22.3-trixie-slim` (Node 24 LTS, Debian 13; `Dockerfile.render` uses the same base), `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
 | `build-image.sh` | build machine (lenovoserver) | Builds `openvolley-backend:<git-sha>` from the committed tree (`git archive HEAD`, allowlist `Dockerfile.backend.dockerignore`), refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`); `--ship local` does the archive and the prune with `sudo` when the VM is lenovoserver itself |
 | `check-edge.sh` | any machine, before go-live and after each Cloudflare/DNS change | Read-only: CAA (only pki.goog, letsencrypt.org, ssl.com + iodef), DMARC p=quarantine/reject with rua, TLS 1.0/1.1 refused and 1.2 accepted, http->https redirect and HSTS on backend., app., get. (RUNBOOK-hetzner.md "Edge and mail domain") |
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), and `OV_READONLY_PW` when set, then checks the `ov_app` login |
@@ -208,7 +208,10 @@ about 150 matches through the first set and about 100 whole matches; the nationa
 (404 matches at once) crash-looped on backend memory in the pre-match.
 
 Since 2026-10-27 the backend has 512m with `NODE_OPTIONS=--max-old-space-size=256` (compose; V8's
-heap stays below `mem_limit`). At 256m the national peak still OOM-killed it 4-6 times in set 1
+heap stays below `mem_limit`). Compose also pins `--max-semi-space-size=16`, Node 22's young
+generation: Node 24 defaults to 64 MB semi-spaces, which raise V8's heap limit at 256 from
+304 MB to 448 MB, too close to the 512m with the memory outside the heap, and with it the
+relay's budget and the admission mark below, which were measured on 304 MB. At 256m the national peak still OOM-killed it 4-6 times in set 1
 on memory outside V8's heap. The other limits stay as they are. Before an event with more than
 about 100 simultaneous matches, raise for that day and measure again with the peak harness:
 

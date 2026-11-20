@@ -12,5 +12,5 @@
   "dependencies": {
     "playwright-core": "1.65.1"
   },
-  "engines": { "node": ">=22" }
+  "engines": { "node": ">=24" }
 }

@@ -15,6 +15,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { inspect } from 'node:util'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
@@ -24,6 +25,15 @@ const PASSWORD = 'correct-horse-battery'
 const MARKER_NAME = 'Marker Signer Zx9'
 const CTX = { home: 'VBC Musterdorf', away: 'Volley 05' }
 const INK = { pad: { w: 4000, h: 2000 }, strokes: [[0, 1888, 300, 1888]] }
+// The stroke and the game PIN are numbers, and the server output has numbers
+// of its own (ports, durations, ids, timestamps) that may hold "1888" or
+// "123456" by chance. A leak prints them the way a log does (JSON,
+// util.inspect, key=value): the stroke as its coordinate run, the PIN as a
+// value of its own, never inside a longer number or id.
+const LEAK_PATTERNS = {
+  stroke: /(?<![0-9])1888[\s,]+300[\s,]+1888(?![0-9])/,
+  'game PIN': /(?<![0-9A-Za-z])123456(?![0-9A-Za-z])/
+}
 
 describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
   let db, srv, sql, storageRoot, statusDir
@@ -290,7 +300,17 @@ describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
     assert.ok(/sign\.start ref=[0-9a-f]{8} slot=\S+ via=cloud/.test(out), 'transitions are logged')
     assert.ok(tokensSeen.length > 40)
     for (const secret of tokensSeen) assert.ok(!out.includes(secret), 'a sign secret reached the server output')
-    for (const marker of [MARKER_NAME, '1888', '123456', 'Musterdorf']) assert.ok(!out.includes(marker), `${marker} reached the server output`)
+    for (const marker of [MARKER_NAME, 'Musterdorf']) assert.ok(!out.includes(marker), `${marker} reached the server output`)
+    // the patterns find the stroke and the PIN as a log would print them, and
+    // not the digits inside other numbers or ids
+    const body = { k: 'x', ...INK, context: { gamePin: '123456' } }
+    for (const leak of [JSON.stringify(body), inspect(body, { depth: null }), 'gamePin=123456 strokes=0,1888,300,1888']) {
+      for (const [what, re] of Object.entries(LEAK_PATTERNS)) assert.ok(re.test(leak), `the ${what} pattern misses ${leak}`)
+    }
+    for (const noise of ['port 41888 in 1888 ms', 'ts=1763123456789 id=a123456f pid 1234567', '18881,300,1888 1888,3000,1888']) {
+      for (const [what, re] of Object.entries(LEAK_PATTERNS)) assert.ok(!re.test(noise), `the ${what} pattern matches ${noise}`)
+    }
+    for (const [what, re] of Object.entries(LEAK_PATTERNS)) assert.ok(!re.test(out), `the ${what} reached the server output`)
   })
 
   it('OV_SIGN_DISABLED=1 switches it off', async () => {

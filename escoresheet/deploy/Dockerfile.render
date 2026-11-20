@@ -13,7 +13,7 @@
 # published port. The container is Chromium's sandbox (--no-sandbox inside:
 # no capabilities, read-only root, its own memory limit).
 
-ARG NODE_IMAGE=node:22.23.5-bookworm-slim
+ARG NODE_IMAGE=node:24.22.3-trixie-slim
 
 # 1. the scoresheet page (dist-render/), from the committed frontend sources
 FROM ${NODE_IMAGE} AS page
