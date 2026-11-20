@@ -78,6 +78,7 @@ import {
   getTestAwayTeamShortName,
   getTestTeamByExternalId
 } from './constants/testSeeds'
+import { cleanIdValue } from './domain/idMode'
 import { apiFrom, apiMatchRestoreByPin, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, matchBackupFromFile, parseBackupText, restoreErrorText, localLossOnReplace, restoreLossText, RESTORE_LOSES_LOCAL, continueWithLocalCopy } from './utils/backupManager'
@@ -2541,15 +2542,10 @@ export default function App() {
 
   function formatISODateToDisplay(dateString) {
     if (!dateString) return null
-    const date = new Date(dateString)
-    if (Number.isNaN(date.getTime())) {
-      return dateString
-    }
-    const day = String(date.getDate()).padStart(2, '0')
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const year = date.getFullYear()
-    return `${day}/${month}/${year}`
+    // the value beside an official's name: a licence number stays as it is, a date becomes dd.mm.yyyy
+    return cleanIdValue('licence', dateString) || null
   }
+
 
   function generateRandomPlayers(teamId, config = {}) {
     // Config options: { totalPlayers: 12, liberoCount: 1 } or { totalPlayers: 11, liberoCount: 1 }
