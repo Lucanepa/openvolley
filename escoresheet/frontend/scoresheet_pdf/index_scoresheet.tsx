@@ -2,7 +2,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './scoresheet.css'; // compiled Tailwind (was cdn.tailwindcss.com — broke offline)
 import { useLiveQuery } from 'dexie-react-hooks';
-import '../src/i18n'; // App_Scoresheet calls useTranslation: this entry needs its own i18n init
+import i18n from '../src/i18n'; // App_Scoresheet calls useTranslation: this entry needs its own i18n init
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import App from './App_Scoresheet';
 import { loadLocalMatchData, normalizeMatchData } from './utils/matchData';
 import { describeScoresheetLoadError, fetchScoresheetJson, parseScoresheetName, type ScoresheetLoadError } from './utils/scoresheetStorage';
@@ -104,6 +106,10 @@ const fetchFromStorage = async (date: string, game: string): Promise<{ data: any
   }
 };
 
+// "<date>, game <n>": the scoresheet a load error names, in the page's language
+const gamePath = (t: TFunction, date: string, game: string): string =>
+  String(t('scoresheetSite.gamePath', { date, game, defaultValue: '{{date}}, game {{game}}' }));
+
 // Fetch all scoresheets from storage
 const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
   try {
@@ -168,8 +174,9 @@ const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
 
           return {
             ...item,
-            homeTeam: json.homeTeam?.name || json.match?.homeTeamName || 'Team A',
-            awayTeam: json.awayTeam?.name || json.match?.awayTeamName || 'Team B',
+            // no name: the list shows "Team A" / "Team B" in the page's language
+            homeTeam: json.homeTeam?.name || json.match?.homeTeamName || undefined,
+            awayTeam: json.awayTeam?.name || json.match?.awayTeamName || undefined,
             finalScore: json.match?.final_score || '',
             uploadedAt: json.uploadedAt
           };
@@ -254,6 +261,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
   );
   const isMatchLoading = live === undefined;
   const isMatchDeleted = live === null;
+  const { t } = useTranslation();
 
   // Show loading state while initial data is being fetched
   if (isMatchLoading) {
@@ -265,7 +273,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
         height: '100vh',
         fontFamily: 'system-ui, sans-serif'
       }}>
-        <div style={{ fontSize: '18px', color: '#666' }}>Loading scoresheet...</div>
+        <div lang={i18n.language} style={{ fontSize: '18px', color: '#666' }}>{t('scoresheetSite.loadingOne', 'Loading scoresheet...')}</div>
       </div>
     );
   }
@@ -293,6 +301,7 @@ const UrlMatchIdScoresheet: React.FC<{ matchId: string; action: 'preview' | 'pri
 
 // Storage scoresheet component - fetches from backend storage (apiStorage)
 const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ date, game, action }) => {
+  const { t } = useTranslation();
   const [matchData, setMatchData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<ScoresheetLoadError | null>(null);
@@ -304,10 +313,10 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
         if (data) {
           setMatchData(data);
         } else {
-          setError(describeScoresheetLoadError(loadError, `${date}, game ${game}`));
+          setError(describeScoresheetLoadError(loadError, gamePath(t, date, game), t));
         }
       } catch (err) {
-        setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, `${date}, game ${game}`));
+        setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, gamePath(t, date, game), t));
       } finally {
         setLoading(false);
       }
@@ -324,14 +333,14 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
         height: '100vh',
         fontFamily: 'system-ui, sans-serif'
       }}>
-        <div style={{ fontSize: '18px', color: '#666' }}>Loading scoresheet from storage...</div>
+        <div lang={i18n.language} style={{ fontSize: '18px', color: '#666' }}>{t('scoresheetSite.loadingOne', 'Loading scoresheet...')}</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div style={{
+      <div lang={i18n.language} style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -340,7 +349,7 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
         gap: '20px',
         fontFamily: 'system-ui, sans-serif'
       }}>
-        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
+        <div role="alert" style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
           {error.title}
         </div>
         <div style={{ color: '#666', maxWidth: '32rem', textAlign: 'center', padding: '0 16px' }}>{error.message}</div>
@@ -353,7 +362,7 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
             onClick={backToTheApp}
             style={{ display: 'inline-flex', alignItems: 'center', minHeight: '44px', padding: '0 20px', borderRadius: '12px', border: 0, background: '#0f172a', color: '#fff', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}
           >
-            Close and sign in in the scorer app
+            {t('scoresheetSite.closeAndSignIn', 'Close and sign in in the scorer app')}
           </button>
         ) : (
           // Same origin as the scorer app: its sign-in gives this page the session
@@ -361,7 +370,7 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
             href="/"
             style={{ display: 'inline-flex', alignItems: 'center', minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#0f172a', color: '#fff', fontWeight: 600, fontSize: '14px', textDecoration: 'none' }}
           >
-            Open the scorer app to sign in
+            {t('scoresheetSite.openAppToSignIn', 'Open the scorer app to sign in')}
           </a>
         ))}
       </div>
@@ -373,6 +382,7 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
 
 // Scoresheet list component - shows all available scoresheets
 const ScoresheetList: React.FC = () => {
+  const { t } = useTranslation();
   const [scoresheets, setScoresheets] = React.useState<ScoresheetItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -383,7 +393,7 @@ const ScoresheetList: React.FC = () => {
         const items = await fetchAllScoresheets();
         setScoresheets(items);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load scoresheets');
+        setError(err instanceof Error ? err.message : t('scoresheetSite.listErrorBody', 'The scoresheets could not be loaded.'));
       } finally {
         setLoading(false);
       }
@@ -410,7 +420,7 @@ const ScoresheetList: React.FC = () => {
   const formatDate = (dateStr: string) => {
     try {
       const date = new Date(dateStr + 'T12:00:00');
-      return date.toLocaleDateString('en-US', {
+      return date.toLocaleDateString(i18n.language || 'en', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
@@ -430,14 +440,14 @@ const ScoresheetList: React.FC = () => {
         height: '100vh',
         fontFamily: 'system-ui, sans-serif'
       }}>
-        <div style={{ fontSize: '18px', color: '#666' }}>Loading scoresheets...</div>
+        <div lang={i18n.language} style={{ fontSize: '18px', color: '#666' }}>{t('scoresheetSite.loadingList', 'Loading scoresheets...')}</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div style={{
+      <div lang={i18n.language} style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -447,7 +457,7 @@ const ScoresheetList: React.FC = () => {
         fontFamily: 'system-ui, sans-serif'
       }}>
         <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
-          Error Loading Scoresheets
+          {t('scoresheetSite.listError', 'Error loading scoresheets')}
         </div>
         <div style={{ color: '#666' }}>{error}</div>
       </div>
@@ -455,7 +465,7 @@ const ScoresheetList: React.FC = () => {
   }
 
   return (
-    <div style={{
+    <div lang={i18n.language} style={{
       minHeight: '100vh',
       background: '#f8fafc',
       fontFamily: 'system-ui, sans-serif',
@@ -471,10 +481,10 @@ const ScoresheetList: React.FC = () => {
           color: '#1e293b',
           marginBottom: '8px'
         }}>
-          Scoresheets
+          {t('scoresheetSite.listTitle', 'Scoresheets')}
         </h1>
         <p style={{ color: '#64748b', marginBottom: '24px' }}>
-          {scoresheets.length} scoresheet{scoresheets.length !== 1 ? 's' : ''} available
+          {t('scoresheetSite.available', { count: scoresheets.length, defaultValue: '{{count}} scoresheets available' })}
         </p>
 
         {scoresheets.length === 0 ? (
@@ -487,7 +497,7 @@ const ScoresheetList: React.FC = () => {
           }}>
             <div style={{ marginBottom: '16px', color: '#94a3b8' }}><ClipboardIcon size={48} /></div>
             <div style={{ fontSize: '18px', color: '#64748b' }}>
-              No scoresheets uploaded yet
+              {t('scoresheetSite.noScoresheets', 'No scoresheets uploaded yet')}
             </div>
           </div>
         ) : (
@@ -543,7 +553,7 @@ const ScoresheetList: React.FC = () => {
                               padding: '2px 8px',
                               borderRadius: '4px'
                             }}>
-                              Game {item.game}
+                              {t('scoresheetSite.game', { n: item.game, defaultValue: 'Game {{n}}' })}
                             </span>
                             {item.finalScore && (
                               <span style={{
@@ -560,7 +570,7 @@ const ScoresheetList: React.FC = () => {
                             fontWeight: '500',
                             color: '#1e293b'
                           }}>
-                            {item.homeTeam || 'Team A'} vs {item.awayTeam || 'Team B'}
+                            {item.homeTeam || t('coinToss.teamA', 'Team A')} {t('scoresheetSite.vs', 'vs')} {item.awayTeam || t('coinToss.teamB', 'Team B')}
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -577,7 +587,7 @@ const ScoresheetList: React.FC = () => {
                               cursor: 'pointer'
                             }}
                           >
-                            View
+                            {t('manage.scoresheets.view', 'View')}
                           </button>
                           <button
                             onClick={() => handleDownload(item)}
@@ -592,7 +602,7 @@ const ScoresheetList: React.FC = () => {
                               cursor: 'pointer'
                             }}
                           >
-                            Download PDF
+                            {t('manage.scoresheets.download', 'Download PDF')}
                           </button>
                         </div>
                       </div>
@@ -647,7 +657,7 @@ class ErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{
+        <div lang={i18n.language} style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -657,11 +667,11 @@ class ErrorBoundary extends React.Component<
           fontFamily: 'system-ui, sans-serif',
           padding: '20px'
         }}>
-          <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
-            Scoresheet Error
+          <div role="alert" style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
+            {i18n.t('scoresheetSite.renderError.title', 'Scoresheet error')}
           </div>
           <div style={{ color: '#666', textAlign: 'center', maxWidth: '600px' }}>
-            {this.state.error?.message || 'An error occurred while rendering the scoresheet'}
+            {this.state.error?.message || i18n.t('scoresheetSite.renderError.body', 'An error occurred while showing the scoresheet.')}
           </div>
           {this.state.error?.stack && (
             <details style={{
@@ -674,7 +684,7 @@ class ErrorBoundary extends React.Component<
               fontFamily: 'monospace',
               fontSize: '12px'
             }}>
-              <summary style={{ cursor: 'pointer', marginBottom: '8px' }}>Error Details</summary>
+              <summary style={{ cursor: 'pointer', marginBottom: '8px' }}>{i18n.t('scoresheetSite.renderError.details', 'Error details')}</summary>
               <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
                 {this.state.error.stack}
               </pre>
@@ -692,7 +702,7 @@ class ErrorBoundary extends React.Component<
               cursor: 'pointer'
             }}
           >
-            Close Window
+            {i18n.t('scoresheetSite.closeWindow', 'Close window')}
           </button>
         </div>
       );
@@ -704,6 +714,7 @@ class ErrorBoundary extends React.Component<
 
 // Import scoresheet component - allows uploading JSON data to render a scoresheet
 const ImportScoresheet: React.FC<{ action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ action }) => {
+  const { t } = useTranslation();
   const [matchData, setMatchData] = React.useState<any>(null);
   const [error, setError] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -721,17 +732,17 @@ const ImportScoresheet: React.FC<{ action: 'preview' | 'print' | 'save' | 'getBl
 
         // Basic validation: check that it has the expected structure
         if (!data.match && !data.sets && !data.events) {
-          setError('Invalid scoresheet data: missing match, sets, or events fields.');
+          setError(t('scoresheetSite.import.invalid', 'This file holds no scoresheet: it has no match, sets or events.'));
           return;
         }
 
         setMatchData(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to parse JSON file');
+        setError(t('scoresheetSite.import.notJson', 'This file could not be read as a scoresheet (JSON).'));
       }
     };
     reader.onerror = () => {
-      setError('Failed to read file');
+      setError(t('scoresheetSite.import.readFailed', 'The file could not be read.'));
     };
     reader.readAsText(file);
   };
@@ -741,7 +752,7 @@ const ImportScoresheet: React.FC<{ action: 'preview' | 'print' | 'save' | 'getBl
   }
 
   return (
-    <div style={{
+    <div lang={i18n.language} style={{
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -750,11 +761,11 @@ const ImportScoresheet: React.FC<{ action: 'preview' | 'print' | 'save' | 'getBl
       gap: '20px',
       fontFamily: 'system-ui, sans-serif'
     }}>
-      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>
-        Scoresheet Viewer
-      </div>
+      <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>
+        {t('scoresheetSite.import.title', 'Scoresheet viewer')}
+      </h1>
       <div style={{ color: '#666', textAlign: 'center', maxWidth: '400px' }}>
-        Upload a scoresheet JSON file to view, print, or save it as a PDF.
+        {t('scoresheetSite.import.body', 'Open a scoresheet JSON file to view it, print it or save it as a PDF.')}
       </div>
 
       <input
@@ -781,7 +792,7 @@ const ImportScoresheet: React.FC<{ action: 'preview' | 'print' | 'save' | 'getBl
           gap: '8px'
         }}
       >
-        Import game data
+        {t('scoresheetSite.import.button', 'Open a scoresheet file')}
       </button>
 
       {error && (
@@ -854,7 +865,7 @@ if (urlMatchId) {
     console.error('Error rendering scoresheet:', error);
     sendErrorToParent(error instanceof Error ? error : new Error(String(error)));
     root.render(
-      <div style={{
+      <div lang={i18n.language} style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -863,8 +874,8 @@ if (urlMatchId) {
         gap: '20px',
         fontFamily: 'system-ui, sans-serif'
       }}>
-        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
-          Rendering Error
+        <div role="alert" style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
+          {i18n.t('scoresheetSite.renderError.title', 'Scoresheet error')}
         </div>
         <div style={{ color: '#666' }}>
           {error instanceof Error ? error.message : String(error)}
@@ -881,7 +892,7 @@ if (urlMatchId) {
             cursor: 'pointer'
           }}
         >
-          Close Window
+          {i18n.t('scoresheetSite.closeWindow', 'Close window')}
         </button>
       </div>
     );

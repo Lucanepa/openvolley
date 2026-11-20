@@ -3525,6 +3525,65 @@
     "checkTheMatch": "Spiel vor der Bestätigung prüfen:",
     "remarksClipped": "BEMERKUNGEN: Der Text passt nicht ins Feld; das PDF druckt ihn vollständig auf Seite 2."
   },
+  "scoresheetSite": {
+    "archiveTitle": "Archiv der Matchblätter",
+    "listTitle": "Matchblätter",
+    "available_one": "{{count}} Matchblatt verfügbar",
+    "available_other": "{{count}} Matchblätter verfügbar",
+    "ownerOnly": "Matchblätter öffnen sich nur für das Schreiberkonto, das sie hochgeladen hat. Melde dich mit diesem Konto an, um deine anzusehen oder herunterzuladen.",
+    "signInTitle": "Melde dich an, um dieses Matchblatt zu öffnen",
+    "signInFailed": "Anmeldung fehlgeschlagen",
+    "signedInAs": "Angemeldet als",
+    "otherAccount": "Mit einem anderen Konto anmelden",
+    "noScoresheets": "Noch keine Matchblätter hochgeladen",
+    "loadingOne": "Matchblatt wird geladen...",
+    "loadingList": "Matchblätter werden geladen...",
+    "listError": "Fehler beim Laden der Matchblätter",
+    "listErrorBody": "Die Matchblätter konnten nicht geladen werden.",
+    "game": "Spiel {{n}}",
+    "vs": "gegen",
+    "backToList": "Zurück zur Liste",
+    "matchId": "Spiel-ID: {{id}}",
+    "closeWindow": "Fenster schliessen",
+    "gamePath": "{{date}}, Spiel {{game}}",
+    "closeAndSignIn": "Schliessen und in der Schreiber-App anmelden",
+    "openAppToSignIn": "Schreiber-App öffnen und anmelden",
+    "renderError": {
+      "title": "Fehler im Matchblatt",
+      "body": "Beim Anzeigen des Matchblatts ist ein Fehler aufgetreten.",
+      "details": "Fehlerdetails"
+    },
+    "import": {
+      "title": "Matchblatt-Ansicht",
+      "body": "Öffne eine Matchblatt-Datei (JSON), um sie anzusehen, zu drucken oder als PDF zu speichern.",
+      "button": "Matchblatt-Datei öffnen",
+      "invalid": "Diese Datei enthält kein Matchblatt: Spiel, Sätze und Aktionen fehlen.",
+      "notJson": "Diese Datei liess sich nicht als Matchblatt (JSON) lesen.",
+      "readFailed": "Die Datei konnte nicht gelesen werden."
+    },
+    "load": {
+      "signin": {
+        "title": "Anmeldung nötig",
+        "message": "Genehmigte Matchblätter kann nur das Schreiberkonto öffnen, das sie hochgeladen hat. Melde dich in der Schreiber-App mit diesem Konto an und öffne das Spiel unter «Meine Spiele»."
+      },
+      "forbidden": {
+        "title": "Nicht dein Matchblatt",
+        "message": "Dieses Matchblatt kann nur das Schreiberkonto öffnen, das es hochgeladen hat."
+      },
+      "notfound": {
+        "title": "Matchblatt nicht gefunden",
+        "message": "Kein Matchblatt gefunden, das dieses Konto hochgeladen hat: {{path}}. Nur das Schreiberkonto, das das Spiel genehmigt hat, kann es öffnen."
+      },
+      "offline": {
+        "title": "Server nicht erreichbar",
+        "message": "Das Matchblatt konnte nicht geladen werden: Der Server ist nicht erreichbar. Prüfe die Verbindung und versuche es noch einmal."
+      },
+      "error": {
+        "title": "Matchblatt nicht verfügbar",
+        "message": "Das Matchblatt konnte nicht geladen werden."
+      }
+    }
+  },
   "tabletStatus": {
     "title": "Tablet-Status",
     "allConnected": "Alle Geräte verbunden",

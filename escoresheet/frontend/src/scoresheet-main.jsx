@@ -3,6 +3,7 @@ import './utils/errorReport/boot'
 import { setErrorTool } from './utils/errorReport'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import './i18n' // the page's words and the scoresheet components' (useTranslation)
 import ScoresheetApp from './ScoresheetApp'
 import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
 import './utils/cqFontScale' // undoes WebKitGTK's double page zoom on font sizes in container units

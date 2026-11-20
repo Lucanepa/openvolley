@@ -1994,6 +1994,65 @@
     "checkTheMatch": "Vérifier le match avant de l'approuver :",
     "remarksClipped": "REMARQUES : le texte ne tient pas dans la case ; le PDF l’imprime en entier en page 2."
   },
+  "scoresheetSite": {
+    "archiveTitle": "Archive des feuilles de match",
+    "listTitle": "Feuilles de match",
+    "available_one": "{{count}} feuille de match disponible",
+    "available_other": "{{count}} feuilles de match disponibles",
+    "ownerOnly": "Une feuille de match ne s’ouvre que pour le compte de marqueur qui l’a téléversée. Connecte-toi avec ce compte pour voir ou télécharger les tiennes.",
+    "signInTitle": "Connecte-toi pour ouvrir cette feuille de match",
+    "signInFailed": "La connexion a échoué",
+    "signedInAs": "Connecté en tant que",
+    "otherAccount": "Se connecter avec un autre compte",
+    "noScoresheets": "Aucune feuille de match téléversée pour l’instant",
+    "loadingOne": "Chargement de la feuille de match…",
+    "loadingList": "Chargement des feuilles de match…",
+    "listError": "Erreur de chargement des feuilles de match",
+    "listErrorBody": "Les feuilles de match n’ont pas pu être chargées.",
+    "game": "Match {{n}}",
+    "vs": "contre",
+    "backToList": "Retour à la liste",
+    "matchId": "ID du match : {{id}}",
+    "closeWindow": "Fermer la fenêtre",
+    "gamePath": "{{date}}, match {{game}}",
+    "closeAndSignIn": "Fermer et se connecter dans l’app du marqueur",
+    "openAppToSignIn": "Ouvrir l’app du marqueur pour te connecter",
+    "renderError": {
+      "title": "Erreur de la feuille de match",
+      "body": "Une erreur s’est produite à l’affichage de la feuille de match.",
+      "details": "Détails de l’erreur"
+    },
+    "import": {
+      "title": "Visionneuse de feuille de match",
+      "body": "Ouvre un fichier de feuille de match (JSON) pour l’afficher, l’imprimer ou l’enregistrer en PDF.",
+      "button": "Ouvrir un fichier de feuille de match",
+      "invalid": "Ce fichier ne contient pas de feuille de match : il n’a ni match, ni sets, ni actions.",
+      "notJson": "Ce fichier n’a pas pu être lu comme feuille de match (JSON).",
+      "readFailed": "Le fichier n’a pas pu être lu."
+    },
+    "load": {
+      "signin": {
+        "title": "Connexion requise",
+        "message": "Une feuille de match approuvée ne s’ouvre que pour le compte de marqueur qui l’a téléversée. Connecte-toi à l’app du marqueur avec ce compte et ouvre le match depuis « Mes matchs »."
+      },
+      "forbidden": {
+        "title": "Pas ta feuille de match",
+        "message": "Cette feuille de match ne s’ouvre que pour le compte de marqueur qui l’a téléversée."
+      },
+      "notfound": {
+        "title": "Feuille de match introuvable",
+        "message": "Aucune feuille de match téléversée par ce compte n’a été trouvée : {{path}}. Seul le compte de marqueur qui a approuvé le match peut l’ouvrir."
+      },
+      "offline": {
+        "title": "Serveur injoignable",
+        "message": "La feuille de match n’a pas pu être chargée : le serveur est injoignable. Vérifie la connexion et réessaie."
+      },
+      "error": {
+        "title": "Feuille de match indisponible",
+        "message": "La feuille de match n’a pas pu être chargée."
+      }
+    }
+  },
   "supportFeedback": {
     "title": "Support & avis",
     "button": "Support & avis",

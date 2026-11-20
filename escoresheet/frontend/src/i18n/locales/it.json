@@ -1995,6 +1995,65 @@
     "checkTheMatch": "Controlla la partita prima di approvarla:",
     "remarksClipped": "OSSERVAZIONI: il testo non entra nel riquadro; il PDF lo stampa per intero a pagina 2."
   },
+  "scoresheetSite": {
+    "archiveTitle": "Archivio dei referti",
+    "listTitle": "Referti",
+    "available_one": "{{count}} referto disponibile",
+    "available_other": "{{count}} referti disponibili",
+    "ownerOnly": "Un referto si apre solo per l’account segnapunti che l’ha caricato. Accedi con quell’account per vedere o scaricare i tuoi.",
+    "signInTitle": "Accedi per aprire questo referto",
+    "signInFailed": "Accesso non riuscito",
+    "signedInAs": "Accesso come",
+    "otherAccount": "Accedi con un altro account",
+    "noScoresheets": "Ancora nessun referto caricato",
+    "loadingOne": "Caricamento del referto...",
+    "loadingList": "Caricamento dei referti...",
+    "listError": "Errore nel caricare i referti",
+    "listErrorBody": "Non è stato possibile caricare i referti.",
+    "game": "Partita {{n}}",
+    "vs": "contro",
+    "backToList": "Torna all’elenco",
+    "matchId": "ID partita: {{id}}",
+    "closeWindow": "Chiudi la finestra",
+    "gamePath": "{{date}}, partita {{game}}",
+    "closeAndSignIn": "Chiudi e accedi nell’app del segnapunti",
+    "openAppToSignIn": "Apri l’app del segnapunti per accedere",
+    "renderError": {
+      "title": "Errore del referto",
+      "body": "Si è verificato un errore nel mostrare il referto.",
+      "details": "Dettagli dell’errore"
+    },
+    "import": {
+      "title": "Visualizzatore di referti",
+      "body": "Apri un file di referto (JSON) per vederlo, stamparlo o salvarlo come PDF.",
+      "button": "Apri un file di referto",
+      "invalid": "Questo file non contiene un referto: mancano partita, set e azioni.",
+      "notJson": "Non è stato possibile leggere questo file come referto (JSON).",
+      "readFailed": "Non è stato possibile leggere il file."
+    },
+    "load": {
+      "signin": {
+        "title": "Accesso necessario",
+        "message": "Un referto approvato si apre solo per l’account segnapunti che l’ha caricato. Accedi all’app del segnapunti con quell’account e apri la partita da «Le mie partite»."
+      },
+      "forbidden": {
+        "title": "Non è il tuo referto",
+        "message": "Questo referto si apre solo per l’account segnapunti che l’ha caricato."
+      },
+      "notfound": {
+        "title": "Referto non trovato",
+        "message": "Nessun referto caricato da questo account è stato trovato: {{path}}. Solo l’account segnapunti che ha approvato la partita può aprirlo."
+      },
+      "offline": {
+        "title": "Server non raggiungibile",
+        "message": "Non è stato possibile caricare il referto: il server non è raggiungibile. Controlla la connessione e riprova."
+      },
+      "error": {
+        "title": "Referto non disponibile",
+        "message": "Non è stato possibile caricare il referto."
+      }
+    }
+  },
   "supportFeedback": {
     "title": "Supporto & feedback",
     "button": "Supporto & feedback",

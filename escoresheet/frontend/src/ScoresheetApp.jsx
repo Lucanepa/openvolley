@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+import './i18n' // the page's words and the scoresheet components' (own entry, own i18n init)
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { apiFrom, apiStorage } from './lib/apiClient'
-import './i18n' // the scoresheet components call useTranslation (own entry, own i18n init)
 import App from '../scoresheet_pdf/App_Scoresheet'
 import { loadLocalMatchData } from '../scoresheet_pdf/utils/matchData'
 import { ArrowLeft, ChevronRight, ClipboardList, FileX2, Lock, LogOut, X } from 'lucide-react'
@@ -56,14 +57,22 @@ const fetchArchiveMatches = async () => {
   }
 }
 
+// The page's words are in the app's language (i18n: the browser's, or the one
+// chosen before on this site); the sheet itself stays as printed (English).
+// `lang` on the page's own parts (the language chosen), never on the sheet
+const langOf = (i18n) => i18n?.language || 'en'
+
 // Scoresheets open only for the account that uploaded them (backend README
 // "Who can read a scoresheet"). The session is per origin (localStorage), so
 // this site signs in on its own; the scorer app's session does not reach it.
-const OWNER_ONLY_NOTE = 'Scoresheets open only for the scorer account that uploaded them. Sign in with that account to view or download yours.'
+const ownerOnlyNote = (t) => t('scoresheetSite.ownerOnly', 'Scoresheets open only for the scorer account that uploaded them. Sign in with that account to view or download yours.')
+// "<date>, game <n>": the scoresheet a load error names
+const gamePath = (t, date, game) => t('scoresheetSite.gamePath', { date, game, defaultValue: '{{date}}, game {{game}}' })
 
 // Email + password sign-in (no sign-up or reset here: an account without
 // scoresheets has nothing to open on this site).
 const ArchiveSignIn = ({ onDone, autoFocus = false }) => {
+  const { t } = useTranslation()
   const { signIn } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -76,25 +85,25 @@ const ArchiveSignIn = ({ onDone, autoFocus = false }) => {
     const { error: signInError } = await signIn(email.trim(), password)
     setBusy(false)
     if (signInError) {
-      setError(signInError.message || 'Sign-in failed')
+      setError(signInError.message || t('scoresheetSite.signInFailed', 'Sign-in failed'))
       return
     }
     setPassword('')
     onDone?.()
   }
   return (
-    <form onSubmit={submit} className="space-y-3 text-left" aria-label="Sign in">
+    <form onSubmit={submit} className="space-y-3 text-left" aria-label={t('auth.signIn', 'Sign in')}>
       {error && (
         <p role="alert" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
       )}
-      <Field label="Email">
+      <Field label={t('auth.email', 'Email')}>
         <Input size="lg" type="email" autoComplete="email" required autoFocus={autoFocus} value={email} onChange={(e) => setEmail(e.target.value)} />
       </Field>
-      <Field label="Password">
+      <Field label={t('auth.password', 'Password')}>
         <Input size="lg" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
       <Button variant="hero" block type="submit" loading={busy} disabled={busy}>
-        {busy ? 'Signing in...' : 'Sign in'}
+        {busy ? t('common.signingIn', 'Signing in...') : t('auth.signIn', 'Sign in')}
       </Button>
     </form>
   )
@@ -102,23 +111,24 @@ const ArchiveSignIn = ({ onDone, autoFocus = false }) => {
 
 // Signed in: who, and sign out. Anonymous: the sign-in toggle.
 const AccountBar = ({ onSignIn, signInOpen }) => {
+  const { t } = useTranslation()
   const { user, signOut, loading } = useAuth()
   if (loading) return null
   if (user) {
     return (
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
         <span className="min-w-0 truncate text-sm text-stone-600" title={user.email}>
-          <span className="sr-only">Signed in as </span>{user.email}
+          <span className="sr-only">{t('scoresheetSite.signedInAs', 'Signed in as')} </span>{user.email}
         </span>
         <Button variant="secondary" size="xl" className="bg-white" onClick={() => signOut()}>
-          <LogOut className="h-4 w-4" aria-hidden /> Sign out
+          <LogOut className="h-4 w-4" aria-hidden /> {t('auth.signOut', 'Sign out')}
         </Button>
       </div>
     )
   }
   return (
     <Button variant="dark" size="xl" onClick={onSignIn} aria-expanded={signInOpen}>
-      <Lock className="h-4 w-4" aria-hidden /> Sign in
+      <Lock className="h-4 w-4" aria-hidden /> {t('auth.signIn', 'Sign in')}
     </Button>
   )
 }
@@ -128,10 +138,10 @@ const LEVEL_ORDER = { senior: 0, U23: 1, U19: 2 }
 const MATCH_TYPE_ORDER = { championship: 0, cup: 1, tournament: 2, friendly: 3 }
 const GENDER_ORDER = { men: 0, women: 1 }
 
-// Display labels
-const LEVEL_LABELS = { senior: 'Senior', U23: 'U23', U19: 'U19' }
-const MATCH_TYPE_LABELS = { championship: 'Championship', cup: 'Cup', tournament: 'Tournament', friendly: 'Friendly' }
-const GENDER_LABELS = { men: 'Men', women: 'Women' }
+// Display labels (Match Setup's words): [key, English] for t()
+const LEVEL_LABELS = { senior: ['matchSetup.senior', 'Senior'], U23: [null, 'U23'], U19: [null, 'U19'] }
+const MATCH_TYPE_LABELS = { championship: ['matchSetup.championship', 'Championship'], cup: ['matchSetup.cup', 'Cup'], tournament: ['matchSetup.tournament', 'Tournament'], friendly: ['matchSetup.friendly', 'Friendly'] }
+const GENDER_LABELS = { men: ['matchSetup.men', 'Men'], women: ['matchSetup.women', 'Women'] }
 
 function getSortOrder(map, key) {
   return Object.hasOwn(map, key) && map[key] !== undefined ? map[key] : 999
@@ -141,9 +151,13 @@ function getSortOrder(map, key) {
 // Grouped by the rows' own free-text values: no prototype, so a league named
 // 'constructor' or '__proto__' is a group like any other
 const group = () => Object.create(null)
-const labelOf = (labels, key) => (Object.hasOwn(labels, key) ? labels[key] : key)
+const labelOf = (labels, key, t) => {
+  if (!Object.hasOwn(labels, key)) return key
+  const [k, en] = labels[key]
+  return k && t ? t(k, en) : en
+}
 
-function buildArchiveTree(matches) {
+function buildArchiveTree(matches, t = null) {
   const tree = group()
 
   for (const match of matches) {
@@ -153,7 +167,7 @@ function buildArchiveTree(matches) {
     const levelKey = info.match_type_3 || 'other'
     const levelLabel = levelKey === 'other' && info.match_type_3_other
       ? info.match_type_3_other
-      : labelOf(LEVEL_LABELS, levelKey)
+      : labelOf(LEVEL_LABELS, levelKey, t)
     // Use the label as grouping key for custom "other" values
     const levelGroupKey = levelKey === 'other' && info.match_type_3_other
       ? `other_${info.match_type_3_other}`
@@ -163,17 +177,17 @@ function buildArchiveTree(matches) {
     const mtKey = info.match_type_1 || 'other'
     const mtLabel = mtKey === 'other' && info.match_type_1_other
       ? info.match_type_1_other
-      : labelOf(MATCH_TYPE_LABELS, mtKey)
+      : labelOf(MATCH_TYPE_LABELS, mtKey, t)
     const mtGroupKey = mtKey === 'other' && info.match_type_1_other
       ? `other_${info.match_type_1_other}`
       : mtKey
 
     // Gender
     const genderKey = info.match_type_2 || 'other'
-    const genderLabel = labelOf(GENDER_LABELS, genderKey)
+    const genderLabel = labelOf(GENDER_LABELS, genderKey, t)
 
     // League
-    const league = info.league || 'Other'
+    const league = info.league || (t ? t('matchSetup.other', 'Other') : 'Other')
 
     // Build nested structure
     if (!tree[levelGroupKey]) tree[levelGroupKey] = { label: levelLabel, sortKey: levelKey, children: group() }
@@ -233,11 +247,14 @@ const getUrlParams = () => {
 }
 
 // Full-page loading state (kit spinner on the warm stone page).
-const PageLoading = ({ label }) => (
-  <div className="ov-kit flex min-h-screen items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
-    <AppSpinner label={label} />
-  </div>
-)
+const PageLoading = ({ label }) => {
+  const { i18n } = useTranslation()
+  return (
+    <div lang={langOf(i18n)} className="ov-kit flex min-h-screen items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
+      <AppSpinner label={label} />
+    </div>
+  )
+}
 
 // A list row's text-styled link: the dark lead tool and the outline tool (kit RowTool, as <a>).
 const ROW_LINK = cn(
@@ -286,8 +303,9 @@ const CollapsibleSection = ({ title, count, depth = 0, defaultOpen = false, chil
 
 // One archived match: date rail, home over away, game number and final score chips, view / download tools
 const MatchCard = ({ match }) => {
-  const homeTeam = match.home_team?.name || 'Team A'
-  const awayTeam = match.away_team?.name || 'Team B'
+  const { t, i18n } = useTranslation()
+  const homeTeam = match.home_team?.name || t('coinToss.teamA', 'Team A')
+  const awayTeam = match.away_team?.name || t('coinToss.teamB', 'Team B')
   const finalScore = match.final_score || ''
   const scheduledAt = match.scheduled_at || match.created_at
   const date = scheduledAt ? new Date(scheduledAt).toISOString().slice(0, 10) : null
@@ -299,7 +317,7 @@ const MatchCard = ({ match }) => {
     <Row
       leading={
         <DateRail
-          weekday={day ? weekdayLabel(when, 'en') : undefined}
+          weekday={day ? weekdayLabel(when, i18n.language) : undefined}
           date={day || '–'}
           time={day ? timeLabel(when) || undefined : undefined}
         />
@@ -308,13 +326,13 @@ const MatchCard = ({ match }) => {
         <div className="min-w-0 text-left">
           <p className="text-sm font-semibold leading-snug break-words text-stone-900 sm:text-[15px]">{homeTeam}</p>
           <p className="text-sm leading-snug break-words text-stone-600 sm:text-[15px]">
-            <span className="sr-only">vs </span>{awayTeam}
+            <span className="sr-only">{t('scoresheetSite.vs', 'vs')} </span>{awayTeam}
           </p>
         </div>
       }
       chips={(match.game_n || finalScore) ? (
         <>
-          {match.game_n && <Chip>Game {match.game_n}</Chip>}
+          {match.game_n && <Chip>{t('scoresheetSite.game', { n: match.game_n, defaultValue: 'Game {{n}}' })}</Chip>}
           {finalScore && <Chip tone="emerald"><span className="tabular-nums">{finalScore}</span></Chip>}
         </>
       ) : undefined}
@@ -324,7 +342,7 @@ const MatchCard = ({ match }) => {
             href={`?date=${date}&game=${gameNumber}`}
             className={cn(ROW_LINK, 'bg-slate-900 text-white hover:bg-slate-800')}
           >
-            View
+            {t('manage.scoresheets.view', 'View')}
           </a>
           <a
             href={`?date=${date}&game=${gameNumber}&action=save`}
@@ -332,7 +350,7 @@ const MatchCard = ({ match }) => {
             rel="noopener noreferrer"
             className={cn(ROW_LINK, 'border border-stone-300 bg-white text-stone-600 hover:bg-stone-50')}
           >
-            Download PDF
+            {t('manage.scoresheets.download', 'Download PDF')}
           </a>
         </>
       ) : undefined}
@@ -342,6 +360,8 @@ const MatchCard = ({ match }) => {
 
 // Scoresheet viewer component
 const ScoresheetViewer = ({ date, game, action }) => {
+  const { t, i18n } = useTranslation()
+  const uiLang = langOf(i18n)
   const { user, loading: authLoading, signOut } = useAuth()
   const [matchData, setMatchData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -353,7 +373,7 @@ const ScoresheetViewer = ({ date, game, action }) => {
     // No session on this site: storage would only answer 401, so ask for the
     // sign-in straight away (no failing request in the console).
     if (!userId) {
-      setError(describeScoresheetLoadError({ status: 401, code: 'missing_token' }, `${date}, game ${game}`))
+      setError(describeScoresheetLoadError({ status: 401, code: 'missing_token' }, gamePath(t, date, game), t))
       setLoading(false)
       return
     }
@@ -367,38 +387,38 @@ const ScoresheetViewer = ({ date, game, action }) => {
         if (data) {
           setMatchData(data)
         } else {
-          setError(describeScoresheetLoadError(loadError, `${date}, game ${game}`))
+          setError(describeScoresheetLoadError(loadError, gamePath(t, date, game), t))
         }
       } catch (err) {
-        if (!cancelled) setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, `${date}, game ${game}`))
+        if (!cancelled) setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, gamePath(t, date, game), t))
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
     loadData()
     return () => { cancelled = true }
-  }, [date, game, userId, authLoading])
+  }, [date, game, userId, authLoading, t])
 
   if (loading || authLoading) {
-    return <PageLoading label="Loading scoresheet..." />
+    return <PageLoading label={t('scoresheetSite.loadingOne', 'Loading scoresheet...')} />
   }
 
-  const backToList = { label: 'Back to list', icon: <ArrowLeft className="h-4 w-4" />, onClick: () => { reloadWithReason('scoresheet-back-to-list', { how: 'href', url: window.location.pathname }) } }
+  const backToList = { label: t('scoresheetSite.backToList', 'Back to list'), icon: <ArrowLeft className="h-4 w-4" />, onClick: () => { reloadWithReason('scoresheet-back-to-list', { how: 'href', url: window.location.pathname }) } }
 
   if (error?.kind === 'signin') {
     return (
-      <div className="ov-kit flex min-h-screen items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
+      <div lang={uiLang} className="ov-kit flex min-h-screen items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
         <div className="w-full max-w-sm rounded-3xl border border-stone-200/70 bg-white p-6 shadow-card-lg sm:p-8">
           <Lock className="mx-auto h-8 w-8 text-red-600" aria-hidden />
-          <h1 className="mt-3 text-center text-base font-semibold text-stone-900">Sign in to open this scoresheet</h1>
-          <p className="mt-1.5 mb-5 text-center text-sm text-stone-600">{OWNER_ONLY_NOTE}</p>
+          <h1 className="mt-3 text-center text-base font-semibold text-stone-900">{t('scoresheetSite.signInTitle', 'Sign in to open this scoresheet')}</h1>
+          <p className="mt-1.5 mb-5 text-center text-sm text-stone-600">{ownerOnlyNote(t)}</p>
           <ArchiveSignIn autoFocus />
           <button
             type="button"
             onClick={backToList.onClick}
             className={cn('mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg text-sm text-stone-600 transition-colors hover:text-stone-900', FOCUS_RING)}
           >
-            <ArrowLeft className="h-4 w-4" aria-hidden /> Back to list
+            <ArrowLeft className="h-4 w-4" aria-hidden /> {backToList.label}
           </button>
         </div>
       </div>
@@ -407,13 +427,13 @@ const ScoresheetViewer = ({ date, game, action }) => {
 
   if (error) {
     return (
-      <div className="ov-kit">
+      <div lang={uiLang} className="ov-kit">
         <GateMessage
           icon={FileX2}
           title={error.title}
           body={error.message}
           action={backToList}
-          secondary={userId && (error.kind === 'forbidden' || error.kind === 'notfound') ? { label: 'Sign in with another account', onClick: () => signOut() } : undefined}
+          secondary={userId && (error.kind === 'forbidden' || error.kind === 'notfound') ? { label: t('scoresheetSite.otherAccount', 'Sign in with another account'), onClick: () => signOut() } : undefined}
         />
       </div>
     )
@@ -424,6 +444,8 @@ const ScoresheetViewer = ({ date, game, action }) => {
 
 // Scoresheet list component with hierarchical grouping
 const ScoresheetList = () => {
+  const { t, i18n } = useTranslation()
+  const uiLang = langOf(i18n)
   const { user } = useAuth()
   const [signInOpen, setSignInOpen] = useState(false)
   const [matches, setMatches] = useState([])
@@ -436,38 +458,38 @@ const ScoresheetList = () => {
         const items = await fetchArchiveMatches()
         setMatches(items)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load scoresheets')
+        setError(err instanceof Error ? err.message : t('scoresheetSite.listErrorBody', 'The scoresheets could not be loaded.'))
       } finally {
         setLoading(false)
       }
     }
     loadList()
-  }, [])
+  }, [t])
 
-  const tree = useMemo(() => buildArchiveTree(matches), [matches])
+  const tree = useMemo(() => buildArchiveTree(matches, t), [matches, t])
 
   if (loading) {
-    return <PageLoading label="Loading scoresheets..." />
+    return <PageLoading label={t('scoresheetSite.loadingList', 'Loading scoresheets...')} />
   }
 
   if (error) {
     return (
-      <div className="ov-kit">
-        <GateMessage title="Error loading scoresheets" body={error} />
+      <div lang={uiLang} className="ov-kit">
+        <GateMessage title={t('scoresheetSite.listError', 'Error loading scoresheets')} body={error} />
       </div>
     )
   }
 
   return (
-    <div className="ov-kit min-h-screen bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6 sm:py-8">
+    <div lang={uiLang} className="ov-kit min-h-screen bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6 sm:py-8">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <Card className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <img src={BRAND.mark} alt="OpenVolley" className="h-10 w-10 shrink-0" />
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-bold tracking-tight text-stone-900 sm:text-2xl">Scoresheet archive</h1>
+            <h1 className="text-xl font-bold tracking-tight text-stone-900 sm:text-2xl">{t('scoresheetSite.archiveTitle', 'Scoresheet archive')}</h1>
             <p className="text-sm text-stone-500">
-              {matches.length} scoresheet{matches.length !== 1 ? 's' : ''} available
+              {t('scoresheetSite.available', { count: matches.length, defaultValue: '{{count}} scoresheets available' })}
             </p>
           </div>
           <div className="ml-auto">
@@ -479,7 +501,7 @@ const ScoresheetList = () => {
           <Card>
             <p className="flex items-start gap-2 text-sm text-stone-600">
               <Lock className="mt-0.5 h-4 w-4 shrink-0 text-stone-500" aria-hidden />
-              <span>{OWNER_ONLY_NOTE}</span>
+              <span>{ownerOnlyNote(t)}</span>
             </p>
             {signInOpen && (
               <div className="mt-4 max-w-sm">
@@ -491,7 +513,7 @@ const ScoresheetList = () => {
 
         {matches.length === 0 ? (
           <Card>
-            <EmptyState icon={ClipboardList}>No scoresheets uploaded yet</EmptyState>
+            <EmptyState icon={ClipboardList}>{t('scoresheetSite.noScoresheets', 'No scoresheets uploaded yet')}</EmptyState>
           </Card>
         ) : (
           tree.map(levelGroup => (
@@ -550,6 +572,8 @@ const ScoresheetList = () => {
 
 // MatchId viewer component - loads from IndexedDB
 const MatchIdViewer = ({ matchId, action }) => {
+  const { t, i18n } = useTranslation()
+  const uiLang = langOf(i18n)
   // Convert matchId to number if it's a numeric string
   const numericMatchId = !isNaN(matchId) ? parseInt(matchId, 10) : matchId
 
@@ -561,17 +585,17 @@ const MatchIdViewer = ({ matchId, action }) => {
 
   // Show loading state while initial data is being fetched
   if (match === undefined) {
-    return <PageLoading label="Loading scoresheet..." />
+    return <PageLoading label={t('scoresheetSite.loadingOne', 'Loading scoresheet...')} />
   }
 
   if (match === null) {
     return (
-      <div className="ov-kit">
+      <div lang={uiLang} className="ov-kit">
         <GateMessage
           icon={FileX2}
-          title="Match not found"
-          body={`Match ID: ${matchId}`}
-          action={{ label: 'Close window', icon: <X className="h-4 w-4" />, onClick: () => window.close() }}
+          title={t('matchSetup.matchNotFound', 'Match not found')}
+          body={t('scoresheetSite.matchId', { id: matchId, defaultValue: 'Match ID: {{id}}' })}
+          action={{ label: t('scoresheetSite.closeWindow', 'Close window'), icon: <X className="h-4 w-4" />, onClick: () => window.close() }}
         />
       </div>
     )

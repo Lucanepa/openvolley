@@ -18,6 +18,7 @@
  * Never log the key: console output is uploaded with the interaction logs.
  */
 
+import type { TFunction } from 'i18next'
 export const SCORESHEET_KEY_RE = /^k[0-9a-f]{32}$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const NAME_RE = /^game(.+?)(?:_(k[0-9a-f]{32}))?(_final)?\.(json|pdf)$/
@@ -158,33 +159,54 @@ export function finalScoresheetUrl(match: { status?: string | null, scheduled_at
 
 export type ScoresheetLoadError = { kind: 'signin' | 'forbidden' | 'notfound' | 'offline' | 'error', title: string, message: string }
 
-/** What to tell the viewer when the storage download of a scoresheet failed. */
-export function describeScoresheetLoadError(error: { status?: number, code?: string, message?: string, network?: boolean } | null | undefined, storagePath: string): ScoresheetLoadError {
+/** i18next's t (the page's language); without it the English texts below */
+export type Translate = TFunction
+
+// The viewer pages' words (scoresheetSite.load.*), English as the default
+const LOAD_TEXT = {
+  signin: {
+    title: 'Sign-in required',
+    message: 'Approved scoresheets can only be opened by the scorer account that uploaded them. Sign in to the scorer app with that account and open the match from My matches.'
+  },
+  forbidden: {
+    title: 'Not your scoresheet',
+    message: 'This scoresheet can only be opened by the scorer account that uploaded it.'
+  },
+  notfound: {
+    title: 'Scoresheet not found',
+    message: 'No scoresheet uploaded by this account was found: {{path}}. Only the scorer account that approved the match can open it.'
+  },
+  offline: {
+    title: 'Server not reachable',
+    message: 'The scoresheet could not be loaded: the server is not reachable. Check the connection and try again.'
+  },
+  error: {
+    title: 'Scoresheet not available',
+    message: 'The scoresheet could not be loaded.'
+  }
+} as const
+
+const fill = (text: string, values: Record<string, string>) => text.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in values ? values[k] : m))
+
+/**
+ * What to tell the viewer when the storage download of a scoresheet failed,
+ * in the page's language with `t` (else English). An unknown failure keeps
+ * the storage error's own message when it has one.
+ */
+export function describeScoresheetLoadError(error: { status?: number, code?: string, message?: string, network?: boolean } | null | undefined, storagePath: string, t?: Translate): ScoresheetLoadError {
   const status = error?.status
   const code = error?.code
-  if (status === 401 || code === 'missing_token' || code === 'invalid_token') {
-    return {
-      kind: 'signin',
-      title: 'Sign-in Required',
-      message: 'Approved scoresheets can only be opened by the scorer account that uploaded them. Sign in to the scorer app with that account and open the match from My Matches.'
-    }
+  const text = (kind: ScoresheetLoadError['kind'], values: Record<string, string> = {}): ScoresheetLoadError => {
+    const def = LOAD_TEXT[kind]
+    const tr = (part: 'title' | 'message'): string => (t
+      ? String(t(`scoresheetSite.load.${kind}.${part}`, { defaultValue: def[part], ...values }))
+      : fill(def[part], values))
+    return { kind, title: tr('title'), message: tr('message') }
   }
-  if (status === 403 || code === 'OV_STORAGE_FORBIDDEN') {
-    return {
-      kind: 'forbidden',
-      title: 'Not Your Scoresheet',
-      message: 'This scoresheet can only be opened by the scorer account that uploaded it.'
-    }
-  }
-  if (status === 404 || code === 'OV_STORAGE_NOT_FOUND') {
-    return {
-      kind: 'notfound',
-      title: 'Scoresheet Not Found',
-      message: `No scoresheet uploaded by this account was found: ${redactScoresheetPath(storagePath)}. Only the scorer account that approved the match can open it.`
-    }
-  }
-  if (error?.network || status === 0) {
-    return { kind: 'offline', title: 'Server Not Reachable', message: 'The scoresheet could not be loaded: the server is not reachable. Check the connection and try again.' }
-  }
-  return { kind: 'error', title: 'Scoresheet Not Available', message: error?.message || 'Failed to load scoresheet' }
+  if (status === 401 || code === 'missing_token' || code === 'invalid_token') return text('signin')
+  if (status === 403 || code === 'OV_STORAGE_FORBIDDEN') return text('forbidden')
+  if (status === 404 || code === 'OV_STORAGE_NOT_FOUND') return text('notfound', { path: redactScoresheetPath(storagePath) })
+  if (error?.network || status === 0) return text('offline')
+  const out = text('error')
+  return error?.message ? { ...out, message: error.message } : out
 }

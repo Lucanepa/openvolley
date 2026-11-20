@@ -1995,6 +1995,65 @@
     "checkTheMatch": "Spiil vor em Genehmige prüefe:",
     "remarksClipped": "BEMERKIGE: De Text passt nöd is Fäld; s PDF druckt en vollständig uf Siite 2."
   },
+  "scoresheetSite": {
+    "archiveTitle": "Archiv vo de Matchblätter",
+    "listTitle": "Matchblätter",
+    "available_one": "{{count}} Matchblatt verfüegbar",
+    "available_other": "{{count}} Matchblätter verfüegbar",
+    "ownerOnly": "Matchblätter gönd nur für s Schriiber-Konto uf, wo sie ufeglade hät. Mäld dich mit dem Konto aa, zum dini aaluege oder abelade.",
+    "signInTitle": "Mäld dich aa, zum das Matchblatt ufmache",
+    "signInFailed": "Aamäldig fehlgschlage",
+    "signedInAs": "Aagmäldet als",
+    "otherAccount": "Mit emene andere Konto aamälde",
+    "noScoresheets": "No kei Matchblätter ufeglade",
+    "loadingOne": "Matchblatt wird glade...",
+    "loadingList": "Matchblätter werded glade...",
+    "listError": "Fehler bim Lade vo de Matchblätter",
+    "listErrorBody": "D Matchblätter händ nöd chöne glade werde.",
+    "game": "Spiil {{n}}",
+    "vs": "gäge",
+    "backToList": "Zrugg zur Lischte",
+    "matchId": "Spiil-ID: {{id}}",
+    "closeWindow": "Fänschter schliesse",
+    "gamePath": "{{date}}, Spiil {{game}}",
+    "closeAndSignIn": "Schliesse und i de Schriiber-App aamälde",
+    "openAppToSignIn": "Schriiber-App ufmache und aamälde",
+    "renderError": {
+      "title": "Fehler im Matchblatt",
+      "body": "Bim Aazeige vom Matchblatt isch en Fehler passiert.",
+      "details": "Fehlerdetails"
+    },
+    "import": {
+      "title": "Matchblatt-Aasicht",
+      "body": "Mach e Matchblatt-Datei (JSON) uf, zum sie aaluege, drucke oder als PDF speichere.",
+      "button": "Matchblatt-Datei ufmache",
+      "invalid": "I dere Datei isch kei Matchblatt: Spiil, Sätz und Aktione fehled.",
+      "notJson": "Die Datei hät sich nöd als Matchblatt (JSON) läse lah.",
+      "readFailed": "D Datei hät nöd chöne gläse werde."
+    },
+    "load": {
+      "signin": {
+        "title": "Aamäldig nötig",
+        "message": "Genehmigti Matchblätter cha nur s Schriiber-Konto ufmache, wo sie ufeglade hät. Mäld dich i de Schriiber-App mit dem Konto aa und mach s Spiil under «Mini Spiil» uf."
+      },
+      "forbidden": {
+        "title": "Nöd dis Matchblatt",
+        "message": "Das Matchblatt cha nur s Schriiber-Konto ufmache, wo s ufeglade hät."
+      },
+      "notfound": {
+        "title": "Matchblatt nöd gfunde",
+        "message": "Kei Matchblatt gfunde, wo das Konto ufeglade hät: {{path}}. Nur s Schriiber-Konto, wo s Spiil genehmigt hät, cha s ufmache."
+      },
+      "offline": {
+        "title": "Server nöd erreichbar",
+        "message": "S Matchblatt hät nöd chöne glade werde: De Server isch nöd erreichbar. Prüef d Verbindig und probier s nomal."
+      },
+      "error": {
+        "title": "Matchblatt nöd verfüegbar",
+        "message": "S Matchblatt hät nöd chöne glade werde."
+      }
+    }
+  },
   "supportFeedback": {
     "title": "Support & Feedback",
     "button": "Support & Feedback",

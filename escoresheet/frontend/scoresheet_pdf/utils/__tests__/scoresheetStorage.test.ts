@@ -90,10 +90,30 @@ describe('describeScoresheetLoadError', () => {
     expect(describeScoresheetLoadError({ status: 403, code: 'OV_STORAGE_FORBIDDEN' }, p).kind).toBe('forbidden')
     // the backend answers a missing object with 200 + OV_STORAGE_NOT_FOUND
     const missing = describeScoresheetLoadError({ status: 200, code: 'OV_STORAGE_NOT_FOUND' }, p)
-    expect(missing).toMatchObject({ kind: 'notfound', title: 'Scoresheet Not Found' })
+    expect(missing).toMatchObject({ kind: 'notfound', title: 'Scoresheet not found' })
     expect(missing.message).toContain(p)
     expect(describeScoresheetLoadError({ status: 0, network: true, message: 'Failed to fetch' }, p).kind).toBe('offline')
     expect(describeScoresheetLoadError({ status: 500, message: 'Storage operation failed' }, p)).toMatchObject({ kind: 'error', message: 'Storage operation failed' })
-    expect(describeScoresheetLoadError(null, p).kind).toBe('error')
+    expect(describeScoresheetLoadError(null, p)).toMatchObject({ kind: 'error', message: 'The scoresheet could not be loaded.' })
+  })
+
+  it('in the page\'s language with t: scoresheetSite.load.<kind>, the English as default, the path filled in', () => {
+    const calls: Array<[string, any]> = []
+    const t = ((key: string, opts: any) => { calls.push([key, opts]); return `${key}|${opts?.path ?? ''}` }) as any
+    const missing = describeScoresheetLoadError({ status: 404 }, '2026-10-05, Spiel 7', t)
+    expect(missing).toEqual({ kind: 'notfound', title: 'scoresheetSite.load.notfound.title|2026-10-05, Spiel 7', message: 'scoresheetSite.load.notfound.message|2026-10-05, Spiel 7' })
+    expect(calls[1][1].defaultValue).toContain('No scoresheet uploaded by this account was found: {{path}}')
+    expect(describeScoresheetLoadError({ status: 401 }, p, t).title).toBe('scoresheetSite.load.signin.title|')
+    // an unknown failure keeps the storage error's own message
+    expect(describeScoresheetLoadError({ status: 500, message: 'Storage operation failed' }, p, t)).toMatchObject({ kind: 'error', title: 'scoresheetSite.load.error.title|', message: 'Storage operation failed' })
+  })
+
+  it('the English defaults are the en locale\'s words', async () => {
+    const en = (await import('../../../src/i18n/locales/en.json')).default as any
+    for (const [err, kind] of [[{ status: 401 }, 'signin'], [{ status: 403 }, 'forbidden'], [{ status: 404 }, 'notfound'], [{ network: true }, 'offline'], [null, 'error']] as const) {
+      const out = describeScoresheetLoadError(err, '{{path}}')
+      expect(out.title).toBe(en.scoresheetSite.load[kind].title)
+      expect(out.message).toBe(en.scoresheetSite.load[kind].message)
+    }
   })
 })
