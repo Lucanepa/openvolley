@@ -7,8 +7,8 @@ People added by hand (section 8, db/026, privacy 1.12) on `fix/manager-list-card
 **db/048 (owner 2026-11-19, privacy 1.21): no dates of birth.** "for switzerland: import only the
 licence number from the einsatzliste etc. also on club manager/team manager etc: ONLY licence
 number." The lists keep **four fields** (licence number, last name, first name, gender); the export's
-date of birth column is never read, `club_licences.dob` is NULL (db/048 cleared it) until db/049
-drops it, and a `dob` an older manager build or Club API client sends is accepted and dropped
+date of birth column is never read, `club_licences.dob` is gone (db/048 cleared it, db/049
+dropped it), and a `dob` an older manager build or Club API client sends is accepted and dropped
 (never a 400). `fillDob`, `fillTeamDob`, the date-of-birth lookup with its caps and audit and the
 age-class filter (`fitsAgeClass`) are gone: a youth team is offered every player of its gender
 (`age_class` is still answered, for the label). `GET /api/club-licences/dob` answers
@@ -187,7 +187,7 @@ longer written since db/048; older entries stay filterable.)
 
 ## 6. Data and retention
 
-- `club_licences(club_id, list, sv_number, last_name, first_name, dob, gender, imported_at,
+- `club_licences(club_id, list, sv_number, last_name, first_name, gender, imported_at,
   imported_by, source, season, id)`, primary key `(club_id, list, sv_number)` (`dob` NULL since
   db/048, dropped by db/049); `source` `import`, `manual` (db/026: `imported_at`/`imported_by` of
   a manual row: when and by whom it was added) or `match` (db/048: a person of an official match's

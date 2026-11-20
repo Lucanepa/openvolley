@@ -109,10 +109,10 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
   it('erases the person from a closed match, its events and the lists; the match stays closed; audited by the caller', async () => {
     const id = await seed('rp-1')
     const { rows: [club] } = await owner.query("INSERT INTO public.clubs (name) VALUES ('Club One') RETURNING id")
-    await owner.query(`INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, dob) VALUES
-      ($1, 'players', '123456', 'Example', 'Mia', '2011-03-02'), ($1, 'players', '654321', 'Other', 'Lea', '2010-01-01')`, [club.id])
-    await owner.query(`INSERT INTO public.svrz_games (game_number, referee_1, referee_1_first_name, referee_1_last_name, referee_1_dob)
-      VALUES ('5101', 'Example Mia', 'Mia', 'Example', '2011-03-02')`)
+    await owner.query(`INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name) VALUES
+      ($1, 'players', '123456', 'Example', 'Mia'), ($1, 'players', '654321', 'Other', 'Lea')`, [club.id])
+    await owner.query(`INSERT INTO public.svrz_games (game_number, referee_1, referee_1_first_name, referee_1_last_name)
+      VALUES ('5101', 'Example Mia', 'Mia', 'Example')`)
     // the app role cannot do it: the match is closed
     const r = await tx(() => redactPerson(owner, { who: { first: 'Mia', last: 'Example' } }))
     assert.deepEqual(r.matches, [id])
@@ -129,8 +129,8 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
     const { rows: [e] } = await owner.query('SELECT payload FROM public.events WHERE match_id = $1', [id])
     assert.equal(e.payload.text, `${REDACTED} injured`)
     assert.deepEqual((await owner.query('SELECT sv_number FROM public.club_licences')).rows.map((x) => x.sv_number), ['654321'])
-    const { rows: [g] } = await owner.query('SELECT referee_1, referee_1_first_name, referee_1_dob FROM public.svrz_games')
-    assert.deepEqual(g, { referee_1: REDACTED, referee_1_first_name: REDACTED, referee_1_dob: null })
+    const { rows: [g] } = await owner.query('SELECT referee_1, referee_1_first_name, referee_1_last_name FROM public.svrz_games')
+    assert.deepEqual(g, { referee_1: REDACTED, referee_1_first_name: REDACTED, referee_1_last_name: REDACTED })
   })
 
   it('--match: only those matches (a namesake elsewhere is left)', async () => {

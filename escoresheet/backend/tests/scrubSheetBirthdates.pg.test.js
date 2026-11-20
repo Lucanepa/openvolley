@@ -54,6 +54,8 @@ describe('scrub-sheet-birthdates', { skip: SKIP_PG }, () => {
     tdb = await createTestDatabase('scrubsheets')
     sql = new pg.Client({ connectionString: tdb.url })
     await sql.connect()
+    // the step ran between db/048 and db/049: profiles.dob was still there (db/049's test: the step skips it after)
+    await sql.query('ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS dob date')
     base = await mkdtemp(join(tmpdir(), 'ov-scrub-test-'))
     await writeFile(join(base, SENTINEL_NAME), '')
     storage = createStorage({ root: base, statfs: async () => ({ bavail: 1e9, bsize: 4096 }), uploaderReadBuckets: ['scoresheets'], logger: silent })

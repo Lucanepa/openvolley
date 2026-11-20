@@ -630,11 +630,12 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     const c = new pg.Client({ connectionString: db.url })
     await c.connect()
     try {
-      await c.query(`INSERT INTO public.referee_database (first_name, last_name, country, dob, sport_type)
-        VALUES ('Dora', 'Dobtest', 'SUI', $1, '["indoor"]'::json)`, [DOB1])
+      // (db/049 dropped the dob columns: the apps that select them get null)
+      await c.query(`INSERT INTO public.referee_database (first_name, last_name, country, sport_type)
+        VALUES ('Dora', 'Dobtest', 'SUI', '["indoor"]'::json)`)
       await c.query(`INSERT INTO public.svrz_games (game_number, datetime, league, gender, team_home, team_away,
-        referee_1_first_name, referee_1_last_name, referee_1_dob, referee_2_dob)
-        VALUES ('E2E-DOB', '2099-01-01T18:00:00', 'H2', 'men', 'A', 'B', 'Dora', 'Dobtest', $1, $2)`, [DOB1, DOB2])
+        referee_1_first_name, referee_1_last_name)
+        VALUES ('E2E-DOB', '2099-01-01T18:00:00', 'H2', 'men', 'A', 'B', 'Dora', 'Dobtest')`)
     } finally { await c.end() }
     const leaks = (text) => text.includes(DOB1) || text.includes(DOB2)
 

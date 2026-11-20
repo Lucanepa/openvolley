@@ -160,7 +160,7 @@ describe('savedTeams on Postgres', { skip: SKIP_PG }, () => {
     assert.deepEqual({ ...r1.players[0], id: undefined }, { id: undefined, number: 7, first_name: 'Anna', last_name: 'Muster', license_number: 'L-7', is_libero: false, is_captain: true, active: true, sort_order: 0, country: null })
     assert.ok(!('dob' in r1.staff[0]), 'no date of birth stored or answered (db/048)')
     const { rows: stored } = await pool.query(
-      'SELECT dob FROM public.competition_players WHERE team_id = $1 UNION ALL SELECT dob FROM public.competition_staff WHERE team_id = $1', [team.id])
+      "SELECT to_jsonb(p) ->> 'dob' AS dob FROM public.competition_players p WHERE team_id = $1 UNION ALL SELECT to_jsonb(s) ->> 'dob' FROM public.competition_staff s WHERE team_id = $1", [team.id])
     assert.ok(stored.length === 3 && stored.every((x) => x.dob === null))
     const after1 = (await st.getBundle()).body.data.version
     assert.ok(after1 > before, 'the version moves')

@@ -207,9 +207,9 @@ const REFEREE_DATABASE_COLUMNS = Object.freeze({
   created_at: true
 })
 
-// The official-match loader (LoadOfficialMatchModal). referee_1_dob /
-// referee_2_dob stay out: NULL since db/048 (vmSync no longer reads them),
-// the columns go with db/049.
+// The official-match loader (LoadOfficialMatchModal). No referee_1_dob /
+// referee_2_dob: NULL since db/048, dropped by db/049 (an app that selects
+// them gets null, pgQuery nullColumns).
 const SVRZ_GAMES_COLUMNS = Object.freeze(Object.fromEntries([
   'id', 'game_number', 'datetime', 'date', 'time', 'team_home', 'team_away', 'league', 'gender',
   'hall', 'city', 'hall_address', 'hall_postal_code', 'match_type', 'match_level',
@@ -413,7 +413,7 @@ export function anonSelectCheck(table, params) {
  * db/048: the date-of-birth columns that /api/db still knows although nothing
  * keeps one (installed apps still select them). pgQuery reads them as NULL,
  * named or with '*', and never writes them (server.js passes this as its
- * nullColumns), whether the table still has them or not: db/049 can drop
+ * nullColumns), whether the table still has them or not: db/049 dropped
  * them while those apps are in use. /api/db takes no filter or order on them
  * (dobColumnFilter: 400 OV_DOB_FILTER, pgQuery refuses it too), for any
  * caller; withoutDobColumns nulls them in an answer all the same.

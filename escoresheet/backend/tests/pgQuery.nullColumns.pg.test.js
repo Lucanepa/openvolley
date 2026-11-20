@@ -31,6 +31,10 @@ describe('pgQuery nullColumns: the dates of birth read as NULL, before and after
     tdb = await createTestDatabase('null_columns')
     raw = new pg.Client({ connectionString: tdb.url })
     await raw.connect()
+    // the tables as before db/049 (the test schema has it applied)
+    await raw.query(`ALTER TABLE public.referee_database ADD COLUMN IF NOT EXISTS dob date;
+      ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS dob date;
+      ALTER TABLE public.svrz_games ADD COLUMN IF NOT EXISTS referee_1_dob date, ADD COLUMN IF NOT EXISTS referee_2_dob date`)
     logger = quietLogger()
     db = createPgQuery({ connectionString: tdb.url, logger, nullColumns: DOB_COLUMNS })
     // a value an older backend might have left: never read

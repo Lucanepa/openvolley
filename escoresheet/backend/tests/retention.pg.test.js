@@ -103,8 +103,8 @@ describe('retention: the sweep', { skip: SKIP_PG }, () => {
     await writeSheet('beach/2023-08-20/game7_abc.pdf')
     await writeSheet('2024-09-14/game4102.pdf')
     await owner.query(
-      `INSERT INTO public.svrz_games (game_number, datetime, referee_1_first_name, referee_1_dob) VALUES
-         ('4101', '2024-03-09T18:00:00+01:00', 'Rita', '1980-01-01'), ('4102', '2024-09-14T18:00:00+02:00', 'Rita', '1980-01-01')`)
+      `INSERT INTO public.svrz_games (game_number, datetime, referee_1_first_name) VALUES
+         ('4101', '2024-03-09T18:00:00+01:00', 'Rita'), ('4102', '2024-09-14T18:00:00+02:00', 'Rita')`)
 
     const dry = await retention.sweep({ now: NOW, dryRun: true })
     assert.equal(dry.matches, 2)

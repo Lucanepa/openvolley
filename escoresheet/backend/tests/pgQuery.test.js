@@ -294,8 +294,8 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(bad.body.error.code, 'OV_INVALID_FILTER')
 
       const uid = (await raw.query("INSERT INTO auth.users (email) VALUES ($1) RETURNING id", [`${uniq('u')}@x.invalid`])).rows[0].id
-      const ins = await q('profiles', 'insert', { data: { user_id: uid, roles: ['scorer', 'referee'], dob: '1990-02-03' }, returning: 'roles, dob', single: true }, W)
-      assert.deepEqual(ins.body.data, { roles: ['scorer', 'referee'], dob: '1990-02-03' })
+      const ins = await q('profiles', 'insert', { data: { user_id: uid, roles: ['scorer', 'referee'], country: 'ITA' }, returning: 'roles, country', single: true }, W)
+      assert.deepEqual(ins.body.data, { roles: ['scorer', 'referee'], country: 'ITA' })
       const r3 = await q('profiles', 'select', { columns: 'user_id', filters: [{ type: 'contains', column: 'roles', value: ['referee'] }, eq('user_id', uid)] })
       assert.equal(r3.body.data.length, 1)
     })
