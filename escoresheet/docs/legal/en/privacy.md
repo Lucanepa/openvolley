@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.22 · As of 20 November 2026
+**OpenVolley and OpenBeach** · Version 1.23 · As of 20 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -649,14 +649,19 @@ games a week, each recorded in the change log. The scorer apps cache these
 teams and delete them on sign-out.
 
 **Filled from official matches (OpenVolley):** after the coin toss of an
-official indoor match (never a test or Easy match), the server adds the
-people of each team's roster to that team's saved team of the season: first
-and last name, shirt number and licence number. A person already there (the
-same licence number, else the same name) keeps their entry and gets the
-number of the latest match; a player of the saved team who had that number
-loses it. Nobody is removed, and the libero and captain flags of the saved
-team stay. People with a licence number are also added to the club's licence
-lists (below), when the club's lists do not have that licence number yet.
+official indoor match (never a test or Easy match), the server adds everyone
+on each team's roster to that team's saved team of the season: the players
+with first and last name, shirt number and licence number, and the team
+officials (coaches, physiotherapist, medic) with role, first and last name
+and licence number. A person already there (the same licence number, else the
+same name) keeps their entry; the team's latest official match sets the
+players' shirt numbers and the officials' roles, and a player of the saved
+team who had that number loses it. Nobody is removed, and the libero and
+captain flags of the saved team stay. Only the players and the coaches (Coach,
+Assistant Coach 1 and Assistant Coach 2) with a licence number are also added
+to the club's licence lists (below), the players to the players list and the
+coaches to the coaches list, when the club's lists do not have that licence
+number yet; a physiotherapist or a medic stays in the saved team only.
 
 **Team managers (OpenVolley):** a club's managers can give a link to the coach
 or manager of one of the club's teams; whoever opens it and signs in manages
@@ -695,8 +700,8 @@ checked for team officials. Each upload replaces the people of the previous
 upload of that list; the lists are deleted with the club, and those of past
 seasons are deleted daily. The lists can also
 hold people that a team manager or a club manager added by hand from a team's
-roster, and people of an official match's roster (above), with licence number,
-names and gender only; an upload keeps them, and they are deleted with their
+roster, and the players and coaches of an official match's roster (above),
+with licence number, names and gender only; an upload keeps them, and they are deleted with their
 list or the club. On a scoring device
 the copy is replaced by each download and deleted when the account signs out.
 

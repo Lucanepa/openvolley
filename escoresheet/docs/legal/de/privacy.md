@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.22 · Stand: 20. November 2026
+**OpenVolley und OpenBeach** · Version 1.23 · Stand: 20. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -729,14 +729,23 @@ speichern diese Teams zwischen und löschen sie beim Abmelden.
 
 **Aus offiziellen Spielen ergänzt (OpenVolley):** Nach der Platzwahl eines
 offiziellen Hallenspiels (nie eines Test- oder Easy-Spiels) fügt der Server
-die Personen des Kaders jedes Teams dem gespeicherten Team dieses Teams für
-die Saison hinzu: Vor- und Nachname, Rückennummer und Lizenznummer. Wer schon
-darin ist (dieselbe Lizenznummer, sonst derselbe Name), behält den Eintrag und
-erhält die Nummer des letzten Spiels; eine Spielerin oder ein Spieler des
+alle Personen des Kaders jedes Teams dem gespeicherten Team dieses Teams für
+die Saison hinzu: die Spielerinnen und Spieler mit Vor- und Nachname,
+Rückennummer und Lizenznummer, die Teamoffiziellen (Trainerinnen und Trainer,
+Physiotherapeutin oder Physiotherapeut, Ärztin oder Arzt) mit Funktion, Vor-
+und Nachname und Lizenznummer. Wer schon darin ist (dieselbe Lizenznummer,
+sonst derselbe Name), behält den Eintrag; das letzte offizielle Spiel des
+Teams bestimmt die Rückennummern der Spielerinnen und Spieler und die
+Funktionen der Teamoffiziellen, und eine Spielerin oder ein Spieler des
 gespeicherten Teams, die oder der diese Nummer hatte, verliert sie. Niemand
 wird entfernt, und die Libero- und Captain-Kennzeichnungen des gespeicherten
-Teams bleiben. Personen mit Lizenznummer kommen ausserdem in die Lizenzlisten
-des Vereins (unten), wenn diese die Lizenznummer noch nicht haben.
+Teams bleiben. Nur die Spielerinnen
+und Spieler sowie die Trainerinnen und Trainer (Coach, Assistenz-Coach 1 und
+Assistenz-Coach 2) mit Lizenznummer kommen ausserdem in die Lizenzlisten des
+Vereins (unten), die Spielerinnen und Spieler in die Spielerliste, die
+Trainerinnen und Trainer in die Trainerliste, wenn die Listen des Vereins
+diese Lizenznummer noch nicht haben; Physiotherapeutin oder Physiotherapeut,
+Ärztin oder Arzt bleiben nur im gespeicherten Team.
 
 **Teamverantwortliche (OpenVolley):** Die Vereinsverantwortlichen können der
 Trainerin, dem Trainer oder den Teamverantwortlichen eines Teams ihres Vereins
@@ -782,8 +791,9 @@ nicht geprüft. Jeder Upload ersetzt die Personen des vorherigen Uploads dieser
 Liste; mit dem Verein werden die Listen gelöscht, und die Listen vergangener
 Saisons werden täglich gelöscht. Die Listen können auch
 Personen enthalten, die Teamverantwortliche oder Vereinsverantwortliche von
-Hand aus dem Kader eines Teams hinzugefügt haben, und Personen aus dem Kader
-eines offiziellen Spiels (oben), nur mit Lizenznummer, Namen und Geschlecht;
+Hand aus dem Kader eines Teams hinzugefügt haben, und die Spielerinnen und
+Spieler sowie die Trainerinnen und Trainer aus dem Kader eines offiziellen
+Spiels (oben), nur mit Lizenznummer, Namen und Geschlecht;
 ein Upload behält sie, und sie werden mit ihrer Liste oder dem Verein
 gelöscht. Auf dem Gerät ersetzt jeder Download die
 Kopie, beim Abmelden wird sie gelöscht.
