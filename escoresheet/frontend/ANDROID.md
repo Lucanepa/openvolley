@@ -87,6 +87,32 @@ names it, add it by hand from the repository (check its published `.sha1`).
 aapt2 is per OS: the file lists the Linux, macOS and Windows jars; a new AGP
 needs all three again.
 
+### Gradle and AGP stay on 8.x
+
+The build uses Gradle 8.14.x and the Android Gradle Plugin 8.13.x
+(`android/build.gradle`) until the app moves to Capacitor 9:
+
+- Capacitor 8 is built for AGP 8.13 and Gradle 8.14: its app template and
+  every plugin's `build.gradle` (`@capacitor/android`, `filesystem`,
+  `screen-orientation`) declare AGP 8.13.0. The root `build.gradle` sets the
+  version that is used, the last patch of that line (8.13.2 since 20.11.2026).
+- AGP 8.x does not run on Gradle 9.6 or later: Gradle removed an internal API
+  that AGP 8 uses ("Plugins relying on removed Problems API internals",
+  docs.gradle.org/current/userguide/upgrading_version_9.html#agp_8x_incompatible;
+  Gradle 9.9.1 with AGP 8.13 fails with exactly that error). Gradle 9.0 to
+  9.5 would still run it but get no more fixes, while 8.14.x still gets
+  security releases (8.14.7 and 8.14.8 in November 2026).
+- AGP 9 needs Capacitor and its plugins updated for it (built-in Kotlin, the
+  new DSL; the app's `proguard-android.txt` is gone too): that is Capacitor 9,
+  which moves to AGP 9.4 and Gradle 9.8 together.
+
+Dependabot therefore skips major updates of `gradle-wrapper` and
+`com.android.tools.build:gradle` (`.github/dependabot.yml`); drop that ignore
+with the Capacitor 9 move. Any Gradle or AGP change alters the APK bytes
+(the AGP version is written into the APK, D8 into `classes.dex`): F-Droid
+builds the tag with the versions the tag declares, so both builds still match,
+but compare `aapt2 dump badging` of the unsigned release APK before and after.
+
 ## Version rule
 
 - `versionName` = `version` in `package.json`. Since 20.11.2026 that is a
