@@ -55,7 +55,8 @@ export const MAX_FRAME_VALUES = 300000
 /**
  * Share of V8's heap limit the relay's bundles and live states may hold in
  * all; one address (IPv4, IPv6 /64 on the cloud) may hold half of that. With
- * --max-old-space-size=256 (V8 limit 304 MB on Node 22) about 106 MB: 60 to
+ * --max-old-space-size=256 --max-semi-space-size=16 (compose; V8 limit 304 MB)
+ * about 106 MB: 60 to
  * 160 matches at their end with all 14 signatures, half of them behind one
  * hall's address. A backend started with a bigger heap (deploy/README.md, big
  * events) keeps more; OV_RELAY_MAX_MB sets the total instead.

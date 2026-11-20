@@ -258,7 +258,7 @@ services:
       # lookups that name no match (100), are refused for 10 min; empty = default
       OV_PIN_MATCH_FAILURES: ${OV_PIN_MATCH_FAILURES:-}
       OV_PIN_SEARCH_FAILURES: ${OV_PIN_SEARCH_FAILURES:-}
-      # V8's heap limit, below mem_limit (change them together). Node 22 sizes
+      # V8's heap limit, below mem_limit (change them together). Node sizes
       # the heap from the cgroup, so V8 never collected hard before the kernel
       # OOM-killed the container: the national peak load test (2026-10-26)
       # crash-looped on exit 137 while part of the heap was garbage. With
@@ -266,8 +266,11 @@ services:
       # the rest of the 512 MB (at the national peak about 110-130 MB of the
       # backend's memory was outside V8's heap). OV_NODE_HEAP_MB and
       # OV_BACKEND_MEM in .env: raise them together (about half of the memory
-      # limit for the heap).
-      NODE_OPTIONS: --max-old-space-size=${OV_NODE_HEAP_MB:-256}
+      # limit for the heap). --max-semi-space-size=16 keeps Node 22's young
+      # generation on Node 24 (whose 64 MB semi-spaces add 144 MB to the heap
+      # limit): the limit stays old space + 48 MB (304 MB at 256), as measured,
+      # and the relay's budget and admission mark (35% / 85% of it) with it.
+      NODE_OPTIONS: --max-old-space-size=${OV_NODE_HEAP_MB:-256} --max-semi-space-size=16
       # The vector PDF (ov-render, profile "render"; field-spec 17.20): both
       # set = on. Empty = off, every PDF the raster capture as before.
       OV_RENDER_URL: ${OV_RENDER_URL:-}

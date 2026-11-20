@@ -430,7 +430,7 @@ describe('createFrameBudget', () => {
 
 describe('relayMemoryBudget', () => {
   it('a share of the heap limit, half of it per address; OV_RELAY_MAX_MB sets the total', () => {
-    const heap = 304 * 1024 * 1024 // --max-old-space-size=256 on Node 22
+    const heap = 304 * 1024 * 1024 // --max-old-space-size=256 --max-semi-space-size=16 (compose)
     const b = relayMemoryBudget({ heapLimitBytes: heap })
     assert.equal(b.total, Math.floor(heap * RELAY_HEAP_SHARE))
     assert.equal(b.perAddress, Math.floor(b.total / 2))

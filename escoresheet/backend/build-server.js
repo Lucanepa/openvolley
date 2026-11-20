@@ -8,7 +8,7 @@
  *  3. Inject blob into a copy of the node binary → standalone executable
  *
  * Prerequisites:
- *  - Node.js >= 22
+ *  - Node.js >= 24
  *  - npm install (backend deps)
  *  - npx esbuild (comes with npm)
  *  - Frontend dist files in public/ (optional — server works without them)
@@ -55,7 +55,7 @@ run([
   'npx esbuild server.js',
   '--bundle',
   '--platform=node',
-  '--target=node22',
+  '--target=node24',
   '--format=cjs',
   `--outfile=${bundlePath}`,
   '--external:bufferutil',
