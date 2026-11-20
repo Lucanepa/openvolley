@@ -110,6 +110,8 @@ import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { setSummaryFit } from './scoreboard/setSummaryFit'
+import { BENCH_FIT_BOX, BENCH_FIT_GRID, watchBenchFit } from './scoreboard/benchFit'
+import { isUprightOnlyDevice } from './referee/refereeLayout'
 import { dragPointer } from './scoreboard/dragPointer'
 import CountdownSeconds from './scoreboard/CountdownSeconds'
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
@@ -398,10 +400,11 @@ const officialName = (official) => `${official.lastName || ''} ${official.firstN
 // big as a bench player's chip and in the same wrapping row (owner,
 // 16.11.2026: the name rows took the column's height on a small tablet).
 // The name is the box's title and label; a tap opens the same sanctions menu.
+// Its px sizes follow the column's --bench-fit like a bench chip's (benchFit.js).
 const SB_OFFICIAL_CHIP = {
-  padding: '1.6cqw 3.1cqw', minWidth: '44px', minHeight: '44px', justifyContent: 'center',
+  padding: '1.6cqw 3.1cqw', minWidth: 'calc(44px * var(--bench-fit, 1))', minHeight: 'calc(44px * var(--bench-fit, 1))', justifyContent: 'center',
   background: 'var(--panel-2)', border: '1px solid var(--ov-hairline)', borderRadius: '1.25cqw',
-  fontSize: 'max(15px, calc(6.6cqw * var(--cqf, 1)))', display: 'flex', alignItems: 'center', gap: '1.25cqw', position: 'relative'
+  fontSize: 'max(calc(15px * var(--bench-fit, 1)), calc(6.6cqw * var(--cqf, 1)))', display: 'flex', alignItems: 'center', gap: '1.25cqw', position: 'relative'
 }
 
 const SB_BENCH_CAPTAIN_PAD = '0.3em'
@@ -1373,8 +1376,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Get the active display mode (either forced or auto-detected)
   const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
-  // Tablet mode: bench officials as role-only boxes (SB_OFFICIAL_CHIP)
-  const officialChips = activeDisplayMode === 'tablet'
+  // Bench officials as role-only boxes (SB_OFFICIAL_CHIP: C, AC1...) on every
+  // phone or tablet, in the app and in a browser alike, and in the Tablet
+  // display mode; only a computer (mouse or touchpad as its main pointer)
+  // keeps the name rows (owner, 20.11.2026: the web app on the tablet still
+  // listed names, its 1280px wide screen being detected "desktop").
+  const touchFirstDevice = useMemo(() => isUprightOnlyDevice(), [])
+  const officialChips = activeDisplayMode === 'tablet' || touchFirstDevice
   // The phone layout (PhoneScoreboard) replaces the desktop / tablet body.
   // A phone in the automatic mode keeps it when turned sideways (the screen
   // stays mounted, dialogs and countdowns included), under a notice to hold
@@ -14740,9 +14748,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       )}
       {/* The phone layout has its own header (undo, match menu) */}
       {!isPhoneView && <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)} clock={formatTimestamp(now)}>
-        {/* Column 1: Date/Time */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+        {/* Column 1: Date/Time, with the fold-away chevron right beside it */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '0.4cqw' }}>
           <span className="toolbar-clock" style={{ fontSize: 'calc(1.28cqw * var(--cqf, 1))' }}>{formatTimestamp(now)}</span>
+          <ToolbarChevron collapsed={false} onToggle={() => setHeaderCollapsed(true)} />
           <NativeBackupAlert onOpen={() => setShowOptionsInMenu(true)} />
         </div>
 
@@ -15546,7 +15555,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {isCompactMode && <span style={{ fontSize: 'calc(4.65cqw * var(--cqf, 1))' }}>{leftMainBenchExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || leftMainBenchExpanded) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' }}>
+                    <BenchFitGrid>
                       {leftTeamBench.benchPlayers.map(player => {
                         const teamKey = leftIsHome ? 'home' : 'away'
                         const canComeBack = canPlayerComeBack(teamKey, player.number)
@@ -15700,8 +15709,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             style={{
                               padding: sbBenchChipPadding(player.isCaptain),
-                              minWidth: '44px',
-                              minHeight: '44px',
+                              minWidth: 'calc(44px * var(--bench-fit, 1))',
+                              minHeight: 'calc(44px * var(--bench-fit, 1))',
                               justifyContent: 'center',
                               touchAction: (canSubBenchPlayer || isSubstitutedByLibero) ? 'none' : undefined,
                               background: isTouchDropTarget
@@ -15714,7 +15723,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       ? 'var(--panel-2)'  // Black bg for substituted-out (only if can still sub back)
                                       : (hasComeBack || showX ? 'var(--panel-2)' : 'var(--panel-2)'),
                               borderRadius: '1.25cqw',
-                              fontSize: 'max(15px, calc(6.6cqw * var(--cqf, 1)))',
+                              fontSize: 'max(calc(15px * var(--bench-fit, 1)), calc(6.6cqw * var(--cqf, 1)))',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.25cqw',
@@ -15798,7 +15807,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
                               <span
                                 style={{
-                                  fontSize: 'max(11px, calc(3.3cqw * var(--cqf, 1)))',
+                                  fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(3.3cqw * var(--cqf, 1)))',
                                   lineHeight: '1',
                                   display: 'flex',
                                   flexDirection: 'row',
@@ -15820,7 +15829,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 {playerWhoReplacedThem && (
                                   <span style={{
                                     color: 'var(--text)',
-                                    fontSize: 'max(13px, calc(5.6cqw * var(--cqf, 1)))',
+                                    fontSize: 'max(calc(13px * var(--bench-fit, 1)), calc(5.6cqw * var(--cqf, 1)))',
                                     fontWeight: 600,
                                     marginLeft: '0.6cqw'
                                   }}>
@@ -15875,7 +15884,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           </div>
                         )
                       })}
-                    </div>
+                    </BenchFitGrid>
                   )}
                 </div>
               )}
@@ -15899,7 +15908,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {isCompactMode && <span style={{ fontSize: 'calc(4.65cqw * var(--cqf, 1))' }}>{leftMainLiberosExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || leftMainLiberosExpanded) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' }}>
+                    <BenchFitGrid>
                       {leftTeamBench.liberos.map(player => {
                         const teamKey = leftIsHome ? 'home' : 'away'
                         const isUnable = isLiberoUnable(teamKey, player.number)
@@ -15963,15 +15972,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}
                               style={{
                                 padding: sbBenchChipPadding(player.isCaptain || player.captain),
-                                minHeight: '44px',
-                                minWidth: '44px',
+                                minHeight: 'calc(44px * var(--bench-fit, 1))',
+                                minWidth: 'calc(44px * var(--bench-fit, 1))',
                                 justifyContent: 'center',
                                 touchAction: canDragLibero ? 'none' : undefined,
                                 background: isTouchDropTargetLibero
                                   ? 'rgba(74, 222, 128, 0.4)'  // Green for valid touch drop target
                                   : isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                                 borderRadius: '1.25cqw',
-                                fontSize: 'max(15px, calc(6.6cqw * var(--cqf, 1)))',
+                                fontSize: 'max(calc(15px * var(--bench-fit, 1)), calc(6.6cqw * var(--cqf, 1)))',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '1.25cqw',
@@ -15988,7 +15997,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 ringColour={isUnable ? '#b91c1c' : '#1d4ed8'}
                                 label={t('scoreboard.phone.markCaptain', 'captain')}
                               />
-                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, calc(5.6cqw * var(--cqf, 1)))', fontWeight: 700 }}
+                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(calc(12px * var(--bench-fit, 1)), calc(5.6cqw * var(--cqf, 1)))', fontWeight: 700 }}
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
@@ -16105,7 +16114,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           </button>
                         )
                       })()}
-                    </div>
+                    </BenchFitGrid>
                   )}
                 </div>
               )}
@@ -16129,7 +16138,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {isCompactMode && <span style={{ fontSize: 'calc(4.65cqw * var(--cqf, 1))' }}>{leftMainOfficialsExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || leftMainOfficialsExpanded) && (
-                    <div data-testid="bench-officials-left" style={officialChips ? { display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' } : { display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
+                    <BenchFitGrid testId="bench-officials-left" column={!officialChips}>
                       {leftTeamBench.benchOfficials.map((official, idx) => {
                         const teamKey = leftIsHome ? 'home' : 'away'
 
@@ -16221,7 +16230,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           </div>
                         )
                       })}
-                    </div>
+                    </BenchFitGrid>
                   )}
                 </div>
               )}
@@ -18929,7 +18938,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {isCompactMode && <span style={{ fontSize: 'calc(4.65cqw * var(--cqf, 1))' }}>{rightMainBenchExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || rightMainBenchExpanded) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' }}>
+                    <BenchFitGrid>
                       {rightTeamBench.benchPlayers.map(player => {
                         const teamKey = leftIsHome ? 'away' : 'home'
                         const canComeBack = canPlayerComeBack(teamKey, player.number)
@@ -19083,8 +19092,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             style={{
                               padding: sbBenchChipPadding(player.isCaptain),
-                              minWidth: '44px',
-                              minHeight: '44px',
+                              minWidth: 'calc(44px * var(--bench-fit, 1))',
+                              minHeight: 'calc(44px * var(--bench-fit, 1))',
                               justifyContent: 'center',
                               touchAction: (canSubBenchPlayer || isSubstitutedByLibero) ? 'none' : undefined,
                               background: isTouchDropTarget
@@ -19097,7 +19106,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       ? 'var(--panel-2)'  // Black bg for substituted-out (only if can still sub back)
                                       : (hasComeBack || showX ? 'var(--panel-2)' : 'var(--panel-2)'),
                               borderRadius: '1.25cqw',
-                              fontSize: 'max(15px, calc(6.6cqw * var(--cqf, 1)))',
+                              fontSize: 'max(calc(15px * var(--bench-fit, 1)), calc(6.6cqw * var(--cqf, 1)))',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.25cqw',
@@ -19181,7 +19190,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
                               <span
                                 style={{
-                                  fontSize: 'max(11px, calc(3.3cqw * var(--cqf, 1)))',
+                                  fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(3.3cqw * var(--cqf, 1)))',
                                   lineHeight: '1',
                                   display: 'flex',
                                   flexDirection: 'row',
@@ -19203,7 +19212,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 {playerWhoReplacedThem && (
                                   <span style={{
                                     color: 'var(--text)',
-                                    fontSize: 'max(13px, calc(5.6cqw * var(--cqf, 1)))',
+                                    fontSize: 'max(calc(13px * var(--bench-fit, 1)), calc(5.6cqw * var(--cqf, 1)))',
                                     fontWeight: 600,
                                     marginLeft: '0.6cqw'
                                   }}>
@@ -19258,7 +19267,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           </div>
                         )
                       })}
-                    </div>
+                    </BenchFitGrid>
                   )}
                 </div>
               )}
@@ -19282,7 +19291,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {isCompactMode && <span style={{ fontSize: 'calc(4.65cqw * var(--cqf, 1))' }}>{rightMainLiberosExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || rightMainLiberosExpanded) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' }}>
+                    <BenchFitGrid>
                       {rightTeamBench.liberos.map(player => {
                         const teamKey = leftIsHome ? 'away' : 'home'
                         const isUnable = isLiberoUnable(teamKey, player.number)
@@ -19346,13 +19355,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }
                               }}
                               style={{
-                                padding: sbBenchChipPadding(player.isCaptain || player.captain), minHeight: '44px', minWidth: '44px', justifyContent: 'center',
+                                padding: sbBenchChipPadding(player.isCaptain || player.captain), minHeight: 'calc(44px * var(--bench-fit, 1))', minWidth: 'calc(44px * var(--bench-fit, 1))', justifyContent: 'center',
                                 touchAction: canDragLibero ? 'none' : undefined,
                                 background: isTouchDropTargetLibero
                                   ? 'rgba(74, 222, 128, 0.4)'  // Green for valid touch drop target
                                   : isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                                 borderRadius: '1.25cqw',
-                                fontSize: 'max(15px, calc(6.6cqw * var(--cqf, 1)))',
+                                fontSize: 'max(calc(15px * var(--bench-fit, 1)), calc(6.6cqw * var(--cqf, 1)))',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '1.25cqw',
@@ -19369,7 +19378,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 ringColour={isUnable ? '#b91c1c' : '#1d4ed8'}
                                 label={t('scoreboard.phone.markCaptain', 'captain')}
                               />
-                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, calc(5.6cqw * var(--cqf, 1)))', fontWeight: 700 }}
+                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(calc(12px * var(--bench-fit, 1)), calc(5.6cqw * var(--cqf, 1)))', fontWeight: 700 }}
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
@@ -19486,7 +19495,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           </button>
                         )
                       })()}
-                    </div>
+                    </BenchFitGrid>
                   )}
                 </div>
               )}
@@ -19510,7 +19519,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {isCompactMode && <span style={{ fontSize: 'calc(4.65cqw * var(--cqf, 1))' }}>{rightMainOfficialsExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || rightMainOfficialsExpanded) && (
-                    <div data-testid="bench-officials-right" style={officialChips ? { display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' } : { display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
+                    <BenchFitGrid testId="bench-officials-right" column={!officialChips}>
                       {rightTeamBench.benchOfficials.map((official, idx) => {
                         const teamKey = leftIsHome ? 'away' : 'home'
 
@@ -19602,7 +19611,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           </div>
                         )
                       })}
-                    </div>
+                    </BenchFitGrid>
                   )}
                 </div>
               )}
@@ -24746,11 +24755,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   )
 }
 
-function ScoreboardToolbar({ children, collapsed, onToggle, clock }) {
+/** The toolbar's fold chevron: a quiet button right of the clock (owner
+ *  20.11.2026: it had a 16px strip of its own under the toolbar, with a rule
+ *  above and below it, which a tablet could not spare). As tall as the
+ *  toolbar's own buttons, so the toolbar keeps its height; the ::before pad
+ *  grows the hit area like theirs. */
+function ToolbarChevron({ collapsed, onToggle }) {
   const { t } = useTranslation()
+  const label = collapsed ? t('scoreboard.toolbar.show', 'Show toolbar') : t('scoreboard.toolbar.hide', 'Hide toolbar')
+  return (
+    <button
+      type="button"
+      data-testid="toolbar-toggle"
+      onClick={(e) => { e.stopPropagation(); onToggle() }}
+      title={label}
+      aria-label={label}
+      aria-expanded={!collapsed}
+      className={`relative inline-flex items-center justify-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-200/70 hover:text-stone-600 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] ${FOCUS_RING}`}
+      style={collapsed
+        ? { boxSizing: 'border-box', height: '16px', padding: '0 4px', fontSize: '10px', fontWeight: 700, lineHeight: 1 }
+        : { boxSizing: 'border-box', height: '2.5cqw', padding: '0 0.5cqw', fontSize: 'calc(0.85cqw * var(--cqf, 1))', fontWeight: 700, lineHeight: 1 }}
+    >
+      {collapsed ? '▼' : '▲'}
+    </button>
+  )
+}
+
+function ScoreboardToolbar({ children, collapsed, onToggle, clock }) {
   return (
     <div style={{ position: 'relative', zIndex: 101 }}>
-      {/* White bar with the stone hairline and the card shadow (svrz header). */}
+      {/* White bar with the stone hairline and the card shadow (svrz header).
+          Its chevron sits in the bar itself, beside the clock (ToolbarChevron). */}
       <div
         className="match-toolbar shadow-card"
         style={{
@@ -24760,24 +24795,22 @@ function ScoreboardToolbar({ children, collapsed, onToggle, clock }) {
       >
         {children}
       </div>
-      {/* Thin collapse/expand strip at bottom center: stone, not a grey slab.
-          Same 16px height, so nothing below moves. With the toolbar folded
-          away the strip carries the clock at its left, so the time stays in
-          sight without a bar of its own. */}
-      <div
-        onClick={onToggle}
-        title={collapsed ? t('scoreboard.toolbar.show', 'Show toolbar') : t('scoreboard.toolbar.hide', 'Hide toolbar')}
-        className="relative flex w-full items-center justify-center bg-stone-100 text-stone-400 hover:bg-stone-200/70 hover:text-stone-600 transition-colors cursor-pointer"
-        style={{
-          height: '16px',
-          borderBottom: '1px solid var(--border)'
-        }}
-      >
-        {collapsed && clock && (
-          <span data-testid="toolbar-strip-clock" className="absolute left-3 tabular-nums text-stone-500" style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1 }}>{clock}</span>
-        )}
-        <span style={{ fontSize: '10px', fontWeight: 700, lineHeight: 1 }}>{collapsed ? '▼' : '▲'}</span>
-      </div>
+      {/* Folded away: one slim row on the page background, no rules, with the
+          clock and the chevron to bring the bar back at its left (the whole
+          row still answers a tap). */}
+      {collapsed && (
+        <div
+          data-testid="toolbar-strip"
+          onClick={onToggle}
+          className="flex w-full items-center gap-1 pl-3 cursor-pointer"
+          style={{ height: '16px' }}
+        >
+          {clock && (
+            <span data-testid="toolbar-strip-clock" className="tabular-nums text-stone-500" style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1 }}>{clock}</span>
+          )}
+          <ToolbarChevron collapsed onToggle={onToggle} />
+        </div>
+      )}
     </div>
   )
 }
@@ -24797,14 +24830,33 @@ const GAME_CAPTAIN_CHIP = {
   cursor: 'pointer'
 }
 
+// A side column fits its squares to its height (benchFit.js): --bench-fit is
+// set on it from the outside, so React never resets it.
 function ScoreboardTeamColumn({ side, children }) {
+  const columnRef = useRef(null)
+  useEffect(() => watchBenchFit(columnRef.current), [])
   return (
     <aside
+      ref={columnRef}
       className="team-controls shadow-card"
       data-side={side}
     >
       {children}
     </aside>
+  )
+}
+
+/** A wrapping row of side-column squares (bench players, liberos, the
+ *  tablet's official chips) that shrinks with the column's --bench-fit
+ *  (benchFit.js). `column` (the officials' name rows) is a plain stack. */
+function BenchFitGrid({ children, testId, column = false }) {
+  if (column) {
+    return <div data-testid={testId} style={{ display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>{children}</div>
+  }
+  return (
+    <div className="bench-fit" style={BENCH_FIT_BOX}>
+      <div data-testid={testId} style={BENCH_FIT_GRID}>{children}</div>
+    </div>
   )
 }
 
