@@ -3295,6 +3295,7 @@
     "city": "Stadt",
     "league": "Liga",
     "championshipType": "Meisterschaftstyp",
+    "championshipTypeOther": "Meisterschaftstyp (andere)",
     "gameNumber": "Spielnummer",
     "matchTypeGender": "Spieltyp (Geschlecht)",
     "scheduledDateTime": "Geplantes Datum/Uhrzeit",

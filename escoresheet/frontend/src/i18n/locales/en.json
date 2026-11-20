@@ -3494,6 +3494,7 @@
     "city": "City",
     "league": "League",
     "championshipType": "Championship type",
+    "championshipTypeOther": "Championship type (other)",
     "gameNumber": "Game number",
     "matchTypeGender": "Match type (gender)",
     "scheduledDateTime": "Scheduled date/time",

@@ -3487,6 +3487,7 @@
     "city": "Ville",
     "league": "Ligue",
     "championshipType": "Type de championnat",
+    "championshipTypeOther": "Type de championnat (autre)",
     "gameNumber": "Numéro de match",
     "matchTypeGender": "Type de match (genre)",
     "scheduledDateTime": "Date/heure prévue",

@@ -3493,6 +3493,7 @@
     "city": "Città",
     "league": "Campionato",
     "championshipType": "Tipo di campionato",
+    "championshipTypeOther": "Tipo di campionato (altro)",
     "gameNumber": "Numero partita",
     "matchTypeGender": "Tipo partita (genere)",
     "scheduledDateTime": "Data/ora programmata",
