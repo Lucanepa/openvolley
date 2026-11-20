@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { render } from '@testing-library/react'
 import ScoreServeRow, { SCORE_ROW, SERVE_BLOCK, serveLabelCqi } from '../referee/ScoreServeRow.jsx'
+import { cssValue } from '../../__tests__/cssValue.js'
 
 // vmin as useScaledLayout gives it: a 1280 x 800 tablet at display scale 1
 const vmin = (v) => 800 * v / 100
@@ -66,7 +67,7 @@ describe('referee score row: the SERVE block', () => {
   it('reserves the same room on both sides, served or not, so the score never moves', () => {
     const row = renderRow('left').querySelector('[data-score-row]')
     // two equal slots that never grow to their content
-    expect(row.style.gridTemplateColumns).toBe('minmax(0, 1fr) auto minmax(0, 1fr)')
+    expect(row.style.gridTemplateColumns).toBe(cssValue('grid-template-columns', 'minmax(0, 1fr) auto minmax(0, 1fr)'))
     const base = renderRow(null)
     for (const side of ['left', 'right', null]) {
       const c = renderRow(side)

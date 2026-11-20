@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import App from '../App_Scoresheet'
 import { LiberoControlSheet } from '../components/LiberoControlSheet'
 import { Results } from '../components/FooterSection'
+import { cssValue } from '../../src/__tests__/cssValue.js'
 
 // Fixture: best-of-3, Team A = home. Set 1 finished 25:20 with a rotation, an open
 // substitution (5 -> 9) and an exceptional one; set 2 finished; deciding set (index 5) started.
@@ -146,7 +147,7 @@ describe('App_Scoresheet on a phone', () => {
     // 2026-10-14: at 30 % it hung out on both sides of a 384 px phone)
     expect(parseFloat(box.style.width)).toBeGreaterThan(parseFloat(box.style.height))
     expect(parseFloat(box.style.width)).toBeLessThanOrEqual(412)
-    expect(sheet.style.transformOrigin).toBe('top left')
+    expect(sheet.style.transformOrigin).toBe(cssValue('transform-origin', 'top left'))
   })
 
   it('upright on a 360 px phone, the sheet still fits the width', () => {

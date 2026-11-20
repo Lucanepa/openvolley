@@ -3,6 +3,7 @@ import { render, waitFor } from '@testing-library/react'
 import PlayerDisc from '../referee/PlayerDisc.jsx'
 import DraggedPlayerOverlay from '../DraggedPlayerOverlay.jsx'
 import { liberoPair, readableTextOn, discRing, TEXT_DARK, TEXT_LIGHT } from '../../utils/teamColours'
+import { cssValue } from '../../__tests__/cssValue.js'
 
 // jsdom normalises inline colours to rgb()
 const rgb = (hex) => {
@@ -27,7 +28,7 @@ describe('referee PlayerDisc colours', () => {
     expect(el.style.background).toBe(rgb('#ffffff'))
     expect(el.style.color).toBe(rgb(TEXT_DARK))
     expect(el.style.border).toBe(`2px solid ${rgb('#82817f')}`)
-    expect(container.querySelector('[data-disc-number]').style.textShadow).toBe('0 0 1px #000')
+    expect(container.querySelector('[data-disc-number]').style.textShadow).toBe(cssValue('text-shadow', '0 0 1px #000'))
   })
 
   it('keeps the hairline edge without a ring and the orange ring while flashing', () => {

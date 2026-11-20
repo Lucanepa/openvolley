@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, act, waitFor, fireEvent, within } from '@testing-library/react'
+import { cssValue } from '../../__tests__/cssValue.js'
 
 // Every referee tablet: a time-out, a substitution or a sanction the scorer
 // records opens "Recorded by the scorer" (OK, or it closes 10 s after its last
@@ -184,7 +185,7 @@ describe('Referee: recorded by the scorer', () => {
       const flight = screen.getByTestId('countdown-flight')
       expect(flight.style.left).toBe('400px')
       expect(main.style.visibility).toBe('hidden')
-      await waitFor(() => expect(flight.style.transform).toBe('translate(-300px, 0px) scale(1)'))
+      await waitFor(() => expect(flight.style.transform).toBe(cssValue('transform', 'translate(-300px, 0px) scale(1)')))
       // landed: the court's own countdown shows
       await waitFor(() => expect(screen.queryByTestId('countdown-flight')).toBeNull())
       expect(document.querySelector('[data-main-countdown]').style.visibility).toBe('visible')
