@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.22 · État au 20 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.23 · État au 20 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -751,15 +751,22 @@ les effacent à la déconnexion.
 
 **Complétées à partir des matchs officiels (OpenVolley) :** après le tirage
 au sort d'un match officiel en salle (jamais un match de test ni un match
-Easy), le serveur ajoute les personnes de la liste de chaque équipe à
-l'équipe enregistrée de cette équipe pour la saison : prénom et nom, numéro
-de maillot et numéro de licence. Une personne qui y figure déjà (le même
-numéro de licence, sinon le même nom) garde son entrée et reçoit le numéro du
-dernier match ; une joueuse ou un joueur de l'équipe enregistrée qui avait ce
-numéro le perd. Personne n'est retiré, et les indications libéro et capitaine
-de l'équipe enregistrée restent. Les personnes avec un numéro de licence sont
-aussi ajoutées aux listes de licences du club (ci-dessous), si celles-ci
-n'ont pas encore ce numéro de licence.
+Easy), le serveur ajoute toutes les personnes de la liste de chaque équipe à
+l'équipe enregistrée de cette équipe pour la saison : les joueuses et joueurs
+avec prénom et nom, numéro de maillot et numéro de licence, et les officiels
+d'équipe (entraîneurs, kinésithérapeute, médecin) avec fonction, prénom et nom
+et numéro de licence. Une personne qui y figure déjà (le même numéro de
+licence, sinon le même nom) garde son entrée ; le dernier match officiel de
+l'équipe fixe les numéros de maillot des joueuses et joueurs et les fonctions
+des officiels d'équipe, et une joueuse ou un joueur de l'équipe enregistrée
+qui avait ce numéro le perd. Personne n'est retiré, et les indications libéro
+et capitaine de l'équipe enregistrée restent. Seuls les joueuses et joueurs et
+les entraîneurs (entraîneur, entraîneur adjoint 1 et entraîneur adjoint 2)
+avec un numéro de licence sont aussi ajoutés aux listes de licences du club
+(ci-dessous), les joueuses et joueurs à la liste des joueurs, les entraîneurs
+à la liste des entraîneurs, si les listes du club n'ont pas encore ce numéro
+de licence ; un kinésithérapeute ou un médecin reste uniquement dans l'équipe
+enregistrée.
 
 **Responsables d'équipe (OpenVolley) :** les responsables d'un club peuvent
 donner un lien à l'entraîneur ou au responsable d'une équipe de leur club ; la
@@ -804,9 +811,9 @@ Chaque chargement remplace les personnes du chargement précédent de cette
 liste ; les listes sont supprimées avec le club, et celles des saisons passées
 sont supprimées chaque jour. Les listes peuvent aussi
 contenir des personnes qu'un responsable d'équipe ou un responsable du club a
-ajoutées à la main depuis l'effectif d'une équipe, et des personnes de la
-liste d'un match officiel (ci-dessus), avec numéro de licence, noms et sexe
-uniquement ; un chargement les conserve, et elles sont supprimées avec leur
+ajoutées à la main depuis l'effectif d'une équipe, et les joueuses et
+joueurs et les entraîneurs de la liste d'un match officiel (ci-dessus), avec
+numéro de licence, noms et sexe uniquement ; un chargement les conserve, et elles sont supprimées avec leur
 liste ou le club. Sur un appareil de marquage,
 chaque téléchargement remplace la copie, et elle est supprimée à la
 déconnexion.

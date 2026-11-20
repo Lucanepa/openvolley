@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.22 · Aggiornata al 20 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.23 · Aggiornata al 20 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -709,15 +709,22 @@ all'uscita.
 
 **Completate dalle partite ufficiali (OpenVolley):** dopo il sorteggio di una
 partita ufficiale indoor (mai una partita di prova o Easy), il server aggiunge
-le persone della lista di ogni squadra alla squadra salvata di quella squadra
-per la stagione: nome e cognome, numero di maglia e numero di licenza. Chi vi
-figura già (lo stesso numero di licenza, altrimenti lo stesso nome) mantiene
-la sua voce e riceve il numero dell'ultima partita; una giocatrice o un
-giocatore della squadra salvata che aveva quel numero lo perde. Nessuno viene
-rimosso, e le indicazioni libero e capitano della squadra salvata restano. Le
-persone con un numero di licenza vengono aggiunte anche agli elenchi delle
-licenze della società (sotto), se questi non hanno ancora quel numero di
-licenza.
+tutte le persone della lista di ogni squadra alla squadra salvata di quella
+squadra per la stagione: le giocatrici e i giocatori con nome e cognome,
+numero di maglia e numero di licenza, e gli ufficiali di squadra (allenatori,
+fisioterapista, medico) con funzione, nome e cognome e numero di licenza. Chi
+vi figura già (lo stesso numero di licenza, altrimenti lo stesso nome)
+mantiene la sua voce; l'ultima partita ufficiale della squadra stabilisce i
+numeri di maglia delle giocatrici e dei giocatori e le funzioni degli
+ufficiali di squadra, e una giocatrice o un giocatore della squadra salvata
+che aveva quel numero lo perde. Nessuno viene rimosso, e le indicazioni libero
+e capitano della squadra salvata restano. Solo le giocatrici e i giocatori e
+gli allenatori (allenatore, assistente allenatore 1 e assistente allenatore 2)
+con un numero di licenza vengono aggiunti anche agli elenchi delle licenze
+della società (sotto), le giocatrici e i giocatori all'elenco dei giocatori,
+gli allenatori all'elenco degli allenatori, se gli elenchi della società non
+hanno ancora quel numero di licenza; un fisioterapista o un medico resta solo
+nella squadra salvata.
 
 **Responsabili di squadra (OpenVolley):** i responsabili di una società
 possono dare un link all'allenatore o al responsabile di una squadra della
@@ -761,8 +768,8 @@ ufficiali di squadra non viene controllato. Ogni caricamento sostituisce le
 persone del caricamento precedente di quell'elenco; gli elenchi vengono
 cancellati con la società, e quelli delle stagioni passate ogni giorno. Gli elenchi possono contenere anche persone che un
 responsabile di squadra o di società ha aggiunto a mano dalla rosa di una
-squadra, e persone della lista di una partita ufficiale (sopra), solo con
-numero di licenza, nomi e sesso; un caricamento le mantiene, e vengono cancellate con il loro elenco o con la
+squadra, e le giocatrici, i giocatori e gli allenatori della lista di una
+partita ufficiale (sopra), solo con numero di licenza, nomi e sesso; un caricamento le mantiene, e vengono cancellate con il loro elenco o con la
 società. Su un dispositivo del segnapunti ogni download sostituisce la copia,
 che viene cancellata all'uscita dall'account.
 
