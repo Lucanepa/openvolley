@@ -109,7 +109,7 @@ export function writeVersionFiles (frontendDir, version) {
       .replace(/^(\s+)versionCode \d+$/m, `$1versionCode ${code}`)
       .replace(/^(\s+)versionName "[^"]*"$/m, `$1versionName "${version}"`)
     // the header's list of codes (the comment line with the "<version> -> <code>" pairs)
-    gradle = gradle.replace(/^(\/\/ +1\.48\.20, androidBuild 0 -> 10480200;.*)$/m, (line) => line.includes(`; ${version} -> `) ? line : `${line}; ${version} -> ${code}`)
+    gradle = gradle.replace(/^(\/\/ +\d+\.\d+\.\d+(?:, androidBuild \d+)? -> \d+;.*)$/m, (line) => line.includes(`; ${version} -> `) ? line : `${line}; ${version} -> ${code}`)
     writeFileSync(gradlePath, gradle)
     written.push(gradlePath)
   }
