@@ -127,6 +127,7 @@ describe('Match menu > History', () => {
     // one tap to the corrections
     fireEvent.click(within(within(dialog).getByTestId('history-footer')).getByRole('button', { name: en.corrections.title }))
     await waitFor(() => expect(screen.queryByTestId('history')).toBeNull())
-    await waitFor(() => expect(screen.getByRole('heading', { name: en.corrections.title })).toBeInTheDocument())
+    // the corrections: the list's dialog, or the correction board where it is the view (tablets, computers)
+    await waitFor(() => expect(screen.queryByTestId('correction-board') || screen.queryByRole('heading', { name: en.corrections.title })).toBeTruthy())
   }, 60000)
 })
