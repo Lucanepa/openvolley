@@ -25,6 +25,11 @@ const LOGO = '/openvolley_logo.png'
 // from Cloudflare's edge cache (max-age 1 day)
 const MEDIA = 'https://openvolley-media.openvolley.app/dictate'
 
+// The dictation's teams as its videos, step lists and result sheet name them
+// (Swiss Volley's script: ZÜRICH and LUZERN). The test match plays them as the
+// made-up VBC Musterau (MUS, home) and VC Beispielstadt (BSP, away): the
+// "Before you start" lines say so. New videos with the test match's names
+// come from ~/ov-ops/diktat-video (cards*.json, render.py) and a UI replay.
 const TEAM = { ZUR: 'ZÜRICH', LUZ: 'LUZERN' }
 const TEAM_COLOUR = { ZUR: '#3b82f6', LUZ: '#dc2626' } // the test match's team colours (testSeeds.js)
 const SETS = [[13, 25], [27, 25], [25, 13], [23, 25], [18, 16]]
@@ -44,7 +49,7 @@ const TEXT = {
     howTitle: 'Before you start',
     how: [
       'Open OpenVolley and start a test match from Home.',
-      'TEST Team A = ZÜRICH (home), TEST Team B = LUZERN (away): the test rosters and benches already match the Diktat.',
+      "The dictation's ZÜRICH is the test match's home team, VBC Musterau (MUS); its LUZERN is the away team, VC Beispielstadt (BSP). The test rosters and benches already match the dictation.",
       'Coin toss: LUZERN is Team A and starts on the left, ZÜRICH serves first.',
       'Pause the video whenever you need more time. Each step shows the score to check.'
     ],
@@ -78,7 +83,7 @@ const TEXT = {
     howTitle: 'Bevor du startest',
     how: [
       'Öffne OpenVolley und starte auf Home ein Testspiel.',
-      'TEST Team A = ZÜRICH (Heim), TEST Team B = LUZERN (Gast): Kader und Bänke des Testspiels stimmen schon mit dem Diktat überein.',
+      'ZÜRICH im Diktat ist das Heimteam des Testspiels, VBC Musterau (MUS); LUZERN ist das Gastteam, VC Beispielstadt (BSP). Kader und Bänke des Testspiels stimmen schon mit dem Diktat überein.',
       'Auslosung: LUZERN ist Team A und beginnt links, ZÜRICH hat den ersten Aufschlag.',
       'Halte das Video an, wenn du mehr Zeit brauchst. Jeder Schritt zeigt den Spielstand zum Kontrollieren.'
     ],

@@ -49,7 +49,7 @@ export function shirtNumber(value) {
   return n >= 1 && n <= 99 ? n : null
 }
 
-/** As Match Setup: "VBC Zürich" -> "VBC", "Musterdorf" -> "MUST" */
+/** As Match Setup: "VBC Musterau" -> "VBC", "Musterdorf" -> "MUST" */
 export function defaultShortName(name) {
   if (!name) return ''
   const cleaned = String(name).trim().toUpperCase()

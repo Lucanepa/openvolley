@@ -28,7 +28,7 @@ describe('shirtNumber', () => {
 
 describe('defaultShortName', () => {
   it('works like Match Setup', () => {
-    expect(defaultShortName('VBC Zürich')).toBe('VBC')
+    expect(defaultShortName('VBC Musterau')).toBe('VBC')
     expect(defaultShortName('Musterdorf')).toBe('MUST')
     expect(defaultShortName('')).toBe('')
   })
@@ -214,9 +214,9 @@ describe('easyMatchPrefill', () => {
     expect(easyMatchPrefill('')).toBe(null)
   })
   it('reads the teams, colours, format and game', () => {
-    const p = easyMatchPrefill('?easy=1&home=VBC+Musterdorf&away=VBC%20Z%C3%BCrich&bestOf=3&homeColor=%23DC2626&awayColor=blue&homeShort=must&league=3L&game=406201&hall=MSH')
+    const p = easyMatchPrefill('?easy=1&home=VBC+Musterdorf&away=VC%20M%C3%BChlestadt&bestOf=3&homeColor=%23DC2626&awayColor=blue&homeShort=must&league=3L&game=406201&hall=MSH')
     expect(p).toEqual({
-      homeName: 'VBC Musterdorf', awayName: 'VBC Zürich', homeShort: 'MUST', awayShort: '',
+      homeName: 'VBC Musterdorf', awayName: 'VC Mühlestadt', homeShort: 'MUST', awayShort: '',
       homeColor: '#dc2626', awayColor: null, bestOf: 3, league: '3L', gameNumber: '406201', hall: 'MSH'
     })
   })

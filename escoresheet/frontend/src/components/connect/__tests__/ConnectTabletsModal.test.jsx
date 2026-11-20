@@ -30,7 +30,7 @@ vi.mock('../../../utils/serverDataSync', () => ({
 const dbMock = vi.hoisted(() => ({
   matches: { update: vi.fn(async () => 1), get: vi.fn() },
   sync_queue: { add: vi.fn(async () => 1) },
-  teams: { get: vi.fn(async (id) => ({ 11: { name: 'VBC Musterdorf' }, 12: { name: 'Volley Luzern' } })[id]) }
+  teams: { get: vi.fn(async (id) => ({ 11: { name: 'VBC Musterdorf' }, 12: { name: 'VC Beispielstadt' } })[id]) }
 }))
 vi.mock('../../../db/db', () => ({ db: dbMock }))
 vi.mock('../../auth/LoginModal', () => ({ default: () => <div data-testid="login-modal" /> }))
@@ -65,7 +65,7 @@ const STATUS = {
 const MATCH = {
   id: 7,
   seed_key: 'match_1759740000000_ab12cd',
-  homeName: 'VBC Zürich',
+  homeName: 'VBC Musterau',
   awayName: 'Volley Bern',
   gameNumber: 4711,
   refereePin: '123456',
@@ -125,7 +125,7 @@ describe('ConnectTabletsModal', () => {
     pick('bench_home')
     expect(qrUrl()).toBe(`http://192.168.1.42:5173/bench?match=${SEED}&team=home`)
     expect(screen.getByTestId('pin-bench_home')).toHaveTextContent('234 567')
-    expect(within(screen.getByTestId('role-row-bench_home')).getByText('VBC Zürich')).toBeInTheDocument()
+    expect(within(screen.getByTestId('role-row-bench_home')).getByText('VBC Musterau')).toBeInTheDocument()
 
     // the away bench is off: no code (its tablet would be told the PIN is wrong), no PIN
     pick('bench_away')
@@ -240,7 +240,7 @@ describe('ConnectTabletsModal', () => {
     const { homeName: _h, awayName: _a, ...bare } = MATCH
     renderModal({ match: { ...bare, homeTeamId: 11, awayTeamId: 12 }, fetchImpl: okFetch(), win: {} })
     await waitFor(() => expect(screen.getByTestId('role-row-bench_home')).toHaveTextContent('VBC Musterdorf'))
-    expect(screen.getByTestId('role-row-bench_away')).toHaveTextContent('Volley Luzern')
+    expect(screen.getByTestId('role-row-bench_away')).toHaveTextContent('VC Beispielstadt')
   })
 
   it('footer: one tablet let in and connected reads without "1 of 1 tablets"', async () => {

@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { TEST_MATCH_SEED_KEY, newTestMatchSeedKey, isTestMatchSeedKey, testMatchSeedKeyFor, getTestHomeTeamShortName, getTestAwayTeamShortName, getTestTeamByExternalId, TEST_HOME_TEAM_EXTERNAL_ID, TEST_AWAY_TEAM_EXTERNAL_ID } from '../testSeeds'
+import { TEST_MATCH_SEED_KEY, newTestMatchSeedKey, isTestMatchSeedKey, testMatchSeedKeyFor, getTestHomeTeamShortName, getTestAwayTeamShortName, getTestTeamByExternalId, TEST_HOME_TEAM_EXTERNAL_ID, TEST_AWAY_TEAM_EXTERNAL_ID, TEST_TEAM_SEED_DATA, seedTeamPatch } from '../testSeeds'
 import { relayMatchKey } from '../../utils/serverDataSync'
+import { SHORT_NAME_MAX, cleanShortName } from '../../domain/teamIdentity'
+import { teamShortLabels } from '../../utils/teamShortLabels'
 
 // A test (rehearsal) match publishes its live state to the venue relay and
 // shows in its match list: its seed key is its relay room, so two scorers
@@ -51,8 +53,34 @@ describe('test team seeds', () => {
   })
 })
 
+// Owner 2026-11-20: made-up clubs only (they were "VBC Zürich" and a real
+// club); a device seeded with the teams of before takes the new names
+describe('test team names', () => {
+  it('are made-up clubs with short names as Match Setup stores them, and two different labels', () => {
+    const [home, away] = TEST_TEAM_SEED_DATA
+    expect([home.name, home.shortName, away.name, away.shortName]).toEqual(['VBC Musterau', 'MUS', 'VC Beispielstadt', 'BSP'])
+    for (const team of TEST_TEAM_SEED_DATA) {
+      expect(team.name).not.toMatch(/Zürich|Luzern/i)
+      expect(team.shortName.length).toBeLessThanOrEqual(SHORT_NAME_MAX)
+      expect(cleanShortName(team.shortName)).toBe(team.shortName)
+    }
+    expect(teamShortLabels({ shortName: home.shortName, name: home.name }, { shortName: away.shortName, name: away.name })).toEqual(['MUS', 'BSP'])
+    // the colours stay (DictateApp.jsx and the dictation videos show them)
+    expect([home.color, away.color]).toEqual(['#3b82f6', '#dc2626'])
+  })
+
+  it('a stored seed team of before takes the name and short name of its definition, never another colour', () => {
+    const [home, away] = TEST_TEAM_SEED_DATA
+    expect(seedTeamPatch({ id: 1, seedKey: home.seedKey, name: 'VBC Zürich', shortName: 'ZÜRICH', color: '#3b82f6' }, home)).toEqual({ name: 'VBC Musterau', shortName: 'MUS' })
+    expect(seedTeamPatch({ id: 2, seedKey: away.seedKey, name: 'Volley Luzern', shortName: 'LUZERN', color: '#16a34a' }, away)).toEqual({ name: 'VC Beispielstadt', shortName: 'BSP' })
+    expect(seedTeamPatch({ id: 2, name: 'VC Beispielstadt', shortName: 'LUZERN' }, away)).toEqual({ shortName: 'BSP' })
+    expect(seedTeamPatch({ id: 1, name: 'VBC Musterau', shortName: 'MUS', color: '#000000' }, home)).toBeNull()
+    expect(seedTeamPatch(null, home)).toBeNull()
+  })
+})
+
 // A test match's teams wear preset shirts, so the colour picker opens on
-// their tile and not on Custom (Volley Luzern was #ef4444, no preset)
+// their tile and not on Custom (the away team was #ef4444 once, no preset)
 describe('test team colours', () => {
   it('are presets', async () => {
     const { TEST_TEAM_SEED_DATA } = await import('../testSeeds')

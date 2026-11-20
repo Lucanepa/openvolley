@@ -83,7 +83,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
   let report
   let matchId
   const homeTeam = { name: 'VBC Musterdorf' }
-  const awayTeam = { name: 'Volley Zürich Nord' }
+  const awayTeam = { name: 'VC Beispielstadt Nord' }
 
   beforeAll(async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -109,7 +109,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     typeInto(field('Home team'), 'VBC Musterdorf')
     step(1)
     logUI('keydown', 'global', 'keydown', { key: 'Tab', code: 'Tab' }, field('Home team'))
-    typeInto(field('Away team'), 'Volley Zürich Nord')
+    typeInto(field('Away team'), 'VC Beispielstadt Nord')
     logUI('change', 'global', 'change', { value: '3L', selectedIndex: 4 }, { tagName: 'select', name: 'league', ariaLabel: 'League', type: 'select-one', path: 'form > select' })
     // the approval PIN field: eventCapture writes no key and no value
     logUI('keydown', 'global', 'keydown', { key: '[REDACTED]', code: '[REDACTED]' }, field('Approval PIN', { type: 'password' }))
@@ -265,7 +265,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     for (const h of ['== 1. Summary', '== 2. Match', '== 3. Timeline', '== 4. App log', '== end of report ==']) expect(t).toContain(h)
     expect(report.fileName).toBe('openvolley-diagnostics-20261029-2001-g406970.txt')
     expect(t).toMatch(/Game number:\s+406970/)
-    expect(t).toContain('VBC Musterdorf (home, B) – Volley Zürich Nord (away, A)')
+    expect(t).toContain('VBC Musterdorf (home, B) – VC Beispielstadt Nord (away, A)')
     expect(t).toMatch(/Time-outs:\s+set 1: home 1, away 0/)
     expect(t).toMatch(/Substitutions:\s+set 1: home 1, away 0/)
     expect(t).toMatch(/Unsent writes:\s+5 \(1 set, 4 event\)/)
@@ -306,7 +306,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     expect(t).not.toContain('iVBORw0KGgo')
     expect(t).not.toContain('2004-05-17')
     expect(t).not.toContain('Undo crashes after a sub')
-    expect(t).not.toContain('Volley Zürich Nord"') // the typed value of the away team field
+    expect(t).not.toContain('VC Beispielstadt Nord"') // the typed value of the away team field
     expect(t).toContain(ACCOUNT)
   })
 

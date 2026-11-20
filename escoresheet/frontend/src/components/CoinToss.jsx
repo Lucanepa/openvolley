@@ -80,7 +80,7 @@ function generatePlaceholderSignature() {
   return canvas.toDataURL('image/png')
 }
 
-// Helper to generate short name from team name (e.g., "VBC Zürich" -> "VBC")
+// Helper to generate short name from team name (e.g., "VBC Musterau" -> "VBC")
 function generateShortName(name) {
   if (!name) return ''
   const cleaned = name.trim().toUpperCase()
