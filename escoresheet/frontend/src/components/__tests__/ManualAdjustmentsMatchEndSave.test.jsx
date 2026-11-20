@@ -30,6 +30,12 @@ import ManualAdjustments from '../ManualAdjustments'
 import { resultKey } from '../../domain/accountApproval'
 
 let saved
+// The editor's onSave: called once a save has written everything (the
+// local rows, the approvals' undo, the cloud update). A test that saves waits
+// for it, or the rest of its save ran into the next test's database (CI
+// 2026-11-20: the approvals test read the queue before the cloud update was
+// in it, and the next test found that update in its empty queue)
+let onSaved
 beforeAll(() => {
   saved = { fetch: globalThis.fetch }
   globalThis.fetch = vi.fn(() => Promise.reject(new TypeError('offline (test)')))
@@ -43,6 +49,7 @@ beforeEach(async () => {
   dialog.answer = true
   dialog.calls = []
   undo.fn = vi.fn(async () => ({ data: {}, error: null }))
+  onSaved = vi.fn()
   await db.open()
   await Promise.all(db.tables.map(t => t.clear()))
 })
@@ -73,7 +80,7 @@ async function seed(over = {}) {
 }
 
 async function openInfo(matchId) {
-  render(<ManualAdjustments matchId={matchId} onClose={() => {}} onSave={() => {}} />)
+  render(<ManualAdjustments matchId={matchId} onClose={() => {}} onSave={onSaved} />)
   fireEvent.click(await screen.findByRole('button', { name: 'Match info' }))
   let hall
   await waitFor(() => {
@@ -83,6 +90,11 @@ async function openInfo(matchId) {
   return hall
 }
 const matchJob = async () => (await db.sync_queue.toArray()).find(j => j.resource === 'match' && j.payload?.match_info)
+// Save changes, then wait until the whole save is through
+async function save() {
+  fireEvent.click(button('Save changes'))
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1), { timeout: 10000 })
+}
 
 describe('ManualAdjustments: Save at the match end', () => {
   it('sends the roster as the other writers do (dates of birth, LFP) and set_results as finished sets', async () => {
@@ -90,8 +102,7 @@ describe('ManualAdjustments: Save at the match end', () => {
     const hall = await openInfo(matchId)
     fireEvent.change(hall, { target: { value: 'South Hall' } })
     await waitFor(() => expect(button('Save changes')).toBeTruthy())
-    fireEvent.click(button('Save changes'))
-    await waitFor(async () => expect(await matchJob()).toBeTruthy(), { timeout: 5000 })
+    await save()
     const job = await matchJob()
     expect(job.payload.set_results).toEqual([{ set: 1, home: 25, away: 20 }, { set: 2, home: 25, away: 18 }, { set: 3, home: 25, away: 22 }])
     expect(job.payload.players_home).toEqual([
@@ -112,8 +123,7 @@ describe('ManualAdjustments: Save at the match end', () => {
     expect(dateInputs.length).toBeGreaterThan(0)
     for (const input of dateInputs) expect(input).toBeDisabled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Hall' }), { target: { value: 'South Hall' } })
-    fireEvent.click(button('Save changes'))
-    await waitFor(async () => expect(await matchJob()).toBeTruthy(), { timeout: 5000 })
+    await save()
     const after = await db.matches.get(matchId)
     expect(after.scheduledAt).toBe('2026-11-07T19:00:00.000Z')
     expect(after.gameN).toBeUndefined()
@@ -127,10 +137,9 @@ describe('ManualAdjustments: Save at the match end', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'City' }), { target: { value: 'Townsville' } })
     fireEvent.change(screen.getByRole('textbox', { name: 'City' }), { target: { value: '' } })
     await waitFor(() => expect(button('Save changes')?.textContent).toContain('(1)'))
-    fireEvent.click(button('Save changes'))
-    await waitFor(async () => expect((await db.matches.get(matchId)).manualChanges).toHaveLength(1), { timeout: 5000 })
-    // the cloud update queued too (a save still running would write into the next test)
-    await waitFor(async () => expect(await matchJob()).toBeTruthy(), { timeout: 5000 })
+    await save()
+    expect((await db.matches.get(matchId)).manualChanges).toHaveLength(1)
+    expect(await matchJob()).toBeTruthy()
     expect((await db.matches.get(matchId)).manualChanges[0]).toMatchObject({
       category: 'match', field: 'hall', before: 'North Hall', after: 'South Hall', afterMatch: true,
       description: 'Hall: North Hall → South Hall'
@@ -142,8 +151,10 @@ describe('ManualAdjustments: Save at the match end', () => {
     const matchId = await seed({ homePostGameCaptainSignature: 'data:a', accountApprovals: { referee1: approval } })
     const hall = await openInfo(matchId)
     fireEvent.change(hall, { target: { value: 'South Hall' } })
-    fireEvent.click(button('Save changes'))
-    await waitFor(async () => expect((await db.matches.get(matchId)).homePostGameCaptainSignature).toBeNull(), { timeout: 5000 })
+    // (the signatures go first; the approvals' undo and the cloud update are
+    // queued after them)
+    await save()
+    expect((await db.matches.get(matchId)).homePostGameCaptainSignature).toBeNull()
     expect(dialog.calls).toHaveLength(1)
     expect((await db.matches.get(matchId)).accountApprovals).toBeNull()
     const jobs = await db.sync_queue.toArray()
@@ -160,6 +171,7 @@ describe('ManualAdjustments: Save at the match end', () => {
     fireEvent.click(button('Save changes'))
     await waitFor(() => expect(dialog.calls).toHaveLength(1))
     await new Promise(r => setTimeout(r, 100))
+    expect(onSaved).not.toHaveBeenCalled()
     const after = await db.matches.get(matchId)
     expect(after.hall).toBe('North Hall')
     expect(after.ref1Signature).toBe('data:r1')
