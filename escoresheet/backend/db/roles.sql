@@ -25,7 +25,10 @@
 --                       USAGE+SELECT on sequences (no setval), and the same on
 --                       future tables/sequences created by ov_owner; which
 --                       tables clients may reach is decided by the allowlist
---                       in lib/pgQuery.js, these grants are the floor.
+--                       in lib/pgQuery.js, these grants are the floor. Less:
+--                       the logs (append-only, below) and redacted_people
+--                       (db/052, SELECT only: the sync reads it, only the
+--                       owner's redact-person writes it)
 --               auth    exactly what lib/auth.js needs:
 --                       auth.users         SELECT (to_jsonb of the whole row),
 --                                          INSERT (sign-up), DELETE
@@ -218,9 +221,14 @@ SELECT format('GRANT UPDATE (%s) ON %s TO ov_app', c, t)
                ('public.audit_log', 'actor_id, target_user_id')) AS g(t, c)
  WHERE to_regclass(t) IS NOT NULL \gexec
 
--- No public table is held back: the daily VolleyManager sync (lib/vmSync.js,
--- scheduled by the backend in cloud mode) writes svrz_games and svrz_sync_log
--- (INSERT ... RETURNING id, so it needs svrz_sync_log_id_seq too) as ov_app.
+-- The daily VolleyManager sync (lib/vmSync.js, scheduled by the backend in
+-- cloud mode) writes svrz_games and svrz_sync_log (INSERT ... RETURNING id, so
+-- it needs svrz_sync_log_id_seq too) as ov_app, and reads the register of
+-- people erased on request (db/052), which only the owner role writes
+-- (scripts/redact-person.mjs): the app could otherwise undo an erasure.
+SELECT format('REVOKE INSERT, UPDATE, DELETE ON %s FROM ov_app', t)
+  FROM unnest(ARRAY['public.redacted_people']) AS t
+ WHERE to_regclass(t) IS NOT NULL \gexec
 
 -- Functions: nobody but the owner may call them. The restored Supabase
 -- functions include SECURITY DEFINER ones (delete_user, reset_test_match,

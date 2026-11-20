@@ -31,6 +31,10 @@
  *    out of svrz_games (db/041); no games or most of them missing is 'partial'
  *  - scheduleVmSync retries a run that is no success and catches a missed one
  *    up; readSyncRecord / syncHealth are /health's view of it
+ *  - a referee or line judge erased on request (scripts/redact-person.mjs,
+ *    registered in public.redacted_people, db/052) is written as NULL, not
+ *    as VolleyManager has them (lib/redactedPeople.js; data-map F27); a
+ *    register with entries and no OV_PIN_SECRET to check them fails the run
  *
  * Nothing here imports `pg`: runVmSync takes a pg Pool (or anything with
  * connect() -> client { query, release, on/removeListener } and, optionally,
@@ -38,6 +42,8 @@
  * checked-out client gets its own 'error' listener for the whole run, so a
  * dropped database connection cannot become an uncaught exception.
  */
+
+import { createRedactedMatcher, loadRegister, redactedPeopleKey, withholdRedacted } from './redactedPeople.js'
 
 export const VM_BASE = 'https://volleymanager.volleyball.ch'
 export const ZURICH_TZ = 'Europe/Zurich'
@@ -1129,6 +1135,8 @@ function wrapLogger(logger, redact) {
  * @param {number} [o.pageSize]            games per search page (SEARCH_PAGE_SIZE; halved on a failing page)
  * @param {boolean} [o.dryRun]             fetch + transform only, no database
  * @param {string} [o.roleAttribute]       the account's referee-delegate role (VM_ROLE_FOR_GAMES)
+ * @param {string|null} [o.redactionSecret] OV_PIN_SECRET: the key of the register of people
+ *                                         erased on request (db/052); needed once it has entries
  */
 export async function runVmSync({
   pool,
@@ -1144,7 +1152,8 @@ export async function runVmSync({
   pageSize = SEARCH_PAGE_SIZE,
   pageDelayMs = 100,
   dryRun = false,
-  staleRunningMs = STALE_RUNNING_MS
+  staleRunningMs = STALE_RUNNING_MS,
+  redactionSecret = null
 } = {}) {
   const clock = typeof now === 'function' ? now : () => new Date(now)
   const startedAt = clock()
@@ -1159,7 +1168,7 @@ export async function runVmSync({
   const dateLabel = win.fromDay === win.toDay ? win.fromDay : `${win.fromDay} → ${win.toDay}`
   const result = {
     status: 'failed', logId: null, window: win, fetched: 0, total: 0, kept: 0, excluded: 0,
-    created: 0, updated: 0, unchanged: 0, written: 0, withoutFormat: 0, removed: 0, errors: 0, elapsedMs: 0, message: '', dryRun
+    created: 0, updated: 0, unchanged: 0, written: 0, withoutFormat: 0, removed: 0, withheld: 0, errors: 0, elapsedMs: 0, message: '', dryRun
   }
   const elapsed = () => ((clock().getTime() - startedAt.getTime()) / 1000).toFixed(1)
 
@@ -1230,9 +1239,24 @@ export async function runVmSync({
     // the upcoming games the schedule holds before this run (a moved game keeps its old time here)
     const upcoming = dryRun ? [] : await storedUpcoming(client, win, startedAt.getTime())
     if (!dryRun) {
+      // People erased on request (db/052): their places stay empty. Read under
+      // the run's lock, right before the writes; entries without the key to
+      // check them would let the names back in, so the run writes nothing.
+      const register = await loadRegister(client)
+      let rows = prepared.rows
+      if (register.size) {
+        let key
+        try {
+          key = redactedPeopleKey(redactionSecret)
+        } catch {
+          throw new Error(`the register of people erased on request (db/052) has ${register.size} entr${register.size === 1 ? 'y' : 'ies'} and OV_PIN_SECRET is not set to check them: nothing written`)
+        }
+        ;({ rows, withheld: result.withheld } = withholdRedacted(rows, createRedactedMatcher(register, key)))
+        if (result.withheld) log.log(`vm-sync: ${result.withheld} referee / line judge place(s) left empty (erased on request)`)
+      }
       const syncedAt = clock()
-      for (let i = 0; i < prepared.rows.length; i += batchSize) {
-        const batch = prepared.rows.slice(i, i + batchSize)
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize)
         try {
           const c = await upsertBatch(client, batch, syncedAt)
           result.created += c.created
@@ -1278,6 +1302,7 @@ export async function runVmSync({
     const parts = [`[${dateLabel}] ${dryRun ? 'Dry run: fetched' : 'Synced'} ${prepared.rows.length} games in ${elapsed()}s`]
     if (!dryRun) parts.push(`(${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged, ${result.errors} errors)`)
     if (result.withoutFormat) parts.push(`${result.withoutFormat} without a format`)
+    if (result.withheld) parts.push(`${result.withheld} referee / line judge place(s) left empty (erased on request)`)
     if (prepared.excluded) parts.push(`${prepared.excluded} NL excluded (${prepared.excludedLeagues.slice(0, 10).join(', ')})`)
     if (result.removed) parts.push(`${result.removed} no longer in VolleyManager (${result.removedGames.slice(0, 20).join(', ')})`)
     if (suspicious) parts.push(`SUSPICIOUS: ${suspicious}`)

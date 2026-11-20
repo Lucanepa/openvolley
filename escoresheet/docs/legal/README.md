@@ -97,6 +97,10 @@ update the texts:
   included) to the cloud relay's memory even without a sign-in. Privacy
   (In short, 3, 5, 9) now says so; if the apps stop doing that, simplify
   those passages again.
+- **F27** (fixed 2026-11-20): "deleted on request" for a referee (privacy 11
+  and 19) also holds against the daily VolleyManager sync, through the
+  register of db/052 (`redacted_people`). Should that register go, those two
+  sections need a caveat again (the sync restores names in its window).
 - **Cookies and Cloudflare's scripts (F26)**: the code sets no cookie, but
   Cloudflare's bot check (JavaScript detections) and Email Address
   Obfuscation inject scripts, and the bot check may set `cf_clearance`.

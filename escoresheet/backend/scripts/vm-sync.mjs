@@ -20,6 +20,11 @@
  *               whether VM sends Z/offsets or Zurich wall-clock times
  *   --help
  *
+ * People erased on request (scripts/redact-person.mjs, public.redacted_people,
+ * db/052) are written as NULL; the register's key comes from OV_PIN_SECRET
+ * (the backend's environment has it), and a register with entries but no
+ * secret fails the run before anything is written.
+ *
  * On lenovoserver (production since 16.10.2026):
  *   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/vm-sync.mjs --from 2026-10-01 --to 2026-10-31
  *
@@ -34,7 +39,7 @@ import { fileURLToPath } from 'node:url'
 import { runVmSync, resolveWindow, windowFromEnv, isYmd } from '../lib/vmSync.js'
 
 const USAGE = 'Usage: node scripts/vm-sync.mjs [--date YYYY-MM-DD | --from YYYY-MM-DD --to YYYY-MM-DD | --days-back N --days-ahead N] [--dry-run] [--json]\n' +
-  'Needs VM_USERNAME, VM_PASSWORD and (unless --dry-run) DATABASE_URL.'
+  'Needs VM_USERNAME, VM_PASSWORD and (unless --dry-run) DATABASE_URL; OV_PIN_SECRET once people erased on request are registered (db/052).'
 
 export const EXIT = { success: 0, failed: 1, usage: 2, skipped: 3, partial: 4 }
 
@@ -134,7 +139,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
       ...(baseUrl ? { baseUrl } : {}),
       ...(http ? { http } : {}),
       credentials: { username: env.VM_USERNAME, password: env.VM_PASSWORD },
-      ...(env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: env.VM_ROLE_ATTRIBUTE_GAMES } : {})
+      ...(env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: env.VM_ROLE_ATTRIBUTE_GAMES } : {}),
+      // the register of people erased on request (db/052): their places stay empty
+      redactionSecret: env.OV_PIN_SECRET || null
     })
   } finally {
     if (pool && !createPool) await pool.end().catch(() => {})

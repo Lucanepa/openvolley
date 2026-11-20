@@ -8081,7 +8081,9 @@ if (DB_MODE) {
             window: vmWindow,
             credentials: { username: process.env.VM_USERNAME, password: process.env.VM_PASSWORD },
             // the shared account's referee-delegate role (lib/vmSync.js VM_ROLE_FOR_GAMES)
-            ...(process.env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: process.env.VM_ROLE_ATTRIBUTE_GAMES } : {})
+            ...(process.env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: process.env.VM_ROLE_ATTRIBUTE_GAMES } : {}),
+            // the key of the register of people erased on request (db/052, lib/redactedPeople.js)
+            redactionSecret: process.env.OV_PIN_SECRET || null
           }).catch((err) => { captureServerError(err, { kind: 'job.failed', view: 'vm sync' }); throw err }),
           retryDelaysMs: vm.VM_SYNC_RETRY_DELAYS_MS,
           allowedWindow,

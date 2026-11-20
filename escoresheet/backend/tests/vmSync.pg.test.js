@@ -25,6 +25,8 @@ import { dirname, join } from 'node:path'
 import { runVmSync, readSyncRecord, syncHealth, ADVISORY_LOCK_KEY } from '../lib/vmSync.js'
 import { createFakeVolleyManager, makeGame, FAKE_USER, FAKE_PASSWORD } from './helpers/fakeVolleyManager.js'
 import { PG_TEST_TEMPLATE, createDatabase } from './helpers/pgTestDb.js'
+import { redactPerson, registerPerson, REDACTED } from '../scripts/redact-person.mjs'
+import { redactedPeopleKey } from '../lib/redactedPeople.js'
 
 const PG_TEST_URL = process.env.PG_TEST_URL || process.env.TEST_DATABASE_URL || ''
 const SKIP = PG_TEST_URL ? false : 'PG_TEST_URL not set (see the header of this file)'
@@ -34,6 +36,10 @@ const MIGRATION_SQL = readFileSync(join(here, '..', 'db', '003_svrz_games_local_
 const SYNC_041_SQL = readFileSync(join(here, '..', 'db', '041_schedule_sync.sql'), 'utf8')
 // the referees' licence numbers the sync writes (db/051)
 const LICENCES_051_SQL = readFileSync(join(here, '..', 'db', '051_referee_licences.sql'), 'utf8')
+// the register of people erased on request the sync reads (db/052)
+const REDACTED_052_SQL = readFileSync(join(here, '..', 'db', '052_redacted_people.sql'), 'utf8')
+// the register's key in this test (db/052); never a real secret
+const PIN_SECRET = 'p'.repeat(40)
 
 const http = { sleep: async () => {}, backoffMs: 1, timeoutMs: 5000 }
 const creds = { username: FAKE_USER, password: FAKE_PASSWORD }
@@ -86,6 +92,8 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
       await c.query(SYNC_041_SQL)
       await c.query(LICENCES_051_SQL)
       await c.query(LICENCES_051_SQL)
+      await c.query(REDACTED_052_SQL)
+      await c.query(REDACTED_052_SQL)
       await admin.query(`CREATE ROLE "${noRlsRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`)
       for (const r of PG_TEST_TEMPLATE ? [noRlsRole] : [appRole, noRlsRole]) {
         await c.query(`GRANT USAGE ON SCHEMA public TO "${r}";
@@ -204,6 +212,59 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     assert.equal(r.status, 'success', r.message)
     assert.deepEqual(await numbers(), ['6101', '6102', '6103', '6104'])
     assert.equal((await q('SELECT count(*)::int AS n FROM public.svrz_games_removed')).rows[0].n, 0)
+  })
+
+  it('a referee erased on request (redact-person, db/052) stays NULL across syncs while VolleyManager still lists them; the others are written', async () => {
+    await reset()
+    await q('TRUNCATE public.redacted_people')
+    const games = [
+      makeGame(6201, { startingDateTime: '2026-10-07T16:00:00Z', sv1: '512345', ref2: true, sv2: '623456' }),
+      makeGame(6202, { startingDateTime: '2026-10-08T16:00:00Z', sv1: '512345' })
+    ]
+    const referees = async () => (await q(`SELECT game_number, referee_1, referee_1_first_name, referee_1_last_name, referee_1_licence,
+        referee_2, referee_2_last_name, referee_2_licence, linesman_1, convocations FROM public.svrz_games ORDER BY game_number`)).rows
+    let r = await sync(createFakeVolleyManager({ games }), { redactionSecret: PIN_SECRET })
+    assert.equal(r.status, 'success', r.message)
+    assert.equal((await referees())[0].referee_1_licence, '512345')
+
+    // the request: the owner's redact-person erases the schedule rows and registers the person
+    const owner = await ownerPool.connect()
+    try {
+      await owner.query('BEGIN')
+      const who = { first: 'Anna', last: 'Muster' }
+      const done = await redactPerson(owner, { who })
+      assert.equal(done.tables.svrz_games, 2)
+      const reg = await registerPerson(owner, { key: redactedPeopleKey(PIN_SECRET), who, licences: done.licences })
+      assert.deepEqual(reg.entries.map((e) => e.kind), ['name', 'licence'], 'the name and the licence number erased')
+      await owner.query('COMMIT')
+    } finally {
+      await owner.query('ROLLBACK').catch(() => {})
+      owner.release()
+    }
+    const stored = (await q("SELECT kind, encode(hash, 'hex') AS h FROM public.redacted_people ORDER BY kind")).rows
+    assert.deepEqual(stored.map((x) => x.kind), ['licence', 'name'])
+    assert.equal(JSON.stringify(stored).includes('Muster') || JSON.stringify(stored).includes('512345'), false, 'no name, no number')
+    assert.equal((await referees())[0].referee_1_last_name, REDACTED)
+
+    // VolleyManager still lists the referee: the next runs leave the places empty
+    for (const round of [1, 2]) {
+      r = await sync(createFakeVolleyManager({ games }), { redactionSecret: PIN_SECRET })
+      assert.equal(r.status, 'success', r.message)
+      assert.equal(r.withheld, 2)
+      const [a, b] = await referees()
+      assert.deepEqual([a.referee_1, a.referee_1_first_name, a.referee_1_last_name, a.referee_1_licence], [null, null, null, null], `round ${round}`)
+      assert.deepEqual([a.referee_2, a.referee_2_last_name, a.referee_2_licence, a.linesman_1], ['Beispiel Ben', 'Beispiel', '623456', 'Linie Lea'], 'the others are unaffected')
+      assert.deepEqual(a.convocations, [])
+      assert.deepEqual([b.referee_1, b.referee_1_licence, b.referee_2], [null, null, 'Beispiel Ben'])
+      if (round === 2) assert.equal(r.unchanged, 2, 'a second run changes nothing')
+    }
+
+    // without the key the run fails and writes nothing: the names do not come back
+    r = await sync(createFakeVolleyManager({ games }))
+    assert.equal(r.status, 'failed')
+    assert.match(r.message, /OV_PIN_SECRET is not set/)
+    assert.equal((await referees())[0].referee_1_last_name, null)
+    await q('TRUNCATE public.redacted_people')
   })
 
   it('pages that overlap (ties on the kick-off broken differently) remove nothing and make the run partial', async () => {
