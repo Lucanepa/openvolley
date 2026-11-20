@@ -50,6 +50,13 @@ i18n
     supportedLngs,
     interpolation: {
       escapeValue: false // React already escapes values
+    },
+    // Only the first language is in the bundle; every other one is loaded
+    // when it is chosen (loadLocale, below), after the languageChanged render.
+    // Re-render when its bundle is added too, or the screen kept the old
+    // language until a reload (languageSwitch.test.jsx)
+    react: {
+      bindI18nStore: 'added'
     }
   })
 
