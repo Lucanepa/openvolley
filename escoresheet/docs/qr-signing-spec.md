@@ -163,7 +163,7 @@ onSave(dataUrl, {source})  →  same field, same PDF
 }
 ```
 
-Tokens: 32 bytes from the CSPRNG (`crypto.randomBytes`, `getrandom` / `rand::rngs::OsRng`),
+Tokens: 32 bytes from the CSPRNG (`crypto.randomBytes`, `getrandom` / `rand::rngs::SysRng`),
 base64url without padding, exactly 43 characters `[A-Za-z0-9_-]`. A presented token or watch
 secret that is not 43 such characters gets the not-found answer before hashing. Lookup is by hash
 in a map. No comparison is done on secrets, so no timing concern applies. SHA-256 without a key is
