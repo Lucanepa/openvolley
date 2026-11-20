@@ -7,7 +7,7 @@
 #
 # Same sources and the same versionName/versionCode as the F-Droid APK
 # (android/app/build.gradle, "Version rule" in ANDROID.md): never upload a
-# versionCode twice; every release bumps PATCH.
+# versionCode twice; every release gets a new (calendar) version.
 #
 # Upload key: PLAY_SIGNING (default ~/.config/openvolley-android/play-upload.properties,
 # same format as signing.properties: storeFile, storePassword, keyAlias,

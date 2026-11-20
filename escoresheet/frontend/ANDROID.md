@@ -89,10 +89,15 @@ needs all three again.
 
 ## Version rule
 
-- `versionName` = `version` in `package.json` (e.g. `2.0.0`).
-- `versionCode` = `(MAJOR * 1000000 + MINOR * 1000 + PATCH) * 10 + androidBuild`,
-  e.g. 1.48.20 → `10480200`, 2.0.0 → `20000000`.
-- **Every Android release bumps PATCH** in `package.json`, a native-only fix
+- `versionName` = `version` in `package.json`. Since 20.11.2026 that is a
+  **calendar version** `YY.M.N`: year, month (no leading zero), the month's
+  release from 0. `26.11.0` = November 2026's first release, `26.11.1` its
+  second, `26.12.0` December's first. `scripts/bump-version.js` sets it (and
+  every other version file) for a release; earlier releases were 1.x to 3.5.1.
+- `versionCode` = `(YY * 1000000 + M * 1000 + N) * 10 + androidBuild`,
+  e.g. 3.5.1 → `30050010`, 26.11.0 → `260110000` (always above the 3.x codes,
+  below Play's limit of 2100000000; a four-digit year would not fit).
+- **Every Android release gets a new version** in `package.json`, a native-only fix
   (Gradle, manifest, `MainActivity.java`) included. `androidBuild` in
   `android/app/build.gradle` stays **0**. It was used only for 1.48.19
   (10480191 = first private-repo build, 10480192 = never published) and is
