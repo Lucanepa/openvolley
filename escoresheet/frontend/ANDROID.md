@@ -109,9 +109,14 @@ The build uses Gradle 8.14.x and the Android Gradle Plugin 8.13.x
 Dependabot therefore skips major updates of `gradle-wrapper` and
 `com.android.tools.build:gradle` (`.github/dependabot.yml`); drop that ignore
 with the Capacitor 9 move. Any Gradle or AGP change alters the APK bytes
-(the AGP version is written into the APK, D8 into `classes.dex`): F-Droid
-builds the tag with the versions the tag declares, so both builds still match,
-but compare `aapt2 dump badging` of the unsigned release APK before and after.
+(the AGP version is written into the APK, D8 into `classes.dex`). F-Droid
+builds the tag with the Gradle and AGP versions the tag declares, so a version
+change alone does not break the reproducible build; the rest still has to
+match as before (same sources, same build commands and environment, e.g. no
+`VITE_BASE_PATH`). Before merging one, compare the unsigned release APK with
+the previous build: `aapt2 dump badging` (package, versions, SDKs,
+permissions) and the list of changed ZIP entries (the web assets must not
+change), and check that an empty-cache build gives the same bytes.
 
 ## Version rule
 
