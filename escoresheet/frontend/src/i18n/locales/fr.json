@@ -2074,7 +2074,10 @@
     "replyTo": "Les réponses arrivent à {{email}}.",
     "mailtoTitle": "Presque terminé",
     "mailtoOpened": "Ton application e-mail s'est ouverte avec le message. Envoie-le depuis là.",
-    "mailtoAttach": "Ajoute tes pièces jointes dans l'application e-mail."
+    "mailtoAttach": "Ajoute tes pièces jointes dans l'application e-mail.",
+    "autoReports": "Envoyer automatiquement les rapports d'erreur",
+    "autoReportsHint": "Quand quelque chose ne va pas, l'application envoie au serveur d'OpenVolley ce qui n'a pas fonctionné et où (jamais ce que tu as tapé), aussi sans connexion. Politique de confidentialité, section 5.",
+    "deviceId": "Identifiant de cet appareil (pour une demande de suppression) :"
   },
   "rosterSetup": {
     "title": "Effectif",

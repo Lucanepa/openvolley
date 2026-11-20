@@ -1,6 +1,7 @@
 import React from 'react'
 import { buildReloadUrl } from '../hooks/useServiceWorker'
 import { reportAppError } from '../utils/activity/appError'
+import { reportError } from '../utils/errorReport'
 import { reloadWithReason } from '../diagnostics/reload'
 
 /**
@@ -25,6 +26,8 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     reportAppError(error?.message || String(error), error?.stack, `render${this.props.name ? `:${this.props.name}` : ''}`)
+    // the error tracker (utils/errorReport): the crash with React's component stack
+    reportError(error instanceof Error ? error : String(error?.message || error), { kind: 'react.crash', componentStack: errorInfo?.componentStack, source: `render${this.props.name ? `:${this.props.name}` : ''}` })
     console.error(`[ErrorBoundary${this.props.name ? `:${this.props.name}` : ''}] Render error:`, error, errorInfo?.componentStack)
   }
 

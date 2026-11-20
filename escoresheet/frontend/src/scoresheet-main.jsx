@@ -1,3 +1,6 @@
+// First: the error reporter listens while the rest loads (utils/errorReport, privacy 1.22)
+import './utils/errorReport/boot'
+import { setErrorTool } from './utils/errorReport'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import ScoresheetApp from './ScoresheetApp'
@@ -10,6 +13,7 @@ import { setAppEntry } from './utils/appEntry'
 
 // Not the scoretable: this page never saves a match backup (utils/appEntry)
 setAppEntry('scoresheet')
+setErrorTool('scoresheet')
 
 // Clean up cache_bust query parameter (added by cache clear / update flow).
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.

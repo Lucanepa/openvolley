@@ -1,3 +1,6 @@
+// First: the error reporter listens while the rest loads (utils/errorReport, privacy 1.22)
+import './utils/errorReport/boot'
+import { setErrorTool } from './utils/errorReport'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import BenchApp from './BenchApp'
@@ -16,6 +19,7 @@ import { installErrorTrail } from './utils/diagnosticsInfo'
 
 // Not the scoretable: this page never saves a match backup (utils/appEntry)
 setAppEntry('bench')
+setErrorTool('bench')
 
 // Opened from the scorer's Home menu on this device (?from=scorer): its menus
 // offer "Back to scorer" (utils/scorerReturn.js)

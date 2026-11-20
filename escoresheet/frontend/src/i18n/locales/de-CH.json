@@ -2075,7 +2075,10 @@
     "replyTo": "D Antworte gönd a {{email}}.",
     "mailtoTitle": "Fast fertig",
     "mailtoOpened": "Dis E-Mail-Programm isch mit de Nachricht ufgange. Schick sie vo dört.",
-    "mailtoAttach": "Häng dini Dateie im E-Mail-Programm aa."
+    "mailtoAttach": "Häng dini Dateie im E-Mail-Programm aa.",
+    "autoReports": "Fehlerberichte automatisch senden",
+    "autoReportsHint": "Wenn etwas schiefgeht, sendet die App, was schiefging und wo (nie, was du eingetippt hast), an den OpenVolley-Server, auch ohne Anmeldung. Datenschutzerklärung, Abschnitt 5.",
+    "deviceId": "Kennung dieses Geräts (für eine Löschanfrage):"
   },
   "rosterSetup": {
     "title": "Kader",

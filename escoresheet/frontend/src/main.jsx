@@ -1,3 +1,6 @@
+// First: the error reporter listens while the rest loads (utils/errorReport, privacy 1.22)
+import './utils/errorReport/boot'
+import { setErrorTool } from './utils/errorReport'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
@@ -29,6 +32,7 @@ import { startDobCleanup } from './db/dobCleanup'
 
 // The scoretable: the only page that saves automatic match backups
 setAppEntry('scorer')
+setErrorTool('scorer')
 
 // Diagnostics mode (off unless Options, ?diag=1 or OPENVOLLEY_DIAGNOSTICS=1
 // in the desktop app): first, so it sees this load and the database opening

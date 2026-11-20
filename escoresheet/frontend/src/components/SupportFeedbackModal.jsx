@@ -7,6 +7,8 @@ import { getLiveMatch, onLiveMatchChange } from '../utils/appLifecycle'
 import { openAppWindow } from '../utils/openAppWindow'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { Check, ChevronDown, Download, Mail, Paperclip, Send, X } from 'lucide-react'
+import { errorReportsEnabled, setErrorReportsEnabled } from '../utils/errorReport'
+import { deviceId } from '../utils/deviceId'
 import { Button, Checkbox, cn, FOCUS_RING, IconButton, Select } from '../ui'
 import {
   CONTACT_AREAS, FILE_ACCEPT, MAX_FILES, MAX_FILES_MB, buildContactForm, checkFiles, collectDiagnostics,
@@ -224,6 +226,8 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
   // of message (the report holds what was done on the device: tap labels,
   // the open match's teams; only what the user chose to send goes)
   const [includeDiagnostics, setIncludeDiagnostics] = useState(false)
+  // The automatic error reports (utils/errorReport, privacy 1.22 section 5): on unless switched off here
+  const [autoReports, setAutoReports] = useState(() => errorReportsEnabled())
   // What "Show what is sent" shows is what is sent: one report, made when the
   // box is ticked (and shown); unticked and ticked again, a new one
   const [report, setReport] = useState(null)
@@ -708,6 +712,20 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
             {sending ? t('supportFeedback.sending') : t('supportFeedback.send')}
           </Button>
         )}
+
+        {/* The automatic error reports: on by default, switched off here; the
+            device id is what a request to delete them names */}
+        <div className="mt-5 border-t border-stone-200 pt-4" data-testid="support-error-reports">
+          <Checkbox
+            label={t('supportFeedback.autoReports')}
+            hint={t('supportFeedback.autoReportsHint')}
+            checked={autoReports}
+            onChange={(e) => { setErrorReportsEnabled(e.target.checked); setAutoReports(e.target.checked) }}
+          />
+          <p className="mt-1.5 break-all text-[11px] text-stone-500">
+            {t('supportFeedback.deviceId')} <span className="font-mono">{(() => { try { return deviceId() } catch { return '' } })()}</span>
+          </p>
+        </div>
       </div>
       </div>
     </Modal>
