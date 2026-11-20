@@ -15,7 +15,7 @@
  * - anything else: the plain download.
  */
 import { detectOs } from './deviceKind.js'
-import { writePdfNative } from './openAppWindow.js'
+import { filesPlugin, writePdfNative } from './openAppWindow.js'
 
 const isNative = (win) => {
   try { return !!win?.Capacitor?.isNativePlatform?.() } catch { return false }
@@ -27,11 +27,6 @@ export function prefersShare(win = typeof window !== 'undefined' ? window : unde
   return isNative(win) || detectOs(win) === 'ios'
 }
 
-async function filesPlugin(win) {
-  let register = win.Capacitor?.registerPlugin
-  if (typeof register !== 'function') register = (await import('@capacitor/core')).registerPlugin
-  return register('OpenVolleyFiles')
-}
 
 function downloadBlob(blob, filename, win) {
   const doc = win.document
@@ -50,7 +45,9 @@ export async function shareFile(blob, filename, { mime = blob?.type || 'applicat
   if (isNative(win)) {
     const fs = await import('@capacitor/filesystem')
     const { uri } = await writePdfNative(fs, await blob.arrayBuffer(), filename)
-    const plugin = await filesPlugin(win)
+    // { plugin }: a bare Capacitor plugin is a thenable that never settles (filesPlugin)
+    const { plugin } = (await filesPlugin(win)) || {}
+    if (!plugin) throw new Error('OpenVolleyFiles plugin unavailable')
     await plugin.share({ uri })
     return 'shared'
   }

@@ -16,6 +16,7 @@ import {
   writePdfNative,
   freePdfName,
   absolutePathOf,
+  filesPlugin,
 } from '../openAppWindow'
 import {
   MSG_PDF_BLOB,
@@ -31,6 +32,22 @@ import {
 import { waitForScoresheetPdf } from '../scoresheetPdfRequest'
 
 const ORIGIN = 'http://localhost:5173'
+
+// Save PDF in the in-app view writes with @capacitor/filesystem
+const nativeFs = vi.hoisted(() => ({
+  Filesystem: { writeFile: async ({ path }) => ({ uri: `file:///data/user/0/com.openvolley.escoresheet/files/${path}` }) },
+  Directory: { Data: 'DATA', External: 'EXTERNAL', Documents: 'DOCUMENTS' }
+}))
+vi.mock('@capacitor/filesystem', () => nativeFs)
+
+/**
+ * Like a Capacitor plugin: every property is a method, `then` too; one the
+ * plugin lacks rejects with "... is not implemented" (a promise resolved with
+ * the bare plugin would call that `then` and never settle).
+ */
+const capacitorPlugin = (methods) => new Proxy({}, {
+  get: (_, prop) => methods[prop] || (() => Promise.reject(new Error(`"OpenVolleyFiles.${String(prop)}()" is not implemented on android`)))
+})
 
 /** A window stub: location on ORIGIN, window.open returning `opened`. */
 function fakeWin({ opened = {}, extra = {} } = {}) {
@@ -207,12 +224,44 @@ describe('openAppWindow in the Android app (Capacitor)', () => {
     }
   })
 
+  // 20.11.2026, emulator: the bar said "PDF saved" but never showed its buttons
+  it('Save PDF: the bar offers Open, Share and Export to Documents (the plugin is a thenable)', async () => {
+    const r = open('/scoresheet/?matchId=7')
+    const bridge = window.Capacitor
+    const share = vi.fn().mockResolvedValue(undefined)
+    window.Capacitor = { isNativePlatform: () => true, registerPlugin: vi.fn(() => capacitorPlugin({ share, open: vi.fn() })) }
+    try {
+      const arrayBuffer = new TextEncoder().encode('%PDF-1.4 test').buffer
+      window.dispatchEvent(new MessageEvent('message', { data: { type: MSG_SAVE_PDF, arrayBuffer, filename: 'game7.pdf' }, origin: window.location.origin, source: r.window }))
+      const actions = document.querySelector('[data-testid="app-window-actions"]')
+      await vi.waitFor(() => expect(actions.style.display).toBe('flex'), { timeout: 1000 })
+      expect([...actions.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Open', 'Share', 'Export to Documents'])
+      expect(document.querySelector('[data-testid="app-window-status"]').textContent).toContain('game7.pdf')
+      actions.querySelectorAll('button')[1].click()
+      await vi.waitFor(() => expect(share).toHaveBeenCalledWith({ uri: 'file:///data/user/0/com.openvolley.escoresheet/files/OpenVolley/scoresheets/game7.pdf' }), { timeout: 1000 })
+    } finally {
+      window.Capacitor = bridge
+    }
+  })
+
   it('sends external links to the system browser by navigation (Capacitor hands it to Android)', () => {
     const win = fakeWin({ extra: { Capacitor: { isNativePlatform: () => true } } })
     const r = openAppWindow('https://openvolley.app/help', { win })
     expect(win.location.assign).toHaveBeenCalledWith('https://openvolley.app/help')
     expect(win.open).not.toHaveBeenCalled()
     expect(r).toMatchObject({ ok: true, mode: 'external', platform: 'capacitor' })
+  })
+})
+
+describe('filesPlugin', () => {
+  it('hands the plugin over wrapped: awaiting a bare Capacitor plugin never settles', async () => {
+    const plugin = capacitorPlugin({})
+    const win = { Capacitor: { isNativePlatform: () => true, registerPlugin: () => plugin } }
+    const settled = await Promise.race([filesPlugin(win), new Promise((res) => setTimeout(() => res('pending'), 500))])
+    expect(settled).not.toBe('pending')
+    expect(settled.plugin).toBe(plugin)
+    expect(await filesPlugin({})).toBeNull()
+    expect(await filesPlugin({ Capacitor: { isNativePlatform: () => false } })).toBeNull()
   })
 })
 

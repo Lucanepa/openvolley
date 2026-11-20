@@ -1,6 +1,22 @@
 import { describe, it, expect, vi } from 'vitest'
 import { prefersShare, shareFile } from '../shareFile.js'
 
+// The native app writes the file with @capacitor/filesystem first
+const nativeFs = vi.hoisted(() => ({
+  Filesystem: { writeFile: async ({ path }) => ({ uri: `file:///data/user/0/com.openvolley.escoresheet/files/${path}` }) },
+  Directory: { Data: 'DATA', External: 'EXTERNAL' }
+}))
+vi.mock('@capacitor/filesystem', () => nativeFs)
+
+/**
+ * Like a Capacitor plugin: every property is a method, `then` too; one the
+ * plugin lacks rejects with "... is not implemented" (a promise resolved with
+ * the bare plugin would call that `then` and never settle).
+ */
+const capacitorPlugin = (methods) => new Proxy({}, {
+  get: (_, prop) => methods[prop] || (() => Promise.reject(new Error(`"OpenVolleyFiles.${String(prop)}()" is not implemented on android`)))
+})
+
 const blob = new Blob(['x'], { type: 'application/zip' })
 
 function fakeWin({ ua = 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)', share, canShare = () => true, native = false } = {}) {
@@ -52,4 +68,16 @@ describe('shareFile (browser)', () => {
     await expect(shareFile(blob, 'b.pdf', { win })).resolves.toBe('downloaded')
     expect(win.clicks).toEqual(['b.pdf'])
   })
+})
+
+describe('shareFile (native app)', () => {
+  it('writes the file and hands it to the OpenVolleyFiles plugin (a Capacitor plugin is a thenable)', async () => {
+    const share = vi.fn().mockResolvedValue(undefined)
+    const win = fakeWin({ native: true })
+    win.Capacitor.registerPlugin = vi.fn(() => capacitorPlugin({ share }))
+    await expect(shareFile(blob, 'match.zip', { win })).resolves.toBe('shared')
+    expect(win.Capacitor.registerPlugin).toHaveBeenCalledWith('OpenVolleyFiles')
+    expect(share).toHaveBeenCalledWith({ uri: 'file:///data/user/0/com.openvolley.escoresheet/files/OpenVolley/scoresheets/match.zip' })
+    expect(win.clicks).toEqual([])
+  }, 2000)
 })
