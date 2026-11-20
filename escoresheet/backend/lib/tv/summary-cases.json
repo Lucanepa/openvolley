@@ -2,11 +2,11 @@
   {
     "name": "home is team A, home serves",
     "liveState": {
-      "team_a_name": "Munich IS",
-      "team_a_short": "MIS",
+      "team_a_name": "Bergtal IS",
+      "team_a_short": "BIS",
       "team_a_color": "#1d4ed8",
-      "team_b_name": "Zurich IS",
-      "team_b_short": "ZIS",
+      "team_b_name": "Seeblick IS",
+      "team_b_short": "SIS",
       "team_b_color": "#dc2626",
       "sets_won_a": 1,
       "sets_won_b": 0,
@@ -32,10 +32,10 @@
         "refereePin": "123456"
       },
       "homeTeam": {
-        "name": "Munich IS"
+        "name": "Bergtal IS"
       },
       "awayTeam": {
-        "name": "Zurich IS"
+        "name": "Seeblick IS"
       },
       "sets": [
         {
@@ -54,13 +54,13 @@
     },
     "expected": {
       "home": {
-        "name": "Munich IS",
-        "short": "MIS",
+        "name": "Bergtal IS",
+        "short": "BIS",
         "color": "#1d4ed8"
       },
       "away": {
-        "name": "Zurich IS",
-        "short": "ZIS",
+        "name": "Seeblick IS",
+        "short": "SIS",
         "color": "#dc2626"
       },
       "setsWon": {
@@ -92,11 +92,11 @@
   {
     "name": "coin toss gave A to away; B serves from the left",
     "liveState": {
-      "team_a_name": "Zurich IS",
-      "team_a_short": "MIS",
+      "team_a_name": "Seeblick IS",
+      "team_a_short": "BIS",
       "team_a_color": "#1d4ed8",
-      "team_b_name": "Munich IS",
-      "team_b_short": "ZIS",
+      "team_b_name": "Bergtal IS",
+      "team_b_short": "SIS",
       "team_b_color": "#dc2626",
       "sets_won_a": 1,
       "sets_won_b": 0,
@@ -118,10 +118,10 @@
         "coinTossTeamA": "away"
       },
       "homeTeam": {
-        "name": "Munich IS"
+        "name": "Bergtal IS"
       },
       "awayTeam": {
-        "name": "Zurich IS"
+        "name": "Seeblick IS"
       },
       "sets": [
         {
@@ -140,13 +140,13 @@
     },
     "expected": {
       "home": {
-        "name": "Munich IS",
-        "short": "ZIS",
+        "name": "Bergtal IS",
+        "short": "SIS",
         "color": "#dc2626"
       },
       "away": {
-        "name": "Zurich IS",
-        "short": "MIS",
+        "name": "Seeblick IS",
+        "short": "BIS",
         "color": "#1d4ed8"
       },
       "setsWon": {
@@ -178,11 +178,11 @@
   {
     "name": "ended match, best of 3, timeout and interval flags",
     "liveState": {
-      "team_a_name": "Munich IS",
-      "team_a_short": "MIS",
+      "team_a_name": "Bergtal IS",
+      "team_a_short": "BIS",
       "team_a_color": "#1d4ed8",
-      "team_b_name": "Zurich IS",
-      "team_b_short": "ZIS",
+      "team_b_name": "Seeblick IS",
+      "team_b_short": "SIS",
       "team_b_color": "#dc2626",
       "sets_won_a": 1,
       "sets_won_b": 0,
@@ -208,10 +208,10 @@
         "refereePin": "123456"
       },
       "homeTeam": {
-        "name": "Munich IS"
+        "name": "Bergtal IS"
       },
       "awayTeam": {
-        "name": "Zurich IS"
+        "name": "Seeblick IS"
       },
       "sets": [
         {
@@ -230,13 +230,13 @@
     },
     "expected": {
       "home": {
-        "name": "Munich IS",
-        "short": "MIS",
+        "name": "Bergtal IS",
+        "short": "BIS",
         "color": "#1d4ed8"
       },
       "away": {
-        "name": "Zurich IS",
-        "short": "ZIS",
+        "name": "Seeblick IS",
+        "short": "SIS",
         "color": "#dc2626"
       },
       "setsWon": {
@@ -268,11 +268,11 @@
   {
     "name": "odd values are refused, not passed on",
     "liveState": {
-      "team_a_name": "Munich IS",
-      "team_a_short": "MIS",
+      "team_a_name": "Bergtal IS",
+      "team_a_short": "BIS",
       "team_a_color": "red;x",
-      "team_b_name": "Zurich IS",
-      "team_b_short": "ZIS",
+      "team_b_name": "Seeblick IS",
+      "team_b_short": "SIS",
       "team_b_color": "#dc2626",
       "sets_won_a": 1,
       "sets_won_b": 0,
@@ -294,13 +294,13 @@
     "entry": {},
     "expected": {
       "home": {
-        "name": "Munich IS",
-        "short": "MIS",
+        "name": "Bergtal IS",
+        "short": "BIS",
         "color": null
       },
       "away": {
-        "name": "Zurich IS",
-        "short": "ZIS",
+        "name": "Seeblick IS",
+        "short": "SIS",
         "color": "#dc2626"
       },
       "setsWon": {

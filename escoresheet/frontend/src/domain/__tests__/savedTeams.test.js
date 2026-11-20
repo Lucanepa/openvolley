@@ -295,8 +295,8 @@ describe('findSavedTeamSuggestions', () => {
 
   it('matches the svrz team name or the name, normalised', () => {
     const c = comp('c1')
-    const teams = [team('t1', 'Musterdorf', c, { svrzTeamName: 'VBC  Musterdorf H1' }), team('t2', 'Uni Bern', c)]
-    expect(findSavedTeamSuggestions(teams, { home: ' vbc musterdorf h1', away: 'UNI BERN' })).toEqual({ home: teams[0], away: teams[1] })
+    const teams = [team('t1', 'Musterdorf', c, { svrzTeamName: 'VBC  Musterdorf H1' }), team('t2', 'Uni Musterau', c)]
+    expect(findSavedTeamSuggestions(teams, { home: ' vbc musterdorf h1', away: 'UNI MUSTERAU' })).toEqual({ home: teams[0], away: teams[1] })
     expect(findSavedTeamSuggestions(teams, { home: 'Nobody', away: '' })).toEqual({ home: null, away: null })
   })
 
@@ -350,7 +350,7 @@ describe('beach saved teams (docs/beach-saved-teams-spec.md 3.2)', () => {
     expect(beach.sport).toBe('beach')
     expect(beach.version).toBe(mixed.version)
     expect(beach.fetched_at).toBe(mixed.fetched_at)
-    expect(beach.competitions.map(c => c.name)).toEqual(['Coop Beachtour', 'Old tour'])
+    expect(beach.competitions.map(c => c.name)).toEqual(['Sunset Beachtour', 'Old tour'])
     expect(beach.teams.map(t => t.name)).toEqual(['Müller / Weber', 'Rossi'])
     const indoor = bundleForSport(mixed, 'indoor')
     expect(indoor.competitions.map(c => c.name)).toEqual(['2. Liga Damen'])

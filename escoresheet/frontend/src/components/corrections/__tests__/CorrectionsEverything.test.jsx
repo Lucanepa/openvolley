@@ -66,8 +66,8 @@ describe('Corrections: every entry correctable', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Oldest first' }))
     fireEvent.click(screen.getAllByRole('button', { name: /^Edit Point for / })[0])
     expect(screen.getByRole('heading', { name: 'Edit point' })).toBeTruthy()
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Point to' })).getByRole('radio', { name: /Volley Bern/ }))
-    expect(screen.getByText(/goes to Volley Bern \(B\); the serve, the rotations and the score after it are recalculated\./)).toBeTruthy()
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Point to' })).getByRole('radio', { name: /Volley Talberg/ }))
+    expect(screen.getByText(/goes to Volley Talberg \(B\); the serve, the rotations and the score after it are recalculated\./)).toBeTruthy()
     confirm()
     await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
     const plan = applied.plans[0]
@@ -75,12 +75,12 @@ describe('Corrections: every entry correctable', () => {
     expect(plan.update.find(u => u.id === first.id).changes.payload.team).toBe('away')
     // later rows were rewritten too (the serve order changed)
     expect(plan.update.length + plan.add.length + plan.remove.length).toBeGreaterThan(3)
-    expect(plan.log.text).toMatch(/^Changed: Point for Volley Bern/)
+    expect(plan.log.text).toMatch(/^Changed: Point for Volley Talberg/)
   })
 
   it('a starting line-up after rallies: six position pickers, every later rotation follows', async () => {
     const { props } = setup()
-    // set 1, VC Smash: the first "Fix the line-up" of the Line-up card
+    // set 1, VC Seehafen: the first "Fix the line-up" of the Line-up card
     fireEvent.click(screen.getAllByRole('button', { name: 'Fix the line-up' })[0])
     expect(screen.getByRole('heading', { name: 'Starting line-up' })).toBeTruthy()
     fireEvent.change(screen.getByLabelText('VI'), { target: { value: '8' } })
@@ -90,23 +90,23 @@ describe('Corrections: every entry correctable', () => {
     const homeSet1 = after.filter(e => e.type === 'lineup' && e.setIndex === 1 && e.payload.team === 'home')
     expect(homeSet1.every(e => Object.values(e.payload.lineup).map(String).includes('8'))).toBe(true)
     expect(homeSet1.some(e => Object.values(e.payload.lineup).map(String).includes('6'))).toBe(false)
-    expect(applied.plans[0].log.text).toBe('Line-up of VC Smash in set 1 changed: 1 · 2 · 3 · 4 · 5 · 6 → 1 · 2 · 3 · 4 · 5 · 8 (entered after the match)')
+    expect(applied.plans[0].log.text).toBe('Line-up of VC Seehafen in set 1 changed: 1 · 2 · 3 · 4 · 5 · 6 → 1 · 2 · 3 · 4 · 5 · 8 (entered after the match)')
   })
 
   it('a player number: a number of the same team is refused with its owner, a free one goes through', async () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: 'Change a number' }))
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /VC Smash/ }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /VC Seehafen/ }))
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Player' })).getByRole('radio', { name: /#5/ }))
     const input = screen.getByLabelText('New number')
     fireEvent.change(input, { target: { value: '6' } })
-    expect(screen.getByText('#6 is already the number of Home 6 (VC Smash). Choose another number.')).toBeTruthy()
+    expect(screen.getByText('#6 is already the number of Home 6 (VC Seehafen). Choose another number.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Confirm' }).disabled).toBe(true)
     fireEvent.change(input, { target: { value: '15' } })
     expect(screen.getByText(/^#5 becomes #15 in the roster and in every entry of the match/)).toBeTruthy()
     confirm()
     await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
-    expect(applied.plans[0].log.text).toBe('Player #5 of VC Smash renumbered to #15 (entered after the match)')
+    expect(applied.plans[0].log.text).toBe('Player #5 of VC Seehafen renumbered to #15 (entered after the match)')
     expect(applied.plans[0].playerUpdates).toEqual([{ id: 5, changes: { number: 15 } }])
   })
 
@@ -125,7 +125,7 @@ describe('Corrections: every entry correctable', () => {
     // the host re-reads the log: the panel lists the entry to fix, with its Edit
     rerender(<CorrectionsPanel {...props} events={applyPlanToEvents(props.events, plan)} />)
     const list = await screen.findByTestId('corrections-issues')
-    expect(within(list).getByText(/substitution of VC Smash, #2 for #7: #7 is not on court\./)).toBeTruthy()
+    expect(within(list).getByText(/substitution of VC Seehafen, #2 for #7: #7 is not on court\./)).toBeTruthy()
     expect(within(list).getByRole('button', { name: /^Edit Substitution/ })).toBeTruthy()
   })
 
@@ -144,9 +144,9 @@ describe('Corrections: every entry correctable', () => {
   it('the coin toss: who serves first changed, every rotation rebuilt', async () => {
     setup()
     const card = screen.getByText('Coin toss').closest('.ov-kit')
-    expect(within(card).getByText('Team A: VC Smash · Serves first in set 1: VC Smash (A)')).toBeTruthy()
+    expect(within(card).getByText('Team A: VC Seehafen · Serves first in set 1: VC Seehafen (A)')).toBeTruthy()
     fireEvent.click(within(card).getByRole('button', { name: 'Edit' }))
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Serves first in set 1' })).getByRole('radio', { name: /Volley Bern/ }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Serves first in set 1' })).getByRole('radio', { name: /Volley Talberg/ }))
     confirm()
     await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
     const plan = applied.plans[0]

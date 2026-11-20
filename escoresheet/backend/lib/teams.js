@@ -286,7 +286,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
   // ---------------------------------------------------------------- who
   /**
    * `list` with each team's gender from its games (svrz_games: 'm', 'f' or
-   * null) and `active`: it has a game this season (owner 2026-11-11: "KSCW
+   * null) and `active`: it has a game this season (owner 2026-11-11: "Musterdorf
    * DU23-2 is not playing this season"). One query.
    */
   async function withGenders (client, list) {

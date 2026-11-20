@@ -12,8 +12,8 @@ function backup() {
   seq = 0
   return {
     match: { status: 'ended', scheduledAt: '2026-10-20T18:00:00+00:00' },
-    homeTeam: { name: 'VBC Rämi D1' },
-    awayTeam: { name: 'VBC Einsiedeln D2' },
+    homeTeam: { name: 'VBC Rebberg D1' },
+    awayTeam: { name: 'VBC Klosterau D2' },
     sets: [
       { index: 3, homePoints: 25, awayPoints: 20, finished: true },
       { index: 1, homePoints: 25, awayPoints: 10, finished: true },
@@ -81,7 +81,7 @@ describe('summarizeBackup (Restore preview)', () => {
     expect(s.score).toEqual({ home: 25, away: 20 })
     expect(s.timeouts).toEqual({ home: 1, away: 2 })
     expect(s.sets.map(x => `${x.index} ${x.home}:${x.away}`)).toEqual(['1 25:10', '2 25:12', '3 25:20'])
-    expect(s.teams).toEqual({ home: 'VBC Rämi D1', away: 'VBC Einsiedeln D2' })
+    expect(s.teams).toEqual({ home: 'VBC Rebberg D1', away: 'VBC Klosterau D2' })
   })
 
   it('serving: the winner of the last rally (point payload `team`)', () => {

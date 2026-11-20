@@ -149,7 +149,7 @@ const TRANSLITERATION: Record<string, string> = {
  */
 export function sanitizeFilenamePart(value: unknown, max = 30): string {
   const s = value === null || value === undefined ? '' : String(value)
-  // Ä/Ö/Ü in an upper-case word become AE/OE/UE ("SCHÖNENWERD" -> "SCHOENENWERD")
+  // Ä/Ö/Ü in an upper-case word become AE/OE/UE ("SCHÖNTAL" -> "SCHOENTAL")
   const ascii = s
     .replace(/[^\u0000-\u007f]/g, (ch: string, i: number) => {
       const t = TRANSLITERATION[ch] ?? ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -186,7 +186,7 @@ export function localIsoDay(value: unknown): string {
 /**
  * A league code loses its spaces in the file name: "1L D" -> "1LD", "3L B" ->
  * "3LB" (owner 2026-10-13). Only codes (every word at most 3 characters); a
- * name such as "Mobiliar Volley Cup" keeps its words apart.
+ * name such as "Muster Volley Cup" keeps its words apart.
  */
 export function compactLeagueCode(raw: unknown): string {
   const s = raw === null || raw === undefined ? '' : String(raw).trim()

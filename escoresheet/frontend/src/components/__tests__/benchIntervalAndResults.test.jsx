@@ -21,7 +21,7 @@ const base = (match = {}) => ({
   success: true,
   match: {
     id: 'm1', status: 'live', coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossConfirmed: true, firstServe: 'home', bestOf: 5,
-    homeShortName: 'ZÜRICH', awayShortName: 'LUZERN', ...match
+    homeShortName: 'MUSTERAU', awayShortName: 'BEISPIEL', ...match
   },
   homeTeam: { name: 'VBC Musterau', color: '#e2001a' },
   awayTeam: { name: 'VC Beispielstadt', color: '#3b82f6' },
@@ -83,8 +83,8 @@ describe('bench match end: the result table', () => {
     const { container, getByText } = render(<MatchEntry matchId="m1" team="away" onBack={() => {}} embedded />)
     await waitFor(() => expect(getByText('The match has ended')).toBeTruthy())
     const text = container.textContent
-    expect(text).toContain('ZÜRICH')
-    expect(text).toContain('LUZERN')
+    expect(text).toContain('MUSTERAU')
+    expect(text).toContain('BEISPIEL')
     // 15:38 to 16:07 Zürich time (UTC+1 in November): 29 minutes
     expect(text).toContain('15 h 38 min')
     expect(text).toContain('16 h 07 min')

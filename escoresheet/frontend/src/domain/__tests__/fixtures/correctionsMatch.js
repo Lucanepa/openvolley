@@ -33,8 +33,8 @@ export const MATCH = {
   coinTossServeA: true,
   status: 'ended'
 }
-export const HOME_TEAM = { id: 10, name: 'VC Smash', color: '#2563eb' }
-export const AWAY_TEAM = { id: 20, name: 'Volley Bern', color: '#dc2626' }
+export const HOME_TEAM = { id: 10, name: 'VC Seehafen', color: '#2563eb' }
+export const AWAY_TEAM = { id: 20, name: 'Volley Talberg', color: '#dc2626' }
 
 export function buildMatch({ sets = [], match = MATCH, start = Date.parse('2026-10-03T18:00:00Z') } = {}) {
   const events = []

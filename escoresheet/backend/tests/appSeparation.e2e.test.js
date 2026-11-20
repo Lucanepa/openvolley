@@ -196,7 +196,7 @@ describe('indoor / beach separation end to end', { skip: SKIP }, () => {
     const indoorCode = await call(users.admin, 'POST', '/api/admin/invites', { label: 'Indoor club' })
     assert.equal(indoorCode.status, 201, indoorCode.text)
     assert.equal(indoorCode.json.data.invite.sport, 'indoor')
-    const beachCode = await call(users.admin, 'POST', '/api/admin/invites?app=beach', { label: 'Zürich tour volunteers', max_uses: 30 })
+    const beachCode = await call(users.admin, 'POST', '/api/admin/invites?app=beach', { label: 'Seeblick tour volunteers', max_uses: 30 })
     assert.equal(beachCode.status, 201, beachCode.text)
     assert.equal(beachCode.json.data.invite.sport, 'beach')
     assert.equal(beachCode.json.data.invite.role, 'scorer')
@@ -232,7 +232,7 @@ describe('indoor / beach separation end to end', { skip: SKIP }, () => {
     const beachAudit = (await call(users.admin, 'GET', '/api/admin/audit?app=beach&limit=200')).json.data.entries
     assert.ok(beachAudit.some((e) => e.action === 'invite.create' && e.details.invite_id === beachCode.json.data.invite.id))
     const redeem = beachAudit.find((e) => e.action === 'invite.redeem' && e.target_email === v.email)
-    assert.deepEqual(redeem.details, { invite_id: beachCode.json.data.invite.id, label: 'Zürich tour volunteers', role: 'beach:scorer', sport: 'beach' })
+    assert.deepEqual(redeem.details, { invite_id: beachCode.json.data.invite.id, label: 'Seeblick tour volunteers', role: 'beach:scorer', sport: 'beach' })
     assert.ok(beachAudit.every((e) => e.app === 'beach'))
     const indoorAudit = (await call(users.admin, 'GET', '/api/admin/audit?app=indoor&limit=200')).json.data.entries
     assert.ok(indoorAudit.some((e) => e.action === 'invite.create' && e.details.invite_id === indoorCode.json.data.invite.id))

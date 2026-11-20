@@ -117,7 +117,7 @@ export function teamLabel(teamKey, ctx = {}) {
   }
 }
 
-/** "VC Smash (A)" */
+/** "VC Seehafen (A)" */
 export function teamNameWithLetter(teamKey, ctx = {}) {
   const lbl = teamLabel(teamKey, ctx)
   if (!lbl) return ''
@@ -468,8 +468,8 @@ export function describeEvent(event, events, ctx = {}) {
     title = `${title} ${teamText}`
     teamText = ''
   }
-  // "Penalty — Player #8 (bench) · VC Smash (A) · Set 1 · A 8:24 B · +1 point to Volley Bern";
-  // "Substitution · VC Smash (A) · #12 in for #7 · Set 2 · A 14:11 B"
+  // "Penalty — Player #8 (bench) · VC Seehafen (A) · Set 1 · A 8:24 B · +1 point to Volley Talberg";
+  // "Substitution · VC Seehafen (A) · #12 in for #7 · Set 2 · A 14:11 B"
   const detailLast = event.type === 'sanction'
   const parts = detailLast ? [teamText, setLabel, score, detail] : [teamText, detail, setLabel, score]
   const meta = parts.filter(Boolean).join(' · ')

@@ -7,7 +7,7 @@ import { createGlobalMatches, keyHash } from '../lib/globalMatches.js'
 
 const KEY = 'K'.repeat(22)
 const PDF = Buffer.from('%PDF-1.7 scoresheet').toString('base64')
-const summary = { home: { name: 'Munich IS' }, away: { name: 'Zurich IS' }, setsWon: { home: 3, away: 1 }, status: 'final' }
+const summary = { home: { name: 'Bergtal IS' }, away: { name: 'Seeblick IS' }, setsWon: { home: 3, away: 1 }, status: 'final' }
 
 describe('Global cloud on Postgres', { skip: SKIP_PG }, () => {
   let tdb, pool, gm
@@ -26,7 +26,7 @@ describe('Global cloud on Postgres', { skip: SKIP_PG }, () => {
     const l = await gm.load(KEY, '1234')
     assert.equal(l.status, 200)
     assert.deepEqual(l.body.data.bundle, { match: { id: 1 }, events: [] })
-    assert.equal(l.body.data.summary.home.name, 'Munich IS')
+    assert.equal(l.body.data.summary.home.name, 'Bergtal IS')
     assert.equal(l.body.data.organizer, true)
     assert.equal((await gm.load(KEY, '9999')).status, 403)
     assert.equal((await gm.load('Q'.repeat(22), '1234')).status, 404)

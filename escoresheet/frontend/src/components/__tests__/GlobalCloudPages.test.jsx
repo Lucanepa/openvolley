@@ -11,14 +11,14 @@ vi.mock('../../utils/backendConfig', () => ({ getCloudApiUrl: (p) => `https://ba
 import { SharedMatchPage, OrganizerPage } from '../GlobalCloudPages'
 
 afterEach(cleanup)
-const summary = (over = {}) => ({ home: { name: 'Munich IS', color: '#1d4ed8' }, away: { name: 'Zurich IS' }, setsWon: { home: 3, away: 1 }, sets: [{ home: 25, away: 20 }], status: 'final', hall: 'Hall 1', ...over })
+const summary = (over = {}) => ({ home: { name: 'Bergtal IS', color: '#1d4ed8' }, away: { name: 'Seeblick IS' }, setsWon: { home: 3, away: 1 }, sets: [{ home: 25, away: 20 }], status: 'final', hall: 'Hall 1', ...over })
 const answer = (data, status = 200) => vi.fn(async () => ({ ok: status < 400, status, json: async () => (status < 400 ? { data, error: null } : { data: null, error: { code: 'OV_NOT_FOUND' } }) }))
 
 describe('Global cloud pages', () => {
   it('a shared match: result, sets and the PDF link', async () => {
     const fetchImpl = answer({ summary: summary(), updatedAt: 'x', hasPdf: true })
     render(<SharedMatchPage token={'S'.repeat(22)} fetchImpl={fetchImpl} pollMs={60000} />)
-    await waitFor(() => expect(screen.getByText('Munich IS')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Bergtal IS')).toBeTruthy())
     expect(fetchImpl.mock.calls[0][0]).toBe(`https://backend.test/api/global/shared/${'S'.repeat(22)}`)
     expect(screen.getByText('Final')).toBeTruthy()
     expect(screen.getByTestId('global-cloud-pdf').getAttribute('href')).toBe(`https://backend.test/api/global/shared/${'S'.repeat(22)}/pdf`)

@@ -13,7 +13,7 @@ import GlobalLiveList from '../GlobalLiveList'
 afterEach(cleanup)
 
 const court = (over = {}) => ({
-  id: 'c1', home: { name: 'Munich IS', color: '#1d4ed8' }, away: { name: 'Zurich IS', color: '#dc2626' },
+  id: 'c1', home: { name: 'Bergtal IS', color: '#1d4ed8' }, away: { name: 'Seeblick IS', color: '#dc2626' },
   setsWon: { home: 1, away: 0 }, points: { home: 12, away: 9 }, sets: [], currentSet: 2, serving: 'home',
   status: 'live', ended: false, timeout: false, interval: false, hall: 'Hall 1', updatedAt: '2027-11-05T09:30:00Z', ...over
 })
@@ -27,7 +27,7 @@ describe('GlobalLiveList (cloud livescore)', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe('https://backend.test/api/global/live')
     expect(screen.getByText('Global matches')).toBeTruthy()
     expect(screen.getByRole('link').getAttribute('href')).toBe('?t=ABCD2345')
-    expect(screen.getAllByText('Munich IS')).toHaveLength(2)
+    expect(screen.getAllByText('Bergtal IS')).toHaveLength(2)
   })
   it('shows nothing while no event is listed, or when the backend fails', async () => {
     const fetchImpl = answer({ updatedAt: null, events: [] })

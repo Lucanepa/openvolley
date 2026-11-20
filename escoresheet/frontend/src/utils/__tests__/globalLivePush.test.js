@@ -4,11 +4,11 @@ vi.mock('../backendConfig', () => ({ getCloudApiUrl: (p) => `https://backend.tes
 import { pushGlobalLive, pushesGlobalLive, pickSummary, resetGlobalLivePush, PUSH_MS } from '../globalLivePush'
 
 const db = {
-  teams: { get: async (id) => ({ id, name: id === 1 ? 'Munich IS' : 'Zurich IS', players: ['no'] }) },
+  teams: { get: async (id) => ({ id, name: id === 1 ? 'Bergtal IS' : 'Seeblick IS', players: ['no'] }) },
   sets: { where: () => ({ equals: () => ({ toArray: async () => [{ index: 2, homePoints: 3, awayPoints: 1, finished: false }, { index: 1, homePoints: 25, awayPoints: 20, finished: true }] }) }) }
 }
 const match = { id: 7, global: true, globalKey: 'k'.repeat(22), homeTeamId: 1, awayTeamId: 2, coinTossTeamA: 'home', hall: 'Hall 1', refereePin: '316271' }
-const live = (p) => ({ team_a_name: 'Munich IS', points_a: p, points_b: 0, lineup_a: { I: 7 }, sanctions_a: [1] })
+const live = (p) => ({ team_a_name: 'Bergtal IS', points_a: p, points_b: 0, lineup_a: { I: 7 }, sanctions_a: [1] })
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
 beforeEach(() => resetGlobalLivePush())
@@ -30,8 +30,8 @@ describe('globalLivePush', () => {
     expect(init.headers['Content-Type']).toBe('application/json')
     const body = JSON.parse(init.body)
     expect(body.court).toMatch(/^[0-9a-f]{32}$/)
-    expect(body.liveState).toEqual({ team_a_name: 'Munich IS', points_a: 3, points_b: 0 })
-    expect(body.homeTeam).toEqual({ name: 'Munich IS' })
+    expect(body.liveState).toEqual({ team_a_name: 'Bergtal IS', points_a: 3, points_b: 0 })
+    expect(body.homeTeam).toEqual({ name: 'Bergtal IS' })
     expect(body.sets).toEqual([{ index: 1, homePoints: 25, awayPoints: 20, finished: true }])
     // a Global match is listed on the livescore unless the device turned it off
     expect(body.listed).toBe(true)

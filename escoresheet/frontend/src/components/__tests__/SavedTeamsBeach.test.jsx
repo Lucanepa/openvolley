@@ -66,10 +66,10 @@ describe('saved teams console: beach', () => {
     expect(await screen.findByRole('button', { name: '2. Liga Damen' })).toBeInTheDocument()
     expect(api.savedTeamsApi.fetchBundle).toHaveBeenCalledWith({ sport: 'all' })
     await waitFor(() => expect(cache.storeSavedTeamsBundle).toHaveBeenCalledWith(mixedSavedTeamsBundle(), 'u1'))
-    expect(screen.queryByRole('button', { name: 'Coop Beachtour' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sunset Beachtour' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('radio', { name: 'savedTeams.sportBeach' }))
-    expect(await screen.findByRole('button', { name: 'Coop Beachtour' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Sunset Beachtour' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '2. Liga Damen' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Old tour' })).not.toBeInTheDocument() // archived
     expect(localStorage.getItem('ov_saved_teams_sport')).toBe('beach')
@@ -83,16 +83,16 @@ describe('saved teams console: beach', () => {
     localStorage.setItem('ov_saved_teams_sport', 'beach')
     api.savedTeamsApi.createCompetition.mockResolvedValue({ data: { competition: { id: 'new' } }, error: null, status: 201 })
     render(<SavedTeamsPanel userId="u1" />)
-    expect(await screen.findByRole('button', { name: 'Coop Beachtour' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Sunset Beachtour' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'savedTeams.newCompetition' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('savedTeams.sportBeach')).toBeInTheDocument()
     expect(within(dialog).queryByText('savedTeams.vmLeagues')).toBeNull()
-    fireEvent.change(within(dialog).getByRole('textbox', { name: 'savedTeams.competitionName' }), { target: { value: 'Zürich Open' } })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'savedTeams.competitionName' }), { target: { value: 'Seeblick Open' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'manage.accounts.save' }))
     await waitFor(() => expect(api.savedTeamsApi.createCompetition).toHaveBeenCalledTimes(1))
     expect(api.savedTeamsApi.createCompetition).toHaveBeenCalledWith({
-      name: 'Zürich Open', season: beachSeasonOptions()[1], gender: null, category: null, sport: 'beach', vm_leagues: []
+      name: 'Seeblick Open', season: beachSeasonOptions()[1], gender: null, category: null, sport: 'beach', vm_leagues: []
     })
     expect(api.svrzQueries.n).toBe(0) // no VolleyManager league lookup for beach
   })
@@ -101,7 +101,7 @@ describe('saved teams console: beach', () => {
     localStorage.setItem('ov_saved_teams_sport', 'beach')
     api.savedTeamsApi.updateCompetition.mockResolvedValue(ok({ competition: {} }))
     render(<SavedTeamsPanel userId="u1" />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Coop Beachtour' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sunset Beachtour' }))
     expect(await screen.findAllByText('savedTeams.sportBeach')).not.toHaveLength(0) // the header chip
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     const dialog = await screen.findByRole('dialog')
@@ -109,14 +109,14 @@ describe('saved teams console: beach', () => {
     await waitFor(() => expect(api.savedTeamsApi.updateCompetition).toHaveBeenCalledTimes(1))
     const [id, body] = api.savedTeamsApi.updateCompetition.mock.calls[0]
     expect(id).toBe('11111111-1111-4111-8111-111111111111')
-    expect(body).toEqual({ name: 'Coop Beachtour', season: '2026', gender: 'women', category: 'A1', archived: false })
+    expect(body).toEqual({ name: 'Sunset Beachtour', season: '2026', gender: 'women', category: 'A1', archived: false })
   })
 
   it('the beach team editor has two slots and a coach, no libero/captain/active, and saves the pair', async () => {
     localStorage.setItem('ov_saved_teams_sport', 'beach')
     api.savedTeamsApi.putRoster.mockImplementation(async (id, body) => ok({ team: { id, players: body.players, staff: body.staff } }))
     render(<SavedTeamsPanel userId="u1" />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Coop Beachtour' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sunset Beachtour' }))
     // the team list shows the players of each pair
     fireEvent.click(await screen.findByRole('button', { name: 'Müller / Weber' }))
 
@@ -154,7 +154,7 @@ describe('saved teams console: beach', () => {
   it('an incomplete pair: slot 2 empty, clearing a slot drops it, a bad country is caught before the request', async () => {
     localStorage.setItem('ov_saved_teams_sport', 'beach')
     render(<SavedTeamsPanel userId="u1" />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Coop Beachtour' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sunset Beachtour' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Rossi' }))
     const slots = await screen.findAllByTestId('beach-slot')
     expect(within(slots[1]).getByRole('textbox', { name: 'savedTeams.lastName 2' })).toHaveValue('')

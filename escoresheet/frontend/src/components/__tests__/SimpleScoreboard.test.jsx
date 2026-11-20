@@ -97,10 +97,10 @@ describe('SimpleScoreboard', () => {
     board()
     fireEvent.click(screen.getByRole('button', { name: 'Teams' }))
     fireEvent.change(document.getElementById('simple-board-home-name'), { target: { value: 'Musterdorf' } })
-    fireEvent.change(document.getElementById('simple-board-away-name'), { target: { value: 'Limmattal' } })
+    fireEvent.change(document.getElementById('simple-board-away-name'), { target: { value: 'Flussau' } })
     fireEvent.click(screen.getByTestId('simple-board-teams-save'))
     expect(within(half('home')).getByText('Musterdorf')).toBeInTheDocument()
-    expect(within(half('away')).getByText('Limmattal')).toBeInTheDocument()
+    expect(within(half('away')).getByText('Flussau')).toBeInTheDocument()
     expect(loadBoard().teams.home.name).toBe('Musterdorf')
   })
 

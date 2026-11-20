@@ -27,7 +27,7 @@ describe('team contacts in match.officials', () => {
   })
   it('editing the officials (Edit match info) keeps the team contacts', () => {
     const withContacts = withTeamContacts(REFS, { home: 'h@x.ch' }, cleanContactEmail)
-    const merged = mergeOfficialsEdits(withContacts, { ref1: { firstName: 'Thamy', lastName: 'K' } })
+    const merged = mergeOfficialsEdits(withContacts, { ref1: { firstName: 'Tamara', lastName: 'K' } })
     expect(teamContactEmail(merged, 'home')).toBe('h@x.ch')
   })
 })

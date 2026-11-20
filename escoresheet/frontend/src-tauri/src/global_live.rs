@@ -572,8 +572,8 @@ mod tests {
 
     fn live(over: Value) -> Value {
         let mut v = json!({
-            "team_a_name": "Munich IS", "team_a_short": "MIS", "team_a_color": "#1d4ed8",
-            "team_b_name": "Zurich IS", "team_b_short": "ZIS", "team_b_color": "#dc2626",
+            "team_a_name": "Bergtal IS", "team_a_short": "BIS", "team_a_color": "#1d4ed8",
+            "team_b_name": "Seeblick IS", "team_b_short": "SIS", "team_b_color": "#dc2626",
             "sets_won_a": 1, "sets_won_b": 0, "points_a": 12, "points_b": 9,
             "current_set": 2, "best_of": 5, "side_a": "left", "serving_team": "left",
             "match_status": "live", "timeout_active": false, "set_interval_active": false,
@@ -588,7 +588,7 @@ mod tests {
     fn entry(over: Value) -> Value {
         let mut v = json!({
             "match": { "coinTossTeamA": "home", "hall": "Hall 1", "scheduledAt": "2027-11-05T09:00:00Z", "gameN": 3, "refereePin": "123456" },
-            "homeTeam": { "name": "Munich IS" }, "awayTeam": { "name": "Zurich IS" },
+            "homeTeam": { "name": "Bergtal IS" }, "awayTeam": { "name": "Seeblick IS" },
             "homePlayers": [{ "firstName": "Anna", "lastName": "Muster", "dob": "2009-01-01" }],
             "sets": [{ "index": 1, "homePoints": 25, "awayPoints": 20, "finished": true }, { "index": 2, "homePoints": 12, "awayPoints": 9, "finished": false }],
         });

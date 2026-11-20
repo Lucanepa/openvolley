@@ -55,7 +55,7 @@ describe('insertion: integer seq, renumbering, ts order', () => {
     expect(Number.isInteger(to.seq)).toBe(true)
     expect(scoreBeforeEvent(after, to)).toEqual({ home: 12, away: 10 })
     expect(getScoreBeforeEvent(after, to)).toEqual({ home: 12, away: 10 })
-    expect(plan.log.text).toBe('Added: Time-out · VC Smash (A) · Set 1 · A 12:10 B (entered after the match)')
+    expect(plan.log.text).toBe('Added: Time-out · VC Seehafen (A) · Set 1 · A 12:10 B (entered after the match)')
   })
 
   it('shifts every later event by one and keeps each point with its N.x rows', () => {
@@ -118,7 +118,7 @@ describe('insertion: integer seq, renumbering, ts order', () => {
     const after = applyPlanToEvents(events, plan)
     const moved = after.find(e => e.id === to.id)
     expect(scoreBeforeEvent(after, moved)).toEqual({ home: 20, away: 16 })
-    expect(plan.log.text).toMatch(/^Changed: Time-out · Volley Bern \(B\) · Set 1 · B 16:20 A \(was: Time-out · Volley Bern \(B\) · Set 1 · B \d+:\d+ A\)/)
+    expect(plan.log.text).toMatch(/^Changed: Time-out · Volley Talberg \(B\) · Set 1 · B 16:20 A \(was: Time-out · Volley Talberg \(B\) · Set 1 · B \d+:\d+ A\)/)
     expect(planRemoveTimeout(events, to.id, review).remove).toEqual([to.id])
   })
 })
@@ -266,7 +266,7 @@ describe('sanctions', () => {
     const plan = planAddSanction(events, { setIndex: 1, team: 'home', type: 'penalty', target: { playerType: 'bench', playerNumber: 8 }, at: idxOf(tl, 11, 9) }, review)
     expect(plan.error).toBeUndefined()
     expect(plan.affectedSets).toEqual([])
-    expect(plan.notes.map(n => n.text)).toContain("Volley Bern's point at B 10:11 A becomes the circled penalty point.")
+    expect(plan.notes.map(n => n.text)).toContain("Volley Talberg's point at B 10:11 A becomes the circled penalty point.")
     const row = plan.add[0]
     expect(row.payload).toEqual({ team: 'home', type: 'penalty', playerType: 'bench', playerNumber: 8 })
     // 11:9 -> 11:10: the next rally went to the opponent, nothing to check
@@ -283,7 +283,7 @@ describe('sanctions', () => {
     const plan = planAddSanction(events, { setIndex: 1, team: 'home', type: 'penalty', target: { playerType: 'player', playerNumber: 3 }, at: idxOf(tl, s.home, s.away) }, review)
     expect(plan.error).toBeUndefined()
     const n = plan.notes.find(x => x.key === 'corrections.note.penaltyNotNext')
-    expect(n.text).toBe(`The rally after A ${s.home}:${s.away} B was won by VC Smash, not by the opponent: check that the sanction was given at this score.`)
+    expect(n.text).toBe(`The rally after A ${s.home}:${s.away} B was won by VC Seehafen, not by the opponent: check that the sanction was given at this score.`)
   })
 
   it('refuses a penalty when the opponent has no later point in the set', () => {

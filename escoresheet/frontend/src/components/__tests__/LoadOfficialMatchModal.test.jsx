@@ -249,9 +249,9 @@ describe('LoadOfficialMatchModal earlier matches', () => {
     api.queries = []
     api.maxRows = 1000
     api.rows = [
-      row('E1', '2026-11-15T08:00:00.000000+00:00', 'VBC Rämi'), // 09:00, this morning
+      row('E1', '2026-11-15T08:00:00.000000+00:00', 'VBC Rebberg'), // 09:00, this morning
       row('E2', '2026-11-15T13:30:00.000000+00:00'), // 14:30, already on
-      row('U1', '2026-11-15T17:00:00.000000+00:00', 'VBC Rämi'), // 18:00, tonight
+      row('U1', '2026-11-15T17:00:00.000000+00:00', 'VBC Rebberg'), // 18:00, tonight
       row('U2', '2026-11-16T08:00:00.000000+00:00') // tomorrow 09:00
     ]
   })
@@ -291,7 +291,7 @@ describe('LoadOfficialMatchModal earlier matches', () => {
 
   it('a search keeps the groups', async () => {
     await openLeague()
-    fireEvent.change(screen.getByRole('textbox', { name: 'loadOfficialMatch.searchPlaceholder' }), { target: { value: 'rämi' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'loadOfficialMatch.searchPlaceholder' }), { target: { value: 'rebberg' } })
     expect(screen.getByText('Home U1')).toBeInTheDocument()
     expect(screen.queryByText('Home U2')).toBeNull()
     const toggle = screen.getByTestId('schedule-earlier-toggle')

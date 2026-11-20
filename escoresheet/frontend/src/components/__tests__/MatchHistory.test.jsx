@@ -87,9 +87,9 @@ describe('MatchHistory (My Matches)', () => {
 describe('MatchHistory: an approved match', () => {
   it('opens its scoresheet like a final one (it had no chevron and no link)', async () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
-    api.rows = [{ external_id: 'match_1_a', game_n: 406970, home_team: 'VBC Rämi D1', away_team: 'VBC Einsiedeln D2', final_score: '3-0', status: 'approved', scheduled_at: '2026-10-20T18:00:00+00:00', created_at: '2026-10-20T17:00:00Z' }]
+    api.rows = [{ external_id: 'match_1_a', game_n: 406970, home_team: 'VBC Rebberg D1', away_team: 'VBC Klosterau D2', final_score: '3-0', status: 'approved', scheduled_at: '2026-10-20T18:00:00+00:00', created_at: '2026-10-20T17:00:00Z' }]
     render(<MatchHistory open onClose={() => {}} />)
-    const row = await screen.findByRole('button', { name: /VBC Rämi D1 – VBC Einsiedeln D2 3-0: Open scoresheet/ })
+    const row = await screen.findByRole('button', { name: /VBC Rebberg D1 – VBC Klosterau D2 3-0: Open scoresheet/ })
     expect(screen.getByText('Approved')).toBeInTheDocument()
     // sets won beside each team, the loser's muted
     expect(screen.getByText('3').className).toContain('text-stone-900')

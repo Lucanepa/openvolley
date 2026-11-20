@@ -324,7 +324,7 @@ function setNumber(setIndex, ctx) {
   return displaySetNumber(setIndex, ctx?.match)
 }
 
-/** Log text: "Added: Time-out · Volley Bern (B) · Set 2 · B 10:12 A". */
+/** Log text: "Added: Time-out · Volley Talberg (B) · Set 2 · B 10:12 A". */
 function logText(kind, row, eventsAfter, ctx, extra = {}) {
   const what = describeEvent(row, eventsAfter, ctx)?.text || ''
   const defaults = {
@@ -984,7 +984,7 @@ export function planSetLineup(events, { setIndex, team, lineup, id = null } = {}
   return done(events, plan, ctx)
 }
 
-/** "VC Smash (A)" */
+/** "VC Seehafen (A)" */
 function nameWithLetter(team, ctx) {
   const lbl = teamLabel(team, ctx)
   return lbl ? tr(ctx?.t, 'corrections.teamWithLetter', '{{name}} ({{letter}})', { name: lbl.name, letter: lbl.letter }) : '?'
@@ -1005,7 +1005,7 @@ export function setOnePlayed(events) {
  *
  * Once set 1 has had a rally, a new Team A changes the labels only, nothing
  * moves (domain/coinToss swapTeamDesignation, owner 2026-10-09). Before it,
- * the coin toss is done again (owner, 15.11: Wädi corrected to B stayed on
+ * the coin toss is done again (owner, 15.11: Seevolley corrected to B stayed on
  * the left in set 1): the teams take the places the coin toss gives them,
  * team A on the left in set 1, as the coin toss screen does (its "Switch
  * teams" swaps the letters and the sides together). "Switch sides" still
@@ -1581,7 +1581,7 @@ export const planRemoveGroup = planRemoveEntry
 
 /**
  * What a removal takes with it, as sentences for the confirmation
- * ("Removes: Point for VC Smash · A 12:10 B and its rotation").
+ * ("Removes: Point for VC Seehafen · A 12:10 B and its rotation").
  */
 export function describeRemoval(events, plan, ctx = {}) {
   const removed = new Set(plan?.remove || [])

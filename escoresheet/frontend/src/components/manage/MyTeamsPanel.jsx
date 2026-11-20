@@ -31,7 +31,7 @@ const when = (v) => [dayLabel(v, { year: true }), timeLabel(v)].filter(Boolean).
  */
 export const gameStarted = (game) => game?.started === true
 
-// a team without a game this season (owner 2026-11-11: "KSCW DU23-2 is not
+// a team without a game this season (owner 2026-11-11: "Musterdorf DU23-2 is not
 // playing this season") is left out of the pickers; an older server sends no `active`
 const playsThisSeason = (x) => x?.active !== false
 const genderKey = (x) => (x?.gender === 'm' || x?.gender === 'f' ? x.gender : 'other')

@@ -13,7 +13,7 @@ import TournamentLive from '../TournamentLive'
 afterEach(cleanup)
 
 const court = (over = {}) => ({
-  id: 'c1', home: { name: 'Munich IS', color: '#1d4ed8' }, away: { name: 'Zurich IS', color: '#dc2626' },
+  id: 'c1', home: { name: 'Bergtal IS', color: '#1d4ed8' }, away: { name: 'Seeblick IS', color: '#dc2626' },
   setsWon: { home: 1, away: 0 }, points: { home: 12, away: 9 }, sets: [{ home: 25, away: 20 }],
   currentSet: 2, bestOf: 5, serving: 'home', status: 'live', ended: false, timeout: false, interval: false,
   hall: 'Hall 1', gameNumber: '3', updatedAt: '2027-11-05T09:30:00Z', ...over
@@ -26,7 +26,7 @@ describe('TournamentLive', () => {
     render(<TournamentLive code="ABCD2345" fetchImpl={fetchImpl} pollMs={60000} />)
     await waitFor(() => expect(screen.getAllByTestId('tournament-live-court')).toHaveLength(2))
     expect(fetchImpl.mock.calls[0][0]).toBe('https://backend.test/api/global/live/ABCD2345')
-    expect(screen.getAllByText('Munich IS')).toHaveLength(2)
+    expect(screen.getAllByText('Bergtal IS')).toHaveLength(2)
     expect(screen.getByText('12')).toBeTruthy()
     expect(screen.getByText(en.globalLive.page.final)).toBeTruthy()
     expect(screen.getByText('Set 2')).toBeTruthy()

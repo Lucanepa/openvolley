@@ -14,7 +14,7 @@ describe('PlayerPoolModal', () => {
   it('ticks the players of the last match and hands back the ticked ones', () => {
     const pool = buildPlayerPool({ saved: [p(1, 'Alpha'), p(2, 'Beta'), p(3, 'Gamma')], earlier: [[p(2, 'Beta'), p(3, 'Gamma')]] })
     const onApply = vi.fn()
-    render(<PlayerPoolModal open pool={pool} teamLabel="VBC Seefeld" onApply={onApply} onClose={() => {}} />)
+    render(<PlayerPoolModal open pool={pool} teamLabel="VBC Seewiese" onApply={onApply} onClose={() => {}} />)
     const boxes = screen.getAllByTestId('player-pool-row')
     expect(boxes.map(b => b.checked)).toEqual([false, true, true])
     expect(screen.getByTestId('player-pool-apply').textContent).toBe('playerPool.apply:2')

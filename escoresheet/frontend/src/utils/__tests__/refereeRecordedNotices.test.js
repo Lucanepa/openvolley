@@ -7,8 +7,8 @@ const point = (seq, team) => ev(seq, 'point', { team })
 const base = [ev(1, 'lineup', { team: 'home' }), point(2, 'home'), point(3, 'away')]
 const ctx = {
   match: { coinTossTeamA: 'home', bestOf: 5 },
-  homeTeam: { name: 'VC Smash', color: '#ef4444' },
-  awayTeam: { name: 'Volley Bern', color: '#3b82f6' }
+  homeTeam: { name: 'VC Seehafen', color: '#ef4444' },
+  awayTeam: { name: 'Volley Talberg', color: '#3b82f6' }
 }
 
 describe('noticeKeys', () => {
@@ -84,7 +84,7 @@ describe('describeNotice', () => {
     const e = ev(4, 'timeout', { team: 'away' })
     const n = describeNotice('k', e, [...base, e], ctx)
     expect(n).toMatchObject({ kind: 'timeout', title: 'Time-out', detail: '', setLabel: 'Set 1', score: 'B 1:1 A', tone: 'timeout' })
-    expect(n.team).toMatchObject({ name: 'Volley Bern', letter: 'B' })
+    expect(n.team).toMatchObject({ name: 'Volley Talberg', letter: 'B' })
   })
 
   it('an exceptional substitution, from a relay event or a live-state one', () => {
@@ -96,7 +96,7 @@ describe('describeNotice', () => {
 
   it('a penalty: the card, who got it and the point to the other team', () => {
     const n = describeNotice('k', ev(4, 'sanction', { team: 'home', type: 'penalty', playerType: 'player', playerNumber: 8 }), base, ctx)
-    expect(n).toMatchObject({ title: 'Penalty', detail: 'Player #8 · +1 point to Volley Bern', tone: 'red' })
+    expect(n).toMatchObject({ title: 'Penalty', detail: 'Player #8 · +1 point to Volley Talberg', tone: 'red' })
   })
 
   it('team sanctions name no person', () => {

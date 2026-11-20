@@ -5398,7 +5398,7 @@ mod tests {
     fn global_bundle(id: u64, pin: &str) -> Value {
         json!({
             "match": { "id": id, "status": "live", "gamePin": pin, "refereePin": "316271", "coinTossTeamA": "home", "hall": "Hall 1", "scheduledAt": "2027-11-05T09:00:00Z", "gameN": 3 },
-            "homeTeam": { "name": "Munich IS" }, "awayTeam": { "name": "Zurich IS" },
+            "homeTeam": { "name": "Bergtal IS" }, "awayTeam": { "name": "Seeblick IS" },
             "homePlayers": [{ "firstName": "Anna", "lastName": "Muster" }], "awayPlayers": [],
             "sets": [{ "index": 1, "homePoints": 25, "awayPoints": 20, "finished": true }, { "index": 2, "homePoints": 3, "awayPoints": 1, "finished": false }],
             "events": [],
@@ -5408,7 +5408,7 @@ mod tests {
     fn live_msg(room: &str, extra: Value) -> String {
         let mut m = json!({
             "type": "live-state-update", "matchId": room,
-            "liveState": { "team_a_name": "Munich IS", "team_b_name": "Zurich IS", "points_a": 3, "points_b": 1, "sets_won_a": 1, "sets_won_b": 0,
+            "liveState": { "team_a_name": "Bergtal IS", "team_b_name": "Seeblick IS", "points_a": 3, "points_b": 1, "sets_won_a": 1, "sets_won_b": 0,
                            "current_set": 2, "side_a": "left", "serving_team": "left", "match_status": "live", "lineup_a": { "I": 7 } },
         });
         for (k, v) in extra.as_object().unwrap() {
@@ -5437,7 +5437,7 @@ mod tests {
         assert_eq!(courts.len(), 1);
         assert_eq!(courts[0]["points"], json!({ "home": 3, "away": 1 }));
         assert_eq!(courts[0]["sets"], json!([{ "home": 25, "away": 20 }]));
-        assert_eq!(courts[0]["home"]["name"], "Munich IS");
+        assert_eq!(courts[0]["home"]["name"], "Bergtal IS");
         assert_eq!(courts[0]["hall"], "Hall 1");
         assert_eq!(courts[0]["serving"], "home");
         for leak in ["Anna", "Muster", "515253", "316271", "lineup", "\"41\""] {

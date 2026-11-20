@@ -14194,7 +14194,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // The match's short name, else the team's, else one derived from the name
   // without "VBC" / "VC" / ...; never the same for both teams
   // (utils/teamShortLabels.js: the first 3 letters gave "VBC" to both teams of
-  // "VBC Einsiedeln D2 - VBC Rämi D1")
+  // "VBC Klosterau D2 - VBC Rebberg D1")
   const [homeShortLabel, awayShortLabel] = teamShortLabels(
     { shortName: data?.match?.homeShortName, teamShortName: data?.homeTeam?.shortName, name: data?.homeTeam?.name },
     { shortName: data?.match?.awayShortName, teamShortName: data?.awayTeam?.shortName, name: data?.awayTeam?.name }

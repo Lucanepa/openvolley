@@ -20,7 +20,7 @@ export const GAME_ROSTER_MIN_PLAYERS = 6
 export const GAME_ROSTER_MAX_LIBEROS = 2
 export const GAME_ROSTER_MAX_STAFF = 5
 
-// Accents folded: "Felicián" typed by hand and "Felician" from VolleyManager are one person
+// Accents folded: "Musterán" typed by hand and "Musteran" from VolleyManager are one person
 const fold = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '')
 const nameKey = (p) => `${fold(p?.last_name)}|${fold(p?.first_name)}`
 const clean = (v) => String(v ?? '').trim()

@@ -116,7 +116,7 @@ describe('game number and team names', () => {
 })
 
 describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
-  const match = { gameNumber: '382208', league: '2L', homeShortName: 'MUST-H1', awayShortName: 'Spada H1', scheduledAt: local(2026, 10, 7, 20, 0) }
+  const match = { gameNumber: '382208', league: '2L', homeShortName: 'MUST-H1', awayShortName: 'Spatz H1', scheduledAt: local(2026, 10, 7, 20, 0) }
 
   it('game<gameNo>_<league>_<YYYY-MM-DD>.pdf', () => {
     expect(buildScoresheetFilename({ match })).toBe('game382208_2L_2026-10-07.pdf')
@@ -141,9 +141,9 @@ describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
 
   it('every part sanitised: no dots, slashes, spaces, umlauts; bounded length', () => {
     const name = buildScoresheetFilename({
-      match: { externalId: 'SV/2026-27 #12', league: 'Mobiliar Volley Cup / Männer', homeShortName: 'VBC SCHÖNENWERD-AARAU', awayShortName: 'Lindaren Volley Amriswil', scheduledAt: local(2026, 10, 7, 20) }
+      match: { externalId: 'SV/2026-27 #12', league: 'Muster Volley Cup / Männer', homeShortName: 'VBC SCHÖNTAL-MUSTERAU', awayShortName: 'Seeblick Volley Musterau', scheduledAt: local(2026, 10, 7, 20) }
     })
-    expect(name).toBe('gameSV-2026-27-12_Mobiliar-Volley-Cup-Maenner_2026-10-07.pdf')
+    expect(name).toBe('gameSV-2026-27-12_Muster-Volley-Cup-Maenner_2026-10-07.pdf')
     expect(name.length).toBeLessThanOrEqual(120)
     expect(name.slice(0, -4)).toMatch(/^[A-Za-z0-9_-]+$/)
     expect(sanitizeFilenamePart('Zürich Genève Ça va', 60)).toBe('Zuerich-Geneve-Ca-va')
@@ -152,8 +152,8 @@ describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
   })
 
   it('the PDF title names the match, never a federation', () => {
-    const title = buildScoresheetTitle({ match, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'Volley Spada' } })
-    expect(title).toBe('OpenVolley eScoresheet: VBC Musterdorf H1 vs Volley Spada, 07.10.2026, game 382208')
+    const title = buildScoresheetTitle({ match, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'Volley Spatz' } })
+    expect(title).toBe('OpenVolley eScoresheet: VBC Musterdorf H1 vs Volley Spatz, 07.10.2026, game 382208')
     expect(title).not.toMatch(/swiss/i)
   })
 })

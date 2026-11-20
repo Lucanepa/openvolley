@@ -107,8 +107,8 @@ describe('renumber a player for the whole match', () => {
     expect(plan.matchPatch).toEqual({ homeCourtCaptain: 15, homeRememberedCourtCaptain: 15 })
 
     // the correction log shown to the referee; nothing inconsistent after it
-    expect(plan.log).toMatchObject({ action: 'renumberPlayer', team: 'home', before: '5', after: 'Player #5 of VC Smash renumbered to #15' })
-    expect(plan.log.text).toBe('Player #5 of VC Smash renumbered to #15')
+    expect(plan.log).toMatchObject({ action: 'renumberPlayer', team: 'home', before: '5', after: 'Player #5 of VC Seehafen renumbered to #15' })
+    expect(plan.log.text).toBe('Player #5 of VC Seehafen renumbered to #15')
     expect(plan.newIssues).toEqual([])
     // the lists read the new number
     const sub = after.find(e => e.type === 'substitution')
@@ -119,12 +119,12 @@ describe('renumber a player for the whole match', () => {
     const { events } = matchWithFive()
     const taken = planRenumberPlayer(events, { team: 'home', playerId: 5, to: 6 }, ctx)
     expect(taken.error).toBe('corrections.error.numberTaken')
-    expect(errorText(taken)).toBe('#6 is already the number of Home 6 (VC Smash). Choose another number.')
+    expect(errorText(taken)).toBe('#6 is already the number of Home 6 (VC Seehafen). Choose another number.')
     // #22 is not on the roster but a substitution of the record uses it
     const withStranger = events.map(e => (e.type === 'bench_injury' ? { ...e, payload: { ...e.payload, playerNumber: 22 } } : e))
     const inRecord = planRenumberPlayer(withStranger, { team: 'home', playerId: 5, to: 22 }, ctx)
     expect(inRecord.error).toBe('corrections.error.numberInRecord')
-    expect(errorText(inRecord)).toBe('#22 already appears in the match record of VC Smash. Choose another number.')
+    expect(errorText(inRecord)).toBe('#22 already appears in the match record of VC Seehafen. Choose another number.')
     for (const bad of [0, 100, 'x', '', 1.5]) {
       expect(planRenumberPlayer(events, { team: 'home', playerId: 5, to: bad }, ctx).error).toBe('corrections.error.invalidNumber')
     }

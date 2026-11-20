@@ -374,12 +374,12 @@ describe('fetchMatchByPin: the live row\'s own Team A', () => {
   // side_a and lineup_a were read for it. The live row's team names tell
   // its own Team A; a live row not older than the latest event gives the
   // restored match its Team A (the swap as the scorer's match has it).
-  const NAMES = { home_team: { name: 'Volley Näfels' }, away_team: { name: 'Chênois Genève' } }
+  const NAMES = { home_team: { name: 'Volley Mühletal' }, away_team: { name: 'Chêneval Volley' } }
   const homeLeft = (m, set) => (getSideAForSet(set, m) === 'left') === (m.coinTossTeamA === 'home')
   // set 2, A = home on the right; swapped: A = away, on the right (home left)
   const swappedLive = (over) => ({
     current_set: 2, side_a: 'right', points_a: 10, points_b: 8, lineup_a: AWAY, lineup_b: HOME,
-    team_a_name: 'Chênois Genève', team_b_name: 'Volley Näfels',
+    team_a_name: 'Chêneval Volley', team_b_name: 'Volley Mühletal',
     last_event_type: 'manual_switch_sides', last_event_ts: '2026-10-08T10:01:00.000Z', ...over
   })
   const pre = { seq: 7, type: 'point', set_index: 2, payload: { team: 'home' }, created_at: '2026-10-08T10:00:00.000Z', lineup_left: AWAY, lineup_right: HOME, state_snapshot: { teamAKey: 'home', currentSetIndex: 2, sideA: 'right', lineupA: HOME, lineupB: AWAY } }
@@ -424,7 +424,7 @@ describe('fetchMatchByPin: the live row\'s own Team A', () => {
         manual_changes: [{ ts: '2026-10-08T10:30:00.000Z', category: 'match', field: 'teamDesignation', before: 'A=home', after: 'A=away' }]
       },
       events: [{ seq: 7, type: 'point', set_index: 2, payload: { team: 'home' }, created_at: '2026-10-08T10:00:00.000Z', lineup_left: AWAY, lineup_right: HOME }],
-      liveState: swappedLive({ side_a: 'right', lineup_a: HOME, lineup_b: AWAY, team_a_name: 'Volley Näfels', team_b_name: 'Chênois Genève', last_event_type: 'match_end' })
+      liveState: swappedLive({ side_a: 'right', lineup_a: HOME, lineup_b: AWAY, team_a_name: 'Volley Mühletal', team_b_name: 'Chêneval Volley', last_event_type: 'match_end' })
     })
     expect(out.match.coin_toss.team_a).toBe('away')
     expect(lineupOf(out, 'home')).toEqual(numbers(1))
@@ -456,7 +456,7 @@ describe('fetchMatchByPin: the live row\'s own Team A', () => {
     const cloud = await restoreWith({
       match: { ...NAMES, coin_toss: { team_a: 'away', team_b: 'home', serve_a: false, first_serve: 'home', confirmed: true } },
       events: [{ seq: 9, type: 'point', set_index: 2, payload: { team: 'home' }, created_at: '2026-10-08T10:05:00.000Z', lineup_left: HOME, lineup_right: AWAY, state_snapshot: { teamAKey: 'away', currentSetIndex: 2, sideA: 'right', lineupA: AWAY, lineupB: HOME } }],
-      liveState: swappedLive({ side_a: 'right', lineup_a: HOME, lineup_b: AWAY, team_a_name: 'Volley Näfels', team_b_name: 'Chênois Genève', last_event_type: 'point', last_event_ts: '2026-10-08T10:01:00.000Z' })
+      liveState: swappedLive({ side_a: 'right', lineup_a: HOME, lineup_b: AWAY, team_a_name: 'Volley Mühletal', team_b_name: 'Chêneval Volley', last_event_type: 'point', last_event_ts: '2026-10-08T10:01:00.000Z' })
     })
     await importMatchFromSupabase(cloud)
     const m = store.matches[0]
@@ -481,7 +481,7 @@ describe('fetchMatchByPin: the live row\'s own Team A', () => {
 // events' snapshots as they were (Team A home). Restored by PIN: the
 // corrected Team A, and each team on the side it played on.
 describe('fetchMatchByPin after a Swap A/B at the match end', () => {
-  const NAMES = { home_team: { name: 'Volley Näfels' }, away_team: { name: 'Chênois Genève' } }
+  const NAMES = { home_team: { name: 'Volley Mühletal' }, away_team: { name: 'Chêneval Volley' } }
   const homeLeft = (m, set) => (getSideAForSet(set, m) === 'left') === (m.coinTossTeamA === 'home')
   const corrected = {
     ...NAMES,
@@ -489,7 +489,7 @@ describe('fetchMatchByPin after a Swap A/B at the match end', () => {
     manual_changes: [{ ts: '2026-10-08T11:00:00.000Z', category: 'match', field: 'teamDesignation', before: 'A=home', after: 'A=away' }]
   }
   const liveRow = (over) => ({
-    team_a_name: 'Volley Näfels', team_b_name: 'Chênois Genève', match_status: 'ended',
+    team_a_name: 'Volley Mühletal', team_b_name: 'Chêneval Volley', match_status: 'ended',
     last_event_type: 'match_end', last_event_ts: '2026-10-08T10:50:00.000Z', ...over
   })
 
@@ -525,7 +525,7 @@ describe('fetchMatchByPin after a Swap A/B at the match end', () => {
   it('a live row written after the correction (play went on): its Team A as before', async () => {
     const cloud = await restoreWith({
       match: corrected,
-      liveState: liveRow({ current_set: 3, side_a: 'right', team_a_name: 'Chênois Genève', team_b_name: 'Volley Näfels', last_event_ts: '2026-10-08T11:05:00.000Z', match_status: 'in_progress' })
+      liveState: liveRow({ current_set: 3, side_a: 'right', team_a_name: 'Chêneval Volley', team_b_name: 'Volley Mühletal', last_event_ts: '2026-10-08T11:05:00.000Z', match_status: 'in_progress' })
     })
     await importMatchFromSupabase(cloud)
     const m = store.matches[0]

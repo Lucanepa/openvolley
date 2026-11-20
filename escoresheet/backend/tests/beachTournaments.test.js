@@ -33,7 +33,7 @@ describe('beachTournaments: pure helpers', () => {
 
   it('slugify', () => {
     assert.equal(slugify('Züri Open 2026'), 'zuri-open-2026')
-    assert.equal(slugify('  Coop Beachtour – Bern!  '), 'coop-beachtour-bern')
+    assert.equal(slugify('  Sunset Beachtour – Bergtal!  '), 'sunset-beachtour-bergtal')
     assert.equal(slugify('ÉTÉ à Genève'), 'ete-a-geneve')
     assert.equal(slugify('***'), '')
   })

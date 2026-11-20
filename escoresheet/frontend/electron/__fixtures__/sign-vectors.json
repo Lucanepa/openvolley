@@ -51,12 +51,12 @@
   {
    "name": "NFC",
    "in": {
-    "home": "Zürich",
-    "away": "Genève"
+    "home": "Mühletal",
+    "away": "Chêneval"
    },
    "out": {
-    "home": "Zürich",
-    "away": "Genève"
+    "home": "Mühletal",
+    "away": "Chêneval"
    }
   },
   {

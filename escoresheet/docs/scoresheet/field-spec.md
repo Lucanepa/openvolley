@@ -628,7 +628,7 @@ are left unchanged.
      - at most 20 characters for the game number, 30 for the league and for each team;
      - total length at most 120 characters, `.pdf` included (the part before it is cut at 116).
    - Examples: `game382208_2L_2026-10-07.pdf`; without a game number
-     `MUST-H1_vs_Spada-H1_2L_2026-10-07.pdf`; without a league `game382208_2026-10-07.pdf`.
+     `MUST-H1_vs_Spatz-H1_2L_2026-10-07.pdf`; without a league `game382208_2026-10-07.pdf`.
 5. **Saving and reporting**: the save must produce a valid PDF (starts with `%PDF-`, ends with
    `%%EOF`, opens in pdf.js and in the system viewer). The user must be told **exactly** where
    the file went:
@@ -808,7 +808,7 @@ These override sections 4-7 and 16 wherever they differ.
    - In RESULT, the winner's name and the sets ("3:2") are centred in the same band under
      their labels.
    - File names: an indoor league code loses its spaces, `1L D` → `1LD`
-     (`compactLeagueCode`: every word at most 3 characters; a name such as "Mobiliar Volley
+     (`compactLeagueCode`: every word at most 3 characters; a name such as "Muster Volley
      Cup" keeps its words apart). Beach leagues are unchanged.
 13. **The PDF draws the sheet as the screen shows it, wherever it is made** (2026-11-16,
    after a Rebuild PDF made in Brave on a Linux laptop lost the rule under the LIBERO "No"
