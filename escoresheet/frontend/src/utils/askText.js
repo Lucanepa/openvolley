@@ -13,6 +13,12 @@
 import i18n from 'i18next'
 import { confirmDialog } from '../ui/uiStore.js'
 
+// A default button label: the app's translation, else the English word. Before
+// i18n.init() (a test that renders the dialog without src/i18n) i18next 27's t()
+// returns '' and an empty translation is not a label either, so neither may
+// leave the button blank.
+const buttonLabel = (key, fallback) => i18n.t(key, fallback) || fallback
+
 /**
  * Ask for a line of text. ALWAYS await it:
  *
@@ -38,8 +44,8 @@ export async function askText({
     title,
     message,
     input: { label, defaultValue, placeholder, type, inputMode },
-    confirmLabel: confirmLabel ?? i18n.t('common.ok', 'OK'),
-    cancelLabel: cancelLabel ?? i18n.t('common.cancel', 'Cancel'),
+    confirmLabel: confirmLabel ?? buttonLabel('common.ok', 'OK'),
+    cancelLabel: cancelLabel ?? buttonLabel('common.cancel', 'Cancel'),
     tone: 'default',
   })
   return typeof answer === 'string' ? answer : null
