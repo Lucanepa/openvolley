@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { ServiceBox, TICK_START } from '../components/ServiceBox'
 import { SERVICE_NUMBER_DROP_MM, SERVICE_NUMBER_PX } from '../components/Marks'
+import { cssValue } from '../../src/__tests__/cssValue.js'
 
 // The owner (2026-10-24): the tick through the round number ran into the team
 // score written in the box; the score sits lower and the tick is shorter from
@@ -22,7 +23,8 @@ describe('a service box', () => {
   it('a circled final stays centred in its ring, with a white edge where the tick crosses it', () => {
     const { container } = render(<ServiceBox num={2} round={round({ points: 25, circled: true })} />)
     expect(points(container).style.transform).toBe('')
-    expect(points(container).style.textShadow).toContain('#fff')
+    // white: the first of its shadows, in the form the style reads back
+    expect(points(container).style.textShadow).toContain(cssValue('text-shadow', '1px 0 0 #fff'))
   })
 
   it('the lowered score clears the tick and stays inside its 5 mm box', () => {

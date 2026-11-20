@@ -10,6 +10,7 @@ import {
   SUB_FLASH_MS, LIBERO_FLASH_MS, LIBERO_EVENT_TYPES,
   discFlashOf, withoutLiberoFlashes, liberoFlashKey
 } from '../referee/discFlash.js'
+import { cssValue } from '../../__tests__/cssValue.js'
 
 const disc = (props) => render(
   <PlayerDisc number={7} position="I" capPx={80} side="left" background="#fdba74" color="#000" {...props} />
@@ -17,9 +18,9 @@ const disc = (props) => render(
 
 describe('referee disc flash', () => {
   it('a substitution pulses until it is cleared, a libero replacement pulses once (about 1 s)', () => {
-    expect(disc({ flash: true }).style.animation).toBe('recentSubFlash 0.5s ease-in-out infinite')
+    expect(disc({ flash: true }).style.animation).toBe(cssValue('animation', 'recentSubFlash 0.5s ease-in-out infinite'))
     const once = disc({ flash: 'once' }).style.animation
-    expect(once).toBe(`recentSubFlash ${LIBERO_FLASH_MS}ms ease-in-out 1`)
+    expect(once).toBe(cssValue('animation', `recentSubFlash ${LIBERO_FLASH_MS}ms ease-in-out 1`))
     expect(once).not.toMatch(/infinite/)
     expect(disc({ flash: false }).style.animation).toBe('')
     expect(LIBERO_FLASH_MS).toBeGreaterThanOrEqual(500)

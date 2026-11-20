@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import '../../i18n'
 import PhoneScoreboard from '../scoreboard/PhoneScoreboard.jsx'
+import { cssValue } from '../../__tests__/cssValue.js'
 
 afterEach(() => cleanup())
 
@@ -70,7 +71,7 @@ describe('PhoneScoreboard: the centre between rallies', () => {
     const serve = screen.getByRole('button', { name: 'Switch serve' })
     // one row of two: the setup fits the point buttons' height at 360x780
     expect(sides.parentElement).toBe(serve.parentElement)
-    expect(sides.parentElement.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))')
+    expect(sides.parentElement.style.gridTemplateColumns).toBe(cssValue('grid-template-columns', 'repeat(2, minmax(0, 1fr))'))
     expect(centreOf().textContent).toContain('Confirm set 5 setup')
     expect(centreOf().textContent).toContain('2:38')
   })
