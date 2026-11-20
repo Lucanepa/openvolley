@@ -46,6 +46,14 @@ updates:
     groups:
       cargo-minor:
         update-types: [minor, patch]
+    ignore:
+      # zbus stays on 5 while tauri-plugin-single-instance needs zbus ^5.9 on
+      # Linux (2.5.5 and 3.0.0-alpha.3, 20.11.2026): zbus 6 would add a second
+      # zbus beside it and keep zbus_names 4 / zvariant 5 (the unmaintained
+      # warnings of cargo audit) in the tree. Remove this when the plugin moves
+      # to zbus 6, then port netshare/linux.rs, lifecycle.rs and main.rs (#155).
+      - dependency-name: zbus
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: gradle
     directory: /escoresheet/frontend/android
