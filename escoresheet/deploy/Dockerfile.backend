@@ -20,7 +20,7 @@
 # outside /tmp, STORAGE_ROOT and its own process memory, so it works with
 # `read_only: true` + a tmpfs on /tmp.
 
-ARG NODE_IMAGE=node:22.23.3-bookworm-slim
+ARG NODE_IMAGE=node:22.23.5-bookworm-slim
 
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app

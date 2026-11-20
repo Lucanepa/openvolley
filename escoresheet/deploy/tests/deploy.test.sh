@@ -143,13 +143,13 @@ ok "unhealthy container or /health 503 after the switch: rolled back"
 
 # 5. refusals before anything happens
 reset
-expect_fail "match-day freeze" env FAKE_DOW=6 "$KIT/deploy.sh" new2 >"$T/out" 2>&1
-expect_fail "match-day freeze" env FAKE_DOW=5 FAKE_HM=1700 "$KIT/deploy.sh" new2 >"$T/out" 2>&1
-[[ ! -s "$CALLS" ]] || bad "freeze: something ran"
-FAKE_DOW=5 FAKE_HM=1659 deploy --migrate-only new2 || bad "Friday 16:59 is outside the freeze"
+# no weekend freeze any more (owner 2026-11-20): Friday evening and Sunday deploy like a weekday
+FAKE_DOW=5 FAKE_HM=1700 deploy --migrate-only new2 || bad "Friday 17:00 must deploy (no freeze)"
+reset
+FAKE_DOW=7 deploy --migrate-only new2 || bad "Sunday must deploy (no freeze)"
 reset
 FAKE_DOW=7 deploy --any-time --migrate-only new2 || bad "--any-time"
-ok "freeze window Friday 17:00 to Sunday, --any-time overrides"
+ok "no match-day freeze: Friday evening and Sunday deploy; --any-time still accepted"
 reset
 expect_fail "2 live relay room(s)" env FAKE_ROOMS=2 "$KIT/deploy.sh" new2 >"$T/out" 2>&1
 [[ ! -s "$CALLS" ]] || bad "live rooms: something ran"

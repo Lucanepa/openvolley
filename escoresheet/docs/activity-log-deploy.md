@@ -25,7 +25,7 @@ Corrections rework). Background: `docs/activity-log-spec.md`.
 | Clients | Web (Pages), desktop and Android builds of 2.4.0. **Old clients keep working:** every new column is nullable or has a default. Old clients simply never send revisions or activity; their Corrections deletes become voids (above). New clients send a correction's removed and changed events as void / edit revisions (reason `correction`, the edit carries the renumbered `seq`) and never an event delete. |
 | Desktop | `tauri-plugin-log` is a new crate (Cargo.lock updated). It writes `desktop.log` into `<data dir>/OpenVolley/logs`. |
 
-Respect the deploy freeze (`RUNBOOK-hetzner.md`). The order matters:
+Deploy when no match is live (`RUNBOOK-hetzner.md`, Match-day rules). The order matters:
 **migrations → roles.sql → backend image → clients.** If a client arrives
 first, it sees 404 on the new routes, parks those jobs as "failed" and
 retries them hourly. Nothing is lost.

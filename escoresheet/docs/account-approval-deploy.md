@@ -19,8 +19,7 @@ Nothing else changes: there are no new environment variables (`OV_PIN_SECRET`
 and the SMTP settings are already set) and the deploy kit is unchanged. The
 app side ships with the usual Pages build of the merged branch.
 
-Respect the deploy freeze (`deploy/RUNBOOK-hetzner.md`, Friday 17:00 to Sunday
-23:59). Do this on a weekday, with no match running. The hosts are the
+Do this with no match running (`deploy/RUNBOOK-hetzner.md`, Match-day rules). The hosts are the
 runbook's (`lenovo$` = lenovoserver, `hetzner#` = the VM).
 
 ## 1. Backup and the current tag

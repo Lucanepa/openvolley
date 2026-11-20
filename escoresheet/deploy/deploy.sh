@@ -6,10 +6,9 @@
 # (build-image.sh --ship).
 #
 #   0. checks: the image is there, compose.yaml is valid and none of its
-#      variables is exported in this shell, one deploy at a time; outside the
-#      match-day freeze (Friday 17:00 to Sunday 23:59, Europe/Zurich) and no
-#      live relay room in the running backend (/health activeRooms), unless
-#      --any-time
+#      variables is exported in this shell, one deploy at a time; no live
+#      relay room in the running backend (/health activeRooms), unless
+#      --any-time (the weekend match-day freeze is gone: owner 2026-11-20)
 #   1. a fresh dump: openvolley-backup.service, which must have run now
 #      (stops here when its count-drop guard trips or its condition, the
 #      backup config, is not met)
@@ -20,7 +19,7 @@
 #   3. roles.sql of the new image, through apply-roles.sh; then
 #      scripts/check-schema.mjs of the new image as ov_owner (every migration
 #      recorded, guard triggers, unique indexes and trigger functions in
-#      place), and the freeze / live-room check once more
+#      place), and the live-room check once more
 #   4. the switch: the previous OV_BACKEND_IMAGE into DEPLOYED.log, the new
 #      one into .env, docker compose up -d --wait ov-backend
 #   5. the new backend's /health answers 200 and scripts/check-schema.mjs
@@ -30,7 +29,7 @@
 #   in 4-5 puts the previous image back into .env and starts it again.
 #
 # Options:
-#   --any-time        deploy inside the freeze window or while relay rooms are live
+#   --any-time        deploy while relay rooms are live
 #   --baseline NNN    the first run of the migration record (migrate.mjs --baseline):
 #                     the last db/ file this database got by hand
 #   --rerun NNN       run db/NNN once more after the switch (a file whose header
@@ -130,14 +129,9 @@ mapfile -t ids < <(docker ps -q \
 (( ${#ids[@]} == 1 )) || die "expected one running ov-postgres of project ${OV_PROJECT}, found ${#ids[@]}"
 PG=${ids[0]}
 
-live_check() {  # the freeze window and the running backend's live relay rooms (skipped with --any-time)
-  local dow hm h rooms
+live_check() {  # the running backend's live relay rooms (skipped with --any-time)
+  local h rooms
   (( ! ANY_TIME )) || return 0
-  dow=$(TZ=Europe/Zurich date +%u)
-  hm=$(TZ=Europe/Zurich date +%H%M)
-  if (( dow == 6 || dow == 7 || (dow == 5 && 10#$hm >= 1700) )); then
-    die "match-day freeze (Friday 17:00 to Sunday 23:59, Europe/Zurich): a restart drops every live relay room. --any-time overrides${1:+ ($1)}"
-  fi
   if h=$(backend_health 2>/dev/null) || [[ "$h" == 503\ * ]]; then
     rooms=$(printf '%s' "${h#* }" | sed -n 's/.*"activeRooms":\([0-9][0-9]*\).*/\1/p')
     [[ "${rooms:-0}" == 0 ]] || die "${rooms} live relay room(s) in the running backend: a restart drops them. --any-time overrides${1:+ ($1)}"
