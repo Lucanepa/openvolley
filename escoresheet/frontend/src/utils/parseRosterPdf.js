@@ -7,12 +7,15 @@
 // precached by the service worker), NOT loaded from a CDN: roster import must
 // work offline and on a LAN-only venue box, and the backend CSP is script-src 'self'.
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-// pdf.js 5's modern build needs a recent engine: Uint8Array.prototype.toHex
-// (Chrome 140) for every document's fingerprint, Promise.withResolvers (119),
-// Promise.try (128), URL.parse (126). The app's build target is Chrome 107
-// (build-target.js), and Android tablets keep an old system WebView for years:
-// there the modern build fails or never answers. Its legacy build carries the
-// polyfills; it is used where the engine lacks any of them (pdfReaderPlan).
+// pdf.js 6's modern build needs a recent engine: Uint8Array.prototype.toHex
+// (Chrome 140) for every document's fingerprint, Math.sumPrecise for its
+// fonts, Promise.withResolvers (119), Promise.try (128), URL.parse (126). The
+// app's build target is Chrome 107 (build-target.js), and Android tablets
+// keep an old system WebView for years: there the modern build fails or never
+// answers. Its legacy build carries the polyfills; it is used where the engine
+// lacks any of them (pdfReaderPlan). That one is built for Chrome 125 (pdf.js
+// 5's for 118): what it still takes from the engine, an older one gets from
+// addLegacyPdfPolyfills, on the main thread.
 import pdfLegacyWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 
 export const PDF_WORKER_URL = pdfWorkerUrl
@@ -37,19 +40,66 @@ export const PDF_WORKER_TIMEOUT_MS = 15000
 export const PDF_MAIN_THREAD_TIMEOUT_MS = 30000
 export const PDF_TIMEOUT_CODE = 'pdf-timeout'
 
-// What pdf.js 5's modern build uses without a fallback of its own
+// What pdf.js 6's modern build uses without a fallback of its own (5 still
+// brought Math.sumPrecise along)
 const MODERN_PDF_FEATURES = [
   ['Promise.withResolvers', (g) => typeof g.Promise?.withResolvers === 'function'],
   ['Promise.try', (g) => typeof g.Promise?.try === 'function'],
   ['URL.parse', (g) => typeof g.URL?.parse === 'function'],
   ['Uint8Array.prototype.toHex', (g) => typeof g.Uint8Array?.prototype?.toHex === 'function'],
   ['Uint8Array.fromBase64', (g) => typeof g.Uint8Array?.fromBase64 === 'function'],
-  ['Map.prototype.getOrInsertComputed', (g) => typeof g.Map?.prototype?.getOrInsertComputed === 'function']
+  ['Map.prototype.getOrInsertComputed', (g) => typeof g.Map?.prototype?.getOrInsertComputed === 'function'],
+  ['Map.prototype.getOrInsert', (g) => typeof g.Map?.prototype?.getOrInsert === 'function'],
+  ['Math.sumPrecise', (g) => typeof g.Math?.sumPrecise === 'function']
 ]
+
+// What pdf.js 6's legacy build still uses without a polyfill of its own: it
+// is built for Chrome 125 / Safari 18, and 5's brought these along. A Chrome
+// 107-118 WebView lacks them, and without them the import failed
+// ("Promise.withResolvers is not a function"). The app adds them there
+// (addLegacyPdfPolyfills), on the main thread only: a module worker's own
+// global would still lack them, so such an engine reads on the main thread.
+const LEGACY_PDF_FEATURES = [
+  ['Promise.withResolvers', (g) => typeof g.Promise?.withResolvers === 'function'],
+  ['ArrayBuffer.prototype.transferToFixedLength', (g) => typeof g.ArrayBuffer?.prototype?.transferToFixedLength === 'function']
+]
+
+const missingOf = (features, g) => features.filter(([, has]) => { try { return !has(g) } catch { return true } }).map(([name]) => name)
 
 /** The features of the modern build the engine lacks (names; none: it can run it). */
 export function missingModernPdfFeatures(g = globalThis) {
-  return MODERN_PDF_FEATURES.filter(([, has]) => { try { return !has(g) } catch { return true } }).map(([name]) => name)
+  return missingOf(MODERN_PDF_FEATURES, g)
+}
+
+/** What the legacy build takes from the engine and this one lacks (names). */
+export function missingLegacyPdfFeatures(g = globalThis) {
+  return missingOf(LEGACY_PDF_FEATURES, g)
+}
+
+/**
+ * Adds to `g` what the legacy build takes from the engine and `g` lacks
+ * (LEGACY_PDF_FEATURES). Nothing on an engine that has them.
+ */
+export function addLegacyPdfPolyfills(g = globalThis) {
+  const define = (obj, name, value) => Object.defineProperty(obj, name, { value, writable: true, configurable: true })
+  if (g.Promise && typeof g.Promise.withResolvers !== 'function') {
+    define(g.Promise, 'withResolvers', function withResolvers() {
+      let resolve
+      let reject
+      const promise = new this((res, rej) => { resolve = res; reject = rej })
+      return { promise, resolve, reject }
+    })
+  }
+  const AB = g.ArrayBuffer
+  if (AB?.prototype && typeof AB.prototype.transferToFixedLength !== 'function') {
+    // a copy of the first `length` bytes (pdf.js calls it on a buffer of its
+    // own, never used again: that it is not detached changes nothing)
+    define(AB.prototype, 'transferToFixedLength', function transferToFixedLength(length = this.byteLength) {
+      const out = new AB(length)
+      new Uint8Array(out).set(new Uint8Array(this, 0, Math.min(length, this.byteLength)))
+      return out
+    })
+  }
 }
 
 /**
@@ -72,11 +122,13 @@ export function supportsModuleWorker(WorkerCtor = globalThis.Worker) {
  * How this engine reads a roster PDF: { build: 'modern'|'legacy', worker:
  * 'module'|'main-thread', missing } (missing: the modern build's features
  * the engine lacks). Without module workers it reads on the main thread,
- * with the legacy build (it runs on every engine the app does).
+ * with the legacy build (with addLegacyPdfPolyfills it runs on every engine
+ * the app does); also where the legacy build itself needs a polyfill.
  */
 export function pdfReaderPlan({ globalObject = globalThis, WorkerCtor = globalObject?.Worker } = {}) {
   const missing = missingModernPdfFeatures(globalObject)
   if (!supportsModuleWorker(WorkerCtor)) return { build: 'legacy', worker: 'main-thread', missing }
+  if (missingLegacyPdfFeatures(globalObject).length) return { build: 'legacy', worker: 'main-thread', missing }
   return { build: missing.length ? 'legacy' : 'modern', worker: 'module', missing }
 }
 
@@ -108,6 +160,8 @@ export function retryOnMainThread(err, plan) {
 }
 
 async function loadPdfjs(plan) {
+  // (before the build runs: its main-thread half uses them in every plan)
+  if (plan.build === 'legacy') addLegacyPdfPolyfills()
   const pdfjsLib = plan.build === 'legacy'
     ? await import('pdfjs-dist/legacy/build/pdf.mjs')
     : await import('pdfjs-dist')
