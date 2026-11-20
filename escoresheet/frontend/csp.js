@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { THEME_BOOT_SCRIPT } from './theme-boot.js'
+import { BROWSER_CHECK_SCRIPT } from './browser-check.js'
 import { VIDEO_BASE } from './src/components/help/helpSections.js'
 
 /**
@@ -10,10 +11,11 @@ import { VIDEO_BASE } from './src/components/help/helpSections.js'
  * its relay without it.
  *
  * What the pages need, and nothing more where that is known:
- *   - scripts: the bundle ('self'), the colour theme boot script (inline, by
- *     its hash: theme-boot.js) and WebAssembly ('wasm-unsafe-eval': Argon2id
- *     of the backup PINs, hash-wasm in src/utils/backupCrypto/kdf.js). No
- *     other inline script and no eval.
+ *   - scripts: the bundle ('self'), the colour theme boot script and the
+ *     old-browser check (inline, by their hashes: theme-boot.js,
+ *     browser-check.js) and WebAssembly ('wasm-unsafe-eval': Argon2id of the
+ *     backup PINs, hash-wasm in src/utils/backupCrypto/kdf.js). No other
+ *     inline script and no eval.
  *   - styles: inline style attributes (React's style props, the dev build's
  *     badge) and <style> tags of libraries: 'unsafe-inline' for styles only.
  *   - images: the app's own, data: (signatures, QR codes) and blob: (PDF
@@ -39,11 +41,15 @@ export const HELP_VIDEO_ORIGIN = new URL(VIDEO_BASE).origin
  *  videos and result sheets, too big for the page host (25 MiB per file). */
 export const OV_MEDIA_ORIGIN = 'https://openvolley-media.openvolley.app'
 
-export const THEME_BOOT_HASH = `'sha256-${createHash('sha256').update(THEME_BOOT_SCRIPT, 'utf8').digest('base64')}'`
+const sha256Source = (script) => `'sha256-${createHash('sha256').update(script, 'utf8').digest('base64')}'`
+
+export const THEME_BOOT_HASH = sha256Source(THEME_BOOT_SCRIPT)
+
+export const BROWSER_CHECK_HASH = sha256Source(BROWSER_CHECK_SCRIPT)
 
 const DIRECTIVES = [
   ["default-src", "'self'"],
-  ["script-src", `'self' 'wasm-unsafe-eval' ${THEME_BOOT_HASH}`],
+  ["script-src", `'self' 'wasm-unsafe-eval' ${THEME_BOOT_HASH} ${BROWSER_CHECK_HASH}`],
   ["style-src", "'self' 'unsafe-inline'"],
   ["img-src", `'self' data: blob: ${HELP_VIDEO_ORIGIN} ${OV_MEDIA_ORIGIN}`],
   ["font-src", "'self' data:"],

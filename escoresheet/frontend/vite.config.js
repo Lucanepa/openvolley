@@ -8,6 +8,7 @@ import { dirname, resolve } from 'path'
 import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
 import { BUILD_TARGET } from './build-target.js'
 import { themeBoot } from './theme-boot.js'
+import { browserCheck } from './browser-check.js'
 import { buildChannelPlugin } from './build-channel.js'
 import { cspMeta } from './csp.js'
 import { htmlToImageFontSize } from './vite-plugin-html-to-image-font-size.js'
@@ -103,6 +104,9 @@ export default defineConfig({
     // Colour theme (src/utils/theme.js): <html data-theme> set before the
     // first paint on every page but the scoresheet and the manager consoles
     themeBoot(),
+    // A browser too old for the app (Android 9's own WebView): a plain
+    // message instead of a white page, on every page (browser-check.js)
+    browserCheck(),
     // The Android app's pages: the Content-Security-Policy as a <meta>
     // (csp.js; the web builds send it in _headers). After themeBoot in this
     // list, so its tag lands above the boot script and covers it too.

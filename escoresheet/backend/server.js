@@ -2812,10 +2812,11 @@ function handleHttpRequest(req, res) {
     : "connect-src 'self' ws: wss: http: https:"
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    // and the colour theme boot script at the top of the frontend pages this
-    // server hands out (frontend/theme-boot.js; the frontend's theme test
-    // checks this hash against the script)
-    "script-src 'self' 'sha256-hAC66PTngtOWJY571phiLXHzeuEYS3pprPNjnV1uBik='",
+    // and the colour theme boot script and the old-browser check of the
+    // frontend pages this server hands out (frontend/theme-boot.js and
+    // browser-check.js; the frontend's theme and browser check tests check
+    // these hashes against the scripts)
+    "script-src 'self' 'sha256-hAC66PTngtOWJY571phiLXHzeuEYS3pprPNjnV1uBik=' 'sha256-mEG3trr/2+bNH35eWodBg+Kvbb2CTl/9fvqyZgpWiCY='",
     "style-src 'self' 'unsafe-inline'",
     // the help panel's videos and their posters and subtitles stream from the
     // website (frontend components/help, helpSections.js VIDEO_BASE)

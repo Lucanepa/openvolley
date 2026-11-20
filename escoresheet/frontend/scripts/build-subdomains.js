@@ -26,6 +26,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { BUILD_TARGET } from '../build-target.js'
 import { themeBoot } from '../theme-boot.js'
+import { browserCheck } from '../browser-check.js'
 import { buildChannelPlugin, buildChannel, devHeadersFile } from '../build-channel.js'
 import { securityHeaderLines } from '../csp.js'
 import { htmlToImageFontSize } from '../vite-plugin-html-to-image-font-size.js'
@@ -372,6 +373,9 @@ async function buildSubdomain(subdomain, basePath = '/') {
         htmlToImageFontSize(),
         // Colour theme boot script (theme-boot.js), as in vite.config.js
         themeBoot({ enabled: usesTheme(config) }),
+        // The old-browser message (browser-check.js), on every page, the
+        // scoresheet and the manager consoles too, as in vite.config.js
+        browserCheck(),
         // A dev-branch build (Pages preview): its test backend, noindex and
         // the "Test build" badge (build-channel.js), as in vite.config.js
         buildChannelPlugin(),

@@ -4,8 +4,9 @@ import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
 import { resolve } from 'path'
 import { subdomains, extraFilesFor, headersFor } from '../../scripts/build-subdomains.js'
-import { contentSecurityPolicy, cspMeta, securityHeaderLines, THEME_BOOT_HASH } from '../../csp.js'
+import { contentSecurityPolicy, cspMeta, securityHeaderLines, THEME_BOOT_HASH, BROWSER_CHECK_HASH } from '../../csp.js'
 import { THEME_BOOT_SCRIPT } from '../../theme-boot.js'
+import { BROWSER_CHECK_SCRIPT } from '../../browser-check.js'
 import { sectionVideo } from '../components/help/helpSections.js'
 
 const frontendDir = resolve(__dirname, '../..')
@@ -53,12 +54,14 @@ describe('FileProvider shares the app folders only (android-6)', () => {
 })
 
 describe('Content-Security-Policy (fe-shell-pwa-6, android-7)', () => {
-  it('the theme boot script is allowed by its hash, no other inline script, no eval', () => {
+  it('the theme boot script and the old-browser check are allowed by their hashes, no other inline script, no eval', () => {
     const hash = `'sha256-${createHash('sha256').update(THEME_BOOT_SCRIPT).digest('base64')}'`
     expect(THEME_BOOT_HASH).toBe(hash)
+    const checkHash = `'sha256-${createHash('sha256').update(BROWSER_CHECK_SCRIPT).digest('base64')}'`
+    expect(BROWSER_CHECK_HASH).toBe(checkHash)
     const policy = contentSecurityPolicy()
     const script = policy.match(/script-src ([^;]+)/)[1]
-    expect(script).toBe(`'self' 'wasm-unsafe-eval' ${hash}`)
+    expect(script).toBe(`'self' 'wasm-unsafe-eval' ${hash} ${checkHash}`)
     expect(policy).not.toMatch(/'unsafe-eval'/)
     expect(policy).toContain("object-src 'none'")
     expect(policy).toContain("base-uri 'self'")
