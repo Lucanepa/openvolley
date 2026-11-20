@@ -47,7 +47,14 @@
  *      captain and libero flags of the saved team stay. Only the latest
  *      official match of the team sets numbers: an older one (its kick-off
  *      before another official match of the team that is past its coin toss)
- *      adds people and fills empty numbers that nobody holds. A person that
+ *      adds people and fills empty numbers that nobody holds. Officials the
+ *      same way (owner 2026-11-20): the latest match's role wins (Coach,
+ *      Assistant Coach 1 / 2, Physiotherapist, Medic, as the sheet names
+ *      them); an official of the saved team who is not on that match and
+ *      held a role it gave to another takes the role left over by the moves
+ *      (the assistant who stood in as coach and the coach swap), else keeps
+ *      theirs (a role twice is allowed in a saved team); an older match
+ *      changes no role, its new officials come with the match's. A person that
  *      would fail the saved team's rules (a player of the other gender in the
  *      club's players list, lib/licences.js wrongGenders; more than 40
  *      players or 10 officials; twice in the roster; a name too long) is left
@@ -181,13 +188,15 @@ export function mapSides (row, schedule) {
  * Returns { players, staff } (the whole PUT body: everyone of before, in
  * their order, the new ones after), `changed`, `counts` { added, numbers
  * (set by the match), cleared (taken from another player), licences (filled
- * in), skipped, conflicts (another licence than the saved team's) } and
+ * in), roles (an official's role set by the match), moved (an official not on
+ * the match moved to the role left over), skipped, conflicts (another licence
+ * than the saved team's) } and
  * `club` ([{ list, sv_number, last_name, first_name }]: the people for the
  * club's lists, those with a 4- to 7-digit licence the saved team agrees
  * with). Pure.
  */
 export function mergeMatchRoster (squad, roster, { latest = true, wrong = new Set() } = {}) {
-  const counts = { added: 0, numbers: 0, cleared: 0, licences: 0, skipped: 0, conflicts: 0 }
+  const counts = { added: 0, numbers: 0, cleared: 0, licences: 0, roles: 0, moved: 0, skipped: 0, conflicts: 0 }
   const club = []
   let changed = false
   const players = arr(squad?.players).map((p) => ({ ...p }))
@@ -289,26 +298,75 @@ export function mergeMatchRoster (squad, roster, { latest = true, wrong = new Se
     forClub('players', p)
   })
 
-  // ---- officials: added or completed, never removed, their roles as the saved team has them
+  // ---- officials: added or completed, never removed. The latest match's
+  // roles win (owner 2026-11-20); an older match changes no role.
   const usedStaff = new Set()
   const seenStaff = twice()
+  // the roles of the saved team's officials before the merge, by index
+  const before = staff.map((e) => e.role)
+  // latest: role -> the index of the match's official who holds it now (the first one the match names)
+  const given = new Map()
   arr(roster?.staff).forEach((s) => {
     if (!s) return
     if (s.invalid || seenStaff(s)) { counts.skipped++; return }
     const hit = findIn(staff, usedStaff, s)
     if (hit) {
       usedStaff.add(hit.i)
-      fillIn(staff[hit.i], s, hit.conflict)
+      const e = staff[hit.i]
+      fillIn(e, s, hit.conflict)
+      if (latest && !given.has(s.role)) {
+        given.set(s.role, hit.i)
+        if (e.role !== s.role) {
+          e.role = s.role
+          counts.roles++
+          changed = true
+        }
+      }
       if (!hit.conflict && CLUB_COACH_ROLES.includes(s.role)) forClub('coaches', s)
       return
     }
     if (staff.length >= MAX_STAFF) { counts.skipped++; return }
     staff.push({ role: s.role, first_name: s.first_name, last_name: s.last_name, license_number: s.license_number })
     usedStaff.add(staff.length - 1)
+    if (latest && !given.has(s.role)) given.set(s.role, staff.length - 1)
     counts.added++
     changed = true
     if (CLUB_COACH_ROLES.includes(s.role)) forClub('coaches', s)
   })
+  if (latest && given.size) {
+    // An official of the saved team who is not on the match and holds a role
+    // the match gave to another takes the role left over at the end of the
+    // moves: the role their taker had before, when nobody holds it now, else
+    // the one that taker's own role went to ... (the coach who missed a game:
+    // the assistant who stood in is Coach, the coach the assistant). Nothing
+    // left over (a new official took the role): they keep it; the saved team
+    // allows a role twice (validateRoster), only the match sheet and a game
+    // roster name each role once. Nobody gets a role no sheet gave anyone.
+    const heldByOther = (r, i) => staff.some((o, k) => k !== i && o.role === r)
+    const leftOver = (role, i) => {
+      const seen = new Set()
+      let r = role
+      while (given.has(r) && !seen.has(r)) {
+        seen.add(r)
+        r = before[given.get(r)]
+        if (!r) return null
+        if (!heldByOther(r, i)) return r
+      }
+      return null
+    }
+    staff
+      .map((e, i) => ({ e, i }))
+      .filter(({ e, i }) => !usedStaff.has(i) && given.has(e.role))
+      .sort((a, b) => STAFF_ROLES.indexOf(a.e.role) - STAFF_ROLES.indexOf(b.e.role) || a.i - b.i)
+      .forEach(({ e, i }) => {
+        const r = leftOver(e.role, i)
+        if (r && r !== e.role) {
+          e.role = r
+          counts.moved++
+          changed = true
+        }
+      })
+  }
 
   return { players, staff, changed, counts, club }
 }

@@ -111,11 +111,75 @@ describe('mergeMatchRoster', () => {
     assert.equal(body(m).error, undefined)
   })
 
-  it('an official keeps the role the saved team gives them; the licence is filled in', () => {
-    const squad = { players: [], staff: [{ id: id(), role: 'Coach', first_name: 'Carla', last_name: 'Coach', license_number: null }] }
-    const m = mergeMatchRoster(squad, { players: [], staff: [{ role: 'Assistant Coach 1', first_name: 'Carla', last_name: 'Coach', license_number: '7777' }] })
-    assert.deepEqual(m.staff.map((s) => [s.role, s.license_number]), [['Coach', '7777']])
-    assert.equal(m.staff.length, 1)
+  const st = (role, last, extra = {}) => ({ id: id(), role, first_name: 'Carla', last_name: last, license_number: null, ...extra })
+  const ms = (role, last, extra = {}) => ({ role, first_name: 'Carla', last_name: last, license_number: null, ...extra })
+  const roles = (m) => m.staff.map((s) => [s.last_name, s.role])
+
+  it('the latest match: an official takes the match\'s role; the licence is filled in', () => {
+    const squad = { players: [], staff: [st('Coach', 'Coach')] }
+    const m = mergeMatchRoster(squad, { players: [], staff: [ms('Assistant Coach 1', 'Coach', { license_number: '7777' })] })
+    assert.deepEqual(m.staff.map((s) => [s.role, s.license_number]), [['Assistant Coach 1', '7777']])
+    assert.equal(m.staff[0].id, squad.staff[0].id, 'the same person, the same id')
+    assert.equal(m.counts.roles, 1)
+    assert.equal(m.changed, true)
+    assert.equal(body(m).error, undefined)
+  })
+
+  it('an older match changes no role; its new official comes with the match\'s', () => {
+    const squad = { players: [], staff: [st('Coach', 'Coach'), st('Assistant Coach 1', 'Assist')] }
+    const m = mergeMatchRoster(squad, { players: [], staff: [ms('Coach', 'Assist'), ms('Medic', 'Medic')] }, { latest: false })
+    assert.deepEqual(roles(m), [['Coach', 'Coach'], ['Assist', 'Assistant Coach 1'], ['Medic', 'Medic']])
+    assert.equal(m.counts.roles, 0)
+    assert.equal(m.counts.moved, 0)
+  })
+
+  it('the coach misses a game, the assistant stands in: the two swap; the next match swaps them back', () => {
+    const squad = { players: [], staff: [st('Coach', 'Head'), st('Assistant Coach 1', 'Assist'), st('Medic', 'Medic')] }
+    const m = mergeMatchRoster(squad, { players: [], staff: [ms('Coach', 'Assist'), ms('Medic', 'Medic')] })
+    assert.deepEqual(roles(m), [['Head', 'Assistant Coach 1'], ['Assist', 'Coach'], ['Medic', 'Medic']])
+    assert.deepEqual([m.counts.roles, m.counts.moved], [1, 1])
+    assert.equal(body(m).error, undefined)
+    const back = mergeMatchRoster({ players: [], staff: m.staff }, { players: [], staff: [ms('Coach', 'Head'), ms('Assistant Coach 1', 'Assist')] })
+    assert.deepEqual(roles(back), [['Head', 'Coach'], ['Assist', 'Assistant Coach 1'], ['Medic', 'Medic']])
+    assert.deepEqual([back.counts.roles, back.counts.moved], [2, 0])
+  })
+
+  it('a chain of moves: the one not on the match takes the role left over at its end', () => {
+    const squad = { players: [], staff: [st('Coach', 'Head'), st('Assistant Coach 1', 'One'), st('Assistant Coach 2', 'Two'), st('Physiotherapist', 'Physio')] }
+    const m = mergeMatchRoster(squad, { players: [], staff: [ms('Coach', 'One'), ms('Assistant Coach 1', 'Two')] })
+    assert.deepEqual(roles(m), [['Head', 'Assistant Coach 2'], ['One', 'Coach'], ['Two', 'Assistant Coach 1'], ['Physio', 'Physiotherapist']])
+    assert.deepEqual([m.counts.roles, m.counts.moved], [2, 1])
+    // each role once, as before
+    assert.equal(new Set(m.staff.map((s) => s.role)).size, m.staff.length)
+  })
+
+  it('a new official takes a role: the saved team\'s holder keeps it (nothing left over), never another role', () => {
+    const squad = { players: [], staff: [st('Coach', 'Head'), st('Medic', 'Medic')] }
+    const m = mergeMatchRoster(squad, { players: [], staff: [ms('Coach', 'Newcoach'), ms('Medic', 'Medic')] })
+    assert.deepEqual(roles(m), [['Head', 'Coach'], ['Medic', 'Medic'], ['Newcoach', 'Coach']])
+    assert.deepEqual([m.counts.added, m.counts.roles, m.counts.moved], [1, 0, 0])
+    assert.equal(body(m).error, undefined, 'a saved team may name a role twice')
+  })
+
+  it('the role left over is taken already: the official keeps theirs', () => {
+    // Head (Coach) is not on the match; Assist (AC1) is Coach now and a new official AC1
+    const squad = { players: [], staff: [st('Coach', 'Head'), st('Assistant Coach 1', 'Assist')] }
+    const m = mergeMatchRoster(squad, { players: [], staff: [ms('Coach', 'Assist'), ms('Assistant Coach 1', 'Newassist')] })
+    assert.deepEqual(roles(m), [['Head', 'Coach'], ['Assist', 'Coach'], ['Newassist', 'Assistant Coach 1']])
+    assert.deepEqual([m.counts.roles, m.counts.moved], [1, 0])
+  })
+
+  it('a role the match names twice: the first official takes it, the second keeps theirs', () => {
+    const squad = { players: [], staff: [st('Assistant Coach 1', 'One'), st('Assistant Coach 2', 'Two')] }
+    const m = mergeMatchRoster(squad, { players: [], staff: [ms('Coach', 'One'), ms('Coach', 'Two')] })
+    assert.deepEqual(roles(m), [['One', 'Coach'], ['Two', 'Assistant Coach 2']])
+  })
+
+  it('the same roles as the saved team: nothing changes', () => {
+    const squad = { players: [], staff: [st('Coach', 'Head', { license_number: '7001' }), st('Medic', 'Medic', { license_number: '7002' })] }
+    const m = mergeMatchRoster(squad, { players: [], staff: [ms('Coach', 'Head', { license_number: '7001' })] })
+    assert.equal(m.changed, false)
+    assert.deepEqual(roles(m), [['Head', 'Coach'], ['Medic', 'Medic']])
   })
 
   it('nothing new: nothing changes', () => {
