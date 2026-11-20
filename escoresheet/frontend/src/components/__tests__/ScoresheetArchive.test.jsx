@@ -3,11 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 // The standalone archive (scoresheet subdomain): scoresheets are readable only
 // by the uploading account, and this origin has its own session. It must offer
-// a sign-in and open the scoresheet once signed in (no dead end).
+// a sign-in and open the scoresheet once signed in (no dead end). Its words are
+// the app's (i18n, the real locale files here), in the page's language.
 
 const state = vi.hoisted(() => ({ session: false, signInResult: { error: null }, listCalls: 0, extraRows: [] }))
 
-vi.mock('../../i18n', () => ({}))
 vi.mock('../../../scoresheet_pdf/App_Scoresheet', () => ({
   default: ({ matchData }) => <div data-testid="scoresheet">sheet of {matchData?.match?.gameNumber}</div>
 }))
@@ -52,8 +52,10 @@ vi.mock('../../lib/apiClient', () => ({
 }))
 
 import ScoresheetApp from '../../ScoresheetApp'
+import i18n from '../../i18n'
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage('en')
   state.session = false
   state.signInResult = { error: null }
   state.listCalls = 0
@@ -94,7 +96,9 @@ describe('Scoresheet archive (standalone site)', () => {
     state.session = true
     window.history.pushState({}, '', '/?date=2026-10-06&game=111111')
     render(<ScoresheetApp />)
-    expect(await screen.findByText('Scoresheet Not Found')).toBeInTheDocument()
+    expect(await screen.findByText('Scoresheet not found')).toBeInTheDocument()
+    // the redacted path, in the page's words: "<date>, game <n>"
+    expect(screen.getByText(/found: 2026-10-06, game 111111\./)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Sign in with another account' }))
     expect(await screen.findByRole('heading', { name: 'Sign in to open this scoresheet' })).toBeInTheDocument()
   })
@@ -112,5 +116,31 @@ describe('Scoresheet archive (standalone site)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /Sign out/ })).toBeInTheDocument())
     expect(screen.getByText('scorer@example.ch')).toBeInTheDocument()
     expect(screen.queryByText(/only for the scorer account that uploaded them/)).toBeNull()
+  })
+
+  it('speaks the page\'s language: German and French words, the sheet itself untouched', async () => {
+    await i18n.changeLanguage('de')
+    const { unmount } = render(<ScoresheetApp />)
+    expect(await screen.findByRole('heading', { name: 'Archiv der Matchblätter' })).toBeInTheDocument()
+    expect(screen.getByText('1 Matchblatt verfügbar')).toBeInTheDocument()
+    expect(screen.getByText(/nur für das Schreiberkonto/)).toBeInTheDocument()
+    // the archive's groups in Match Setup's words
+    expect(screen.getByRole('button', { name: /Senior/ })).toBeInTheDocument()
+    expect(screen.getByText('Archiv der Matchblätter').closest('[lang]')).toHaveAttribute('lang', 'de')
+    fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }))
+    expect(screen.getByLabelText('E-Mail')).toBeInTheDocument()
+    expect(screen.getByLabelText('Passwort')).toBeInTheDocument()
+    unmount()
+    await i18n.changeLanguage('fr')
+    window.history.pushState({}, '', '/?date=2026-10-06&game=992404')
+    render(<ScoresheetApp />)
+    expect(await screen.findByRole('heading', { name: 'Connecte-toi pour ouvrir cette feuille de match' })).toBeInTheDocument()
+    expect(screen.getByRole('form', { name: 'Se connecter' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Retour à la liste/ })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'scorer@example.ch' } })
+    fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: 'pw' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Se connecter' }))
+    // the sheet (mocked here) opens as before
+    expect(await screen.findByTestId('scoresheet')).toHaveTextContent('sheet of 992404')
   })
 })

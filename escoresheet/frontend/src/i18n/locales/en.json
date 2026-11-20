@@ -1996,6 +1996,65 @@
     "checkTheMatch": "Check the match before approving it:",
     "remarksClipped": "REMARKS: the text does not fit the box; the PDF prints all of it on page 2."
   },
+  "scoresheetSite": {
+    "archiveTitle": "Scoresheet archive",
+    "listTitle": "Scoresheets",
+    "available_one": "{{count}} scoresheet available",
+    "available_other": "{{count}} scoresheets available",
+    "ownerOnly": "Scoresheets open only for the scorer account that uploaded them. Sign in with that account to view or download yours.",
+    "signInTitle": "Sign in to open this scoresheet",
+    "signInFailed": "Sign-in failed",
+    "signedInAs": "Signed in as",
+    "otherAccount": "Sign in with another account",
+    "noScoresheets": "No scoresheets uploaded yet",
+    "loadingOne": "Loading scoresheet...",
+    "loadingList": "Loading scoresheets...",
+    "listError": "Error loading scoresheets",
+    "listErrorBody": "The scoresheets could not be loaded.",
+    "game": "Game {{n}}",
+    "vs": "vs",
+    "backToList": "Back to list",
+    "matchId": "Match ID: {{id}}",
+    "closeWindow": "Close window",
+    "gamePath": "{{date}}, game {{game}}",
+    "closeAndSignIn": "Close and sign in in the scorer app",
+    "openAppToSignIn": "Open the scorer app to sign in",
+    "renderError": {
+      "title": "Scoresheet error",
+      "body": "An error occurred while showing the scoresheet.",
+      "details": "Error details"
+    },
+    "import": {
+      "title": "Scoresheet viewer",
+      "body": "Open a scoresheet JSON file to view it, print it or save it as a PDF.",
+      "button": "Open a scoresheet file",
+      "invalid": "This file holds no scoresheet: it has no match, sets or events.",
+      "notJson": "This file could not be read as a scoresheet (JSON).",
+      "readFailed": "The file could not be read."
+    },
+    "load": {
+      "signin": {
+        "title": "Sign-in required",
+        "message": "Approved scoresheets can only be opened by the scorer account that uploaded them. Sign in to the scorer app with that account and open the match from My matches."
+      },
+      "forbidden": {
+        "title": "Not your scoresheet",
+        "message": "This scoresheet can only be opened by the scorer account that uploaded it."
+      },
+      "notfound": {
+        "title": "Scoresheet not found",
+        "message": "No scoresheet uploaded by this account was found: {{path}}. Only the scorer account that approved the match can open it."
+      },
+      "offline": {
+        "title": "Server not reachable",
+        "message": "The scoresheet could not be loaded: the server is not reachable. Check the connection and try again."
+      },
+      "error": {
+        "title": "Scoresheet not available",
+        "message": "The scoresheet could not be loaded."
+      }
+    }
+  },
   "supportFeedback": {
     "title": "Support & feedback",
     "button": "Support & feedback",
