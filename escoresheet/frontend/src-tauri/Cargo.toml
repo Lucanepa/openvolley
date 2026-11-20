@@ -26,7 +26,7 @@ tauri-plugin-single-instance = "2"
 # download verified against the minisign key in tauri.conf.json (2.13: tauri
 # 2.12 and Rust 1.90, as the rest of tauri 2.12).
 # Its JS commands are not granted to any window (capabilities/update.json).
-tauri-plugin-updater = "~2.13"
+tauri-plugin-updater = "~2.14"
 # The desktop log (main.rs): <data dir>/OpenVolley/logs/desktop.log, rotated.
 # None of its JS commands is granted to a window.
 tauri-plugin-log = "~2.10"
