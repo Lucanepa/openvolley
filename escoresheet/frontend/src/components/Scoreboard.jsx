@@ -20053,7 +20053,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         onCorrections={() => { setShowLogs(false); setShowManualPanel(true) }}
       />
 
-      {/* Manual Changes Modal (the list view; the board is below, after Go back) */}
+      {/* Manual Changes Modal */}
+      {/* (the list view; the correction board is below, after Go back) */}
       {showManualPanel && !(correctionView === 'board' && boardFits()) && (
         <Modal
           title={t('corrections.title')}
