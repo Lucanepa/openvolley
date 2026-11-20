@@ -61,6 +61,16 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # No Gradle 9 or AGP 9 while the app is on Capacitor 8 (ANDROID.md, "Gradle
+    # and AGP stay on 8.x"): Capacitor 8 and its plugins build with AGP 8.13,
+    # which fails on Gradle 9.6 and later (Gradle removed an internal API that
+    # AGP 8 uses), and AGP 9 needs the Capacitor 9 plugins. Gradle 8.14.x still
+    # gets security releases. Drop this with the move to Capacitor 9.
+    ignore:
+      - dependency-name: gradle-wrapper
+        update-types: [version-update:semver-major]
+      - dependency-name: com.android.tools.build:gradle
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
