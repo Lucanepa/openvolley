@@ -413,14 +413,20 @@ export async function writePdfNative(fs, arrayBuffer, filename) {
 /**
  * The app's own "open / share a saved scoresheet" plugin (android/.../
  * ScoresheetFilesPlugin.java: Android intents through the app's FileProvider,
- * no new dependency), or null outside the Android app.
+ * no new dependency) as { plugin }, or null outside the Android app.
+ *
+ * Wrapped, never returned bare: a Capacitor plugin answers every property with
+ * a method, `then` too, so a promise resolved with it calls
+ * "OpenVolleyFiles.then()" (not implemented) and never settles. The Save PDF
+ * bar then never showed Open, Share or Export to Documents (Android emulator,
+ * 20.11.2026).
  */
-async function filesPlugin(win) {
+export async function filesPlugin(win) {
   try {
     if (!win.Capacitor?.isNativePlatform?.()) return null
     let register = win.Capacitor?.registerPlugin
     if (typeof register !== 'function') register = (await import('@capacitor/core')).registerPlugin
-    return register('OpenVolleyFiles')
+    return { plugin: register('OpenVolleyFiles') }
   } catch {
     return null
   }
@@ -446,7 +452,7 @@ async function savePdf({ arrayBuffer, filename }, status, actions, win = window)
     const saved = t('appWindow.pdfSavedInApp', `PDF saved in the app for ${days} days: ${name}. Share it or export it to Documents to keep a copy.`, { name, days })
     status.textContent = saved
     if (actions) {
-      const plugin = uri ? await filesPlugin(win) : null
+      const plugin = uri ? (await filesPlugin(win))?.plugin : null
       const run = (method) => async () => {
         try {
           await plugin[method]({ uri })
