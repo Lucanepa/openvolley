@@ -38,7 +38,7 @@ x-logging: &logging
 
 services:
   ov-postgres:
-    image: ${OV_POSTGRES_IMAGE:-postgres:17.11-alpine}
+    image: ${OV_POSTGRES_IMAGE:-postgres:17.12-alpine}
     restart: unless-stopped
     # Run as the image's postgres user (uid 70) from the start: no root, no
     # chown, no capabilities. host-prep.sh creates ${OV_PG_HOST_DIR}/data
@@ -147,7 +147,7 @@ services:
   # dump's compression never takes ov-postgres's 0.5 CPU on a match day. Only
   # started by that run (profile "backup"), on ov-internal only, read-only.
   ov-backup:
-    image: ${OV_POSTGRES_IMAGE:-postgres:17.11-alpine}
+    image: ${OV_POSTGRES_IMAGE:-postgres:17.12-alpine}
     profiles: [backup]
     user: "70:70"
     entrypoint: ["nice", "-n", "10"]

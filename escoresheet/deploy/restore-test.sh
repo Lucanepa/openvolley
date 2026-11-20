@@ -29,7 +29,7 @@
 #                        `build-image.sh --ship local`); *-dirty / *-prewiring
 #                        tags are refused unless RT_ALLOW_DEV_IMAGE=1
 #   RT_TAG_FILE          ~/ov-ops/shipped-local
-#   RT_PG_IMAGE          postgres:17.11-alpine
+#   RT_PG_IMAGE          postgres:17.12-alpine
 #   RT_GNUPGHOME         default $GNUPGHOME or ~/.gnupg
 #   RT_GPG_PASSPHRASE_FILE  default $CREDENTIALS_DIRECTORY/gpg-pass if present
 #   RT_ROLES_SQL         default <repo>/escoresheet/backend/db/roles.sql; missing
@@ -52,7 +52,7 @@ fi
 
 KIT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 RT_SOURCE=${RT_SOURCE:-/data/openvolley/backups}
-RT_PG_IMAGE=${RT_PG_IMAGE:-postgres:17.11-alpine}
+RT_PG_IMAGE=${RT_PG_IMAGE:-postgres:17.12-alpine}
 RT_BACKEND_IMAGE=${RT_BACKEND_IMAGE:-}
 RT_GNUPGHOME=${RT_GNUPGHOME:-${GNUPGHOME:-$HOME/.gnupg}}
 RT_GPG_PASSPHRASE_FILE=${RT_GPG_PASSPHRASE_FILE:-}

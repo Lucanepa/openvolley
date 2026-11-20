@@ -1,6 +1,7 @@
 # Update proposals as pull requests, reviewed like any other change: the npm
-# lock files of the backend and the frontend, the desktop app's Cargo.lock,
-# the Android build (Gradle) and the commit pins of the workflows' actions.
+# lock files of the backend, the frontend and the render service, the Docker
+# base images, the desktop app's Cargo.lock, the Android build (Gradle) and the
+# commit pins of the workflows' actions.
 # Security updates come as soon as an advisory is published; the rest weekly.
 version: 2
 updates:
@@ -21,6 +22,21 @@ updates:
     groups:
       frontend-minor:
         update-types: [minor, patch]
+
+  # The render service (escoresheet/render): its playwright-core pins the
+  # Chromium that prints the official PDF; a bump needs a new render image.
+  - package-ecosystem: npm
+    directory: /escoresheet/render
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+
+  # The base images of the backend and render images (Node) and of compose.
+  - package-ecosystem: docker
+    directory: /escoresheet/deploy
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
 
   - package-ecosystem: cargo
     directory: /escoresheet/frontend/src-tauri
