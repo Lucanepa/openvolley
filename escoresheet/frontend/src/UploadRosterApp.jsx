@@ -1047,7 +1047,7 @@ export default function UploadRosterApp() {
 
   return (
     <div style={{
-      minHeight: '100dvh',
+      minHeight: 'var(--ov-vh100, 100vh)',
       background: 'var(--bg)',
       color: 'var(--text)',
       display: 'flex',

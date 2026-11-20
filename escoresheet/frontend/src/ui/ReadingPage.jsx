@@ -54,7 +54,7 @@ export function GateScreen({ logo, eyebrow, corner, footer, below, brandBar = tr
   // scoring screens, so a card taller than a phone would be cut off. my-auto,
   // not items-center: a tall card starts at the top instead of above it.
   return (
-    <div className="h-dvh overflow-y-auto bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex flex-col items-center p-4">
+    <div className="h-[var(--ov-vh100)] overflow-y-auto bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex flex-col items-center p-4">
       <div className={cn('w-full my-auto', width === 'md' ? 'max-w-md' : 'max-w-sm')}>
         <div className={cn('relative overflow-hidden bg-white rounded-3xl shadow-card-lg border border-stone-200/70 p-8', className)}>
           {brandBar && <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />}

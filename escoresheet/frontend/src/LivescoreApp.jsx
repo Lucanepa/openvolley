@@ -401,7 +401,7 @@ export default function LivescoreApp() {
 
     return (
       <div className="ov-kit" style={{
-        minHeight: '100dvh',
+        minHeight: 'var(--ov-vh100, 100vh)',
         background: 'var(--bg)',
         color: 'var(--text)',
         display: 'flex',
@@ -538,7 +538,7 @@ export default function LivescoreApp() {
   // List view - show all games
   return (
     <div className="ov-kit" style={{
-      minHeight: '100dvh',
+      minHeight: 'var(--ov-vh100, 100vh)',
       background: 'var(--bg)',
       color: 'var(--text)'
     }}>

@@ -107,7 +107,7 @@ export default function NotificationsBell({ app, onOpen }) {
             {state.known ? t('manage.notifications.empty') : t('manage.notifications.loading')}
           </p>
         ) : (
-          <ul className="max-h-[min(24rem,70dvh)] divide-y divide-stone-100 overflow-y-auto" data-testid="notifications-list">
+          <ul className="max-h-[min(24rem,calc(var(--ov-vh100)*0.7))] divide-y divide-stone-100 overflow-y-auto" data-testid="notifications-list">
             {list.map((n) => {
               const who = n.user?.name || n.user?.email || t('manage.notifications.deletedAccount')
               // db/050: an error group (lib/errorAlerts.js), no account behind it

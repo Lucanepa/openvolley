@@ -57,7 +57,7 @@ export default class ErrorBoundary extends React.Component {
 
     return (
       <div role="alert" style={{
-        minHeight: '100dvh',
+        minHeight: 'var(--ov-vh100, 100vh)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

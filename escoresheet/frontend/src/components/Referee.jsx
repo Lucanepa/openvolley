@@ -2409,8 +2409,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   if (isAwaitingCoinToss && !isMasterMode && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
     return (
       <div style={{
-        height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
-        maxHeight: '100dvh',
+        height: 'var(--ov-vh100, 100vh)', // the visible height: dvh where the browser has it (respects iOS browser chrome)
+        maxHeight: 'var(--ov-vh100, 100vh)',
         width: '100vw',
         maxWidth: `${REFEREE_LAYOUT.maxWidth}px`,
         margin: '0 auto',
@@ -2868,8 +2868,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   if (isMatchFinished) {
     return (
       <div style={{
-        height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
-        maxHeight: '100dvh',
+        height: 'var(--ov-vh100, 100vh)', // the visible height: dvh where the browser has it (respects iOS browser chrome)
+        maxHeight: 'var(--ov-vh100, 100vh)',
         width: '100vw',
         maxWidth: `${REFEREE_LAYOUT.maxWidth}px`,
         margin: '0 auto',
@@ -2969,8 +2969,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   return (
     <div style={{
-      height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
-      maxHeight: '100dvh',
+      height: 'var(--ov-vh100, 100vh)', // the visible height: dvh where the browser has it (respects iOS browser chrome)
+      maxHeight: 'var(--ov-vh100, 100vh)',
       width: '100vw',
       maxWidth: `${REFEREE_LAYOUT.maxWidth}px`,
       margin: '0 auto',
