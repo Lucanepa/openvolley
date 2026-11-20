@@ -1071,7 +1071,11 @@ button:disabled {
   }
 }
 
-/* Match record layout - full width with user-controlled scaling */
+/* Match record layout - full width with user-controlled scaling.
+   Its only items in flow are the toolbar and .match-content (banners, cards
+   and dialogs are fixed), so the gap is the band between the toolbar and the
+   three columns: 2px at every width (owner, 20.11.2026: as close as possible;
+   it was 12px up to 1800px wide). */
 .match-record {
   display: flex;
   flex-direction: column;
@@ -1084,12 +1088,6 @@ button:disabled {
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
-}
-
-@media (max-width: 1800px) {
-  .match-record {
-    gap: 12px;
-  }
 }
 
 /* Prevent layout shifts during gameplay */

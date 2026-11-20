@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COURT_CELLS, clockTime, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, PHONE_COUNTER_HEIGHT_PX, PHONE_RECENT_HEIGHT_PX, PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, recentLinesFor, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
+import { COURT_CELLS, clockTime, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, PHONE_COUNTER_HEIGHT_PX, PHONE_RECENT_HEIGHT_PX, PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, OFFICIAL_NAMES_MIN_WIDTH, officialsAsRoles, recentLinesFor, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
 
 describe('detectDisplayMode (the automatic display mode)', () => {
   it.each([[390, 844], [360, 740], [412, 915], [599, 1000]])('a %ix%i portrait phone gets the phone layout', (w, h) => {
@@ -244,5 +244,24 @@ describe('phone layout on a short screen (styles.css)', () => {
     const court = '(100cqw - 24px) / 2, max(var(--phone-court-min), 100cqh - var(--phone-square-reserve) - var(--phone-square-min))'
     expect(supports).toContain(`height: min(${court});`)
     expect(supports).toContain(`height: min((100cqw - 34px) / 2, max(var(--phone-square-min), 100cqh - var(--phone-square-reserve) - min(${court})));`)
+  })
+})
+
+describe('officialsAsRoles (bench officials as C, AC1... or with names)', () => {
+  it.each([800, 1024, 1180, 1280, 1366, 1439])('a %ipx wide window shows the roles only, whatever the device', (width) => {
+    expect(officialsAsRoles({ displayMode: 'desktop', width })).toBe(true)
+  })
+
+  it.each([1440, 1536, 1920])('a %ipx wide window lists the names', (width) => {
+    expect(officialsAsRoles({ displayMode: 'desktop', width })).toBe(false)
+  })
+
+  it('the Tablet display mode shows the roles on a wide window too', () => {
+    expect(officialsAsRoles({ displayMode: 'tablet', width: 1920 })).toBe(true)
+  })
+
+  it('names from the desktop width on', () => {
+    expect(OFFICIAL_NAMES_MIN_WIDTH).toBe(1440)
+    expect(officialsAsRoles({ displayMode: 'desktop', width: undefined })).toBe(true)
   })
 })
