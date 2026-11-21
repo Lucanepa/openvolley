@@ -15,6 +15,7 @@ import { ScaleProvider } from './contexts/ScaleContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
 import PhonePairHost from './components/phonePair/PhonePairHost.jsx'
+import ScoreboardCodeHost from './components/scoreboardCode/ScoreboardCodeHost.jsx'
 import { stripCacheBustParam, applyUpdateAtStart, answerUpdateQuestions, installPreloadErrorNotice } from './hooks/useServiceWorker'
 import { readOpenMatch } from './utils/deviceSelfCheck'
 import { isDesktopScoretable, resolveDesktopWindow } from './utils/appLifecycle'
@@ -104,6 +105,7 @@ createRoot(document.getElementById('root')).render(
               <App />
               {/* Pair a phone: the remote keyboard lives across screens */}
               <PhonePairHost />
+              <ScoreboardCodeHost />
             </LoggingProvider>
           </AlertProvider>
         </AuthProvider>

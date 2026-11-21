@@ -18,6 +18,7 @@ import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import { matchMenuSections, toMenuListSections } from './matchMenu'
 import { openPhonePair, phonePairMatchOf } from './phonePair/phonePairStore'
+import { openScoreboardCode, scoreboardCodeMatchOf } from './scoreboardCode/scoreboardCodeStore'
 import { useScoreboardDisplay } from './scoreboard/useScoreboardDisplay'
 import SanctionsResultsModal from './SanctionsResultsModal'
 import SetPreviewModal from './setPreview/SetPreviewModal.jsx'
@@ -14325,6 +14326,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     editRosterAway: () => setReopenRosterConfirm('away'),
     showPins: () => setShowPinsModal(true),
     pairPhone: data?.match ? () => openPhonePair(phonePairMatchOf(data, { lang: i18n.language, fallbackHome: t('common.home'), fallbackAway: t('common.away') })) : undefined,
+    // the match's scoreboard code (docs/scoreboard-code-spec.md): any board follows by it
+    showOnScoreboard: data?.match ? () => openScoreboardCode(scoreboardCodeMatchOf(data)) : undefined,
     scoreboardSettings: scoreboardDisplay.open,
     downloadGameData: () => { downloadGameData() },
     options: () => setShowOptionsInMenu(true),

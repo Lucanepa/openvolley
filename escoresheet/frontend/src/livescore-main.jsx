@@ -1,12 +1,13 @@
 // First: the error reporter listens while the rest loads (utils/errorReport, privacy 1.22)
 import './utils/errorReport/boot'
 import { setErrorTool } from './utils/errorReport'
-import React from 'react'
+import React, { Suspense, lazy } from 'react'
 import ReactDOM from 'react-dom/client'
 import LivescoreApp from './LivescoreApp'
 import TournamentLive from './components/TournamentLive'
 import { liveCodeFromUrl } from './utils/globalLive'
 import { cloudPageFromUrl } from './utils/globalCloudDb'
+import { isBoardPath, takeBoardTargetFromUrl } from './utils/boardCode'
 import { SharedMatchPage, OrganizerPage } from './components/GlobalCloudPages'
 import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
 import './utils/cqFontScale' // undoes WebKitGTK's double page zoom on font sizes in container units
@@ -38,10 +39,24 @@ stripCacheBustParam()
 installErrorTrail()
 
 initTheme()
-const tournamentCode = liveCodeFromUrl()
+// /board (livescore.openvolley.app/board, /livescore/board, <relay>/livescore/board):
+// the full-screen scoreboard page (components/board). A ?code= leaves the
+// address here, before anything else reads it (utils/boardCode).
+const boardPage = isBoardPath(window.location.pathname)
+const boardTarget = boardPage ? takeBoardTargetFromUrl() : undefined
+const BoardApp = lazy(() => import('./components/board/BoardApp'))
+const tournamentCode = boardPage ? null : liveCodeFromUrl()
 // ?s=<token> / ?o=<code>: a shared Global match, a tournament's list (utils/globalCloudDb)
 const cloudPage = tournamentCode ? null : cloudPageFromUrl()
-ReactDOM.createRoot(document.getElementById('root')).render(
+ReactDOM.createRoot(document.getElementById('root')).render(boardPage ? (
+  <React.StrictMode>
+    <ErrorBoundary name="livescore">
+      <Suspense fallback={null}>
+        <BoardApp initialTarget={boardTarget} />
+      </Suspense>
+    </ErrorBoundary>
+  </React.StrictMode>
+) : (
   <React.StrictMode>
     <ErrorBoundary name="livescore">
       <AuthProvider>
@@ -55,6 +70,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       </AuthProvider>
       <div className="ov-kit ov-kit-host"><UiHost /></div>
     </ErrorBoundary>
-  </React.StrictMode>,
-)
+  </React.StrictMode>
+))
 

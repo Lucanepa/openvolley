@@ -129,6 +129,12 @@ export default defineConfig({
               break
             }
           }
+          // The livescore's scoreboard page (/livescore/board): the livescore entry
+          // switches to it by the path (livescore-main.jsx); the query stays
+          if (url === '/livescore/board' || url === '/livescore/board/') {
+            const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''
+            req.url = `/livescore/index.html${query}`
+          }
 
           next()
         })

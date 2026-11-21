@@ -8,6 +8,7 @@
 import core from './electron/lanRelayCore.cjs'
 import signCore from './electron/signSessionCore.cjs'
 import pairCore from './electron/pairSessionCore.cjs'
+import displayCore from './electron/displayCodeCore.cjs'
 
 export const {
   MATCH_SECRET_FIELDS,
@@ -45,14 +46,16 @@ export const {
 
 /**
  * One relay instance, with Sign on phone (/api/sign/*) wired to
- * ./electron/signSessionCore.cjs and Pair a phone (/api/pair/*) to
- * ./electron/pairSessionCore.cjs (the .cjs core may not require() them).
+ * ./electron/signSessionCore.cjs, Pair a phone (/api/pair/*) to
+ * ./electron/pairSessionCore.cjs and the scoreboard codes (display-code-set,
+ * subscribe-match { code }, /api/display/*) to ./electron/displayCodeCore.cjs
+ * (the .cjs core may not require() them).
  * @param {Parameters<typeof core.createLanRelay>[0]} [options]
  */
 export function createLanRelay(options = {}) {
-  return core.createLanRelay({ signCore, pairCore, ...options })
+  return core.createLanRelay({ signCore, pairCore, displayCore, ...options })
 }
 
-export { signCore, pairCore }
+export { signCore, pairCore, displayCore }
 
 export default core

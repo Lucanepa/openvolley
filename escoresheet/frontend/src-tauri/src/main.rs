@@ -5,6 +5,7 @@ mod activity;
 mod backup;
 mod bench_requests;
 mod diagnostics;
+mod display_code;
 mod firewall;
 mod flavour;
 mod global_live;
