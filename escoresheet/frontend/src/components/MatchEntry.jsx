@@ -40,7 +40,7 @@ import { getSideAForSet, getFirstServeForSet } from '../domain/rules'
 import { countRegularSubstitutions } from '../domain/substitutions'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours'
-import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName } from './bench/benchLayout.js'
+import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName, teamSanctionsForDisplay } from './bench/benchLayout.js'
 import BenchRequestPanel from './bench/BenchRequestPanel.jsx'
 import { benchSetIndex } from '../domain/benchRequests'
 
@@ -705,80 +705,15 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       })
   }, [teamInfo, getOfficialSanctions])
 
-  // Get overall team sanctions
-  const overallSanctions = useMemo(() => {
-    if (!data?.events) return []
-    return data.events.filter(
-      e => e.type === 'sanction' &&
-      e.payload?.team === team &&
-      (!e.payload?.playerNumber || e.payload?.role)
-    )
-  }, [data?.events, team])
-
-  // Collect all sanctions for display - MUST be before any early returns to maintain consistent hook order
-  const allSanctionsForDisplay = useMemo(() => {
-    const sanctions = []
-
-    // Player sanctions (on court)
-    playersOnCourt.forEach(player => {
-      if (player.number) {
-        const playerSanctions = getPlayerSanctions(player.number)
-        playerSanctions.forEach(s => {
-          sanctions.push({
-            type: 'player',
-            number: player.number,
-            sanctionType: s.payload?.type || 'warning'
-          })
-        })
-      }
-    })
-
-    // Bench player sanctions
-    benchPlayersWithSanctions.forEach(player => {
-      player.sanctions.forEach(s => {
-        sanctions.push({
-          type: 'bench',
-          number: player.number,
-          sanctionType: s.payload?.type || 'warning'
-        })
-      })
-    })
-
-    // Libero sanctions
-    benchLiberos.forEach(libero => {
-      libero.sanctions.forEach(s => {
-        sanctions.push({
-          type: 'libero',
-          number: libero.number,
-          sanctionType: s.payload?.type || 'warning'
-        })
-      })
-    })
-
-    // Official sanctions
-    benchOfficials.forEach(official => {
-      if (official.sanctions) {
-        official.sanctions.forEach(s => {
-          sanctions.push({
-            type: 'official',
-            role: official.role,
-            sanctionType: s.payload?.type || 'warning'
-          })
-        })
-      }
-    })
-
-    // Overall team sanctions
-    overallSanctions.forEach(s => {
-      sanctions.push({
-        type: 'team',
-        role: s.payload?.role || 'Team',
-        sanctionType: s.payload?.type || 'warning'
-      })
-    })
-
-    return sanctions
-  }, [playersOnCourt, benchPlayersWithSanctions, benchLiberos, benchOfficials, overallSanctions, getPlayerSanctions])
+  // The team's sanctions box: every sanction event of the team in the match,
+  // once each, in the order the scorer recorded them (MUST be before any early
+  // returns to keep the hook order). Read from the events alone, never from
+  // who is on the court or the bench now: a coach's warning was listed twice
+  // ("Coach, Coach": by the officials row and again as a team sanction), the
+  // box said "None" during the interval between two sets (no set under way)
+  // and lost a player an exceptional substitution took off the court, whom
+  // the referee still showed (full-match test 2026-11-21).
+  const allSanctionsForDisplay = useMemo(() => teamSanctionsForDisplay(data?.events, team), [data?.events, team])
 
   if (!data || !teamInfo) {
     if (embedded) {
@@ -1182,13 +1117,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             <span style={{ color: 'var(--ov-text-muted)', fontSize: 'clamp(15px, 2vh, 20px)' }}>{t('matchEntry.none', 'None')}</span>
           ) : (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: '8px 16px', alignItems: 'center', minWidth: 0 }}>
-              {allSanctionsForDisplay.map((s, idx) => {
+              {allSanctionsForDisplay.map((s) => {
                 const card = cardOfSanctionType(s.sanctionType)
-                const who = s.type === 'player' || s.type === 'bench' || s.type === 'libero'
+                const who = s.type === 'player'
                   ? `#${s.number}`
-                  : card?.delay ? 'D' : card?.improperRequest ? t('scoreboard.sanctions.improperRequest', 'Improper request') : s.role
+                  : card?.delay || s.delay ? 'D' : card?.improperRequest ? t('scoreboard.sanctions.improperRequest', 'Improper request') : s.role
                 return (
-                  <li key={idx} data-bench-sanction={s.sanctionType} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <li key={s.key} data-bench-sanction={s.sanctionType} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {card?.kind && <CardGlyph kind={card.kind} height="clamp(22px, 3.2vh, 36px)" />}
                     <span style={{ fontWeight: 700, fontSize: card?.improperRequest ? '14px' : 'clamp(18px, 2.6vh, 30px)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{who}</span>
                   </li>
