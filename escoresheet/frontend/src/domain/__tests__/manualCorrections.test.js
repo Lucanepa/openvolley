@@ -328,6 +328,19 @@ describe('sanctions', () => {
     expect(validateMemberSanction(prior, { team: 'away', role: 'Coach', type: 'warning' })).toEqual({ legal: true })
   })
 
+  it('a member\'s next sanction must be heavier (FIVB 21.4.2): a lighter one is recorded with a note', () => {
+    const prior = [{ type: 'sanction', payload: { team: 'home', type: 'expulsion', playerNumber: 5 } }]
+    expect(validateMemberSanction(prior, { team: 'home', playerNumber: 5, type: 'penalty' })).toEqual({ legal: false, reason: 'lighterSanction', heaviest: 'expulsion' })
+    expect(validateMemberSanction(prior, { team: 'home', playerNumber: 5, type: 'disqualification' })).toEqual({ legal: true })
+    const { events } = buildMatch({
+      sets: [{ points: pointsFor(25, 20), finished: true, extras: [{ at: 2, type: 'sanction', payload: { team: 'home', type: 'expulsion', playerType: 'player', playerNumber: 3 } }] }]
+    })
+    const tl = scoreTimeline(events, 1)
+    const plan = planAddSanction(events, { setIndex: 1, team: 'home', type: 'penalty', target: { playerType: 'bench', playerNumber: 3 }, at: idxOf(tl, 11, 9) }, review)
+    expect(plan.error).toBeUndefined()
+    expect(plan.notes.find(n => n.key === 'corrections.note.lighterSanction')?.text).toBe('This person already had a heavier sanction (each further sanction must be heavier).')
+  })
+
   it('an improper request explains the paper box', () => {
     const { events } = fixture()
     const plan = planAddSanction(events, { setIndex: 1, team: 'away', type: 'improper_request', at: 3 }, review)

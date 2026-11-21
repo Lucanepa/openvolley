@@ -71,7 +71,7 @@ import { breakSecondsAfter, hasLongIntervalAfterSet2, isLongInterval, retimedBre
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getToolMode } from '../utils/toolMode'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from '../domain/rules'
-import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction } from '../domain/sanctions'
+import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction, memberSanctionOptions } from '../domain/sanctions'
 import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
@@ -12113,24 +12113,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setSanctionConfirmModal(null)
   }, [])
 
-  // Check if a player has a specific sanction type
-  const playerHasSanctionType = useCallback((teamKey, playerNumber, sanctionType) => {
-    if (!data?.events) return false
-
-    const hasSanction = data.events.some(e => {
-      const isSanction = e.type === 'sanction'
-      const teamMatch = e.payload?.team === teamKey
-      const playerMatch = e.payload?.playerNumber === playerNumber ||
-        String(e.payload?.playerNumber) === String(playerNumber) ||
-        Number(e.payload?.playerNumber) === Number(playerNumber)
-      const typeMatch = e.payload?.type === sanctionType
-
-      return isSanction && teamMatch && playerMatch && typeMatch
-    })
-
-    return hasSanction
-  }, [data?.events])
-
   // Get player's current highest sanction
   const getPlayerSanctionLevel = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return null
@@ -12214,16 +12196,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     const { team, type, playerNumber, position, role, sanctionType } = sanctionConfirmModal
 
-    // Validate that we're not giving the same sanction type again: a player
-    // or a team official (by role), the domain rule recompute and the manual
-    // corrections use too (validateMemberSanction)
+    // Validate the sanction for this member: a player or a team official (by
+    // role), the domain rule recompute and the manual corrections use too
+    // (validateMemberSanction)
     if (playerNumber || role) {
       const check = validateMemberSanction(data.events, { team, playerNumber, role, type: sanctionType })
+      const who = playerNumber ? t('scoreboard.dialogs.playerNumber', { defaultValue: 'Player {{number}}', number: playerNumber }) : role
 
       // Prevent giving the same sanction type again
       if (check.reason === 'sameSanctionTwice') {
-        const who = playerNumber ? t('scoreboard.dialogs.playerNumber', { defaultValue: 'Player {{number}}', number: playerNumber }) : role
         deferUi(() => showAlert(t('scoreboard.dialogs.sameSanctionTwice', { defaultValue: '{{who}} already has this sanction ({{sanction}}). A team member cannot receive the same sanction type twice.', who, sanction: t(`scoreboard.sanctions.${sanctionType}`, sanctionType) }), 'warning'))
+        deferUi(() => setSanctionConfirmModal(null))
+        return
+      }
+
+      // Never lighter than the member's heaviest earlier sanction (FIVB 21.4.2)
+      if (check.reason === 'lighterSanction') {
+        deferUi(() => showAlert(t('scoreboard.dialogs.lighterSanction', { defaultValue: '{{who}} already has a heavier sanction ({{sanction}}). Each further sanction of a team member must be heavier.', who, sanction: t(`scoreboard.sanctions.${check.heaviest}`, check.heaviest) }), 'warning'))
         deferUi(() => setSanctionConfirmModal(null))
         return
       }
@@ -12597,7 +12586,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
     }
-  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey, easyNewSubstituteOpen])
+  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey, easyNewSubstituteOpen])
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
@@ -20569,14 +20558,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const playerForMenu = (teamPlayersForMenu || []).find(p => String(p.number) === String(playerNumber))
         const playerNameForMenu = playerForMenu ? [playerForMenu.firstName, playerForMenu.lastName].filter(Boolean).join(' ') : ''
 
-        // Get sanction availability
-        const teamWarning = teamHasFormalWarning(team)
-        const hasWarning = playerHasSanctionType(team, playerNumber, 'warning')
-        const hasPenalty = playerHasSanctionType(team, playerNumber, 'penalty')
-        const hasExpulsion = playerHasSanctionType(team, playerNumber, 'expulsion')
-        const canGetWarning = !hasWarning && !teamWarning
-        const canGetPenalty = !hasPenalty
-        const canGetExpulsion = !hasExpulsion
+        // The sanctions this player may get now: never the same type twice,
+        // never lighter than an earlier one (FIVB 21.4.2), one warning per
+        // team (domain/sanctions)
+        const sanctionOptions = memberSanctionOptions(data?.events, { team, playerNumber })
+        const canGetWarning = sanctionOptions.warning.legal
+        const canGetPenalty = sanctionOptions.penalty.legal
+        const canGetExpulsion = sanctionOptions.expulsion.legal
+        const canGetDisqualification = sanctionOptions.disqualification.legal
 
         const showSanctionConfirmFromMenu = (sanctionType) => {
           setPlayerActionMenu(null)
@@ -20875,7 +20864,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromMenu('expulsion')} disabled={!canGetExpulsion}>
                         {t('scoreboard.sanctions.expulsion')}
                       </SbMenuItem>
-                      <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromMenu('disqualification')}>
+                      <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromMenu('disqualification')} disabled={!canGetDisqualification}>
                         {t('scoreboard.sanctions.disqualification')}
                       </SbMenuItem>
                     </div>
@@ -21349,29 +21338,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {(() => {
                     const teamKey = sanctionDropdown.team
                     const playerNumber = sanctionDropdown.playerNumber
-                    const teamWarning = teamHasFormalWarning(teamKey)
 
-                    // Check if the player, or the team official (by role), has
-                    // each specific sanction type (for back-sanctioning rules;
-                    // domain/sanctions validateMemberSanction)
-                    const hasType = (type) => (playerNumber || sanctionDropdown.role)
-                      ? validateMemberSanction(data?.events, { team: teamKey, playerNumber, role: sanctionDropdown.role, type }).reason === 'sameSanctionTwice'
-                      : false
-                    const hasWarning = hasType('warning')
-                    const hasPenalty = hasType('penalty')
-                    const hasExpulsion = hasType('expulsion')
-                    const hasDisqualification = hasType('disqualification')
-
-                    // Determine which sanctions are available
-                    // Rule: A player cannot get the same sanction type twice
-                    // Exception: Warning can only be given if team hasn't been warned (player can have other sanctions)
-                    const canGetWarning = !hasWarning && !teamWarning
-                    // Penalty: can be given if player doesn't already have a penalty (back-sanctioning allowed)
-                    const canGetPenalty = !hasPenalty
-                    // Expulsion: can be given if player doesn't already have an expulsion (back-sanctioning allowed)
-                    const canGetExpulsion = !hasExpulsion
-                    // Disqualification: can be given if player doesn't already have a disqualification (back-sanctioning allowed)
-                    const canGetDisqualification = !hasDisqualification
+                    // The sanctions this player or team official (by role) may
+                    // get now: never the same type twice, never lighter than
+                    // an earlier one (FIVB 21.4.2), one warning per team
+                    // (domain/sanctions)
+                    const sanctionOptions = (playerNumber || sanctionDropdown.role)
+                      ? memberSanctionOptions(data?.events, { team: teamKey, playerNumber, role: sanctionDropdown.role })
+                      : null
+                    const canGetWarning = sanctionOptions ? sanctionOptions.warning.legal : !teamHasFormalWarning(teamKey)
+                    const canGetPenalty = sanctionOptions ? sanctionOptions.penalty.legal : true
+                    const canGetExpulsion = sanctionOptions ? sanctionOptions.expulsion.legal : true
+                    const canGetDisqualification = sanctionOptions ? sanctionOptions.disqualification.legal : true
 
                     return (
                       <>
@@ -21387,8 +21365,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirm('expulsion')} disabled={!canGetExpulsion}>
                           {t('scoreboard.sanctions.expulsion')}{!canGetExpulsion && ` (${t('scoreboard.playerMenu.alreadySanctioned')})`}
                         </SbMenuItem>
-                        <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirm('disqualification')}>
-                          {t('scoreboard.sanctions.disqualification')}
+                        <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirm('disqualification')} disabled={!canGetDisqualification}>
+                          {t('scoreboard.sanctions.disqualification')}{!canGetDisqualification && ` (${t('scoreboard.playerMenu.alreadySanctioned')})`}
                         </SbMenuItem>
                       </>
                     )
@@ -21561,14 +21539,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
                 {/* Sanction - expandable */}
                 {(() => {
-                  // Get sanction availability for bench player
-                  const teamWarning = teamHasFormalWarning(team)
-                  const hasWarning = playerHasSanctionType(team, playerNumber, 'warning')
-                  const hasPenalty = playerHasSanctionType(team, playerNumber, 'penalty')
-                  const hasExpulsion = playerHasSanctionType(team, playerNumber, 'expulsion')
-                  const canGetWarning = !hasWarning && !teamWarning
-                  const canGetPenalty = !hasPenalty
-                  const canGetExpulsion = !hasExpulsion
+                  // The sanctions this bench player may get now: never the
+                  // same type twice, never lighter than an earlier one (FIVB
+                  // 21.4.2), one warning per team (domain/sanctions)
+                  const sanctionOptions = memberSanctionOptions(data?.events, { team, playerNumber })
+                  const canGetWarning = sanctionOptions.warning.legal
+                  const canGetPenalty = sanctionOptions.penalty.legal
+                  const canGetExpulsion = sanctionOptions.expulsion.legal
+                  const canGetDisqualification = sanctionOptions.disqualification.legal
 
                   const showSanctionConfirmFromBenchMenu = (sanctionType) => {
                     setBenchPlayerActionMenu(null)
@@ -21601,7 +21579,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromBenchMenu('expulsion')} disabled={!canGetExpulsion}>
                             {t('scoreboard.sanctions.expulsion')}
                           </SbMenuItem>
-                          <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromBenchMenu('disqualification')}>
+                          <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromBenchMenu('disqualification')} disabled={!canGetDisqualification}>
                             {t('scoreboard.sanctions.disqualification')}
                           </SbMenuItem>
                         </div>
