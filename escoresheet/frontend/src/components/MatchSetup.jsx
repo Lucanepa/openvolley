@@ -51,7 +51,6 @@ import { sheetInputsToMatchInfo } from '../domain/sheetInputs'
 import LongIntervalSwitch from './LongIntervalSwitch'
 import { useSponsorsOption } from '../hooks/useSponsorsOption'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
-import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
 import { isShirtNumber, shirtNumberDigits, recordNumbersMissingFrom } from '../domain/roster'
 import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
@@ -78,7 +77,7 @@ import { addClubPlayersToRoster, applyClubFill, benchOfficialOfRole, benchRolesO
 import ClubShield from './manage/ClubShield'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
-import { Users, Save as SaveIcon, Trash2, ListChecks, UserPlus, RefreshCw } from 'lucide-react'
+import { Users, Trash2, ListChecks, UserPlus, RefreshCw } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
@@ -924,7 +923,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // suggestions for a schedule game, and the official-game claim of another
   // scorer (spec 6.5)
   const [savedPicker, setSavedPicker] = useState(null) // 'home' | 'away' | null
-  const [saveToTeam, setSaveToTeam] = useState(null) // 'home' | 'away' | null
   const [savedSuggestion, setSavedSuggestion] = useState(null) // { home, away } | null
   // "Choose the players" (domain/playerPool): { side, pool, teamLabel,
   // savedTeam, summary } | null; and, after a schedule load, how many players
@@ -4891,11 +4889,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     {t('clubPlayers.add')}
                   </Button>
                 )}
-                {access?.canManageTeams && isNavigatorOnline() && !guestMatch && (
-                  <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('home')}>
-                    {t('savedTeams.saveToTeam')}
-                  </Button>
-                )}
           </div>
         </div>
         {/* db/023: the roster the team sent ahead (the device's copy) */}
@@ -5925,16 +5918,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           bench={benchHome}
           teamLabel={home || t('matchSetup.homeTeam')}
         />
-        <SaveRosterToTeamModal
-          open={saveToTeam === 'home'}
-          onClose={() => setSaveToTeam(null)}
-          userId={user?.id ?? null}
-          access={access}
-          roster={homeRoster}
-          bench={benchHome}
-          meta={{ name: home || '', shortName: homeShortName || '', color: homeColor }}
-          suggestedTeamId={savedSuggestion?.home?.id || null}
-        />
 
         {/* SignaturePad for home team view */}
         <SignaturePad
@@ -5995,11 +5978,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {clubTeams.away && !guestMatch && (
                   <Button variant="secondary" size="xl" icon={<UserPlus size={16} aria-hidden />} onClick={() => setClubPicker('away')} data-testid="add-from-club-away">
                     {t('clubPlayers.add')}
-                  </Button>
-                )}
-                {access?.canManageTeams && isNavigatorOnline() && !guestMatch && (
-                  <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('away')}>
-                    {t('savedTeams.saveToTeam')}
                   </Button>
                 )}
           </div>
@@ -7035,16 +7013,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           roster={awayRoster}
           bench={benchAway}
           teamLabel={away || t('matchSetup.awayTeam')}
-        />
-        <SaveRosterToTeamModal
-          open={saveToTeam === 'away'}
-          onClose={() => setSaveToTeam(null)}
-          userId={user?.id ?? null}
-          access={access}
-          roster={awayRoster}
-          bench={benchAway}
-          meta={{ name: away || '', shortName: awayShortName || '', color: awayColor }}
-          suggestedTeamId={savedSuggestion?.away?.id || null}
         />
 
         {/* SignaturePad for away team view */}
