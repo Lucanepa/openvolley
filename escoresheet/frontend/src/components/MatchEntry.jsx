@@ -239,13 +239,15 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // a set's override, odd sets A left / even sets A right, set 5 its coin toss
   // and the change of courts at 8). It had A on the right in every set from 2
   // to 4 (set 3 is A's left) and read no override.
+  // Between two sets the coming set's side, as on the scorer's court (it fell
+  // back to the left).
   const teamSide = useMemo(() => {
-    if (!data?.set || !data?.match) return 'left'
+    if (!data?.match) return 'left'
     const teamAKey = data.match.coinTossTeamA || 'home'
-    const sideA = getSideAForSet(data.set.index, data.match)
+    const sideA = getSideAForSet(data.set?.index ?? benchSetIndex(data.allSets, data.liveState), data.match)
     const isTeamA = team === teamAKey
     return isTeamA ? sideA : (sideA === 'left' ? 'right' : 'left')
-  }, [data?.set, data?.match, team])
+  }, [data?.set, data?.allSets, data?.liveState, data?.match, team])
 
   // Get team info
   const teamInfo = useMemo(() => {
@@ -462,28 +464,44 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     return lastPoint.payload?.team === team
   }, [data?.events, data?.set, data?.match, team])
 
+  // The set whose line-up the court and the bench rows show: the one under
+  // way. In the interval between two sets none is (the next line-up creates
+  // it): the court is empty and every player is on the bench row, as the
+  // scorer and the referee show it. The bench row was empty then, as if
+  // nobody had played (full-match test 2026-11-21).
+  const courtSetIndex = data?.set?.index ?? null
+
+  // The team's newest line-up of that set (null: none yet)
+  const courtLineupEvent = useMemo(() => {
+    if (!data?.events || courtSetIndex == null) return null
+    const lineupEvents = data.events
+      .filter(e => e.type === 'lineup' && e.setIndex === courtSetIndex && e.payload?.team === team)
+      .sort(newestFirst)
+    return lineupEvents[0] || null
+  }, [data?.events, courtSetIndex, team])
+
+  // The shirt numbers on the court in it
+  const onCourtNumbers = useMemo(() => {
+    const numbers = new Set()
+    const lineup = courtLineupEvent?.payload?.lineup
+    if (lineup && typeof lineup === 'object') {
+      Object.values(lineup).forEach(posData => {
+        // Handle both rich format (object with number) and legacy format (just number)
+        const num = posData && typeof posData === 'object' && posData.number !== undefined
+          ? posData.number
+          : posData
+        if (num) numbers.add(Number(num))
+      })
+    }
+    return numbers
+  }, [courtLineupEvent])
+
   // Get players on court
   const playersOnCourt = useMemo(() => {
-    if (!data?.events || !data?.set) {
-      // Return empty placeholders if no set data
-      return ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => ({
-        number: null,
-        position: pos,
-        isCaptain: false,
-        isLibero: false,
-        liberoType: null
-      }))
-    }
-    
-    // Get lineup events for current set
-    const lineupEvents = data.events
-      .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
-      .sort(newestFirst)
-    
     const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-    
-    // If no lineup events, return empty placeholders
-    if (lineupEvents.length === 0) {
+
+    // No line-up yet: empty placeholders
+    if (!courtLineupEvent) {
       return positions.map(pos => ({
         number: null,
         position: pos,
@@ -492,8 +510,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         liberoType: null
       }))
     }
-    
-    const latestLineupEvent = lineupEvents[0]
+
+    const latestLineupEvent = courtLineupEvent
     const latestLineup = latestLineupEvent?.payload?.lineup
     
     // Lineup is stored as an object { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 }
@@ -554,7 +572,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     })
     
     return players
-  }, [data?.events, data?.set, team, teamInfo])
+  }, [courtLineupEvent, teamInfo])
 
   // Get player sanctions. The scorer stores the number as text ("7", from
   // the court disc), the roster and the line-up as a number: compare as text,
@@ -580,35 +598,17 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     )
   }, [data?.events, team])
 
-  // Get bench players (players not on court, excluding liberos)
+  // Get bench players (players not on court, excluding liberos; all of
+  // them before the set's line-up and between two sets)
   const benchPlayersWithSanctions = useMemo(() => {
-    if (!teamInfo?.players || !data?.events || !data?.set) return []
-    
-    // Get players currently on court
-    const lineupEvents = data.events
-      .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
-      .sort(newestFirst)
-    
-    const playersOnCourtSet = new Set()
-    if (lineupEvents.length > 0) {
-      const latestLineup = lineupEvents[0].payload?.lineup
-      if (latestLineup && typeof latestLineup === 'object') {
-        Object.values(latestLineup).forEach(posData => {
-          // Handle both rich format (object with number) and legacy format (just number)
-          const num = posData && typeof posData === 'object' && posData.number !== undefined
-            ? posData.number
-            : posData
-          if (num) playersOnCourtSet.add(Number(num))
-        })
-      }
-    }
+    if (!teamInfo?.players) return []
 
     // Get bench players: all players not on court, excluding liberos
     const benchPlayers = teamInfo.players
       .filter(p => {
         const playerNumber = Number(p.number)
         if (Number.isNaN(playerNumber)) return false
-        if (playersOnCourtSet.has(playerNumber)) return false
+        if (onCourtNumbers.has(playerNumber)) return false
         if (p.libero && p.libero !== '') return false // Exclude liberos
         
         // Filter out players who were exceptionally substituted
@@ -634,30 +634,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       .sort((a, b) => (a.number || 0) - (b.number || 0))
     
     return benchPlayers
-  }, [teamInfo, data?.events, data?.set, team, getPlayerSanctions])
+  }, [teamInfo, onCourtNumbers, data?.events, team, getPlayerSanctions])
 
   // Get liberos (not currently on court)
   const benchLiberos = useMemo(() => {
-    if (!teamInfo?.players || !data?.events || !data?.set) return []
-
-    // Get players currently on court
-    const lineupEvents = data.events
-      .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
-      .sort(newestFirst)
-
-    const playersOnCourtSet = new Set()
-    if (lineupEvents.length > 0) {
-      const latestLineup = lineupEvents[0].payload?.lineup
-      if (latestLineup && typeof latestLineup === 'object') {
-        Object.values(latestLineup).forEach(posData => {
-          // Handle both rich format (object with number) and legacy format (just number)
-          const num = posData && typeof posData === 'object' && posData.number !== undefined
-            ? posData.number
-            : posData
-          if (num) playersOnCourtSet.add(Number(num))
-        })
-      }
-    }
+    if (!teamInfo?.players) return []
 
     // Get liberos not on court
     const liberos = teamInfo.players
@@ -665,7 +646,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         const playerNumber = Number(p.number)
         if (Number.isNaN(playerNumber)) return false
         if (!p.libero || p.libero === '') return false
-        if (playersOnCourtSet.has(playerNumber)) return false
+        if (onCourtNumbers.has(playerNumber)) return false
         return true
       })
       .map(p => {
@@ -687,7 +668,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       })
     
     return liberos
-  }, [teamInfo, data?.events, data?.set, team, getPlayerSanctions])
+  }, [teamInfo, onCourtNumbers, getPlayerSanctions])
 
   // Get bench officials
   const benchOfficials = useMemo(() => {

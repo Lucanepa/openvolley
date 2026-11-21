@@ -4,7 +4,8 @@ import { render, waitFor, cleanup } from '@testing-library/react'
 // The bench's sanctions box (full-match test 2026-11-21, 26.11.2):
 // - a coach's warning was listed twice ("Coach, Coach"): once by the
 //   officials row, once more as a team sanction;
-// - in the interval between two sets (no set under way) it said "None";
+// - in the interval between two sets (no set under way) it said "None" and
+//   the bench row was empty;
 // - a player an exceptional substitution took off the court (home #11,
 //   expelled with no legal substitute) lost his sanction, which the referee
 //   still showed.
@@ -117,5 +118,45 @@ describe('bench sanctions box: each sanction once', () => {
     })
     const { container } = await renderBench()
     await waitFor(() => expect(listOf(container).length).toBe(1))
+  })
+})
+
+describe('bench sanctions box and rows: the interval between two sets', () => {
+  beforeEach(() => { cleanup(); bundle = null; seq = 0 })
+
+  it('keeps the sanctions and the bench players while no set is under way', async () => {
+    bundle = benchBundle({
+      // set 1 over, set 2 not created yet (its line-up creates it)
+      sets: [{ index: 1, homePoints: 25, awayPoints: 20, finished: true }],
+      events: [
+        lineup('home', 1, home1),
+        sanction('home', 1, { type: 'warning', playerType: 'official', role: 'Coach' }),
+        sanction('home', 1, { type: 'penalty', playerType: 'player', playerNumber: 14, position: 'III' })
+      ],
+      match: { status: 'interval' }
+    })
+    bundle.liveState = { current_set: 2, set_interval_active: true, match_status: 'interval' }
+    const { container, queryByText } = await renderBench()
+    await waitFor(() => expect(listOf(container).length).toBe(2))
+    expect(listOf(container)).toEqual([['warning', 'Coach'], ['penalty', '#14']])
+    expect(queryByText('None')).toBeNull()
+    // no line-up yet: an empty court and every player on the bench row, as
+    // the scorer and the referee show the interval; #14 with his card
+    await waitFor(() => expect(rowText(container, 'players')).toContain('#14'))
+    for (const n of [1, 7, 10, 11, 12, 88, 99]) expect(rowText(container, 'players')).toContain(`#${n}`)
+    const chip14 = [...container.querySelectorAll('[data-bench-row="players"] div')].find(d => d.textContent === '#14')
+    expect(chip14.querySelector('[data-card-glyph="penalty"]')).not.toBeNull()
+    expect(rowText(container, 'officials')).toContain('C')
+    expect([...container.querySelectorAll('.court-player')].map(d => d.textContent.replace(/[IV]+/, '')).join('')).toBe('——————')
+    // the coming set's side: team A (home) on the right in set 2
+    expect(container.querySelector('.court-side').classList.contains('court-side-right')).toBe(true)
+  })
+
+  it('before the first set: no set at all, every player on the bench row', async () => {
+    bundle = benchBundle({ sets: [], events: [] })
+    const { container, getByText } = await renderBench()
+    await waitFor(() => expect(rowText(container, 'players')).toContain('#11'))
+    for (const n of [1, 7, 10, 11, 12, 14, 88, 99]) expect(rowText(container, 'players')).toContain(`#${n}`)
+    expect(getByText('None')).toBeInTheDocument()
   })
 })
