@@ -137,7 +137,7 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     render(<ManagerApp />)
     expect(screen.getByTestId('manage-console')).toBeInTheDocument()
     expect(railButtons().map(b => b.textContent)).toEqual([
-      'manage.tabs.accounts', 'manage.tabs.invites', 'manage.tabs.clubs', 'manage.tabs.games',
+      'manage.tabs.accounts', 'manage.accounts.filterPending', 'manage.accounts.filterAll', 'manage.tabs.invites', 'manage.tabs.clubs', 'manage.tabs.games',
       'manage.tabs.matches', 'manage.tabs.scoresheets', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams', 'manage.tabs.settings'
     ])
     expect(screen.queryByRole('button', { name: 'manage.backToApp' })).toBeNull()
@@ -174,7 +174,7 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     window.history.replaceState(null, '', '/#no-such-tab')
     setAuth({ roles: ['admin'] })
     render(<ManagerApp />)
-    expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.tabs.accounts')
+    expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.accounts.filterPending')
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 
@@ -182,7 +182,7 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     window.history.replaceState(null, '', '/#accounts')
     setAuth({ roles: ['competition_manager'] })
     render(<ManagerApp />)
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.settings'])
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.matches.filterAll', 'manage.matches.filterClosed', 'manage.matches.filterOpen', 'manage.tabs.teams', 'manage.tabs.settings'])
     await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
     expect(api.admin.listAccounts).not.toHaveBeenCalled()
   })
@@ -287,7 +287,7 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     render(<ManagerApp />)
     expect(screen.getByTestId('manage-console')).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe(''))
-    expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.tabs.accounts')
+    expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.accounts.filterPending')
   })
 
   it('signed in but roles not known yet: loading, then a retry that re-reads the profile', async () => {
