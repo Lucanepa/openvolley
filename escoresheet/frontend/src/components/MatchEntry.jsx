@@ -956,8 +956,6 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       background: embedded ? 'transparent' : 'var(--bg)',
       color: 'var(--ov-text)',
       padding: 'clamp(8px, 1.6vw, 16px)',
-      // the test match's badge (bottom right, fixed) never covers the bench row
-      paddingBottom: isTest ? '56px' : 'clamp(8px, 1.6vw, 16px)',
       display: 'flex',
       flexDirection: 'column',
       flex: embedded ? '1 0 auto' : 'none',
@@ -1260,17 +1258,20 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         )}
       </section>
 
-      {/* Test Mode Controls - only shown in test mode */}
+      {/* Test Mode Controls - only shown in test mode. The badge in the
+          page's own flow under the bench rows: floating over the bottom right
+          corner it covered the last officials chip on a 360 x 740 phone (the
+          page scrolls there, so no bottom padding kept it clear) */}
       {isTest && (
         <TestModeControls
           matchId={matchId}
+          inline
+          style={{ alignSelf: 'flex-end' }}
           onRefresh={() => {
             if (matchId && matchId !== -1) {
-              getMatchData(matchId).then(result => {
-                if (result.success) {
-                  setData(result)
-                }
-              })
+              // the bundle as the live updates read it (it set the raw
+              // bundle: no current set, no sorted events)
+              getMatchData(matchId).then(updateFromMatchData)
             }
           }}
         />
