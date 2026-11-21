@@ -3511,6 +3511,17 @@
     "checkTheMatch": "Spiel vor der Bestätigung prüfen:",
     "remarksClipped": "BEMERKUNGEN: Der Text passt nicht ins Feld; das PDF druckt ihn vollständig auf Seite 2."
   },
+  "setPreview": {
+    "menu": "Satzvorschau",
+    "title": "Satzvorschau",
+    "description": "Der Satz, wie er auf dem Matchblatt gedruckt wird. Er wird bei jedem Ballwechsel aktualisiert.",
+    "sets": "Sätze",
+    "setTab": "Satz {{n}}",
+    "zoomOut": "Verkleinern",
+    "zoomIn": "Vergrössern",
+    "fit": "An Breite anpassen",
+    "loading": "Satzvorschau wird geladen..."
+  },
   "scoresheetSite": {
     "archiveTitle": "Archiv der Matchblätter",
     "listTitle": "Matchblätter",
