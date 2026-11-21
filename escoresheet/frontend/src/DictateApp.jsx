@@ -25,11 +25,13 @@ const LOGO = '/openvolley_logo.png'
 // from Cloudflare's edge cache (max-age 1 day)
 const MEDIA = 'https://openvolley-media.openvolley.app/dictate'
 
-// The dictation's teams as its videos, step lists and result sheet name them
-// (Swiss Volley's script: ZÜRICH and LUZERN). The test match plays them as the
-// made-up VBC Musterau (MUS, home) and VC Beispielstadt (BSP, away): the
-// "Before you start" lines say so. New videos with the test match's names
-// come from ~/ov-ops/diktat-video (cards*.json, render.py) and a UI replay.
+// The dictation's teams as its videos and step lists name them (Swiss Volley's
+// script: ZÜRICH and LUZERN). The test match plays them as the made-up
+// VBC Musterau (MUS, home) and VC Beispielstadt (BSP, away): the "Before you
+// start" lines say so, and the result sheets and how-to pictures (regenerated
+// 20.11.2026 from a UI replay, ~/ov-ops/diktat-video/driver) show those names.
+// New videos with the test match's names would come from ~/ov-ops/diktat-video
+// (cards*.json, render.py).
 const TEAM = { ZUR: 'ZÜRICH', LUZ: 'LUZERN' }
 const TEAM_COLOUR = { ZUR: '#3b82f6', LUZ: '#dc2626' } // the test match's team colours (testSeeds.js)
 const SETS = [[13, 25], [27, 25], [25, 13], [23, 25], [18, 16]]

@@ -118,7 +118,11 @@ describe('activity log', () => {
     expect(rows[3].data).toEqual({ role: 'homeCoach', signed: true })
     expect(rows[4].data).toEqual({ category: 'player', field: 'dob', before: 'changed', after: 'changed' })
     expect(rows[5].data).toEqual({ team: 'home', number: 7, op: 'add' })
-    expect(JSON.stringify(rows)).not.toMatch(/data:image|2000/)
+    // the signature and the three dates must not reach the log; match the dates themselves
+    // (a bare /2000/ also matched random ids and timestamps that happen to contain 2000)
+    const logged = JSON.stringify(rows)
+    expect(logged).not.toMatch(/data:image/)
+    for (const date of ['1.1.2000', '2.1.2000', '01.01.2000']) expect(logged).not.toContain(date)
   })
 
   // UI tour 14.11: after Close match the log said "Set removed set 1 25:2 /
