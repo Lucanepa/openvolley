@@ -95,6 +95,7 @@ export const ERROR_DEFAULTS = {
   setNotFinished: 'Set {{set}} is not finished.',
   ladder: 'By the rules this is a {{expected}} (the team\'s earlier sanctions).',
   sameSanctionTwice: 'This person already has this sanction.',
+  lighterSanction: 'This person already has a heavier sanction: each further sanction must be heavier.',
   teamAlreadyWarned: 'The team has already been warned: only one warning per team per match.',
   chooseTarget: 'Choose who was sanctioned.',
   readOnlyApproved: 'The match is approved. Reopen it for corrections first.',
@@ -125,6 +126,7 @@ export const ERROR_DEFAULTS = {
 export const NOTE_DEFAULTS = {
   ladder: 'By the rules this would have been a {{expected}}; recorded as the referee decided.',
   sameSanctionTwice: 'This person already has this sanction.',
+  lighterSanction: 'This person already had a heavier sanction (each further sanction must be heavier).',
   teamAlreadyWarned: 'The team had already been warned (only one warning per team per match).',
   circledPoint: '{{team}}\'s point at {{score}} becomes the circled penalty point.',
   pointNow: 'The point for {{team}} is added after the sanction.',

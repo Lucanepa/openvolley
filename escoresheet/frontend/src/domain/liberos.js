@@ -9,6 +9,8 @@
  * libero's new position, so it is matched by libero NUMBER, never by position.
  */
 
+import { playersAvailableForNextSet } from './matchEnd'
+
 const same = (a, b) => a != null && b != null && String(a) === String(b)
 const bySeqDesc = (a, b) => (b.seq || 0) - (a.seq || 0)
 const asNumber = (n) => (n == null || n === '' ? null : (Number.isNaN(Number(n)) ? n : Number(n)))
@@ -41,4 +43,38 @@ export function playerReplacedByLibero(events, teamKey, setIndex, liberoNumber) 
   if (!replacement) return null
   const replaced = replacement.type === 'libero_entry' ? replacement.payload.playerOut : replacement.payload.playerNumber
   return asNumber(replaced)
+}
+
+/**
+ * The players a team may re-designate as its libero once it has no libero
+ * left (FIVB 19.4.2.3-19.4.2.4; the scorer's "Libero re-designation" list):
+ * roster players who are
+ *  - not on court at the moment of the re-designation,
+ *  - no libero (original, re-designated or unable) and not re-designated
+ *    before, nor the libero who became unable,
+ *  - still allowed to play in the match: not disqualified and not taken out
+ *    by a disqualification substitution or an exceptional substitution of an
+ *    injured player (FIVB 15.7, 21.3.3), the rule the next set's line-up
+ *    follows (playersAvailableForNextSet).
+ * A player expelled in the set being played stays on the list: he plays
+ * again next set (21.3.2) and is not offered as libero before then (whether
+ * he may be re-designated during that set is an open owner decision).
+ * @param {Array} players the team's roster
+ * @param {Array} events all events of the match
+ * @param {'home'|'away'} teamKey
+ * @param {{onCourt?: Array, unableLiberoNumber?: number|string|null}} [opts]
+ *   onCourt: the shirt numbers on court now
+ * @returns {Array} the roster entries that may be chosen
+ */
+export function playersForLiberoRedesignation(players, events, teamKey, { onCourt = [], unableLiberoNumber = null } = {}) {
+  const key = (n) => (n == null || n === '' || Number.isNaN(Number(n)) ? null : String(Number(n)))
+  const court = new Set((onCourt || []).map(key))
+  const redesignated = new Set((events || [])
+    .filter(e => e?.type === 'libero_redesignation' && e.payload?.team === teamKey)
+    .map(e => key(e.payload?.newLiberoNumber)))
+  const unable = key(unableLiberoNumber)
+  return playersAvailableForNextSet(players, events, teamKey).filter(p => {
+    const n = key(p.number)
+    return n !== null && !court.has(n) && !redesignated.has(n) && n !== unable
+  })
 }

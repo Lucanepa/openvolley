@@ -152,27 +152,77 @@ export function deferredPenaltyPoints(events, setIndex) {
 const hasNumber = (n) => n !== undefined && n !== null && n !== '' && n !== '?'
 
 /**
- * Misconduct checks for one team member (player or official), the same two
- * rules the live sanction flow applies (Scoreboard confirmSanctionAction):
+ * The misconduct sanctions of a team member, lightest first: the sanctioning
+ * scale (FIVB 21.3). Delays and improper requests are team sanctions and
+ * have their own ladder (resolveSanction).
+ */
+export const MEMBER_SANCTION_SCALE = ['warning', 'penalty', 'expulsion', 'disqualification']
+
+const scaleLevel = (type) => MEMBER_SANCTION_SCALE.indexOf(type)
+
+/** The member's misconduct sanctions among the events: a player by number, an official by role. */
+function memberSanctions(events, { team, playerNumber, role } = {}) {
+  const sameMember = (e) => hasNumber(playerNumber)
+    ? String(e.payload?.playerNumber) === String(playerNumber)
+    : (!!role && e.payload?.role === role && !hasNumber(e.payload?.playerNumber))
+  return (events || []).filter(e => e?.type === 'sanction' && e.payload?.team === team && sameMember(e))
+}
+
+/**
+ * The heaviest misconduct sanction a team member (player, libero or bench
+ * official) has in the match, or null.
+ * @param {Array} events
+ * @param {{team:'home'|'away', playerNumber?:any, role?:string}} member
+ * @returns {'warning'|'penalty'|'expulsion'|'disqualification'|null}
+ */
+export function heaviestMemberSanction(events, member) {
+  let level = -1
+  for (const e of memberSanctions(events, member)) level = Math.max(level, scaleLevel(e.payload?.type))
+  return level >= 0 ? MEMBER_SANCTION_SCALE[level] : null
+}
+
+/**
+ * Misconduct checks for one team member (player, libero or official), the
+ * rules the live sanction flow applies (Scoreboard confirmPlayerSanction and
+ * its sanction menus):
  *  - a member cannot receive the same sanction type twice in the match;
+ *  - repeated misconduct of the same member in the match is sanctioned
+ *    progressively (FIVB 21.4.2): a member's next sanction must be heavier
+ *    than his heaviest earlier one (warning < penalty < expulsion <
+ *    disqualification; an expulsion or disqualification needs no earlier
+ *    sanction, 21.4.3);
  *  - a (formal) warning cannot be given once the team has been warned —
  *    only one warning per team per match (FIVB 21.1 / 21.3.1).
  * Delays and improper requests are team sanctions and are not checked here
  * (resolveSanction does).
  * @param {Array} priorEvents events BEFORE the sanction (any set of the match)
  * @param {{team:'home'|'away', playerNumber?:any, role?:string, type:string}} sanction
- * @returns {{legal:boolean, reason?:'sameSanctionTwice'|'teamAlreadyWarned'}}
+ * @returns {{legal:boolean, reason?:'sameSanctionTwice'|'lighterSanction'|'teamAlreadyWarned', heaviest?:string}}
+ *   heaviest: with 'lighterSanction', the member's heaviest earlier sanction
  */
 export function validateMemberSanction(priorEvents, { team, playerNumber, role, type } = {}) {
-  const sanctions = (priorEvents || []).filter(e => e?.type === 'sanction' && e.payload?.team === team)
-  const sameMember = (e) => hasNumber(playerNumber)
-    ? String(e.payload?.playerNumber) === String(playerNumber)
-    : (!!role && e.payload?.role === role && !hasNumber(e.payload?.playerNumber))
-  if (sanctions.some(e => sameMember(e) && e.payload?.type === type)) {
+  const own = memberSanctions(priorEvents, { team, playerNumber, role })
+  if (own.some(e => e.payload?.type === type)) {
     return { legal: false, reason: 'sameSanctionTwice' }
   }
-  if (type === 'warning' && sanctions.some(e => e.payload?.type === 'warning')) {
+  const heaviest = heaviestMemberSanction(own, { team, playerNumber, role })
+  if (heaviest && scaleLevel(type) >= 0 && scaleLevel(type) < scaleLevel(heaviest)) {
+    return { legal: false, reason: 'lighterSanction', heaviest }
+  }
+  if (type === 'warning' && (priorEvents || []).some(e => e?.type === 'sanction' && e.payload?.team === team && e.payload?.type === 'warning')) {
     return { legal: false, reason: 'teamAlreadyWarned' }
   }
   return { legal: true }
+}
+
+/**
+ * The misconduct sanctions the scorer's menus offer a team member now, in
+ * scale order, each with validateMemberSanction's verdict: the court
+ * player, bench player and sanction menus (the phone's too) all read it.
+ * @param {Array} events all events of the match so far
+ * @param {{team:'home'|'away', playerNumber?:any, role?:string}} member
+ * @returns {Record<'warning'|'penalty'|'expulsion'|'disqualification', {legal:boolean, reason?:string}>}
+ */
+export function memberSanctionOptions(events, member) {
+  return Object.fromEntries(MEMBER_SANCTION_SCALE.map(type => [type, validateMemberSanction(events, { ...member, type })]))
 }

@@ -72,7 +72,7 @@ import { breakSecondsAfter, hasLongIntervalAfterSet2, isLongInterval, retimedBre
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getToolMode } from '../utils/toolMode'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from '../domain/rules'
-import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction } from '../domain/sanctions'
+import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction, memberSanctionOptions } from '../domain/sanctions'
 import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
@@ -83,7 +83,7 @@ import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice
 import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
-import { playerReplacedByLibero } from '../domain/liberos'
+import { playerReplacedByLibero, playersForLiberoRedesignation } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, MAX_SUBSTITUTIONS_PER_SET, substitutionBarsForMatch } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
@@ -11231,33 +11231,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setLiberoDropdown(null) // Close libero dropdown when selecting substitution
   }, [substitutionDropdown, isSubstitutionLegal, forcedSanctionOf])
 
-  // Get available players for libero re-designation (not on court, not already libero, not re-designated)
+  // Players who may be re-designated as libero: not on court, no libero, not
+  // re-designated before, and still allowed to play in the match (not
+  // disqualified, not out after an exceptional substitution; domain/liberos)
   const getAvailablePlayersForRedesignation = useCallback((teamKey, unableLiberoNumber) => {
     if (!data) return []
-
-    const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+    const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
     const { playersOnCourt } = getTeamLineupState(teamKey)
-    const playersOnCourtSet = new Set(playersOnCourt.map(num => Number(num)))
-
-    // Get all re-designation events to find already re-designated players
-    const redesignationEvents = data?.events?.filter(e =>
-      e.type === 'libero_redesignation' &&
-      e.payload?.team === teamKey
-    ) || []
-    const redesignatedPlayerNumbers = new Set(
-      redesignationEvents.map(e => e.payload?.newLiberoNumber).filter(n => n !== undefined && n !== null)
-    )
-
-    // Filter: not on court, not already a libero, not already re-designated, not the unable libero
-    return teamPlayers.filter(p => {
-      const playerNumber = Number(p.number)
-      if (Number.isNaN(playerNumber)) return false
-      if (playersOnCourtSet.has(playerNumber)) return false // On court
-      if (p.libero && p.libero !== '') return false // Already a libero
-      if (redesignatedPlayerNumbers.has(playerNumber)) return false // Already re-designated
-      if (playerNumber === unableLiberoNumber) return false // The unable libero
-      return true
-    })
+    return playersForLiberoRedesignation(teamPlayers, data?.events, teamKey, { onCourt: playersOnCourt, unableLiberoNumber })
   }, [data, getTeamLineupState])
 
   // Check if libero re-designation is needed and trigger modal
@@ -11299,7 +11280,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Get available players
     const availablePlayers = getAvailablePlayersForRedesignation(teamKey, liberoNumber)
     if (availablePlayers.length === 0) {
-      showAlert(t('scoreboard.dialogs.noPlayersForRedesignationDetail', 'No available players for libero re-designation. All players are either on court or already liberos.'), 'warning')
+      showAlert(t('scoreboard.dialogs.noPlayersForRedesignationDetail', 'No available players for libero re-designation. All players are on court, already liberos or may no longer play in this match.'), 'warning')
       return
     }
 
@@ -12133,24 +12114,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setSanctionConfirmModal(null)
   }, [])
 
-  // Check if a player has a specific sanction type
-  const playerHasSanctionType = useCallback((teamKey, playerNumber, sanctionType) => {
-    if (!data?.events) return false
-
-    const hasSanction = data.events.some(e => {
-      const isSanction = e.type === 'sanction'
-      const teamMatch = e.payload?.team === teamKey
-      const playerMatch = e.payload?.playerNumber === playerNumber ||
-        String(e.payload?.playerNumber) === String(playerNumber) ||
-        Number(e.payload?.playerNumber) === Number(playerNumber)
-      const typeMatch = e.payload?.type === sanctionType
-
-      return isSanction && teamMatch && playerMatch && typeMatch
-    })
-
-    return hasSanction
-  }, [data?.events])
-
   // Get player's current highest sanction
   const getPlayerSanctionLevel = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return null
@@ -12234,16 +12197,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     const { team, type, playerNumber, position, role, sanctionType } = sanctionConfirmModal
 
-    // Validate that we're not giving the same sanction type again: a player
-    // or a team official (by role), the domain rule recompute and the manual
-    // corrections use too (validateMemberSanction)
+    // Validate the sanction for this member: a player or a team official (by
+    // role), the domain rule recompute and the manual corrections use too
+    // (validateMemberSanction)
     if (playerNumber || role) {
       const check = validateMemberSanction(data.events, { team, playerNumber, role, type: sanctionType })
+      const who = playerNumber ? t('scoreboard.dialogs.playerNumber', { defaultValue: 'Player {{number}}', number: playerNumber }) : role
 
       // Prevent giving the same sanction type again
       if (check.reason === 'sameSanctionTwice') {
-        const who = playerNumber ? t('scoreboard.dialogs.playerNumber', { defaultValue: 'Player {{number}}', number: playerNumber }) : role
         deferUi(() => showAlert(t('scoreboard.dialogs.sameSanctionTwice', { defaultValue: '{{who}} already has this sanction ({{sanction}}). A team member cannot receive the same sanction type twice.', who, sanction: t(`scoreboard.sanctions.${sanctionType}`, sanctionType) }), 'warning'))
+        deferUi(() => setSanctionConfirmModal(null))
+        return
+      }
+
+      // Never lighter than the member's heaviest earlier sanction (FIVB 21.4.2)
+      if (check.reason === 'lighterSanction') {
+        deferUi(() => showAlert(t('scoreboard.dialogs.lighterSanction', { defaultValue: '{{who}} already has a heavier sanction ({{sanction}}). Each further sanction of a team member must be heavier.', who, sanction: t(`scoreboard.sanctions.${check.heaviest}`, check.heaviest) }), 'warning'))
         deferUi(() => setSanctionConfirmModal(null))
         return
       }
@@ -12617,7 +12587,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
     }
-  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey, easyNewSubstituteOpen])
+  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey, easyNewSubstituteOpen])
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
@@ -13373,6 +13343,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!liberoRedesignationModal || !data?.set) return
 
     const { team, unableLiberoNumber, unableLiberoType, reason = 'declared' } = liberoRedesignationModal
+    // Only a player the list offers: never one who may no longer play
+    if (!getAvailablePlayersForRedesignation(team, unableLiberoNumber).some(p => String(p.number) === String(newLiberoNumber))) return
     // Closed with the written change (deferUi, one render): the candidate list
     // is live and never redraws without the chosen player
     deferUi(() => setLiberoRedesignationModal(null))
@@ -13449,7 +13421,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     logManualChange('Libero', 'Redesignation', `#${unableLiberoNumber}`, `#${newLiberoNumber}`,
       `Player #${newLiberoNumber} re-designated as Libero replacing #${unableLiberoNumber} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
 
-  })), [runAction, deferUi, runLiberoRedesignation, liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
+  })), [runAction, deferUi, runLiberoRedesignation, liberoRedesignationModal, getAvailablePlayersForRedesignation, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
 
   // Confirm marking libero as unable
   const confirmLiberoUnable = useCallback(() => runAction('liberoUnable', async () => {
@@ -15395,8 +15367,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       disabled={rallyStatus === 'in_play' || isRallyReplayed}
                       style={{
                         flex: 1,
-                        fontSize: 'calc(4.65cqw * var(--cqf, 1))',
-                        padding: '2.5cqw 1.25cqw',
+                        minWidth: 0,
+                        // readable on a 8" tablet as the sanction buttons below
+                        // (it was 8.8 px at 1280x800); a long label wraps
+                        fontSize: 'max(12px, calc(4.65cqw * var(--cqf, 1)))',
+                        fontWeight: 600,
+                        lineHeight: 1.15,
+                        whiteSpace: 'normal',
+                        overflowWrap: 'anywhere',
+                        textAlign: 'center',
+                        padding: 'max(4px, 1.25cqw) max(6px, 1.25cqw)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -16100,20 +16080,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               })
                             }}
                             style={{
-                              padding: '1.9cqw 3.75cqw',
+                              // a row of its own under the libero squares, its
+                              // text readable at any --bench-fit (it was 9.7 px
+                              // at 1280x800); a long label wraps
+                              flexBasis: '100%',
+                              minWidth: 0,
+                              minHeight: 'calc(32px * var(--bench-fit, 1))',
+                              padding: 'max(4px, 1.25cqw) max(6px, 2.5cqw)',
                               background: '#f97316',
                               color: '#000',
                               border: 'none',
                               borderRadius: '1.25cqw',
-                              fontSize: 'calc(5.1cqw * var(--cqf, 1))',
+                              fontSize: 'max(12px, calc(5.1cqw * var(--cqf, 1)))',
                               fontWeight: 600,
+                              lineHeight: 1.15,
+                              whiteSpace: 'normal',
+                              overflowWrap: 'anywhere',
+                              textAlign: 'center',
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '1.25cqw'
+                              justifyContent: 'center',
+                              gap: '0.4em'
                             }}
                           >
-                            <RefreshIcon size="1em" /> Redesignate libero
+                            <RefreshIcon size="1em" style={{ flexShrink: 0 }} /> {t('scoreboard.actions.redesignateLibero')}
                           </button>
                         )
                       })()}
@@ -18778,8 +18769,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       disabled={rallyStatus === 'in_play' || isRallyReplayed}
                       style={{
                         flex: 1,
-                        fontSize: 'calc(4.65cqw * var(--cqf, 1))',
-                        padding: '2.5cqw 1.25cqw',
+                        minWidth: 0,
+                        // readable on a 8" tablet as the sanction buttons below
+                        // (it was 8.8 px at 1280x800); a long label wraps
+                        fontSize: 'max(12px, calc(4.65cqw * var(--cqf, 1)))',
+                        fontWeight: 600,
+                        lineHeight: 1.15,
+                        whiteSpace: 'normal',
+                        overflowWrap: 'anywhere',
+                        textAlign: 'center',
+                        padding: 'max(4px, 1.25cqw) max(6px, 1.25cqw)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -19481,20 +19480,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               })
                             }}
                             style={{
-                              padding: '1.9cqw 3.75cqw',
+                              // a row of its own under the libero squares, its
+                              // text readable at any --bench-fit (it was 9.7 px
+                              // at 1280x800); a long label wraps
+                              flexBasis: '100%',
+                              minWidth: 0,
+                              minHeight: 'calc(32px * var(--bench-fit, 1))',
+                              padding: 'max(4px, 1.25cqw) max(6px, 2.5cqw)',
                               background: '#f97316',
                               color: '#000',
                               border: 'none',
                               borderRadius: '1.25cqw',
-                              fontSize: 'calc(5.1cqw * var(--cqf, 1))',
+                              fontSize: 'max(12px, calc(5.1cqw * var(--cqf, 1)))',
                               fontWeight: 600,
+                              lineHeight: 1.15,
+                              whiteSpace: 'normal',
+                              overflowWrap: 'anywhere',
+                              textAlign: 'center',
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '1.25cqw'
+                              justifyContent: 'center',
+                              gap: '0.4em'
                             }}
                           >
-                            <RefreshIcon size="1em" /> Redesignate libero
+                            <RefreshIcon size="1em" style={{ flexShrink: 0 }} /> {t('scoreboard.actions.redesignateLibero')}
                           </button>
                         )
                       })()}
@@ -20589,14 +20599,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const playerForMenu = (teamPlayersForMenu || []).find(p => String(p.number) === String(playerNumber))
         const playerNameForMenu = playerForMenu ? [playerForMenu.firstName, playerForMenu.lastName].filter(Boolean).join(' ') : ''
 
-        // Get sanction availability
-        const teamWarning = teamHasFormalWarning(team)
-        const hasWarning = playerHasSanctionType(team, playerNumber, 'warning')
-        const hasPenalty = playerHasSanctionType(team, playerNumber, 'penalty')
-        const hasExpulsion = playerHasSanctionType(team, playerNumber, 'expulsion')
-        const canGetWarning = !hasWarning && !teamWarning
-        const canGetPenalty = !hasPenalty
-        const canGetExpulsion = !hasExpulsion
+        // The sanctions this player may get now: never the same type twice,
+        // never lighter than an earlier one (FIVB 21.4.2), one warning per
+        // team (domain/sanctions)
+        const sanctionOptions = memberSanctionOptions(data?.events, { team, playerNumber })
+        const canGetWarning = sanctionOptions.warning.legal
+        const canGetPenalty = sanctionOptions.penalty.legal
+        const canGetExpulsion = sanctionOptions.expulsion.legal
+        const canGetDisqualification = sanctionOptions.disqualification.legal
 
         const showSanctionConfirmFromMenu = (sanctionType) => {
           setPlayerActionMenu(null)
@@ -20895,7 +20905,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromMenu('expulsion')} disabled={!canGetExpulsion}>
                         {t('scoreboard.sanctions.expulsion')}
                       </SbMenuItem>
-                      <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromMenu('disqualification')}>
+                      <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromMenu('disqualification')} disabled={!canGetDisqualification}>
                         {t('scoreboard.sanctions.disqualification')}
                       </SbMenuItem>
                     </div>
@@ -21369,29 +21379,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {(() => {
                     const teamKey = sanctionDropdown.team
                     const playerNumber = sanctionDropdown.playerNumber
-                    const teamWarning = teamHasFormalWarning(teamKey)
 
-                    // Check if the player, or the team official (by role), has
-                    // each specific sanction type (for back-sanctioning rules;
-                    // domain/sanctions validateMemberSanction)
-                    const hasType = (type) => (playerNumber || sanctionDropdown.role)
-                      ? validateMemberSanction(data?.events, { team: teamKey, playerNumber, role: sanctionDropdown.role, type }).reason === 'sameSanctionTwice'
-                      : false
-                    const hasWarning = hasType('warning')
-                    const hasPenalty = hasType('penalty')
-                    const hasExpulsion = hasType('expulsion')
-                    const hasDisqualification = hasType('disqualification')
-
-                    // Determine which sanctions are available
-                    // Rule: A player cannot get the same sanction type twice
-                    // Exception: Warning can only be given if team hasn't been warned (player can have other sanctions)
-                    const canGetWarning = !hasWarning && !teamWarning
-                    // Penalty: can be given if player doesn't already have a penalty (back-sanctioning allowed)
-                    const canGetPenalty = !hasPenalty
-                    // Expulsion: can be given if player doesn't already have an expulsion (back-sanctioning allowed)
-                    const canGetExpulsion = !hasExpulsion
-                    // Disqualification: can be given if player doesn't already have a disqualification (back-sanctioning allowed)
-                    const canGetDisqualification = !hasDisqualification
+                    // The sanctions this player or team official (by role) may
+                    // get now: never the same type twice, never lighter than
+                    // an earlier one (FIVB 21.4.2), one warning per team
+                    // (domain/sanctions)
+                    const sanctionOptions = (playerNumber || sanctionDropdown.role)
+                      ? memberSanctionOptions(data?.events, { team: teamKey, playerNumber, role: sanctionDropdown.role })
+                      : null
+                    const canGetWarning = sanctionOptions ? sanctionOptions.warning.legal : !teamHasFormalWarning(teamKey)
+                    const canGetPenalty = sanctionOptions ? sanctionOptions.penalty.legal : true
+                    const canGetExpulsion = sanctionOptions ? sanctionOptions.expulsion.legal : true
+                    const canGetDisqualification = sanctionOptions ? sanctionOptions.disqualification.legal : true
 
                     return (
                       <>
@@ -21407,8 +21406,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirm('expulsion')} disabled={!canGetExpulsion}>
                           {t('scoreboard.sanctions.expulsion')}{!canGetExpulsion && ` (${t('scoreboard.playerMenu.alreadySanctioned')})`}
                         </SbMenuItem>
-                        <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirm('disqualification')}>
-                          {t('scoreboard.sanctions.disqualification')}
+                        <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirm('disqualification')} disabled={!canGetDisqualification}>
+                          {t('scoreboard.sanctions.disqualification')}{!canGetDisqualification && ` (${t('scoreboard.playerMenu.alreadySanctioned')})`}
                         </SbMenuItem>
                       </>
                     )
@@ -21581,14 +21580,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
                 {/* Sanction - expandable */}
                 {(() => {
-                  // Get sanction availability for bench player
-                  const teamWarning = teamHasFormalWarning(team)
-                  const hasWarning = playerHasSanctionType(team, playerNumber, 'warning')
-                  const hasPenalty = playerHasSanctionType(team, playerNumber, 'penalty')
-                  const hasExpulsion = playerHasSanctionType(team, playerNumber, 'expulsion')
-                  const canGetWarning = !hasWarning && !teamWarning
-                  const canGetPenalty = !hasPenalty
-                  const canGetExpulsion = !hasExpulsion
+                  // The sanctions this bench player may get now: never the
+                  // same type twice, never lighter than an earlier one (FIVB
+                  // 21.4.2), one warning per team (domain/sanctions)
+                  const sanctionOptions = memberSanctionOptions(data?.events, { team, playerNumber })
+                  const canGetWarning = sanctionOptions.warning.legal
+                  const canGetPenalty = sanctionOptions.penalty.legal
+                  const canGetExpulsion = sanctionOptions.expulsion.legal
+                  const canGetDisqualification = sanctionOptions.disqualification.legal
 
                   const showSanctionConfirmFromBenchMenu = (sanctionType) => {
                     setBenchPlayerActionMenu(null)
@@ -21621,7 +21620,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromBenchMenu('expulsion')} disabled={!canGetExpulsion}>
                             {t('scoreboard.sanctions.expulsion')}
                           </SbMenuItem>
-                          <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromBenchMenu('disqualification')}>
+                          <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromBenchMenu('disqualification')} disabled={!canGetDisqualification}>
                             {t('scoreboard.sanctions.disqualification')}
                           </SbMenuItem>
                         </div>
