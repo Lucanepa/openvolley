@@ -3547,6 +3547,7 @@
     "city": "Stadt",
     "league": "Liga",
     "championshipType": "Meischterschaftstyp",
+    "championshipTypeOther": "Meischterschaftstyp (anderi)",
     "gameNumber": "Spiilnummere",
     "matchTypeGender": "Spiiltyp (Geschlecht)",
     "scheduledDateTime": "Gplants Datum/Ziit",

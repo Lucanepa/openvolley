@@ -14,6 +14,11 @@ import { matchInfoFromLocal, queueMatchUpdate, toCloudPlayers } from '../db/matc
 import { buildSetEndMatchPayload } from '../utils/eventSync'
 import { signedAfterMatch } from '../services/corrections/applyCorrectionPlan'
 import { Button } from '../ui/Button.jsx'
+import { Card } from '../ui/Card.jsx'
+import { Field } from '../ui/Field.jsx'
+import { Input } from '../ui/Input.jsx'
+import { Select } from '../ui/Select.jsx'
+import { cn } from '../ui/cn.js'
 import { confirmDialog } from '../ui/uiStore.js'
 import { DateTimeField } from '../ui/DateField.jsx'
 import IdField from './IdField'
@@ -34,6 +39,7 @@ import { backdropDismiss } from '../ui/backdropDismiss.js'
 import LongIntervalSwitch from './LongIntervalSwitch'
 import { longIntervalChanged } from '../domain/setInterval'
 import { isLocalOnly } from '../domain/matchKind'
+import { championshipTypeFields, championshipTypeToSave } from '../domain/championshipType'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -113,10 +119,28 @@ function toISODate(dateStr) {
  * Allows editing of all match data: scores, teams, players, bench officials,
  * sanctions, timeouts, substitutions, and match officials.
  */
+// The change log's label of a match field: its own key, or the label the
+// field has on screen (the three match-type selects, the game number and the
+// date had no key of their own and logged "Match match_type_1").
+const MATCH_FIELD_LABEL_KEYS = {
+  gameN: 'manualAdjustmentsEditor.gameNumber',
+  match_type_1: 'matchSetup.matchType',
+  match_type_2: 'manualAdjustmentsEditor.matchTypeGender',
+  match_type_3: 'matchSetup.matchLevel',
+  scheduledAt: 'manualAdjustmentsEditor.scheduledDateTime'
+}
+
+export function matchFieldLabel(t, field) {
+  const key = MATCH_FIELD_LABEL_KEYS[field]
+  if (key) return t(key)
+  return t(`manualAdjustmentsEditor.${field}`, `Match ${field}`)
+}
+
 export default function ManualAdjustments({ matchId, onClose, onSave, initialTab = 'corrections', tabIds = null }) {
   const { t } = useTranslation()
-  // A phone: the two teams and the two match-info cards one above the other,
-  // an official's name on one line and country / date of birth on the next
+  // A phone: the two teams one above the other, an official's name on one
+  // line and country / date of birth on the next (the match info cards
+  // switch with Tailwind's sm, the same 640 px)
   const phone = usePhoneWidth()
   const pairCols = phone ? '1fr' : '1fr 1fr'
   const officialCols = phone ? '1fr 1fr' : '1fr 1fr 80px 100px'
@@ -194,7 +218,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   useEffect(() => {
     if (data && !initializedRef.current) {
       initializedRef.current = true
-      setEditedMatch({ ...data.match })
+      // the championship type as the select shows it: a value typed by hand
+      // ("Regional") maps to its lowercase option, which the sheet ticks
+      setEditedMatch({ ...data.match, ...championshipTypeFields(data.match) })
       setEditedHomeTeam(data.homeTeam ? { ...data.homeTeam } : null)
       setEditedAwayTeam(data.awayTeam ? { ...data.awayTeam } : null)
       setEditedHomePlayers(data.homePlayers.map(p => ({ ...p })))
@@ -279,7 +305,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       if (!prev) return prev
       const oldValue = prev[field]
       if (oldValue !== value) {
-        recordFieldChange('match', field, oldValue, value, t(`manualAdjustmentsEditor.${field}`, `Match ${field}`))
+        recordFieldChange('match', field, oldValue, value, matchFieldLabel(t, field))
       }
       return { ...prev, [field]: value }
     })
@@ -515,7 +541,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
           hall: editedMatch.hall,
           city: editedMatch.city,
           league: editedMatch.league,
-          championshipType: editedMatch.championshipType,
+          // lowercase, the "Other" text only with 'other' (domain/championshipType)
+          ...championshipTypeToSave(editedMatch),
           // the game number and the date are fixed after the match: the
           // official PDF is filed under the date the server has
           ...(afterMatch ? {} : { gameN: editedMatch.gameN, scheduledAt: editedMatch.scheduledAt }),
@@ -651,7 +678,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       await queueMatchUpdate(db, editedMatch.seed_key, {
         // every key: the server replaces match_info whole (four keys wiped
         // the match type, gender and level)
-        match_info: matchInfoFromLocal(editedMatch),
+        match_info: matchInfoFromLocal({ ...editedMatch, ...championshipTypeToSave(editedMatch) }),
         set_results: setResults,
         players_home: playersHome,
         players_away: playersAway,
@@ -709,6 +736,12 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   // The game number and the date are fixed after the match: the official
   // PDF is filed under the date the server has, which this editor does not send
   const matchOver = isMatchOverStatus(data.match?.status)
+  // Match info: "Other" championship type adds its text field to the League /
+  // Championship type / Game number row: four to a row from lg, two by two
+  // below (a quarter of a tablet's width cut the text)
+  const championshipOther = editedMatch?.championshipType === 'other'
+  const rowCell = championshipOther ? 'sm:col-span-6 lg:col-span-3' : 'sm:col-span-4'
+  const sponsorsShown = !!editedMatch && showsSponsorBoxes(sponsorsOption, editedMatch)
 
   // Teams and Match info are saved together with "Save changes"; leaving
   // with unsaved edits asks first (corrections are saved one by one)
@@ -1019,12 +1052,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
         )}
 
         {/* ==================== MATCH INFO TAB ==================== */}
+        {/* One column of whole-width cards: Teams, Match details, Team
+            contacts beside Sponsors on clothing, Match officials */}
         {activeTab === 'info' && editedMatch && (
-          <div style={{ display: 'grid', gridTemplateColumns: pairCols, gap: '24px' }}>
+          <div className="flex flex-col gap-4">
             {/* Teams: short name and shirt colour (Edit match info during
                 the match; the names are fixed after the coin toss) */}
             {teamLabelsOnInfo && (editedHomeTeam || editedAwayTeam) && (
-              <div style={{ ...cardStyle, gridColumn: '1 / -1' }} data-testid="edit-team-labels">
+              <Card stack={false} data-testid="edit-team-labels">
                 <h2 style={cardTitleStyle}>
                   {t('manualAdjustmentsEditor.tabTeams', 'Teams')}
                 </h2>
@@ -1070,76 +1105,89 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                   ))}
                 </div>
                 {coloursTooClose(colourOf('home'), colourOf('away')) && <CloseColourNote className="mt-3" />}
-              </div>
+              </Card>
             )}
 
-            {/* Match Details */}
-            <div style={cardStyle}>
+            {/* Match details: the whole width (owner 20.11: beside Team
+                contacts it cut long halls and left the other card empty).
+                From sm a 12-column grid: Hall wide beside City; League,
+                Championship type and Game number in a row; the three
+                category boxes in a row; the date beside the interval
+                switch. A phone: one column. Kit fields (volleyui). */}
+            <Card stack={false} className="ov-kit" data-testid="edit-match-details">
               <h2 style={cardTitleStyle}>
                 {t('manualAdjustmentsEditor.matchDetails', 'Match details')}
               </h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.hall', 'Hall')}</label>
-                  <input
-                    type="text"
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
+                <Field tone="compact" className="sm:col-span-8" label={t('manualAdjustmentsEditor.hall', 'Hall')}>
+                  <Input
                     value={editedMatch.hall || ''}
                     onChange={(e) => updateMatchInfo('hall', e.target.value)}
                     aria-label={t('manualAdjustmentsEditor.hall', 'Hall')}
-                    style={{ ...inputStyle, width: '100%' }}
                   />
-                </div>
-                <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.city', 'City')}</label>
-                  <input
-                    type="text"
+                </Field>
+                <Field tone="compact" className="sm:col-span-4" label={t('manualAdjustmentsEditor.city', 'City')}>
+                  <Input
                     value={editedMatch.city || ''}
                     onChange={(e) => updateMatchInfo('city', e.target.value)}
                     aria-label={t('manualAdjustmentsEditor.city', 'City')}
-                    style={{ ...inputStyle, width: '100%' }}
                   />
-                </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.league', 'League')}</label>
-                  <input
-                    type="text"
+                </Field>
+                <Field tone="compact" className={rowCell} label={t('manualAdjustmentsEditor.league', 'League')}>
+                  <Input
                     value={editedMatch.league || ''}
                     onChange={(e) => updateMatchInfo('league', e.target.value)}
                     aria-label={t('manualAdjustmentsEditor.league', 'League')}
-                    style={{ ...inputStyle, width: '100%' }}
                   />
-                </div>
-                <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.championshipType', 'Championship type')}</label>
-                  <input
-                    type="text"
+                </Field>
+                {/* The sheet's Regional / National / International / Other
+                    boxes (Header.tsx) tick only the stored lowercase value:
+                    a select, as in Match setup (it was free text, and
+                    "Regional" typed by hand ticked nothing) */}
+                <Field tone="compact" className={rowCell} label={t('manualAdjustmentsEditor.championshipType', 'Championship type')}>
+                  <Select
+                    block
                     value={editedMatch.championshipType || ''}
                     onChange={(e) => updateMatchInfo('championshipType', e.target.value)}
                     aria-label={t('manualAdjustmentsEditor.championshipType', 'Championship type')}
-                    style={{ ...inputStyle, width: '100%' }}
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.gameNumber', 'Game number')}</label>
-                  <input
-                    type="text"
+                    data-testid="edit-championship-type"
+                  >
+                    <option value="">–</option>
+                    <option value="regional">{t('matchSetup.regional', 'Regional')}</option>
+                    <option value="national">{t('matchSetup.national', 'National')}</option>
+                    <option value="international">{t('matchSetup.international', 'International')}</option>
+                    <option value="other">{t('matchSetup.other', 'Other')}</option>
+                  </Select>
+                </Field>
+                {championshipOther && (
+                  <Field tone="compact" className={rowCell} label={t('matchSetup.specify', 'Specify')}>
+                    <Input
+                      value={editedMatch.championshipTypeOther || ''}
+                      onChange={(e) => updateMatchInfo('championshipTypeOther', e.target.value)}
+                      placeholder={t('matchSetup.otherType', 'Other type')}
+                      aria-label={t('manualAdjustmentsEditor.championshipTypeOther', 'Championship type (other)')}
+                      data-testid="edit-championship-type-other"
+                    />
+                  </Field>
+                )}
+                <Field tone="compact" className={rowCell} label={t('manualAdjustmentsEditor.gameNumber', 'Game number')}>
+                  <Input
+                    className="tabular-nums"
                     value={editedMatch.gameN || editedMatch.gameNumber || editedMatch.game_n || ''}
                     onChange={(e) => updateMatchInfo('gameN', e.target.value)}
                     disabled={matchOver}
                     aria-label={t('manualAdjustmentsEditor.gameNumber', 'Game number')}
-                    style={{ ...inputStyle, width: '100%' }}
                   />
-                </div>
+                </Field>
                 {/* the sheet's category boxes (Header.tsx): the values Match setup
                     stores. The gender used M/W/X, which no box matches, and showed
                     "Men" for a women's match. */}
-                <div>
-                  <label style={labelStyle}>{t('matchSetup.matchType')}</label>
-                  <select
+                <Field tone="compact" className="sm:col-span-4" label={t('matchSetup.matchType')}>
+                  <Select
+                    block
                     value={editedMatch.match_type_1 || ''}
                     onChange={(e) => updateMatchInfo('match_type_1', e.target.value)}
                     aria-label={t('matchSetup.matchType')}
-                    style={{ ...inputStyle, width: '100%' }}
                   >
                     <option value="">–</option>
                     <option value="championship">{t('matchSetup.championship')}</option>
@@ -1147,123 +1195,123 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                     <option value="friendly">{t('matchSetup.friendly')}</option>
                     <option value="tournament">{t('matchSetup.tournament')}</option>
                     {editedMatch.match_type_1 === 'other' && <option value="other">{t('matchSetup.other')}</option>}
-                  </select>
-                </div>
-                <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.matchTypeGender', 'Match type (gender)')}</label>
-                  <select
+                  </Select>
+                </Field>
+                <Field tone="compact" className="sm:col-span-4" label={t('manualAdjustmentsEditor.matchTypeGender', 'Match type (gender)')}>
+                  <Select
+                    block
                     value={editedMatch.match_type_2 || ''}
                     onChange={(e) => updateMatchInfo('match_type_2', e.target.value)}
                     aria-label={t('manualAdjustmentsEditor.matchTypeGender', 'Match type (gender)')}
-                    style={{ ...inputStyle, width: '100%' }}
                   >
                     <option value="">–</option>
                     <option value="men">{t('manualAdjustmentsEditor.genderMen', 'Men')}</option>
                     <option value="women">{t('manualAdjustmentsEditor.genderWomen', 'Women')}</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={labelStyle}>{t('matchSetup.matchLevel')}</label>
-                  <select
+                  </Select>
+                </Field>
+                <Field tone="compact" className="sm:col-span-4" label={t('matchSetup.matchLevel')}>
+                  <Select
+                    block
                     value={editedMatch.match_type_3 || ''}
                     onChange={(e) => updateMatchInfo('match_type_3', e.target.value)}
                     aria-label={t('matchSetup.matchLevel')}
-                    style={{ ...inputStyle, width: '100%' }}
                   >
                     <option value="">–</option>
                     <option value="senior">{t('matchSetup.senior')}</option>
                     {['U23', 'U21', 'U19', 'U17'].map(v => <option key={v} value={v}>{v}</option>)}
                     {editedMatch.match_type_3 === 'other' && <option value="other">{editedMatch.match_type_3_other || t('matchSetup.other')}</option>}
-                  </select>
-                </div>
-                {/* date and time are two fields: a whole row on a phone. The
-                    Zürich 'YYYY-MM-DDTHH:MM' both ways (timeUtils): one zone
+                  </Select>
+                </Field>
+                {/* The Zürich 'YYYY-MM-DDTHH:MM' both ways (timeUtils): one zone
                     in and out (a UTC slice made the time jump by the offset on
                     every edit), the gym's on a device in any zone */}
-                <div style={phone ? { gridColumn: '1 / -1' } : undefined}>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled date/time')}</label>
+                <Field tone="compact" className="sm:col-span-6 lg:col-span-4" label={t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled date/time')}>
                   <DateTimeField
-                    size="bare"
                     value={formatDateTimeLocal(editedMatch.scheduledAt)}
                     onChange={(v) => updateMatchInfo('scheduledAt', v ? parseLocalToISO(v) : null)}
                     disabled={matchOver}
                     aria-label={t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled date/time')}
-                    style={{ ...inputStyle, width: '100%' }}
                   />
-                </div>
+                </Field>
+                <LongIntervalSwitch
+                  className="sm:col-span-6 lg:col-span-8"
+                  checked={editedMatch.longIntervalAfterSet2 === true}
+                  onChange={updateLongInterval}
+                  disabled={closed}
+                />
               </div>
-              <LongIntervalSwitch
-                className="mt-4"
-                checked={editedMatch.longIntervalAfterSet2 === true}
-                onChange={updateLongInterval}
-                disabled={closed}
-              />
-            </div>
+            </Card>
 
-            {/* Team contacts: they get the final scoresheet by email (owner 15.11) */}
-            <div style={cardStyle}>
-              <h2 style={cardTitleStyle}>
-                {t('manualAdjustmentsEditor.teamContacts', 'Team contacts')}
-              </h2>
-              <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--ov-text-muted)' }}>
-                {t('matchSetup.teamContactEmailHint', "Gets the final scoresheet by email. Only this match's scorers see it.")}
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: pairCols, gap: '12px' }}>
-                {['home', 'away'].map(team => (
-                  <div key={team}>
-                    <label style={labelStyle}>{(team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')}</label>
-                    <input
-                      type="email"
-                      inputMode="email"
-                      autoComplete="off"
-                      maxLength={254}
-                      aria-label={`${(team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`}
-                      value={editedTeamContacts[team]}
-                      onChange={(e) => updateTeamContact(team, e.target.value)}
-                      disabled={closed}
-                      style={inputStyle}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Sponsors on clothing (domain/sponsors.js): while the option is on
-                or the match is marked; the match prints (+) / (-) after the names */}
-            {showsSponsorBoxes(sponsorsOption, editedMatch) && (
-              <div style={cardStyle} data-testid="edit-sponsors">
+            {/* Team contacts (they get the final scoresheet by email, owner
+                15.11) and Sponsors on clothing, side by side under Match
+                details from lg; Team contacts alone takes the whole width */}
+            <div className={cn('grid grid-cols-1 gap-4', sponsorsShown && 'lg:grid-cols-2')} data-testid="edit-contacts-row">
+              <Card stack={false} className="ov-kit" data-testid="edit-team-contacts">
                 <h2 style={cardTitleStyle}>
-                  {t('options.sponsorsOnClothing')}
+                  {t('manualAdjustmentsEditor.teamContacts', 'Team contacts')}
                 </h2>
                 <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--ov-text-muted)' }}>
-                  {t('options.sponsorsOnClothingInfo')}
+                  {t('matchSetup.teamContactEmailHint', "Gets the final scoresheet by email. Only this match's scorers see it.")}
                 </p>
-                <div className="ov-kit" style={{ display: 'grid', gridTemplateColumns: pairCols, gap: '12px' }}>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {['home', 'away'].map(team => {
                     const name = (team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
                     return (
-                      <Checkbox
-                        key={team}
-                        variant="card"
-                        data-testid={`edit-sponsors-${team}`}
-                        aria-label={`${name} ${t('options.sponsorsOnClothing')}`}
-                        label={name}
-                        checked={sponsorsOf(editedMatch)[team]}
-                        disabled={closed}
-                        onChange={(e) => updateSponsors(team, e.target.checked)}
-                      />
+                      <Field key={team} tone="compact" label={name}>
+                        <Input
+                          type="email"
+                          inputMode="email"
+                          autoComplete="off"
+                          maxLength={254}
+                          aria-label={`${name} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`}
+                          value={editedTeamContacts[team]}
+                          onChange={(e) => updateTeamContact(team, e.target.value)}
+                          disabled={closed}
+                        />
+                      </Field>
                     )
                   })}
                 </div>
-              </div>
-            )}
+              </Card>
 
-            {/* Match Officials */}
-            <div style={cardStyle}>
+              {/* Sponsors on clothing (domain/sponsors.js): while the option is on
+                  or the match is marked; the match prints (+) / (-) after the names */}
+              {sponsorsShown && (
+                <Card stack={false} className="ov-kit" data-testid="edit-sponsors">
+                  <h2 style={cardTitleStyle}>
+                    {t('options.sponsorsOnClothing')}
+                  </h2>
+                  <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--ov-text-muted)' }}>
+                    {t('options.sponsorsOnClothingInfo')}
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {['home', 'away'].map(team => {
+                      const name = (team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+                      return (
+                        <Checkbox
+                          key={team}
+                          variant="card"
+                          data-testid={`edit-sponsors-${team}`}
+                          aria-label={`${name} ${t('options.sponsorsOnClothing')}`}
+                          label={name}
+                          checked={sponsorsOf(editedMatch)[team]}
+                          disabled={closed}
+                          onChange={(e) => updateSponsors(team, e.target.checked)}
+                        />
+                      )
+                    })}
+                  </div>
+                </Card>
+              )}
+            </div>
+
+            {/* Match Officials: the whole width, the four officials two by
+                two on a wide screen */}
+            <Card stack={false} data-testid="edit-match-officials">
               <h2 style={cardTitleStyle}>
                 {t('manualAdjustmentsEditor.matchOfficials', 'Match officials')}
               </h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="grid grid-cols-1 gap-x-6 gap-y-4 xl:grid-cols-2">
                 {/* 1st Referee */}
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st referee')}</div>
@@ -1412,7 +1460,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                   </div>
                 </div>
               </div>
-            </div>
+            </Card>
           </div>
         )}
 
