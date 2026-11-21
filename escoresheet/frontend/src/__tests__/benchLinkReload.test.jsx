@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
 
 // A bench tablet joins through the match's link (QR code: /bench/?match=…&team=…)
 // and enters its PIN. The link stays in the address, and every reload (tab
@@ -157,4 +157,28 @@ describe('bench opened through its match link', () => {
     await screen.findByText('bench match view', {}, { timeout: 8000 })
     expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
   }, 25000)
+
+  // Full-match test 2026-11-21 follow-up: a typed PIN no server could check
+  // read "Invalid PIN" (and was cleared), and a failed check showed the raw
+  // error ("Failed to fetch")
+  it('a typed PIN no server could check says so and stays typed; a wrong one is "Invalid PIN"', async () => {
+    sync.getMatchData.mockResolvedValue({ success: true, match: { gameNumber: 12 }, homeTeam: { name: 'Home VC' }, awayTeam: { name: 'Away VC' } })
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<BenchApp />)
+    const input = await screen.findByPlaceholderText('000000')
+    fireEvent.change(input, { target: { value: PIN } })
+    fireEvent.click(screen.getByText('benchDashboard.connect'))
+    await screen.findByText('No connection to the server – check the Wi-Fi and try again.')
+    expect(screen.queryByText(/Failed to fetch/)).toBeNull()
+    expect(screen.queryByText('Invalid PIN. Please try again.')).toBeNull()
+    expect(input.value).toBe(PIN)
+
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Invalid PIN code', status: 404 })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    fireEvent.click(screen.getByText('benchDashboard.connect'))
+    await screen.findByText('Invalid PIN. Please try again.')
+    expect(screen.queryByText(/No match found/)).toBeNull()
+    expect(input.value).toBe('')
+  })
 })

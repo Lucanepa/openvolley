@@ -587,3 +587,23 @@ export function shouldAutoConnect({ servedFromLocalServer = false, staticDeploym
   try { params = new URLSearchParams(search || '') } catch { return false }
   return !!(params.get('match') || params.get('server'))
 }
+
+/**
+ * Why the first read of the live games failed, for the message the list shows
+ * in its place (never the browser's own text, such as "Failed to fetch"):
+ *   'server'       the server answered, with an error (an HTTP status)
+ *   'unreachable'  no answer: offline, the server down, a timeout, an address
+ *                  nothing listens on
+ * The raw text stays in the support diagnostics.
+ * @param {unknown} error  an apiClient error ({ message, status, network }), a
+ *   thrown Error, or the venue relay feed's text ('HTTP 503', 'Failed to fetch')
+ * @returns {'server'|'unreachable'|null}
+ */
+export function liveLoadErrorKind(error) {
+  if (error == null || error === '') return null
+  if (typeof error === 'object') {
+    if (error.network) return 'unreachable'
+    return Number(error.status) >= 400 ? 'server' : 'unreachable'
+  }
+  return /^HTTP [45]\d\d\b/.test(String(error)) ? 'server' : 'unreachable'
+}

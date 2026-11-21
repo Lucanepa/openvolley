@@ -2267,7 +2267,12 @@
     "disconnect": "Trenne",
     "awaitingCoinToss": "Warte uf Usloosig",
     "awaitingCoinTossDesc": "S Spiil fangt aa, sobald d Usloosig bestätigt worde isch.",
-    "loadGames": "Spiil lade"
+    "loadGames": "Spiil lade",
+    "serverUnreachable": "Kei Verbindig zum Server – prüef s WLAN und probier s nomal.",
+    "checkFailed": "D PIN hät nöd chönne prüeft werde. Prüef d Verbindig und probier s nomal.",
+    "enterSixDigitPin": "Gib di 6-stellig PIN ii",
+    "selectTeamFirst": "Wähl zerscht dis Team",
+    "connectionDisabled": "De Schriiber hät d Verbindig vo dere Bank abgschaltet. Bitt en, sie iizschalte, und verbind dich dänn nomal."
   },
   "refereeDashboard": {
     "scorerAway": "S Grät vom Schriiber isch nöd verbunde: De Spielstand isch vilicht nöd aktuell. Prüef, öb s aa und online isch.",
@@ -2517,7 +2522,9 @@
       "matchNotFound": "Spiil mit dere Nummere nöd gfunde",
       "failedToFindMatch": "Spiil hät nöd chönne gfunde werde. Stell sicher, dass s Haupt-Matchblatt lauft.",
       "failedToLoadData": "Date händ nöd chönne glade werde",
-      "failedToLoadDataConnection": "Date händ nöd chönne glade werde. Stell sicher, dass s Haupt-Matchblatt lauft."
+      "failedToLoadDataConnection": "Date händ nöd chönne glade werde. Stell sicher, dass s Haupt-Matchblatt lauft.",
+      "unreachable": "De Server isch nöd erreichbar. Prüef d Verbindig und probier s nomal.",
+      "serverError": "De Server hät d Live-Resultat nöd chönne schicke. Probier s grad nomal."
     },
     "final": "Schlussstand",
     "serving": "Ufschlag"

@@ -12,7 +12,7 @@ import { applyServerParam, getApiUrl, getBackendOverride, isServedFromLocalServe
 import { createRelayLivescoreFeed, fetchRelayLivescoreList, relayLivescoreMode, relayLivescoreWsUrl } from './utils/relayLivescore'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
 import { setDiagnosticsInfo } from './utils/diagnosticsInfo'
-import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, shouldAutoConnect, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS, liveScoreboard, settleLiveChange, mergeRefetchedGames } from './utils/livescoreModel'
+import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, shouldAutoConnect, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS, liveScoreboard, settleLiveChange, mergeRefetchedGames, liveLoadErrorKind } from './utils/livescoreModel'
 import ballFallback from './ball_fallback.png'
 import { AlertTriangle, Radio, RefreshCw, Server } from 'lucide-react'
 import { cn } from './ui/cn.js'
@@ -74,6 +74,9 @@ export default function LivescoreApp() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [selectedGame, setSelectedGame] = useState(null) // UUID of selected game for fullscreen
   const [loading, setLoading] = useState(true)
+  // Why the first read failed: an apiClient error, an Error or the relay
+  // feed's text; shown as a sentence (liveLoadErrorKind), the raw text only
+  // in the support diagnostics
   const [error, setError] = useState(null)
   // A refetch failed after an earlier success: keep showing the last good
   // list with a small notice instead of replacing it with the error view.
@@ -153,7 +156,7 @@ export default function LivescoreApp() {
       if (fetchError) {
         console.error('[Livescore] Error fetching games:', fetchError)
         if (hasLoadedRef.current) setStale(true)
-        else setError(fetchError.message)
+        else setError(fetchError)
       } else {
         // A row read before the scorer's database write keeps the newer relay
         // frame already shown (mergeRefetchedGames)
@@ -166,7 +169,7 @@ export default function LivescoreApp() {
     } catch (err) {
       console.error('[Livescore] Exception:', err)
       if (hasLoadedRef.current) setStale(true)
-      else setError(err.message)
+      else setError(err)
     } finally {
       setLoading(false)
     }
@@ -568,7 +571,11 @@ export default function LivescoreApp() {
           </Card>
         ) : error ? (
           <Card className="mx-auto max-w-md text-center">
-            <FormError size="md">{error}</FormError>
+            <FormError size="md">
+              {liveLoadErrorKind(error) === 'server'
+                ? t('livescore.errors.serverError', 'The server could not send the live scores. Try again in a moment.')
+                : t('livescore.errors.unreachable', "Can't reach the server. Check the connection and try again.")}
+            </FormError>
             <ButtonGroup className="mt-4 justify-center">
               <Button variant="secondary" size="xl" icon={RefreshCw} onClick={fetchLiveGames}>
                 {t('common.retry', 'Retry')}

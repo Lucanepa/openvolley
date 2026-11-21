@@ -2268,7 +2268,12 @@
     "disconnect": "Disconnect",
     "awaitingCoinToss": "Awaiting coin toss",
     "awaitingCoinTossDesc": "The match will begin once the coin toss has been confirmed.",
-    "loadGames": "Load games"
+    "loadGames": "Load games",
+    "serverUnreachable": "No connection to the server – check the Wi-Fi and try again.",
+    "checkFailed": "The PIN could not be checked. Check the connection and try again.",
+    "enterSixDigitPin": "Enter the 6-digit PIN",
+    "selectTeamFirst": "Select your team first",
+    "connectionDisabled": "The scorer switched this bench's connection off. Ask the scorer to switch it on, then connect again."
   },
   "refereeDashboard": {
     "scorerAway": "The scorer's device is not connected: the score may be out of date. Check that it is on and online.",
@@ -2523,7 +2528,9 @@
       "matchNotFound": "Match not found with this game number",
       "failedToFindMatch": "Failed to find match. Make sure the main scoresheet is running.",
       "failedToLoadData": "Failed to load match data",
-      "failedToLoadDataConnection": "Failed to load match data. Make sure the main scoresheet is running."
+      "failedToLoadDataConnection": "Failed to load match data. Make sure the main scoresheet is running.",
+      "unreachable": "Can't reach the server. Check the connection and try again.",
+      "serverError": "The server could not send the live scores. Try again in a moment."
     },
     "final": "Final",
     "serving": "Serving"
