@@ -43,6 +43,7 @@ import RefereeRosters from './referee/RefereeRosters.jsx'
 import { TeamSanctionList, hasTeamSanctions } from './referee/SanctionCards.jsx'
 import { bundleHasFullAccess } from './referee/scoresheetInput.js'
 import { liveStateCounters } from './referee/liveCounters.js'
+import { refereeSetBreak } from './referee/setBreak.js'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours.js'
 import { compareBySeq } from '../domain/describe'
@@ -1558,6 +1559,26 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     }
   }, [data])
 
+  // Between two sets: the set that comes next, its sides and its first
+  // server (referee/setBreak.js). Also while the next set's row is not in the
+  // bundle yet (data.currentSet null for the whole break): the defaults below
+  // put home on the left and gave set 1's server the SERVE box. null while a
+  // set is under way.
+  const setBreak = useMemo(() => {
+    const matchTeamA = data?.match?.coinTossTeamA || 'home'
+    return refereeSetBreak({
+      sets: data?.sets,
+      currentSet: data?.currentSet,
+      liveState: data?.liveState,
+      events: data?.events,
+      match: data?.match,
+      bestOf: data?.match?.bestOf ?? data?.liveState?.best_of ?? 5,
+      teamAKey: matchTeamA,
+      liveTeamAKey: liveRowTeamA(data?.liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || matchTeamA,
+      liveStateOnly: dataSourceRef.current === 'live_state'
+    })
+  }, [data])
+
   // Determine who has serve
   const getCurrentServe = useMemo(() => {
     console.log('[Referee] getCurrentServe - data:', {
@@ -1565,6 +1586,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       matchFirstServe: data?.match?.firstServe,
       setIndex: data?.currentSet?.index
     })
+    // Between sets: the next set's first server; none while it is not known
+    // (the deciding set before its coin toss): no SERVE box then
+    if (setBreak) return setBreak.servingTeam
+
     // First priority: use servingTeam from Supabase live state (most accurate)
     if (data?.currentSet?.servingTeam) {
       console.log('[Referee] Using currentSet.servingTeam:', data.currentSet.servingTeam)
@@ -1597,7 +1622,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     // the last rally's winner, or the team a going back gave the serve to
     return servingTeamFromLog(data.events, data.currentSet.index, data.match) || currentSetFirstServe
-  }, [data?.events, data?.currentSet, data?.match])
+  }, [data?.events, data?.currentSet, data?.match, setBreak])
 
   // Determine team labels
   const teamAKey = data?.match?.coinTossTeamA || 'home'
@@ -1612,6 +1637,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Which team is on the left for the 2nd referee (the scorer's side): the
   // scorer's live state, else the scorer's own rule (getSideAForSet)
   const homeOnLeftFor2ndRef = useMemo(() => {
+    // Between sets: the next set's sides (the teams change sides after every
+    // set; the deciding set after its coin toss), not the set that ended
+    if (setBreak) return setBreak.homeLeft
     if (!data?.currentSet) return true
 
     // PRIORITY 1: Live state from server (Scoreboard source of truth)
@@ -1630,7 +1658,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // If sideA='left' (Team A on left), then home is on left only if teamAKey='home'
     // If sideA='right' (Team A on right), then home is on left only if teamAKey!='home' (i.e., Team B is on left)
     return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.currentSet, data?.match, teamAKey, liveTeamAKey, data?.liveState?.side_a])
+  }, [data?.currentSet, data?.match, teamAKey, liveTeamAKey, data?.liveState?.side_a, setBreak])
 
   const homeTeamOnLeft = refereeView === '1st' ? !homeOnLeftFor2ndRef : homeOnLeftFor2ndRef
 
