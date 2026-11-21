@@ -11,6 +11,7 @@ import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, rewriteQueuedSyncJobs, jobMatchKey, USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, APPROVAL_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
 import { approvalsApi } from '../lib/accountApi'
 import { buildConnectionPins } from '../utils/connectionPins'
+import { pendingClearDecision } from '../utils/remoteRoster'
 import { isShirtNumber } from '../domain/roster'
 import { uploadQueuedScoresheet } from '../utils/scoresheetUploader'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
@@ -1368,6 +1369,19 @@ async function processJobInner(job, ctx) {
               }
             }
           }
+        }
+
+        // The clear of an accepted or rejected upload (remoteRoster
+        // clearPendingRosterJob): only while the server still has that
+        // upload; a team's newer one stays for the next check (21.11.2026)
+        const clear = pendingClearDecision(job, fetchError ? undefined : existingMatch)
+        if (clear.key && !clear.keep) {
+          if (clear.only) {
+            safeLog.log('[SyncQueue] Pending roster clear skipped: the server has another upload, or none:', id)
+            return true
+          }
+          const { [clear.key]: _newer, ...connections } = finalUpdateData.connections || {}
+          finalUpdateData = { ...finalUpdateData, connections }
         }
       }
 

@@ -20,6 +20,7 @@ import { accessFromRoles } from '../lib/access'
 import { licenceOf } from '../domain/idMode'
 import { currentUserId } from './savedTeams'
 import { isLocalOnly } from '../domain/matchKind'
+import { sentRosterFingerprint, uploadIsNewVersion, uploadState } from '../domain/rosterVersions'
 
 export const GAME_ROSTERS_CHANGED_EVENT = 'ov-game-rosters-changed'
 // The background refresh while the app is open (AuthContext)
@@ -120,7 +121,9 @@ const ROSTER_LOCKED_STATUSES = new Set(['live', 'ended', 'approved', 'final', 'c
 /**
  * The sent rosters Match Setup offers for `match`: { home, away } (a cached
  * row or null). None for a test match, or once the match has started; a
- * version already used or put aside ("Not now") is not offered again.
+ * version already used or put aside ("Not now") is not offered again, nor a
+ * newer version with the content used here (the team sent the same again,
+ * 21.11.2026: nothing would change).
  */
 export function offeredSentRosters(rows, match, userId) {
   const out = { home: null, away: null }
@@ -129,36 +132,66 @@ export function offeredSentRosters(rows, match, userId) {
     if (!r || r.usedPending || (r.side !== 'home' && r.side !== 'away') || (userId && r.userId !== userId)) continue
     const version = r.updatedAt || 'sent'
     if (match.sentRosterUsed?.[r.side] === version || match.sentRosterDismissed?.[r.side] === version) continue
+    if (match.sentRosterUsedFp?.[r.side] && match.sentRosterUsedFp[r.side] === sentRosterFingerprint(r)) continue
     out[r.side] = r
   }
   return out
 }
 
 /**
- * What Match Setup's "Search for roster" found for `side`. It looks in both
- * places a team's roster can come from: the upload made with the upload PIN
+ * The sent rosters of `rows` that are newer versions of the one used here
+ * with the same content (the team sent it again unchanged): not offered
+ * (offeredSentRosters); Match Setup records them as used, so the team sees
+ * "Accepted" and the server stops sending them.
+ */
+export function sentRostersSameAsUsed(rows, match, userId) {
+  if (!match || isLocalOnly(match) || ROSTER_LOCKED_STATUSES.has(match.status)) return []
+  return (rows || []).filter((r) => r && !r.usedPending && (r.side === 'home' || r.side === 'away') && (!userId || r.userId === userId) &&
+    !!match.sentRosterUsedFp?.[r.side] && match.sentRosterUsed?.[r.side] !== (r.updatedAt || 'sent') &&
+    match.sentRosterUsedFp[r.side] === sentRosterFingerprint(r))
+}
+
+/**
+ * What a check of the server ("Check server for rosters", or the Remote
+ * panel's own check every 30 s) found for `side`. It looks in both places a
+ * team's roster can come from: the upload made with the upload PIN
  * (`remote`, from the match's server row; `remoteFailed` when that could not
  * be asked) and the roster sent from the manager site (`sentRows`: the
  * device's rows for the game, after asking the server when online;
  * `sentChecked` false when this account cannot see sent rosters).
- * - { kind: 'remote' }: the upload, shown as its card
- * - { kind: 'sent', row, restore }: a sent roster, shown as its card;
- *   `restore` when it had been put aside ("Not now"): searching for it is
- *   asking for it, so it comes back. A used one never does.
+ * - { kind: 'remote', changed, newVersion, sent }: the upload, shown as its
+ *   card; `changed` false when the card shows it already (nothing to
+ *   store); `newVersion` when an earlier upload was accepted here. A version
+ *   accepted or rejected here, or the content accepted here uploaded again,
+ *   is not offered (domain/rosterVersions uploadState).
+ * - { kind: 'sent', row, restore, newVersion }: a sent roster, shown as its
+ *   card; `restore` when it had been put aside ("Not now"): asking for it is
+ *   asking for it, so it comes back (never in a `silent` check: the panel's
+ *   own check keeps "Not now"). A used one never does. `newVersion` when an
+ *   earlier version was used here.
  * - { kind: 'error' }: the upload could not be asked and nothing was sent
- * - { kind: 'none', sentChecked }: neither has a roster
+ * - { kind: 'none', sentChecked, upToDate }: neither has a roster to offer;
+ *   `upToDate` when this side took one from the server before (the latest)
+ * `sent` (on 'remote'): the sent roster offered beside the upload, or null.
  */
-export function rosterSearchOutcome({ side, remote, remoteFailed = false, sentRows = [], match, userId, sentChecked = true }) {
-  if (remote) return { kind: 'remote' }
+export function rosterSearchOutcome({ side, remote, remoteFailed = false, sentRows = [], match, userId, sentChecked = true, silent = false }) {
+  const pending = side === 'home' ? match?.pendingHomeRoster : match?.pendingAwayRoster
+  const upload = uploadState({ remote, pending, taken: match?.uploadedRosterTaken?.[side] })
+  let sent = null
   const offered = offeredSentRosters(sentRows, match, userId)[side]
-  if (offered) return { kind: 'sent', row: offered, restore: false }
-  if (match?.sentRosterDismissed?.[side]) {
+  if (offered) sent = { row: offered, restore: false }
+  else if (!silent && match?.sentRosterDismissed?.[side]) {
     const asked = { ...match, sentRosterDismissed: { ...match.sentRosterDismissed, [side]: null } }
     const row = offeredSentRosters(sentRows, asked, userId)[side]
-    if (row) return { kind: 'sent', row, restore: true }
+    if (row) sent = { row, restore: true }
   }
+  const sentNewVersion = !!match?.sentRosterUsed?.[side]
+  if (upload === 'new' || upload === 'same') {
+    return { kind: 'remote', changed: upload === 'new', newVersion: uploadIsNewVersion(match, side), sent: sent ? { ...sent, newVersion: sentNewVersion } : null }
+  }
+  if (sent) return { kind: 'sent', ...sent, newVersion: sentNewVersion }
   if (remoteFailed) return { kind: 'error' }
-  return { kind: 'none', sentChecked }
+  return { kind: 'none', sentChecked, upToDate: uploadIsNewVersion(match, side) || sentNewVersion }
 }
 
 /**
@@ -231,8 +264,16 @@ export async function getGameRoster(gameNumber, side, { userId } = {}) {
 export async function markGameRosterAccepted(row) {
   if (!row?.key) return
   try {
-    await db.game_rosters.update(row.key, { usedPending: true, usedAt: new Date().toISOString() })
-    notify()
+    // only the version accepted: a newer one downloaded meanwhile (the team
+    // sent it again while the scorer answered) stays offered, and the
+    // server is never told it was used (21.11.2026)
+    const marked = await db.transaction('rw', db.game_rosters, async () => {
+      const stored = await db.game_rosters.get(row.key)
+      if (!stored || (stored.updatedAt || null) !== (row.updatedAt || null)) return false
+      await db.game_rosters.update(row.key, { usedPending: true, usedAt: new Date().toISOString() })
+      return true
+    })
+    if (marked) notify()
   } catch (e) {
     console.warn('[gameRosters] mark accepted failed:', e?.message)
   }

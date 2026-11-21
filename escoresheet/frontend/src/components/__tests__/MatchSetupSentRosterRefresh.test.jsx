@@ -181,8 +181,8 @@ afterEach(() => {
 async function openRemoteSearch () {
   fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
   fireEvent.click(await screen.findByRole('radio', { name: 'matchSetup.remote' }))
-  expect(await screen.findByTestId('search-roster-hint-home')).toHaveTextContent('matchSetup.searchRosterHint')
-  return screen.getByRole('button', { name: 'matchSetup.searchForRoster' })
+  expect(await screen.findByTestId('search-roster-hint-home')).toHaveTextContent('matchSetup.rosterCheck.hint')
+  return screen.getByRole('button', { name: 'matchSetup.rosterCheck.button' })
 }
 
 describe('Match Setup asks for sent rosters while it stays open', () => {

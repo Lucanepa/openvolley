@@ -14,6 +14,10 @@
 import { useEffect, useRef } from 'react'
 
 export const SENT_ROSTER_POLL_MS = 60 * 1000
+// Match Setup's Remote panel (owner 2026-11-21): while a roster editor shows
+// it, the panel checks the server for that side itself, this often (the
+// upload made with the PIN and the sent roster), silently
+export const REMOTE_PANEL_CHECK_MS = 30 * 1000
 export const SENT_ROSTER_MIN_GAP_MS = 5 * 1000
 
 const browserOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false
@@ -63,7 +67,11 @@ export function startSentRosterWatch({
   }
 }
 
-/** startSentRosterWatch while `enabled`; `refresh` may change between renders. */
+/**
+ * startSentRosterWatch while `enabled`; `refresh` may change between renders.
+ * Another truthy `enabled` (the Remote panel's side) starts it again, with a
+ * check at once.
+ */
 export function useSentRosterRefresh(enabled, refresh, { intervalMs = SENT_ROSTER_POLL_MS } = {}) {
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh

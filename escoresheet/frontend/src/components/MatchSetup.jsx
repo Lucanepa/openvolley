@@ -62,8 +62,11 @@ import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
 import { savedTeamToRoster, findSavedTeamSuggestions, fillNumbersFromSaved, savedNumberFinder } from '../domain/savedTeams'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
-import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rosterSearchOutcome, rowToPendingRoster } from '../db/gameRosters'
-import { useSentRosterRefresh } from '../hooks/useSentRosterRefresh'
+import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rosterSearchOutcome, rowToPendingRoster, sentRostersSameAsUsed } from '../db/gameRosters'
+import { REMOTE_PANEL_CHECK_MS, useSentRosterRefresh } from '../hooks/useSentRosterRefresh'
+import { useBrowserOnline } from '../hooks/useBrowserOnline'
+import { sameUpload, sentRosterFingerprint, takenAfter, uploadIsNewVersion } from '../domain/rosterVersions'
+import RosterCheckStatus from './RosterCheckStatus'
 import SentRosterCard from './SentRosterCard'
 import BackupTargetsPanel from './BackupTargetsPanel'
 import GlobalCloudPanel from './GlobalCloudPanel'
@@ -75,7 +78,7 @@ import { addClubPlayersToRoster, applyClubFill, benchOfficialOfRole, benchRolesO
 import ClubShield from './manage/ClubShield'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
-import { Users, Save as SaveIcon, Trash2, ListChecks, UserPlus } from 'lucide-react'
+import { Users, Save as SaveIcon, Trash2, ListChecks, UserPlus, RefreshCw } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
@@ -985,6 +988,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Remote roster search state
   const [homeRosterSearching, setHomeRosterSearching] = useState(false)
   const [awayRosterSearching, setAwayRosterSearching] = useState(false)
+  // The Remote panel's checks of the server (owner 2026-11-21: a "refresh"
+  // for rosters uploaded again): per side, when it last asked (`at`),
+  // whether the server could not be reached, an automatic check under way
+  const [rosterCheck, setRosterCheck] = useState({ home: { at: null, failed: false, auto: false }, away: { at: null, failed: false, auto: false } })
+  const browserOnline = useBrowserOnline()
   const [rosterPreview, setRosterPreview] = useState(null) // 'home' | 'away' | null
 
   // Referee selector state
@@ -1148,14 +1156,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }, [sentGameNumber, user?.id])
   const sentRosters = useMemo(() => offeredSentRosters(sentRows, match, user?.id),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sentRows, user?.id, match?.test, match?.global, match?.status, match?.sentRosterUsed, match?.sentRosterDismissed])
+    [sentRows, user?.id, match?.test, match?.global, match?.status, match?.sentRosterUsed, match?.sentRosterUsedFp, match?.sentRosterDismissed])
   // With a connection, ask for this game as well (a roster sent minutes ago,
   // another club's game), and again while the screen stays open: a roster
   // sent while the scorer waits shows up without reopening Match Setup
   // (17.11.2026). Nothing waits for it; offline it reads the device's copy.
   const canAskSentRosters = !!sentGameNumber && !!access?.canReadTeams && !!user?.id
   const refreshSentRosters = () => refreshGameRosters({ access, userId: user?.id, games: [sentGameNumber] })
-  useSentRosterRefresh(canAskSentRosters && !setupLocked, refreshSentRosters)
 
   // db/024, offline first: the licence lists of the account's clubs, read
   // from the device's copy (downloaded while online; AuthContext). "Add from
@@ -1187,6 +1194,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // club's lists, other matches' rosters on the device and the referee
   // directory stay out; the public schedule and the Einsatzliste import stay.
   const guestMatch = isGuestMatch(match)
+  // The side whose roster editor shows its Remote panel: that panel checks
+  // the server itself (every REMOTE_PANEL_CHECK_MS, below), so the screen's
+  // own refresh of the sent rosters rests meanwhile
+  const remotePanelSide = !match || setupLocked || guestMatch ? null
+    : currentView === 'home' && homeUploadMode === 'remote' ? 'home'
+      : currentView === 'away' && awayUploadMode === 'remote' ? 'away'
+        : null
+  useSentRosterRefresh(canAskSentRosters && !setupLocked && !remotePanelSide, refreshSentRosters)
+  // The team sent the roster used here again, unchanged: nothing to offer
+  // (db/gameRosters offeredSentRosters); recorded as used, so the server
+  // stops sending it and the team sees it accepted (21.11.2026)
+  useEffect(() => {
+    if (!matchId || setupLocked) return
+    const same = sentRostersSameAsUsed(sentRows, match, user?.id)
+    if (!same.length) return
+    const used = { ...(match?.sentRosterUsed || {}) }
+    for (const r of same) {
+      used[r.side] = r.updatedAt || 'sent'
+      markGameRosterAccepted(r)
+    }
+    db.matches.update(matchId, { sentRosterUsed: used }).catch((err) => console.warn('[MatchSetup] Recording the sent roster failed:', err?.message))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sentRows, matchId, setupLocked, user?.id, match?.sentRosterUsed, match?.sentRosterUsedFp, match?.status])
   // The saved teams on this device (the account's copy, offline first): the
   // shirt numbers an Einsatzliste import and "Add from club" fill in (owner
   // 2026-11-19; the server keeps the latest official match's numbers in them,
@@ -2870,7 +2900,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
       try {
         const fresh = await db.matches.get(matchId)
-        await db.matches.update(matchId, { sentRosterUsed: { ...(fresh?.sentRosterUsed || {}), [side]: pending.row.updatedAt || 'sent' } })
+        await db.matches.update(matchId, {
+          sentRosterUsed: { ...(fresh?.sentRosterUsed || {}), [side]: pending.row.updatedAt || 'sent' },
+          sentRosterUsedFp: { ...(fresh?.sentRosterUsedFp || {}), [side]: sentRosterFingerprint(pending.row) }
+        })
       } catch (err) {
         console.warn('[MatchSetup] Writing the sent roster failed:', err?.message)
       }
@@ -3174,7 +3207,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         }
         await db.matches.update(matchId, {
           [side === 'home' ? 'bench_home' : 'bench_away']: bench,
-          sentRosterUsed: { ...(match?.sentRosterUsed || {}), [side]: row.updatedAt || 'sent' }
+          sentRosterUsed: { ...(match?.sentRosterUsed || {}), [side]: row.updatedAt || 'sent' },
+          // its content: the same sent again later is not offered again
+          sentRosterUsedFp: { ...(match?.sentRosterUsedFp || {}), [side]: sentRosterFingerprint(row) }
         })
       } catch (err) {
         console.warn('[MatchSetup] Writing the sent roster failed:', err?.message)
@@ -3632,10 +3667,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Accepted or rejected: clear the coach's upload on the server too, so the
   // next search does not bring it back (a new upload replaces it anyway).
-  const clearServerPendingRoster = async (team) => {
+  // Only that upload (`roster`): one the team made again before the job is
+  // sent stays on the server for the next check (21.11.2026).
+  const clearServerPendingRoster = async (team, roster = null) => {
     if (!match?.seed_key || !match?.matchInfoConfirmedAt) return
     try {
-      await db.sync_queue.add(clearPendingRosterJob(match.seed_key, team))
+      await db.sync_queue.add(clearPendingRosterJob(match.seed_key, team, roster))
     } catch (err) {
       console.warn('[MatchSetup] Failed to queue the pending roster clean-up:', err)
     }
@@ -3685,13 +3722,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const signatures = uploadedSignaturesToTake(checked.roster, storedSignaturesOf(team))
     const teamId = isHome ? match.homeTeamId : match.awayTeamId
     const pendingField = isHome ? 'pendingHomeRoster' : 'pendingAwayRoster'
+    // What Accept records: this upload is taken (never offered again, nor its
+    // content uploaded again), and the card goes unless a newer upload came
+    // in while the scorer answered (it stays, offered as a new version)
+    const acceptedUpdate = (fresh) => ({
+      [pendingField]: !fresh?.[pendingField] || sameUpload(fresh[pendingField], raw) ? null : fresh[pendingField],
+      uploadedRosterTaken: takenAfter(fresh, team, raw, 'accepted')
+    })
     try {
       if (teamId) {
         // One transaction: a failure leaves the roster as it was
-        const matchUpdate = { [isHome ? 'bench_home' : 'bench_away']: bench, [pendingField]: null }
+        const matchUpdate = { [isHome ? 'bench_home' : 'bench_away']: bench }
         if (signatures.coach) matchUpdate[isHome ? 'homeCoachSignature' : 'awayCoachSignature'] = signatures.coach
         if (signatures.captain) matchUpdate[isHome ? 'homeCaptainSignature' : 'awayCaptainSignature'] = signatures.captain
         await db.transaction('rw', db.players, db.matches, async () => {
+          Object.assign(matchUpdate, acceptedUpdate(await db.matches.get(matchId)))
           await db.players.where('teamId').equals(teamId).delete()
           if (players.length) {
             await db.players.bulkAdd(players.map(p => ({
@@ -3713,7 +3758,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         console.log(`[MatchSetup] Accepted ${team} roster with signatures:`, { hasCoach: !!signatures.coach, hasCaptain: !!signatures.captain })
       } else {
         // No team yet: just clear pending
-        await db.matches.update(matchId, { [pendingField]: null })
+        await db.transaction('rw', db.matches, async () => {
+          await db.matches.update(matchId, acceptedUpdate(await db.matches.get(matchId)))
+        })
       }
     } catch (err) {
       console.warn('[MatchSetup] Accepting the uploaded roster failed:', err?.message)
@@ -3731,18 +3778,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       if (signatures.coach) setAwayCoachSignature(signatures.coach)
       if (signatures.captain) setAwayCaptainSignature(signatures.captain)
     }
-    await clearServerPendingRoster(team)
+    await clearServerPendingRoster(team, raw)
   }
+  // Reject: this upload is not offered again (the server's copy is cleared
+  // too); a newer one that came in meanwhile stays
   const rejectPendingRoster = async (team) => {
     if (!matchId) return
-    await db.matches.update(matchId, { [team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster']: null })
-    await clearServerPendingRoster(team)
+    const raw = pendingRosterOf(team)
+    const pendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
+    try {
+      await db.transaction('rw', db.matches, async () => {
+        const fresh = await db.matches.get(matchId)
+        const update = { [pendingField]: !raw || !fresh?.[pendingField] || sameUpload(fresh[pendingField], raw) ? null : fresh[pendingField] }
+        if (raw) update.uploadedRosterTaken = takenAfter(fresh, team, raw, 'rejected')
+        await db.matches.update(matchId, update)
+      })
+    } catch (err) {
+      console.warn('[MatchSetup] Rejecting the uploaded roster failed:', err?.message)
+      return
+    }
+    await clearServerPendingRoster(team, raw)
   }
   // On the main view: a team's roster waits (why the app opened Match Setup),
   // with the way to its card
   const renderPendingRosterNotice = (team) => pendingRosterOf(team) ? (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50/60 px-3 py-2 text-sm text-stone-800" data-testid={`pending-roster-notice-${team}`}>
-      <span>{t('matchSetup.rosterUploaded')}</span>
+      <span>{uploadIsNewVersion(match, team) ? t('matchSetup.rosterCheck.newVersion') : t('matchSetup.rosterUploaded')}</span>
       {/* after the coin toss the roster editor is closed: Reject only */}
       {setupLocked ? (
         <Button variant="danger-outline" size="sm" onClick={() => rejectPendingRoster(team)} data-testid={`pending-roster-notice-${team}-reject`}>
@@ -3775,7 +3836,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const kept = checked.ok && !started ? uploadedSignaturesKept(checked.roster, storedSignaturesOf(team)) : {}
     return (
       <div className="mt-3 rounded-xl border border-sky-200 bg-white p-3" data-testid={`pending-roster-${team}`}>
-        <h4 className="mt-0 mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
+        <h4 className="mt-0 mb-2 text-sm font-semibold text-stone-800" data-testid={`pending-roster-title-${team}`}>{uploadIsNewVersion(match, team) ? t('matchSetup.rosterCheck.newVersion') : t('matchSetup.rosterUploaded')}</h4>
         {checked.ok ? (
           <div className="mb-3 flex flex-col gap-1 text-xs text-stone-600">
             <div>
@@ -3818,26 +3879,59 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     )
   }
 
-  // Search for roster (Edit roster -> Remote): both places a team's roster
-  // comes from, the upload made with the upload PIN (the match's row,
+  // Check server for rosters (Edit roster -> Remote): both places a team's
+  // roster comes from, the upload made with the upload PIN (the match's row,
   // connections.pending_{team}_roster) and the roster sent from the manager
   // site (db/023; asked again now, then the device's copy, so offline still
   // finds one downloaded before). 17.11.2026: it only asked for the upload
   // and said "No pending roster" while the team had sent theirs.
-  const handleSearchRoster = async (team) => {
+  // 21.11.2026 (owner: "in case the roster has to be reuploaded ... a
+  // 'refresh' button that looks for rosters on the server"): the panel also
+  // checks by itself every REMOTE_PANEL_CHECK_MS while it is open (`silent`:
+  // no "no roster" message, a toast only for something new), and a version
+  // accepted or rejected here is never offered again, a newer one as a card.
+  // Nothing waits for these checks; the screen stays usable offline.
+  const rosterCheckRunRef = useRef({ home: null, away: null })
+  const sentRostersRef = useRef(sentRosters)
+  sentRostersRef.current = sentRosters
+  const handleSearchRoster = async (team, { silent = false } = {}) => {
     if (!match) {
-      setNoticeModal({ message: t('matchSetup.noSupabaseConnection') })
+      if (!silent) setNoticeModal({ message: t('matchSetup.noSupabaseConnection') })
       return
     }
-    const setSearching = team === 'home' ? setHomeRosterSearching : setAwayRosterSearching
-    setSearching(true)
+    const running = rosterCheckRunRef.current[team]
+    if (silent) {
+      // never two at a time, never while an Accept writes, never offline
+      if (running || acceptingPendingRef.current || !isNavigatorOnline()) return
+    } else if (running) {
+      // the panel's own check is under way: this one asks again after it
+      await running.catch(() => {})
+    }
+    const run = checkServerForRoster(team, silent)
+    rosterCheckRunRef.current[team] = run
     try {
-      const [remoteRes] = await Promise.allSettled([
+      await run
+    } finally {
+      if (rosterCheckRunRef.current[team] === run) rosterCheckRunRef.current[team] = null
+    }
+  }
+  const checkServerForRoster = async (team, silent) => {
+    const setSearching = team === 'home' ? setHomeRosterSearching : setAwayRosterSearching
+    const setAuto = (auto) => setRosterCheck((prev) => ({ ...prev, [team]: { ...prev[team], auto } }))
+    const pendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
+    const teamName = (team === 'home' ? home : away) || ''
+    // the sent roster this side offered before asking: a toast only for another one
+    const offeredBefore = sentRostersRef.current?.[team]?.updatedAt ?? null
+    if (silent) setAuto(true)
+    else setSearching(true)
+    try {
+      const [remoteRes, sentRes] = await Promise.allSettled([
         fetchPendingRoster(apiFrom, match.seed_key, team),
         canAskSentRosters ? refreshSentRosters() : Promise.resolve('skipped')
       ])
       const remoteFailed = remoteRes.status === 'rejected' || !!remoteRes.value?.error
-      if (remoteFailed) console.error('[MatchSetup] Error searching for the uploaded roster:', remoteRes.reason?.message || remoteRes.value?.error?.message || remoteRes.value?.error)
+      if (remoteFailed && !silent) console.error('[MatchSetup] Error searching for the uploaded roster:', remoteRes.reason?.message || remoteRes.value?.error?.message || remoteRes.value?.error)
+      const sentFailed = sentRes.status === 'rejected' || sentRes.value === 'offline' || sentRes.value === 'error'
       const remote = remoteFailed ? null : (remoteRes.value?.roster || null)
       let rows = []
       if (canAskSentRosters) {
@@ -3845,28 +3939,53 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           rows = await db.game_rosters.where('gameNumber').equals(sentGameNumber).toArray()
         } catch { /* none on the device */ }
       }
-      const outcome = rosterSearchOutcome({ side: team, remote, remoteFailed, sentRows: rows, match, userId: user?.id, sentChecked: canAskSentRosters })
+      // the match as stored now (an Accept or Reject may have landed meanwhile)
+      const current = (matchId ? await db.matches.get(matchId).catch(() => null) : null) || match
+      const outcome = rosterSearchOutcome({ side: team, remote, remoteFailed, sentRows: rows, match: current, userId: user?.id, sentChecked: canAskSentRosters, silent })
+      const failed = remoteFailed || sentFailed
+      setRosterCheck((prev) => ({ ...prev, [team]: { at: failed ? prev[team].at : new Date().toISOString(), failed, auto: false } }))
+      const sentIsNew = (sent) => !!sent && (sent.row.updatedAt ?? null) !== offeredBefore
+      const announceSent = (sent) => toast.info(sent.newVersion
+        ? t('matchSetup.rosterCheck.newVersionFound', { team: sent.row.teamName || teamName })
+        : t('matchSetup.sentRosterFound', { team: sent.row.teamName || teamName }))
       if (outcome.kind === 'remote') {
-        // Store in local match data to trigger the pending roster UI
-        await db.matches.update(matchId, { [team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster']: remote })
+        // Store in local match data to trigger the pending roster UI (only
+        // what is new: the card shows the same one already otherwise)
+        if (outcome.changed) {
+          await db.matches.update(matchId, { [pendingField]: remote })
+          if (silent) toast.info(outcome.newVersion ? t('matchSetup.rosterCheck.newVersionFound', { team: teamName }) : t('matchSetup.rosterCheck.uploadFound', { team: teamName }))
+        }
+        if (silent && sentIsNew(outcome.sent)) announceSent(outcome.sent)
       } else if (outcome.kind === 'sent') {
         if (outcome.restore) {
-          await db.matches.update(matchId, { sentRosterDismissed: { ...(match?.sentRosterDismissed || {}), [team]: null } })
+          await db.matches.update(matchId, { sentRosterDismissed: { ...(current?.sentRosterDismissed || {}), [team]: null } })
         }
         // its card is on this screen already (or now): nothing stored yet
-        toast.info(t('matchSetup.sentRosterFound', { team: outcome.row.teamName || (team === 'home' ? home : away) || '' }))
+        if (!silent || sentIsNew(outcome)) announceSent(outcome)
+      } else if (silent) {
+        // nothing new: the line under the hint says when it asked
       } else if (outcome.kind === 'error') {
         setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
+      } else if (outcome.upToDate) {
+        setNoticeModal({ message: t('matchSetup.rosterCheck.upToDate') })
       } else {
         setNoticeModal({ message: outcome.sentChecked ? t('matchSetup.noRosterFoundAnywhere') : t('matchSetup.noRosterFound') })
       }
     } catch (err) {
       console.error(`[MatchSetup] Error searching for ${team} roster:`, err?.message || err)
-      setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
+      setRosterCheck((prev) => ({ ...prev, [team]: { ...prev[team], failed: true, auto: false } }))
+      if (!silent) setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
     } finally {
-      setSearching(false)
+      if (silent) setAuto(false)
+      else setSearching(false)
     }
   }
+  // The open Remote panel checks by itself: now, every REMOTE_PANEL_CHECK_MS,
+  // and when the screen comes back or the device is online again
+  // (hooks/useSentRosterRefresh: never offline, never hidden, never two at a
+  // time). Stops when the panel closes, the setup locks or Match Setup goes.
+  const remotePanelChecks = !!remotePanelSide && (!!match?.seed_key || canAskSentRosters)
+  useSentRosterRefresh(remotePanelChecks ? remotePanelSide : false, () => (remotePanelSide ? handleSearchRoster(remotePanelSide, { silent: true }) : undefined), { intervalMs: REMOTE_PANEL_CHECK_MS })
   const handleSearchHomeRoster = () => handleSearchRoster('home')
   const handleSearchAwayRoster = () => handleSearchRoster('away')
 
@@ -4780,7 +4899,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
         {/* db/023: the roster the team sent ahead (the device's copy) */}
-        <SentRosterCard row={sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
+        <SentRosterCard row={sentRosters.home} side="home" newVersion={!!match?.sentRosterUsed?.home} onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
         {/* db/024: a player the club's list has with the other gender */}
         <ClubGenderNotice warnings={clubWarnings.home} gender={clubGender} />
         {/* born on 1 January: a placeholder or a bad import? A note here, never at the coin toss (owner 2026-11-15) */}
@@ -4813,10 +4932,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       handleSearchHomeRoster()
                     }
                   }}
+                  // Remote: a refresh from the server (the panel's own check spins the icon)
+                  icon={homeUploadMode === 'remote' ? <RefreshCw size={16} aria-hidden className={cn('shrink-0', rosterCheck.home.auto && 'animate-spin')} /> : undefined}
+                  loading={homeUploadMode === 'remote' && homeRosterSearching}
                   disabled={homePdfLoading || homeRosterSearching}
+                  data-testid={homeUploadMode === 'remote' ? 'check-server-roster-home' : undefined}
                     className="min-w-0 flex-[999_1_auto]"
                   >
-                  {homeUploadMode === 'local' ? t('matchSetup.uploadPdf') : (homeRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
+                  {homeUploadMode === 'local' ? t('matchSetup.uploadPdf') : (homeRosterSearching ? t('matchSetup.rosterCheck.checking') : t('matchSetup.rosterCheck.button'))}
                   </Button>
                 {/* Local/Remote Toggle */}
                 {/* a guest match: the PDF on this device only (remote = sent and uploaded rosters, on the server) */}
@@ -4858,8 +4981,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {/* Remote Upload */}
               {homeUploadMode === 'remote' && (
                 <div className="flex flex-col gap-1.5">
-                  {/* what Search for roster looks in: the upload with this PIN and the manager site's sent roster */}
-                  <p className="m-0 text-xs text-stone-500" data-testid="search-roster-hint-home">{t('matchSetup.searchRosterHint')}</p>
+                  {/* what the check looks in (the upload with this PIN and the manager site's sent roster), and when it last asked */}
+                  <p className="m-0 text-xs text-stone-500" data-testid="search-roster-hint-home">{t('matchSetup.rosterCheck.hint')}</p>
+                  <RosterCheckStatus side="home" state={rosterCheck.home} online={browserOnline} />
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
                     <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">
@@ -5881,7 +6005,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
         {/* db/023: the roster the team sent ahead (the device's copy) */}
-        <SentRosterCard row={sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
+        <SentRosterCard row={sentRosters.away} side="away" newVersion={!!match?.sentRosterUsed?.away} onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
         {/* db/024: a player the club's list has with the other gender */}
         <ClubGenderNotice warnings={clubWarnings.away} gender={clubGender} />
         {/* born on 1 January: a placeholder or a bad import? A note here, never at the coin toss (owner 2026-11-15) */}
@@ -5913,10 +6037,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       handleSearchAwayRoster()
                     }
                   }}
+                  // Remote: a refresh from the server (the panel's own check spins the icon)
+                  icon={awayUploadMode === 'remote' ? <RefreshCw size={16} aria-hidden className={cn('shrink-0', rosterCheck.away.auto && 'animate-spin')} /> : undefined}
+                  loading={awayUploadMode === 'remote' && awayRosterSearching}
                   disabled={awayPdfLoading || awayRosterSearching}
+                  data-testid={awayUploadMode === 'remote' ? 'check-server-roster-away' : undefined}
                     className="min-w-0 flex-[999_1_auto]"
                   >
-                  {awayUploadMode === 'local' ? t('matchSetup.uploadPdf') : (awayRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
+                  {awayUploadMode === 'local' ? t('matchSetup.uploadPdf') : (awayRosterSearching ? t('matchSetup.rosterCheck.checking') : t('matchSetup.rosterCheck.button'))}
                   </Button>
                 {/* Local/Remote Toggle */}
                 {/* a guest match: the PDF on this device only (remote = sent and uploaded rosters, on the server) */}
@@ -5958,8 +6086,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {/* Remote Upload */}
               {awayUploadMode === 'remote' && (
                 <div className="flex flex-col gap-1.5">
-                  {/* what Search for roster looks in: the upload with this PIN and the manager site's sent roster */}
-                  <p className="m-0 text-xs text-stone-500" data-testid="search-roster-hint-away">{t('matchSetup.searchRosterHint')}</p>
+                  {/* what the check looks in (the upload with this PIN and the manager site's sent roster), and when it last asked */}
+                  <p className="m-0 text-xs text-stone-500" data-testid="search-roster-hint-away">{t('matchSetup.rosterCheck.hint')}</p>
+                  <RosterCheckStatus side="away" state={rosterCheck.away} online={browserOnline} />
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
                     <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">
@@ -7532,7 +7661,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {!setupLocked && <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>}
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
-          <SentRosterCard row={setupLocked ? null : sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
+          <SentRosterCard row={setupLocked ? null : sentRosters.home} side="home" newVersion={!!match?.sentRosterUsed?.home} onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
           {renderPendingRosterNotice('home')}
           <ClubGenderNotice warnings={clubWarnings.home} gender={clubGender} />
         </div>
@@ -7595,7 +7724,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {!setupLocked && <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>}
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
-          <SentRosterCard row={setupLocked ? null : sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
+          <SentRosterCard row={setupLocked ? null : sentRosters.away} side="away" newVersion={!!match?.sentRosterUsed?.away} onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
           {renderPendingRosterNotice('away')}
           <ClubGenderNotice warnings={clubWarnings.away} gender={clubGender} />
         </div>

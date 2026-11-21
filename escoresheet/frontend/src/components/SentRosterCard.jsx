@@ -10,9 +10,11 @@ import { dayTimeLabel } from '../ui/format'
  * while it was online, so this shows without a connection. Accept fills the
  * roster and the signatures made ahead (after the usual replace question),
  * Not now hides this version. Nothing is filled without the tap.
- * @param {{ row: object, side: 'home'|'away', onUse: () => void, onDismiss: () => void, className?: string }} props
+ * `newVersion`: an earlier version of this side was accepted here; the card
+ * says "A new version of the roster is available" (21.11.2026).
+ * @param {{ row: object, side: 'home'|'away', onUse: () => void, onDismiss: () => void, newVersion?: boolean, className?: string }} props
  */
-export default function SentRosterCard({ row, side, onUse, onDismiss, className }) {
+export default function SentRosterCard({ row, side, onUse, onDismiss, newVersion = false, className }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   if (!row) return null
@@ -25,7 +27,14 @@ export default function SentRosterCard({ row, side, onUse, onDismiss, className 
       <div className="flex items-start gap-2">
         <ClipboardCheck size={18} aria-hidden className="mt-0.5 shrink-0 text-emerald-700" />
         <div className="min-w-0 flex-1">
-          <p className="m-0 text-sm font-semibold text-emerald-900">{t('sentRoster.title', { team: row.teamName || '' })}</p>
+          {newVersion ? (
+            <>
+              <p className="m-0 text-sm font-semibold text-emerald-900" data-testid={`sent-roster-new-version-${side}`}>{t('matchSetup.rosterCheck.newVersion')}</p>
+              <p className="m-0 mt-0.5 text-xs font-medium text-emerald-900">{t('sentRoster.title', { team: row.teamName || '' })}</p>
+            </>
+          ) : (
+            <p className="m-0 text-sm font-semibold text-emerald-900">{t('sentRoster.title', { team: row.teamName || '' })}</p>
+          )}
           <p className="m-0 mt-0.5 text-xs text-emerald-800">
             {t('sentRoster.meta', {
               players: t('sentRoster.players', { count: players.length }),

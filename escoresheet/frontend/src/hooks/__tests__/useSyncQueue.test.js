@@ -3256,3 +3256,56 @@ describe('a match the server lacks (OV_MATCH_UNKNOWN)', () => {
     expect(await resyncMatch(SEED, { database: fakeDb })).toBe(3)
   })
 })
+
+// 21.11.2026: Accept / Reject of an uploaded roster queues the clear of the
+// server's copy; a team that uploads again before it is sent (a tablet
+// offline, a slow queue) keeps the new roster: the clear names its upload.
+describe('the clear of an accepted upload (connections.pending_home_roster)', () => {
+  const SEED = 'match_100_aaa'
+  const roster = (timestamp, lastName = 'Example') => ({
+    players: [{ number: 4, firstName: 'Anna', lastName, dob: '', libero: '', isCaptain: true, isLfp: false }],
+    bench: [], coachSignature: null, captainSignature: null, timestamp
+  })
+  const clearJob = async (accepted, extra = {}) => {
+    const { clearPendingRosterJob } = await import('../../utils/remoteRoster')
+    return { id: 7, ...clearPendingRosterJob(SEED, 'home', accepted), ...extra }
+  }
+  const serverHas = (connections) => (call) => (call.table === 'matches' && call.action === 'select' ? ok({ connections }) : defaultRespond(call))
+  const updates = () => api.calls.filter((c) => c.table === 'matches' && c.action === 'update')
+
+  it('the server still has the accepted upload: it is cleared', async () => {
+    api.respond = serverHas({ referee_enabled: true, pending_home_roster: roster('2026-11-21T10:00:00.000Z') })
+    expect(await processJob(await clearJob(roster('2026-11-21T10:00:00.000Z')))).toBe(true)
+    expect(updates()).toHaveLength(1)
+    expect(updates()[0].data.connections).toEqual({ referee_enabled: true, pending_home_roster: null })
+  })
+
+  it('the team uploaded again meanwhile: nothing is sent, the new roster stays', async () => {
+    api.respond = serverHas({ pending_home_roster: roster('2026-11-21T10:05:00.000Z', 'Newer') })
+    expect(await processJob(await clearJob(roster('2026-11-21T10:00:00.000Z')))).toBe(true)
+    expect(updates()).toHaveLength(0)
+  })
+
+  it('already cleared, or the server could not be read: nothing is cleared blind', async () => {
+    api.respond = serverHas({ pending_home_roster: null })
+    expect(await processJob(await clearJob(roster('2026-11-21T10:00:00.000Z')))).toBe(true)
+    api.respond = (call) => (call.table === 'matches' && call.action === 'select' ? { data: null, error: { message: 'refused', code: 'OV_BAD', status: 400 }, status: 400 } : defaultRespond(call))
+    expect(await processJob(await clearJob(roster('2026-11-21T10:00:00.000Z')))).toBe(true)
+    expect(updates()).toHaveLength(0)
+  })
+
+  it('an upload of an older app (no timestamp) is matched by its content', async () => {
+    const old = roster(undefined)
+    delete old.timestamp
+    api.respond = serverHas({ pending_home_roster: { ...old } })
+    expect(await processJob(await clearJob(old))).toBe(true)
+    expect(updates()).toHaveLength(1)
+  })
+
+  it('a clear job of an older version (no upload named) still clears', async () => {
+    api.respond = serverHas({ pending_home_roster: roster('2026-11-21T10:05:00.000Z') })
+    const { clearPendingRosterJob } = await import('../../utils/remoteRoster')
+    expect(await processJob({ id: 7, ...clearPendingRosterJob(SEED, 'home') })).toBe(true)
+    expect(updates()[0].data.connections).toEqual({ pending_home_roster: null })
+  })
+})

@@ -14,6 +14,7 @@
  */
 import { buildConnectionPins } from './connectionPins'
 import { generateSecurePin } from './stringUtils'
+import { sameUpload, uploadedRosterIdentity } from '../domain/rosterVersions'
 
 // Local field -> connection_pins key, in the order they are generated
 const PIN_FIELDS = [
@@ -89,17 +90,44 @@ export async function fetchPendingRoster(from, seedKey, team) {
  * A sync-queue job that clears the pending roster on the server once the
  * scorer accepted or rejected it, so the next search does not bring it back.
  * The match update merges connections, so the other keys stay.
+ * With `roster` (the upload accepted or rejected), only that upload is
+ * cleared (21.11.2026): a team that uploads again before the job is sent (a
+ * tablet offline, a slow queue) keeps its new roster on the server, and the
+ * next check offers it. useSyncQueue reads the server's upload first
+ * (job.onlyIfPending) and leaves another one where it is.
  */
-export function clearPendingRosterJob(seedKey, team) {
+export function clearPendingRosterJob(seedKey, team, roster = null) {
   const key = PENDING_KEY[team]
   if (!key) throw new Error(`clearPendingRosterJob: unknown team ${team}`)
+  const id = roster ? uploadedRosterIdentity(roster) : null
   return {
     resource: 'match',
     action: 'update',
     payload: { id: seedKey, connections: { [key]: null } },
+    ...(id ? { onlyIfPending: { key, version: id.version, fp: id.fp } } : {}),
     ts: new Date().toISOString(),
     status: 'queued'
   }
+}
+
+/**
+ * A conditional clear (clearPendingRosterJob with a roster) once the
+ * server's match row was read (`existing`: its { connections }; undefined
+ * when it could not be read): the clear is kept only while the server still
+ * has that upload. Another upload (a newer one), none, or a row that could
+ * not be read: the key is left out of the update, nothing is cleared blind.
+ * @returns {{ keep: boolean, key: string|null, only: boolean }} `only`: the
+ *   job has nothing else to send
+ */
+export function pendingClearDecision(job, existing) {
+  const cond = job?.onlyIfPending
+  const connections = job?.payload?.connections
+  if (!cond?.key || !connections || typeof connections !== 'object' || !(cond.key in connections)) return { keep: true, key: null, only: false }
+  const stored = existing && typeof existing === 'object' ? existing.connections?.[cond.key] : undefined
+  const keep = !!stored && typeof stored === 'object' && sameUpload({ version: cond.version ?? null, fp: cond.fp ?? null }, stored)
+  const { id: _id, ...rest } = job.payload
+  const only = Object.keys(rest).every((k) => k === 'connections') && Object.keys(connections).every((k) => k === cond.key)
+  return { keep, key: cond.key, only }
 }
 
 /**
