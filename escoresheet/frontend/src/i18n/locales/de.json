@@ -6353,7 +6353,9 @@
     "stale": "Das Spiel hat sich geändert, während das Board offen war. Beginne neu mit dem aktuellen Stand.",
     "startAgain": "Neu beginnen",
     "rallyInPlay": "Ein Ballwechsel läuft: Erfasse zuerst seinen Punkt, dann korrigiere.",
-    "penaltyPointRefused": "Die Sanktion gibt einen Punkt, den das Board nicht hinzufügen kann ({{why}}). Erfasse die Sanktion stattdessen auf dem Scoreboard."
+    "penaltyPointRefused": "Die Sanktion gibt einen Punkt, den das Board nicht hinzufügen kann ({{why}}). Erfasse die Sanktion stattdessen auf dem Scoreboard.",
+    "previewTitle": "Auf dem Matchblatt nach deinen Änderungen",
+    "previewLoading": "Satz wird gezeichnet…"
   },
   "picker": {
     "calendar": "Kalender",

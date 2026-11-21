@@ -6365,7 +6365,9 @@
     "stale": "S Spiil hät sich gänderet, während s Board offe gsi isch. Fang neu a mit em aktuelle Stand.",
     "startAgain": "Neu afange",
     "rallyInPlay": "En Ballwächsel lauft: Erfass zerscht sin Punkt, dänn korrigier.",
-    "penaltyPointRefused": "D Sanktion git en Punkt, wo s Board nöd cha dezuetue ({{why}}). Erfass d Sanktion stattdesse uf em Scoreboard."
+    "penaltyPointRefused": "D Sanktion git en Punkt, wo s Board nöd cha dezuetue ({{why}}). Erfass d Sanktion stattdesse uf em Scoreboard.",
+    "previewTitle": "Ufem Matchblatt nach dine Änderige",
+    "previewLoading": "Satz wird zeichnet…"
   },
   "picker": {
     "calendar": "Kaländer",

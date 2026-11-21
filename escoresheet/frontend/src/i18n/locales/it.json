@@ -6370,7 +6370,9 @@
     "stale": "La partita è cambiata mentre il tabellone era aperto. Ricomincia dalla partita com’è adesso.",
     "startAgain": "Ricomincia",
     "rallyInPlay": "Uno scambio è in corso: registra prima il suo punto, poi correggi.",
-    "penaltyPointRefused": "La sanzione dà un punto che il tabellone non può aggiungere ({{why}}). Registra invece la sanzione sul tabellone segnapunti."
+    "penaltyPointRefused": "La sanzione dà un punto che il tabellone non può aggiungere ({{why}}). Registra invece la sanzione sul tabellone segnapunti.",
+    "previewTitle": "Sul referto dopo le tue modifiche",
+    "previewLoading": "Disegno del set…"
   },
   "picker": {
     "calendar": "Calendario",

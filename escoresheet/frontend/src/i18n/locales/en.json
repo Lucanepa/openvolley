@@ -6371,7 +6371,9 @@
     "stale": "The match changed while the board was open. Start again from the match as it is now.",
     "startAgain": "Start again",
     "rallyInPlay": "A rally is in play: record its point first, then correct.",
-    "penaltyPointRefused": "The sanction gives a point the board cannot add ({{why}}). Record the sanction on the scoreboard instead."
+    "penaltyPointRefused": "The sanction gives a point the board cannot add ({{why}}). Record the sanction on the scoreboard instead.",
+    "previewTitle": "On the scoresheet after your changes",
+    "previewLoading": "Drawing the set…"
   },
   "picker": {
     "calendar": "Calendar",
