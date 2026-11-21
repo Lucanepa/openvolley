@@ -42,6 +42,7 @@ import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
 import RefereeRosters from './referee/RefereeRosters.jsx'
 import { TeamSanctionList, hasTeamSanctions } from './referee/SanctionCards.jsx'
 import { bundleHasFullAccess } from './referee/scoresheetInput.js'
+import { liveStateCounters } from './referee/liveCounters.js'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours.js'
 import { compareBySeq } from '../domain/describe'
@@ -1459,23 +1460,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       const liveState = data.liveState
       const teamAIsHome = (liveRowTeamA(liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || data.match?.coinTossTeamA || 'home') === 'home'
 
-      // Helper to get count from either array (new format) or number (old format)
-      const getCount = (value) => {
-        if (Array.isArray(value)) return value.length
-        if (typeof value === 'number') return value
-        return 0
-      }
-
-      return {
-        home: {
-          timeouts: teamAIsHome ? getCount(liveState.timeouts_a) : getCount(liveState.timeouts_b),
-          substitutions: teamAIsHome ? getCount(liveState.subs_a) : getCount(liveState.subs_b)
-        },
-        away: {
-          timeouts: teamAIsHome ? getCount(liveState.timeouts_b) : getCount(liveState.timeouts_a),
-          substitutions: teamAIsHome ? getCount(liveState.subs_b) : getCount(liveState.subs_a)
-        }
-      }
+      // Regular substitutions only: an exceptional one (FIVB 15.7) is beyond
+      // the 6, as on the scorer and the bench (referee/liveCounters.js)
+      return liveStateCounters(liveState, teamAIsHome)
     }
 
     // Fallback: count from events (when data comes from local IndexedDB or WebSocket)
