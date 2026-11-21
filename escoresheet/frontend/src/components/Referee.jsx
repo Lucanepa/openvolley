@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
-import i18n from '../i18n'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker, isLiveStateNewerThanBundle } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import { useScorerAway } from '../hooks/useScorerAway'
@@ -65,64 +64,10 @@ import { useMatchTz } from '../ui/useMatchTz'
 // A lineup position: the rich format's { number, ... } or the legacy plain number
 const lineupNumber = (pos) => (pos && typeof pos === 'object') ? pos.number : (pos || '')
 
-// Get current version from package.json (injected by Vite at build time)
-const currentVersion = __APP_VERSION__
-
 // The scorer's pushes that end the break between sets ahead of time (a row
 // with set_interval_active false): "End interval" and the set 5 setup's
 // confirmation (Scoreboard endSetInterval / syncSet5Setup)
 const BREAK_END_EVENTS = new Set(['end_interval', 'manual_set5_setup'])
-
-// Flag SVG components for language selector
-const FlagGB = () => (
-  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="60" height="42" fill="#012169" />
-    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7" />
-    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)" />
-    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12" />
-    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7" />
-  </svg>
-)
-
-const FlagIT = () => (
-  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="20" height="42" fill="#009246" />
-    <rect x="20" width="20" height="42" fill="#fff" />
-    <rect x="40" width="20" height="42" fill="#CE2B37" />
-  </svg>
-)
-
-const FlagDE = () => (
-  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="60" height="14" fill="#000" />
-    <rect y="14" width="60" height="14" fill="#DD0000" />
-    <rect y="28" width="60" height="14" fill="#FFCE00" />
-  </svg>
-)
-
-const FlagFR = () => (
-  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="20" height="42" fill="#002395" />
-    <rect x="20" width="20" height="42" fill="#fff" />
-    <rect x="40" width="20" height="42" fill="#ED2939" />
-  </svg>
-)
-
-const FlagCH = () => (
-  <svg className="flag" width="14" height="14" viewBox="0 0 32 32" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="32" height="32" fill="#ff0000" />
-    <rect x="14" y="6" width="4" height="20" fill="#fff" />
-    <rect x="6" y="14" width="20" height="4" fill="#fff" />
-  </svg>
-)
-
-const languages = [
-  { code: 'en', Flag: FlagGB, label: 'EN' },
-  { code: 'it', Flag: FlagIT, label: 'IT' },
-  { code: 'de', Flag: FlagDE, label: 'DE' },
-  { code: 'de-CH', Flag: FlagCH, label: 'DE' },
-  { code: 'fr', Flag: FlagFR, label: 'FR' }
-]
 
 // Hook to compute synced font size for paired texts using off-screen measurement
 function useSyncedFontSize(texts, containerWidth, baseFontSize, minFontSize, isSingleLine = false, maxLines = 3) {
@@ -234,7 +179,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const lastAttentionTriggerRef = useRef(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const theme = useTheme()
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   // Score/countdown font from settings
   const [scoreFont, setScoreFont] = useState(() => {
     const saved = localStorage.getItem('scoreFont')
@@ -2415,6 +2359,89 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     </div>
   ) : null
 
+  // The header menu, in the match and before the coin toss (SimpleHeader adds
+  // the language, the version and Clear cache)
+  const refereeMenuItems = [
+    // The live scoresheet (also in the bar; here with its name on a phone)
+    ...(canShowScoresheet ? [
+      { icon: <FileText size={13} aria-hidden="true" />, label: t('refereeDashboard.scoresheet.open', 'Scoresheet'), onClick: () => setScoresheetOpen(true) },
+      { icon: <Users size={13} aria-hidden="true" />, label: t('refereeDashboard.rosters.open', 'Rosters'), onClick: () => setRostersOpen(true) },
+      { divider: true }
+    ] : []),
+    // Screen options
+    { header: t('refereeDashboard.screenOptions') },
+    {
+      icon: wakeLockActive ? <SunIcon size={13} /> : <MoonIcon size={13} />,
+      label: t('refereeDashboard.keepScreenOn'),
+      onClick: toggleWakeLock,
+      toggle: wakeLockActive,
+      keepOpen: true
+    },
+    // Colour theme: one row per choice, the chosen one inverted
+    ...themeMenuItems(t, theme),
+    { divider: true },
+    // Connection (only if not master mode)
+    ...(!isMasterMode ? [
+      { header: t('refereeDashboard.connection.title') },
+      {
+        icon: <RefreshIcon size={13} />,
+        label: t('refereeDashboard.connection.auto'),
+        onClick: () => setConnectionType(CONNECTION_TYPES.AUTO),
+        active: connectionType === CONNECTION_TYPES.AUTO
+      },
+      {
+        icon: <DatabaseIcon size={13} />,
+        label: t('refereeDashboard.connection.dbOnly'),
+        onClick: () => setConnectionType(CONNECTION_TYPES.SUPABASE),
+        active: connectionType === CONNECTION_TYPES.SUPABASE,
+        color: '#22c55e'
+      },
+      {
+        icon: <SatelliteDishIcon size={13} />,
+        label: t('refereeDashboard.connection.directOnly'),
+        onClick: () => setConnectionType(CONNECTION_TYPES.WEBSOCKET),
+        active: connectionType === CONNECTION_TYPES.WEBSOCKET,
+        color: '#3b82f6'
+      },
+      { divider: true }
+    ] : []),
+    // Test mode indicator
+    ...(isMasterMode ? [
+      {
+        icon: <WarningIcon size={13} />,
+        label: t('refereeDashboard.testMode'),
+        disabled: true,
+        color: '#fbbf24'
+      },
+      { divider: true }
+    ] : []),
+    // Refresh (always visible)
+    {
+      icon: <RefreshIcon size={13} />,
+      label: t('refereeDashboard.refresh'),
+      onClick: fetchFreshData,
+      color: '#3b82f6'
+    },
+    { divider: true },
+    // Exit
+    {
+      icon: '✕',
+      label: t('refereeDashboard.exit'),
+      onClick: onExit,
+      color: '#ef4444'
+    },
+    // Opened from the scorer's Home menu on this device: back to it
+    // (utils/scorerReturn.js)
+    ...(scorerReturnUrl() ? [
+      {
+        icon: <House size={14} aria-hidden="true" />,
+        label: t('dashboards.backToScorer', 'Back to scorer'),
+        onClick: () => returnToScorer(),
+        testId: 'dashboard-back-to-scorer'
+      }
+    ] : [])
+  ]
+
   // A phone or tablet held sideways: the dashboard is upright only (owner,
   // 2026-11-09), the mirror of the scorer's landscape-only scoreboard. The
   // notice stands in for every dashboard screen; the state above keeps
@@ -2443,60 +2470,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         overflow: 'hidden'
       }}>
         <ContextualHelpPanel open={helpOpen} onClose={closeHelp} screen="referee" />
-        {/* Header - same as main view */}
-        <div style={{
-          height: '40px',
-          minHeight: '40px',
-          maxHeight: '40px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '0 12px',
-          background: 'var(--panel-2)',
-          borderBottom: '1px solid var(--border)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              onClick={toggleFullscreen}
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                background: 'var(--panel)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                height: '25px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                display: 'flex',
-              }}
-            >
-              {isFullscreen ? `⛶ ${t('refereeDashboard.exitFullscreen')}` : '⛶'}
-            </button>
-
-            <button
-              onClick={toggleWakeLock}
-              style={{
-                padding: '2px 8px',
-                fontSize: '9px',
-                fontWeight: 600,
-                background: wakeLockActive ? 'var(--ov-selected)' : 'var(--panel)',
-                color: wakeLockActive ? 'var(--ov-on-dark)' : 'var(--text)',
-                border: wakeLockActive ? '1px solid var(--ov-selected)' : '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                height: '25px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                display: 'flex',
-              }}
-              title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
-            >
-              {wakeLockActive ? <SunIcon size={14} /> : <MoonIcon size={14} />}
-            </button>
-
+        {/* Header: the bar of the match view (SimpleHeader). The row of its
+            own (fullscreen, screen on, connection, refresh, ?, language,
+            version, exit) was wider than a 360 px phone and its last button
+            sat off the screen (full-match test 21.11.2026): screen on,
+            refresh and exit are in the menu now, with the language and the
+            version */}
+        <SimpleHeader
+          leading={
             <ConnectionStatus
               connectionStatuses={connectionStatuses}
               connectionDebugInfo={{
@@ -2510,188 +2491,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               }}
               queueStats={syncStatus}
               onRetryErrors={retryErrors}
-              position="right"
+              position="left"
               size="small"
             />
-          </div>
-
-          {/* Center - Refresh Button */}
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <button
-              onClick={fetchFreshData}
-              style={{
-                padding: '6px 16px',
-                fontSize: '12px',
-                fontWeight: 600,
-                height: '25px',
-                justifyContent: 'center',
-                background: 'var(--ov-card)',
-                color: 'var(--ov-text-body)',
-                border: '1px solid var(--ov-hairline-strong)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-              title={t('refereeDashboard.refresh')}
-            >
-              <RefreshIcon size={14} /> {window.innerWidth >= 500 && t('refereeDashboard.refresh')}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            {/* Help: the panel with the referee's help */}
-            <button
-              type="button"
-              onClick={toggleHelp}
-              aria-pressed={helpOpen}
-              aria-label={t('contextHelp.helpButton', 'Help')}
-              title={t('contextHelp.helpButton', 'Help')}
-              style={{
-                padding: '4px 9px',
-                fontSize: '12px',
-                fontWeight: 700,
-                height: '25px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                display: 'flex',
-                background: helpOpen ? 'var(--ov-selected)' : 'var(--panel)',
-                color: helpOpen ? 'var(--ov-on-dark)' : 'var(--text)',
-                border: helpOpen ? '1px solid var(--ov-selected)' : '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-            >
-              ?
-            </button>
-            {/* Language Selector */}
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setLanguageMenuOpen(!languageMenuOpen)
-                }}
-                style={{
-                  padding: '4px 8px',
-                  fontSize: '10px',
-                  height: '25px',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  display: 'flex',
-                  gap: '4px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-                title={t('header.language', 'Language')}
-              >
-                {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
-                <span style={{ fontSize: '8px' }}>▼</span>
-              </button>
-
-              {/* Language Dropdown */}
-              {languageMenuOpen && (
-                <>
-                  <div
-                    {...backdropDismiss(() => setLanguageMenuOpen(false))}
-                    style={{
-                      position: 'fixed',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      zIndex: 998
-                    }}
-                  />
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    marginTop: '4px',
-                    background: 'var(--panel)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                    zIndex: 1000,
-                    minWidth: '100px',
-                    boxShadow: 'var(--ov-shadow-card-lg)'
-                  }}>
-                    {languages.map((lang) => (
-                      <button
-                        key={lang.code}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          i18n.changeLanguage(lang.code)
-                          setLanguageMenuOpen(false)
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          width: '100%',
-                          padding: '10px 12px',
-                          fontSize: '12px',
-                          fontWeight: i18n.language === lang.code ? 600 : 400,
-                          background: i18n.language === lang.code ? 'var(--ov-sunken-strong)' : 'transparent',
-                          color: 'var(--text)',
-                          border: 'none',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.15s'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (i18n.language !== lang.code) {
-                            e.currentTarget.style.background = 'var(--panel-2)'
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (i18n.language !== lang.code) {
-                            e.currentTarget.style.background = 'transparent'
-                          }
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center' }}><lang.Flag /></span>
-                        <span>{lang.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Version */}
-            <span style={{ fontSize: '8px', color: 'var(--muted)' }}>
-              v{currentVersion}
-            </span>
-            {/* Exit Button with Icon */}
-            <button
-              onClick={onExit}
-              style={{
-                padding: '4px 8px',
-                fontSize: '10px',
-                height: '25px',
-                width: '25px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                display: 'flex',
-                fontWeight: 600,
-                background: 'var(--ov-card)',
-                color: 'var(--ov-danger-text)',
-                border: '1px solid var(--ov-danger-border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                lineHeight: 1
-              }}
-              title={t('header.exit')}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+          }
+          onFullscreen={toggleFullscreen}
+          isFullscreen={isFullscreen}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
+          menuItems={refereeMenuItems}
+        />
 
         {/* Content */}
         <div className="ov-kit flex flex-1 flex-col items-center overflow-y-auto bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6">
@@ -3148,86 +2957,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         isFullscreen={isFullscreen}
         onHelp={toggleHelp}
         helpOpen={helpOpen}
-        menuItems={[
-          // The live scoresheet (also in the bar; here with its name on a phone)
-          ...(canShowScoresheet ? [
-            { icon: <FileText size={13} aria-hidden="true" />, label: t('refereeDashboard.scoresheet.open', 'Scoresheet'), onClick: () => setScoresheetOpen(true) },
-            { icon: <Users size={13} aria-hidden="true" />, label: t('refereeDashboard.rosters.open', 'Rosters'), onClick: () => setRostersOpen(true) },
-            { divider: true }
-          ] : []),
-          // Screen options
-          { header: t('refereeDashboard.screenOptions') },
-          {
-            icon: wakeLockActive ? <SunIcon size={13} /> : <MoonIcon size={13} />,
-            label: t('refereeDashboard.keepScreenOn'),
-            onClick: toggleWakeLock,
-            toggle: wakeLockActive,
-            keepOpen: true
-          },
-          // Colour theme: one row per choice, the chosen one inverted
-          ...themeMenuItems(t, theme),
-          { divider: true },
-          // Connection (only if not master mode)
-          ...(!isMasterMode ? [
-            { header: t('refereeDashboard.connection.title') },
-            {
-              icon: <RefreshIcon size={13} />,
-              label: t('refereeDashboard.connection.auto'),
-              onClick: () => setConnectionType(CONNECTION_TYPES.AUTO),
-              active: connectionType === CONNECTION_TYPES.AUTO
-            },
-            {
-              icon: <DatabaseIcon size={13} />,
-              label: t('refereeDashboard.connection.dbOnly'),
-              onClick: () => setConnectionType(CONNECTION_TYPES.SUPABASE),
-              active: connectionType === CONNECTION_TYPES.SUPABASE,
-              color: '#22c55e'
-            },
-            {
-              icon: <SatelliteDishIcon size={13} />,
-              label: t('refereeDashboard.connection.directOnly'),
-              onClick: () => setConnectionType(CONNECTION_TYPES.WEBSOCKET),
-              active: connectionType === CONNECTION_TYPES.WEBSOCKET,
-              color: '#3b82f6'
-            },
-            { divider: true }
-          ] : []),
-          // Test mode indicator
-          ...(isMasterMode ? [
-            {
-              icon: <WarningIcon size={13} />,
-              label: t('refereeDashboard.testMode'),
-              disabled: true,
-              color: '#fbbf24'
-            },
-            { divider: true }
-          ] : []),
-          // Refresh (always visible)
-          {
-            icon: <RefreshIcon size={13} />,
-            label: t('refereeDashboard.refresh'),
-            onClick: fetchFreshData,
-            color: '#3b82f6'
-          },
-          { divider: true },
-          // Exit
-          {
-            icon: '✕',
-            label: t('refereeDashboard.exit'),
-            onClick: onExit,
-            color: '#ef4444'
-          },
-          // Opened from the scorer's Home menu on this device: back to it
-          // (utils/scorerReturn.js)
-          ...(scorerReturnUrl() ? [
-            {
-              icon: <House size={14} aria-hidden="true" />,
-              label: t('dashboards.backToScorer', 'Back to scorer'),
-              onClick: () => returnToScorer(),
-              testId: 'dashboard-back-to-scorer'
-            }
-          ] : [])
-        ]}
+        menuItems={refereeMenuItems}
       />
       <ContextualHelpPanel open={helpOpen} onClose={closeHelp} screen="referee" />
 
