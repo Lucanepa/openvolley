@@ -757,7 +757,6 @@
     "menu": {
       "scoresheet": "eScoresheet",
       "menu": "Menü",
-      "showActionLog": "Aktionsprotokoll anzeigen",
       "showSanctionsResults": "Sanktionen und Ergebnisse anzeigen",
       "openRemarksRecording": "Bemerkungen erfassen",
       "stopMatch": "Spiel abbrechen",
@@ -771,10 +770,8 @@
       "refereePin": "Schiedsrichter-PIN",
       "gameNumber": "Spielnummer",
       "helpVideoGuides": "Hilfe & Video-Anleitungen",
-      "actionLog": "Aktionsprotokoll",
       "manualChanges": "Manuelle Änderungen",
       "keyboardShortcuts": "Tastaturkürzel",
-      "searchEvents": "Ereignisse suchen...",
       "sections": {
         "matchInfo": "Spielinfos",
         "corrections": "Korrekturen",
@@ -880,7 +877,6 @@
       "setEndFailed": "Ende setzen fehlgeschlagen. Daten lokal gespeichert.",
       "forfaitFailed": "Forfait konnte nicht abgeschlossen werden. Spielstand und Sätze in den manuellen Anpassungen prüfen."
     },
-    "noEventsRecorded": "Noch keine Ereignisse erfasst.",
     "captainOnCourt": {
       "designate": "Spielkapitän",
       "selectTitle": "Spielführer",
@@ -925,18 +921,8 @@
       "deleteSanctionEvent": "Diese Sanktion löschen?",
       "deleteEvent": "Dieses {{type}}-Ereignis löschen?",
       "deleteLineupEvent": "Dieses Aufstellungsereignis löschen?",
-      "setStart": "Satzanfang",
-      "setEnd": "Satzende",
       "excSubstitution": "Ausserord. Auswechslung",
-      "excSub": "Ausserord. Ausw.",
-      "delaySanction": "Verzögerungssanktion",
-      "rally": "Ballwechsel",
-      "decision": "Entscheid",
-      "pointCancelled": "Punkt annulliert",
-      "lineupChanged": "Aufst. geändert",
-      "liberoExchShort": "Libero-Tausch",
-      "liberoRedesShort": "Libero neu",
-      "disqualifShort": "Disqualif."
+      "delaySanction": "Verzögerungssanktion"
     },
     "deviceDisconnected": "{{device}} getrennt",
     "pins": {
@@ -1242,8 +1228,7 @@
       "titleDisqualified": "Disqualifiziert – darf im Rest des Spiels nicht spielen",
       "titleExceptional": "Ausserordentlich ausgewechselt – darf im Rest des Spiels nicht spielen",
       "titleExpelled": "Ausgeschlossen – darf in diesem Satz nicht spielen",
-      "titleCannotReenter": "Kann nicht wieder eintreten",
-      "noEventsFound": "Keine Ereignisse gefunden"
+      "titleCannotReenter": "Kann nicht wieder eintreten"
     }
   },
   "settings": {
@@ -3295,6 +3280,7 @@
     "city": "Stadt",
     "league": "Liga",
     "championshipType": "Meisterschaftstyp",
+    "championshipTypeOther": "Meisterschaftstyp (andere)",
     "gameNumber": "Spielnummer",
     "matchTypeGender": "Spieltyp (Geschlecht)",
     "scheduledDateTime": "Geplantes Datum/Uhrzeit",
@@ -3524,6 +3510,17 @@
     "fileActionFailed": "Die Datei konnte von hier aus nicht geöffnet werden. Sie liegt in: {{path}}",
     "checkTheMatch": "Spiel vor der Bestätigung prüfen:",
     "remarksClipped": "BEMERKUNGEN: Der Text passt nicht ins Feld; das PDF druckt ihn vollständig auf Seite 2."
+  },
+  "setPreview": {
+    "menu": "Satzvorschau",
+    "title": "Satzvorschau",
+    "description": "Der Satz, wie er auf dem Matchblatt gedruckt wird. Er wird bei jedem Ballwechsel aktualisiert.",
+    "sets": "Sätze",
+    "setTab": "Satz {{n}}",
+    "zoomOut": "Verkleinern",
+    "zoomIn": "Vergrössern",
+    "fit": "An Breite anpassen",
+    "loading": "Satzvorschau wird geladen..."
   },
   "scoresheetSite": {
     "archiveTitle": "Archiv der Matchblätter",
@@ -5806,6 +5803,68 @@
       "wrong_server": "Falsche/r Aufschläger/in",
       "officials_mistake": "Fehler der Offiziellen",
       "other": "Anderes"
+    }
+  },
+  "history": {
+    "menu": "Verlauf",
+    "title": "Verlauf",
+    "tab": {
+      "history": "Verlauf",
+      "setInfo": "Satzinformationen"
+    },
+    "filter": {
+      "set": "Satz",
+      "allSets": "Alle Sätze",
+      "infoFor": "Informationen zu",
+      "wholeMatch": "Ganzes Spiel"
+    },
+    "search": "Suchen",
+    "searchPlaceholder": "Verlauf durchsuchen",
+    "libero": "Libero",
+    "lineupHint": "Aufstellungen nach jedem Punkt, Positionen I bis VI; L = Libero.",
+    "scoreHint": "Spielstände stehen mit dem betroffenen Team zuerst, wie auf dem Matchblatt.",
+    "col": {
+      "time": "Zeit",
+      "what": "Was",
+      "lineupOf": "Aufstellung {{letter}}",
+      "set": "Satz",
+      "score": "Stand",
+      "scoreTitle": "Das betroffene Team zuerst, wie auf dem Matchblatt",
+      "teamAB": "A/B",
+      "team": "Team",
+      "in": "Nr. rein",
+      "out": "Nr. raus",
+      "scoreIn": "Stand rein",
+      "scoreOut": "Stand raus",
+      "number": "Nr."
+    },
+    "sanctionColumn": {
+      "W": "W",
+      "P": "P",
+      "E": "E",
+      "D": "D"
+    },
+    "section": {
+      "injuries": "Verletzungen und ausserordentliche Wechsel"
+    },
+    "improperRequest": "Nicht ordnungsgemässer Antrag: Team {{team}}, Satz {{set}}, {{score}}",
+    "empty": {
+      "events": "Noch nichts erfasst.",
+      "search": "Kein Eintrag passt zu deiner Suche.",
+      "substitutions": "Keine Spielerwechsel.",
+      "sanctions": "Keine Sanktionen.",
+      "injuries": "Keine.",
+      "timeouts": "Keine Auszeiten."
+    },
+    "what": {
+      "matchStart": "Spielbeginn",
+      "setStart": "Beginn Satz {{n}}",
+      "rallyStart": "Ballwechsel beginnt",
+      "rotation": "Rotation von {{team}}",
+      "lineupUpdate": "Aufstellung von {{team}} aktualisiert",
+      "liberoFrontRow": "Libero #{{libero}} raus an der Vorderreihe, #{{player}} rein",
+      "exceptional": "Ausserordentlicher Spielerwechsel: #{{in}} für #{{out}}",
+      "injurySub": "Spielerwechsel wegen Verletzung: #{{in}} für #{{out}}"
     }
   },
   "corrections": {

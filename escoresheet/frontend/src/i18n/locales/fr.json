@@ -763,7 +763,6 @@
     "menu": {
       "scoresheet": "eScoresheet",
       "menu": "Menu",
-      "showActionLog": "Afficher le journal des actions",
       "showSanctionsResults": "Afficher sanctions et résultats",
       "openRemarksRecording": "Ouvrir la saisie des remarques",
       "stopMatch": "Arrêter le match",
@@ -777,10 +776,8 @@
       "refereePin": "PIN arbitre",
       "gameNumber": "Numéro de match",
       "helpVideoGuides": "Aide & guides vidéo",
-      "actionLog": "Journal des actions",
       "manualChanges": "Modifications manuelles",
       "keyboardShortcuts": "Raccourcis clavier",
-      "searchEvents": "Rechercher des événements...",
       "sections": {
         "matchInfo": "Infos du match",
         "corrections": "Corrections",
@@ -886,7 +883,6 @@
       "setEndFailed": "Échec de la fin de l'enregistrement. Données sauvegardées localement.",
       "forfaitFailed": "Le forfait n'a pas pu être finalisé. Vérifie le score et les sets dans les ajustements manuels."
     },
-    "noEventsRecorded": "Aucun événement enregistré.",
     "captainOnCourt": {
       "designate": "Capitaine de jeu",
       "selectTitle": "Capitaine de jeu",
@@ -931,18 +927,8 @@
       "deleteSanctionEvent": "Supprimer cette sanction ?",
       "deleteEvent": "Supprimer cet événement {{type}} ?",
       "deleteLineupEvent": "Supprimer cet événement de composition ?",
-      "setStart": "Début de set",
-      "setEnd": "Fin de set",
       "excSubstitution": "Rempl. exceptionnel",
-      "excSub": "Rempl. except.",
-      "delaySanction": "Sanction de retard",
-      "rally": "Échange",
-      "decision": "Décision",
-      "pointCancelled": "Point annulé",
-      "lineupChanged": "Pos. modifiée",
-      "liberoExchShort": "Échange lib.",
-      "liberoRedesShort": "Redés. libéro",
-      "disqualifShort": "Disqualif."
+      "delaySanction": "Sanction de retard"
     },
     "deviceDisconnected": "{{device}} déconnecté",
     "pins": {
@@ -1248,8 +1234,7 @@
       "titleDisqualified": "Disqualifié — ne peut plus jouer de tout le match",
       "titleExceptional": "Remplacé exceptionnellement — ne peut plus jouer de tout le match",
       "titleExpelled": "Expulsé — ne peut pas jouer ce set",
-      "titleCannotReenter": "Ne peut pas revenir",
-      "noEventsFound": "Aucun événement trouvé"
+      "titleCannotReenter": "Ne peut pas revenir"
     }
   },
   "settings": {
@@ -1993,6 +1978,17 @@
     "fileActionFailed": "Le fichier n'a pas pu être ouvert d'ici. Il se trouve dans : {{path}}",
     "checkTheMatch": "Vérifier le match avant de l'approuver :",
     "remarksClipped": "REMARQUES : le texte ne tient pas dans la case ; le PDF l’imprime en entier en page 2."
+  },
+  "setPreview": {
+    "menu": "Aperçu du set",
+    "title": "Aperçu du set",
+    "description": "Le set tel qu'il s'imprime sur la feuille de match. Il se met à jour à chaque échange.",
+    "sets": "Sets",
+    "setTab": "Set {{n}}",
+    "zoomOut": "Réduire",
+    "zoomIn": "Agrandir",
+    "fit": "Ajuster à la largeur",
+    "loading": "Chargement de l'aperçu du set..."
   },
   "scoresheetSite": {
     "archiveTitle": "Archive des feuilles de match",
@@ -3546,6 +3542,7 @@
     "city": "Ville",
     "league": "Ligue",
     "championshipType": "Type de championnat",
+    "championshipTypeOther": "Type de championnat (autre)",
     "gameNumber": "Numéro de match",
     "matchTypeGender": "Type de match (genre)",
     "scheduledDateTime": "Date/heure prévue",
@@ -5817,6 +5814,68 @@
       "wrong_server": "Mauvais/e serveur/euse",
       "officials_mistake": "Erreur des officiels",
       "other": "Autre"
+    }
+  },
+  "history": {
+    "menu": "Historique",
+    "title": "Historique",
+    "tab": {
+      "history": "Historique",
+      "setInfo": "Infos du set"
+    },
+    "filter": {
+      "set": "Set",
+      "allSets": "Tous les sets",
+      "infoFor": "Informations pour",
+      "wholeMatch": "Tout le match"
+    },
+    "search": "Rechercher",
+    "searchPlaceholder": "Rechercher dans l'historique",
+    "libero": "Libéro",
+    "lineupHint": "Formations après chaque point, positions I à VI ; L = libéro.",
+    "scoreHint": "Les scores sont écrits avec l'équipe concernée d'abord, comme sur la feuille de match.",
+    "col": {
+      "time": "Heure",
+      "what": "Quoi",
+      "lineupOf": "Formation {{letter}}",
+      "set": "Set",
+      "score": "Score",
+      "scoreTitle": "L'équipe concernée d'abord, comme sur la feuille de match",
+      "teamAB": "A/B",
+      "team": "Équipe",
+      "in": "N° entrant",
+      "out": "N° sortant",
+      "scoreIn": "Score entrée",
+      "scoreOut": "Score sortie",
+      "number": "N°"
+    },
+    "sanctionColumn": {
+      "W": "W",
+      "P": "P",
+      "E": "E",
+      "D": "D"
+    },
+    "section": {
+      "injuries": "Blessures et remplacements exceptionnels"
+    },
+    "improperRequest": "Demande irrégulière : équipe {{team}}, set {{set}}, {{score}}",
+    "empty": {
+      "events": "Rien enregistré pour le moment.",
+      "search": "Aucune entrée ne correspond à ta recherche.",
+      "substitutions": "Aucun remplacement.",
+      "sanctions": "Aucune sanction.",
+      "injuries": "Aucune.",
+      "timeouts": "Aucun temps mort."
+    },
+    "what": {
+      "matchStart": "Début du match",
+      "setStart": "Début du set {{n}}",
+      "rallyStart": "L'échange commence",
+      "rotation": "Rotation de {{team}}",
+      "lineupUpdate": "Formation de {{team}} mise à jour",
+      "liberoFrontRow": "Libéro #{{libero}} sort en zone avant, #{{player}} entre",
+      "exceptional": "Remplacement exceptionnel : #{{in}} pour #{{out}}",
+      "injurySub": "Remplacement pour blessure : #{{in}} pour #{{out}}"
     }
   },
   "corrections": {

@@ -2,13 +2,15 @@ import {
   Users, RectangleVertical, ScrollText, NotebookPen, ClipboardList,
   Wrench, UserPen, KeyRound, Download, Settings, OctagonX, History, FilePen, Keyboard, MonitorCog
 } from 'lucide-react'
+// the Set preview row's icon
+import { TableProperties } from 'lucide-react'
 
 /**
  * The scorer's "Match" menu (scoreboard toolbar, and the action sheet of the
  * legacy phone layout), grouped instead of one flat list. Most used first,
  * the destructive "Stop the match" alone at the end:
  *
- *   Match info      rosters, sanctions and results, action log, remarks, match setup,
+ *   Match info      rosters, sanctions and results, history, remarks, match setup,
  *                   edit match info (hall, date, officials ... at any time)
  *   Corrections     go back (the rules' going back to a score: points
  *                   cancelled, point and service, then everything editable),
@@ -39,8 +41,12 @@ export function matchMenuSections(t, actions) {
       items: [
         ...row('rosters', Users, t('scoreboard.showRosters', 'Show rosters'), actions.showRosters),
         ...row('sanctions', RectangleVertical, t('scoreboard.menu.showSanctionsResults', 'Show sanctions and results'), actions.showSanctions),
-        ...row('action-log', ScrollText, t('scoreboard.menu.showActionLog', 'Show action log'), actions.showActionLog),
+        // History (components/history): the log and the set information; the
+        // row keeps its old key and action name (action-log / showActionLog)
+        ...row('action-log', ScrollText, t('history.menu', 'History'), actions.showActionLog),
         ...row('remarks', NotebookPen, t('scoreboard.menu.openRemarksRecording', 'Open remarks recording'), actions.openRemarks),
+        // the set as the paper sheet prints it (components/setPreview)
+        ...row('set-preview', TableProperties, t('setPreview.menu', 'Set preview'), actions.showSetPreview),
         ...row('match-setup', ClipboardList, t('scoreboard.menu.showMatchSetup', 'Show match setup'), actions.openMatchSetup),
         ...row('edit-match-info', FilePen, t('scoreboard.menu.editMatchInfo', 'Edit match info'), actions.editMatchInfo)
       ]

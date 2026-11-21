@@ -764,7 +764,6 @@
     "menu": {
       "scoresheet": "eScoresheet",
       "menu": "Menu",
-      "showActionLog": "Mostra registro azioni",
       "showSanctionsResults": "Mostra sanzioni e risultati",
       "openRemarksRecording": "Apri la registrazione delle osservazioni",
       "stopMatch": "Interrompi partita",
@@ -778,10 +777,8 @@
       "refereePin": "PIN arbitro",
       "gameNumber": "Numero partita",
       "helpVideoGuides": "Aiuto & guide video",
-      "actionLog": "Registro azioni",
       "manualChanges": "Modifiche manuali",
       "keyboardShortcuts": "Scorciatoie tastiera",
-      "searchEvents": "Cerca eventi...",
       "sections": {
         "matchInfo": "Info partita",
         "corrections": "Correzioni",
@@ -887,7 +884,6 @@
       "setEndFailed": "Fine dell'impostazione non riuscita. I dati sono stati salvati localmente.",
       "forfaitFailed": "Non è stato possibile completare il forfait. Controlla il punteggio e i set nelle modifiche manuali."
     },
-    "noEventsRecorded": "Nessun evento registrato.",
     "captainOnCourt": {
       "designate": "Capitano in gioco",
       "selectTitle": "Capitano in gioco",
@@ -932,18 +928,8 @@
       "deleteSanctionEvent": "Eliminare questa sanzione?",
       "deleteEvent": "Eliminare questo evento {{type}}?",
       "deleteLineupEvent": "Eliminare questo evento formazione?",
-      "setStart": "Inizio set",
-      "setEnd": "Fine set",
       "excSubstitution": "Sost. eccezionale",
-      "excSub": "Sost. ecc.",
-      "delaySanction": "Sanzione per ritardo",
-      "rally": "Scambio",
-      "decision": "Decisione",
-      "pointCancelled": "Punto annullato",
-      "lineupChanged": "Form. modificata",
-      "liberoExchShort": "Scambio lib.",
-      "liberoRedesShort": "Rides. libero",
-      "disqualifShort": "Squalif."
+      "delaySanction": "Sanzione per ritardo"
     },
     "deviceDisconnected": "{{device}} disconnesso",
     "pins": {
@@ -1249,8 +1235,7 @@
       "titleDisqualified": "Squalificato — non può giocare il resto della partita",
       "titleExceptional": "Sostituito in modo eccezionale — non può giocare il resto della partita",
       "titleExpelled": "Espulso — non può giocare questo set",
-      "titleCannotReenter": "Non può rientrare",
-      "noEventsFound": "Nessun evento trovato"
+      "titleCannotReenter": "Non può rientrare"
     }
   },
   "settings": {
@@ -1994,6 +1979,17 @@
     "fileActionFailed": "Non è stato possibile aprire il file da qui. Si trova in: {{path}}",
     "checkTheMatch": "Controlla la partita prima di approvarla:",
     "remarksClipped": "OSSERVAZIONI: il testo non entra nel riquadro; il PDF lo stampa per intero a pagina 2."
+  },
+  "setPreview": {
+    "menu": "Anteprima del set",
+    "title": "Anteprima del set",
+    "description": "Il set come viene stampato sul referto. Si aggiorna a ogni scambio.",
+    "sets": "Set",
+    "setTab": "Set {{n}}",
+    "zoomOut": "Riduci",
+    "zoomIn": "Ingrandisci",
+    "fit": "Adatta alla larghezza",
+    "loading": "Caricamento dell'anteprima del set..."
   },
   "scoresheetSite": {
     "archiveTitle": "Archivio dei referti",
@@ -3552,6 +3548,7 @@
     "city": "Città",
     "league": "Campionato",
     "championshipType": "Tipo di campionato",
+    "championshipTypeOther": "Tipo di campionato (altro)",
     "gameNumber": "Numero partita",
     "matchTypeGender": "Tipo partita (genere)",
     "scheduledDateTime": "Data/ora programmata",
@@ -5823,6 +5820,68 @@
       "wrong_server": "Battitore/trice sbagliato/a",
       "officials_mistake": "Errore degli ufficiali",
       "other": "Altro"
+    }
+  },
+  "history": {
+    "menu": "Cronologia",
+    "title": "Cronologia",
+    "tab": {
+      "history": "Cronologia",
+      "setInfo": "Informazioni sul set"
+    },
+    "filter": {
+      "set": "Set",
+      "allSets": "Tutti i set",
+      "infoFor": "Informazioni su",
+      "wholeMatch": "Tutta la partita"
+    },
+    "search": "Cerca",
+    "searchPlaceholder": "Cerca nella cronologia",
+    "libero": "Libero",
+    "lineupHint": "Formazioni dopo ogni punto, posizioni da I a VI; L = libero.",
+    "scoreHint": "I punteggi sono scritti con prima la squadra interessata, come sul referto.",
+    "col": {
+      "time": "Ora",
+      "what": "Cosa",
+      "lineupOf": "Formazione {{letter}}",
+      "set": "Set",
+      "score": "Punteggio",
+      "scoreTitle": "Prima la squadra interessata, come sul referto",
+      "teamAB": "A/B",
+      "team": "Squadra",
+      "in": "N. entra",
+      "out": "N. esce",
+      "scoreIn": "Punteggio entrata",
+      "scoreOut": "Punteggio uscita",
+      "number": "N."
+    },
+    "sanctionColumn": {
+      "W": "W",
+      "P": "P",
+      "E": "E",
+      "D": "D"
+    },
+    "section": {
+      "injuries": "Infortuni e sostituzioni eccezionali"
+    },
+    "improperRequest": "Richiesta impropria: squadra {{team}}, set {{set}}, {{score}}",
+    "empty": {
+      "events": "Ancora niente registrato.",
+      "search": "Nessuna voce corrisponde alla tua ricerca.",
+      "substitutions": "Nessuna sostituzione.",
+      "sanctions": "Nessuna sanzione.",
+      "injuries": "Nessuno.",
+      "timeouts": "Nessun tempo di riposo."
+    },
+    "what": {
+      "matchStart": "Inizio partita",
+      "setStart": "Inizio set {{n}}",
+      "rallyStart": "Inizia lo scambio",
+      "rotation": "Rotazione di {{team}}",
+      "lineupUpdate": "Formazione di {{team}} aggiornata",
+      "liberoFrontRow": "Libero #{{libero}} esce in prima linea, entra #{{player}}",
+      "exceptional": "Sostituzione eccezionale: #{{in}} per #{{out}}",
+      "injurySub": "Sostituzione per infortunio: #{{in}} per #{{out}}"
     }
   },
   "corrections": {
