@@ -328,6 +328,16 @@ function handleRequest(req, res) {
       }
     }
     
+    // A role page's own sub-path (/livescore/board: the scoreboard page, which
+    // the livescore entry picks by its path): that role's page
+    if (!existsSync(filePath)) {
+      const sub = /^\/+([a-z_]+)\/[a-z0-9_-]+\/?$/i.exec(urlPath)
+      if (sub && ROLE_PATHS.includes(sub[1])) {
+        const own = join(DIST_DIR, sub[1], 'index.html')
+        if (existsSync(own)) filePath = own
+      }
+    }
+
     // An OpenBeach build's role page
     if (!existsSync(filePath)) {
       const role = urlPath.replace(/^\/+|\/+$/g, '').replace(/\.html$/, '')
