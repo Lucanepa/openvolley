@@ -2,7 +2,7 @@
 // prints it, any set so far a tap away, live with the scoreboard's data.
 // The drawing itself is tested in scoresheet_pdf/__tests__/SetPreview.test.tsx.
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest'
-import { render, screen, fireEvent, within, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, within, cleanup, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -24,7 +24,7 @@ vi.mock('react-i18next', async () => {
   }
 })
 
-import SetPreviewModal, { previewSetIndices, currentPreviewSet } from '../setPreview/SetPreviewModal.jsx'
+import SetPreviewModal, { previewSetIndices, currentPreviewSet, readableZoom, READABLE_SCALE } from '../setPreview/SetPreviewModal.jsx'
 import MenuList from '../MenuList'
 import { matchMenuSections, toMenuListSections } from '../matchMenu'
 import en from '../../i18n/locales/en.json'
@@ -150,6 +150,39 @@ describe('SetPreviewModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('readableZoom: fitted 1 and wider open fitted; a small fit opens zoomed to READABLE_SCALE', () => {
+    expect(READABLE_SCALE).toBe(0.8)
+    expect(readableZoom(1.5)).toBe(1)
+    expect(readableZoom(0.8)).toBe(1)
+    expect(readableZoom(0.4)).toBe(2)
+    expect(readableZoom(0.29)).toBe(2.76)
+    expect(readableZoom(0.1)).toBe(4) // ZOOM_MAX
+    expect(readableZoom(0)).toBe(1)
+    expect(readableZoom(undefined)).toBe(1)
+  })
+
+  it('a phone: opens zoomed in to a readable size; Fit to width is then kept', async () => {
+    // the dialog 390 px wide, the set ~975 px at paper size: fitted 0.4
+    const spies = [
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390),
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(975),
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(300)
+    ]
+    try {
+      const { rerender } = render(<SetPreviewModal data={scoreboardData()} onClose={() => {}} />)
+      await row()
+      const scale = () => Number(screen.getByTestId('set-preview').getAttribute('data-scale'))
+      await waitFor(() => expect(scale()).toBe(0.8))
+      fireEvent.click(screen.getByTestId('set-preview-fit'))
+      expect(scale()).toBe(0.4)
+      // a rally later: the scorer's choice stays
+      rerender(<SetPreviewModal data={{ ...scoreboardData() }} onClose={() => {}} />)
+      expect(scale()).toBe(0.4)
+    } finally {
+      spies.forEach(sp => sp.mockRestore())
+    }
   })
 
   it('previewSetIndices / currentPreviewSet: sets by index once each, set 1 before any; the set in play, else the last', () => {

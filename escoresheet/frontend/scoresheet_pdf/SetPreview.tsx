@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 // The sheet's own base styles (font, line height, preflight, .ss-rule), scoped
 // to .ss-sheet: the set looks as on the printed sheet wherever it is mounted
 import './sheet.css';
@@ -40,6 +40,10 @@ export interface SetPreviewProps {
   zoom?: number;
   /** Called with the new zoom when two fingers pinch (controlled zoom). */
   onZoomChange?: (zoom: number) => void;
+  /** Called with the fitted scale (zoom 1) once it is measured and whenever it changes (a set of another width, a resize). */
+  onFitScale?: (fitScale: number) => void;
+  /** Zoomed in wider than the width given: start scrolled past the legend, at the SET column (the caller's own zoom: false). */
+  scrollToSet?: boolean;
   className?: string;
 }
 
@@ -110,7 +114,7 @@ export function SetPreviewRow({ model, setIndex }: { model: SheetModel; setIndex
  * scaled size, so a zoomed-in set scrolls sideways from its left edge; two
  * fingers zoom it (usePinchZoom, as the scoresheet viewer).
  */
-export function SetPreview({ matchData, setIndex, fit = true, zoom: zoomProp, onZoomChange, className }: SetPreviewProps) {
+export function SetPreview({ matchData, setIndex, fit = true, zoom: zoomProp, onZoomChange, onFitScale, scrollToSet = false, className }: SetPreviewProps) {
   const data = useMemo(() => normalizeMatchData(matchData), [matchData]);
   const match: any = data.match;
   // the set's clocks (start, end) read the match's own zone, as on the sheet
@@ -154,6 +158,22 @@ export function SetPreview({ matchData, setIndex, fit = true, zoom: zoomProp, on
   const measured = size.w > 0 && size.h > 0;
   const fitScale = fit && measured && size.avail > 0 ? clamp(size.avail / size.w, FIT_MIN, FIT_MAX) : 1;
   const scale = Math.round(fitScale * zoom * 1000) / 1000;
+
+  // the caller may start zoomed in where the fitted set is too small to read (a phone)
+  const onFitScaleRef = useRef(onFitScale);
+  onFitScaleRef.current = onFitScale;
+  useEffect(() => {
+    if (fit && measured && size.avail > 0) onFitScaleRef.current?.(fitScale);
+  }, [fit, measured, size.avail, fitScale]);
+
+  // zoomed in on a narrow screen: the set's numbers first, the legend a swipe to the left
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!scrollToSet || !viewport || !measured) return;
+    const legend = sheetRef.current?.querySelector('[data-testid="set-preview-row"]')?.firstElementChild as HTMLElement | null;
+    if (!legend || size.w * scale <= size.avail) return;
+    viewport.scrollLeft = Math.round(legend.offsetLeft * scale + legend.offsetWidth * scale);
+  }, [scrollToSet, measured, scale, setIndex, size.w, size.avail]);
 
   // Two fingers: the hook speaks in the drawn scale, the zoom is over the fitted one
   usePinchZoom({
