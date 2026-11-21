@@ -14,7 +14,7 @@
  * last step is taken back (Undo): every later plan was planned on the draft
  * the earlier ones made.
  */
-import { emptyPlan, mergePlans, applyPlanToEvents } from './manualCorrections'
+import { emptyPlan, mergePlans, applyPlanToEvents, planAddPoint, planRemovePoint } from './manualCorrections'
 import { matchIssues } from './recompute'
 import { remarksAfter } from './remarks'
 import { scoreFromPointEvents } from './rules'
@@ -108,4 +108,39 @@ export function newIssues(base, draft, ctx = {}) {
 /** The sentences of the staged changes, in order (the board's change list). */
 export function stepLines(steps = []) {
   return (steps || []).map((s, i) => ({ index: i, text: s.plan?.log?.text || '', notes: s.plan?.notes || [] })).filter(l => l.text)
+}
+
+/**
+ * A score typed on the board (owner 2026-11-21: "if possible yes"): the
+ * difference as points of `team` at the end of the set, one after the other,
+ * each planned on the draft the one before made (planAddPoint /
+ * planRemovePoint, as "+" and "−"). Points of one team in a row: the first may
+ * be a side-out (the team rotates), the next ones are on its own serve. It
+ * stops at the first point the board cannot add or remove (the one that ends
+ * the set, a finished set's rule) and says why.
+ * @returns {{ plans: object[], reached: number, error: object|null }}
+ */
+export function planScoreTo(draft, { setIndex, team, target } = {}, ctx = {}) {
+  const pointsOf = (d) => {
+    const sc = scoreFromPointEvents(d.events, setIndex)
+    return team === 'home' ? sc.homePoints : sc.awayPoints
+  }
+  const plans = []
+  let d = draft
+  let now = pointsOf(d)
+  const goal = Number(target)
+  if (!Number.isInteger(goal) || goal < 0) return { plans, reached: now, error: { error: 'corrections.error.noScoreChange', params: {} } }
+  while (now !== goal) {
+    const c = { ...ctx, match: d.match }
+    const plan = goal > now
+      ? planAddPoint(d.events, d.sets, { setIndex, team }, c)
+      : planRemovePoint(d.events, d.sets, { setIndex, team }, c)
+    if (plan.error) return { plans, reached: now, error: plan }
+    plans.push(plan)
+    d = applyStep(d, plan)
+    const next = pointsOf(d)
+    if (next === now) break // nothing moved: never loop
+    now = next
+  }
+  return { plans, reached: now, error: null }
 }

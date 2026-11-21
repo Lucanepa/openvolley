@@ -101,6 +101,35 @@ describe('CorrectionBoard', () => {
     expect(applied.plans).toHaveLength(0)
   })
 
+  it('a typed score goes in as a run of points; one Undo takes it all back', async () => {
+    setup()
+    const left0 = scoreOf('left')
+    fireEvent.click(screen.getByTestId('board-score-left'))
+    const input = await screen.findByTestId('board-type-score-input')
+    // the field has the focus (the dialog around it does not take it back): typing goes in at once
+    await vi.waitFor(() => expect(document.activeElement).toBe(input))
+    fireEvent.change(input, { target: { value: String(left0 + 3) } })
+    fireEvent.click(screen.getByTestId('board-type-score-apply'))
+    await vi.waitFor(() => expect(scoreOf('left')).toBe(left0 + 3))
+    expect(screen.queryByTestId('board-type-score-input')).toBeNull()
+    fireEvent.click(screen.getByTestId('board-undo'))
+    expect(scoreOf('left')).toBe(left0)
+    expect(applied.plans).toHaveLength(0)
+  })
+
+  it('a typed score: not a number is refused in place, Enter applies', async () => {
+    setup()
+    const right0 = scoreOf('right')
+    fireEvent.click(screen.getByTestId('board-score-right'))
+    const input = await screen.findByTestId('board-type-score-input')
+    fireEvent.change(input, { target: { value: 'x' } })
+    expect(screen.getByText('Enter a whole number from 0.')).toBeTruthy()
+    expect(screen.getByTestId('board-type-score-apply').disabled).toBe(true)
+    fireEvent.change(input, { target: { value: String(right0 - 1) } })
+    fireEvent.submit(input.closest('form'))
+    await vi.waitFor(() => expect(scoreOf('right')).toBe(right0 - 1))
+  })
+
   it('a time-out is added from its slot and removed from it', async () => {
     setup()
     fireEvent.click(screen.getByTestId('board-timeout-left-0'))

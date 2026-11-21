@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   planAddPoint, planRemovePoint, planLastPointOtherTeam, planAddTimeout, planRotateTeam, scoreTimeline, courtAt
 } from '../manualCorrections'
-import { baseDraft, buildDraft, combinedPlan, newIssues, stepLines } from '../correctionDraft'
+import { baseDraft, buildDraft, combinedPlan, newIssues, stepLines, planScoreTo } from '../correctionDraft'
 import { planSwitchSides } from '../../components/corrections/liveActions'
 import { scoreFromPointEvents, getLeftTeamLabelForSet } from '../rules'
 import { compareBySeq } from '../describe'
@@ -140,5 +140,56 @@ describe('the draft chains plans (planned on the draft before them) and writes t
     const plan = combinedPlan(base, [a, b])
     expect(plan.remarksSet).toBe('one\ntwo edited')
     expect(plan.remarkAdd).toEqual([])
+  })
+})
+
+describe('planScoreTo (a score typed on the board)', () => {
+  const pointsOf = (events, setIndex, team) => scoreFromPointEvents(events, setIndex)[team === 'home' ? 'homePoints' : 'awayPoints']
+
+  it('a run of points for the receiving team: the first rotates it, the next ones are on its serve', () => {
+    const { events } = fixture()
+    const server = serverAfter(events, 2)
+    const receiver = server === 'home' ? 'away' : 'home'
+    const base = baseDraft({ events, match: MATCH, sets: SETS })
+    const from = pointsOf(events, 2, receiver)
+    const res = planScoreTo(base, { setIndex: 2, team: receiver, target: from + 3 }, ctxOf())
+    expect(res.error).toBeNull()
+    expect(res.plans).toHaveLength(3)
+    expect(res.reached).toBe(from + 3)
+    expect(res.plans[0].add.some(r => r.type === 'lineup')).toBe(true)
+    expect(res.plans[1].add.some(r => r.type === 'lineup')).toBe(false)
+    expect(res.plans[2].add.some(r => r.type === 'lineup')).toBe(false)
+    const draft = buildDraft(base, res.plans.map(plan => ({ plan })))
+    expect(pointsOf(draft.events, 2, receiver)).toBe(from + 3)
+    // the combined plan writes what the draft shows
+    const written = buildDraft(base, [{ plan: combinedPlan(base, res.plans.map(plan => ({ plan }))) }])
+    expect(pointsOf(written.events, 2, receiver)).toBe(from + 3)
+  })
+
+  it('a lower score removes the team\'s latest points', () => {
+    const { events } = fixture()
+    const base = baseDraft({ events, match: MATCH, sets: SETS })
+    const from = pointsOf(events, 2, 'home')
+    const res = planScoreTo(base, { setIndex: 2, team: 'home', target: from - 2 }, ctxOf())
+    expect(res.error).toBeNull()
+    expect(res.plans).toHaveLength(2)
+    expect(pointsOf(buildDraft(base, res.plans.map(plan => ({ plan }))).events, 2, 'home')).toBe(from - 2)
+  })
+
+  it('stops before the point that ends the set and says why', () => {
+    const { events } = buildMatch({ sets: [{ points: pointsFor(20, 15), finished: false }] })
+    const base = baseDraft({ events, match: MATCH, sets: [{ id: 1, index: 1, finished: false }] })
+    const res = planScoreTo(base, { setIndex: 1, team: 'home', target: 26 }, { ...ctxOf(), liveSetIndex: 1 })
+    expect(res.plans).toHaveLength(4)
+    expect(res.reached).toBe(24)
+    expect(res.error?.error).toBe('corrections.error.pointEndsSet')
+  })
+
+  it('the same score or a non-number plans nothing', () => {
+    const { events } = fixture()
+    const base = baseDraft({ events, match: MATCH, sets: SETS })
+    expect(planScoreTo(base, { setIndex: 2, team: 'home', target: pointsOf(events, 2, 'home') }, ctxOf()).plans).toHaveLength(0)
+    expect(planScoreTo(base, { setIndex: 2, team: 'home', target: -1 }, ctxOf()).error).toBeTruthy()
+    expect(planScoreTo(base, { setIndex: 2, team: 'home', target: 'x' }, ctxOf()).error).toBeTruthy()
   })
 })

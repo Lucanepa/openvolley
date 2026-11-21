@@ -36,7 +36,7 @@ import {
   planRemoveTimeout, planRemoveSubstitution, planRemoveSanction, planRemoveEntry, scoreTimeline, courtAt,
   emptyPlan, errorText, entryActions
 } from '../../domain/manualCorrections'
-import { baseDraft, buildDraft, applyStep, combinedPlan, newIssues, stepLines } from '../../domain/correctionDraft'
+import { baseDraft, buildDraft, applyStep, combinedPlan, newIssues, stepLines, planScoreTo } from '../../domain/correctionDraft'
 import { issueText } from '../../domain/recompute'
 import { awardsPoint } from '../../domain/sanctions'
 import { scoreFromPointEvents, getFirstServeForSet } from '../../domain/rules'
@@ -90,7 +90,8 @@ function BoardDialog({ children, onClose, width = 680, label }) {
     // focus inside (keyboard and screen readers start here); Escape closes,
     // unless a kit dialog (UiHost) is open above it
     const prev = document.activeElement
-    ref.current?.focus({ preventScroll: true })
+    // (a field inside that focused itself keeps it: the children's effects run first)
+    if (ref.current && !ref.current.contains(document.activeElement)) ref.current.focus({ preventScroll: true })
     const onKey = (e) => {
       if (e.key !== 'Escape') return
       if (document.querySelector('.ov-kit-host [role="dialog"], .ov-kit-host [role="alertdialog"]')) return
@@ -210,6 +211,37 @@ function SaveReview({ t, lines, steps, issues, draft, homeTeam, awayTeam, curren
   )
 }
 
+/**
+ * Type a team's score of the set (the board's score box): the difference
+ * goes in as that team's points at the end of the set, one after the other.
+ */
+function TypeScoreCard({ t, team, set, current, onClose, onApply }) {
+  const [value, setValue] = useState(String(current))
+  const inputRef = useRef(null)
+  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select() }, [])
+  const n = /^\d{1,3}$/.test(value.trim()) ? Number(value.trim()) : null
+  const submit = (e) => { e?.preventDefault?.(); if (n != null && n !== current) onApply(n) }
+  return (
+    <form onSubmit={submit}>
+      <SheetCard t={t} onClose={onClose}
+        title={tr(t, 'correctionBoard.typeScoreTitle', 'Score of {{team}} · set {{set}}', { team: team?.name, set })}
+        footer={(
+          <>
+            <Button variant="secondary" size="lg" onClick={onClose}>{tr(t, 'corrections.action.cancel', 'Cancel')}</Button>
+            <Button variant="positive" size="lg" type="submit" disabled={n == null || n === current} data-testid="board-type-score-apply">{tr(t, 'correctionBoard.typeScoreApply', 'Apply')}</Button>
+          </>
+        )}>
+        <label className="block text-sm font-medium text-stone-800" htmlFor="board-type-score-input">{tr(t, 'correctionBoard.typeScoreLabel', 'Points')}</label>
+        <input id="board-type-score-input" ref={inputRef} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+          value={value} onChange={(e) => setValue(e.target.value)} data-testid="board-type-score-input"
+          className="mt-1 h-14 w-32 rounded-xl border border-stone-300 bg-white px-3 text-center text-3xl font-bold tabular-nums text-stone-900 focus:border-stone-900 focus:outline-none" />
+        {value.trim() !== '' && n == null && <p className="mt-2 text-sm text-red-700">{tr(t, 'correctionBoard.typeScoreInvalid', 'Enter a whole number from 0.')}</p>}
+        <p className="mt-3 text-sm text-stone-600">{tr(t, 'correctionBoard.typeScoreHint', 'The difference is added or removed as points of this team at the end of the set, one after the other: the first may rotate the team, the next ones are on its serve. A point that ends the set is given with the point button.')}</p>
+      </SheetCard>
+    </form>
+  )
+}
+
 export default function CorrectionBoard({
   mode = 'live',
   matchId,
@@ -300,6 +332,17 @@ export default function CorrectionBoard({
     return true
   }
   const plan = (planner) => planner(draft, ctx)
+  // a typed score: the run of points as one change (Undo takes it all back)
+  const applyTypedScore = (team, target) => {
+    const res = planScoreTo(draft, { setIndex, team, target }, ctx)
+    if (res.plans.length) setSteps(s => [...s, ...res.plans.map((plan, i) => ({ plan, withPrevious: i > 0 }))])
+    if (res.error) {
+      const why = errorText(res.error, t)
+      if (res.plans.length) toast.error(tr(t, 'correctionBoard.typeScoreStopped', 'Stopped at {{n}}: {{why}}', { n: res.reached, why }))
+      else toast.error(why)
+    }
+    return res.plans.length > 0 || !res.error
+  }
   const undoLast = () => setSteps(s => {
     let n = s.length - 1
     while (n > 0 && s[n]?.withPrevious) n -= 1
@@ -558,10 +601,14 @@ export default function CorrectionBoard({
         <Button variant="dark" size="xl" icon={<Plus size={26} strokeWidth={2.5} aria-hidden="true" />} className={cn(HIT, 'w-16 px-0')} disabled={!editable}
           onClick={() => stage(planAddPoint(draft.events, draft.sets, { setIndex, team }, ctx))}
           aria-label={tr(t, 'correctionBoard.addPoint', 'Add a point: {{team}}', { team: teamLabel(team, ctx)?.name })} data-testid={`board-plus-${side}`} />
-        <div className={cn('flex h-20 w-24 items-center justify-center rounded-2xl bg-white text-5xl font-bold tabular-nums text-stone-900 shadow-card ring-1 ring-stone-200', pts !== was && 'ring-2 ring-sky-500')}
+        <button type="button" disabled={!editable}
+          onClick={() => setSheet({ kind: 'typeScore', team })}
+          className={cn('flex h-20 w-24 items-center justify-center rounded-2xl bg-white text-5xl font-bold tabular-nums text-stone-900 shadow-card ring-1 ring-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900',
+            pts !== was && 'ring-2 ring-sky-500', editable && 'hover:bg-stone-50 active:bg-stone-100')}
+          aria-label={tr(t, 'correctionBoard.typeScoreAria', 'Type the score of {{team}}: {{n}}', { team: teamLabel(team, ctx)?.name, n: pts })}
           data-testid={`board-score-${side}`}>
           {pts}
-        </div>
+        </button>
         <Button variant="danger-soft" size="xl" icon={<Minus size={26} strokeWidth={2.5} aria-hidden="true" />} className={cn(HIT, 'w-16 px-0')} disabled={!editable || pts === 0}
           onClick={() => stage(planRemovePoint(draft.events, draft.sets, { setIndex, team }, ctx))}
           aria-label={tr(t, 'correctionBoard.removePoint', 'Remove a point: {{team}}', { team: teamLabel(team, ctx)?.name })} data-testid={`board-minus-${side}`} />
@@ -617,6 +664,16 @@ export default function CorrectionBoard({
               </Button>
             </div>
           </SheetCard>
+        </BoardDialog>
+      )
+    }
+    if (sheet.kind === 'typeScore') {
+      const { team } = sheet
+      const pts = team === 'home' ? score.homePoints : score.awayPoints
+      return (
+        <BoardDialog onClose={closeSheet} width={440} label={tr(t, 'correctionBoard.typeScoreTitle', 'Score of {{team}} · set {{set}}', { team: teamLabel(team, ctx)?.name, set: displaySetNumber(setIndex, draft.match) })}>
+          <TypeScoreCard t={t} team={teamLabel(team, ctx)} set={displaySetNumber(setIndex, draft.match)} current={pts} onClose={closeSheet}
+            onApply={(target) => { if (applyTypedScore(team, target)) closeSheet() }} />
         </BoardDialog>
       )
     }

@@ -3143,7 +3143,7 @@
       "q_editMatchInfo": "Comment corriger la salle, la date ou un officiel pendant le match ?",
       "a_editMatchInfo": "Match › « Modifier les infos du match » : salle, ville, ligue, numéro du match, type de match, date, contacts des équipes et officiels, ainsi que le nom court et la couleur du maillot de chaque équipe (les noms des équipes restent ceux de la feuille de match). Appuie sur « Enregistrer les modifications » ; « Fermer » revient au match.",
       "q_board": "Qu’est-ce que le tableau de correction ?",
-      "a_board": "Sur une tablette en mode paysage ou un ordinateur, Match › « Corrections » ouvre le tableau de correction : le tableau de marque où tout se corrige. « + » et « − » ajoutent ou retirent un point, les cases de temps mort ajoutent, déplacent ou suppriment un temps mort, un appui sur une joueuse ou un joueur permet de le remplacer, de le sanctionner ou de changer son numéro, les flèches font tourner une équipe et « Formation de départ » corrige la formation. Le tableau se met à jour tout de suite et rien n’est enregistré tant que tu n’appuies pas sur « Enregistrer » : toutes les modifications sont alors écrites ensemble et figurent dans le journal des corrections. « Défaire » annule la dernière modification, « Annuler » les abandonne toutes. « Liste » affiche les cartes à la place (toujours sur un téléphone), avec le journal des événements et « Rouvrir le set ». Un point qui termine le set se donne avec le bouton de point."
+      "a_board": "Sur une tablette en mode paysage ou un ordinateur, Match › « Corrections » ouvre le tableau de correction : le tableau de marque où tout se corrige. « + » et « − » ajoutent ou retirent un point (ou appuie sur le score et saisis-le : la différence est enregistrée comme points de l’équipe à la suite), les cases de temps mort ajoutent, déplacent ou suppriment un temps mort, un appui sur une joueuse ou un joueur permet de le remplacer, de le sanctionner ou de changer son numéro, les flèches font tourner une équipe et « Formation de départ » corrige la formation. Le tableau se met à jour tout de suite et rien n’est enregistré tant que tu n’appuies pas sur « Enregistrer » : toutes les modifications sont alors écrites ensemble et figurent dans le journal des corrections. « Défaire » annule la dernière modification, « Annuler » les abandonne toutes. « Liste » affiche les cartes à la place (toujours sur un téléphone), avec le journal des événements et « Rouvrir le set ». Un point qui termine le set se donne avec le bouton de point."
     },
     "moreHelp": "Plus d'aide",
     "contactSupport": "Contacter le support",
@@ -6366,7 +6366,14 @@
     "rallyInPlay": "Un échange est en cours : enregistre d’abord son point, puis corrige.",
     "penaltyPointRefused": "La sanction donne un point que le tableau ne peut pas ajouter ({{why}}). Enregistre plutôt la sanction sur le tableau de marque.",
     "previewTitle": "Sur la feuille de match après tes modifications",
-    "previewLoading": "Dessin du set…"
+    "previewLoading": "Dessin du set…",
+    "typeScoreAria": "Saisir le score de {{team}} : {{n}}",
+    "typeScoreTitle": "Points de {{team}} · set {{set}}",
+    "typeScoreLabel": "Points",
+    "typeScoreApply": "Appliquer",
+    "typeScoreInvalid": "Saisis un nombre entier à partir de 0.",
+    "typeScoreHint": "La différence est ajoutée ou retirée comme points de cette équipe à la fin du set, l’un après l’autre : au premier, l’équipe peut effectuer une rotation, les suivants sont sur son service. Un point qui termine le set se donne avec le bouton de point.",
+    "typeScoreStopped": "Arrêté à {{n}} : {{why}}"
   },
   "picker": {
     "calendar": "Calendrier",
