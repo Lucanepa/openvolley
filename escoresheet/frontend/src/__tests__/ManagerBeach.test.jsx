@@ -141,7 +141,7 @@ describe('ManagerApp as OpenBeach\'s manager', () => {
   it('admin: seven tabs, every list asked for ?app=beach, a link to OpenBeach', async () => {
     setAuth({ roles: ['admin'] })
     renderBeach()
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.accounts', 'manage.tabs.invites', 'manage.tabs.scoresheets', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams', 'manage.tabs.tournaments'])
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.accounts', 'manage.accounts.filterPending', 'manage.accounts.filterAll', 'manage.tabs.invites', 'manage.tabs.scoresheets', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams', 'manage.tabs.tournaments'])
     expect(screen.getByRole('link', { name: 'managerBeach.openAppLong' })).toHaveAttribute('href', BEACH_APP)
     expect(screen.getByAltText('OpenBeach')).toBeInTheDocument()
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', q: undefined, app: 'beach' }))
@@ -162,7 +162,7 @@ describe('ManagerApp as OpenBeach\'s manager', () => {
     window.history.replaceState(null, '', '/#accounts')
     setAuth({ roles: ['beach:competition_manager'] })
     renderBeach()
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.tournaments'])
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.matches.filterAll', 'manage.matches.filterClosed', 'manage.matches.filterOpen', 'manage.tabs.teams', 'manage.tabs.tournaments'])
     await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'beach' })))
     fireEvent.click(railButtons().find(b => b.textContent === 'manage.tabs.teams'))
     await waitFor(() => expect(api.savedTeamsApi.fetchBundle).toHaveBeenCalledWith({ sport: 'beach' }))

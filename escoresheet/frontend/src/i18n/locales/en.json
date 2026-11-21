@@ -4558,6 +4558,11 @@
       "noMail": "This server cannot send email yet (no mail server set up): nothing goes out, even with the switch on."
     },
     "myTeams": {
+      "nav": {
+        "requests": "Requests",
+        "squad": "Squad",
+        "games": "Games"
+      },
       "facts": {
         "when": "When",
         "where": "Where",

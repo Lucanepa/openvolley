@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { admin, clubsApi, fetchPublicClubs } from '../../lib/accountApi'
@@ -57,11 +57,13 @@ export function findAccount(id, app) {
  * says and the same actions; roles, clubs, the request review and deleting
  * stay dialogs, opened from the page as from the row (usePanelRoute).
  */
-export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, route = '', onRoute = null }) {
+export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, filter: filterProp = null, onPendingCount = null, route = '', onRoute = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
-  const [filter, setFilter] = useState('pending')
+  // the console's tree drives the filter (filterProp); alone, the segmented control does
+  const [ownFilter, setFilter] = useState('pending')
+  const filter = filterProp || ownFilter
   const [q, setQ] = useState('')
   const [query, setQuery] = useState('')
   const [rowError, setRowError] = useState({})
@@ -85,6 +87,8 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
   // the list itself when it is the pending one: the label and the rows change together
   const pendingList = filter === 'pending' && !query && data ? data : pending.data
   const pendingCount = pendingList?.accounts?.length ?? null
+  // the menu's Pending child shows it (ManageConsole)
+  useEffect(() => { onPendingCount?.(pendingCount) }, [pendingCount, onPendingCount])
   const canDelete = data?.can_delete === true
   // PATCH /api/admin/accounts/:id (name and address): only on a server that has it
   const canEdit = data?.can_edit === true
@@ -295,15 +299,17 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
       <PanelHead title={t('manage.tabs.accounts')} />
       <OfflineBanner online={online} />
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <SegmentedControl
-          ariaLabel={t('manage.tabs.accounts')}
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: 'pending', label: pendingCount ? `${t('manage.accounts.filterPending')} (${pendingCount})` : t('manage.accounts.filterPending') },
-            { value: 'all', label: t('manage.accounts.filterAll') }
-          ]}
-        />
+{!filterProp && (
+          <SegmentedControl
+            ariaLabel={t('manage.tabs.accounts')}
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: 'pending', label: pendingCount ? `${t('manage.accounts.filterPending')} (${pendingCount})` : t('manage.accounts.filterPending') },
+              { value: 'all', label: t('manage.accounts.filterAll') }
+            ]}
+          />
+        )}
         <form className="sm:ml-auto sm:w-80" onSubmit={e => { e.preventDefault(); setQuery(q.trim()) }}>
           <SearchInput size="md" value={q} onChange={e => { setQ(e.target.value); if (!e.target.value) setQuery('') }} placeholder={t('manage.accounts.search')} aria-label={t('manage.accounts.search')} maxLength={80} />
         </form>
