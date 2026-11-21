@@ -47,6 +47,16 @@ const CELL = { whiteSpace: 'nowrap', verticalAlign: 'middle', paddingLeft: 6, pa
 // padding, so labels sit over their values.
 const TABLE = { tableLayout: 'fixed' }
 const TH = { paddingLeft: 6, paddingRight: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+// The sanctions heading over the phone's 60 px column: the word, split at
+// its soft hyphens (rosterLive.sanctionsNarrow) on two lines rather than cut
+// to "SANCT…" (at 360 and 390 px, 2026-11-21)
+const TH_WRAP = { paddingLeft: 6, paddingRight: 6, whiteSpace: 'normal', hyphens: 'manual', overflowWrap: 'normal', lineHeight: 1.25 }
+function SanctionsHead({ phone }) {
+  const { t } = useTranslation()
+  return phone
+    ? <th style={TH_WRAP} data-sanctions-head="">{t('rosterLive.sanctionsNarrow')}</th>
+    : <th style={TH} data-sanctions-head="">{t('rosterLive.sanctions')}</th>
+}
 const NAME_CELL = { ...CELL, overflow: 'hidden', textOverflow: 'ellipsis' }
 // One row height for every row of both teams' tables, so they stay aligned
 // side by side whatever a row holds (position pill, cards, badges).
@@ -186,7 +196,7 @@ function PlayerTable({ team, rows, showPos, kind, idLabel }) {
           <th style={TH}>{t('roster.name')}</th>
           {!phone && <th style={TH}>{idLabel || t('roster.dob')}</th>}
           {showPos && <th style={TH} title={t('rosterLive.posTitle')}>{t('rosterLive.pos')}</th>}
-          <th style={TH}>{t('rosterLive.sanctions')}</th>
+          <SanctionsHead phone={phone} />
         </tr>
       </thead>
       <tbody>
@@ -249,7 +259,7 @@ function BenchTable({ team, rows, emptyAll, idLabel }) {
           <th style={TH}>{t('roster.role')}</th>
           <th style={TH}>{t('roster.name')}</th>
           {!phone && <th style={TH}>{idLabel || t('roster.dob')}</th>}
-          <th style={TH}>{t('rosterLive.sanctions')}</th>
+          <SanctionsHead phone={phone} />
         </tr>
       </thead>
       <tbody>

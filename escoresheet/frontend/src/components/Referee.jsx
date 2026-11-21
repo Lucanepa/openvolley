@@ -3050,7 +3050,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {(() => {
                 const teamLineup = setterSelectionModal === 'left' ? leftLineup : rightLineup
                 const currentSetter = setterSelectionModal === 'left' ? setterNumber.left : setterNumber.right
-                if (!teamLineup) return <div className="col-span-full text-sm text-stone-500">{t('refereeDashboard.noLineup', 'No lineup available')}</div>
+                if (!teamLineup) return <div className="col-span-full text-sm text-stone-500">{t('refereeDashboard.noLineup', 'No line-up available')}</div>
 
                 return Object.entries(teamLineup).map(([position, posData]) => {
                   // Handle both rich format (posData is object with number) and legacy format (posData is number)
