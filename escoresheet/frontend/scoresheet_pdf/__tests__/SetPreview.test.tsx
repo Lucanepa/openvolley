@@ -177,6 +177,25 @@ describe('SetPreview', () => {
       expect((box.firstElementChild as HTMLElement).style.transform).toBe('scale(0.5)')
     })
 
+    it('scrollToSet: zoomed in wider than the width given, it starts past the legend', () => {
+      sizes(390, 975, 300)
+      const { container } = render(<SetPreview matchData={liveSet1()} setIndex={1} zoom={2} scrollToSet />)
+      const viewport = container.querySelector('[data-testid="set-preview"]') as HTMLElement
+      expect(viewport.getAttribute('data-scale')).toBe('0.8')
+      expect(viewport.scrollLeft).toBeGreaterThan(0)
+      cleanup()
+      // fitted (not wider than the width given): left as it is
+      const fitted = render(<SetPreview matchData={liveSet1()} setIndex={1} scrollToSet />)
+      expect((fitted.container.querySelector('[data-testid="set-preview"]') as HTMLElement).scrollLeft).toBe(0)
+    })
+
+    it('reports the fitted scale (onFitScale) once measured', () => {
+      sizes(400, 800, 200)
+      const onFitScale = vi.fn()
+      render(<SetPreview matchData={liveSet1()} setIndex={1} onFitScale={onFitScale} />)
+      expect(onFitScale).toHaveBeenLastCalledWith(0.5)
+    })
+
     it('zoom multiplies the fitted scale (the box then scrolls sideways); a wide screen stops at FIT_MAX', () => {
       sizes(400, 800, 200)
       const { container } = render(<SetPreview matchData={liveSet1()} setIndex={1} zoom={2} />)
