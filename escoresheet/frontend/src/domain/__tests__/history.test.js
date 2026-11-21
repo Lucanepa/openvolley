@@ -17,14 +17,14 @@ describe('history: score columns', () => {
     const { events } = buildMatch({ match, sets: [{ points: 'HHA' }] })
     const pts = points(historyRows(events, ctxOf(match)))
     expect(pts.map(r => [r.scoreA, r.scoreB])).toEqual([[0, 1], [0, 2], [1, 2]])
-    expect(pts[0].what).toBe('Point for VC Smash')
+    expect(pts[0].what).toBe('Point for VC Seehafen')
   })
 
   it('a time-out between points shows the score at that moment', () => {
     const { events } = buildMatch({ sets: [{ points: 'HAH', extras: [{ at: 2, type: 'timeout', payload: { team: 'away' } }] }] })
     const to = historyRows(events, ctxOf()).find(r => r.kind === 'timeout')
     expect([to.scoreA, to.scoreB]).toEqual([1, 1])
-    expect(to.what).toBe('Time-out · Volley Bern (B)')
+    expect(to.what).toBe('Time-out · Volley Talberg (B)')
   })
 
   it('every set starts at 0:0; the set end carries the final score', () => {
@@ -78,10 +78,10 @@ describe('history: line-ups after a point', () => {
     const exit = historyRows(events, ctx, { showAutomatic: true }).find(r => r.kind === 'libero_exit')
     expect(exit.automatic).toBe(true)
     expect(exit.tone).toBe('auto')
-    expect(exit.what).toBe('Libero #9 out at the front row, #1 in · VC Smash (A)')
+    expect(exit.what).toBe('Libero #9 out at the front row, #1 in · VC Seehafen (A)')
     // the libero's entry is a row of its own (muted)
     const entry = historyRows(events, ctx).find(r => r.kind === 'libero_entry')
-    expect(entry.what).toBe('Libero #9 in for #1 · VC Smash (A)')
+    expect(entry.what).toBe('Libero #9 in for #1 · VC Seehafen (A)')
     expect(entry.tone).toBe('muted')
   })
 
@@ -159,7 +159,7 @@ describe('history: rows, tones and filters', () => {
     expect(tone('rally_start')).toBe('auto')
     expect(rowTone({ type: 'libero_entry' })).toBe('muted')
     const s = rows.find(r => r.kind === 'sanction')
-    expect(s.what).toBe('Warning — Player #8 · Volley Bern (B)')
+    expect(s.what).toBe('Warning — Player #8 · Volley Talberg (B)')
   })
 
   it('the set filter keeps one set; order and search', () => {

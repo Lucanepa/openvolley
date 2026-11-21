@@ -118,7 +118,7 @@ describe('History tab', () => {
     show()
     const [p1, p2] = rowsOf('point')
     expect(cells(p1).slice(1, 3)).toEqual(['1', '0'])
-    expect(p1.querySelector('[data-what]').textContent).toBe('Point for VC Smash')
+    expect(p1.querySelector('[data-what]').textContent).toBe('Point for VC Seehafen')
     expect(p1.querySelector('[data-lineup="A"]').textContent).toBe('1,2,3,4,5,6')
     expect(p1.querySelector('[data-lineup="B"]').textContent).toBe('L20,12,13,14,15,16')
     expect(p1.querySelector('[data-lineup="B"] [title="Libero"]').textContent).toBe('L20')
