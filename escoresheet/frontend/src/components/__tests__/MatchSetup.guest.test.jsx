@@ -160,7 +160,6 @@ describe('Match setup: a guest match keeps private data out', () => {
     expect(screen.getByRole('button', { name: 'matchSetup.uploadPdf' })).toBeInTheDocument()
     expect(screen.queryByTestId('load-saved-team-home')).toBeNull()
     expect(screen.queryByTestId('add-from-club-home')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'savedTeams.saveToTeam' })).toBeNull()
     expect(screen.queryByText('matchSetup.remote')).toBeNull()
   })
 
@@ -182,6 +181,8 @@ describe('Match setup: a guest match keeps private data out', () => {
     expect(screen.queryByTestId('guest-match-note')).toBeNull()
     await openHomeRoster()
     expect(screen.getByTestId('load-saved-team-home')).toBeInTheDocument()
+    // no "Save roster to team": the server saves an official match's roster back (rosterSaveBack)
+    expect(screen.queryByRole('button', { name: /saveToTeam/ })).toBeNull()
     expect(screen.getByText('matchSetup.remote')).toBeInTheDocument()
   })
 })
