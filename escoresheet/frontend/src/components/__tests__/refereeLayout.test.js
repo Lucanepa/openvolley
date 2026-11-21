@@ -3,7 +3,6 @@ import {
   REFEREE_LAYOUT, isWideLayout, columnWidth, sidePanelWidth, courtBoxInSlot, courtDiscRoom, screenFit,
   portraitCourtBox, PORTRAIT_COURT, isUprightOnlyDevice, mustTurnUpright
 } from '../referee/refereeLayout.js'
-import { RECEPTION, layoutReception, formationPointPx, pointToFormation, boxSeparation } from '../referee/receptionLayout.js'
 import { DISC, discMetrics, discFitProblems, discCapPx } from '../referee/discSizing.js'
 
 describe('referee page width and arrangement', () => {
@@ -106,87 +105,6 @@ describe('"screen too small" overlay', () => {
   })
 })
 
-// Reception formations as in Referee.jsx getReceptionFormation
-const FORMATIONS = {
-  1: { I: { top: 88, left: 88 }, II: { top: 70, left: 80 }, III: { top: 28, left: 50 }, IV: { top: 28, left: 15 }, V: { top: 80, left: 15 }, VI: { top: 78, left: 50 } },
-  2: { I: { top: 70, left: 85 }, II: { top: 12, left: 88 }, III: { top: 28, left: 50 }, IV: { top: 70, left: 15 }, V: { top: 88, left: 40 }, VI: { top: 70, left: 50 } },
-  3: { I: { top: 70, left: 82 }, II: { top: 12, left: 82 }, III: { top: 13, left: 50 }, IV: { top: 67, left: 15 }, V: { top: 70, left: 45 }, VI: { top: 88, left: 60 } },
-  4: { I: { top: 88, left: 88 }, II: { top: 70, left: 35 }, III: { top: 40, left: 25 }, IV: { top: 12, left: 15 }, V: { top: 70, left: 55 }, VI: { top: 70, left: 75 } },
-  5: { I: { top: 75, left: 82 }, II: { top: 12, left: 85 }, III: { top: 75, left: 35 }, IV: { top: 12, left: 15 }, V: { top: 42, left: 33 }, VI: { top: 75, left: 58 } },
-  6: { I: { top: 78, left: 82 }, II: { top: 25, left: 82 }, III: { top: 12, left: 50 }, IV: { top: 72, left: 18 }, V: { top: 78, left: 44 }, VI: { top: 42, left: 59 } }
-}
-
-const assertNoOverlap = (res, width, height, label) => {
-  const pts = Object.entries(res.points)
-  for (let i = 0; i < pts.length; i++) {
-    const [pa, a] = pts[i]
-    expect(a.x - res.size / 2, `${label} ${pa} left`).toBeGreaterThanOrEqual(-0.01)
-    expect(a.x + res.size / 2, `${label} ${pa} right`).toBeLessThanOrEqual(width + 0.01)
-    expect(a.y - res.size / 2, `${label} ${pa} top`).toBeGreaterThanOrEqual(-0.01)
-    expect(a.y + res.size / 2, `${label} ${pa} bottom`).toBeLessThanOrEqual(height + 0.01)
-    for (let j = i + 1; j < pts.length; j++) {
-      const [pb, b] = pts[j]
-      // square boxes clear (the marks sit in the corners), so the circles are too
-      expect(boxSeparation(a, b), `${label} ${pa}-${pb}`).toBeGreaterThanOrEqual(res.size)
-    }
-  }
-}
-
-describe('reception formation layout', () => {
-  // court boxes (content) from phone to the 1400 px column, and the disc the court gives
-  const COURTS = [[353, 249], [382, 290], [589, 336], [784, 461], [784, 272], [1000, 480], [1046, 476], [1160, 777], [1250, 560], [1370, 620]]
-  const caps = [40, 70, 93, 139, 200]
-
-  it('no two discs overlap and none leaves its half, for every formation, court and side', () => {
-    for (const [cw, ch] of COURTS) {
-      for (const capPx of caps) {
-        const disc = discMetrics({ courtWidth: cw, courtHeight: ch, capPx }).disc
-        for (const [setter, formation] of Object.entries(FORMATIONS)) {
-          for (const side of ['left', 'right']) {
-            const res = layoutReception({ formation, side, width: cw / 2, height: ch, disc })
-            expect(res.scale).toBeLessThanOrEqual(RECEPTION.maxScale)
-            assertNoOverlap(res, cw / 2, ch, `${cw}x${ch} cap ${capPx} P${setter} ${side}`)
-          }
-        }
-      }
-    }
-  })
-
-  it('1920 x 1200: disc I no longer sits on disc II (P1, the case from the tablet check)', () => {
-    // old: 784 x 429 court, 111 px discs at 80 % = 88 px, I and II 78 px apart
-    const disc = 111
-    const res = layoutReception({ formation: FORMATIONS[1], side: 'right', width: 392, height: 429, disc })
-    const { I, II } = res.points
-    expect(boxSeparation(I, II)).toBeGreaterThanOrEqual(res.size)
-    expect(res.scale).toBeLessThan(RECEPTION.maxScale)
-    expect(res.scale).toBeGreaterThanOrEqual(RECEPTION.minScale)
-  })
-
-  it('keeps the 80 % size and the formation spots when there is room', () => {
-    const res = layoutReception({ formation: FORMATIONS[3], side: 'left', width: 400, height: 460, disc: 60 })
-    expect(res.scale).toBe(RECEPTION.maxScale)
-    const III = formationPointPx(FORMATIONS[3].III, 'left', 400, 460)
-    expect(res.points.III.x).toBeCloseTo(III.x)
-    expect(res.points.III.y).toBeCloseTo(III.y)
-  })
-
-  it('pushes apart positions dragged onto the same spot', () => {
-    const stacked = Object.fromEntries(['I', 'II', 'III', 'IV', 'V', 'VI'].map((p) => [p, { top: 50, left: 50 }]))
-    const res = layoutReception({ formation: stacked, side: 'right', width: 392, height: 429, disc: 93 })
-    expect(res.scale).toBe(RECEPTION.minScale)
-    assertNoOverlap(res, 392, 429, 'stacked')
-  })
-
-  it('a dropped point maps back to the spot it was dropped on (both halves)', () => {
-    for (const side of ['left', 'right']) {
-      const f = pointToFormation({ x: 120, y: 300 }, side, 400, 460)
-      const p = formationPointPx(f, side, 400, 460)
-      expect(p.x).toBeCloseTo(120)
-      expect(p.y).toBeCloseTo(300)
-    }
-  })
-})
-
 // Owner 2026-11-09: the referee tablet is held upright. The court takes the
 // column's width and grows in height down to 1.3 : 1; the discs grow with it
 // (the cap follows the width); the strip under it gets the rest.
@@ -203,7 +121,7 @@ describe('referee page upright (portrait)', () => {
     // the CSS says the same
     expect(PORTRAIT_COURT.width).toBe('min(98cqw, calc(98cqh * 2.2))')
     expect(PORTRAIT_COURT.height).toBe('min(98cqh, calc(98cqw / 1.3))')
-    expect(PORTRAIT_COURT.sectionMaxHeight).toBe(`calc(min(100vw, 1400px) / 1.3 + ${REFEREE_LAYOUT.portraitButtonRowPx}px)`)
+    expect(PORTRAIT_COURT.sectionMaxHeight).toBe('calc(min(100vw, 1400px) / 1.3)')
   })
 
   it('discs fill the upright court (about 116-124 px on a portrait tablet, 70-95 before)', () => {

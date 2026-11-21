@@ -42,8 +42,6 @@ export const REFEREE_LAYOUT = {
    * SUB and sanctions strip under it
    */
   portraitMinAspect: 1.3,
-  /** upright: room for the setter / reception buttons above the court, px */
-  portraitButtonRowPx: 32,
   /** a disc below this cannot show its number and marks: the screen is too small */
   minDiscPx: DISC.minPx
 }
@@ -95,9 +93,10 @@ export function portraitCourtBox(slotWidth, slotHeight) {
 
 /**
  * The same rule as CSS (Referee.jsx): the court's slot is a size container,
- * the box uses its cqw / cqh. `sectionMaxHeight` caps the court section (the
- * button row and the slot) at the court's tallest box for the page column's
- * width, so the strip below gets the rest of the screen.
+ * the box uses its cqw / cqh. `sectionMaxHeight` caps the court section at the
+ * court's tallest box for the page column's width, so the strip below gets the
+ * rest of the screen (the setter / reception button row above the court went
+ * with the referee's Advanced mode, owner 21.11.2026).
  */
 export const PORTRAIT_COURT = (() => {
   const L = REFEREE_LAYOUT
@@ -105,7 +104,7 @@ export const PORTRAIT_COURT = (() => {
   return {
     width: `min(${f}cqw, calc(${f}cqh * ${L.courtMaxAspect}))`,
     height: `min(${f}cqh, calc(${f}cqw / ${L.portraitMinAspect}))`,
-    sectionMaxHeight: `calc(min(100vw, ${L.maxWidth}px) / ${L.portraitMinAspect} + ${L.portraitButtonRowPx}px)`
+    sectionMaxHeight: `calc(min(100vw, ${L.maxWidth}px) / ${L.portraitMinAspect})`
   }
 })()
 

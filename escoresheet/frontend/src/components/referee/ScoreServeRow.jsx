@@ -53,12 +53,15 @@ export const SERVE_BLOCK = {
   numberCqi: 64,
   numberPadEm: 0.18,
   /**
-   * upright (`large`): the block fills its whole slot, out to the screen
-   * edge (owner, 15.11: "the serve can occupy the space closer to the edge,
-   * full column, much bigger"); the number grows with it
+   * upright (`large`): a bigger number (owner, 15.11: "much bigger"), but the
+   * block stays as wide as its content like the scorer's SERVE box (owner,
+   * 21.11: "not too wide but automatic width"; it filled the whole slot out
+   * to the screen edge since 15.11). The number is held to the same share of
+   * the slot as on a landscape screen, so its box never spills out of a
+   * narrow upright slot either (a phone at 25 : 25).
    */
   largeNumberVmin: 14,
-  largeNumberCqi: 78,
+  largeNumberCqi: 64,
   /** upright: the SERVE label, vmin (still held to the slot width by serveLabelCqi) */
   largeLabelVmin: 4
 }
@@ -155,10 +158,10 @@ function ServeBlock({ side, label, number, vmin, heightVmin = SERVE_BLOCK.height
     <div
       data-serve-block={side}
       style={{
-        // as wide as the label or the number box, whichever is wider;
-        // upright the whole slot (large)
+        // as wide as the label or the number box, whichever is wider (upright
+        // too: owner 21.11, it filled the whole slot before)
         boxSizing: 'border-box',
-        width: large ? '100%' : 'auto',
+        width: 'auto',
         maxWidth: '100%',
         height: vmin(heightVmin),
         display: 'flex',

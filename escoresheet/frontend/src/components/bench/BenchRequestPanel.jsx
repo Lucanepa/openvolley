@@ -111,7 +111,9 @@ export default function BenchRequestPanel({ matchId, team, data, players, discSt
           const tn = tone(tile.request)
           const open = isOpenStatus(tile.request?.status)
           return (
-            <div key={tile.key} className="relative min-w-0">
+            // a size container: the label's font and layout follow the tile's
+            // own width (a 360 px phone: three ~108 px tiles), not the screen's
+            <div key={tile.key} className="@container relative min-w-0">
               <button
                 type="button"
                 data-bench-request={tile.key}
@@ -127,14 +129,20 @@ export default function BenchRequestPanel({ matchId, team, data, players, discSt
                   tn === 'bad' && 'border-red-200 bg-red-50'
                 )}
               >
-                <span className="flex items-center gap-1.5 text-[15px] sm:text-base font-semibold leading-tight">
+                {/* The label stays inside the tile's padding in every language
+                    (owner 21.11: "Substitution" ran into the border on a phone).
+                    The row could grow past the button (no max width), so the
+                    truncate never applied. Now: the font scales with the tile,
+                    a narrow tile puts the icon above the label, and a cut
+                    with "…" is only the last resort. */}
+                <span className="flex max-w-full min-w-0 items-center gap-1.5 text-[clamp(12px,11.5cqi,16px)] font-semibold leading-tight @max-[8.5rem]:flex-col @max-[8.5rem]:gap-0.5">
                   <Icon size={18} aria-hidden="true" className="shrink-0" />
-                  <span className="truncate">{tile.label}</span>
+                  <span className="block max-w-full truncate">{tile.label}</span>
                 </span>
                 <span
                   data-bench-request-caption={tile.key}
                   className={cn(
-                    'text-[11px] sm:text-xs leading-snug line-clamp-2',
+                    'max-w-full text-[11px] sm:text-xs leading-snug line-clamp-2',
                     tn === 'done' ? 'text-emerald-800' : tn === 'bad' ? 'text-red-700' : open ? 'text-sky-800' : tile.enabled ? 'text-stone-500' : 'text-stone-500'
                   )}
                 >{tile.caption}</span>

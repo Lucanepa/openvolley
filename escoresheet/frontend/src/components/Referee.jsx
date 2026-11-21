@@ -19,11 +19,10 @@ import DonutCountdown from './DonutCountdown'
 import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
 import { useSyncQueue } from '../hooks/useSyncQueue'
-import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, WarningIcon, SettingsIcon, VolleyballIcon, BellIcon } from './icons'
+import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, WarningIcon, BellIcon } from './icons'
 import { FileText, House, Loader2, Users } from 'lucide-react'
 import { scorerReturnUrl, returnToScorer } from '../utils/scorerReturn'
-import { cn } from '../ui/cn.js'
-import { Button, FOCUS_RING } from '../ui/Button.jsx'
+import { Button } from '../ui/Button.jsx'
 import { Card } from '../ui/Card.jsx'
 import { StatusPill } from '../ui/StatusPill.jsx'
 import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
@@ -47,11 +46,10 @@ import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } f
 import { compareBySeq } from '../domain/describe'
 import { useTheme } from '../utils/theme'
 import { themeMenuItems } from './themeMenuItems'
-import { discCapPx, discMetrics } from './referee/discSizing.js'
+import { discCapPx } from './referee/discSizing.js'
 import { isWideLayout, screenFit, mustTurnUpright, SIDE_PANEL_CSS, REFEREE_LAYOUT, PORTRAIT_COURT } from './referee/refereeLayout.js'
 import { useUprightOnlyDevice } from './referee/upright.js'
 import TurnUprightNotice from './referee/TurnUprightNotice.jsx'
-import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
 import { getSideAForSet, servingTeamFromLog } from '../domain/rules'
 import { liveRowTeamA } from '../domain/coinToss'
 import { BRAND } from '../brand'
@@ -290,27 +288,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Connection type state (auto, supabase, websocket)
   const [connectionType, setConnectionType] = useState(CONNECTION_TYPES.AUTO)
 
-  // Advanced mode state for reception formations
-  const [advancedMode, setAdvancedMode] = useState({ left: false, right: false }) // Per-side advanced mode
-  const [setterNumber, setSetterNumber] = useState({ left: null, right: null }) // Per-side setter number
-  const [setterSelectionModal, setSetterSelectionModal] = useState(null) // 'left' | 'right' | null
-
-  // Reception mode: 'standard' (grid layout) or 'reception' (formation positions)
-  const [receptionMode, setReceptionMode] = useState({ left: 'standard', right: 'standard' })
-
-  // Custom formation positions (drag and drop adjustments) per set
-  const [customFormations, setCustomFormations] = useState({}) // { [setIndex]: { left: { [position]: { top, left } }, right: { ... } } }
-
-  // Dragging state for player repositioning
-  const [draggingPlayer, setDraggingPlayer] = useState(null) // { side: 'left'|'right', position: 'I'-'VI' }
-  const courtRef = useRef({ left: null, right: null })
   // The court box (size container of the discs), measured: the "screen too
-  // small" rule and the reception formation layout work from its real size.
+  // small" rule works from its real size.
   const [courtBoxEl, setCourtBoxEl] = useState(null)
   const [courtBox, setCourtBox] = useState(null) // { width, height } content box, px
-
-  // Timer ref for auto-revert to standard mode
-  const receptionModeTimerRef = useRef({ left: null, right: null })
 
   // Connection state
   const [connectionStatuses, setConnectionStatuses] = useState({
@@ -1346,112 +1327,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return () => clearInterval(timer)
   }, [timeoutModal?.started, timeoutModal?.startTimestamp, timeoutModal?.anchor, timeoutModal?.initialCountdown])
 
-  // Track last point count to detect when points change (rally ends)
-  const lastPointsRef = useRef({ home: 0, away: 0 })
-
-  // Auto-revert reception mode to standard after rally starts (3 seconds after point)
-  useEffect(() => {
-    if (!data?.currentSet) return
-
-    const currentHomePoints = data.currentSet.homePoints || 0
-    const currentAwayPoints = data.currentSet.awayPoints || 0
-
-    const pointsChanged = currentHomePoints !== lastPointsRef.current.home ||
-      currentAwayPoints !== lastPointsRef.current.away
-
-    // Update last points
-    lastPointsRef.current = { home: currentHomePoints, away: currentAwayPoints }
-
-    // If points changed (rally ended), start 3 second timer to revert to standard mode
-    if (pointsChanged) {
-      // Clear existing timers
-      if (receptionModeTimerRef.current.left) {
-        clearTimeout(receptionModeTimerRef.current.left)
-      }
-      if (receptionModeTimerRef.current.right) {
-        clearTimeout(receptionModeTimerRef.current.right)
-      }
-
-      // Start new timer for both sides if in reception mode
-      if (receptionMode.left === 'reception') {
-        receptionModeTimerRef.current.left = setTimeout(() => {
-          setReceptionMode(prev => ({ ...prev, left: 'standard' }))
-        }, 3000)
-      }
-      if (receptionMode.right === 'reception') {
-        receptionModeTimerRef.current.right = setTimeout(() => {
-          setReceptionMode(prev => ({ ...prev, right: 'standard' }))
-        }, 3000)
-      }
-    }
-
-    return () => {
-      if (receptionModeTimerRef.current.left) {
-        clearTimeout(receptionModeTimerRef.current.left)
-      }
-      if (receptionModeTimerRef.current.right) {
-        clearTimeout(receptionModeTimerRef.current.right)
-      }
-    }
-  }, [data?.currentSet?.homePoints, data?.currentSet?.awayPoints, receptionMode.left, receptionMode.right])
-
-  // Toggle reception mode for a side
-  const toggleReceptionMode = useCallback((side) => {
-    setReceptionMode(prev => ({
-      ...prev,
-      [side]: prev[side] === 'standard' ? 'reception' : 'standard'
-    }))
-  }, [])
-
-  // Handle drag start for player repositioning
-  const handleDragStart = useCallback((e, side, position) => {
-    e.dataTransfer.effectAllowed = 'move'
-    setDraggingPlayer({ side, position })
-  }, [])
-
-  // Handle drag over court
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }, [])
-
-  // Handle drop on court - save custom position
-  const handleDrop = useCallback((e, side) => {
-    e.preventDefault()
-    if (!draggingPlayer || draggingPlayer.side !== side) return
-
-    const courtEl = courtRef.current[side]
-    if (!courtEl) return
-
-    const rect = courtEl.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-
-    // To formation percentages (top: from the net, left: across the court
-    // seen from behind the end line), the coordinates the court draws from.
-    // Saving the raw x / y put the disc somewhere else than where it was dropped.
-    const spot = pointToFormation({ x, y }, side, rect.width, rect.height)
-
-    // Clamp values to court bounds
-    const clampedLeft = Math.max(5, Math.min(95, spot.left))
-    const clampedTop = Math.max(5, Math.min(95, spot.top))
-
-    const setIndex = data?.currentSet?.index || 1
-
-    setCustomFormations(prev => ({
-      ...prev,
-      [setIndex]: {
-        ...prev[setIndex],
-        [side]: {
-          ...prev[setIndex]?.[side],
-          [draggingPlayer.position]: { top: clampedTop, left: clampedLeft }
-        }
-      }
-    }))
-
-    setDraggingPlayer(null)
-  }, [draggingPlayer, data?.currentSet?.index])
-
   // Calculate statistics
   const stats = useMemo(() => {
     // First, try to get stats from liveState (most accurate for Supabase-sourced data)
@@ -1896,116 +1771,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     )
   }, [data?.events])
 
-  // Get setter position (P1-P6) based on current lineup
-  const getSetterPosition = useCallback((lineup, setterNum) => {
-    if (!lineup || !setterNum) return null
-    for (const [position, posData] of Object.entries(lineup)) {
-      // Handle both rich format (posData is object with number) and legacy format (posData is number)
-      const playerNum = typeof posData === 'object' && posData?.number !== undefined ? posData.number : posData
-      if (String(playerNum) === String(setterNum)) {
-        // Convert position (I, II, III, IV, V, VI) to P number (1-6)
-        const posMap = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6 }
-        return posMap[position] || null
-      }
-    }
-    return null
-  }, [])
-
-  // Reception formation positions based on setter position (P1-P6)
-  // Positions are percentages: { top: %, left: % } from court perspective (net at top)
-  // These are for a SINGLE side court view - approved from visualization
-  const getReceptionFormation = useCallback((setterPos) => {
-    // Standard positions for when no advanced mode
-    const standard = {
-      I: { top: 85, left: 85 },   // Back right
-      II: { top: 15, left: 85 },  // Front right
-      III: { top: 15, left: 50 }, // Front middle
-      IV: { top: 15, left: 15 },  // Front left
-      V: { top: 85, left: 15 },   // Back left
-      VI: { top: 85, left: 50 }   // Back middle
-    }
-
-    if (!setterPos) return standard
-
-    // Reception formations based on setter position (approved from visualization)
-    const formations = {
-      // P1: Setter in position I (back right corner)
-      1: {
-        I: { top: 88, left: 88 },   // Setter: back right corner
-        II: { top: 70, left: 80 },  // Next to setter (top-left of I)
-        III: { top: 28, left: 50 }, // 3m line, middle
-        IV: { top: 28, left: 15 },  // 3m line, left
-        V: { top: 80, left: 15 },   // Bottom left
-        VI: { top: 78, left: 50 }   // Between II and V
-      },
-      // P2: Setter in position II (front right at net)
-      2: {
-        I: { top: 70, left: 85 },   // Back right area
-        II: { top: 12, left: 88 },  // Setter: at net, right
-        III: { top: 28, left: 50 }, // 3m line, middle
-        IV: { top: 70, left: 15 },  // Same line as I and VI
-        V: { top: 88, left: 40 },   // Back, beneath IV and VI
-        VI: { top: 70, left: 50 }   // Same line as IV and I
-      },
-      // P3: Setter in position III (front middle at net)
-      3: {
-        I: { top: 70, left: 82 },   // Back right
-        II: { top: 12, left: 82 },  // Front right at net
-        III: { top: 13, left: 50 }, // Setter: at net, middle
-        IV: { top: 67, left: 15 },  // Dropped back left
-        V: { top: 70, left: 45 },   // Back center-left
-        VI: { top: 88, left: 60 }   // Back, towards end line
-      },
-      // P4: Setter in position IV (front left at net)
-      4: {
-        I: { top: 88, left: 88 },   // Back right corner
-        II: { top: 70, left: 35 },  // Dropped back
-        III: { top: 40, left: 25 }, // Diagonally between IV and II
-        IV: { top: 12, left: 15 },  // Setter: at net, left
-        V: { top: 70, left: 55 },   // Back middle
-        VI: { top: 70, left: 75 }   // Back right area
-      },
-      // P5: Setter in position V (back left, penetrating)
-      5: {
-        I: { top: 75, left: 82 },   // Back right
-        II: { top: 12, left: 85 },  // Front right at net
-        III: { top: 75, left: 35 }, // Dropped back for passing
-        IV: { top: 12, left: 15 },  // Front left at net
-        V: { top: 42, left: 33 },   // Setter: back left, penetrating
-        VI: { top: 75, left: 58 }   // Back middle
-      },
-      // P6: Setter in position VI (back middle, penetrating)
-      6: {
-        I: { top: 78, left: 82 },   // Back right
-        II: { top: 25, left: 82 },  // Towards 3m line
-        III: { top: 12, left: 50 }, // At net, middle
-        IV: { top: 72, left: 18 },  // Dropped back left
-        V: { top: 78, left: 44 },   // Back center-left
-        VI: { top: 42, left: 59 }   // Setter: penetrating from back middle
-      }
-    }
-
-    return formations[setterPos] || standard
-  }, [])
-
-  // Get formation positions with custom overrides
-  const getFormationWithCustom = useCallback((side, setterPos) => {
-    const baseFormation = getReceptionFormation(setterPos)
-    const setIndex = data?.currentSet?.index || 1
-    const customPositions = customFormations[setIndex]?.[side]
-
-    if (!customPositions) return baseFormation
-
-    // Merge custom positions with base formation
-    const merged = { ...baseFormation }
-    for (const [pos, coords] of Object.entries(customPositions)) {
-      if (coords) {
-        merged[pos] = coords
-      }
-    }
-    return merged
-  }, [getReceptionFormation, customFormations, data?.currentSet?.index])
-
   // Re-enable wake lock (call this when entering fullscreen or on user interaction)
   const reEnableWakeLock = useCallback(async () => {
     // Try native Wake Lock API
@@ -2216,7 +1981,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   }, [data?.events, data?.currentSet])
   // The first line-up of a set stays hidden until the other is in
   // (domain/lineupPrivacy.js): the court's "Line-up set" cover, and its
-  // server's number and setter position are not shown either
+  // server's number is not shown either
   const leftLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!leftLineup, otherEntered: !!rightLineup })
   const rightLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!rightLineup, otherEntered: !!leftLineup })
 
@@ -2924,46 +2689,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // side panels sit on the court's page colour, like the court slot between them
   const sideCell = { alignSelf: 'stretch', minHeight: 0 }
 
-  // Reception formation: disc centres in px inside the half, shrunk and pushed
-  // apart so that no two discs overlap (receptionLayout.js)
-  const receptionPlacement = (side, formation) => {
-    if (!courtBox || !courtBox.width || !courtBox.height) return null
-    const disc = discMetrics({ courtWidth: courtBox.width, courtHeight: courtBox.height, capPx: discCapPx(vmin, { portrait: !wide }), lfp: lfpTrackingEnabled }).disc
-    return layoutReception({ formation, side, width: courtBox.width / 2, height: courtBox.height, disc })
-  }
-
-  // Standard / reception formation switch: in the row above the court, beside
-  // the setter button (on the court it covered disc I)
-  const receptionToggle = (side) => {
-    const on = receptionMode[side] === 'reception'
-    const label = on ? t('refereeDashboard.switchToStandard') : t('refereeDashboard.switchToReception')
-    return (
-      <button
-        type="button"
-        onClick={() => toggleReceptionMode(side)}
-        title={label}
-        aria-label={label}
-        aria-pressed={on}
-        className="relative before:absolute before:-inset-x-2 before:-inset-y-3 before:content-['']"
-        style={{
-          padding: '4px 8px',
-          fontSize: '11px',
-          fontWeight: 600,
-          background: on ? 'rgba(139, 92, 246, 0.12)' : 'var(--ov-card)',
-          color: on ? '#6d28d9' : 'var(--ov-text-secondary)',
-          border: on ? '1px solid #8b5cf6' : '1px solid var(--ov-hairline)',
-          borderRadius: '6px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          lineHeight: 1
-        }}
-      >
-        <RefreshIcon size={12} />
-      </button>
-    )
-  }
-
   // The running time-out, shown in the "Recorded" popup when it lists one
   const popupTimeout = timeoutModal && timeoutModal.countdown > 0 && recordedNotices.some(n => n.kind === 'timeout') ? timeoutModal : null
 
@@ -3024,85 +2749,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       {!isMasterMode && wsDebugAllowed && <WsDebugOverlay matchId={matchId} />}
 
 
-
-      {/* Setter Selection Modal for Advanced Mode */}
-      {setterSelectionModal && (
-        <div
-          {...backdropDismiss(() => setSetterSelectionModal(null))}
-          className="ov-kit fixed inset-0 flex cursor-pointer items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
-          style={{ zIndex: 9999 }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="setter-modal-title"
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm max-h-[85vh] cursor-default overflow-y-auto rounded-2xl border border-stone-200/70 bg-white p-6 text-center shadow-2xl"
-            style={{ minWidth: 'min(320px, 90vw)' }}
-          >
-            <h2 id="setter-modal-title" className="flex items-center justify-center gap-2 text-lg font-bold text-stone-900">
-              <VolleyballIcon size={18} /> {t('refereeDashboard.selectSetter', 'Select setter')}
-            </h2>
-            <p className="mt-1 mb-5 text-sm text-stone-500">
-              {setterSelectionModal === 'left' ? leftTeamData?.name : rightTeamData?.name}
-            </p>
-            <div className="mb-6 grid grid-cols-3 gap-2">
-              {(() => {
-                const teamLineup = setterSelectionModal === 'left' ? leftLineup : rightLineup
-                const currentSetter = setterSelectionModal === 'left' ? setterNumber.left : setterNumber.right
-                if (!teamLineup) return <div className="col-span-full text-sm text-stone-500">{t('refereeDashboard.noLineup', 'No lineup available')}</div>
-
-                return Object.entries(teamLineup).map(([position, posData]) => {
-                  // Handle both rich format (posData is object with number) and legacy format (posData is number)
-                  const playerNum = typeof posData === 'object' && posData?.number !== undefined ? posData.number : posData
-                  const chosen = String(playerNum) === String(currentSetter)
-                  return (
-                    <button
-                      key={position}
-                      type="button"
-                      aria-pressed={chosen}
-                      onClick={() => {
-                        const side = setterSelectionModal
-                        setSetterNumber(prev => ({ ...prev, [side]: playerNum }))
-                        setAdvancedMode(prev => ({ ...prev, [side]: true }))
-                        setSetterSelectionModal(null)
-                      }}
-                      className={cn(
-                        'flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-xl border text-xl font-bold tabular-nums transition-colors',
-                        FOCUS_RING,
-                        chosen
-                          ? 'border-slate-900 bg-slate-900 text-white'
-                          : 'border-stone-300 bg-white text-stone-900 hover:bg-stone-50'
-                      )}
-                    >
-                      <span className={cn('text-[10px] font-semibold', chosen ? 'text-white/70' : 'text-stone-500')}>{position}</span>
-                      <span>#{playerNum}</span>
-                    </button>
-                  )
-                })
-              })()}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" size="xl" className="flex-1 font-medium" onClick={() => setSetterSelectionModal(null)}>
-                {t('common.cancel')}
-              </Button>
-              <Button
-                variant="danger-outline"
-                size="xl"
-                className="flex-1 font-medium"
-                onClick={() => {
-                  const side = setterSelectionModal
-                  setAdvancedMode(prev => ({ ...prev, [side]: false }))
-                  setSetterNumber(prev => ({ ...prev, [side]: null }))
-                  setSetterSelectionModal(null)
-                }}
-              >
-                {t('refereeDashboard.exitAdvanced', 'Exit advanced')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* SECTION 1: Header - 40px */}
       <SimpleHeader
@@ -3314,7 +2960,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           gridArea: 'score',
           // Stacked (portrait): at least 15 %, more when the score needs it
           // (display scale 150 % on a portrait tablet cut the digits and ran
-          // them into the Advanced button); the panel below gives the room.
+          // them into the court); the panel below gives the room.
           flex: wide ? '0 0 15%' : '0 0 auto',
           padding: '4px 0',
           background: 'var(--panel-2)',
@@ -3344,7 +2990,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           />
         </div>
 
-        {/* SECTION 3: Court Area (includes advanced mode buttons). Upright: it
+        {/* SECTION 3: Court Area. Upright: it
             grows first (up to the court's own height, PORTRAIT_COURT), the
             strip below takes the rest; landscape: its grid area. */}
         <div style={{
@@ -3355,85 +3001,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           overflow: 'hidden',
           minHeight: 0
         }}>
-          {/* Advanced Mode Buttons - Above Court */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '2px 8px',
-            background: 'var(--panel-2)',
-            flex: '0 0 auto'
-          }}>
-            {/* Left team advanced mode button - only show when receiving and 2R view */}
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
-              {refereeView === '2nd' && !leftServing && leftLineup && !leftLineupHidden && (
-                <button
-                  onClick={() => setSetterSelectionModal('left')}
-                  // Hit-slop only: the box stays 22px so the court below does not move;
-                  // where the slop overlaps the court, the court (painted later) still wins.
-                  className="relative before:absolute before:-inset-x-3 before:-inset-y-3 before:content-['']"
-                  style={{
-                    padding: '4px 12px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    background: advancedMode.left ? 'rgba(139, 92, 246, 0.12)' : 'var(--ov-card)',
-                    color: advancedMode.left ? '#6d28d9' : 'var(--ov-text-secondary)',
-                    border: advancedMode.left ? '1px solid #8b5cf6' : '1px solid var(--ov-hairline)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  {advancedMode.left ? (
-                    <>
-                      <span style={{ color: '#8b5cf6' }}>P{getSetterPosition(leftLineup, setterNumber.left) || '?'}</span>
-                      <span>#{setterNumber.left}</span>
-                    </>
-                  ) : (
-                    <><SettingsIcon size={11} />{t('refereeDashboard.advanced', 'Advanced')}</>
-                  )}
-                </button>
-              )}
-              {advancedMode.left && !leftServing && receptionToggle('left')}
-            </div>
-            {/* Right team advanced mode button - only show when receiving and 2R view */}
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
-              {refereeView === '2nd' && !rightServing && rightLineup && !rightLineupHidden && (
-                <button
-                  onClick={() => setSetterSelectionModal('right')}
-                  // Hit-slop only: the box stays 22px so the court below does not move;
-                  // where the slop overlaps the court, the court (painted later) still wins.
-                  className="relative before:absolute before:-inset-x-3 before:-inset-y-3 before:content-['']"
-                  style={{
-                    padding: '4px 12px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    background: advancedMode.right ? 'rgba(139, 92, 246, 0.12)' : 'var(--ov-card)',
-                    color: advancedMode.right ? '#6d28d9' : 'var(--ov-text-secondary)',
-                    border: advancedMode.right ? '1px solid #8b5cf6' : '1px solid var(--ov-hairline)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  {advancedMode.right ? (
-                    <>
-                      <span style={{ color: '#8b5cf6' }}>P{getSetterPosition(rightLineup, setterNumber.right) || '?'}</span>
-                      <span>#{setterNumber.right}</span>
-                    </>
-                  ) : (
-                    <><SettingsIcon size={11} />{t('refereeDashboard.advanced', 'Advanced')}</>
-                  )}
-                </button>
-              )}
-              {advancedMode.right && !rightServing && receptionToggle('right')}
-            </div>
-          </div>
-
           {/* Court visualization - takes the rest of the section */}
           <div style={{
             flex: 1,
@@ -3506,9 +3073,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
               {/* Left side */}
               <div
-                ref={(el) => { courtRef.current.left = el }}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'left')}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -3518,9 +3082,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 }}
               >
 
-                {/* Standard grid layout when NOT in advanced mode OR when serving OR when in standard mode */}
-                {(!advancedMode.left || leftServing || receptionMode.left === 'standard') ? (
-                  <div style={{
+                {/* The six positions in a grid */}
+                <div style={{
                     display: 'grid',
                     gridTemplateColumns: '1.5fr 1fr',
                     gap: 'clamp(4px, 2vw, 12px)',
@@ -3551,54 +3114,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       <PlayerCircle positionData={leftLineup?.II} position="II" team={leftTeam} isServing={leftServing} />
                     </div>
                   </div>
-                ) : (
-                  /* Advanced mode + reception - absolute positioning for reception formations */
-                  /* Court perspective: Net is on RIGHT side (towards center), end line on LEFT */
-                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                    {(() => {
-                      const setterPos = getSetterPosition(leftLineup, setterNumber.left)
-                      const formation = getFormationWithCustom('left', setterPos)
-                      const placed = receptionPlacement('left', formation)
-                      // For left court: Net is on right
-                      // formation gives top (from net) and left (from left side looking at net from behind)
-                      // For horizontal court with net in middle:
-                      // - top in formation = distance from net = maps to distance from RIGHT edge of left half
-                      // - left in formation = horizontal position = maps directly to vertical position
-                      //   (left side of court = top, right side = bottom)
-                      return ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => {
-                        const coords = formation[pos]
-                        // Transform: formation top -> distance from net (right edge)
-                        // formation left -> vertical position (mirrored for left side view)
-                        const rightPercent = coords.top // Distance from net
-                        const topPercent = coords.left // Left side: no inversion (mirrored from right side)
-                        return (
-                          <div
-                            key={pos}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, 'left', pos)}
-                            style={{
-                              position: 'absolute',
-                              ...(placed ? {
-                                left: `${placed.points[pos].x}px`,
-                                top: `${placed.points[pos].y}px`,
-                                transform: `translate(-50%, -50%) scale(${placed.scale})`
-                              } : {
-                                right: `${rightPercent}%`,
-                                top: `${topPercent}%`,
-                                transform: 'translate(50%, -50%) scale(0.8)'
-                              }),
-                              zIndex: 3,
-                              cursor: 'grab',
-                              touchAction: 'none'
-                            }}
-                          >
-                            <PlayerCircle positionData={leftLineup?.[pos]} position={pos} team={leftTeam} isServing={leftServing} />
-                          </div>
-                        )
-                      })
-                    })()}
-                  </div>
-                )}
                 {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
                 {leftLineup && !rightLineup && isFirstRally && !peekingLineup.left && (
                   <div style={{
@@ -3652,9 +3167,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
               {/* Right side */}
               <div
-                ref={(el) => { courtRef.current.right = el }}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'right')}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -3664,9 +3176,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 }}
               >
 
-                {/* Standard grid layout when NOT in advanced mode OR when serving OR when in standard mode */}
-                {(!advancedMode.right || rightServing || receptionMode.right === 'standard') ? (
-                  <div style={{
+                {/* The six positions in a grid */}
+                <div style={{
                     display: 'grid',
                     gridTemplateColumns: '1fr 1.5fr',
                     gap: 'clamp(4px, 2vw, 12px)',
@@ -3697,53 +3208,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       <PlayerCircle positionData={rightLineup?.V} position="V" team={rightTeam} isServing={rightServing} />
                     </div>
                   </div>
-                ) : (
-                  /* Advanced mode + reception - absolute positioning for reception formations */
-                  /* Court perspective: Net is on LEFT side (towards center), end line on RIGHT */
-                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                    {(() => {
-                      const setterPos = getSetterPosition(rightLineup, setterNumber.right)
-                      const formation = getFormationWithCustom('right', setterPos)
-                      const placed = receptionPlacement('right', formation)
-                      // For right court: Net is on left
-                      // formation gives top (from net) and left (from left side looking at net from behind)
-                      // For horizontal court with net in middle:
-                      // - top in formation = distance from net = maps to distance from LEFT edge of right half
-                      // - left in formation = horizontal position = maps to vertical position
-                      return ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => {
-                        const coords = formation[pos]
-                        // Transform: formation top -> distance from net (left edge)
-                        // formation left -> vertical position (need to flip for right side view)
-                        const leftPercent = coords.top // Distance from net
-                        const topPercent = 100 - coords.left // Invert: formation left (0) = bottom, left (100) = top
-                        return (
-                          <div
-                            key={pos}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, 'right', pos)}
-                            style={{
-                              position: 'absolute',
-                              ...(placed ? {
-                                left: `${placed.points[pos].x}px`,
-                                top: `${placed.points[pos].y}px`,
-                                transform: `translate(-50%, -50%) scale(${placed.scale})`
-                              } : {
-                                left: `${leftPercent}%`,
-                                top: `${topPercent}%`,
-                                transform: 'translate(-50%, -50%) scale(0.8)'
-                              }),
-                              zIndex: 3,
-                              cursor: 'grab',
-                              touchAction: 'none'
-                            }}
-                          >
-                            <PlayerCircle positionData={rightLineup?.[pos]} position={pos} team={rightTeam} isServing={rightServing} />
-                          </div>
-                        )
-                      })
-                    })()}
-                  </div>
-                )}
                 {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
                 {rightLineup && !leftLineup && isFirstRally && !peekingLineup.right && (
                   <div style={{

@@ -49,14 +49,19 @@ describe('referee score row: the SERVE block', () => {
     expect(c.querySelector('[data-serve-slot="right"]').style.justifyContent).toBe('flex-end')
   })
 
-  it('upright (large): a bigger score, and the serve block fills its whole slot with a bigger number', () => {
+  it('upright (large): a bigger score and number, the serve block as wide as its content (owner 21.11)', () => {
     const c = renderRow('right', { large: true })
     const digits = c.querySelector('[data-score] span')
     expect(digits.style.fontSize).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
     expect(SCORE_ROW.largeScoreVmin).toBeGreaterThan(SCORE_ROW.scoreVmin)
     const block = c.querySelector('[data-serve-block="right"]')
-    expect(block.style.width).toBe('100%')
+    // not the whole slot (owner 21.11: "not too wide but automatic width")
+    expect(block.style.width).toBe('auto')
+    expect(block.style.maxWidth).toBe('100%')
     expect(block.style.height).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
+    expect(SERVE_BLOCK.largeNumberVmin).toBeGreaterThan(SERVE_BLOCK.numberVmin)
+    // the number box (two digits + padding + border) stays inside a narrow slot
+    expect(SERVE_BLOCK.largeNumberCqi).toBeLessThanOrEqual(SERVE_BLOCK.numberCqi)
     expect(c.querySelector('[data-serve-slot="left"]').style.height).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
     expect(c.querySelector('[data-serve-box]').style.fontSize).toBe(`min(${vmin(SERVE_BLOCK.largeNumberVmin)}px, calc(${SERVE_BLOCK.largeNumberCqi}cqi * var(--cqf, 1)))`)
     // the referee view passes it upright only (landscape: the row is 15 % of the height)

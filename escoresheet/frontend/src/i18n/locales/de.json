@@ -2097,8 +2097,6 @@
     },
     "delayWarningShort": "V V",
     "delayPenaltyShort": "V S",
-    "switchToStandard": "Zur Standardansicht wechseln",
-    "switchToReception": "Zur Annahmeformation wechseln",
     "scoresheet": {
       "open": "Matchblatt",
       "close": "Schliessen",
@@ -2132,10 +2130,6 @@
       "formalWarning": "Formelle Warnung"
     },
     "iosFullscreenTip": "Tipp: Für echtes Vollbild auf iOS tippe auf Teilen → Zum Home-Bildschirm und öffne die App von dort.",
-    "selectSetter": "Zuspieler wählen",
-    "noLineup": "Keine Aufstellung verfügbar",
-    "exitAdvanced": "Erweitert beenden",
-    "advanced": "Erweitert",
     "scorerAttention": "Der Schreiber braucht dich",
     "acknowledge": "Verstanden"
   },
