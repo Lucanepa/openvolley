@@ -53,7 +53,7 @@ export function leaguesForGender(rows, gender) {
  * loaded with ?sport=beach (the server wants a beach role for it), no sport
  * switch, and no offline cache (that one is OpenVolley's indoor teams).
  */
-export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '', onRoute = null }) {
+export default function SavedTeamsPanel({ userId, sport: fixedSport, sportFilter = null, route = '', onRoute = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -68,7 +68,9 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
   const [teamFormOpen, setTeamFormOpen] = useState(false)
   const [actionError, setActionError] = useState('')
   const [chosenSport, setSportState] = useState(readSport)
-  const sport = fixedSport === 'beach' ? 'beach' : chosenSport
+  const sport = fixedSport === 'beach' ? 'beach' : sportFilter || chosenSport
+  // the console's tree switches the sport (sportFilter): the season belongs to one sport
+  useEffect(() => { if (sportFilter) setSeason('') }, [sportFilter])
   const setSport = (v) => {
     setSportState(v)
     setSeason('')
@@ -218,7 +220,7 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
         <Button icon={Plus} onClick={() => setCompetitionForm({})} disabled={!online}>{t('savedTeams.newCompetition')}</Button>
       </PanelHead>
       <OfflineBanner online={online} />
-      {fixedSport !== 'beach' && (
+      {fixedSport !== 'beach' && !sportFilter && (
         <div className="mb-3">
           <SegmentedControl
             ariaLabel={t('savedTeams.sport')}

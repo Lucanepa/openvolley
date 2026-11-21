@@ -43,11 +43,12 @@ const pdfOf = (blob) => (blob.type === 'application/pdf' ? blob : new Blob([blob
  * signatures and the account approvals, and stores it as the match's newest,
  * a closed match too.
  */
-export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false }) {
+export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false, state: stateProp = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
-  const [state, setState] = useState('all')
+  const [ownState, setState] = useState('all')
+  const state = stateProp || ownState
   const [q, setQ] = useState('')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(null) // `${id}:view` | `${id}:download`
@@ -213,16 +214,18 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false })
       <OfflineBanner online={online} />
       <p className="mb-3 text-xs text-stone-500">{t('manage.scoresheets.intro')}</p>
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <SegmentedControl
-          ariaLabel={t('manage.tabs.scoresheets')}
-          value={state}
-          onChange={setState}
-          options={[
-            { value: 'all', label: t('manage.matches.filterAll') },
-            { value: 'closed', label: t('manage.matches.filterClosed') },
-            { value: 'open', label: t('manage.matches.filterOpen') }
-          ]}
-        />
+{!stateProp && (
+          <SegmentedControl
+            ariaLabel={t('manage.tabs.scoresheets')}
+            value={state}
+            onChange={setState}
+            options={[
+              { value: 'all', label: t('manage.matches.filterAll') },
+              { value: 'closed', label: t('manage.matches.filterClosed') },
+              { value: 'open', label: t('manage.matches.filterOpen') }
+            ]}
+          />
+        )}
         <form className="sm:ml-auto sm:w-80" onSubmit={e => { e.preventDefault(); setQuery(q.trim()) }}>
           <SearchInput size="md" value={q} onChange={e => { setQ(e.target.value); if (!e.target.value) setQuery('') }} placeholder={t('manage.matches.search')} aria-label={t('manage.matches.search')} />
         </form>
