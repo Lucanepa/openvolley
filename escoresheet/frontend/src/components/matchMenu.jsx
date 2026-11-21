@@ -1,6 +1,6 @@
 import {
   Users, RectangleVertical, ScrollText, NotebookPen, ClipboardList,
-  Wrench, UserPen, KeyRound, Download, Settings, OctagonX, History, FilePen, Keyboard, MonitorCog
+  Wrench, UserPen, KeyRound, Download, Settings, OctagonX, History, FilePen, Keyboard, MonitorCog, MonitorPlay
 } from 'lucide-react'
 // the Set preview row's icon
 import { TableProperties } from 'lucide-react'
@@ -15,9 +15,10 @@ import { TableProperties } from 'lucide-react'
  *   Corrections     go back (the rules' going back to a score: points
  *                   cancelled, point and service, then everything editable),
  *                   manual changes, edit home / away roster
- *   Devices & data  PINs, pair a phone (its keyboard types on this device), scoreboard
- *                   settings (only while a scoreboard display follows the match and offers
- *                   its settings page), download game data
+ *   Devices & data  PINs, pair a phone (its keyboard types on this device), show on a
+ *                   scoreboard (the match's scoreboard code, docs/scoreboard-code-spec.md),
+ *                   scoreboard settings (only while a scoreboard display follows the match
+ *                   and offers its settings page), download game data
  *   Settings        options
  *   End of match    stop the match (red; it opens its own confirmation)
  *
@@ -69,6 +70,7 @@ export function matchMenuSections(t, actions) {
       items: [
         ...row('pins', KeyRound, t('scoreboard.menu.showPins', 'Show PINs'), actions.showPins),
         ...row('pair-phone', Keyboard, t('phonePair.menu', 'Pair a phone (keyboard)'), actions.pairPhone),
+        ...row('show-on-scoreboard', MonitorPlay, t('scoreboardCode.menu', 'Show on a scoreboard'), actions.showOnScoreboard),
         ...row('scoreboard-settings', MonitorCog, t('scoreboard.menu.scoreboardSettings', 'Scoreboard settings'), actions.scoreboardSettings),
         ...row('export', Download, t('scoreboard.menu.downloadGameData', 'Download game data (JSON)'), actions.downloadGameData)
       ]
