@@ -3161,7 +3161,7 @@
       "q_editMatchInfo": "How do I fix the hall, the date or an official during the match?",
       "a_editMatchInfo": "Match › “Edit match info”: hall, city, league, game number, match type, date, team contacts and officials, and each team's short name and shirt colour (the team names stay as on the scoresheet). Tap “Save changes”; “Close” goes back to the match.",
       "q_board": "What is the correction board?",
-      "a_board": "On a tablet in landscape or a computer, Match › “Corrections” opens the correction board: the scoreboard with every part correctable. “+” and “−” add or remove a point, the time-out boxes add, move or remove a time-out, a tap on a player substitutes, sanctions or renumbers them, the arrows rotate a team and “Starting line-up” corrects the line-up. The board redraws at once and nothing is saved until you tap “Save”: then every change is written together and listed in the correction log. “Undo” takes back the last change, “Cancel” throws them all away. “List” shows the cards instead (phones always use them), with the event log and “Reopen set”. A point that would end the set is given with the point button."
+      "a_board": "On a tablet in landscape or a computer, Match › “Corrections” opens the correction board: the scoreboard with every part correctable. “+” and “−” add or remove a point (or tap the score and type it: the difference goes in as the team’s points in a row), the time-out boxes add, move or remove a time-out, a tap on a player substitutes, sanctions or renumbers them, the arrows rotate a team and “Starting line-up” corrects the line-up. The board redraws at once and nothing is saved until you tap “Save”: then every change is written together and listed in the correction log. “Undo” takes back the last change, “Cancel” throws them all away. “List” shows the cards instead (phones always use them), with the event log and “Reopen set”. A point that would end the set is given with the point button."
     },
     "moreHelp": "More help",
     "contactSupport": "Contact support",
@@ -6384,7 +6384,14 @@
     "rallyInPlay": "A rally is in play: record its point first, then correct.",
     "penaltyPointRefused": "The sanction gives a point the board cannot add ({{why}}). Record the sanction on the scoreboard instead.",
     "previewTitle": "On the scoresheet after your changes",
-    "previewLoading": "Drawing the set…"
+    "previewLoading": "Drawing the set…",
+    "typeScoreAria": "Type the score of {{team}}: {{n}}",
+    "typeScoreTitle": "Score of {{team}} · set {{set}}",
+    "typeScoreLabel": "Points",
+    "typeScoreApply": "Apply",
+    "typeScoreInvalid": "Enter a whole number from 0.",
+    "typeScoreHint": "The difference is added or removed as points of this team at the end of the set, one after the other: the first may rotate the team, the next ones are on its serve. A point that ends the set is given with the point button.",
+    "typeScoreStopped": "Stopped at {{n}}: {{why}}"
   },
   "picker": {
     "calendar": "Calendar",

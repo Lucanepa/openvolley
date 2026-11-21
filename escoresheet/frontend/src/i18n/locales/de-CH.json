@@ -3155,7 +3155,7 @@
       "q_editMatchInfo": "Wie korrigier ich während em Spiil d Halle, s Datum oder en Offizielle?",
       "a_editMatchInfo": "Spiil › «Spiilinfo bearbeite»: Halle, Ort, Liga, Spiilnummere, Spiiltyp, Datum, Teamkontäkt und Offizielli, und vo jedem Team de Churzname und d Trikotfarb (d Teamnäme bliibed wie uf em Matchblatt). Tipp uf «Änderige speichere»; «Schliesse» gaht zrugg is Spiil.",
       "q_board": "Was isch s Korrektur-Board?",
-      "a_board": "Uf emne Tablet im Querformat oder emne Computer macht Spiil › «Korrekture» s Korrektur-Board uf: s Scoreboard, wo du alles chasch korrigiere. «+» und «−» tüend en Punkt dezue oder näh en wäg, i de Timeout-Fälder tuesch es Timeout dezue, verschiebsch oder nimmsch es wäg, en Tipp uf e Spielerin oder en Spieler wächslet us, sanktioniert oder änderet d Nummere, d Pfiil rotiered es Team und «Startufstellig» korrigiert d Ufstellig. S Board zeigt jedi Änderig sofort, gspeicheret wird aber erscht, wenn du uf «Speichere» tippsch: Dänn werded alli Änderige zäme gschribe und im Korrekturprotokoll uufgfüehrt. «Rückgängig» nimmt di letscht Änderig zrugg, «Abbräche» verwirft alli. «Liste» zeigt stattdesse d Charte (ufem Handy immer), mit em Ereignisprotokoll und «Satz wieder öffne». En Punkt, wo de Satz beändet, gisch mit em Punkt-Chnopf."
+      "a_board": "Uf emne Tablet im Querformat oder emne Computer macht Spiil › «Korrekture» s Korrektur-Board uf: s Scoreboard, wo du alles chasch korrigiere. «+» und «−» tüend en Punkt dezue oder näh en wäg (oder tipp uf de Spiilstand und gib en ii: d Differenz wird als Pünkt vom Team nachenand iitreit), i de Timeout-Fälder tuesch es Timeout dezue, verschiebsch oder nimmsch es wäg, en Tipp uf e Spielerin oder en Spieler wächslet us, sanktioniert oder änderet d Nummere, d Pfiil rotiered es Team und «Startufstellig» korrigiert d Ufstellig. S Board zeigt jedi Änderig sofort, gspeicheret wird aber erscht, wenn du uf «Speichere» tippsch: Dänn werded alli Änderige zäme gschribe und im Korrekturprotokoll uufgfüehrt. «Rückgängig» nimmt di letscht Änderig zrugg, «Abbräche» verwirft alli. «Liste» zeigt stattdesse d Charte (ufem Handy immer), mit em Ereignisprotokoll und «Satz wieder öffne». En Punkt, wo de Satz beändet, gisch mit em Punkt-Chnopf."
     },
     "moreHelp": "Meh Hilf",
     "contactSupport": "Support kontaktiere",
@@ -6378,7 +6378,14 @@
     "rallyInPlay": "En Ballwächsel lauft: Erfass zerscht sin Punkt, dänn korrigier.",
     "penaltyPointRefused": "D Sanktion git en Punkt, wo s Board nöd cha dezuetue ({{why}}). Erfass d Sanktion stattdesse uf em Scoreboard.",
     "previewTitle": "Ufem Matchblatt nach dine Änderige",
-    "previewLoading": "Satz wird zeichnet…"
+    "previewLoading": "Satz wird zeichnet…",
+    "typeScoreAria": "Spiilstand vo {{team}} iigäh: {{n}}",
+    "typeScoreTitle": "Pünkt vo {{team}} · Satz {{set}}",
+    "typeScoreLabel": "Pünkt",
+    "typeScoreApply": "Übernäh",
+    "typeScoreInvalid": "Gib e ganzi Zahl ab 0 ii.",
+    "typeScoreHint": "D Differenz wird als Pünkt vo dem Team am Satzend dezuegleit oder wäggno, eine nach em andere: Bim erschte cha s Team rotiere, di wiitere folged bi sim Ufschlag. En Punkt, wo de Satz beändet, gisch mit em Punkt-Chnopf.",
+    "typeScoreStopped": "Bi {{n}} aaghalte: {{why}}"
   },
   "picker": {
     "calendar": "Kaländer",

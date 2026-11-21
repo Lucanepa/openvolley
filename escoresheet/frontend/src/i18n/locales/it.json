@@ -3160,7 +3160,7 @@
       "q_editMatchInfo": "Come correggo la palestra, la data o un ufficiale di gara durante la partita?",
       "a_editMatchInfo": "Partita › «Modifica info partita»: palestra, città, campionato, numero partita, tipo di partita, data, contatti delle squadre e ufficiali di gara, e il nome breve e il colore della maglia di ogni squadra (i nomi delle squadre restano come sul referto). Tocca «Salva le modifiche»; «Chiudi» torna alla partita.",
       "q_board": "Che cos’è il tabellone delle correzioni?",
-      "a_board": "Su un tablet in orizzontale o su un computer, Partita › «Correzioni» apre il tabellone delle correzioni: il tabellone segnapunti dove tutto si può correggere. «+» e «−» aggiungono o tolgono un punto, le caselle dei tempi di riposo aggiungono, spostano o tolgono un tempo di riposo, un tocco su una giocatrice o un giocatore permette di sostituirlo, sanzionarlo o cambiargli il numero, le frecce fanno ruotare una squadra e «Formazione iniziale» corregge la formazione. Il tabellone si aggiorna subito e niente viene salvato finché non tocchi «Salva»: allora tutte le modifiche vengono scritte insieme e compaiono nel registro delle correzioni. «Annulla ultima» toglie l’ultima modifica, «Annulla» le scarta tutte. «Elenco» mostra invece le schede (sul telefono sempre), con il registro degli eventi e «Riapri set». Un punto che chiude il set si assegna con il pulsante del punto."
+      "a_board": "Su un tablet in orizzontale o su un computer, Partita › «Correzioni» apre il tabellone delle correzioni: il tabellone segnapunti dove tutto si può correggere. «+» e «−» aggiungono o tolgono un punto (oppure tocca il punteggio e inseriscilo: la differenza viene registrata come punti della squadra di seguito), le caselle dei tempi di riposo aggiungono, spostano o tolgono un tempo di riposo, un tocco su una giocatrice o un giocatore permette di sostituirlo, sanzionarlo o cambiargli il numero, le frecce fanno ruotare una squadra e «Formazione iniziale» corregge la formazione. Il tabellone si aggiorna subito e niente viene salvato finché non tocchi «Salva»: allora tutte le modifiche vengono scritte insieme e compaiono nel registro delle correzioni. «Annulla ultima» toglie l’ultima modifica, «Annulla» le scarta tutte. «Elenco» mostra invece le schede (sul telefono sempre), con il registro degli eventi e «Riapri set». Un punto che chiude il set si assegna con il pulsante del punto."
     },
     "moreHelp": "Altro aiuto",
     "contactSupport": "Contatta il supporto",
@@ -6383,7 +6383,14 @@
     "rallyInPlay": "Uno scambio è in corso: registra prima il suo punto, poi correggi.",
     "penaltyPointRefused": "La sanzione dà un punto che il tabellone non può aggiungere ({{why}}). Registra invece la sanzione sul tabellone segnapunti.",
     "previewTitle": "Sul referto dopo le tue modifiche",
-    "previewLoading": "Disegno del set…"
+    "previewLoading": "Disegno del set…",
+    "typeScoreAria": "Inserisci il punteggio di {{team}}: {{n}}",
+    "typeScoreTitle": "Punti di {{team}} · set {{set}}",
+    "typeScoreLabel": "Punti",
+    "typeScoreApply": "Applica",
+    "typeScoreInvalid": "Inserisci un numero intero da 0.",
+    "typeScoreHint": "La differenza viene aggiunta o tolta come punti di questa squadra alla fine del set, uno dopo l’altro: al primo la squadra può ruotare, i successivi sono sul suo servizio. Un punto che chiude il set si assegna con il pulsante del punto.",
+    "typeScoreStopped": "Fermato a {{n}}: {{why}}"
   },
   "picker": {
     "calendar": "Calendario",

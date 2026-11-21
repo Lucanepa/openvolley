@@ -2892,7 +2892,7 @@
       "q_editMatchInfo": "Wie korrigiere ich während des Spiels die Halle, das Datum oder einen Offiziellen?",
       "a_editMatchInfo": "Spiel › «Spielinfo bearbeiten»: Halle, Ort, Liga, Spielnummer, Spieltyp, Datum, Teamkontakte und Offizielle sowie Kurzname und Trikotfarbe jedes Teams (die Teamnamen bleiben wie auf dem Matchblatt). Tippe auf «Änderungen speichern»; «Schliessen» führt zurück zum Spiel.",
       "q_board": "Was ist das Korrektur-Board?",
-      "a_board": "Auf einem Tablet im Querformat oder einem Computer öffnet Spiel › «Korrekturen» das Korrektur-Board: das Scoreboard, auf dem du alles korrigieren kannst. «+» und «−» fügen einen Punkt hinzu oder entfernen ihn, in den Auszeit-Feldern fügst du eine Auszeit hinzu, verschiebst oder entfernst sie, ein Tipp auf eine Spielerin oder einen Spieler wechselt aus, sanktioniert oder ändert die Nummer, die Pfeile rotieren ein Team und «Startaufstellung» korrigiert die Aufstellung. Das Board zeigt jede Änderung sofort, gespeichert wird aber erst, wenn du auf «Speichern» tippst: Dann werden alle Änderungen zusammen geschrieben und im Korrekturprotokoll aufgeführt. «Rückgängig» nimmt die letzte Änderung zurück, «Abbrechen» verwirft alle. «Liste» zeigt stattdessen die Karten (auf dem Handy immer), mit dem Ereignisprotokoll und «Satz wieder öffnen». Einen Punkt, der den Satz beendet, gibst du mit der Punkt-Schaltfläche."
+      "a_board": "Auf einem Tablet im Querformat oder einem Computer öffnet Spiel › «Korrekturen» das Korrektur-Board: das Scoreboard, auf dem du alles korrigieren kannst. «+» und «−» fügen einen Punkt hinzu oder entfernen ihn (oder tippe auf den Spielstand und gib ihn ein: die Differenz wird als Punkte des Teams nacheinander eingetragen), in den Auszeit-Feldern fügst du eine Auszeit hinzu, verschiebst oder entfernst sie, ein Tipp auf eine Spielerin oder einen Spieler wechselt aus, sanktioniert oder ändert die Nummer, die Pfeile rotieren ein Team und «Startaufstellung» korrigiert die Aufstellung. Das Board zeigt jede Änderung sofort, gespeichert wird aber erst, wenn du auf «Speichern» tippst: Dann werden alle Änderungen zusammen geschrieben und im Korrekturprotokoll aufgeführt. «Rückgängig» nimmt die letzte Änderung zurück, «Abbrechen» verwirft alle. «Liste» zeigt stattdessen die Karten (auf dem Handy immer), mit dem Ereignisprotokoll und «Satz wieder öffnen». Einen Punkt, der den Satz beendet, gibst du mit der Punkt-Schaltfläche."
     },
     "moreHelp": "Mehr Hilfe",
     "contactSupport": "Support kontaktieren",
@@ -6366,7 +6366,14 @@
     "rallyInPlay": "Ein Ballwechsel läuft: Erfasse zuerst seinen Punkt, dann korrigiere.",
     "penaltyPointRefused": "Die Sanktion gibt einen Punkt, den das Board nicht hinzufügen kann ({{why}}). Erfasse die Sanktion stattdessen auf dem Scoreboard.",
     "previewTitle": "Auf dem Matchblatt nach deinen Änderungen",
-    "previewLoading": "Satz wird gezeichnet…"
+    "previewLoading": "Satz wird gezeichnet…",
+    "typeScoreAria": "Spielstand von {{team}} eingeben: {{n}}",
+    "typeScoreTitle": "Punkte von {{team}} · Satz {{set}}",
+    "typeScoreLabel": "Punkte",
+    "typeScoreApply": "Übernehmen",
+    "typeScoreInvalid": "Gib eine ganze Zahl ab 0 ein.",
+    "typeScoreHint": "Die Differenz wird als Punkte dieses Teams am Satzende hinzugefügt oder entfernt, einer nach dem anderen: Beim ersten kann das Team rotieren, die weiteren folgen bei seinem Aufschlag. Einen Punkt, der den Satz beendet, gibst du mit der Punkt-Schaltfläche.",
+    "typeScoreStopped": "Bei {{n}} angehalten: {{why}}"
   },
   "picker": {
     "calendar": "Kalender",
