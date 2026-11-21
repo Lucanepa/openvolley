@@ -256,7 +256,7 @@ export function GameCaptainForm({ ctx, events, players, preset = {}, busy, onCan
   const t = ctx.t
   const [team, setTeam] = useState(preset.team ?? null)
   const field = team === 'away' ? 'awayCourtCaptain' : 'homeCourtCaptain'
-  const [number, setNumber] = useState(null)
+  const [number, setNumber] = useState(preset.number ?? null)
   const roster = rosterOf(players, team).filter(p => !p.libero)
   const plan = useMemo(() => (team && number != null ? planGameCaptain(events, { team, number }, ctx) : null), [events, team, number, ctx])
   const current = team ? ctx.match?.[field] : null
@@ -286,7 +286,7 @@ export function GameCaptainForm({ ctx, events, players, preset = {}, busy, onCan
 export function RenumberForm({ ctx, events, players, preset = {}, busy, onCancel, onConfirm }) {
   const t = ctx.t
   const [team, setTeam] = useState(preset.team ?? null)
-  const [playerNumber, setPlayerNumber] = useState(null)
+  const [playerNumber, setPlayerNumber] = useState(preset.playerNumber ?? null)
   const [to, setTo] = useState('')
   const roster = rosterOf(players, team)
   const player = roster.find(p => String(p.number) === String(playerNumber)) || null

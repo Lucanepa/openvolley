@@ -41,7 +41,7 @@
  */
 import { scoreFromPointEvents, setTargetsOf, courtSwitchPointOf } from '../../domain/rules'
 import { deriveTeamSanctionFlags } from '../../domain/sanctions'
-import { appendRemark, removeRemarkLine } from '../../domain/remarks'
+import { remarksAfter } from '../../domain/remarks'
 import { syncJobsForEvents } from '../../domain/corrections'
 import { clearedPostMatchSignatures, POST_MATCH_SIGNATURE_FIELDS, getMatchWinner, countSetsWon, isMatchOverStatus } from '../../domain/matchEnd'
 import { signaturesPayload } from '../../domain/signatureEdits'
@@ -140,19 +140,8 @@ export async function writeSignedSheetChange(db, matchId, patch, log, now = new 
   try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
 }
 
-/** The new remarks text after the plan's removals and additions. */
-export function remarksAfter(remarks, plan) {
-  // remarksSet: the whole text, when one line was edited in place
-  let out = plan?.remarksSet !== undefined ? String(plan.remarksSet) : (remarks || '')
-  // a line rewritten where it stands (a renumbered player's remark)
-  for (const { from, to } of plan?.remarkReplace || []) {
-    if (!from || from === to) continue
-    out = out.split('\n').map(l => (l === from ? to : l)).join('\n')
-  }
-  for (const line of plan?.remarkRemove || []) out = removeRemarkLine(out, line)
-  for (const line of plan?.remarkAdd || []) out = appendRemark(out, line)
-  return out
-}
+/** The new remarks text after the plan's removals and additions (domain/remarks). */
+export { remarksAfter }
 
 /**
  * Write a correction plan.
@@ -243,9 +232,13 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
       Object.assign(patch, clearedPostMatchSignatures())
       result.signaturesCleared = true
     }
-    const afterMatch = mode === 'review' && !!plan.log && (!REMARK_ACTIONS.has(plan.log.action) || result.signaturesCleared)
-    const entry = logEntryFor(plan, now, { afterMatch })
-    if (entry) patch.manualChanges = [...(match.manualChanges || []), entry]
+    // one log entry per change: plan.logs when several changes are written
+    // together (the correction board's Confirm), else plan.log
+    const logs = Array.isArray(plan.logs) && plan.logs.length ? plan.logs : (plan.log ? [plan.log] : [])
+    const entries = logs
+      .map(log => logEntryFor({ log }, now, { afterMatch: mode === 'review' && (!REMARK_ACTIONS.has(log.action) || result.signaturesCleared) }))
+      .filter(Boolean)
+    if (entries.length) patch.manualChanges = [...(match.manualChanges || []), ...entries]
     if (Object.keys(patch).length) await db.matches.update(matchId, patch)
 
     // 5b. the roster (a renumbered player, a libero mark)

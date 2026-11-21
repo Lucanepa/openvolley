@@ -94,6 +94,7 @@ import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEdita
 import { describeEventText, compareBySeq } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import HistoryModal from './history/HistoryModal.jsx'
+import CorrectionBoard, { readCorrectionView, saveCorrectionView, boardFits } from './corrections/CorrectionBoard.jsx'
 import RectifyPanel from './rectify/RectifyPanel.jsx'
 import { planRectificationReversal, rectifyErrorText } from '../domain/rectify'
 import { servingTeamFromLog } from '../domain/rules'
@@ -131,7 +132,7 @@ import { DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
 import { freeStorageBytes, isStorageFullError, LOW_STORAGE_BYTES } from '../utils/storageSpace'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
-import { ArrowUpDown, ChevronDown, Cross, Pointer } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Cross, LayoutDashboard, Pointer } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
 import { preload, usePreloaded } from '../utils/preload'
 
@@ -576,6 +577,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const [showLogs, setShowLogs] = useState(false)
   const [showManualPanel, setShowManualPanel] = useState(false)
+  // Corrections: the board (tablet landscape, desktop) or the list of cards (CorrectionBoard)
+  const [correctionView, setCorrectionView] = useState(readCorrectionView)
   // Go back (components/rectify/RectifyPanel, domain/rectify)
   const [showRectify, setShowRectify] = useState(false)
   const [manualPanelExpandedSections, setManualPanelExpandedSections] = useState({
@@ -20051,7 +20054,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       />
 
       {/* Manual Changes Modal */}
-      {showManualPanel && (
+      {/* (the list view; the correction board is below, after Go back) */}
+      {showManualPanel && !(correctionView === 'board' && boardFits()) && (
         <Modal
           title={t('corrections.title')}
           open={true}
@@ -20067,6 +20071,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               end, in live mode. The live handlers keep their side effects
               (undo, decision change, point, time-out countdown, line-up guard,
               reopen set); the panel closes itself before opening them. */}
+          {boardFits() && (
+            <div className="ov-kit mb-3 flex justify-end">
+              <Button variant="toolbar" size="md" icon={LayoutDashboard} data-testid="corrections-show-board"
+                onClick={() => { saveCorrectionView('board'); setCorrectionView('board') }}>
+                {t('correctionBoard.boardView', 'Board')}
+              </Button>
+            </div>
+          )}
           <div className="rounded-xl bg-stone-100/80 p-2 sm:p-3">
             <CorrectionsPanel
               mode="live"
@@ -20127,6 +20139,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             }}
           />
         </Modal>
+      )}
+
+      {/* Correction board (owner 2026-11-20): the scoreboard with every
+          element correctable, staged, written in one go on Save. The list
+          (Manual Changes Modal above) stays one tap away and on phones. */}
+      {showManualPanel && correctionView === 'board' && boardFits() && (
+        <CorrectionBoard
+          mode="live"
+          matchId={matchId}
+          events={data?.events}
+          match={data?.match}
+          sets={data?.sets}
+          homeTeam={data?.homeTeam}
+          awayTeam={data?.awayTeam}
+          homePlayers={data?.homePlayers}
+          awayPlayers={data?.awayPlayers}
+          liveSetIndex={data?.set?.index ?? null}
+          rallyInPlay={rallyStatus === 'in_play'}
+          hooks={{
+            notifyScoresheetUpdate: () => notifyScoresheetUpdate('correction'),
+            syncToReferee,
+            syncLiveState: () => syncLiveStateToSupabase('manual_correction', null, null),
+            reopenSet: (set) => { setShowManualPanel(false); setReopenSetConfirm({ setId: set.id, setIndex: set.index }) }
+          }}
+          onClose={() => {
+            setShowManualPanel(false)
+            notifyScoresheetUpdate('manual_panel_closed')
+          }}
+          onShowList={() => setCorrectionView('list')}
+        />
       )}
 
       {/* Remarks Modal */}

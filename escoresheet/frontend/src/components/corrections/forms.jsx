@@ -123,7 +123,8 @@ export function SubstitutionForm({ ctx, events, sets, players, mode, liveSetInde
   const { setIndex, chooseSet, timeline, at, setAt, liveIdx } = useScoreChoice({ events, mode, liveSetIndex, preset, editEvent })
   const p0 = editEvent?.payload || {}
   const [team, setTeam] = useState(p0.team ?? preset.team ?? null)
-  const [playerOut, setPlayerOut] = useState(p0.playerOut ?? null)
+  // preset.playerOut: the correction board's tap on a player of the court
+  const [playerOut, setPlayerOut] = useState(p0.playerOut ?? preset.playerOut ?? null)
   const [playerIn, setPlayerIn] = useState(p0.playerIn ?? null)
   const [exceptional, setExceptional] = useState(!!p0.isExceptional)
   const [reason, setReason] = useState(p0.exceptionalReason || 'injury')
@@ -258,8 +259,9 @@ export function SanctionForm({ ctx, events, sets, players, mode, liveSetIndex, p
   const p0 = editEvent?.payload || {}
   const [team, setTeam] = useState(p0.team ?? preset.team ?? null)
   const [type, setType] = useState(p0.type ?? null)
-  const [who, setWho] = useState(whoOfPayload(p0))
-  const [number, setNumber] = useState(p0.playerNumber ?? null)
+  // preset.playerNumber: the correction board's tap on a player of the court
+  const [who, setWho] = useState(editEvent ? whoOfPayload(p0) : (preset.playerNumber != null ? 'player' : whoOfPayload(p0)))
+  const [number, setNumber] = useState(p0.playerNumber ?? preset.playerNumber ?? null)
   const [pointChoice, setPointChoice] = useState(null) // 'given' | 'now'
 
   const teamSanction = type && isTeamSanctionType(type)

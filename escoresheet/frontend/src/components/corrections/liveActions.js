@@ -17,6 +17,8 @@
  */
 import { getSideAForSet, getLeftTeamLabelForSet } from '../../domain/rules'
 import { regularSetIndexes } from '../../domain/coinToss'
+import { emptyPlan } from '../../domain/manualCorrections'
+import { tr, displaySetNumber } from '../../domain/describe'
 
 const flipLabel = (label) => (label === 'A' ? 'B' : 'A')
 
@@ -53,6 +55,33 @@ export async function switchSides({ db, matchId, match, setIndex }) {
   const before = getLeftTeamLabelForSet(setIndex, match || {})
   await db.matches.update(matchId, { setLeftTeamOverrides: switchedSides(match, setIndex) })
   return { before: `${before} left`, after: `${flipLabel(before)} left` }
+}
+
+/**
+ * Switch sides as a plan (the correction board stages it with its other
+ * changes): the same match-row fields switchSides writes, as plan.matchPatch,
+ * and its log line. Nothing for the cloud's matches table (no column for the
+ * sides): the live state pushed after the write carries them.
+ */
+export function planSwitchSides(match, setIndex, ctx = {}) {
+  const plan = emptyPlan()
+  let before
+  let after
+  if (setIndex === 5) {
+    const currentLeft = match?.set5LeftTeam || getLeftTeamLabelForSet(5, { ...(match || {}), set5CourtSwitched: false })
+    const newLeft = flipLabel(currentLeft)
+    plan.matchPatch = { set5LeftTeam: newLeft }
+    before = `${currentLeft} left`
+    after = `${newLeft} left`
+  } else {
+    const left = getLeftTeamLabelForSet(setIndex, match || {})
+    plan.matchPatch = { setLeftTeamOverrides: switchedSides(match, setIndex) }
+    before = `${left} left`
+    after = `${flipLabel(left)} left`
+  }
+  const set = displaySetNumber(setIndex, match)
+  plan.log = { action: 'switchSides', setIndex, team: null, before, after, text: tr(ctx.t, 'corrections.log.sides', 'Sides switched in set {{set}}', { set }) }
+  return plan
 }
 
 /** The team serving first in a set as the match row says (sets 1-4: firstServe; set 5: its toss). */

@@ -146,6 +146,7 @@ export const HELP_SECTIONS = [
   ]),
   section('corrections', [
     q('manualAdjustments', 'whereCorrections'),
+    q('manualAdjustments', 'board'),
     q('manualAdjustments', 'goBack'),
     q('manualAdjustments', 'editMatchInfo'),
     q('manualAdjustments', 'missedPoint'),
