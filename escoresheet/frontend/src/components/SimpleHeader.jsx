@@ -78,6 +78,9 @@ const languages = [
  */
 export default function SimpleHeader({
   title,
+  // Optional: what the left column shows instead of the title (the referee's
+  // connection status before the coin toss)
+  leading,
   version,
   menuItems = [], // Array of { icon, label, onClick, active, color, toggle, badge, badgeColor, disabled, divider }
   onFullscreen,
@@ -143,6 +146,8 @@ export default function SimpleHeader({
             // an invisible ::before makes each a 44 px tall target
             className="shrink-0 sm:p-0 sm:[&_button]:h-9 sm:[&_button]:px-3 [&_button]:relative [&_button]:before:absolute [&_button]:before:inset-x-0 [&_button]:before:-inset-y-2 [&_button]:before:content-['']"
           />
+        ) : leading ? (
+          leading
         ) : title ? (
           <span className={HEADER_TITLE}>
             {title}

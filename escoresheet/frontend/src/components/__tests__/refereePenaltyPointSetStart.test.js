@@ -8,6 +8,7 @@ import { resolve } from 'node:path'
 import { isFirstRallyOf } from '../../domain/rally'
 
 const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+const setBreakSrc = readFileSync(resolve(__dirname, '../referee/setBreak.js'), 'utf8')
 
 describe('referee: a penalty point before the first serve does not start the set', () => {
   it('the rule: only a set start, a rally start or a rally point starts it', () => {
@@ -17,7 +18,10 @@ describe('referee: a penalty point before the first serve does not start the set
   })
   it('the interval, the line-up cover and the line-ups between sets all use it', () => {
     expect(src).toMatch(/import \{ isFirstRallyOf \} from '\.\.\/domain\/rally'/)
-    expect(src).toContain('return isFirstRallyOf(data.events, currentSetIndex)')
+    // the interval: the break (referee/setBreak.js refereeSetBreak)
+    expect(src).toContain('const isBetweenSets = !!setBreak?.betweenSets')
+    expect(setBreakSrc).toContain("import { isFirstRallyOf } from '../../domain/rally'")
+    expect(setBreakSrc).toContain('isFirstRallyOf(events, index)')
     expect(src).toContain('const currentSetHasPoints = !isFirstRallyOf(data.events, currentSetIndex)')
     expect(src).toContain('return isFirstRallyOf(data.events, data.currentSet.index)')
     expect(src).not.toMatch(/\(e\.type === 'point' \|\| e\.type === 'set_start'\) && e\.setIndex === currentSetIndex/)
