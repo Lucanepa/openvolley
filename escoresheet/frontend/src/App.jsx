@@ -4007,14 +4007,15 @@ export default function App() {
                 display: 'flex',
                 justifyContent: 'center'
               } : {}),
-              // MatchSetup fills available space
+              // MatchSetup fills available space (the base's flex: 1 1 auto
+              // grows it; no flexGrow next to that shorthand: React warned
+              // each time the branch went away)
               ...(showMatchSetup ? {
                 display: 'flex',
                 flexDirection: 'column',
                 padding: '10px',
                 overflowY: 'hidden',
-                height: '0px',
-                flexGrow: 1
+                height: '0px'
               } : {}),
               // Scoreboard active: flex column so match-record height: 100% resolves correctly
               ...(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd ? {
