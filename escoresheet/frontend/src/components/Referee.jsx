@@ -2137,23 +2137,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   }, [isFullscreen, reEnableWakeLock])
 
   // Format countdown
-  // Detect if we're between sets (previous set finished but current set not started)
-  const isBetweenSets = useMemo(() => {
-    if (!data?.sets || !data?.currentSet) return false
-
-    const currentSetIndex = data.currentSet.index
-    if (currentSetIndex <= 1) return false
-
-    const previousSet = data.sets.find(s => s.index === currentSetIndex - 1)
-    if (!previousSet || !previousSet.finished) return false
-
-    // Has the current set started? A set_start, a rally start or a rally
-    // point; a penalty point awarded before the first serve (a sanction at
-    // the end of the set before) does not start it (domain/rally
-    // isFirstRallyOf, as the scorer): it ended the interval and showed an
-    // empty court (owner 15.11, start of set 2 at 0:1)
-    return isFirstRallyOf(data.events, currentSetIndex)
-  }, [data?.sets, data?.currentSet, data?.events])
+  // Between sets: the set before finished and the next one not started
+  // (referee/setBreak.js). Also while the next set's row is not in the bundle
+  // yet: with no unfinished set this was false, and a live state without the
+  // break flag then showed "SET 1 · 0:0" (full-match test 21.11.2026). Has
+  // the next set started? A set_start, a rally start or a rally point; a
+  // penalty point awarded before the first serve (a sanction at the end of
+  // the set before) does not start it (domain/rally isFirstRallyOf, as the
+  // scorer): it ended the interval and showed an empty court (owner 15.11,
+  // start of set 2 at 0:1)
+  const isBetweenSets = !!setBreak?.betweenSets
 
   // Check if match has ended (from liveState status or sets won)
   const refBestOf = data?.match?.bestOf ?? data?.liveState?.best_of ?? 5
@@ -2164,11 +2157,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Check if we're in set interval (from liveState or local detection)
   // But NOT if match is already finished
   const isInSetInterval = !isMatchEnded && (data?.liveState?.set_interval_active || isBetweenSets)
-  // During interval, currentSet is already the NEW set (Scoreboard creates it immediately on set_end)
-  // So we should use currentSet.index directly, not add +1
-  // Also check liveState.current_set which is already set to the next set index
+  // The set the header shows when none is known (a bundle without an
+  // unfinished set outside the break): the last one shown, never set 1
+  const lastShownSetRef = useRef(null)
+  const lastShownSet = lastShownSetRef.current?.matchId === matchId ? lastShownSetRef.current.index : null
+  // During the interval: the set that comes next (setBreak: the next set's
+  // row, else the set after the last finished one, else the live state's
+  // current_set, which the set end's push already moves on)
   const nextSetIndex = isInSetInterval
-    ? (data?.liveState?.current_set || data?.currentSet?.index || 1)
+    ? (setBreak?.setIndex || data?.liveState?.current_set || data?.currentSet?.index || lastShownSet || 1)
     : null
 
   // Match ended: cleared. In the set interval the NEW set's line-ups show
@@ -2203,11 +2200,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     ? (rightTeam === 'home' ? lastFinishedSet.homePoints : lastFinishedSet.awayPoints)
     : (rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
 
-  // Sets won by each side - use liveState if available (from Supabase), otherwise fall back to setsWon
-  const liveStateSetsWonHome = liveTeamAKey === 'home'
+  // Sets won by each side - use liveState if available (from Supabase), otherwise fall back to setsWon.
+  // Every set row finished (the next set's not in the bundle yet): the rows,
+  // which hold the set just ended; a live state can be from before its end
+  const setsWonFromRows = isBetweenSets && !data?.currentSet
+  const liveStateSetsWonHome = setsWonFromRows ? setsWon.home : liveTeamAKey === 'home'
     ? (data?.liveState?.sets_won_a ?? setsWon.home)
     : (data?.liveState?.sets_won_b ?? setsWon.home)
-  const liveStateSetsWonAway = liveTeamAKey === 'home'
+  const liveStateSetsWonAway = setsWonFromRows ? setsWon.away : liveTeamAKey === 'home'
     ? (data?.liveState?.sets_won_b ?? setsWon.away)
     : (data?.liveState?.sets_won_a ?? setsWon.away)
   const leftSetsWon = leftTeam === 'home' ? liveStateSetsWonHome : liveStateSetsWonAway
@@ -2218,10 +2218,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightDisplayScore = isInSetInterval ? rightSetsWon : rightPoints
   // Display set index - during interval show the NEXT set, but never show more than Set 5
   // (a best-of-3 decider is stored as set 5 and shown as set 3)
-  const displaySetIndex = displaySetNumber(Math.min(
-    isInSetInterval ? nextSetIndex : (data?.currentSet?.index || 1),
+  const shownSetIndex = Math.min(
+    isInSetInterval ? nextSetIndex : (data?.currentSet?.index || lastShownSet || 1),
     5
-  ), refBestOf)
+  )
+  if (data?.currentSet?.index || isInSetInterval) lastShownSetRef.current = { matchId, index: shownSetIndex }
+  const displaySetIndex = displaySetNumber(shownSetIndex, refBestOf)
 
   // Check if this is the first rally of the set (no points scored yet)
   const isFirstRally = useMemo(() => {
@@ -2235,11 +2237,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const leftLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!leftLineup, otherEntered: !!rightLineup })
   const rightLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!rightLineup, otherEntered: !!leftLineup })
 
-  // Start between-sets countdown when we detect we're between sets
+  // Start between-sets countdown when we detect we're between sets: on the
+  // next set's row, as before. Without it (the set just ended) the set end's
+  // action and the live state start it: started here, a reload after the
+  // break had run out or been ended showed a new full countdown
+  const nextSetRowBetweenSets = isBetweenSets && !!data?.currentSet
   useEffect(() => {
     // Only start countdown if between sets AND countdown hasn't been started yet (null means never started)
     // AND it wasn't manually dismissed
-    if (isBetweenSets && betweenSetsCountdown === null && !intervalDismissedRef.current) {
+    if (nextSetRowBetweenSets && betweenSetsCountdown === null && !intervalDismissedRef.current) {
       const endedSet = endedSetBefore(data?.currentSet?.index, data?.sets, null, data?.match?.bestOf)
       const breakSeconds = breakSecondsAfter(data?.match, endedSet, 180)
       setBetweenSetsCountdown({
@@ -2251,13 +2257,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         endedSet
       })
       setShowIntervalModal(true)
-    } else if (!isBetweenSets) {
+    } else if (!nextSetRowBetweenSets) {
       // Reset to null only when no longer between sets (new set started)
       setBetweenSetsCountdown(null)
       setShowIntervalModal(false) // Hide the modal when set starts
       intervalDismissedRef.current = false // Reset dismissal flag when set starts
     }
-  }, [isBetweenSets]) // Remove betweenSetsCountdown from deps to prevent restart loop
+  }, [nextSetRowBetweenSets]) // Remove betweenSetsCountdown from deps to prevent restart loop
 
   // Handle between-sets countdown timer
   useEffect(() => {

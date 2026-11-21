@@ -85,6 +85,10 @@ const leftTeam = () => {
   return text.indexOf('HOM') < text.indexOf('AWY') ? 'HOM' : 'AWY'
 }
 const serveSide = () => document.querySelector('[data-serve-block]')?.getAttribute('data-serve-block') ?? null
+// The header's "SET n" and the big score ("SETS" over it in the interval)
+const shownSet = () => [...document.querySelectorAll('span')].find(e => e.textContent === 'SET')?.nextElementSibling?.textContent ?? null
+const shownScore = () => [...document.querySelectorAll('[data-score] span')].map(e => e.textContent).join('')
+const caption = () => document.querySelector('[data-score-caption]')?.textContent ?? null
 
 describe('Referee in the break: the next set\'s sides and server', () => {
   beforeEach(() => { cleanup(); relay.subscriber = null; relay.onData = null })
@@ -118,3 +122,64 @@ describe('Referee in the break: the next set\'s sides and server', () => {
     expect(serveSide()).toBe(null)
   })
 })
+
+// "SET 1 · 0:0" for about a second at a set change (sets 3 and 4 on the
+// full-match test): the bundle with the set finished and no next set row,
+// and a live state without the break flag (the last point's, or a push made
+// before the scorer's break ran)
+describe('Referee at a set change: never set 1 while no set is open', () => {
+  beforeEach(() => { cleanup(); relay.subscriber = null; relay.onData = null })
+
+  const set3Running = bundle({
+    sets: [fin(1, 25, 20), fin(2, 20, 25), { index: 3, homePoints: 24, awayPoints: 20, finished: false }],
+    events: [point(1, 'home', 1), point(2, 'away', 2), point(3, 'home', 3)],
+    liveState: { current_set: 3, side_a: 'left', serving_team: 'left', points_a: 24, points_b: 20, sets_won_a: 1, sets_won_b: 1, set_interval_active: false, last_event_type: 'point', match_status: 'in_progress' }
+  })
+  const set3Ended = (liveState) => bundle({
+    sets: [fin(1, 25, 20), fin(2, 20, 25), fin(3, 25, 20)],
+    events: [point(1, 'home', 1), point(2, 'away', 2), point(3, 'home', 3), point(3, 'home', 4)],
+    liveState
+  })
+
+  it('the set 3 end with the last point\'s live state: set 4 and the sets won (2:1), not SET 1 · 0:0', async () => {
+    await mount(set3Running)
+    expect(shownSet()).toBe('3')
+    expect(shownScore()).toBe('24:20')
+    const push = relay.onData || relay.subscriber
+    await act(async () => {
+      push(set3Ended({ current_set: 3, side_a: 'left', serving_team: 'left', points_a: 25, points_b: 20, sets_won_a: 1, sets_won_b: 1, set_interval_active: false, last_event_type: 'point', match_status: 'in_progress' }))
+    })
+    await settle()
+    expect(shownSet()).toBe('4')
+    expect(caption()).toBe('SETS')
+    // set 4: HOM (A) on the right, 2 sets to 1
+    expect(leftTeam()).toBe('AWY')
+    expect(shownScore()).toBe('1:2')
+  })
+
+  it('the set end\'s push, then a push without the break flag on the ended set (as seen at sets 3 and 4): set 4 throughout', async () => {
+    await mount(set3Running)
+    const push = relay.onData || relay.subscriber
+    await act(async () => {
+      push(set3Ended({ current_set: 4, side_a: 'right', serving_team: 'left', points_a: 0, points_b: 0, sets_won_a: 2, sets_won_b: 1, set_interval_active: true, last_event_type: 'set_end', match_status: 'interval' }))
+    })
+    await settle()
+    expect(shownSet()).toBe('4')
+    expect(shownScore()).toBe('1:2')
+    await act(async () => {
+      push(set3Ended({ current_set: 3, side_a: 'left', serving_team: 'left', points_a: 25, points_b: 20, sets_won_a: 2, sets_won_b: 1, set_interval_active: false, last_event_type: 'lineup', match_status: 'in_progress' }))
+    })
+    await settle()
+    expect(shownSet()).toBe('4')
+    expect(shownScore()).toBe('1:2')
+    expect(caption()).toBe('SETS')
+    expect(leftTeam()).toBe('AWY')
+  })
+
+  it('a live state of the break without its flag (a push the scorer made in the break): still set 4', async () => {
+    await mount(set3Ended({ current_set: 4, side_a: 'right', serving_team: 'left', points_a: 0, points_b: 0, sets_won_a: 2, sets_won_b: 1, set_interval_active: false, last_event_type: 'reconnect', match_status: 'in_progress' }))
+    expect(shownSet()).toBe('4')
+    expect(caption()).toBe('SETS')
+  })
+})
+
