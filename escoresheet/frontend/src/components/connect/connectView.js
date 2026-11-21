@@ -253,14 +253,17 @@ export function defaultRole(accessOf, statuses = {}) {
 }
 
 /**
- * The footer summary: which roles have a tablet, of how many let in.
- * @param {Record<string, { status: string }>} statuses
- * @returns {{ connected: string[], on: number, known: boolean }}
+ * The footer summary: which roles have a tablet, of how many let in, and how
+ * many tablets that is (two referee tablets on one PIN are one role, two
+ * tablets: the footer read "3 of 3 tablets" with 4 connected).
+ * @param {Record<string, { status: string, count?: number }>} statuses
+ * @returns {{ connected: string[], on: number, known: boolean, tablets: number }}
  */
 export function connectedSummary(statuses) {
   const roles = PIN_ROLES.filter(r => statuses[r])
   const on = roles.filter(r => !['off'].includes(statuses[r].status))
   const connected = on.filter(r => ['connected', 'many'].includes(statuses[r].status))
   const known = on.some(r => ['waiting', 'connected', 'many'].includes(statuses[r].status))
-  return { connected, on: on.length, known }
+  const tablets = connected.reduce((sum, r) => sum + Math.max(1, Number(statuses[r].count) || 0), 0)
+  return { connected, on: on.length, known, tablets }
 }

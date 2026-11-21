@@ -44,9 +44,16 @@ function cloudFallbackUrl() {
 }
 
 /**
- * A host on this machine or the local network: loopback, RFC 1918, *.local.
- * Such a host is a venue relay (desktop app, Pi, standalone server), never
- * the cloud backend.
+ * A host on this machine or the local network: loopback, RFC 1918,
+ * 100.64/10, *.local. Such a host is a venue relay (desktop app, Pi,
+ * standalone server), never the cloud backend.
+ *
+ * 100.64.0.0/10 (RFC 6598 shared address space) is the range Tailscale gives
+ * every machine of a tailnet (e.g. a scorer laptop at 100.76.39.66): like
+ * RFC 1918 it is never routed on the internet, and isLocalRelayUrl and
+ * localNetwork.isLocalNetworkHost already count it as local. Any device on
+ * the same network can answer there, as on the hall Wi-Fi: a link naming
+ * such a server is still asked about first (linkServerState 'ask').
  * @param {string} hostname
  */
 function isLanHost(hostname) {
@@ -56,6 +63,7 @@ function isLanHost(hostname) {
   if (/^10\.(\d{1,3}\.){2}\d{1,3}$/.test(host)) return true
   if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true
   if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$/.test(host)) return true
   return false
 }
 
@@ -63,11 +71,11 @@ function isLanHost(hostname) {
  * SECURITY: the backend override decides where the app sends requests carrying
  * the user's auth token. It can be set from the ?server= query param, so it must
  * be restricted to trusted targets: a venue relay on this machine or the hall
- * network (loopback, RFC 1918, *.local) over http or https, or an
- * openvolley.app host over https only (plain http to the cloud would carry the
- * password and the session token in clear) — otherwise a crafted link could
- * exfiltrate the session token to any origin. A dev build never takes the
- * production backend.
+ * network (loopback, RFC 1918, 100.64/10 as Tailscale uses it, *.local) over
+ * http or https, or an openvolley.app host over https only (plain http to the
+ * cloud would carry the password and the session token in clear) — otherwise
+ * a crafted link could exfiltrate the session token to any origin. A dev
+ * build never takes the production backend.
  * @param {string} url
  * @returns {boolean}
  */
@@ -475,7 +483,7 @@ const sameServer = (a, b) => {
  * Is this the backend this page uses when nothing was chosen on it
  * (defaultBackendUrl)? The page reaches it with no override, so it is
  * accepted even where isAllowedBackendUrl does not cover its address: a page
- * a venue relay serves on a plain host name, an IPv6 or 100.64/10 address.
+ * a venue relay serves on a plain host name or an IPv6 address.
  * @param {string|null|undefined} url
  */
 export function isDefaultBackendUrl(url) {
@@ -631,7 +639,8 @@ export function isStandaloneMode() {
 }
 
 /**
- * Is this URL on this machine or the local network (localhost, *.local, RFC1918)?
+ * Is this URL on this machine or the local network (localhost, *.local,
+ * RFC 1918, 100.64/10; see isLanHost)?
  * Such a host is a venue relay (desktop app, Pi, standalone server), never
  * the cloud backend.
  * @param {string|null|undefined} url

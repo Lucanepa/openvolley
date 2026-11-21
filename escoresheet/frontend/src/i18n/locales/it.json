@@ -2267,7 +2267,12 @@
     "disconnect": "Disconnetti",
     "awaitingCoinToss": "In attesa del sorteggio",
     "awaitingCoinTossDesc": "La partita inizierà una volta confermato il sorteggio.",
-    "loadGames": "Carica partite"
+    "loadGames": "Carica partite",
+    "serverUnreachable": "Nessuna connessione al server – controlla il Wi-Fi e riprova.",
+    "checkFailed": "Non è stato possibile verificare il PIN. Controlla la connessione e riprova.",
+    "enterSixDigitPin": "Inserisci il PIN a 6 cifre",
+    "selectTeamFirst": "Seleziona prima la tua squadra",
+    "connectionDisabled": "Il segnapunti ha disattivato la connessione di questa panchina. Chiedigli di attivarla, poi ricollegati."
   },
   "refereeDashboard": {
     "scorerAway": "Il dispositivo del segnapunti non è collegato: il punteggio potrebbe non essere aggiornato. Controlla che sia acceso e online.",
@@ -2522,7 +2527,9 @@
       "matchNotFound": "Partita non trovata con questo numero",
       "failedToFindMatch": "Impossibile trovare la partita. Assicurati che l'eScoresheet principale sia in esecuzione.",
       "failedToLoadData": "Impossibile caricare i dati",
-      "failedToLoadDataConnection": "Impossibile caricare i dati. Assicurati che l'eScoresheet principale sia in esecuzione."
+      "failedToLoadDataConnection": "Impossibile caricare i dati. Assicurati che l'eScoresheet principale sia in esecuzione.",
+      "unreachable": "Impossibile raggiungere il server. Controlla la connessione e riprova.",
+      "serverError": "Il server non è riuscito a inviare i punteggi in diretta. Riprova tra un momento."
     },
     "final": "Finale",
     "serving": "Al servizio"
@@ -2814,7 +2821,9 @@
       "connected": "Connessi: {{roles}} · {{count}} di {{total}} tablet",
       "connectedOnly": "Connessi: {{roles}}",
       "none": "Ancora nessun tablet connesso",
-      "thisNetworkOnly": "Lo stato in tempo reale mostra solo i tablet di questa rete"
+      "thisNetworkOnly": "Lo stato in tempo reale mostra solo i tablet di questa rete",
+      "connectedTablets": "Connessi: {{roles}} · {{tablets}} tablet per {{count}} di {{total}} ruoli",
+      "connectedTabletsOnly": "Connessi: {{roles}} · {{tablets}} tablet"
     },
     "hallJoin": "I tablet si collegano al Wi-Fi «{{network}}».",
     "howToJoin": "Come collegarsi",

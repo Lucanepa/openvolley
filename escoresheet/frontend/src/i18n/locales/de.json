@@ -2004,7 +2004,12 @@
     "disconnect": "Trennen",
     "awaitingCoinToss": "Warte auf Auslosung",
     "awaitingCoinTossDesc": "Das Spiel beginnt sobald die Auslosung bestätigt wurde.",
-    "loadGames": "Spiele laden"
+    "loadGames": "Spiele laden",
+    "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
+    "checkFailed": "Die PIN konnte nicht geprüft werden. Prüfe die Verbindung und versuche es noch einmal.",
+    "enterSixDigitPin": "Gib die 6-stellige PIN ein",
+    "selectTeamFirst": "Wähle zuerst dein Team",
+    "connectionDisabled": "Der Schreiber hat die Verbindung dieser Bank ausgeschaltet. Bitte ihn, sie einzuschalten, und verbinde dich dann erneut."
   },
   "refereeDashboard": {
     "scorerAway": "Das Gerät des Schreibers ist nicht verbunden: Der Spielstand ist vielleicht nicht aktuell. Prüfe, ob es an und online ist.",
@@ -2254,7 +2259,9 @@
       "matchNotFound": "Spiel mit dieser Nummer nicht gefunden",
       "failedToFindMatch": "Spiel konnte nicht gefunden werden. Stelle sicher, dass das Haupt-eScoresheet läuft.",
       "failedToLoadData": "Daten konnten nicht geladen werden",
-      "failedToLoadDataConnection": "Daten konnten nicht geladen werden. Stelle sicher, dass das Haupt-eScoresheet läuft."
+      "failedToLoadDataConnection": "Daten konnten nicht geladen werden. Stelle sicher, dass das Haupt-eScoresheet läuft.",
+      "unreachable": "Der Server ist nicht erreichbar. Prüfe die Verbindung und versuche es noch einmal.",
+      "serverError": "Der Server konnte die Live-Ergebnisse nicht senden. Versuche es gleich noch einmal."
     },
     "final": "Endstand",
     "serving": "Aufschlag"
@@ -2546,7 +2553,9 @@
       "connected": "Verbunden: {{roles}} · {{count}} von {{total}} Tablets",
       "connectedOnly": "Verbunden: {{roles}}",
       "none": "Noch kein Tablet verbunden",
-      "thisNetworkOnly": "Der Live-Status zeigt nur Tablets in diesem Netz"
+      "thisNetworkOnly": "Der Live-Status zeigt nur Tablets in diesem Netz",
+      "connectedTablets": "Verbunden: {{roles}} · {{tablets}} Tablets für {{count}} von {{total}} Rollen",
+      "connectedTabletsOnly": "Verbunden: {{roles}} · {{tablets}} Tablets"
     },
     "hallJoin": "Die Tablets verbinden sich mit dem WLAN «{{network}}».",
     "howToJoin": "So verbinden",

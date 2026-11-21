@@ -682,7 +682,7 @@ export default function BenchApp() {
         setView(null)
         setSelectedTeam(null)
         setPinInput('')
-        setError('Connection has been disabled. Please enable the connection in the scoreboard and reconnect.')
+        setError(t('benchDashboard.connectionDisabled', "The scorer switched this bench's connection off. Ask the scorer to switch it on, then connect again."))
       }
     }
   }, [match, selectedTeam])
@@ -698,12 +698,12 @@ export default function BenchApp() {
     setError('')
 
     if (!pinInput || pinInput.length !== 6) {
-      setError('Please enter a 6-digit PIN code')
+      setError(t('benchDashboard.enterSixDigitPin', 'Enter the 6-digit PIN'))
       return
     }
 
     if (!selectedTeam) {
-      setError('Please select a team first')
+      setError(t('benchDashboard.selectTeamFirst', 'Select your team first'))
       return
     }
 
@@ -753,13 +753,19 @@ export default function BenchApp() {
       } else if (result?.ambiguous) {
         // The relay holds more than one match with this PIN: the PIN stays typed
         setError(t('benchDashboard.pickGame', 'More than one match has this PIN. Pick your game in the list, then enter the PIN again.'))
+      } else if (result?.noAnswer) {
+        // No server compared the PIN (none answered, or the backend failed):
+        // not a wrong PIN, so it stays typed for another try
+        setError(t('benchDashboard.serverUnreachable', 'No connection to the server – check the Wi-Fi and try again.'))
       } else {
         setError(t('benchDashboard.invalidPin', 'Invalid PIN. Please try again.'))
         setPinInput('')
       }
     } catch (err) {
+      // The raw error (often the browser's "Failed to fetch") goes to the
+      // console only
       console.error('[Bench] Error validating PIN:', err)
-      setError(err.message || 'Failed to validate PIN. Make sure the main scoresheet is running and connected.')
+      setError(t('benchDashboard.checkFailed', 'The PIN could not be checked. Check the connection and try again.'))
       setPinInput('')
     }
   }

@@ -34,7 +34,7 @@ vi.mock('../lib/apiClient', () => ({
       order: () => {
         api.calls++
         const r = api.responses.length > 1 ? api.responses.shift() : api.responses[0]
-        if (r && r.fail) return Promise.resolve({ data: null, error: { message: r.fail } })
+        if (r && r.fail) return Promise.resolve({ data: null, error: { message: r.fail, ...(r.status != null ? { status: r.status } : {}), ...(r.network ? { network: true } : {}) } })
         return Promise.resolve({ data: structuredClone(r), error: null })
       }
     }
@@ -275,13 +275,25 @@ describe('LivescoreApp', () => {
     expect(screen.getByRole('status').textContent).toMatch(/last known scores/)
   })
 
-  it('a failed first load shows the error view with Change server', async () => {
-    api.responses = [{ fail: 'unreachable' }]
+  // Full-match test 2026-11-21: a dead server showed the browser's own
+  // "Failed to fetch" (untranslated) above Retry / Change server
+  it('a failed first load shows the error view with Change server, in words, not the browser\'s error', async () => {
+    api.responses = [{ fail: 'Failed to fetch', status: 0, network: true }]
     render(<LivescoreApp />)
     await flush()
-    expect(screen.getByText('unreachable')).toBeInTheDocument()
+    expect(screen.getByText("Can't reach the server. Check the connection and try again.")).toBeInTheDocument()
+    expect(screen.queryByText(/Failed to fetch/)).toBeNull()
+    expect(screen.getByText('Retry')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Change server'))
     expect(screen.getByText('Connect to Server')).toBeInTheDocument()
+  })
+
+  it('a server that answers the first load with an error says so, without its raw text', async () => {
+    api.responses = [{ fail: 'Database operation failed (503)', status: 503 }]
+    render(<LivescoreApp />)
+    await flush()
+    expect(screen.getByText('The server could not send the live scores. Try again in a moment.')).toBeInTheDocument()
+    expect(screen.queryByText(/Database operation failed/)).toBeNull()
   })
 
   it('a best-of-3 decider is set 3; FINAL counts the sets Team B won; FINAL games are not counted live', async () => {
@@ -433,6 +445,18 @@ describe('LivescoreApp', () => {
       expect(screen.getByText('4')).toBeInTheDocument()
       expect(screen.getByTestId('header').textContent).toContain('1 game live')
       for (const m of ws.sent) expect(m).not.toHaveProperty('pin')
+    })
+
+    it('a relay that does not answer the first list says so in words', async () => {
+      globalThis.fetch = vi.fn(async (url) => {
+        if (String(url).endsWith('/api/server/status')) return { ok: true, json: async () => ({ wsPort: 8080 }) }
+        throw new TypeError('Failed to fetch')
+      })
+      render(<LivescoreApp />)
+      await flush()
+      await flush()
+      expect(screen.getByText("Can't reach the server. Check the connection and try again.")).toBeInTheDocument()
+      expect(screen.queryByText(/Failed to fetch/)).toBeNull()
     })
 
     it('says when the relay socket is down', async () => {
