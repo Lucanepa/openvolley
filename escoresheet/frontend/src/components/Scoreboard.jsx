@@ -18,6 +18,7 @@ import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import { matchMenuSections, toMenuListSections } from './matchMenu'
 import { openPhonePair, phonePairMatchOf } from './phonePair/phonePairStore'
+import PhonePairDock from './phonePair/PhonePairDock.jsx'
 import { useScoreboardDisplay } from './scoreboard/useScoreboardDisplay'
 import SanctionsResultsModal from './SanctionsResultsModal'
 import SetPreviewModal from './setPreview/SetPreviewModal.jsx'
@@ -14992,6 +14993,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         {/* Right: Scoresheet, Menu (Home button moved to MainHeader) */}
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.85cqw' }}>
+          {/* "Phone keyboard" while a phone is paired or awaited (PhonePairHost),
+              beside the Match menu that pairs it; the folded bar has its own */}
+          {!headerCollapsed && <PhonePairDock variant="toolbar" />}
           {/* Scoresheet dropdown menu */}
           <MenuList
             buttonLabel={<FileTextIcon size="1em" />}
@@ -24413,6 +24417,8 @@ function ScoreboardToolbar({ children, collapsed, onToggle, clock }) {
             <span data-testid="toolbar-strip-clock" className="tabular-nums text-stone-500" style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1 }}>{clock}</span>
           )}
           <ToolbarChevron collapsed onToggle={onToggle} />
+          {/* the "Phone keyboard" indicator, small, while the bar is folded */}
+          <PhonePairDock variant="strip" />
         </div>
       )}
     </div>
