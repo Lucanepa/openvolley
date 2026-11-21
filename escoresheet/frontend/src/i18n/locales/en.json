@@ -1155,7 +1155,7 @@
       "decisionChangeNoUndo": "This decision change cannot be undone automatically. Apply a second decision change to give the point back.",
       "mustAwardPointBeforeLiberoEnters": "A point must be awarded before the libero can enter",
       "requiresExceptionalCaseDetail": "This substitution requires an exceptional case (injury, expulsion, etc.)",
-      "noPlayersForRedesignationDetail": "No available players for libero re-designation. All players are either on court or already liberos.",
+      "noPlayersForRedesignationDetail": "No available players for libero re-designation. All players are on court, already liberos or may no longer play in this match.",
       "substitutionCycleDone": "This player cannot be substituted (already completed a substitution cycle)",
       "playerNumber": "Player {{number}}",
       "sameSanctionTwice": "{{who}} already has this sanction ({{sanction}}). A team member cannot receive the same sanction type twice.",

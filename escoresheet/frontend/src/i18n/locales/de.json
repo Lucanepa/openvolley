@@ -1147,7 +1147,7 @@
       "decisionChangeNoUndo": "Diese Entscheidungsänderung kann nicht automatisch rückgängig gemacht werden. Mache eine zweite Entscheidungsänderung, um den Punkt zurückzugeben.",
       "mustAwardPointBeforeLiberoEnters": "Ein Punkt muss vergeben werden, bevor der Libero eintreten kann",
       "requiresExceptionalCaseDetail": "Diese Auswechslung erfordert einen Ausnahmefall (Verletzung, Ausschluss usw.)",
-      "noPlayersForRedesignationDetail": "Keine Spieler für die Libero-Neubezeichnung verfügbar. Alle Spieler sind auf dem Feld oder bereits Liberos.",
+      "noPlayersForRedesignationDetail": "Keine Spieler für die Libero-Neubezeichnung verfügbar. Alle Spieler sind auf dem Feld, bereits Liberos oder dürfen in diesem Spiel nicht mehr spielen.",
       "substitutionCycleDone": "Dieser Spieler kann nicht ausgewechselt werden (Wechselzyklus bereits abgeschlossen)",
       "playerNumber": "Spieler {{number}}",
       "sameSanctionTwice": "{{who}} hat diese Sanktion bereits ({{sanction}}). Ein Teammitglied kann dieselbe Sanktion nicht zweimal erhalten.",

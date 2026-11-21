@@ -1154,7 +1154,7 @@
       "decisionChangeNoUndo": "Questo cambio decisione non può essere annullato automaticamente. Fai un secondo cambio decisione per restituire il punto.",
       "mustAwardPointBeforeLiberoEnters": "Un punto deve essere assegnato prima che il libero possa entrare",
       "requiresExceptionalCaseDetail": "Questa sostituzione richiede un caso eccezionale (infortunio, espulsione, ecc.)",
-      "noPlayersForRedesignationDetail": "Nessun giocatore disponibile per la nuova designazione libero. Tutti i giocatori sono in campo o già liberi.",
+      "noPlayersForRedesignationDetail": "Nessun giocatore disponibile per la nuova designazione libero. Tutti i giocatori sono in campo, già liberi o non possono più giocare in questa partita.",
       "substitutionCycleDone": "Questo giocatore non può essere sostituito (ciclo di sostituzione già completato)",
       "playerNumber": "Giocatore {{number}}",
       "sameSanctionTwice": "{{who}} ha già questa sanzione ({{sanction}}). Un membro della squadra non può ricevere due volte la stessa sanzione.",

@@ -82,7 +82,7 @@ import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice
 import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
-import { playerReplacedByLibero } from '../domain/liberos'
+import { playerReplacedByLibero, playersForLiberoRedesignation } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, MAX_SUBSTITUTIONS_PER_SET, substitutionBarsForMatch } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
@@ -11230,33 +11230,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setLiberoDropdown(null) // Close libero dropdown when selecting substitution
   }, [substitutionDropdown, isSubstitutionLegal, forcedSanctionOf])
 
-  // Get available players for libero re-designation (not on court, not already libero, not re-designated)
+  // Players who may be re-designated as libero: not on court, no libero, not
+  // re-designated before, and still allowed to play in the match (not
+  // disqualified, not out after an exceptional substitution; domain/liberos)
   const getAvailablePlayersForRedesignation = useCallback((teamKey, unableLiberoNumber) => {
     if (!data) return []
-
-    const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+    const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
     const { playersOnCourt } = getTeamLineupState(teamKey)
-    const playersOnCourtSet = new Set(playersOnCourt.map(num => Number(num)))
-
-    // Get all re-designation events to find already re-designated players
-    const redesignationEvents = data?.events?.filter(e =>
-      e.type === 'libero_redesignation' &&
-      e.payload?.team === teamKey
-    ) || []
-    const redesignatedPlayerNumbers = new Set(
-      redesignationEvents.map(e => e.payload?.newLiberoNumber).filter(n => n !== undefined && n !== null)
-    )
-
-    // Filter: not on court, not already a libero, not already re-designated, not the unable libero
-    return teamPlayers.filter(p => {
-      const playerNumber = Number(p.number)
-      if (Number.isNaN(playerNumber)) return false
-      if (playersOnCourtSet.has(playerNumber)) return false // On court
-      if (p.libero && p.libero !== '') return false // Already a libero
-      if (redesignatedPlayerNumbers.has(playerNumber)) return false // Already re-designated
-      if (playerNumber === unableLiberoNumber) return false // The unable libero
-      return true
-    })
+    return playersForLiberoRedesignation(teamPlayers, data?.events, teamKey, { onCourt: playersOnCourt, unableLiberoNumber })
   }, [data, getTeamLineupState])
 
   // Check if libero re-designation is needed and trigger modal
@@ -11298,7 +11279,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Get available players
     const availablePlayers = getAvailablePlayersForRedesignation(teamKey, liberoNumber)
     if (availablePlayers.length === 0) {
-      showAlert(t('scoreboard.dialogs.noPlayersForRedesignationDetail', 'No available players for libero re-designation. All players are either on court or already liberos.'), 'warning')
+      showAlert(t('scoreboard.dialogs.noPlayersForRedesignationDetail', 'No available players for libero re-designation. All players are on court, already liberos or may no longer play in this match.'), 'warning')
       return
     }
 
@@ -13372,6 +13353,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!liberoRedesignationModal || !data?.set) return
 
     const { team, unableLiberoNumber, unableLiberoType, reason = 'declared' } = liberoRedesignationModal
+    // Only a player the list offers: never one who may no longer play
+    if (!getAvailablePlayersForRedesignation(team, unableLiberoNumber).some(p => String(p.number) === String(newLiberoNumber))) return
     // Closed with the written change (deferUi, one render): the candidate list
     // is live and never redraws without the chosen player
     deferUi(() => setLiberoRedesignationModal(null))
@@ -13448,7 +13431,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     logManualChange('Libero', 'Redesignation', `#${unableLiberoNumber}`, `#${newLiberoNumber}`,
       `Player #${newLiberoNumber} re-designated as Libero replacing #${unableLiberoNumber} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
 
-  })), [runAction, deferUi, runLiberoRedesignation, liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
+  })), [runAction, deferUi, runLiberoRedesignation, liberoRedesignationModal, getAvailablePlayersForRedesignation, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
 
   // Confirm marking libero as unable
   const confirmLiberoUnable = useCallback(() => runAction('liberoUnable', async () => {
