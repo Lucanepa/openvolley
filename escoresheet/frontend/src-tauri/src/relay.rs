@@ -2504,6 +2504,17 @@ fn resolve_asset(req_path: &str, f: &crate::flavour::Flavour, exists: &dyn Fn(&s
     if ROLE_PATHS.contains(&role) {
         return None;
     }
+    // A role page's own sub-path (/livescore/board, the scoreboard page,
+    // docs/scoreboard-code-spec.md): that role's page, as frontend/server.js
+    let sub = p.strip_suffix('/').unwrap_or(p);
+    if let Some((head, rest)) = sub.split_once('/') {
+        if ROLE_PATHS.contains(&head) && !rest.is_empty() && !rest.contains('/') && !rest.contains('.') {
+            let page = format!("{head}/index.html");
+            if exists(&page) {
+                return Some(page);
+            }
+        }
+    }
     // SPA fallback
     index()
 }
@@ -5445,6 +5456,12 @@ mod tests {
         ];
         let ov = has(OV_DIST);
         let o = |path: &str| resolve_asset(path, &OPENVOLLEY, &ov);
+        // the scoreboard page (/livescore/board) is the livescore page
+        for path in ["/livescore/board", "/livescore/board/"] {
+            assert_eq!(o(path).as_deref(), Some("livescore/index.html"), "{path}");
+        }
+        assert_eq!(o("/referee/board").as_deref(), Some("referee/index.html"));
+        assert_eq!(o("/livescore/board/x").as_deref(), Some("index.html"), "deeper paths: the SPA fallback");
         for path in ["/referee", "/referee/", "/referee.html"] {
             assert_eq!(o(path).as_deref(), Some("referee/index.html"), "{path}");
         }
