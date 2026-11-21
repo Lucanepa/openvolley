@@ -3991,48 +3991,50 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               <span style={{ opacity: 0.4 }}>{t('refereeDashboard.events.noAction')}</span>
             )}
           </span>
+          {/* Test Mode Controls - only shown in test mode. The badge at the
+              footer's end, beside the last action: floating over the corner
+              it covered the last action on a 360 px phone */}
+          {(matchId === -1 || data?.match?.test === true) && (
+            <TestModeControls
+              matchId={matchId}
+              inline
+              style={{ marginLeft: '8px' }}
+              onRefresh={async () => {
+                console.log('[TestModeControls] onRefresh called', { matchId, isMasterMode })
+                // In test mode, reload from local IndexedDB
+                try {
+                  const match = await db.matches.get(matchId)
+                  const sets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+                  const events = await db.events.where('matchId').equals(matchId).sortBy('seq')
+                  const homeTeam = await db.teams.get(match?.homeTeamId)
+                  const awayTeam = await db.teams.get(match?.awayTeamId)
+
+                  console.log('[TestModeControls] Reloaded from IndexedDB:', {
+                    matchId,
+                    sets: sets.length,
+                    events: events.length,
+                    currentSet: sets.find(s => !s.finished)?.index
+                  })
+
+                  // Update state with fresh local data
+                  setData({
+                    success: true,
+                    match,
+                    homeTeam,
+                    awayTeam,
+                    sets,
+                    events
+                  })
+                } catch (err) {
+                  console.error('[TestModeControls] Error reloading from IndexedDB:', err)
+                }
+              }}
+            />
+          )}
         </div>
 
       </div>{/* End main content wrapper */}
 
-      {/* Test Mode Controls - only shown in test mode */}
-      {
-        (matchId === -1 || data?.match?.test === true) && (
-          <TestModeControls
-            matchId={matchId}
-            onRefresh={async () => {
-              console.log('[TestModeControls] onRefresh called', { matchId, isMasterMode })
-              // In test mode, reload from local IndexedDB
-              try {
-                const match = await db.matches.get(matchId)
-                const sets = await db.sets.where('matchId').equals(matchId).sortBy('index')
-                const events = await db.events.where('matchId').equals(matchId).sortBy('seq')
-                const homeTeam = await db.teams.get(match?.homeTeamId)
-                const awayTeam = await db.teams.get(match?.awayTeamId)
-
-                console.log('[TestModeControls] Reloaded from IndexedDB:', {
-                  matchId,
-                  sets: sets.length,
-                  events: events.length,
-                  currentSet: sets.find(s => !s.finished)?.index
-                })
-
-                // Update state with fresh local data
-                setData({
-                  success: true,
-                  match,
-                  homeTeam,
-                  awayTeam,
-                  sets,
-                  events
-                })
-              } catch (err) {
-                console.error('[TestModeControls] Error reloading from IndexedDB:', err)
-              }
-            }}
-          />
-        )
-      }
       {/* The live scoresheet: read only, from the last full relay bundle */}
       {scoresheetLayer}
       {/* What the scorer just recorded (time-outs, substitutions, sanctions) */}
