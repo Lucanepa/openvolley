@@ -15364,8 +15364,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       disabled={rallyStatus === 'in_play' || isRallyReplayed}
                       style={{
                         flex: 1,
-                        fontSize: 'calc(4.65cqw * var(--cqf, 1))',
-                        padding: '2.5cqw 1.25cqw',
+                        minWidth: 0,
+                        // readable on a 8" tablet as the sanction buttons below
+                        // (it was 8.8 px at 1280x800); a long label wraps
+                        fontSize: 'max(12px, calc(4.65cqw * var(--cqf, 1)))',
+                        fontWeight: 600,
+                        lineHeight: 1.15,
+                        whiteSpace: 'normal',
+                        overflowWrap: 'anywhere',
+                        textAlign: 'center',
+                        padding: 'max(4px, 1.25cqw) max(6px, 1.25cqw)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -16069,20 +16077,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               })
                             }}
                             style={{
-                              padding: '1.9cqw 3.75cqw',
+                              // a row of its own under the libero squares, its
+                              // text readable at any --bench-fit (it was 9.7 px
+                              // at 1280x800); a long label wraps
+                              flexBasis: '100%',
+                              minWidth: 0,
+                              minHeight: 'calc(32px * var(--bench-fit, 1))',
+                              padding: 'max(4px, 1.25cqw) max(6px, 2.5cqw)',
                               background: '#f97316',
                               color: '#000',
                               border: 'none',
                               borderRadius: '1.25cqw',
-                              fontSize: 'calc(5.1cqw * var(--cqf, 1))',
+                              fontSize: 'max(12px, calc(5.1cqw * var(--cqf, 1)))',
                               fontWeight: 600,
+                              lineHeight: 1.15,
+                              whiteSpace: 'normal',
+                              overflowWrap: 'anywhere',
+                              textAlign: 'center',
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '1.25cqw'
+                              justifyContent: 'center',
+                              gap: '0.4em'
                             }}
                           >
-                            <RefreshIcon size="1em" /> Redesignate libero
+                            <RefreshIcon size="1em" style={{ flexShrink: 0 }} /> {t('scoreboard.actions.redesignateLibero')}
                           </button>
                         )
                       })()}
@@ -18747,8 +18766,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       disabled={rallyStatus === 'in_play' || isRallyReplayed}
                       style={{
                         flex: 1,
-                        fontSize: 'calc(4.65cqw * var(--cqf, 1))',
-                        padding: '2.5cqw 1.25cqw',
+                        minWidth: 0,
+                        // readable on a 8" tablet as the sanction buttons below
+                        // (it was 8.8 px at 1280x800); a long label wraps
+                        fontSize: 'max(12px, calc(4.65cqw * var(--cqf, 1)))',
+                        fontWeight: 600,
+                        lineHeight: 1.15,
+                        whiteSpace: 'normal',
+                        overflowWrap: 'anywhere',
+                        textAlign: 'center',
+                        padding: 'max(4px, 1.25cqw) max(6px, 1.25cqw)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -19450,20 +19477,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               })
                             }}
                             style={{
-                              padding: '1.9cqw 3.75cqw',
+                              // a row of its own under the libero squares, its
+                              // text readable at any --bench-fit (it was 9.7 px
+                              // at 1280x800); a long label wraps
+                              flexBasis: '100%',
+                              minWidth: 0,
+                              minHeight: 'calc(32px * var(--bench-fit, 1))',
+                              padding: 'max(4px, 1.25cqw) max(6px, 2.5cqw)',
                               background: '#f97316',
                               color: '#000',
                               border: 'none',
                               borderRadius: '1.25cqw',
-                              fontSize: 'calc(5.1cqw * var(--cqf, 1))',
+                              fontSize: 'max(12px, calc(5.1cqw * var(--cqf, 1)))',
                               fontWeight: 600,
+                              lineHeight: 1.15,
+                              whiteSpace: 'normal',
+                              overflowWrap: 'anywhere',
+                              textAlign: 'center',
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '1.25cqw'
+                              justifyContent: 'center',
+                              gap: '0.4em'
                             }}
                           >
-                            <RefreshIcon size="1em" /> Redesignate libero
+                            <RefreshIcon size="1em" style={{ flexShrink: 0 }} /> {t('scoreboard.actions.redesignateLibero')}
                           </button>
                         )
                       })()}
