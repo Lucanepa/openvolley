@@ -109,7 +109,11 @@ export async function runDisplayCodeContract ({ wsUrl, httpBase, openClient, tag
   }
   const cleanText = (what, text) => {
     for (const p of Object.values(PINS)) assert.ok(!text.includes(p), `${tag}: a PIN in ${what}: ${text.slice(0, 200)}`)
-    for (const s of SHIRTS) assert.ok(!new RegExp(`[^0-9.]${s}[^0-9]`).test(text), `${tag}: a private shirt number ${s} in ${what}: ${text.slice(0, 300)}`)
+    // shirt numbers: in what carries match data (ids and timestamps are digits too)
+    let m = null
+    try { m = JSON.parse(text) } catch { m = null }
+    const data = m && typeof m === 'object' ? JSON.stringify([m.liveState, m.data, m.homePlayers, m.awayPlayers, m.events, m.sets, m.match, m.homeTeam, m.awayTeam]) : text
+    for (const s of SHIRTS) assert.ok(!new RegExp(`[^0-9.]${s}[^0-9]`).test(data), `${tag}: a private shirt number ${s} in ${what}: ${data.slice(0, 300)}`)
     for (const name of ['Anna', 'Muster"', 'Bea"']) assert.ok(!text.includes(name), `${tag}: a player's name in ${what}`)
   }
 

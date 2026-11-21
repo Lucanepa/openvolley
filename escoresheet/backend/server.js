@@ -50,6 +50,7 @@ import { createVectorPdf } from './lib/vectorPdf.js'
 import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS, SLOTS as SIGN_SLOTS } from './lib/signSessions.js'
 import { signPageFile } from './lib/signPage.js'
 import { createPairSessions, pairEndpointOf, pairBodyLimit, pairError, isPairPagePath, PAIR_API_HEADERS } from './lib/pairSessions.js'
+import { createDisplayCodes, displayEndpointOf, displayError, codeStateMessage, codeAnswerMessage, codeEndedMessage, DISPLAY_PREFLIGHT_HEADERS, BODY_MAX as DISPLAY_BODY_MAX } from './lib/displayCodes.js'
 import { pairPageFile } from './lib/pairPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
@@ -2149,6 +2150,43 @@ function getPairSessions() {
   return pairSessions
 }
 
+// --- Scoreboard codes (docs/scoreboard-code-spec.md; lib/displayCodes.js) ----
+// The scorer's socket sets its room's code (display-code-set); any board finds
+// the room by it (subscribe-match { code }, POST /api/display/lookup|live),
+// whatever cloudListsMatch says, and gets the public summary and live state.
+// Memory only, hashes only; a scorer sets its code again after a restart.
+const displayCodes = createDisplayCodes({
+  via: IS_CLOUD ? 'cloud' : 'lan',
+  sha256: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+  log: (line) => console.log(`[Display] ${line}`),
+  onEnd: (room, hash, reason) => onDisplayCodeEnd(room, hash, reason)
+})
+const displayCodeFollowers = new Map() // code hash -> Set of client ids that follow its room by it
+
+/** POST /api/display/lookup | live (read-only, CORS *, no credentials). */
+async function handleDisplayRequest(req, res, endpoint) {
+  const send = (r) => {
+    res.removeHeader('Access-Control-Allow-Credentials')
+    sendJson(res, r.status, r.body, { ...(r.headers || {}), ...(r.status === 413 ? { Connection: 'close' } : {}) })
+  }
+  let text
+  try {
+    text = (await readBodyBuffer(req, DISPLAY_BODY_MAX)).toString('utf8')
+  } catch (err) {
+    send(err?.code === 'BODY_TOO_LARGE' ? displayError(413, 'OV_DISPLAY_TOO_LARGE') : displayError(400, 'OV_DISPLAY_BAD_REQUEST'))
+    return
+  }
+  send(displayCodes.http(endpoint, {
+    contentType: req.headers['content-type'],
+    text,
+    ipKey: ipBucketKey(getClientIp(req)),
+    summaryOf: (room) => {
+      const entry = activeMatches.get(room)
+      return entry?.match ? relaySummaryBundle(entry) : null
+    }
+  }))
+}
+
 async function handlePairRequest(req, res, endpoint) {
   const send = (r) => sendJson(res, r.status, r.body, {
     ...PAIR_API_HEADERS,
@@ -2545,6 +2583,9 @@ const TEXT_TYPE_RE = /^\s*text\/plain\s*(;|$)/i
 /** The refusal of an API write by its Origin or body type, or null. */
 function apiWriteRefusal(req, pathname) {
   if (!WRITE_METHODS.has(req.method) || !pathname.startsWith('/api/')) return null
+  // Scoreboard codes: read-only lookups with no credentials, for any board
+  // on any site (CORS *); the body check is the core's own
+  if (displayEndpointOf(pathname)) return null
   const origin = req.headers.origin
   if (origin !== undefined && !isTrustedOrigin(origin, { host: req.headers.host })) {
     transportRefusals.origin++
@@ -2828,6 +2869,13 @@ function handleHttpRequest(req, res) {
   ].join('; '))
 
   if (req.method === 'OPTIONS') {
+    // the scoreboard codes: any site (CORS *, never with credentials)
+    if (displayEndpointOf(String(req.url || '').split('?')[0])) {
+      res.removeHeader('Access-Control-Allow-Credentials')
+      res.writeHead(204, DISPLAY_PREFLIGHT_HEADERS)
+      res.end()
+      return
+    }
     res.writeHead(200)
     res.end()
     return
@@ -2924,6 +2972,16 @@ function handleHttpRequest(req, res) {
     res.end(req.method === 'HEAD' ? undefined : (file ? file.body : 'Not Found'))
     return
   }
+  // Scoreboard codes: a board finds the match by the scorer's code
+  const displayEndpoint = req.method === 'POST' ? displayEndpointOf(url.pathname) : null
+  if (displayEndpoint) {
+    handleDisplayRequest(req, res, displayEndpoint).catch((err) => {
+      console.error('[Display] request failed:', err?.message)
+      if (!res.headersSent) sendJson(res, 503, displayError(503, 'OV_DISPLAY_UNAVAILABLE').body, displayError(503, 'OV_DISPLAY_UNAVAILABLE').headers)
+    })
+    return
+  }
+
   // ... and its API (start/wait/focus/close come from the app origins through the CORS above)
   const pairEndpoint = req.method === 'POST' ? pairEndpointOf(url.pathname) : null
   if (pairEndpoint) {
@@ -5872,6 +5930,8 @@ wss.on('connection', (ws, req) => {
     // A display's announcement (subscribe-match device 'display'):
     // { settingsUrl, at }, settingsUrl already checked (displaySettingsUrl)
     display: null,
+    // Room key -> code hash: the rooms this socket follows by a scoreboard code
+    codeRooms: new Map(),
     // The installation a scoreboard names in sync-match-data (db/019, the
     // scoring device): its claims are checked against match_scorer_devices
     scorerDevice: null,
@@ -6085,6 +6145,11 @@ function handleSocketMessage(clientInfo, data) {
         break
 
       case 'subscribe-match':
+        // subscribe-match { code }: a scoreboard follows by the scorer's code
+        if (message.code !== undefined && message.code !== null && (message.matchId === undefined || message.matchId === null || message.matchId === '')) {
+          handleCodeSubscribe(clientInfo, message)
+          break
+        }
         // Frontend format for joining a match room (used by referee/bench/livescore)
         // Adapt to join_match format
         handleJoinMatch(clientInfo, {
@@ -6103,9 +6168,16 @@ function handleSocketMessage(clientInfo, data) {
         // One room left, the socket's others kept (the relay livescore
         // follows several matches on one socket), as on the LAN relays
         const key = normalizeMatchId(message.matchId)
-        if (key) handleLeaveMatch(clientInfo, key)
+        if (key) {
+          unfollowDisplayCode(clientInfo, key)
+          handleLeaveMatch(clientInfo, key)
+        }
         break
       }
+
+      case 'display-code-set':
+        handleDisplayCodeSet(clientInfo, message)
+        break
 
       case 'bench-request':
         handleBenchRequest(clientInfo, message)
@@ -6331,6 +6403,66 @@ function updateDisplayPresence(matchId) {
   room.displayTold = key
   const data = JSON.stringify(displayPresenceMessage(matchId, state))
   for (const c of matchOwners(matchId)) sendToRoomMember(c, data)
+}
+
+// --- Scoreboard codes (lib/displayCodes.js, docs/scoreboard-code-spec.md) ----
+// Same messages as the LAN relays: display-code-set from the room's scorer
+// socket (answered with display-code-state, never the code), subscribe-match
+// { code } from a board (display-code, then the PIN-less summary: the public
+// live state only), and display-code ended when the code ends.
+
+function handleDisplayCodeSet(clientInfo, message) {
+  const key = resolveMatchKey(clientInfo, message.matchId)
+  const matchId = key || normalizeMatchId(message.matchId)
+  if (!key || !clientInfo.ownedMatches.has(key)) {
+    sendToClient(clientInfo, codeStateMessage(matchId, { ok: false, reason: 'not-match-owner' }))
+    return
+  }
+  const r = displayCodes.set({ room: key, code: message.code, issuedAt: message.issuedAt, owner: clientInfo.id })
+  sendToClient(clientInfo, codeStateMessage(key, r))
+}
+
+function handleCodeSubscribe(clientInfo, message) {
+  const r = displayCodes.resolve(message.code, { ipKey: clientInfo.ipKey || clientInfo.ip || `ws:${clientInfo.id}` })
+  sendToClient(clientInfo, codeAnswerMessage(r))
+  if (!r.ok) return
+  const before = clientInfo.codeRooms.get(r.room)
+  if (before && before !== r.hash) displayCodeFollowers.get(before)?.delete(clientInfo.id)
+  clientInfo.codeRooms.set(r.room, r.hash)
+  if (!displayCodeFollowers.has(r.hash)) displayCodeFollowers.set(r.hash, new Set())
+  displayCodeFollowers.get(r.hash).add(clientInfo.id)
+  // as a PIN-less display subscribing to the room: never a PIN or token next to a code
+  handleJoinMatch(clientInfo, { matchId: r.room, role: 'subscriber' })
+  clientInfo.device = DISPLAY_DEVICE
+  sendBenchRequestsOnJoin(clientInfo, r.room)
+  sendScorerPresence(clientInfo, r.room)
+  noteDisplay(clientInfo, message.settingsUrl)
+}
+
+/** The socket no longer follows `room` by a code (it left, or the socket closed). */
+function unfollowDisplayCode(clientInfo, room) {
+  const hash = clientInfo.codeRooms.get(room)
+  if (!hash) return
+  clientInfo.codeRooms.delete(room)
+  const set = displayCodeFollowers.get(hash)
+  if (!set) return
+  set.delete(clientInfo.id)
+  if (set.size === 0) displayCodeFollowers.delete(hash)
+}
+
+/** A code ended (replaced, revoked, expired, its room dropped): its boards are told and leave the room. */
+function onDisplayCodeEnd(room, hash, reason) {
+  const ids = displayCodeFollowers.get(hash)
+  displayCodeFollowers.delete(hash)
+  for (const id of ids || []) {
+    const c = connections.get(id)
+    if (!c || c.codeRooms.get(room) !== hash) continue
+    c.codeRooms.delete(room)
+    if (c.ws.readyState === 1) sendToClient(c, codeEndedMessage(room))
+    if (c.rooms.has(room)) leaveRoom(c, room)
+  }
+  // run out: the scorer's sockets hear it (a revoke or a new code was answered already)
+  if (reason === 'expired') for (const c of matchOwners(room)) sendToClient(c, codeStateMessage(room, { ok: false, reason: 'expired' }))
 }
 
 /**
@@ -6745,6 +6877,8 @@ function sweepHeldRooms() {
  * the room again, and the next owner was sent the benches' open requests.
  */
 function releaseRoomClaim(matchId) {
+  // its scoreboard code ends with it (the boards that followed by it are told)
+  displayCodes.dropRoom(matchId)
   heldRooms.delete(matchId)
   displacedPins.delete(matchId)
   benchRequests.drop(matchId)
@@ -6841,6 +6975,7 @@ function handleClientDisconnect(clientInfo) {
     const stillOwned = [...connections.values()].some(c => c !== clientInfo && c.ownedMatches.has(matchId))
     if (entry && !stillOwned) entry.orphanedAt = Date.now()
   }
+  for (const room of [...clientInfo.codeRooms.keys()]) unfollowDisplayCode(clientInfo, room)
   handleLeaveMatch(clientInfo)
   connections.delete(clientInfo.id)
   wsRateLimitMap.delete(clientInfo.id)
