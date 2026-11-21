@@ -2816,7 +2816,9 @@
       "connected": "Verbunde: {{roles}} · {{count}} vo {{total}} Tablets",
       "connectedOnly": "Verbunde: {{roles}}",
       "none": "No kei Tablet verbunde",
-      "thisNetworkOnly": "De Live-Status zeigt nur Tablets i däm Netz"
+      "thisNetworkOnly": "De Live-Status zeigt nur Tablets i däm Netz",
+      "connectedTablets": "Verbunde: {{roles}} · {{tablets}} Tablets für {{count}} vo {{total}} Rolle",
+      "connectedTabletsOnly": "Verbunde: {{roles}} · {{tablets}} Tablets"
     },
     "hallJoin": "D Tablets verbinded sich mit em WLAN «{{network}}».",
     "howToJoin": "So verbinde",

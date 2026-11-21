@@ -2553,7 +2553,9 @@
       "connected": "Verbunden: {{roles}} · {{count}} von {{total}} Tablets",
       "connectedOnly": "Verbunden: {{roles}}",
       "none": "Noch kein Tablet verbunden",
-      "thisNetworkOnly": "Der Live-Status zeigt nur Tablets in diesem Netz"
+      "thisNetworkOnly": "Der Live-Status zeigt nur Tablets in diesem Netz",
+      "connectedTablets": "Verbunden: {{roles}} · {{tablets}} Tablets für {{count}} von {{total}} Rollen",
+      "connectedTabletsOnly": "Verbunden: {{roles}} · {{tablets}} Tablets"
     },
     "hallJoin": "Die Tablets verbinden sich mit dem WLAN «{{network}}».",
     "howToJoin": "So verbinden",

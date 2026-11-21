@@ -183,8 +183,21 @@ describe('connectView: live status', () => {
       bench_away: { status: 'off' },
       livescore: { status: 'public' }
     })
-    expect(s).toEqual({ connected: ['referee'], on: 2, known: true })
+    expect(s).toEqual({ connected: ['referee'], on: 2, known: true, tablets: 1 })
     expect(connectedSummary({ referee: { status: 'unknown' } }).known).toBe(false)
+  })
+
+  // Full-match test 2026-11-21: two referee tablets on one PIN read
+  // "3 of 3 tablets" with 4 connected
+  it('footer summary counts the tablets apart from the roles', () => {
+    const s = connectedSummary({
+      referee: roleStatus({ role: 'referee', access: { enabled: true, pin: '123456' }, reachable: true, clients: [{ role: 'referee' }, { role: 'referee' }] }),
+      bench_home: { status: 'connected', count: 1 },
+      bench_away: { status: 'connected', count: 1 },
+      livescore: { status: 'public' }
+    })
+    expect(s).toEqual({ connected: ['referee', 'bench_home', 'bench_away'], on: 3, known: true, tablets: 4 })
+    expect(connectedSummary({ referee: { status: 'waiting' } }).tablets).toBe(0)
   })
 })
 

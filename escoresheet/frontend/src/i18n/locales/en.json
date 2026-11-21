@@ -2822,7 +2822,9 @@
       "connected": "Connected: {{roles}} · {{count}} of {{total}} tablets",
       "connectedOnly": "Connected: {{roles}}",
       "none": "No tablet connected yet",
-      "thisNetworkOnly": "Live status shows tablets on this network only"
+      "thisNetworkOnly": "Live status shows tablets on this network only",
+      "connectedTablets": "Connected: {{roles}} · {{tablets}} tablets for {{count}} of {{total}} roles",
+      "connectedTabletsOnly": "Connected: {{roles}} · {{tablets}} tablets"
     },
     "hallJoin": "Tablets join the Wi-Fi “{{network}}”.",
     "howToJoin": "How to join",

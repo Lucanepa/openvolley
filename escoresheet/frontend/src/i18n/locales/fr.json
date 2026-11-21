@@ -2815,7 +2815,9 @@
       "connected": "Connectées : {{roles}} · {{count}} sur {{total}} tablettes",
       "connectedOnly": "Connectées : {{roles}}",
       "none": "Aucune tablette connectée pour l’instant",
-      "thisNetworkOnly": "Le statut en direct ne montre que les tablettes de ce réseau"
+      "thisNetworkOnly": "Le statut en direct ne montre que les tablettes de ce réseau",
+      "connectedTablets": "Connectées : {{roles}} · {{tablets}} tablettes pour {{count}} sur {{total}} rôles",
+      "connectedTabletsOnly": "Connectées : {{roles}} · {{tablets}} tablettes"
     },
     "hallJoin": "Les tablettes rejoignent le Wi-Fi « {{network}} ».",
     "howToJoin": "Comment se connecter",
