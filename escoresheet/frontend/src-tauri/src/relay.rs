@@ -397,6 +397,12 @@ pub struct AppState {
     /// The Global tool's live page for TVs: a court summary per tournament
     /// code (global_live.rs), memory only
     global_live: std::sync::Mutex<crate::global_live::GlobalLive>,
+    /// Scoreboard codes (display_code.rs): code hash -> room, memory only
+    display_codes: std::sync::Mutex<crate::display_code::DisplayCodes>,
+    /// room key -> connection -> the hash of the code it follows the room by
+    /// (subscribe-match { code }): those get the public live state only, and
+    /// leave the room when that code ends
+    display_followers: Mutex<HashMap<String, HashMap<u64, String>>>,
     pub http_port: u16,
     pub ws_port: u16,
 }
@@ -429,6 +435,8 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         sign: crate::sign::SignSessions::lan(),
         pair: crate::pair::PairSessions::lan(),
         global_live: std::sync::Mutex::new(crate::global_live::GlobalLive::default()),
+        display_codes: std::sync::Mutex::new(crate::display_code::DisplayCodes::lan()),
+        display_followers: Mutex::new(HashMap::new()),
         http_port,
         ws_port,
     })
@@ -1248,6 +1256,9 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/pair/join", post(pair_api))
         .route("/api/pair/poll", post(pair_api))
         .route("/api/pair/input", post(pair_api))
+        // Scoreboard codes (display_code.rs): read-only, CORS *, any page
+        .route("/api/display/lookup", post(display_api))
+        .route("/api/display/live", post(display_api))
         .route("/api/global/live/game/{n}", get(global_live_game))
         .route("/api/global/live/{code}", get(global_live_page))
         .route("/tv", get(tv_entry))
@@ -1278,8 +1289,12 @@ async fn add_headers(req: Request<Body>, next: Next) -> Response {
     // Host on every relay route, Origin on the ones that change something
     // (lanRelayCore handleHttp): a foreign page gets neither
     let api = req.uri().path().starts_with("/api/");
+    // /api/display/lookup and /live (scoreboard codes) are for any page and any
+    // third-party board: read-only, no credentials, CORS *. No Origin check
+    // (the Host one stays) and their own preflight.
+    let display = crate::display_code::endpoint_of(req.uri().path()).is_some();
     let changes = !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
-    let refusal = if api && changes {
+    let refusal = if api && changes && !display {
         relay_request_refusal(req.headers())
     } else if api && !is_allowed_relay_host(host.as_deref()) {
         Some("host-not-allowed")
@@ -1290,6 +1305,12 @@ async fn add_headers(req: Request<Body>, next: Next) -> Response {
     let mut res = if let Some(why) = refusal {
         let error = if why == "host-not-allowed" { "Host not allowed" } else { "Origin not allowed" };
         json_response(StatusCode::FORBIDDEN, json!({ "success": false, "error": error }))
+    } else if is_options && display {
+        let mut r = StatusCode::NO_CONTENT.into_response();
+        for (k, v) in crate::display_code::DISPLAY_PREFLIGHT_HEADERS {
+            r.headers_mut().insert(*k, HeaderValue::from_static(v));
+        }
+        r
     } else if is_options {
         StatusCode::OK.into_response()
     } else {
@@ -1314,14 +1335,16 @@ async fn add_headers(req: Request<Body>, next: Next) -> Response {
             }
         }
     }
-    h.insert(
-        "Access-Control-Allow-Methods",
-        HeaderValue::from_static("GET, POST, PATCH, OPTIONS"),
-    );
-    h.insert(
-        "Access-Control-Allow-Headers",
-        HeaderValue::from_static("Content-Type, X-Instance-ID, X-OV-Match-Pin, X-OV-Match-Token"),
-    );
+    if !display {
+        h.insert(
+            "Access-Control-Allow-Methods",
+            HeaderValue::from_static("GET, POST, PATCH, OPTIONS"),
+        );
+        h.insert(
+            "Access-Control-Allow-Headers",
+            HeaderValue::from_static("Content-Type, X-Instance-ID, X-OV-Match-Pin, X-OV-Match-Token"),
+        );
+    }
     res
 }
 
@@ -2383,6 +2406,55 @@ async fn pair_api(
     sign_response(answer)
 }
 
+// ---------------------------------------------------------------------------
+// Scoreboard codes (display_code.rs, docs/scoreboard-code-spec.md): POST
+// /api/display/lookup | live { code } for boards that poll
+// ---------------------------------------------------------------------------
+
+fn display_response(a: crate::display_code::HttpAnswer) -> Response {
+    let status = StatusCode::from_u16(a.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut res = (status, [("content-type", "application/json")], a.body.to_string()).into_response();
+    for (k, v) in &a.headers {
+        if let (Ok(k), Ok(v)) = (axum::http::HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(v)) {
+            res.headers_mut().insert(k, v);
+        }
+    }
+    if a.status == 413 {
+        res.headers_mut().insert("Connection", HeaderValue::from_static("close"));
+    }
+    res
+}
+
+async fn display_api(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    use crate::display_code::{display_error, BODY_MAX};
+    let endpoint = crate::display_code::endpoint_of(uri.path()).unwrap_or("");
+    let declared = headers.get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.is_some_and(|n| n > BODY_MAX) {
+        return display_response(display_error(413, "OV_DISPLAY_TOO_LARGE", &[]));
+    }
+    // Reads at most BODY_MAX bytes and stops
+    let Ok(bytes) = axum::body::to_bytes(body, BODY_MAX).await else {
+        return display_response(display_error(413, "OV_DISPLAY_TOO_LARGE", &[]));
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let content_type = headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
+    let ip_key = crate::display_code::ip_key(addr.ip());
+    let (answer, ended) = {
+        let matches = state.matches.lock().await;
+        let mut table = display_table(&state);
+        let a = table.http(endpoint, content_type, &text, &ip_key, |room| matches.get(room).map(summary_bundle));
+        (a, table.take_ended())
+    };
+    end_display_codes(&state, ended).await;
+    display_response(answer)
+}
+
 fn serve_asset(req_path: &str) -> Response {
     let exists = |p: &str| Assets::get(p).is_some();
     match resolve_asset(req_path, crate::flavour::CURRENT, &exists).and_then(|p| try_file(&p)) {
@@ -2658,6 +2730,10 @@ async fn forget_connection(state: &Arc<AppState>, conn_id: u64) {
         });
         followed
     };
+    state.display_followers.lock().await.retain(|_, m| {
+        m.remove(&conn_id);
+        !m.is_empty()
+    });
     // A display gone: the scoreboards of the rooms it followed are told
     if was_display {
         for id in &followed {
@@ -3092,6 +3168,14 @@ async fn drop_room(state: &Arc<AppState>, match_id: &str) {
     state.bench.lock().await.remove(match_id);
     state.presence.lock().await.remove(match_id);
     state.display_told.lock().await.remove(match_id);
+    // Its scoreboard code ends (nobody follows an idle room, but its lookups answer 'ended')
+    let ended = {
+        let mut t = display_table(state);
+        t.drop_room(match_id);
+        t.take_ended()
+    };
+    end_display_codes(state, ended).await;
+    state.display_followers.lock().await.remove(match_id);
 }
 
 /// May this sync (of `bytes`) be stored (lanRelayCore `roomBudgetDenied`)?
@@ -3166,6 +3250,14 @@ async fn delete_match(state: &Arc<AppState>, match_id: &str) {
     // (its subscribers were told 'match-deleted' and are gone: nobody to tell)
     state.presence.lock().await.remove(match_id);
     state.display_told.lock().await.remove(match_id);
+    // Its scoreboard code ends: the boards that followed by it are told
+    let ended = {
+        let mut t = display_table(state);
+        t.drop_room(match_id);
+        t.take_ended()
+    };
+    end_display_codes(state, ended).await;
+    state.display_followers.lock().await.remove(match_id);
 }
 
 async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &str) {
@@ -3287,86 +3379,18 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
             }
         }
         "subscribe-match" => {
+            // A scoreboard by its code alone (display_code.rs): no matchId, any PIN ignored
+            if match_id.is_none() && data.get("code").is_some_and(|c| !c.is_null()) {
+                subscribe_by_code(state, conn_id, tx, &data).await;
+                return;
+            }
             let Some(match_id) = match_id else {
                 send_error(tx, "bad-request", "subscribe-match needs matchId", None);
                 return;
             };
-            {
-                let mut subs = state.subs.lock().await;
-                let mine = subs.values().filter(|s| s.contains(&conn_id)).count();
-                let already = subs.get(&match_id).map_or(false, |s| s.contains(&conn_id));
-                if !already && mine >= MAX_SUBSCRIPTIONS_PER_CONN {
-                    drop(subs);
-                    send_error(tx, "too-many-subscriptions", "This connection follows the maximum number of matches", Some(&match_id));
-                    return;
-                }
-                subs.entry(match_id.clone()).or_default().insert(conn_id);
-            }
-            let device = data.get("device").or_else(|| data.get("role")).and_then(|v| v.as_str());
-            let team = data.get("team").and_then(|v| v.as_str()).filter(|t| matches!(*t, "home" | "away"));
-            if let Some(m) = state.conn_meta.lock().await.get_mut(&conn_id) {
-                if let Some(role) = device.filter(|r| matches!(*r, "referee" | "bench" | "livescore")) {
-                    m.role = role.to_string();
-                }
-                if let Some(team) = team {
-                    m.team = Some(team.to_string());
-                }
-            }
-            let stored = state.matches.lock().await.get(&match_id).cloned();
-            offer_pin(state, conn_id, tx, &match_id, data.get("pin"), stored.as_ref()).await;
-            if let Some(bundle) = stored {
-                let full = has_access(state, conn_id, &match_id, Some(&bundle)).await;
-                let msg = bundle_message_access("match-full-data", &match_id, &bundle, None, full);
-                let _ = tx.send(Message::Text(msg.to_string().into()));
-                // A bench: its team's requests; a referee: the open time-out / substitution requests
-                match role_of(state, conn_id, &match_id, &bundle).await {
-                    Some(team @ ("home" | "away")) => {
-                        let requests: Vec<Value> = state
-                            .bench
-                            .lock()
-                            .await
-                            .get(&match_id)
-                            .map(|l| l.iter().filter(|e| e.team == team).map(crate::bench_requests::bench_view).collect())
-                            .unwrap_or_default();
-                        let msg = json!({ "type": "bench-request-state", "matchId": match_id, "team": team, "requests": requests });
-                        let _ = tx.send(Message::Text(msg.to_string().into()));
-                    }
-                    Some("referee") => {
-                        let infos: Vec<Value> = state
-                            .bench
-                            .lock()
-                            .await
-                            .get(&match_id)
-                            .map(|l| {
-                                l.iter()
-                                    .filter(|e| e.is_open() && e.kind() != "lineup")
-                                    .map(|e| crate::bench_requests::referee_info(&match_id, e, &e.status))
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        for info in infos {
-                            let _ = tx.send(Message::Text(info.to_string().into()));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            // Last, once the subscription is answered: is the scorer there now
-            // (false for a room not on the relay yet)
-            update_presence(state, &match_id, Some((conn_id, tx))).await;
-            // A display: its announcement, for every room it follows (their scoreboards told)
-            if device == Some(DISPLAY_DEVICE) {
-                let url = display_settings_url(data.get("settingsUrl"));
-                let seq = state.display_seq.fetch_add(1, Ordering::Relaxed);
-                if let Some(m) = state.conn_meta.lock().await.get_mut(&conn_id) {
-                    m.display = Some((url, seq));
-                }
-                let followed: Vec<String> = state.subs.lock().await.iter().filter(|(_, set)| set.contains(&conn_id)).map(|(id, _)| id.clone()).collect();
-                for id in followed {
-                    note_displays(state, &id).await;
-                }
-            }
+            subscribe_room(state, conn_id, tx, &data, match_id, None).await;
         }
+        "display-code-set" => on_display_code_set(state, conn_id, tx, &data, match_id).await,
         "bench-request" => on_bench_request(state, conn_id, tx, &data).await,
         "bench-response" => on_bench_response(state, conn_id, tx, &data).await,
         "unsubscribe-match" => {
@@ -3380,6 +3404,7 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                         }
                     }
                 }
+                unfollow_code(state, conn_id, &match_id).await;
                 let display = state.conn_meta.lock().await.get(&conn_id).is_some_and(|m| m.display.is_some());
                 if display {
                     note_displays(state, &match_id).await;
@@ -3636,6 +3661,10 @@ async fn has_access(state: &Arc<AppState>, conn_id: u64, match_id: &str, bundle:
     if is_owner(state, conn_id, match_id).await {
         return true;
     }
+    // A board that follows by a code: the public summary only, whatever PIN it offered before
+    if is_code_follower(state, conn_id, match_id).await {
+        return false;
+    }
     let (offered, verified, ip) = {
         let meta = state.conn_meta.lock().await;
         match meta.get(&conn_id).and_then(|m| m.access.get(match_id).map(|(p, v)| (p.clone(), *v, m.ip))) {
@@ -3693,8 +3722,12 @@ async fn notify_match_data(
 ) {
     let mut full_ids = Vec::new();
     let mut summary_ids = Vec::new();
+    let mut public_ids = Vec::new();
+    let coded = code_followers(state, match_id).await;
     for id in subscriber_ids(state, match_id, exclude).await {
-        if has_access(state, id, match_id, Some(bundle)).await {
+        if coded.contains(&id) {
+            public_ids.push(id);
+        } else if has_access(state, id, match_id, Some(bundle)).await {
             full_ids.push(id);
         } else {
             summary_ids.push(id);
@@ -3704,8 +3737,11 @@ async fn notify_match_data(
         .then(|| bundle_message_access(msg_type, match_id, bundle, sb_ts.clone(), true).to_string());
     let summary = (!summary_ids.is_empty())
         .then(|| bundle_message_access(msg_type, match_id, bundle, sb_ts.clone(), false).to_string());
+    // Boards that follow by a code: the summary with the public live state
+    let public = (!public_ids.is_empty())
+        .then(|| public_message(&bundle_message_access(msg_type, match_id, bundle, sb_ts.clone(), false)).to_string());
     let clients = state.clients.lock().await;
-    for (ids, text) in [(full_ids, full), (summary_ids, summary)] {
+    for (ids, text) in [(full_ids, full), (summary_ids, summary), (public_ids, public)] {
         let Some(text) = text else { continue };
         for id in ids {
             if let Some(tx) = clients.get(&id) {
@@ -3899,14 +3935,309 @@ async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, 
     if sub_ids.is_empty() {
         return;
     }
+    // Boards that follow by a code: the public live state
+    let coded = if msg.get("liveState").is_some() { code_followers(state, match_id).await } else { HashSet::new() };
     let text = msg.to_string();
+    let public = (!coded.is_empty()).then(|| public_message(msg).to_string());
     let clients = state.clients.lock().await;
     for id in sub_ids {
         if Some(id) == exclude {
             continue;
         }
+        let text = match &public {
+            Some(p) if coded.contains(&id) => p,
+            _ => &text,
+        };
         if let Some(tx) = clients.get(&id) {
             let _ = tx.send(Message::Text(text.clone().into()));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scoreboard codes (display_code.rs, docs/scoreboard-code-spec.md): the
+// room's scorer socket sets a code (display-code-set); a board follows the
+// room by it (subscribe-match { code }) as a PIN-less display would, and gets
+// the public live state only (LIVE_STATE_PRIVATE_COLUMNS out) in every
+// live-state-update, match-full-data and match-data-update. When the code
+// ends (a new one, revoked, 12 h, the room deleted or dropped) its boards are
+// told (display-code ended) and leave the room. The same messages as
+// backend/server.js and lanRelayCore.cjs.
+// ---------------------------------------------------------------------------
+
+fn display_table(state: &AppState) -> std::sync::MutexGuard<'_, crate::display_code::DisplayCodes> {
+    state.display_codes.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn ws_text(v: &Value) -> Message {
+    Message::Text(v.to_string().into())
+}
+
+/// A match message as a board that follows by a code gets it: `liveState`
+/// and `data.liveState` public.
+fn public_message(msg: &Value) -> Value {
+    let mut out = msg.clone();
+    if let Some(o) = out.as_object_mut() {
+        if let Some(live) = o.get("liveState") {
+            let p = crate::display_code::public_live_state(live);
+            o.insert("liveState".into(), p);
+        }
+        if let Some(data) = o.get_mut("data").and_then(|d| d.as_object_mut()) {
+            if let Some(live) = data.get("liveState") {
+                let p = crate::display_code::public_live_state(live);
+                data.insert("liveState".into(), p);
+            }
+        }
+    }
+    out
+}
+
+/// Codes that ended: every board that followed its room by one is told and
+/// leaves the room (its scoreboards hear display-presence when that changed).
+async fn end_display_codes(state: &Arc<AppState>, ended: Vec<crate::display_code::Ended>) {
+    for e in ended {
+        let ids: Vec<u64> = {
+            let mut followers = state.display_followers.lock().await;
+            let Some(room) = followers.get_mut(&e.room) else { continue };
+            let ids: Vec<u64> = room.iter().filter(|(_, h)| **h == e.hash).map(|(id, _)| *id).collect();
+            for id in &ids {
+                room.remove(id);
+            }
+            if room.is_empty() {
+                followers.remove(&e.room);
+            }
+            ids
+        };
+        if ids.is_empty() {
+            continue;
+        }
+        {
+            let mut subs = state.subs.lock().await;
+            if let Some(set) = subs.get_mut(&e.room) {
+                for id in &ids {
+                    set.remove(id);
+                }
+                if set.is_empty() {
+                    subs.remove(&e.room);
+                }
+            }
+        }
+        send_many(state, &ids, &crate::display_code::code_ended_message(&e.room)).await;
+        note_displays(state, &e.room).await;
+    }
+}
+
+/// Every SWEEP_MS: codes that ran out end (their boards told), old tombstones go.
+fn start_display_sweeper(state: &Arc<AppState>) {
+    let weak = Arc::downgrade(state);
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_millis(crate::display_code::SWEEP_MS));
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            let Some(state) = weak.upgrade() else { break };
+            let ended = {
+                let mut t = display_table(&state);
+                t.sweep();
+                t.take_ended()
+            };
+            end_display_codes(&state, ended).await;
+        }
+    });
+}
+
+/// The connections that follow the room by a code (the room's code that ran
+/// out ends here first).
+async fn code_followers(state: &Arc<AppState>, room: &str) -> HashSet<u64> {
+    if !state.display_followers.lock().await.contains_key(room) {
+        return HashSet::new();
+    }
+    let ended = {
+        let mut t = display_table(state);
+        t.code_of_room(room);
+        t.take_ended()
+    };
+    end_display_codes(state, ended).await;
+    state.display_followers.lock().await.get(room).map(|m| m.keys().copied().collect()).unwrap_or_default()
+}
+
+async fn is_code_follower(state: &Arc<AppState>, conn_id: u64, room: &str) -> bool {
+    state.display_followers.lock().await.get(room).is_some_and(|m| m.contains_key(&conn_id))
+}
+
+/// Forget that `conn_id` follows `room` by a code.
+async fn unfollow_code(state: &Arc<AppState>, conn_id: u64, room: &str) {
+    let mut followers = state.display_followers.lock().await;
+    if let Some(m) = followers.get_mut(room) {
+        m.remove(&conn_id);
+        if m.is_empty() {
+            followers.remove(room);
+        }
+    }
+}
+
+/// display-code-set { matchId, code, issuedAt } from the room's scorer
+/// socket; the answer (display-code-state, never the code) to it only.
+async fn on_display_code_set(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value, match_id: Option<String>) {
+    use crate::display_code::code_state_message;
+    let Some(room) = resolve_key(state, conn_id, match_id).await else {
+        let mut msg = code_state_message("", Err("bad-code"));
+        msg["matchId"] = Value::Null;
+        let _ = tx.send(ws_text(&msg));
+        return;
+    };
+    if !is_owner(state, conn_id, &room).await {
+        let _ = tx.send(ws_text(&code_state_message(&room, Err("not-match-owner"))));
+        return;
+    }
+    let null = Value::Null;
+    let (r, ended, sweeper) = {
+        let mut t = display_table(state);
+        let r = t.set(Some(&room), data.get("code").unwrap_or(&null), data.get("issuedAt").unwrap_or(&null), &format!("ws:{conn_id}"));
+        (r, t.take_ended(), t.take_sweeper_request())
+    };
+    let _ = tx.send(ws_text(&code_state_message(&room, r)));
+    end_display_codes(state, ended).await;
+    if sweeper {
+        start_display_sweeper(state);
+    }
+}
+
+/// subscribe-match { code } (no matchId): the code's room, followed as a
+/// PIN-less display (a PIN next to the code is ignored).
+async fn subscribe_by_code(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value) {
+    use crate::display_code::code_answer_message;
+    let Some(ip) = state.conn_meta.lock().await.get(&conn_id).map(|m| m.ip) else { return };
+    let null = Value::Null;
+    let (r, ended) = {
+        let mut t = display_table(state);
+        let r = t.resolve(data.get("code").unwrap_or(&null), &crate::display_code::ip_key(ip));
+        (r, t.take_ended())
+    };
+    end_display_codes(state, ended).await;
+    match r {
+        Ok(found) => {
+            let answer = code_answer_message(&Ok(found.clone()));
+            subscribe_room(state, conn_id, tx, data, found.room, Some((found.hash, answer))).await;
+        }
+        Err(e) => {
+            let _ = tx.send(ws_text(&code_answer_message(&Err(e))));
+        }
+    }
+}
+
+/// subscribe-match: follow `match_id`. `by_code`: the board follows it by
+/// a code (its hash, and the display-code answer to send once subscribed):
+/// no PIN, device 'display', the public live state only.
+async fn subscribe_room(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value, match_id: String, by_code: Option<(String, Value)>) {
+    {
+        let mut subs = state.subs.lock().await;
+        let mine = subs.values().filter(|s| s.contains(&conn_id)).count();
+        let already = subs.get(&match_id).map_or(false, |s| s.contains(&conn_id));
+        if !already && mine >= MAX_SUBSCRIPTIONS_PER_CONN {
+            drop(subs);
+            send_error(tx, "too-many-subscriptions", "This connection follows the maximum number of matches", Some(&match_id));
+            return;
+        }
+        subs.entry(match_id.clone()).or_default().insert(conn_id);
+    }
+    let coded = by_code.is_some();
+    match by_code {
+        Some((hash, answer)) => {
+            state.display_followers.lock().await.entry(match_id.clone()).or_default().insert(conn_id, hash.clone());
+            // Ended meanwhile (its end ran before this board was noted): not followed
+            let live = {
+                let mut t = display_table(state);
+                let live = t.is_live(&hash, &match_id);
+                (live, t.take_ended())
+            };
+            end_display_codes(state, live.1).await;
+            if !live.0 {
+                unfollow_code(state, conn_id, &match_id).await;
+                let mut subs = state.subs.lock().await;
+                if let Some(set) = subs.get_mut(&match_id) {
+                    set.remove(&conn_id);
+                    if set.is_empty() {
+                        subs.remove(&match_id);
+                    }
+                }
+                drop(subs);
+                let _ = tx.send(ws_text(&json!({ "type": "display-code", "ok": false, "reason": "ended" })));
+                return;
+            }
+            let _ = tx.send(ws_text(&answer));
+        }
+        // By its key: an ordinary subscriber from now on (no longer by a code)
+        None => unfollow_code(state, conn_id, &match_id).await,
+    }
+    let device = if coded { Some(DISPLAY_DEVICE) } else { data.get("device").or_else(|| data.get("role")).and_then(|v| v.as_str()) };
+    let team = data.get("team").and_then(|v| v.as_str()).filter(|t| matches!(*t, "home" | "away") && !coded);
+    if let Some(m) = state.conn_meta.lock().await.get_mut(&conn_id) {
+        if let Some(role) = device.filter(|r| matches!(*r, "referee" | "bench" | "livescore")) {
+            m.role = role.to_string();
+        }
+        if let Some(team) = team {
+            m.team = Some(team.to_string());
+        }
+    }
+    let stored = state.matches.lock().await.get(&match_id).cloned();
+    if !coded {
+        offer_pin(state, conn_id, tx, &match_id, data.get("pin"), stored.as_ref()).await;
+    }
+    if let Some(bundle) = stored {
+        let full = !coded && has_access(state, conn_id, &match_id, Some(&bundle)).await;
+        let mut msg = bundle_message_access("match-full-data", &match_id, &bundle, None, full);
+        if coded {
+            msg = public_message(&msg);
+        }
+        let _ = tx.send(ws_text(&msg));
+        // A bench: its team's requests; a referee: the open time-out / substitution requests
+        let role = if coded { None } else { role_of(state, conn_id, &match_id, &bundle).await };
+        match role {
+            Some(team @ ("home" | "away")) => {
+                let requests: Vec<Value> = state
+                    .bench
+                    .lock()
+                    .await
+                    .get(&match_id)
+                    .map(|l| l.iter().filter(|e| e.team == team).map(crate::bench_requests::bench_view).collect())
+                    .unwrap_or_default();
+                let msg = json!({ "type": "bench-request-state", "matchId": match_id, "team": team, "requests": requests });
+                let _ = tx.send(ws_text(&msg));
+            }
+            Some("referee") => {
+                let infos: Vec<Value> = state
+                    .bench
+                    .lock()
+                    .await
+                    .get(&match_id)
+                    .map(|l| {
+                        l.iter()
+                            .filter(|e| e.is_open() && e.kind() != "lineup")
+                            .map(|e| crate::bench_requests::referee_info(&match_id, e, &e.status))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                for info in infos {
+                    let _ = tx.send(ws_text(&info));
+                }
+            }
+            _ => {}
+        }
+    }
+    // Last, once the subscription is answered: is the scorer there now
+    // (false for a room not on the relay yet)
+    update_presence(state, &match_id, Some((conn_id, tx))).await;
+    // A display: its announcement, for every room it follows (their scoreboards told)
+    if device == Some(DISPLAY_DEVICE) {
+        let url = display_settings_url(data.get("settingsUrl"));
+        let seq = state.display_seq.fetch_add(1, Ordering::Relaxed);
+        if let Some(m) = state.conn_meta.lock().await.get_mut(&conn_id) {
+            m.display = Some((url, seq));
+        }
+        let followed: Vec<String> = state.subs.lock().await.iter().filter(|(_, set)| set.contains(&conn_id)).map(|(id, _)| id.clone()).collect();
+        for id in followed {
+            note_displays(state, &id).await;
         }
     }
 }
@@ -5199,6 +5530,144 @@ mod tests {
         assert_eq!(ended["state"], "closed");
         let (st, _, body) = sign_call(&state, "/api/pair/join", json!({ "k": token }).to_string(), phone_addr, &[("content-type", "text/plain")]).await;
         assert_eq!((st, body["code"].as_str()), (StatusCode::BAD_REQUEST, Some("OV_PAIR_BAD_REQUEST")));
+    }
+
+    // --- Scoreboard codes (display_code.rs; docs/scoreboard-code-spec.md) ---
+
+    #[tokio::test]
+    async fn display_api_answers_any_page_and_its_preflight() {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let state = new_state(0, 0);
+        let mut b = bundle(1, "111111", "live");
+        b["homeTeam"] = json!({ "name": "Home VC", "color": "#e2001a", "coach": "Cora" });
+        b["liveState"] = json!({ "points_a": 3, "lineup_a": [{ "number": 77 }], "subs_count_a": 1 });
+        state.matches.lock().await.insert("room-x".into(), b);
+        assert!(display_table(&state).set(Some("room-x"), &json!("ABCD2345"), &Value::Null, "t").is_ok());
+        let board = "192.0.2.50:1";
+        let page = ("origin", "https://board.example");
+        let (st, h, body) = sign_call(&state, "/api/display/live", json!({ "code": "abcd-2345" }).to_string(), board, &[page]).await;
+        assert_eq!(st, StatusCode::OK, "{body}");
+        assert_eq!(h.get("access-control-allow-origin").unwrap(), "*");
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        assert_eq!(body["liveState"], json!({ "points_a": 3, "subs_count_a": 1 }));
+        assert_eq!(body["match"]["status"], "live");
+        assert_eq!(body["homeTeam"], json!({ "name": "Home VC", "color": "#e2001a" }));
+        assert!(!body.to_string().contains("111111") && !body.to_string().contains("314159"));
+        // text/plain (a simple request, no preflight) too
+        let plain = [("content-type", "text/plain;charset=UTF-8"), page];
+        let (st, _, body) = sign_call(&state, "/api/display/lookup", json!({ "code": "ABCD2345" }).to_string(), board, &plain).await;
+        assert_eq!((st, body["matchId"].as_str()), (StatusCode::OK, Some("room-x")));
+        // the relay's other routes still refuse that page; a Host an outside party points at stays refused
+        assert_eq!(sign_call(&state, "/api/pair/join", json!({ "code": "ABCD2345" }).to_string(), board, &[page]).await.0, StatusCode::FORBIDDEN);
+        let rebound = [("host", "relay.attacker.example")];
+        assert_eq!(sign_call(&state, "/api/display/lookup", json!({ "code": "ABCD2345" }).to_string(), board, &rebound).await.0, StatusCode::FORBIDDEN);
+        // wrong, too large
+        let (st, _, body) = sign_call(&state, "/api/display/lookup", json!({ "code": "ZZZZZZZZ" }).to_string(), board, &[]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::NOT_FOUND, Some("OV_DISPLAY_NOT_FOUND")));
+        let (st, _, body) = sign_call(&state, "/api/display/lookup", json!({ "code": "x".repeat(2000) }).to_string(), board, &[]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::PAYLOAD_TOO_LARGE, Some("OV_DISPLAY_TOO_LARGE")));
+        // the preflight: 204 and the core's headers, not the relay's own CORS
+        let mut req = Request::builder()
+            .method("OPTIONS")
+            .uri("/api/display/live")
+            .header("origin", "https://board.example")
+            .header("access-control-request-method", "POST")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(board.parse::<SocketAddr>().unwrap()));
+        let res = http_router(state.clone()).oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+        for (k, v) in crate::display_code::DISPLAY_PREFLIGHT_HEADERS {
+            assert_eq!(res.headers().get(*k).unwrap(), v, "{k}");
+        }
+        assert!(res.into_body().collect().await.unwrap().to_bytes().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_board_by_its_code_gets_the_public_live_state_and_leaves_when_it_ends() {
+        use crate::display_code::{DisplayCodes, LAN_CAPS, MAX_LIFE_MS};
+        let state = new_state(0, 0);
+        let clock = Arc::new(AtomicU64::new(1_000));
+        let c = clock.clone();
+        *state.display_codes.lock().unwrap() = DisplayCodes::new(LAN_CAPS, "lan", Arc::new(move || c.load(Ordering::SeqCst)), Box::new(|_| {}));
+        let drain = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Vec<Value> {
+            let mut out = Vec::new();
+            while let Ok(Message::Text(t)) = rx.try_recv() {
+                out.push(serde_json::from_str(&t).unwrap());
+            }
+            out
+        };
+        let of = |msgs: &[Value], t: &str| -> Vec<Value> { msgs.iter().filter(|m| m["type"] == t).cloned().collect() };
+        let mut rxs = Vec::new();
+        let mut txs = Vec::new();
+        for id in 1..=4u64 {
+            connect(&state, id, &format!("192.168.1.{}", 50 + id)).await;
+            let (tx, rx) = tx_pair();
+            state.clients.lock().await.insert(id, tx.clone());
+            txs.push(tx);
+            rxs.push(rx);
+        }
+        let send = |id: u64, v: Value| {
+            let (state, tx) = (state.clone(), txs[id as usize - 1].clone());
+            async move { handle_ws_message(&state, id, &tx, &v.to_string()).await }
+        };
+        let mut m = bundle(1, "111111", "live")["match"].clone();
+        m["refereeConnectionEnabled"] = json!(true);
+        send(1, json!({ "type": "sync-match-data", "matchId": "7", "match": m })).await;
+        drain(&mut rxs[0]);
+        // only the room's scorer sets a code; the answer never names it
+        send(2, json!({ "type": "display-code-set", "matchId": "7", "code": "ABCD2345" })).await;
+        assert_eq!(of(&drain(&mut rxs[1]), "display-code-state")[0]["reason"], "not-match-owner");
+        send(1, json!({ "type": "display-code-set", "matchId": "7", "code": "ABCD2345", "issuedAt": 1_000 })).await;
+        let st = of(&drain(&mut rxs[0]), "display-code-state");
+        assert_eq!(st[0], json!({ "type": "display-code-state", "matchId": "7", "active": true, "endsAt": 1_000 + MAX_LIFE_MS }));
+        // 2: an ordinary PIN-less subscriber; 3: a board by the code (its PIN ignored);
+        // 4: the referee PIN first, then the code: public from then on
+        send(2, json!({ "type": "subscribe-match", "matchId": "7" })).await;
+        send(3, json!({ "type": "subscribe-match", "code": "abcd 2345", "device": "display", "pin": "314159" })).await;
+        let got = drain(&mut rxs[2]);
+        assert_eq!(got[0], json!({ "type": "display-code", "ok": true, "matchId": "7", "endsAt": 1_000 + MAX_LIFE_MS }));
+        assert_eq!(of(&got, "match-full-data")[0]["access"], "summary");
+        send(4, json!({ "type": "subscribe-match", "matchId": "7", "pin": "314159" })).await;
+        assert_eq!(of(&drain(&mut rxs[3]), "match-full-data")[0]["access"], "full");
+        send(4, json!({ "type": "subscribe-match", "code": "ABCD2345" })).await;
+        assert_eq!(of(&drain(&mut rxs[3]), "match-full-data")[0]["access"], "summary");
+        assert_eq!(of(&drain(&mut rxs[0]), "display-presence").last().unwrap()["present"], true);
+        drain(&mut rxs[1]);
+        send(1, json!({ "type": "live-state-update", "matchId": "7", "liveState": { "points_a": 4, "lineup_a": [7], "sanctions_b": [] } })).await;
+        assert_eq!(of(&drain(&mut rxs[1]), "live-state-update")[0]["liveState"]["lineup_a"], json!([7]), "ordinary subscribers as before");
+        for rx in [2, 3] {
+            assert_eq!(of(&drain(&mut rxs[rx]), "live-state-update")[0]["liveState"], json!({ "points_a": 4 }));
+        }
+        send(1, json!({ "type": "sync-match-data", "matchId": "7", "match": m })).await;
+        for rx in [2, 3] {
+            let mdu = of(&drain(&mut rxs[rx]), "match-data-update").remove(0);
+            assert_eq!((mdu["access"].clone(), mdu["liveState"].clone(), mdu["data"]["liveState"].clone()), (json!("summary"), json!({ "points_a": 4 }), json!({ "points_a": 4 })));
+        }
+        send(1, json!({ "type": "match-action", "matchId": "7", "action": "timeout", "data": {} })).await;
+        assert!(of(&drain(&mut rxs[3]), "match-action").is_empty(), "a board by a code gets no actions");
+        // 12 h on, the sweep ends the code: its boards are told and leave the room
+        clock.store(1_000 + MAX_LIFE_MS, Ordering::SeqCst);
+        let ended = {
+            let mut t = display_table(&state);
+            t.sweep();
+            t.take_ended()
+        };
+        end_display_codes(&state, ended).await;
+        for rx in [2, 3] {
+            assert_eq!(drain(&mut rxs[rx]), vec![json!({ "type": "display-code", "ok": false, "reason": "ended", "matchId": "7" })]);
+        }
+        assert_eq!(state.subs.lock().await.get("7").unwrap().iter().copied().collect::<Vec<_>>(), vec![2]);
+        assert_eq!(of(&drain(&mut rxs[0]), "display-presence").last().unwrap()["present"], false);
+        send(1, json!({ "type": "live-state-update", "matchId": "7", "liveState": { "points_a": 5 } })).await;
+        assert!(drain(&mut rxs[2]).is_empty() && drain(&mut rxs[3]).is_empty());
+        assert_eq!(of(&drain(&mut rxs[1]), "live-state-update").len(), 1);
+        // a room the relay drops ends its code too
+        send(1, json!({ "type": "display-code-set", "matchId": "7", "code": "WXYZ6789" })).await;
+        drop_room(&state, "7").await;
+        assert_eq!(display_table(&state).resolve(&json!("WXYZ6789"), "x").unwrap_err().reason, "ended");
+        assert!(state.display_followers.lock().await.is_empty());
     }
 
     // --- Sign on phone through the router (sign.rs; docs/qr-signing-spec.md 8.3) ---
