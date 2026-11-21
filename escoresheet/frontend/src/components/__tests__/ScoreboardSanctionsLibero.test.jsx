@@ -417,3 +417,37 @@ describe('one libero entry for every path (FIVB 19.3.2, 5.2)', () => {
     expect((await lineupsOf('away')).at(-1).payload.lineup.V).toBe('12')
   }, 60000)
 })
+
+// Escape did not close the libero and sanction menus (the phone layout opens
+// these same menus), only a tap outside did, with the keyboard shortcuts off
+// as by default (full-match test 2026-11-21)
+describe('Escape closes the libero and sanction menus, as a tap outside does', () => {
+  it('the bench libero menu, then an official\'s sanction menu', async () => {
+    const matchId = await setUp({ match: { bench_home: [{ role: 'Coach', firstName: 'Alex', lastName: 'Trainer' }] } })
+    await openScreen(matchId, 5)
+    const liberoMenu = () => document.querySelector('[data-libero-bench-action-menu]')
+    fireEvent.click(benchLibero(12))
+    await waitFor(() => expect(liberoMenu()).toBeTruthy(), { timeout: 3000 })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(liberoMenu()).toBeFalsy())
+
+    const sanctionMenu = () => document.querySelector('[data-sanction-dropdown]')
+    fireEvent.click(document.querySelector('[data-bench-official="Coach"]'))
+    await waitFor(() => expect(sanctionMenu()).toBeTruthy(), { timeout: 3000 })
+    // another key leaves it open
+    fireEvent.keyDown(window, { key: 'a' })
+    expect(sanctionMenu()).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(sanctionMenu()).toBeFalsy())
+    expect(await ofType('sanction')).toHaveLength(0)
+  }, 60000)
+
+  it('the court player menu (a libero on court opens it on the phone)', async () => {
+    const matchId = await setUp()
+    await openScreen(matchId, 6)
+    fireEvent.click(court(6))
+    await waitFor(() => expect(playerMenu()).toBeTruthy(), { timeout: 3000 })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(playerMenu()).toBeFalsy())
+  }, 60000)
+})

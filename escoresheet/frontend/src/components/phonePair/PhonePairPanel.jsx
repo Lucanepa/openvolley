@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { Keyboard, Loader2, Smartphone, Unlink } from 'lucide-react'
+import { Keyboard, Loader2, Smartphone, Unlink, X } from 'lucide-react'
 import { Button, SegmentedControl, Skeleton, Switch } from '../../ui'
 import { usePhoneSignTransports } from '../signature/PhoneSignPanel'
 import { rememberTransport } from '../../utils/phoneSignTransport'
@@ -30,9 +30,10 @@ export function pairFailureKey(err, transport) {
 
 /**
  * "Pair a phone" (the Match menu): the QR code and the short code of a new
- * pairing, then "Phone connected" with Unpair. One phone at a time: a new
- * pairing ends the one before. Closing the panel keeps the pairing; only
- * Unpair (or the match closing, or 6 hours) ends it.
+ * pairing (Stop pairing while it waits), then "Phone connected" with Unpair.
+ * One phone at a time: a new pairing ends the one before. Closing the panel
+ * keeps the pairing; only Stop / Unpair (here or on the indicator), the
+ * match closing, or 6 hours end it.
  *
  * @param {{ match: { matchId, matchKey, gamePin, context }, onClose: () => void, controller?: object }} props
  */
@@ -137,13 +138,16 @@ export default function PhonePairPanel({ match, onClose, controller = phonePairC
             <p className="m-0 tabular-nums text-xs text-stone-500">{t('phonePair.validFor', { time: formatLeft(leftMs) })}</p>
             <span className="sr-only" data-testid="phone-pair-link">{phonePairUrl(handle)}</span>
           </div>
+          <div className="sm:col-span-2">
+            <Button variant="danger-outline" size="xl" icon={X} onClick={() => controller.unpair()} data-testid="phone-pair-stop">{t('phonePair.stop')}</Button>
+          </div>
         </div>
       ) : state.status === 'starting' || (loading && !noWay) ? (
         <Skeleton className="h-[226px] w-[226px] rounded-xl" />
       ) : !noWay ? (
         <div className="flex flex-col gap-2">
           <p className="m-0 font-medium text-stone-700" role="status" data-testid="phone-pair-status">
-            {state.status === 'error' ? t(pairFailureKey(state.error, way)) : state.ended === 'unpaired' ? t('phonePair.ended') : t('phonePair.expired')}
+            {state.status === 'error' ? t(pairFailureKey(state.error, way)) : state.ended === 'unpaired' ? t('phonePair.ended') : state.ended === 'stopped' ? t('phonePair.stopped') : t('phonePair.expired')}
           </p>
           <div>
             <Button variant="secondary" size="xl" icon={Keyboard} onClick={() => { controller.reset(); start() }} data-testid="phone-pair-again">{t('phonePair.newPairing')}</Button>

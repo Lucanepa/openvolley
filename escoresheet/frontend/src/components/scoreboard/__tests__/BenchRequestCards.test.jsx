@@ -151,6 +151,106 @@ describe('the scorer\'s bridge', () => {
     expect(result.current.queue).toHaveLength(1)
     expect(result.current.unsent.to).toBe(true)
   })
+
+  describe('an answer without a connection goes once the scorer is back', () => {
+    const push = (m) => act(() => { for (const fn of relay.listeners) fn(m) })
+    const subRequest = { id: 'sub1', kind: 'substitution', setIndex: 1, pairs: [{ out: 1, in: 8 }] }
+    const declined = { type: 'bench-response', matchId: 'seed-1', team: 'home', id: 'sub1', status: 'declined', reason: 'No 8 is injured' }
+    const replay = (status = 'seen') => push({ type: 'bench-request', matchId: 'seed-1', team: 'home', request: subRequest, status, at: 1, replay: true })
+    const offlineDecline = () => {
+      const hook = renderHook(() => useBenchRequestBridge({ relayKey: 'seed-1', events: [], setIndex: 1 }))
+      push({ type: 'bench-request', matchId: 'seed-1', team: 'home', request: subRequest, status: 'pending' })
+      relay.sent = []
+      relay.ok = false // the scorer's socket is closed
+      act(() => { hook.result.current.respond('home', 'sub1', 'declined', 'No 8 is injured') })
+      expect(hook.result.current.unsent.sub1).toBe(true)
+      expect(relay.sent).toEqual([])
+      relay.ok = true // a socket is open again, not yet proved as the match's scoreboard
+      return hook
+    }
+
+    it('the relay replays the request to the socket that proved the match again: the held answer is sent, the note goes', () => {
+      const { result } = offlineDecline()
+      // nothing as the socket opens (the relay would refuse it: not the match's scoreboard yet)
+      expect(relay.sent).toEqual([])
+      replay()
+      expect(relay.sent).toEqual([declined])
+      expect(result.current.unsent.sub1).toBe(false)
+      expect(result.current.queue).toHaveLength(0)
+      // another reconnect replays nothing of it (the relay has it answered); if it did, no second answer
+      replay('pending')
+      expect(relay.sent.filter((m) => m.status === 'declined')).toHaveLength(1)
+    })
+
+    it('a replay while the connection is gone again keeps the answer held for the next one', () => {
+      const { result } = offlineDecline()
+      relay.ok = false
+      replay()
+      expect(result.current.unsent.sub1).toBe(true)
+      expect(result.current.queue).toHaveLength(1)
+      relay.ok = true
+      replay()
+      expect(relay.sent).toEqual([declined])
+      expect(result.current.unsent.sub1).toBe(false)
+      expect(result.current.queue).toHaveLength(0)
+    })
+
+    it('the scorer taps again once online: sent then, nothing more on a replay', () => {
+      const { result } = offlineDecline()
+      act(() => { result.current.respond('home', 'sub1', 'declined', 'No 8 is injured') })
+      expect(relay.sent).toEqual([declined])
+      expect(result.current.unsent.sub1).toBe(false)
+      replay('pending')
+      expect(relay.sent.filter((m) => m.status === 'declined')).toHaveLength(1)
+      expect(relay.sent.at(-1)).toMatchObject({ id: 'sub1', status: 'seen' })
+    })
+
+    it('cancelled by the bench meanwhile: the held answer is dropped', () => {
+      const { result } = offlineDecline()
+      push({ type: 'bench-request', matchId: 'seed-1', team: 'home', request: { id: 'c1', kind: 'cancel', setIndex: 1, cancelId: 'sub1' }, status: 'cancelled' })
+      expect(result.current.unsent.sub1).toBe(false)
+      expect(result.current.queue).toHaveLength(0)
+      replay('pending')
+      expect(relay.sent.some((m) => m.status === 'declined')).toBe(false)
+    })
+
+    it('answered on another scoreboard of the match: the held answer is dropped', () => {
+      const { result } = offlineDecline()
+      push({ type: 'bench-response', matchId: 'seed-1', team: 'home', id: 'sub1', status: 'accepted' })
+      expect(result.current.unsent.sub1).toBe(false)
+      expect(result.current.queue).toHaveLength(0)
+      replay()
+      expect(relay.sent.some((m) => m.status === 'declined')).toBe(false)
+    })
+
+    it('a line-up declined offline goes on the replay too', () => {
+      const lu = { id: 'lu1', kind: 'lineup', setIndex: 1, lineup: LU }
+      const { result } = renderHook(() => useBenchRequestBridge({ relayKey: 'seed-1', events: [], setIndex: 1 }))
+      push({ type: 'bench-request', matchId: 'seed-1', team: 'away', request: lu, status: 'pending' })
+      relay.ok = false
+      act(() => { result.current.respond('away', 'lu1', 'declined', 'No 4 is injured') })
+      relay.ok = true
+      relay.sent = []
+      push({ type: 'bench-request', matchId: 'seed-1', team: 'away', request: lu, status: 'seen', at: 1, replay: true })
+      expect(relay.sent).toEqual([{ type: 'bench-response', matchId: 'seed-1', team: 'away', id: 'lu1', status: 'declined', reason: 'No 4 is injured' }])
+      expect(result.current.unsent.lu1).toBe(false)
+    })
+
+    it('a line-up the scorer recorded while offline is closed as accepted on the replay', () => {
+      const lu = { id: 'lu2', kind: 'lineup', setIndex: 1, lineup: LU }
+      const { result, rerender } = renderHook((props) => useBenchRequestBridge(props), { initialProps: { relayKey: 'seed-1', events: [], setIndex: 1 } })
+      push({ type: 'bench-request', matchId: 'seed-1', team: 'away', request: lu, status: 'pending' })
+      relay.ok = false
+      rerender({ relayKey: 'seed-1', events: [lineupEv(LU, 1, 'away')], setIndex: 1 })
+      expect(result.current.unsent.lu2).toBe(true)
+      relay.ok = true
+      relay.sent = []
+      push({ type: 'bench-request', matchId: 'seed-1', team: 'away', request: lu, status: 'seen', at: 1, replay: true })
+      expect(relay.sent).toEqual([{ type: 'bench-response', matchId: 'seed-1', team: 'away', id: 'lu2', status: 'accepted' }])
+      expect(result.current.unsent.lu2).toBe(false)
+      expect(result.current.queue).toHaveLength(0)
+    })
+  })
 })
 
 describe('the referee\'s note', () => {

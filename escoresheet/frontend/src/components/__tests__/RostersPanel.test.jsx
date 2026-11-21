@@ -137,6 +137,36 @@ describe('RostersPanel on a phone', () => {
       window.matchMedia = matchMedia
     }
   })
+
+  // "SANCTIONS" was cut to "SANCT…" in its 60 px column at 360 and 390 px
+  // (full-match test 2026-11-21): the word wraps at its soft hyphens instead
+  it('heads the sanctions column with the word split at its soft hyphens, on two lines', () => {
+    const matchMedia = window.matchMedia
+    window.matchMedia = (query) => ({ matches: true, media: query, addEventListener: () => {}, removeEventListener: () => {} })
+    try {
+      const { container, unmount } = render(<RostersPanel data={baseData()} lineups={{ home: null, away: null }} servingTeam="home" />)
+      const heads = [...container.querySelectorAll('th[data-sanctions-head]')]
+      expect(heads.length).toBeGreaterThan(2) // players and bench of both teams
+      for (const th of heads) {
+        expect(th.textContent).toBe('Sanc­tions')
+        expect(th.style.whiteSpace).toBe('normal')
+        expect(th.style.textOverflow).toBe('')
+      }
+      unmount()
+    } finally {
+      window.matchMedia = matchMedia
+    }
+    // wider: the plain word on one line
+    const { container } = render(<RostersPanel data={baseData()} lineups={{ home: null, away: null }} servingTeam="home" />)
+    expect(container.querySelector('th[data-sanctions-head]').textContent).toBe('Sanctions')
+  })
+
+  it('every language splits the same word it shows on wider screens', () => {
+    for (const [lng, file] of Object.entries({ en, de, 'de-CH': deCH, fr, it: it_ })) {
+      expect(file.rosterLive.sanctionsNarrow.replace(/­/g, ''), lng).toBe(file.rosterLive.sanctions)
+      expect(file.rosterLive.sanctionsNarrow, lng).toContain('­')
+    }
+  })
 })
 
 // A bench role or shirt number named like an Object.prototype member

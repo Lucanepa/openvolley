@@ -19,6 +19,7 @@ import MenuList from './MenuList'
 import { matchMenuSections, toMenuListSections } from './matchMenu'
 import { openPhonePair, phonePairMatchOf } from './phonePair/phonePairStore'
 import { openScoreboardCode, scoreboardCodeMatchOf } from './scoreboardCode/scoreboardCodeStore'
+import PhonePairDock from './phonePair/PhonePairDock.jsx'
 import { useScoreboardDisplay } from './scoreboard/useScoreboardDisplay'
 import SanctionsResultsModal from './SanctionsResultsModal'
 import SetPreviewModal from './setPreview/SetPreviewModal.jsx'
@@ -12583,7 +12584,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           await handlePoint(otherSide, false, { penaltySeq: sanctionSeq })
         } else {
           // Lineups not set - show message
-          deferUi(() => showAlert(t('scoreboard.dialogs.penaltyRecordedPointLater', 'Penalty recorded. Point will be awarded after both teams set their lineups.'), 'info'))
+          deferUi(() => showAlert(t('scoreboard.dialogs.penaltyRecordedPointLater', 'Penalty recorded. Point will be awarded after both teams set their line-ups.'), 'info'))
         }
       }
     }
@@ -12958,7 +12959,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const originalPlayerNumber = replacedPlayer
 
       if (!originalPlayerNumber) {
-        deferUi(() => showAlert(t('scoreboard.dialogs.originalPlayerNotFoundManual', 'Original player not found for this libero. Please update lineup manually.'), 'error'))
+        deferUi(() => showAlert(t('scoreboard.dialogs.originalPlayerNotFoundManual', 'Original player not found for this libero. Please update the line-up manually.'), 'error'))
         return
       }
 
@@ -13253,7 +13254,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     if (!originalPlayerNumber) {
-      deferUi(() => showAlert(t('scoreboard.dialogs.originalPlayerNotFoundManual', 'Original player not found for this libero. Please update lineup manually.'), 'error'))
+      deferUi(() => showAlert(t('scoreboard.dialogs.originalPlayerNotFoundManual', 'Original player not found for this libero. Please update the line-up manually.'), 'error'))
       return
     }
 
@@ -13779,6 +13780,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Cancel key (Escape) - only close non-decision modals
       if (key === keyBindings.cancel) {
+        // a popover already closed by Escape (the listener below)
+        if (e.defaultPrevented) return
         // Close dropdowns and menus
         if (playerActionMenu) {
           e.preventDefault()
@@ -13879,6 +13882,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     courtSwitchModal, setEndTimeModal, setStartTimeModal, liberoReminder, set5SideServiceModal, exceptionalSubstitutionModal,
     confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
   ])
+
+  // Escape closes the anchored popovers (the court and bench player menus,
+  // the libero menus, the sanction menu, the substitution / libero / injury
+  // lists) as a tap outside does, the keyboard shortcuts on or off (off by
+  // default; the phone layout's libero and sanction menus are these too). The
+  // newest first, one per press. A dialog over them takes Escape itself
+  // (Modal stops it at the document); a shortcut that closed one already
+  // prevented it.
+  const popoverOpen = !!(sanctionDropdown || liberoBenchActionMenu || playerActionMenu || benchPlayerActionMenu ||
+    substitutionDropdown || liberoDropdown || liberoInDropdown || injuryDropdown)
+  const closeTopPopoverRef = useRef(null)
+  closeTopPopoverRef.current = () => {
+    if (sanctionDropdown) {
+      cancelSanction()
+    } else if (liberoBenchActionMenu) {
+      setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false); setLiberoBenchUnableExpanded(false)
+    } else if (substitutionDropdown || liberoDropdown || liberoInDropdown || injuryDropdown) {
+      setSubstitutionDropdown(null); setLiberoDropdown(null); setLiberoInDropdown(null); setInjuryDropdown(null)
+    } else if (playerActionMenu) {
+      setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false)
+    } else if (benchPlayerActionMenu) {
+      setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchSanctionExpanded(false)
+    }
+  }
+  useEffect(() => {
+    if (!popoverOpen) return undefined
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      closeTopPopoverRef.current?.()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [popoverOpen])
 
   // Courtside chips: px floors on the cqw sizes so a 200 px side column still
   // gets 12 px text and a 44 px tap target, and light-theme amber / red pairs
@@ -14967,6 +15004,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         {/* Right: Scoresheet, Menu (Home button moved to MainHeader) */}
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.85cqw' }}>
+          {/* "Phone keyboard" while a phone is paired or awaited (PhonePairHost),
+              beside the Match menu that pairs it; the folded bar has its own */}
+          {!headerCollapsed && <PhonePairDock variant="toolbar" />}
           {/* Scoresheet dropdown menu */}
           <MenuList
             buttonLabel={<FileTextIcon size="1em" />}
@@ -24415,6 +24455,8 @@ function ScoreboardToolbar({ children, collapsed, onToggle, clock }) {
             <span data-testid="toolbar-strip-clock" className="tabular-nums text-stone-500" style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1 }}>{clock}</span>
           )}
           <ToolbarChevron collapsed onToggle={onToggle} />
+          {/* the "Phone keyboard" indicator, small, while the bar is folded */}
+          <PhonePairDock variant="strip" />
         </div>
       )}
     </div>
@@ -25132,7 +25174,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               </SbButton>
               <SbButton className="w-full min-w-0 whitespace-normal leading-tight" variant="danger-outline" onClick={handleClearLineup} disabled={!hasEntries}>
                 <span style={{ fontSize: '16px' }} aria-hidden="true">✕</span>
-                {t('scoreboard.lineupModal.clearLineup', 'Clear lineup')}
+                {t('scoreboard.lineupModal.clearLineup', 'Clear line-up')}
               </SbButton>
             </div>
             <div className="lineup-rotate">

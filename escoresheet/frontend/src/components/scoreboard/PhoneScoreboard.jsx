@@ -10,6 +10,7 @@ import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
 import LineupSetOverlay from './LineupSetOverlay.jsx'
 import { lineupHiddenUntilBoth } from '../../domain/lineupPrivacy'
 import CountdownSeconds from './CountdownSeconds.jsx'
+import PhonePairDock from '../phonePair/PhonePairDock.jsx'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -114,6 +115,11 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // ---- header -------------------------------------------------------------
   const header = (
     <header style={{ flex: 'none', height: 52, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px 0 14px', borderBottom: '1px solid var(--ov-hairline)', background: 'var(--ov-card)' }}>
+      {/* "Phone keyboard" while a phone is paired or awaited (PhonePairHost):
+          in the header, not over the actions at the bottom; at its left, as
+          the middle takes the folded app header's taps (MainHeader
+          header-expand-target) and the right has Undo and Menu */}
+      <PhonePairDock variant="phone" />
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
         <span data-testid="phone-header-sets" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ov-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {t('scoreboard.phone.setInfo', { set: setNumber, home: home.setsWon, away: away.setsWon })}

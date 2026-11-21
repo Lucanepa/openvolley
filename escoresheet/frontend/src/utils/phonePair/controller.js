@@ -26,7 +26,7 @@ export function createPhonePairController({ api = defaultApi, doc = typeof docum
     phoneConnected: false,
     handle: null,
     error: null, // { status, code } of a failed start
-    ended: null, // 'closed' | 'expired' | 'unpaired'
+    ended: null, // 'closed' | 'expired' | 'unpaired' | 'stopped' (unpaired before a phone came)
     arrival: null, // { label, text, at }: text that arrived in an official field
     matchId: null,
     hideKeyboard: true,
@@ -235,13 +235,13 @@ export function createPhonePairController({ api = defaultApi, doc = typeof docum
     return r
   }
 
-  /** Unpair: the relay forgets the phone, both sides told. */
+  /** Unpair: the relay forgets the phone, both sides told. One still waiting for its phone is stopped. */
   async function unpair({ keepalive = false } = {}) {
     const handle = state.handle
     if (ac) ac.abort()
     ac = null
     detach()
-    if (live() || state.status === 'starting') set({ status: 'ended', ended: 'unpaired', phoneConnected: false, handle: null })
+    if (live() || state.status === 'starting') set({ status: 'ended', ended: state.status === 'paired' ? 'unpaired' : 'stopped', phoneConnected: false, handle: null })
     if (handle) await api.closePhonePair(handle, { keepalive })
   }
 
