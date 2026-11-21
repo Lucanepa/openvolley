@@ -23,6 +23,7 @@ import { readRelayBundle } from '../serverDataSync'
 import { runBeachVenueContract } from '../../../../backend/tests/helpers/beachVenueContract.js'
 import { runBenchRequestContract } from '../../../../backend/tests/helpers/benchRequestContract.js'
 import { runDisplayPresenceContract, SETTINGS_URL_CASES, BOARD_URL } from '../../../../backend/tests/helpers/displayPresenceContract.js'
+import { runDisplayCodeContract } from '../../../../backend/tests/helpers/displayCodeContract.js'
 import { displaySettingsUrl as backendDisplaySettingsUrl } from '../../../../backend/lib/displayPresence.js'
 import lanCore from '../../../electron/lanRelayCore.cjs'
 import { TAURI_RELAY_BIN, startTauriRelay } from './tauriRelay.js'
@@ -1671,6 +1672,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await scorerPresenceScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runDisplayPresenceContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
+      await runDisplayCodeContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, httpBase: `http://127.0.0.1:${port}`, openClient, tag: 'server-js' })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
@@ -1776,6 +1778,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await pinCheckBudgetScenario({ httpBase, wsUrl })
       await scorerPresenceScenario({ wsUrl })
       await runDisplayPresenceContract({ wsUrl, openClient, tag: 'tauri' })
+      await runDisplayCodeContract({ wsUrl, httpBase, openClient, tag: 'tauri' })
       const unknown = await fetch(`${httpBase}/api/nope`)
       expect(unknown.status).toBe(404)
     } finally {
@@ -1830,6 +1833,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await pinCheckBudgetScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await scorerPresenceScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runDisplayPresenceContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'vite' })
+      await runDisplayCodeContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, httpBase, openClient, tag: 'vite' })
     })
   })
 })
