@@ -765,7 +765,6 @@
     "menu": {
       "scoresheet": "Scoresheet",
       "menu": "Menu",
-      "showActionLog": "Show action log",
       "showSanctionsResults": "Show sanctions and results",
       "openRemarksRecording": "Open remarks recording",
       "stopMatch": "Stop the match",
@@ -779,10 +778,8 @@
       "refereePin": "Referee PIN",
       "gameNumber": "Game number",
       "helpVideoGuides": "Help & video guides",
-      "actionLog": "Action log",
       "manualChanges": "Manual changes",
       "keyboardShortcuts": "Keyboard shortcuts",
-      "searchEvents": "Search events...",
       "sections": {
         "matchInfo": "Match info",
         "corrections": "Corrections",
@@ -888,7 +885,6 @@
       "setEndFailed": "Set end failed. Data saved locally.",
       "forfaitFailed": "Forfait could not be completed. Check the score and the sets in manual adjustments."
     },
-    "noEventsRecorded": "No events recorded yet.",
     "captainOnCourt": {
       "designate": "Game captain",
       "selectTitle": "Game captain",
@@ -933,18 +929,8 @@
       "deleteSanctionEvent": "Delete this sanction event?",
       "deleteEvent": "Delete this {{type}} event?",
       "deleteLineupEvent": "Delete this lineup event?",
-      "setStart": "Set start",
-      "setEnd": "Set end",
       "excSubstitution": "Exc. substitution",
-      "excSub": "Exc. sub",
-      "delaySanction": "Delay sanction",
-      "rally": "Rally",
-      "decision": "Decision",
-      "pointCancelled": "Point cancelled",
-      "lineupChanged": "Lineup chg",
-      "liberoExchShort": "Libero exch",
-      "liberoRedesShort": "Libero redes",
-      "disqualifShort": "Disqualif."
+      "delaySanction": "Delay sanction"
     },
     "deviceDisconnected": "{{device}} disconnected",
     "pins": {
@@ -1250,8 +1236,7 @@
       "titleDisqualified": "Disqualified - cannot play rest of match",
       "titleExceptional": "Exceptionally substituted - cannot play rest of match",
       "titleExpelled": "Expelled - cannot play this set",
-      "titleCannotReenter": "Cannot re-enter",
-      "noEventsFound": "No events found"
+      "titleCannotReenter": "Cannot re-enter"
     }
   },
   "settings": {
@@ -5825,6 +5810,68 @@
       "wrong_server": "Wrong server",
       "officials_mistake": "Officials' mistake",
       "other": "Other"
+    }
+  },
+  "history": {
+    "menu": "History",
+    "title": "History",
+    "tab": {
+      "history": "History",
+      "setInfo": "Set information"
+    },
+    "filter": {
+      "set": "Set",
+      "allSets": "All sets",
+      "infoFor": "Information related to",
+      "wholeMatch": "Whole match"
+    },
+    "search": "Search",
+    "searchPlaceholder": "Search the history",
+    "libero": "Libero",
+    "lineupHint": "Line-ups after each point, positions I to VI; L = libero.",
+    "scoreHint": "Scores are written with the team concerned first, as on the scoresheet.",
+    "col": {
+      "time": "Time",
+      "what": "What",
+      "lineupOf": "Line-up {{letter}}",
+      "set": "Set",
+      "score": "Score",
+      "scoreTitle": "The team concerned first, as on the scoresheet",
+      "teamAB": "A/B",
+      "team": "Team",
+      "in": "No. in",
+      "out": "No. out",
+      "scoreIn": "Score in",
+      "scoreOut": "Score out",
+      "number": "No."
+    },
+    "sanctionColumn": {
+      "W": "W",
+      "P": "P",
+      "E": "E",
+      "D": "D"
+    },
+    "section": {
+      "injuries": "Injuries and exceptional substitutions"
+    },
+    "improperRequest": "Improper request: Team {{team}}, set {{set}}, {{score}}",
+    "empty": {
+      "events": "Nothing recorded yet.",
+      "search": "No entry matches your search.",
+      "substitutions": "No substitutions.",
+      "sanctions": "No sanctions.",
+      "injuries": "None.",
+      "timeouts": "No time-outs."
+    },
+    "what": {
+      "matchStart": "Match start",
+      "setStart": "Set {{n}} start",
+      "rallyStart": "Rally starts",
+      "rotation": "Rotation of {{team}}",
+      "lineupUpdate": "Line-up of {{team}} updated",
+      "liberoFrontRow": "Libero #{{libero}} out at the front row, #{{player}} in",
+      "exceptional": "Exceptional substitution: #{{in}} in for #{{out}}",
+      "injurySub": "Substitution for injury: #{{in}} in for #{{out}}"
     }
   },
   "corrections": {

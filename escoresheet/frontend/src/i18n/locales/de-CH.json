@@ -764,7 +764,6 @@
     "menu": {
       "scoresheet": "eScoresheet",
       "menu": "Menü",
-      "showActionLog": "Aktionsprotokoll aazeige",
       "showSanctionsResults": "Sanktione und Resultat aazeige",
       "openRemarksRecording": "Bemerkige erfasse",
       "stopMatch": "Spiil abbräche",
@@ -778,10 +777,8 @@
       "refereePin": "Schiri-PIN",
       "gameNumber": "Spiilnummere",
       "helpVideoGuides": "Hilf & Video-Aaleitige",
-      "actionLog": "Aktionsprotokoll",
       "manualChanges": "Manuelli Änderige",
       "keyboardShortcuts": "Tastaturchürzel",
-      "searchEvents": "Ereignis sueche...",
       "sections": {
         "matchInfo": "Spiilinfo",
         "corrections": "Korrekture",
@@ -887,7 +884,6 @@
       "setEndFailed": "Satzend fählgschlage. Date lokal gspeicheret.",
       "forfaitFailed": "Forfait hät nöd chöne abgschlosse werde. Spielstand und Sätz i de manuelle Aapassige prüefe."
     },
-    "noEventsRecorded": "No kei Ereignis erfasst.",
     "captainOnCourt": {
       "designate": "Spiilcaptain",
       "selectTitle": "Spiilcaptain",
@@ -932,18 +928,8 @@
       "deleteSanctionEvent": "Das Sanktionsereignis lösche?",
       "deleteEvent": "Das {{type}}-Ereignis lösche?",
       "deleteLineupEvent": "Das Ufstelligs-Ereignis lösche?",
-      "setStart": "Satzstart",
-      "setEnd": "Satzend",
       "excSubstitution": "Usserord. Wächsel",
-      "excSub": "Usserord. Wächsel",
-      "delaySanction": "Verzögerigssanktion",
-      "rally": "Ballwächsel",
-      "decision": "Entscheid",
-      "pointCancelled": "Punkt annulliert",
-      "lineupChanged": "Ufstellig gänderet",
-      "liberoExchShort": "Libero-Tuusch",
-      "liberoRedesShort": "Libero neu",
-      "disqualifShort": "Disqualif."
+      "delaySanction": "Verzögerigssanktion"
     },
     "deviceDisconnected": "{{device}} trennt",
     "pins": {
@@ -1249,8 +1235,7 @@
       "titleDisqualified": "Disqualifiziert – darf im Rest vom Spiil nöd spiile",
       "titleExceptional": "Usserordentlich gwächslet – darf im Rest vom Spiil nöd spiile",
       "titleExpelled": "Usgschlosse – darf i däm Satz nöd spiile",
-      "titleCannotReenter": "Cha nöd wieder ine",
-      "noEventsFound": "Kei Ereignis gfunde"
+      "titleCannotReenter": "Cha nöd wieder ine"
     }
   },
   "settings": {
@@ -5819,6 +5804,68 @@
       "wrong_server": "Falschi Ufschlägerin / falsche Ufschläger",
       "officials_mistake": "Fähler vo de Offizielle",
       "other": "Öppis anders"
+    }
+  },
+  "history": {
+    "menu": "Verlauf",
+    "title": "Verlauf",
+    "tab": {
+      "history": "Verlauf",
+      "setInfo": "Satzinfos"
+    },
+    "filter": {
+      "set": "Satz",
+      "allSets": "Alli Sätz",
+      "infoFor": "Infos zu",
+      "wholeMatch": "Ganzes Spiil"
+    },
+    "search": "Sueche",
+    "searchPlaceholder": "Verlauf durchsueche",
+    "libero": "Libero",
+    "lineupHint": "Ufstellige nach jedem Punkt, Positione I bis VI; L = Libero.",
+    "scoreHint": "Spielständ stönd mit em betroffene Team zersch, wie uf em Matchblatt.",
+    "col": {
+      "time": "Ziit",
+      "what": "Was",
+      "lineupOf": "Ufstellig {{letter}}",
+      "set": "Satz",
+      "score": "Stand",
+      "scoreTitle": "S betroffene Team zersch, wie uf em Matchblatt",
+      "teamAB": "A/B",
+      "team": "Team",
+      "in": "Nr. ine",
+      "out": "Nr. use",
+      "scoreIn": "Stand ine",
+      "scoreOut": "Stand use",
+      "number": "Nr."
+    },
+    "sanctionColumn": {
+      "W": "W",
+      "P": "P",
+      "E": "E",
+      "D": "D"
+    },
+    "section": {
+      "injuries": "Verletzige und usserordentlichi Wächsel"
+    },
+    "improperRequest": "Nicht ordnungsgemässe Antrag: Team {{team}}, Satz {{set}}, {{score}}",
+    "empty": {
+      "events": "No nüt erfasst.",
+      "search": "Kein Iitrag passt zu dinere Suechi.",
+      "substitutions": "Kei Wächsel.",
+      "sanctions": "Kei Sanktione.",
+      "injuries": "Keini.",
+      "timeouts": "Kei Timeouts."
+    },
+    "what": {
+      "matchStart": "Spiilbeginn",
+      "setStart": "Beginn Satz {{n}}",
+      "rallyStart": "Ballwächsel fangt aa",
+      "rotation": "Rotation vo {{team}}",
+      "lineupUpdate": "Ufstellig vo {{team}} aktualisiert",
+      "liberoFrontRow": "Libero #{{libero}} use a de Vorderreihe, #{{player}} ine",
+      "exceptional": "Usserordentliche Wächsel: #{{in}} für #{{out}}",
+      "injurySub": "Wächsel wäge Verletzig: #{{in}} für #{{out}}"
     }
   },
   "corrections": {
