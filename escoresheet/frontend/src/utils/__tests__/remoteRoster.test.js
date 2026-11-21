@@ -4,6 +4,7 @@ import {
   connectionPinsSyncJob,
   fetchPendingRoster,
   clearPendingRosterJob,
+  pendingClearDecision,
   rosterGoesToRelay,
   isKnownDob,
   scorerIdentified,
@@ -78,7 +79,37 @@ describe('fetchPendingRoster', () => {
 describe('clearPendingRosterJob', () => {
   it('nulls only that team\'s pending roster (connections is merged on the server)', () => {
     expect(clearPendingRosterJob('m1', 'away').payload).toEqual({ id: 'm1', connections: { pending_away_roster: null } })
+    expect(clearPendingRosterJob('m1', 'away').onlyIfPending).toBeUndefined()
     expect(() => clearPendingRosterJob('m1', 'x')).toThrow()
+  })
+
+  // 21.11.2026: a team that uploads again before the clear is sent keeps its new roster
+  it('with the upload accepted or rejected: names it, outside the payload the server gets', () => {
+    const job = clearPendingRosterJob('m1', 'home', { players: [], bench: [], timestamp: '2026-11-21T10:00:00.000Z' })
+    expect(job.payload).toEqual({ id: 'm1', connections: { pending_home_roster: null } })
+    expect(job.onlyIfPending).toMatchObject({ key: 'pending_home_roster', version: '2026-11-21T10:00:00.000Z' })
+    expect(typeof job.onlyIfPending.fp).toBe('string')
+  })
+})
+
+describe('pendingClearDecision', () => {
+  const roster = (timestamp, lastName = 'Example') => ({ players: [{ number: 4, firstName: 'A', lastName }], bench: [], timestamp })
+  const job = clearPendingRosterJob('m1', 'home', roster('t1'))
+
+  it('kept while the server has that upload; left out for a newer one, none, or a row that could not be read', () => {
+    expect(pendingClearDecision(job, { connections: { pending_home_roster: roster('t1') } })).toEqual({ keep: true, key: 'pending_home_roster', only: true })
+    expect(pendingClearDecision(job, { connections: { pending_home_roster: roster('t2', 'Newer') } }).keep).toBe(false)
+    expect(pendingClearDecision(job, { connections: { pending_home_roster: null } }).keep).toBe(false)
+    expect(pendingClearDecision(job, { connections: {} }).keep).toBe(false)
+    expect(pendingClearDecision(job, null).keep).toBe(false)
+    expect(pendingClearDecision(job, undefined).keep).toBe(false)
+  })
+
+  it('other jobs are not touched; a job with more to send is not only the clear', () => {
+    expect(pendingClearDecision(clearPendingRosterJob('m1', 'home'), undefined)).toEqual({ keep: true, key: null, only: false })
+    expect(pendingClearDecision({ resource: 'match', action: 'update', payload: { id: 'm1', status: 'live' } }, null).key).toBeNull()
+    const more = { ...job, payload: { ...job.payload, connections: { pending_home_roster: null, referee_enabled: true } } }
+    expect(pendingClearDecision(more, undefined)).toEqual({ keep: false, key: 'pending_home_roster', only: false })
   })
 })
 

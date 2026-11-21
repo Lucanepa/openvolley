@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { startSentRosterWatch, SENT_ROSTER_POLL_MS, SENT_ROSTER_MIN_GAP_MS } from '../useSentRosterRefresh'
+import { startSentRosterWatch, SENT_ROSTER_POLL_MS, SENT_ROSTER_MIN_GAP_MS, REMOTE_PANEL_CHECK_MS } from '../useSentRosterRefresh'
 
 // A roster sent while Match Setup is open (17.11.2026): asked again on a
 // timer and when the screen comes back, never offline, hidden or twice at once
@@ -97,5 +97,35 @@ describe('startSentRosterWatch', () => {
     await vi.advanceTimersByTimeAsync(SENT_ROSTER_POLL_MS)
     expect(refresh).toHaveBeenCalledTimes(3)
     stop()
+  })
+})
+
+// Match Setup's Remote panel (21.11.2026): the same watch, every 30 s
+describe('the Remote panel\'s own check', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('asks every REMOTE_PANEL_CHECK_MS (30 s), never offline', async () => {
+    expect(REMOTE_PANEL_CHECK_MS).toBe(30 * 1000)
+    const win = new EventTarget()
+    const doc = new EventTarget()
+    doc.visibilityState = 'visible'
+    const state = { online: true }
+    const calls = []
+    const stop = startSentRosterWatch({ refresh: async () => { calls.push(Date.now()) }, intervalMs: REMOTE_PANEL_CHECK_MS, win, doc, isOnline: () => state.online })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(REMOTE_PANEL_CHECK_MS)
+    expect(calls).toHaveLength(2)
+    state.online = false
+    await vi.advanceTimersByTimeAsync(REMOTE_PANEL_CHECK_MS * 2)
+    expect(calls).toHaveLength(2)
+    state.online = true
+    win.dispatchEvent(new Event('online'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls).toHaveLength(3)
+    stop()
+    await vi.advanceTimersByTimeAsync(REMOTE_PANEL_CHECK_MS * 2)
+    expect(calls).toHaveLength(3)
   })
 })

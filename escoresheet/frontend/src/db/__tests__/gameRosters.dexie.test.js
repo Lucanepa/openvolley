@@ -130,6 +130,22 @@ describe('sent game rosters on the device', () => {
     expect(await db.game_rosters.get('1|home')).toBeUndefined()
   })
 
+  // 21.11.2026: the team sent a new version while the scorer answered the
+  // replace question; Accept of the old one must not spend the new one
+  it('Accept of a version the device has replaced since: the newer one stays offered, the server is not told', async () => {
+    await storeGameRosters({ games: [], rosters: [roster('1', 'home')] }, 'u1')
+    const old = await db.game_rosters.get('1|home')
+    await storeGameRosters({ games: [{ game_number: '1' }], rosters: [roster('1', 'home', { updated_at: '2026-11-21T10:00:00.000Z' })] }, 'u1')
+    markGameRosterUsed.mockResolvedValue({ data: { used: true }, error: null, status: 200 })
+    await markGameRosterAccepted(old)
+    await flushUsedGameRosters({ online: true })
+    const now = await db.game_rosters.get('1|home')
+    expect(now.updatedAt).toBe('2026-11-21T10:00:00.000Z')
+    expect(now.usedPending).toBeUndefined()
+    expect(markGameRosterUsed).not.toHaveBeenCalled()
+    expect(offeredSentRosters([now], { status: 'setup', sentRosterUsed: { home: old.updatedAt } }, 'u1').home).toEqual(now)
+  })
+
   it('a newer version replaces an accepted one waiting to be told', async () => {
     await storeGameRosters({ games: [], rosters: [roster('1', 'home')] }, 'u1')
     await db.game_rosters.update('1|home', { usedPending: true })

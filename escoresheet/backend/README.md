@@ -1213,7 +1213,7 @@ The upload PINs reach the server with the match: Match Setup's Create match
 sends the full `connection_pins` (referee, benches, both upload PINs) with the
 match insert, and a regenerated upload PIN through the sync queue, stored as
 HMACs ("PINs at rest"). The roster lands in `connections.pending_{team}_roster`
-of the match row; the scorer reads it with "Search for roster" (its own match
+of the match row; the scorer reads it with "Check server for rosters" (its own match
 row, by `external_id`), and Accept / Reject clears it on the server. The
 Upload Roster app calls the relay's `PATCH /api/match/:id` only on a LAN
 relay: this backend has no `PATCH /api/match/:id` route.
