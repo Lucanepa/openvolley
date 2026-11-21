@@ -276,7 +276,8 @@ function handleRequest(req, res) {
     return
   }
   
-  // Handle CORS preflight
+  // Handle CORS preflight (the scoreboard codes answer their own: CORS *)
+  if (req.method === 'OPTIONS' && urlPath.startsWith('/api/display/') && relay.handleApiRequest(req, res, req.url)) return
   if (req.method === 'OPTIONS') {
     res.writeHead(200)
     res.end()

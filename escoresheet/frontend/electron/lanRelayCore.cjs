@@ -1207,6 +1207,42 @@ function readSignBody(req, limit) {
   })
 }
 
+/**
+ * Read at most `limit` bytes of a body as text and stop: { text } or { error: status }.
+ * Never buffers more than the cap.
+ */
+function readTextBody(req, limit) {
+  return new Promise((resolve) => {
+    const declared = Number(req.headers && req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > limit) {
+      req.resume()
+      resolve({ error: 413 })
+      return
+    }
+    const chunks = []
+    let size = 0
+    let done = false
+    const finish = (r) => { if (!done) { done = true; resolve(r) } }
+    req.on('data', (chunk) => {
+      if (done) return
+      size += chunk.length
+      if (size > limit) {
+        chunks.length = 0
+        finish({ error: 413 })
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      const text = typeof Buffer !== 'undefined' && chunks.every((c) => typeof c !== 'string')
+        ? Buffer.concat(chunks).toString('utf8')
+        : chunks.map(String).join('')
+      finish({ text })
+    })
+    req.on('error', () => finish({ error: 400 }))
+  })
+}
+
 const isJsonRequest = (req) => /^application\/json\b/i.test(String((req.headers && req.headers['content-type']) || ''))
 
 // --- Bench requests ----------------------------------------------------------
@@ -1518,6 +1554,9 @@ function createLanRelay(options = {}) {
   const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
   const signCore = options.signCore || null
   const pairCore = options.pairCore || null
+  // Scoreboard codes (docs/scoreboard-code-spec.md): ./displayCodeCore.cjs,
+  // passed like the pair core; it needs the sign core's SHA-256
+  const displayCore = options.displayCore || null
   const isLocalAddr = options.isLocal || isLoopbackAddress
   // Wrong PINs per match from every address (MATCH_PIN_FAILURE_LIMIT)
   const matchPinFailures = createFailureCounter({ windowMs: MATCH_PIN_WINDOW_MS, max: options.matchPinFailureLimit ?? MATCH_PIN_FAILURE_LIMIT })
@@ -1553,6 +1592,17 @@ function createLanRelay(options = {}) {
   const allowedHosts = (options.allowedHosts || []).map((h) => String(h).toLowerCase())
   let signSessions = null // created on the first /api/sign/* request
   let pairSessions = null // created on the first /api/pair/* request
+  // The scoreboard codes of the rooms (hash -> room only); its sweeper starts with the first code
+  const displayCodes = displayCore && (options.displayOptions?.sha256 || signCore)
+    ? displayCore.createDisplayCodes({
+      via: 'lan',
+      sha256: signCore ? signCore.sha256Hex : undefined,
+      log: (line) => log.log(`[Display] ${line}`),
+      onEnd: (room, hash, reason) => onCodeEnd(room, hash, reason),
+      ...(options.displayOptions || {}),
+    })
+    : null
+  const codeFollowers = new Map() // code hash -> Set<ws> that follow its room by it
 
   const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
   const subscriptions = new Map() // matchId -> Set<ws>
@@ -1647,11 +1697,16 @@ function createLanRelay(options = {}) {
     if (!subs || !bundle) return 0
     let full = null
     let summary = null
+    let publicSummary = null
     let sent = 0
     for (const client of subs) {
       if (client === excludeWs || client.readyState !== 1) continue
       let text
-      if (hasAccess(client, matchId, bundle)) {
+      if (followsByCode(client, matchId)) {
+        // a board that came by a scoreboard code: the public live state only
+        publicSummary = publicSummary || JSON.stringify(codeView(matchDataMessage(type, matchId, bundle, scoreboardTs, 'summary')))
+        text = publicSummary
+      } else if (hasAccess(client, matchId, bundle)) {
         full = full || JSON.stringify(matchDataMessage(type, matchId, bundle, scoreboardTs, 'full'))
         text = full
       } else {
@@ -1754,6 +1809,7 @@ function createLanRelay(options = {}) {
       access: new Map(), // room key -> { pin, verified }: the PIN offered in subscribe-match
       scorerDevice: null, // the device its syncs named with a claim (see noteScorer)
       display: null, // a display's announcement { settingsUrl, at } (subscribe-match device 'display')
+      codeRooms: new Map(), // room key -> code hash: the rooms it follows by a scoreboard code
     }
     clients.set(ws, meta)
     watch(ws)
@@ -1773,6 +1829,7 @@ function createLanRelay(options = {}) {
       }
     }
     clients.delete(ws)
+    for (const hash of meta.codeRooms.values()) unfollowCode(ws, hash)
     benchLimiter.forget(meta.id)
     messageLimiter.forget(meta.id)
     if (meta.display) for (const id of meta.subscribed) noteDisplays(id)
@@ -1928,6 +1985,7 @@ function createLanRelay(options = {}) {
   }
 
   function dropRoom(matchId) {
+    if (displayCodes) displayCodes.dropRoom(matchId)
     subscriptions.delete(matchId)
     store.delete(matchId)
     rooms.delete(matchId)
@@ -2174,6 +2232,8 @@ function createLanRelay(options = {}) {
   function deleteMatch(matchId) {
     // Read the subscribers BEFORE dropping them, so they actually get told.
     sendToSubscribers(matchId, { type: 'match-deleted', matchId })
+    // its scoreboard code ends (the boards that followed by it are told)
+    if (displayCodes) displayCodes.dropRoom(matchId)
     const subs = subscriptions.get(matchId)
     if (subs) for (const ws of subs) clients.get(ws)?.subscribed.delete(matchId)
     subscriptions.delete(matchId)
@@ -2351,6 +2411,11 @@ function createLanRelay(options = {}) {
   }
 
   function onSubscribe(ws, msg) {
+    // subscribe-match { code }: a scoreboard follows by the scorer's code
+    if (msg.code !== undefined && msg.code !== null && (msg.matchId === undefined || msg.matchId === null || msg.matchId === '')) {
+      onCodeSubscribe(ws, msg)
+      return
+    }
     const matchId = normalizeMatchId(msg.matchId)
     if (!matchId) {
       sendError(ws, 'bad-request', 'subscribe-match needs matchId')
@@ -2371,7 +2436,8 @@ function createLanRelay(options = {}) {
       offerPin(ws, meta, matchId, msg.pin, DEVICE_ROLES.includes(device) ? device : null)
     }
     const stored = store.get(matchId)
-    if (stored) send(ws, matchDataMessage('match-full-data', matchId, stored, undefined, hasAccess(ws, matchId, stored) ? 'full' : 'summary'))
+    if (stored && followsByCode(ws, matchId)) send(ws, codeView(matchDataMessage('match-full-data', matchId, stored, undefined, 'summary')))
+    else if (stored) send(ws, matchDataMessage('match-full-data', matchId, stored, undefined, hasAccess(ws, matchId, stored) ? 'full' : 'summary'))
     if (stored) {
       // A bench: its team's requests; a referee: the open time-out / substitution requests
       const role = roleOf(ws, matchId, stored)
@@ -2513,6 +2579,10 @@ function createLanRelay(options = {}) {
     }
     const meta = clients.get(ws)
     if (meta) meta.subscribed.delete(matchId)
+    if (meta && meta.codeRooms.has(matchId)) {
+      unfollowCode(ws, meta.codeRooms.get(matchId))
+      meta.codeRooms.delete(matchId)
+    }
     if (meta && meta.display) noteDisplays(matchId)
   }
 
@@ -2554,7 +2624,100 @@ function createLanRelay(options = {}) {
     if (!msg.liveState || typeof msg.liveState !== 'object') return
     const existing = store.get(matchId)
     if (existing) existing.liveState = msg.liveState
-    sendToSubscribers(matchId, { type: 'live-state-update', matchId, liveState: msg.liveState }, ws)
+    const update = { type: 'live-state-update', matchId, liveState: msg.liveState }
+    let publicText = null
+    for (const client of subscriptions.get(matchId) || []) {
+      if (client === ws || client.readyState !== 1) continue
+      // a board that came by a scoreboard code: the public live state only
+      const text = followsByCode(client, matchId)
+        ? (publicText = publicText || JSON.stringify({ ...update, liveState: displayCore.publicLiveState(msg.liveState) }))
+        : null
+      if (text) {
+        try { client.send(text) } catch (err) { log.error('[Relay] send to subscriber failed:', err && err.message) }
+      } else {
+        send(client, update)
+      }
+    }
+  }
+
+  // --- Scoreboard codes (docs/scoreboard-code-spec.md) -----------------------
+  // The scorer's socket sets its room's code (display-code-set); a board
+  // follows by it (subscribe-match { code }) and gets the public summary and
+  // live state only. The code table (./displayCodeCore.cjs) keeps hashes only.
+
+  function followsByCode(ws, matchId) {
+    const meta = clients.get(ws)
+    return !!meta && meta.codeRooms.has(matchId)
+  }
+
+  /** A match-full-data / match-data-update for a code follower: its live state public. */
+  function codeView(msg) {
+    const out = { ...msg }
+    if (out.liveState !== undefined) out.liveState = displayCore.publicLiveState(out.liveState)
+    if (out.data && out.data.liveState !== undefined) out.data = { ...out.data, liveState: displayCore.publicLiveState(out.data.liveState) }
+    return out
+  }
+
+  function unfollowCode(ws, hash) {
+    const set = codeFollowers.get(hash)
+    if (!set) return
+    set.delete(ws)
+    if (set.size === 0) codeFollowers.delete(hash)
+  }
+
+  function onCodeSet(ws, msg) {
+    const key = resolveKey(ws, msg.matchId)
+    const matchId = key || normalizeMatchId(msg.matchId)
+    if (!displayCodes) {
+      send(ws, displayCore ? displayCore.codeStateMessage(matchId, { ok: false, reason: 'busy' }) : { type: 'display-code-state', matchId, active: false, reason: 'busy' })
+      return
+    }
+    if (!key || !isOwner(ws, key)) {
+      send(ws, displayCore.codeStateMessage(matchId, { ok: false, reason: 'not-match-owner' }))
+      return
+    }
+    const meta = clients.get(ws)
+    const r = displayCodes.set({ room: key, code: msg.code, issuedAt: msg.issuedAt, owner: meta ? meta.id : 'ws' })
+    send(ws, displayCore.codeStateMessage(key, r))
+  }
+
+  function onCodeSubscribe(ws, msg) {
+    const meta = clients.get(ws)
+    if (!displayCodes || !meta) {
+      send(ws, { type: 'display-code', ok: false, reason: 'not-found' })
+      return
+    }
+    const r = displayCodes.resolve(msg.code, { ipKey: stripV4Prefix(meta.ip) || `ws:${meta.id}` })
+    send(ws, displayCore.codeAnswerMessage(r))
+    if (!r.ok) return
+    const before = meta.codeRooms.get(r.room)
+    if (before && before !== r.hash) unfollowCode(ws, before)
+    meta.codeRooms.set(r.room, r.hash)
+    if (!codeFollowers.has(r.hash)) codeFollowers.set(r.hash, new Set())
+    codeFollowers.get(r.hash).add(ws)
+    // as a PIN-less display subscribing to the room (a PIN next to a code is never offered)
+    onSubscribe(ws, { type: 'subscribe-match', matchId: r.room, device: DISPLAY_DEVICE, settingsUrl: msg.settingsUrl })
+  }
+
+  /** A code ended (replaced, revoked, expired, its room dropped): its boards are told and leave the room. */
+  function onCodeEnd(room, hash, reason) {
+    const set = codeFollowers.get(hash)
+    codeFollowers.delete(hash)
+    for (const ws of set || []) {
+      const meta = clients.get(ws)
+      if (!meta || meta.codeRooms.get(room) !== hash) continue
+      meta.codeRooms.delete(room)
+      const subs = subscriptions.get(room)
+      if (subs) {
+        subs.delete(ws)
+        if (subs.size === 0) subscriptions.delete(room)
+      }
+      meta.subscribed.delete(room)
+      send(ws, displayCore.codeEndedMessage(room))
+      if (meta.display) noteDisplays(room)
+    }
+    // run out: the scorer's sockets hear it (a revoke or a new code was answered already)
+    if (reason === 'expired') for (const owner of ownersOf(room)) send(owner, displayCore.codeStateMessage(room, { ok: false, reason: 'expired' }))
   }
 
   function onDelete(ws, msg) {
@@ -2622,6 +2785,7 @@ function createLanRelay(options = {}) {
       case 'sync-match-data': onSync(ws, msg); break
       case 'subscribe-match': onSubscribe(ws, msg); break
       case 'unsubscribe-match': onUnsubscribe(ws, msg); break
+      case 'display-code-set': onCodeSet(ws, msg); break
       case 'match-action': onMatchAction(ws, msg); break
       case 'live-state-update': onLiveState(ws, msg); break
       case 'delete-match': onDelete(ws, msg); break
@@ -3003,6 +3167,37 @@ function createLanRelay(options = {}) {
     if (r.status !== 499) sendSign(res, r)
   }
 
+  // --- Scoreboard codes over HTTP ----------------------------------------------
+
+  function sendDisplay(res, r) {
+    if (res.headersSent || res.writableEnded) return
+    const headers = { 'Content-Type': 'application/json', ...(r.headers || displayCore.DISPLAY_API_HEADERS) }
+    if (r.status === 413) headers.Connection = 'close'
+    res.writeHead(r.status, headers)
+    res.end(JSON.stringify(r.body))
+  }
+
+  /** POST /api/display/lookup | live. */
+  async function handleDisplay(req, res, endpoint, ip) {
+    if (!displayCodes) {
+      req.resume()
+      return sendDisplay(res, displayCore.displayError(503, 'OV_DISPLAY_UNAVAILABLE'))
+    }
+    const read = await readTextBody(req, displayCore.BODY_MAX)
+    if (read.error === 413) return sendDisplay(res, displayCore.displayError(413, 'OV_DISPLAY_TOO_LARGE'))
+    if (read.error) return sendDisplay(res, displayCore.displayError(400, 'OV_DISPLAY_BAD_REQUEST'))
+    const r = displayCodes.http(endpoint, {
+      contentType: req.headers && req.headers['content-type'],
+      text: read.text,
+      ipKey: stripV4Prefix(ip),
+      summaryOf: (room) => {
+        const stored = store.get(room)
+        return stored ? relaySummaryBundle(stored) : null
+      },
+    })
+    sendDisplay(res, r)
+  }
+
   /**
    * Serve the relay-owned endpoints. `url` is the full '/api/...' path with
    * query (the Vite middleware strips '/api', so it passes '/api' + req.url).
@@ -3013,10 +3208,12 @@ function createLanRelay(options = {}) {
     const path = parsed.pathname
     const method = req.method
     const ip = (req.socket && req.socket.remoteAddress) || 'unknown'
+    // Scoreboard codes: read-only, no credentials, CORS * (third-party boards call them)
+    const displayEndpoint = displayCore ? displayCore.displayEndpointOf(path) : null
     // Host on every relay route, Origin on the ones that change something
     // (a page elsewhere must not drive the relay through a visitor's browser)
     if (path.startsWith('/api/')) {
-      const readOnly = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
+      const readOnly = method === 'GET' || method === 'HEAD' || method === 'OPTIONS' || !!displayEndpoint
       const refused = relayRequestRefusal(readOnly ? { headers: { host: req.headers && req.headers.host } } : req, allowedHosts)
       if (refused) {
         sendJson(res, 403, { success: false, error: refused === 'host-not-allowed' ? 'Host not allowed' : 'Origin not allowed' })
@@ -3027,6 +3224,21 @@ function createLanRelay(options = {}) {
     const reply = (p) => Promise.resolve().then(typeof p === 'function' ? p : () => p)
       .then((r) => sendJson(res, r.status, r.body))
       .catch((err) => sendJson(res, err.status || 500, { success: false, error: err.message || 'Internal error' }))
+
+    if (displayEndpoint && method === 'OPTIONS') {
+      if (!res.headersSent) {
+        res.writeHead(204, displayCore.DISPLAY_PREFLIGHT_HEADERS)
+        res.end()
+      }
+      return true
+    }
+    if (displayEndpoint && method === 'POST') {
+      handleDisplay(req, res, displayEndpoint, ip).catch((err) => {
+        log.error('[Display] request failed:', err && err.message)
+        sendDisplay(res, displayCore.displayError(500, 'OV_DISPLAY_BAD_REQUEST'))
+      })
+      return true
+    }
 
     const pair = PAIR_ENDPOINT_RE.exec(path)
     if (pair && method === 'POST') {
@@ -3135,6 +3347,8 @@ function createLanRelay(options = {}) {
     signStats: () => (signSessions ? signSessions.stats() : null),
     /** Pair session counts (tests): null before the first pair request. */
     pairStats: () => (pairSessions ? pairSessions.stats() : null),
+    /** Scoreboard code counts (tests): null without the code core. */
+    displayStats: () => (displayCodes ? displayCodes.stats() : null),
     /**
      * Stop the relay's timers: the sign sessions (sweeper, held waits) and the
      * rate limiters it created. A later sign request starts fresh sessions.
@@ -3144,6 +3358,7 @@ function createLanRelay(options = {}) {
       signSessions = null
       if (pairSessions) pairSessions.dispose()
       pairSessions = null
+      if (displayCodes) displayCodes.dispose()
       for (const limiter of ownLimiters) limiter.dispose()
       for (const p of pending.values()) clearTimeout(p.timer)
       if (heartbeatTimer) clearInterval(heartbeatTimer)
