@@ -65,14 +65,29 @@ export function lineupAcceptBlock(entry, events, setIndex) {
  * request is closed (accepted: "recorded" on the bench) once the team has a
  * line-up of the set, as sent, changed by the scorer or typed by hand; the
  * bench is never told it was entered otherwise (owner 2026-11-09).
+ *
+ * An answer that found no connection (`unsent`: the card says so) is kept and
+ * goes by itself once the scorer is back: the relay replays every open
+ * request to the scorer's socket right after that socket proved the match
+ * again (backend replayBenchRequests, the LAN relay the same), the first
+ * moment the relay takes a bench-response from it (requireMatchOwner; the
+ * socket's open comes before the match is proved). The bench then hears the
+ * answer and the note goes; a tap on the card still answers as before.
  */
 export function useBenchRequestBridge({ relayKey, events, setIndex }) {
   const [queue, dispatch] = useReducer(scorerQueueReducer, [])
   const [donePairs, setDonePairs] = useState({}) // request id -> pair indexes recorded (own keys only, read with Object.hasOwn)
   const [unsent, setUnsent] = useState({}) // request id -> true: the answer found no connection
   const sinceRef = useRef(new Map()) // request id -> max event seq when it arrived
+  const heldRef = useRef(new Map()) // request id -> { team, status, reason }: the answer that found no connection
   const eventsRef = useRef(events)
   eventsRef.current = events
+
+  // The held answer of a request is not wanted any more (answered elsewhere, cancelled)
+  const forget = useCallback((id) => {
+    if (!heldRef.current.delete(id)) return
+    setUnsent((u) => (Object.hasOwn(u, id) ? { ...u, [id]: false } : u))
+  }, [])
 
   const respond = useCallback((team, id, status, reason = null) => {
     if (!relayKey) return false
@@ -81,11 +96,17 @@ export function useBenchRequestBridge({ relayKey, events, setIndex }) {
       if (ok) {
         dispatch({ type: 'answered', team, id })
         sinceRef.current.delete(id)
+        heldRef.current.delete(id)
+      } else {
+        heldRef.current.set(id, { team, status, reason })
       }
       setUnsent((u) => ({ ...u, [id]: !ok }))
     }
     return ok
   }, [relayKey])
+
+  // Another match: its held answers go with it
+  useEffect(() => () => { heldRef.current.clear() }, [relayKey])
 
   useEffect(() => {
     if (!relayKey) return undefined
@@ -94,20 +115,30 @@ export function useBenchRequestBridge({ relayKey, events, setIndex }) {
       if (m.type === 'bench-request') {
         const r = m.request
         if (!r?.id) return
+        if (r.kind === 'cancel') forget(r.cancelId)
         if (r.kind !== 'cancel' && !sinceRef.current.has(r.id)) sinceRef.current.set(r.id, maxSeq(eventsRef.current))
         if (r.kind === 'lineup' && lineupClosed(eventsRef.current, m.team, r.setIndex)) {
-          // the scorer has the team's line-up (or the set started): closed as recorded
-          scorerRelay.send({ type: 'bench-response', matchId: relayKey, team: m.team, id: r.id, status: 'accepted' })
+          // the scorer has the team's line-up (or the set started): closed as
+          // recorded (a replayed one leaves the cards, a held answer with it)
+          respond(m.team, r.id, 'accepted')
           return
         }
         dispatch({ type: 'bench-request', message: m })
+        const held = r.kind !== 'cancel' ? heldRef.current.get(r.id) : null
+        if (held) {
+          // replayed to the socket that has just proved the match again: the
+          // answer the scorer gave without a connection goes now
+          respond(held.team, r.id, held.status, held.reason)
+          return
+        }
         if (r.kind !== 'cancel' && m.status === 'pending') scorerRelay.send({ type: 'bench-response', matchId: relayKey, team: m.team, id: r.id, status: 'seen' })
       } else if (m.type === 'bench-response' && m.status !== 'seen') {
         // answered on another of this match's scoreboards
+        forget(m.id)
         dispatch({ type: 'answered', team: m.team, id: m.id })
       }
     })
-  }, [relayKey])
+  }, [relayKey, respond, forget])
 
   // A set that is over takes its requests with it
   useEffect(() => {
