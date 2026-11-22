@@ -611,7 +611,14 @@
         "none": "Keine",
         "player": "Spiilcaptain: Spieler {{number}}",
         "enterFirst": "Chasch uswähle, sobald d Spieler iitreit sind",
-        "fromFirstRally": "Captain {{captain}} isch nöd i de Ufstellig: Spiilcaptain ab em erschte Ballwächsel"
+        "fromFirstRally": "Captain {{captain}} isch nöd i de Ufstellig: Spiilcaptain ab em erschte Ballwächsel",
+        "kept": "#{{n}} als Spiilcaptain bhalte, ab em erschte Ballwächsel"
+      },
+      "copy": {
+        "group": "Startufstellig vomene früenere Satz",
+        "lastSet": "Ufstellig letschte Satz",
+        "set": "Satz {{n}}",
+        "setTitle": "Startufstellig Satz {{n}}"
       },
       "easyLiberos": "Liberos (optional)",
       "easyLiberoInput": "Libero {{n}}",
@@ -908,7 +915,14 @@
       "designate": "Spiilcaptain",
       "selectTitle": "Spiilcaptain",
       "last": "Letschte Spiilcaptain",
-      "lastShort": "Zletscht"
+      "lastShort": "Zletscht",
+      "keep": "Als Spiilcaptain bhalte",
+      "keepHint": "Kei Nachfrog, solang die Person uf em Fäld isch",
+      "acting": "#{{n}} isch Spiilcaptain",
+      "captainOnCourt": "Captain #{{n}} isch uf em Fäld",
+      "kept": "Bhalte: #{{n}}",
+      "keptChip": "Spiilcaptain #{{n}}",
+      "autoNotice": "{{team}}: #{{n}} Spiilcaptain"
     },
     "duplicateTabTitle": "Matchblatt scho offe",
     "duplicateTabMessage": "S Matchblatt vo däm Spiil isch scho i emne andere Tab oder Browserfänschter offe. Füehr s nur i eim Tab, zum Datekonflikt vermeide: Schliess dä Tab, oder drück «I däm Tab wiiterfüehre», zum s Matchblatt da wiiterfüehre (de ander Tab füehrt s dänn nüme).",
@@ -6815,7 +6829,6 @@
       "send": "Ufstellig schicke",
       "net": "Netz",
       "players": "Spieler",
-      "asInSet": "Wie im Satz {{set}}",
       "noLiberos": "Liberos ({{numbers}}) ghöred nöd i d Ufstellig.",
       "gameCaptainHint": "Kapitän {{captain}} isch nöd i de Ufstellig: wer isch Spielkapitän uf em Feld?"
     },

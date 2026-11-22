@@ -47,7 +47,7 @@ const chip = (text) => [...dialog().querySelectorAll('*')].filter(e => e.textCon
 const confirmButton = () => [...dialog().querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm')
 
 // A live set without line-ups; captain #1 on both rosters of players 1-8
-async function openLineupA({ easy = false } = {}) {
+async function openLineupA({ easy = false, match = {} } = {}) {
   const home = await db.teams.add({ name: 'Home' })
   const away = await db.teams.add({ name: 'Away' })
   await db.players.bulkAdd([1, 2, 3, 4, 5, 6, 7, 8].flatMap(n => [
@@ -56,7 +56,8 @@ async function openLineupA({ easy = false } = {}) {
   ]))
   const matchId = await db.matches.add({
     homeTeamId: home, awayTeamId: away, status: 'live', test: true, ...(easy ? { easy: true } : {}),
-    firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away'
+    firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away',
+    ...match
   })
   await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
   await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: new Date(Date.now() - 60000).toISOString() })
@@ -140,5 +141,49 @@ describe('Line-up dialog: the game-captain choice', () => {
     expect(await db.events.where({ matchId, type: 'lineup' }).count()).toBe(0)
     expect(await db.events.where({ matchId, type: 'court_captain_designation' }).count()).toBe(0)
     expect((await db.matches.get(matchId)).homeCourtCaptain ?? null).toBeNull()
+  })
+})
+
+// "Keep as game captain" on (domain/gameCaptainKeep.js): a new set whose six
+// leave the team captain out but hold the kept player has him as the game
+// captain without asking (chosen in the picker already); None asks with the
+// Game captain dialog instead
+describe('Line-up dialog: the kept game captain', () => {
+  const gcDialog = () => [...document.querySelectorAll('[role=dialog]')].find(d => d.querySelector('[data-testid="game-captain-keep"]')) || null
+
+  it('the kept player among the six: chosen already, Confirm designates him (keep), no question after', async () => {
+    const matchId = await openLineupA({ match: { homeKeepCourtCaptain: true, homeRememberedCourtCaptain: 4 } })
+    await enter(['2', '3', '4', '5', '6', '7'])
+    const kept = picker().querySelector('[aria-label="Game captain: player 4"]')
+    expect(kept.getAttribute('aria-pressed')).toBe('true')
+    expect(picker().textContent).toContain('#4 kept as game captain')
+    await confirmAndWait(matchId)
+    const designations = await db.events.where({ matchId, type: 'court_captain_designation' }).toArray()
+    expect(designations).toHaveLength(1)
+    expect(designations[0].payload).toMatchObject({ team: 'home', playerNumber: 4, fromLineup: true, keep: true })
+    expect((await db.matches.get(matchId)).homeCourtCaptain).toBe(4)
+    expect(gcDialog()).toBeNull()
+  })
+
+  it('the kept player not among the six: nothing chosen, as without the switch', async () => {
+    const matchId = await openLineupA({ match: { homeKeepCourtCaptain: true, homeRememberedCourtCaptain: 8 } })
+    await enter(['2', '3', '4', '5', '6', '7'])
+    expect(picker().querySelector('[aria-pressed="true"]').textContent.trim()).toBe('None')
+    await confirmAndWait(matchId)
+    expect(await db.events.where({ matchId, type: 'court_captain_designation' }).count()).toBe(0)
+    // asked after the save, the switch shown on
+    await waitFor(() => expect(gcDialog()).toBeTruthy())
+    expect(gcDialog().querySelector('[data-testid="game-captain-keep-switch"]').getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('None instead of the kept player: no designation, the Game captain dialog asks', async () => {
+    const matchId = await openLineupA({ match: { homeKeepCourtCaptain: true, homeRememberedCourtCaptain: 4 } })
+    await enter(['2', '3', '4', '5', '6', '7'])
+    fireEvent.click(picker().querySelector('.lineup-gcapt__choice--none'))
+    await sleep(30)
+    expect(picker().querySelector('[aria-label="Game captain: player 4"]').getAttribute('aria-pressed')).toBe('false')
+    await confirmAndWait(matchId)
+    expect(await db.events.where({ matchId, type: 'court_captain_designation' }).count()).toBe(0)
+    await waitFor(() => expect(gcDialog()).toBeTruthy())
   })
 })

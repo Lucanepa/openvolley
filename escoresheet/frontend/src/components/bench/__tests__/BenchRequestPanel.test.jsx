@@ -132,7 +132,7 @@ describe('BenchRequestPanel', () => {
     expect(relay.sent[0].request).toMatchObject({ kind: 'substitution', pairs: [{ out: 7, in: 8 }, { out: 1, in: 9 }], gameCaptain: 8 })
   })
 
-  it('a best-of-3 decider (index 5) is set 3 on both sheets, its line-up offered "as in set 2"', () => {
+  it('a best-of-3 decider (index 5) is set 3 on both sheets, set 2\'s line-up offered as the last set\'s', () => {
     const lineup2 = { type: 'lineup', setIndex: 2, payload: { team: 'home', lineup: LU } }
     const data = base([lineup2], {
       match: { coinTossConfirmed: true, bestOf: 3 },
@@ -143,11 +143,39 @@ describe('BenchRequestPanel', () => {
     fireEvent.click(document.querySelector('[data-bench-request="lineup"]'))
     const dialog = screen.getByRole('dialog')
     expect(dialog.textContent).toContain('benchRequests.lineupSheet.title:{"set":3}')
-    const asIn = within(dialog).getByRole('button', { name: /benchRequests.lineupSheet.asInSet/ })
-    expect(asIn.textContent).toContain('{"set":2}')
+    const asIn = within(dialog).getByRole('button', { name: /scoreboard.lineupModal.copy.lastSet/ })
+    expect(asIn.getAttribute('data-copy-set')).toBe('2')
+    expect(asIn.getAttribute('title')).toContain('{"n":2}')
     fireEvent.click(asIn)
     fireEvent.click(dialog.querySelector('[data-game-captain="4"]'))
     fireEvent.click(dialog.querySelector('[data-bench-lineup-send]'))
     expect(relay.sent[0].request).toMatchObject({ kind: 'lineup', setIndex: 5, lineup: LU })
+  })
+
+  // owner 2026-11-22: as on the scorer's line-up dialog, the starting
+  // line-up of the other earlier sets beside the last set's
+  it('set 3: the last set\'s line-up and set 1 beside it, each its STARTING six', () => {
+    const LU1 = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 }
+    const LU2 = { I: 8, II: 9, III: 10, IV: 1, V: 2, VI: 3 }
+    const events = [
+      { type: 'lineup', setIndex: 1, seq: 1, payload: { team: 'home', lineup: LU1, isInitial: true } },
+      { type: 'point', setIndex: 1, seq: 2, payload: { team: 'home' } },
+      { type: 'lineup', setIndex: 1, seq: 2.1, payload: { team: 'home', lineup: { I: 2, II: 3, III: 4, IV: 5, V: 6, VI: 1 }, fromRotation: true } },
+      { type: 'lineup', setIndex: 2, seq: 3, payload: { team: 'home', lineup: LU2, isInitial: true } }
+    ]
+    const data = base(events, {
+      set: { index: 3, homePoints: 0, awayPoints: 0, finished: false },
+      allSets: [{ index: 1, finished: true }, { index: 2, finished: true }, { index: 3, finished: false }]
+    })
+    render(<BenchRequestPanel matchId="seed-1" team="home" data={data} players={players} />)
+    fireEvent.click(document.querySelector('[data-bench-request="lineup"]'))
+    const dialog = screen.getByRole('dialog')
+    const buttons = [...dialog.querySelectorAll('[data-lineup-copy] [data-copy-set]')]
+    expect(buttons.map((b) => b.getAttribute('data-copy-set'))).toEqual(['2', '1'])
+    expect(buttons[0].textContent).toContain('scoreboard.lineupModal.copy.lastSet')
+    fireEvent.click(buttons[1])
+    fireEvent.click(dialog.querySelector('[data-game-captain="4"]'))
+    fireEvent.click(dialog.querySelector('[data-bench-lineup-send]'))
+    expect(relay.sent[0].request).toMatchObject({ kind: 'lineup', setIndex: 3, lineup: LU1 })
   })
 })

@@ -124,6 +124,10 @@ import { useBenchRequestBridge, lineupAcceptBlock } from './scoreboard/useBenchR
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
 import { coveredLineupTeams, coveredLineupTeamsOf, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
+import GameCaptainDialog from './scoreboard/GameCaptainDialog.jsx'
+import { actingCourtCaptains, automaticGameCaptain, automaticDesignation, chosenGameCaptain, courtCaptainsCleared, courtCaptainsRestored, keepCourtCaptainField, keepsGameCaptain, keptGameCaptain, keepEdit } from '../domain/gameCaptainKeep'
+import { toast } from '../ui/uiStore.js'
+import { earlierStartingLineups } from '../domain/lineupCopy'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -135,7 +139,7 @@ import { DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
 import { freeStorageBytes, isStorageFullError, LOW_STORAGE_BYTES } from '../utils/storageSpace'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
-import { ArrowUpDown, ChevronDown, Cross, LayoutDashboard, Pointer } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Cross, LayoutDashboard, Pin, Pointer, RotateCcw } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
 import { preload, usePreloaded } from '../utils/preload'
 
@@ -4142,7 +4146,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // onCourt: the six just saved by the line-up modal, which `data` may not
   // show yet (it then read an empty court and asked for a game captain even
   // with the captain, or a chosen game captain, on court)
-  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey, onCourt = null) => {
+  // ask: open the dialog even when "Keep as game captain" would designate the
+  // kept player (the line-up dialog's game captain set to None on purpose)
+  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey, onCourt = null, { ask = false } = {}) => {
     // Check if manage captain on court is enabled
     if (!localManageCaptainOnCourt) return
 
@@ -4199,9 +4205,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // replaced, or the team captain came back and left again): a new one is
     // designated (FIVB 5.1.2). The dialog proposes the last game captain when
     // that player is on court (one tap); any player on court can be chosen.
+    // "Keep as game captain" on and the kept player on court: he is
+    // designated without the dialog (domain/gameCaptainKeep.js)
+    const kept = ask ? null : automaticGameCaptain({ match, team: teamKey, playersOnCourt })
+    if (kept != null) {
+      await designateKeptCaptainRef.current?.(teamKey, kept)
+      return
+    }
     console.log(`[CaptainOnCourt] Asking for a game captain for ${teamKey} - playersOnCourt:`, playersOnCourt, `captain #${captainNumberStr}`, `last #${rememberedCourtCaptain ?? '-'}`)
     setCaptainOnCourtModal({ team: teamKey })
   }, [localManageCaptainOnCourt, data, matchId, getTeamLineupState, syncLiveStateToSupabase, syncToReferee])
+
+  // The kept game captain designated without asking: the same
+  // 'court_captain_designation' event as a chosen one (auto: true), so the
+  // scoresheet, the referee and the benches follow and Undo takes it back,
+  // and a short notice instead of the dialog. One action per team at a time;
+  // checked again inside it (a substitution and the effect below can both
+  // ask for the same exit)
+  const designateKeptCaptainRef = useRef(null)
+  designateKeptCaptainRef.current = (teamKey, playerNumber) => runAction(`captainKept:${teamKey}`, async () => {
+    if (!matchId) return
+    const match = await db.matches.get(matchId)
+    if (!keepsGameCaptain(match, teamKey) || String(keptGameCaptain(match, teamKey)) !== String(playerNumber)) return
+    if (String(match?.[teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] ?? '') === String(playerNumber)) return
+    const { matchUpdate, payload } = automaticDesignation({ match, team: teamKey, playerNumber })
+    await db.matches.update(matchId, matchUpdate)
+    await logEventRef.current?.('court_captain_designation', payload)
+    const team = teamKey === 'home' ? data?.homeTeam : data?.awayTeam
+    const teamName = team?.shortName || team?.name || (teamKey === 'home' ? t('common.home', 'Home') : t('common.away', 'Away'))
+    deferUi(() => toast.info(t('scoreboard.captainOnCourt.autoNotice', { team: teamName, n: playerNumber, defaultValue: '{{team}}: #{{n}} game captain' }), { duration: 3000 }))
+  })
 
   // A game captain who left the court without a live action (a line-up
   // correction replaced him, owner 15.11): the team captain is off court too,
@@ -5751,10 +5784,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // team captain is off court and no acting game captain is among the six.
   // Once designated the role cannot be changed (FIVB 5.1.2: it lasts until
   // that player leaves the court, the team captain returns or the set ends).
+  // While "Keep as game captain" is on it stays, quiet, with the kept
+  // player's number ('kept'): the scorer turns the switch off there.
   const needsGameCaptain = (status) => !status.captainOnCourt && !status.courtCaptainOnCourt
+  const gameCaptainChipOf = (lineupSet, teamKey) => {
+    if (!lineupSet) return false
+    if (needsGameCaptain(captainOnCourtStatus[teamKey])) return 'needed'
+    return keptGameCaptain(data?.match, teamKey) != null ? 'kept' : false
+  }
   const gameCaptainChip = {
-    left: leftTeamLineupSet && needsGameCaptain(captainOnCourtStatus[leftIsHome ? 'home' : 'away']),
-    right: rightTeamLineupSet && needsGameCaptain(captainOnCourtStatus[leftIsHome ? 'away' : 'home'])
+    left: gameCaptainChipOf(leftTeamLineupSet, leftIsHome ? 'home' : 'away'),
+    right: gameCaptainChipOf(rightTeamLineupSet, leftIsHome ? 'away' : 'home')
   }
 
   // One side of the row above the court: the SERVE indicator (its label and
@@ -5860,10 +5900,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           {chip && (
             <button
               className="serve-side__chip"
+              data-game-captain-chip={chip}
               onClick={() => setCaptainOnCourtModal({ team: teamKey })}
-              style={GAME_CAPTAIN_CHIP}
+              aria-label={chip === 'kept' ? `${t('scoreboard.captainOnCourt.keep', 'Keep as game captain')}: #${keptGameCaptain(data?.match, teamKey)}` : undefined}
+              style={chip === 'kept' ? GAME_CAPTAIN_CHIP_KEPT : GAME_CAPTAIN_CHIP}
             >
-              {t('scoreboard.captainOnCourt.designate', 'Game captain')}
+              {chip === 'kept' ? (
+                <>
+                  <Pin size={14} aria-hidden="true" style={{ flex: 'none' }} />
+                  {t('scoreboard.captainOnCourt.keptChip', { n: keptGameCaptain(data?.match, teamKey), defaultValue: 'Game captain #{{n}}' })}
+                </>
+              ) : t('scoreboard.captainOnCourt.designate', 'Game captain')}
             </button>
           )}
         </div>
@@ -6284,10 +6331,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   reason: 'rotation_to_front_row'
                 }, { parentSeq: pointSeq })
 
-                // Check if the libero leaving is the court captain
+                // Check if the libero leaving is the court captain, or the
+                // team captain (a libero may be captain: he leaves the court
+                // at this rotation, a game captain is needed, FIVB 5.1.2)
                 const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
                 const currentCourtCaptain = data?.match?.[captainOnCourtField]
-                if (String(currentCourtCaptain) === String(liberoNumber)) {
+                if (String(currentCourtCaptain) === String(liberoNumber) || liberoPlayer?.isCaptain || liberoPlayer?.captain) {
                   // Counted from when the rotated lineup is shown
                   deferUi(() => setTimeout(() => {
                     checkAndRequestCaptainOnCourtRef.current?.(teamKey)
@@ -7077,6 +7126,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.log('[SET_END_DEBUG] STEP 3: Logging set_end event...')
       const setEndWritten = (await db.events.where('matchId').equals(matchId).toArray())
         .some(e => e.type === 'set_end' && e.setIndex === setIndex)
+      // A game captain's role ends with the set (FIVB 5.1.2, owner 22.11):
+      // the acting ones are cleared with the set end, which keeps them for
+      // Undo / Reopen set (reverseEventSideEffects); the next set designates
+      // again (the line-up dialog, the Game captain dialog, or "Keep as game
+      // captain"), a new designation event of that set
+      const matchAtSetEnd = await db.matches.get(matchId)
+      const previousCourtCaptains = actingCourtCaptains(matchAtSetEnd)
+      const clearsCourtCaptains = Object.keys(previousCourtCaptains).length > 0
       if (!setEndWritten) await logEvent('set_end', {
         team: winner,
         teamLabel: winnerLabel,
@@ -7085,8 +7142,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         awayPoints,
         startTime: startTime,
         endTime: roundToMinute(time),
-        ...(setEndReason ? { reason: setEndReason } : {})
-      })
+        ...(setEndReason ? { reason: setEndReason } : {}),
+        ...(clearsCourtCaptains ? { previousCourtCaptains } : {})
+      }, clearsCourtCaptains ? { beforeSnapshot: () => db.matches.update(matchId, courtCaptainsCleared(previousCourtCaptains)) } : {})
       console.log('[SET_END_DEBUG] STEP 3 DONE: set_end event logged')
 
       // Debug log: set end
@@ -8002,13 +8060,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           Object.prototype.hasOwnProperty.call(e.payload, 'previousRememberedCourtCaptain')) {
         matchUpdate[e.payload.team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'] = e.payload.previousRememberedCourtCaptain ?? null
       }
+      // "Keep as game captain" as it was before the tap that changed it
+      // (domain/gameCaptainKeep.js chosenGameCaptain)
+      if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away') &&
+          Object.prototype.hasOwnProperty.call(e.payload, 'previousKeepCourtCaptain')) {
+        matchUpdate[keepCourtCaptainField(e.payload.team)] = e.payload.previousKeepCourtCaptain === true
+      }
+      // The game captain in force before the removed designation, or before
+      // the removed set end (it ended their role); oldest last, so a Reopen
+      // set that also removes the next set's designations gets the set's own
+      if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
+        matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
+      }
+      if (e.type === 'set_end') Object.assign(matchUpdate, courtCaptainsRestored(e.payload?.previousCourtCaptains))
     }
 
     const rosterTeams = new Set()
     for (const e of removed) {
-      if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
-        matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
-      }
       if (e.type === 'libero_redesignation' && e.payload?.previousLiberoFlags) {
         const team = e.payload.team
         const { unableLibero, newLibero } = e.payload.previousLiberoFlags
@@ -13085,11 +13153,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
       const currentCourtCaptain = data?.match?.[captainOnCourtField]
       const isLiberoCourtCaptain = String(currentCourtCaptain) === String(playerOut)
+      const isLiberoTeamCaptain = !!(liberoPlayer?.isCaptain || liberoPlayer?.captain)
 
       // Trigger captain check if:
       // - Libero leaving is the court captain
+      // - Libero leaving is the team captain (a game captain is needed)
       // - Team captain is returning to court (need to clear game captain badge)
-      if (isLiberoCourtCaptain || isReturningCaptain) {
+      if (isLiberoCourtCaptain || isLiberoTeamCaptain || isReturningCaptain) {
         deferUi(() => setTimeout(() => {
           checkAndRequestCaptainOnCourtRef.current?.(team)
         }, 300))
@@ -13382,11 +13452,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
     const isLiberoCourtCaptain = String(currentCourtCaptain) === String(liberoOnCourt.liberoNumber)
+    const leavingLibero = teamPlayers?.find(p => String(p.number) === String(liberoOnCourt.liberoNumber))
+    const isLiberoTeamCaptain = !!(leavingLibero?.isCaptain || leavingLibero?.captain)
 
     // Trigger captain check if:
     // - Libero leaving is the court captain
+    // - Libero leaving is the team captain (a game captain is needed)
     // - Team captain is returning to court (need to clear game captain badge)
-    if (isLiberoCourtCaptain || isReturningCaptain) {
+    if (isLiberoCourtCaptain || isLiberoTeamCaptain || isReturningCaptain) {
       deferUi(() => setTimeout(() => {
         checkAndRequestCaptainOnCourtRef.current?.(teamKey)
       }, 300))
@@ -13746,7 +13819,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       ts: new Date().toISOString(),
       seq: subEventSeq
     })
-  }), [runAction, deferUi, rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, matchId, logEvent, isLiberoUnable])
+
+    // A libero who is team captain or game captain leaves the court, or the
+    // team captain (a libero) comes in: the game captain is checked as after
+    // a libero exit
+    const isCaptainNumber = (n) => !!teamPlayers?.some(p => String(p.number) === String(n) && (p.isCaptain || p.captain))
+    const currentCourtCaptain = data?.match?.[teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain']
+    if (isCaptainNumber(liberoOnCourt.liberoNumber) || isCaptainNumber(otherLibero.number) || String(currentCourtCaptain) === String(liberoOnCourt.liberoNumber)) {
+      deferUi(() => setTimeout(() => {
+        checkAndRequestCaptainOnCourtRef.current?.(teamKey)
+      }, 300))
+    }
+  }), [runAction, deferUi, rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
 
   // The key for the binding being edited in the keyboard shortcuts dialog:
   // captured only while it is edited and the dialog is open (as in Options,
@@ -14071,32 +14155,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle captain on court selection
   const runCaptainOnCourt = useConfirmAction(onConfirmFailed)
-  const handleSelectCaptainOnCourt = useCallback((playerNumber) => runCaptainOnCourt(() => runAction('captain', async () => {
+  // keep: the dialog's "Keep as game captain" switch at the tap
+  const handleSelectCaptainOnCourt = useCallback((playerNumber, keep = false) => runCaptainOnCourt(() => runAction('captain', async () => {
     if (!captainOnCourtModal || !matchId) return
 
     const { team } = captainOnCourtModal
     // Closed with the designation (deferUi, one render)
     deferUi(() => setCaptainOnCourtModal(null))
-    const courtCaptainField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-    const rememberedField = team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'
 
-    // Get previous court captain for undo
+    // The game captain in force, the one remembered for the next time the
+    // team captain leaves the court (proposed, or designated without asking
+    // while the switch is on), and the switch; the event keeps what they
+    // were, for Undo (domain/gameCaptainKeep.js chosenGameCaptain)
     const match = await db.matches.get(matchId)
-    const previousCourtCaptain = match?.[courtCaptainField] || null
-
-    // Save the selected captain on court AND remember for auto-redesignation
-    await db.matches.update(matchId, {
-      [courtCaptainField]: playerNumber,
-      [rememberedField]: playerNumber  // Remember for when captain leaves again
-    })
+    const { matchUpdate, payload } = chosenGameCaptain({ match, team, playerNumber, keep })
+    await db.matches.update(matchId, matchUpdate)
 
     // Log the event (this triggers snapshot capture and sync to Supabase/Referee)
-    await logEvent('court_captain_designation', {
-      team,
-      playerNumber,
-      previousCourtCaptain
-    })
+    await logEvent('court_captain_designation', payload)
   })), [runAction, deferUi, runCaptainOnCourt, captainOnCourtModal, matchId, logEvent])
+
+  // The switch turned on or off where nobody is to be chosen (the Game
+  // captain button while the role is held, FIVB 5.1.2): a setting of the
+  // match, no new event. The newest designation of the team says so too
+  // (payload.keep, an edit the server's copy of the event gets), so a device
+  // continuing the match from it has the switch as it is
+  // (domain/gameCaptainKeep.js keepEdit, keepFieldsFromEvents)
+  const handleKeepCaptainChange = useCallback((keep) => runAction('captainKeep', async () => {
+    if (!captainOnCourtModal || !matchId) return
+    const team = captainOnCourtModal.team
+    await db.matches.update(matchId, { [keepCourtCaptainField(team)]: keep === true })
+    const edit = keepEdit(await db.events.where('matchId').equals(matchId).toArray(), team, keep)
+    if (edit) await db.events.update(edit.id, { payload: edit.payload })
+    syncToReferee()
+  }), [runAction, captainOnCourtModal, matchId, syncToReferee])
 
   // Handle cancel (no captain selected)
   const handleCancelCaptainOnCourt = useCallback(() => {
@@ -14472,6 +14564,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         lineupOptional: lineupsOptional,
         // coach / captain still to sign before the first serve (empty: none)
         signaturesMissing: preMatchMissing?.[teamKey] || [],
+        // The Game captain button, as the tablet's (gameCaptainChip)
+        gameCaptain: !showRefereeRow || !gameCaptainChip[side]
+          ? null
+          : gameCaptainChip[side] === 'kept'
+            ? { state: 'kept', number: keptGameCaptain(data?.match, teamKey) }
+            : { state: 'needed' },
         // The libero's shirt (the desktop court's disc paint): the phone court
         // showed the libero's number in the team colour, like any player
         liberoPaint: discPaintBySide[side]?.libero || null,
@@ -14562,6 +14660,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         timeout: (side) => handleTimeout(side),
         openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
         openSignatures: (side) => setPreMatchSignTeam(mapSideToTeamKey(side)),
+        gameCaptain: (side) => setCaptainOnCourtModal({ team: mapSideToTeamKey(side) }),
         playerClick: handlePlayerClick,
         // The player who came in with no completed rally since is offered
         // too: picking him opens the request warning (pickSubOut)
@@ -20116,77 +20215,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Captain on Court Modal - Simplified */}
-      {captainOnCourtModal && (
-        <Modal
-          title={t('scoreboard.captainOnCourt.selectTitle', 'Game captain')}
-          open={true}
-          onClose={handleCancelCaptainOnCourt}
-          width={360}
-        >
-          <div>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '8px',
-              marginBottom: '16px'
-            }}>
-              {(() => {
-                const team = captainOnCourtModal.team
-                const teamLineupState = getTeamLineupState(team)
-                const currentLineup = teamLineupState.currentLineup || {}
-
-                // Court position order: IV III II (front row), V VI I (back row)
-                const positionOrder = ['IV', 'III', 'II', 'V', 'VI', 'I']
-
-                // The last game captain, proposed when on court
-                const remembered = data?.match?.[team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain']
-                const proposed = remembered != null && remembered !== '' && Object.values(currentLineup).some(n => String(n) === String(remembered))
-                  ? String(remembered)
-                  : null
-
-                return positionOrder.map((pos) => {
-                  const playerNumber = currentLineup[pos]
-                  if (!playerNumber) return <div key={pos} />
-                  const isProposed = proposed != null && String(playerNumber) === proposed
-                  return (
-                    <button
-                      key={pos}
-                      onClick={() => handleSelectCaptainOnCourt(playerNumber)}
-                      aria-label={isProposed ? `${playerNumber} (${t('scoreboard.captainOnCourt.last', 'Last game captain')})` : undefined}
-                      style={{
-                        padding: '12px 8px',
-                        background: isProposed ? '#eab308' : 'rgba(234, 179, 8, 0.15)',
-                        border: `2px solid ${isProposed ? '#ca8a04' : 'rgba(234, 179, 8, 0.5)'}`,
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontSize: '24px',
-                        fontWeight: 700,
-                        color: isProposed ? '#1c1917' : '#eab308',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        lineHeight: 1.1
-                      }}
-                    >
-                      {playerNumber}
-                      {isProposed && (
-                        <span style={{ fontSize: '11px', fontWeight: 600, marginTop: '2px' }}>
-                          {t('scoreboard.captainOnCourt.lastShort', 'Last')}
-                        </span>
-                      )}
-                    </button>
-                  )
-                })
-              })()}
-            </div>
-
-            <SbButton block onClick={handleCancelCaptainOnCourt}>
-              {t('common.cancel', 'Cancel')}
-            </SbButton>
-          </div>
-        </Modal>
-      )}
+      {/* Game captain dialog (FIVB 5.1.2) with "Keep as game captain":
+          choose while one is needed, else the switch only (the Game captain
+          button while it is on) */}
+      {captainOnCourtModal && (() => {
+        const team = captainOnCourtModal.team
+        const status = captainOnCourtStatus[team] || {}
+        const needed = !status.captainOnCourt && !status.courtCaptainOnCourt
+        const captain = (team === 'home' ? data?.homePlayers : data?.awayPlayers)?.find(p => p.isCaptain || p.captain)
+        return (
+          <GameCaptainDialog
+            mode={needed ? 'choose' : 'settings'}
+            lineup={getTeamLineupState(team).currentLineup || {}}
+            remembered={data?.match?.[team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'] ?? null}
+            keep={keepsGameCaptain(data?.match, team)}
+            acting={status.captainOnCourt ? null : (status.courtCaptainOnCourt ? status.courtCaptainNumber : null)}
+            captainOnCourt={status.captainOnCourt ? (captain?.number ?? null) : null}
+            onSelect={handleSelectCaptainOnCourt}
+            onKeepChange={handleKeepCaptainChange}
+            onClose={handleCancelCaptainOnCourt}
+          />
+        )
+      })()}
 
       {/* Options in Menu Modal */}
       <ScoreboardOptionsModal
@@ -20792,13 +20842,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         lfpMinimumOnCourt={lfpMinimumOnCourt}
         courtCaptain={lineupModal.team === 'home' ? data?.match?.homeCourtCaptain : data?.match?.awayCourtCaptain}
         rememberedCourtCaptain={lineupModal.team === 'home' ? data?.match?.homeRememberedCourtCaptain : data?.match?.awayRememberedCourtCaptain}
+        keptCourtCaptain={keptGameCaptain(data?.match, lineupModal.team)}
+        bestOf={data?.match?.bestOf}
         easy={data?.match?.easy === true}
         onClose={() => setLineupModal(null)}
         // One action: the line-up, its owed penalty points and the game
         // captain commit together, and the dialog closes with them on the
         // court (it closed a frame before the court filled)
         runSave={(body) => runAction('lineup', body)}
-        onSave={async (gameCaptain, onCourt = null) => {
+        onSave={async (gameCaptain, onCourt = null, { ask = false } = {}) => {
           const teamKey = lineupModal.team
           deferUi(() => setLineupModal(null))
           // Optional game captain chosen in the modal (FIVB 5.2), written the
@@ -20818,7 +20870,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Check if captain is on court after lineup is saved
           // Use timeout to allow data to update from database (increased to 300ms for reliability)
           setTimeout(() => {
-            checkAndRequestCaptainOnCourtRef.current?.(teamKey, onCourt)
+            checkAndRequestCaptainOnCourtRef.current?.(teamKey, onCourt, { ask })
           }, 300)
         }}
         onLineupSaved={() => {
@@ -24731,6 +24783,17 @@ const GAME_CAPTAIN_CHIP = {
   borderRadius: '8px',
   cursor: 'pointer'
 }
+// "Keep as game captain" on: the same button, quiet (white, a pin and the
+// kept player's number), a status rather than a question
+const GAME_CAPTAIN_CHIP_KEPT = {
+  ...GAME_CAPTAIN_CHIP,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '5px',
+  background: '#ffffff',
+  color: '#92400e',
+  border: '1px solid #fcd34d'
+}
 
 // A side column fits its squares to its height (benchFit.js): --bench-fit is
 // set on it from the outside, so React never resets it.
@@ -24817,7 +24880,7 @@ function EasyNewSubstitute({ players, onCourt, available, onPick }) {
   )
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, presetGameCaptain = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, presetGameCaptain = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, keptCourtCaptain = null, bestOf = 5, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -24828,7 +24891,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   // 'Required' only shows once the scorer has tried to confirm (until Clear)
   const [confirmAttempted, setConfirmAttempted] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
-  const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }]
+  const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }] | [{ lineup }] (a copied line-up)
 
   // Determine if this team is A or B
   const isTeamA = team === teamAKey
@@ -24904,10 +24967,19 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   const captainStatus = lineupCaptainStatus({ lineup, players })
   const captainNumber = teamCaptainNumber(players)
   const askGameCaptain = !easy && captainStatus === 'offCourt' && lineup.every(v => String(v ?? '').trim() !== '')
-  const gameCaptain = askGameCaptain && gameCaptainChoices.includes(gameCaptainChoice) ? gameCaptainChoice : ''
+  // "Keep as game captain" on (domain/gameCaptainKeep.js) and the kept player
+  // among the six: he is the choice until the scorer picks another or None
+  // (None then asks with the Game captain dialog, checkAndRequestCaptainOnCourt)
+  const [gameCaptainTouched, setGameCaptainTouched] = useState(false)
+  const keptChoice = keptCourtCaptain != null && gameCaptainChoices.includes(String(Number(keptCourtCaptain))) ? String(Number(keptCourtCaptain)) : ''
+  const effectiveGameCaptainChoice = gameCaptainTouched || gameCaptainChoice !== '' ? gameCaptainChoice : keptChoice
+  const gameCaptain = askGameCaptain && gameCaptainChoices.includes(effectiveGameCaptainChoice) ? effectiveGameCaptainChoice : ''
+  const pickGameCaptain = (value) => { setGameCaptainTouched(true); setGameCaptainChoice(value) }
   const gameCaptainNote = gameCaptainChoices.length === 0
     ? t('scoreboard.lineupModal.gameCaptain.enterFirst', 'Choose once the players are entered')
-    : t('scoreboard.lineupModal.gameCaptain.fromFirstRally', { captain: captainNumber, defaultValue: 'Captain {{captain}} is not in the line-up: game captain from the first rally' })
+    : keptChoice !== '' && gameCaptain === keptChoice
+      ? t('scoreboard.lineupModal.gameCaptain.kept', { n: keptChoice, defaultValue: '#{{n}} kept as game captain, from the first rally' })
+      : t('scoreboard.lineupModal.gameCaptain.fromFirstRally', { captain: captainNumber, defaultValue: 'Captain {{captain}} is not in the line-up: game captain from the first rally' })
 
   const errorText = (code) => ({
     required: t('scoreboard.lineupModal.errors.required', 'Required'),
@@ -24996,13 +25068,36 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     if (editHistory.length === 0) return
 
     const lastEdit = editHistory[editHistory.length - 1]
-    // Restore the previous value (skip history tracking for undo)
-    handleInputChange(lastEdit.index, lastEdit.previousValue, true)
+    if (lastEdit.lineup) {
+      // a copied line-up: the six as they were before it
+      setLineup(lastEdit.lineup)
+      setSaveFailed(false)
+    } else {
+      // Restore the previous value (skip history tracking for undo)
+      handleInputChange(lastEdit.index, lastEdit.previousValue, true)
+    }
     // Remove the last entry from history
     setEditHistory(prev => prev.slice(0, -1))
   }
 
   const hasEntries = lineup.some(v => v && v.trim() !== '')
+
+  // The starting line-up of an earlier set as a pre-fill (owner 2026-11-22,
+  // domain/lineupCopy.js): "Last set's line-up", the other earlier sets
+  // beside it. Checked as typed numbers (lineupEntryErrors: a player out of
+  // the set or the match, or a libero now, is flagged); Undo last edit puts
+  // back the six it replaced
+  const earlierSets = useMemo(
+    () => (mode === 'initial' && setIndex > 1 ? earlierStartingLineups(events || [], team, setIndex) : []),
+    [mode, setIndex, events, team]
+  )
+  const copyLineupOf = (entry) => {
+    const next = LINEUP_POSITIONS.map(pos => entry.lineup[pos] ?? '')
+    if (next.every((v, i) => v === (lineup[i] ?? ''))) return
+    setEditHistory(prev => [...prev, { lineup: [...lineup] }])
+    setLineup(next)
+    setSaveFailed(false)
+  }
 
   // Clear all lineup entries (a fresh start: no 'Required' until the next Confirm)
   const handleClearLineup = () => {
@@ -25086,8 +25181,11 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       lineup, players, events, team,
       choice: gameCaptain,
       currentCourtCaptain: courtCaptain,
-      rememberedCourtCaptain
+      rememberedCourtCaptain,
+      keep: keptCourtCaptain != null
     })
+    // The kept game captain set aside with None: the dialog asks after the save
+    const declinedKept = askGameCaptain && keptChoice !== '' && gameCaptain === ''
 
     // Save lineup as an event (mark as initial lineup or manual override)
     if (matchId && setIndex) {
@@ -25162,7 +25260,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
         // Auto-close modal after successful save (skip confirmation step),
         // with what to do about the optional game captain
-        await onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null))
+        await onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null), { ask: declinedKept })
       }).catch(() => {
         // Don't auto-close - let user close manually with close button
         setSaveFailed(true)
@@ -25308,7 +25406,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   aria-pressed={gameCaptain === ''}
                   className="lineup-gcapt__choice lineup-gcapt__choice--none"
                   disabled={gameCaptainChoices.length === 0}
-                  onClick={() => setGameCaptainChoice('')}
+                  onClick={() => pickGameCaptain('')}
                 >
                   {t('scoreboard.lineupModal.gameCaptain.none', 'None')}
                 </button>
@@ -25319,7 +25417,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     aria-pressed={gameCaptain === n}
                     aria-label={t('scoreboard.lineupModal.gameCaptain.player', { number: n, defaultValue: 'Game captain: player {{number}}' })}
                     className="lineup-gcapt__choice"
-                    onClick={() => setGameCaptainChoice(gameCaptain === n ? '' : n)}
+                    onClick={() => pickGameCaptain(gameCaptain === n ? '' : n)}
                   >
                     {n}
                   </button>
@@ -25361,6 +25459,27 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     )
                   })}
                 </div>
+              </div>
+            )}
+            {/* The starting line-up of an earlier set: the last set's, then
+                the others (set 1, 2...) */}
+            {earlierSets.length > 0 && (
+              <div className="lineup-copy" role="group" aria-label={t('scoreboard.lineupModal.copy.group', 'Starting line-up of an earlier set')} data-testid="lineup-copy">
+                <SbButton className="lineup-copy__last" onClick={() => copyLineupOf(earlierSets[0])} data-copy-set={earlierSets[0].setIndex} title={t('scoreboard.lineupModal.copy.setTitle', { n: displaySetNumber(earlierSets[0].setIndex, bestOf), defaultValue: 'Starting line-up of set {{n}}' })}>
+                  <RotateCcw size={16} aria-hidden="true" />
+                  {t('scoreboard.lineupModal.copy.lastSet', "Last set's line-up")}
+                </SbButton>
+                {earlierSets.slice(1).map(entry => (
+                  <SbButton
+                    key={entry.setIndex}
+                    className="lineup-copy__set"
+                    onClick={() => copyLineupOf(entry)}
+                    data-copy-set={entry.setIndex}
+                    aria-label={t('scoreboard.lineupModal.copy.setTitle', { n: displaySetNumber(entry.setIndex, bestOf), defaultValue: 'Starting line-up of set {{n}}' })}
+                  >
+                    {t('scoreboard.lineupModal.copy.set', { n: displaySetNumber(entry.setIndex, bestOf), defaultValue: 'Set {{n}}' })}
+                  </SbButton>
+                ))}
               </div>
             )}
             {/* Available players (excluding liberos and players out of the game);

@@ -126,6 +126,14 @@ describe('the prepared substitution', () => {
     expect(courtCaptainOf(events, 1, 'home', players)).toBe('5')
     expect(courtCaptainOf([lineupEv({ ...LU, I: 7 })], 1, 'home', players)).toBe('7')
   })
+  // the role ends with the set (FIVB 5.1.2, owner 22.11): set 1's game
+  // captain does not lead the team in set 2 until designated again
+  it('the court captain of an earlier set is not this set\'s', () => {
+    const set2 = (e) => ({ ...e, setIndex: 2 })
+    const events = [ev('court_captain_designation', { playerNumber: 5 }), set2(lineupEv())]
+    expect(courtCaptainOf(events, 2, 'home', players)).toBeNull()
+    expect(courtCaptainOf([...events, set2(ev('court_captain_designation', { playerNumber: 5 }))], 2, 'home', players)).toBe('5')
+  })
 })
 
 describe('the bench\'s requests', () => {

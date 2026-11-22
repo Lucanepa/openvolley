@@ -55,6 +55,7 @@ import { playerOfficialLinks, playsAsOf, rolesOfPlayer } from './playerOfficials
 import { applyPlanToEvents, finalizePlan, isRotationLiberoExit, isRally } from './recompute'
 import { planRectificationReversal } from './rectify'
 import { referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber, renumberRemarkText } from './roster'
+import { courtCaptainsRestored } from './gameCaptainKeep'
 
 export { applyPlanToEvents }
 
@@ -1167,10 +1168,16 @@ function removalSideEffects(events, removed, ctx) {
     if (line) out.remarkRemove.push(line)
   }
   for (const e of list) {
+    // the game captains a removed set end had ended (domain/gameCaptainKeep.js)
+    if (e.type === 'set_end') Object.assign(out.matchPatch, courtCaptainsRestored(e.payload?.previousCourtCaptains))
     const team = e.payload?.team
     if (team !== 'home' && team !== 'away') continue
     if ((e.type === 'lineup' || e.type === 'court_captain_designation') && Object.prototype.hasOwnProperty.call(e.payload, 'previousRememberedCourtCaptain')) {
       out.matchPatch[team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'] = e.payload.previousRememberedCourtCaptain ?? null
+    }
+    // "Keep as game captain" as before the designation that changed it (domain/gameCaptainKeep.js)
+    if (e.type === 'court_captain_designation' && Object.prototype.hasOwnProperty.call(e.payload, 'previousKeepCourtCaptain')) {
+      out.matchPatch[team === 'home' ? 'homeKeepCourtCaptain' : 'awayKeepCourtCaptain'] = e.payload.previousKeepCourtCaptain === true
     }
     if (e.type === 'court_captain_designation' && latestDesignation(events, team)?.id === e.id) {
       out.matchPatch[courtCaptainField(team)] = e.payload.previousCourtCaptain ?? null
