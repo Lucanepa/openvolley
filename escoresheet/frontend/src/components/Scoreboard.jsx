@@ -15389,6 +15389,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     setToSubDetailsModal({ type: 'substitution', side: 'left' })
                   }
                 }}
+                data-tap-hint={getSubstitutionDetails('left').length > 0 ? '' : undefined}
                 className="to-sub-counter"
                 style={{
                   flex: 1,
@@ -15485,6 +15486,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {isNarrowMode ? (
               <div style={{ marginTop: '1.25cqw' }}>
                 <button
+                  className="tap-hint tap-hint-sm"
                   onClick={() => setLeftDelaysDropdownOpen(!leftDelaysDropdownOpen)}
                   style={{ width: '100%', fontSize: 'calc(4.65cqw * var(--cqf, 1))', padding: '2.5cqw 1.25cqw', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
@@ -15496,6 +15498,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <button
                         onClick={() => { handleImproperRequest('left'); setLeftDelaysDropdownOpen(false) }}
                         disabled={rallyStatus === 'in_play'}
+                        className="tap-hint tap-hint-sm"
                         style={sanctionButtonStyles.improper}
                       >
                         {t('scoreboard.sanctions.improperRequest')}
@@ -15505,6 +15508,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <button
                         onClick={() => { handleDelayWarning('left'); setLeftDelaysDropdownOpen(false) }}
                         disabled={rallyStatus === 'in_play'}
+                        className="tap-hint tap-hint-sm"
                         style={sanctionButtonStyles.delayWarning}
                       >
                         {t('scoreboard.sanctions.delayWarning')}
@@ -15513,6 +15517,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <button
                         onClick={() => { handleDelayPenalty('left'); setLeftDelaysDropdownOpen(false) }}
                         disabled={rallyStatus === 'in_play'}
+                        className="tap-hint tap-hint-sm"
                         style={sanctionButtonStyles.delayPenalty}
                       >
                         {t('scoreboard.sanctions.delayPenalty')}
@@ -15527,6 +15532,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <button
                     onClick={() => handleImproperRequest('left')}
                     disabled={rallyStatus === 'in_play'}
+                    className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.improper}
                   >
                     {t('scoreboard.sanctions.improperRequest')}
@@ -15536,6 +15542,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <button
                     onClick={() => handleDelayWarning('left')}
                     disabled={rallyStatus === 'in_play'}
+                    className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.delayWarning}
                   >
                     {t('scoreboard.sanctions.delayWarning')}
@@ -15544,6 +15551,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <button
                     onClick={() => handleDelayPenalty('left')}
                     disabled={rallyStatus === 'in_play'}
+                    className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.delayPenalty}
                   >
                     {t('scoreboard.sanctions.delayPenalty')}
@@ -15749,6 +15757,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <div
                             key={`${teamKey}-bench-${player.id || player.number}`}
                             data-bench-player={player.number}
+                            data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
                             data-team={teamKey}
                             data-is-libero="false"
                             draggable={rallyStatus === 'idle' && (canSubBenchPlayer || isSubstitutedByLibero)}
@@ -16016,6 +16025,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           >
                             <div
                               data-bench-player={player.number}
+                              data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
                               data-team={teamKey}
                               data-is-libero="true"
                               data-libero-state={mayReturn ? 'injured' : isUnable ? 'unable' : undefined}
@@ -16256,6 +16266,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             data-bench-official={official.role}
+                            data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
                             title={officialChips ? officialName(official) : undefined}
                             aria-label={officialChips ? `${officialRoleAbbr(official.role)} ${officialName(official)}` : undefined}
                             style={officialChips ? {
@@ -18295,7 +18306,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {rallyStatus === 'idle' ? (
                       <button
                         data-help-id="scoreboard-start-rally"
-                        className="secondary start-rally-button"
+                        className="secondary start-rally-button tap-hint"
                         onClick={(e) => tapStartRally(e)}
                         disabled={isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet)}
                       >
@@ -18304,10 +18315,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ) : (
                       <>
                         <div className="rally-controls-row">
-                          <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={(e) => tapPoint('left', e)}>
+                          <button data-help-id="scoreboard-point-left" className="rally-point-button tap-hint" onClick={(e) => tapPoint('left', e)}>
                             {t('scoreboard.buttons.pointTeam', { team: teamALabel })}
                           </button>
-                          <button data-help-id="scoreboard-point-right" className="rally-point-button" onClick={(e) => tapPoint('right', e)}>
+                          <button data-help-id="scoreboard-point-right" className="rally-point-button tap-hint" onClick={(e) => tapPoint('right', e)}>
                             {t('scoreboard.buttons.pointTeam', { team: teamBLabel })}
                           </button>
                         </div>
@@ -18316,7 +18327,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <div className="rally-secondary-row">
                       {rallyStatus === 'in_play' && (
                         <button
-                          className="secondary"
+                          className="secondary tap-hint"
                           onClick={handleReplay}
                         >
                           {t('scoreboard.buttons.replay')}
@@ -18326,6 +18337,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           time-outs / substitutions (taken back with it, row 19) */}
                       {rallyStatus === 'idle' && canChangeDecision && (
                         <button
+                          className="tap-hint"
                           onClick={handleReplay}
                           style={{
                             background: '#eab308',
@@ -18343,7 +18355,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden="true" />}
                       <button
                         data-help-id="scoreboard-undo"
-                        className="danger"
+                        className="danger tap-hint"
                         onClick={showUndoConfirm}
                         disabled={!canUndo}
                       >
@@ -18801,6 +18813,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     setToSubDetailsModal({ type: 'substitution', side: 'right' })
                   }
                 }}
+                data-tap-hint={getSubstitutionDetails('right').length > 0 ? '' : undefined}
                 className="to-sub-counter"
                 style={{
                   flex: 1,
@@ -18897,6 +18910,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {isNarrowMode ? (
               <div style={{ marginTop: '1.25cqw' }}>
                 <button
+                  className="tap-hint tap-hint-sm"
                   onClick={() => setRightDelaysDropdownOpen(!rightDelaysDropdownOpen)}
                   style={{ width: '100%', fontSize: 'calc(4.65cqw * var(--cqf, 1))', padding: '2.5cqw 1.25cqw', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
@@ -18908,6 +18922,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <button
                         onClick={() => { handleImproperRequest('right'); setRightDelaysDropdownOpen(false) }}
                         disabled={rallyStatus === 'in_play'}
+                        className="tap-hint tap-hint-sm"
                         style={sanctionButtonStyles.improper}
                       >
                         {t('scoreboard.sanctions.improperRequest')}
@@ -18917,6 +18932,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <button
                         onClick={() => { handleDelayWarning('right'); setRightDelaysDropdownOpen(false) }}
                         disabled={rallyStatus === 'in_play'}
+                        className="tap-hint tap-hint-sm"
                         style={sanctionButtonStyles.delayWarning}
                       >
                         {t('scoreboard.sanctions.delayWarning')}
@@ -18925,6 +18941,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <button
                         onClick={() => { handleDelayPenalty('right'); setRightDelaysDropdownOpen(false) }}
                         disabled={rallyStatus === 'in_play'}
+                        className="tap-hint tap-hint-sm"
                         style={sanctionButtonStyles.delayPenalty}
                       >
                         {t('scoreboard.sanctions.delayPenalty')}
@@ -18939,6 +18956,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <button
                     onClick={() => handleImproperRequest('right')}
                     disabled={rallyStatus === 'in_play'}
+                    className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.improper}
                   >
                     {t('scoreboard.sanctions.improperRequest')}
@@ -18948,6 +18966,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <button
                     onClick={() => handleDelayWarning('right')}
                     disabled={rallyStatus === 'in_play'}
+                    className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.delayWarning}
                   >
                     {t('scoreboard.sanctions.delayWarning')}
@@ -18956,6 +18975,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <button
                     onClick={() => handleDelayPenalty('right')}
                     disabled={rallyStatus === 'in_play'}
+                    className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.delayPenalty}
                   >
                     {t('scoreboard.sanctions.delayPenalty')}
@@ -19161,6 +19181,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <div
                             key={`${teamKey}-bench-${player.id || player.number}`}
                             data-bench-player={player.number}
+                            data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
                             data-team={teamKey}
                             data-is-libero="false"
                             draggable={rallyStatus === 'idle' && (canSubBenchPlayer || isSubstitutedByLibero)}
@@ -19429,6 +19450,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           >
                             <div
                               data-bench-player={player.number}
+                              data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
                               data-team={teamKey}
                               data-is-libero="true"
                               data-libero-state={mayReturn ? 'injured' : isUnable ? 'unable' : undefined}
@@ -19666,6 +19688,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             data-bench-official={official.role}
+                            data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
                             title={officialChips ? officialName(official) : undefined}
                             aria-label={officialChips ? `${officialRoleAbbr(official.role)} ${officialName(official)}` : undefined}
                             style={officialChips ? {
