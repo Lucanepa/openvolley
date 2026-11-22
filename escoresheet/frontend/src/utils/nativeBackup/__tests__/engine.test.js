@@ -83,6 +83,29 @@ describe('native backup engine', () => {
     expect(engine.getStatus()).toMatchObject({ folder: '/backups', count: 3, error: null, lastFile: `game12-seed1/${files[2]}` })
   })
 
+  it('a match removed from the device while its backup waited is skipped, not an error (22.11.2026)', async () => {
+    const gone = vi.fn(async () => { throw new Error('Match not found') })
+    const readMatch = vi.fn(async () => undefined)
+    const { engine, store, log } = setup({ exportMatch: gone, engine: { readMatch } })
+    engine.notify(1)
+    await engine.flush()
+    expect(gone).toHaveBeenCalledTimes(1)
+    expect(readMatch).toHaveBeenCalledWith(1)
+    expect(eventFiles(store)).toHaveLength(0)
+    expect(log.error).not.toHaveBeenCalled()
+    expect(engine.getStatus().error).toBeFalsy()
+  })
+
+  it('an export that fails while the match is still there stays an error', async () => {
+    const broken = vi.fn(async () => { throw new Error('disk full') })
+    const readMatch = vi.fn(async () => ({ id: 1 }))
+    const { engine, log } = setup({ exportMatch: broken, engine: { readMatch } })
+    engine.notify(1)
+    await engine.flush()
+    expect(log.error).toHaveBeenCalled()
+    expect(engine.getStatus().error).toBe('disk full')
+  })
+
   it('coalesces an unchanged state (no duplicate file)', async () => {
     const { engine, store, m } = setup()
     m.point('home')

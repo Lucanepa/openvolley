@@ -97,7 +97,7 @@ export function reportError(err, opts = {}) {
     const message = String(e ? e.message : (typeof err === 'string' ? err : err?.message ?? err ?? '')) || '(no message)'
     const name = e?.name && e.name !== 'Error' ? e.name : (e ? 'Error' : null)
     const live = liveContext()
-    const verdict = classifyError({ message, name: e?.name, source: opts.source, kind: opts.kind || 'app.error', online: live.online, unloading, automated: isAutomatedVisit() })
+    const verdict = classifyError({ message, name: e?.name, source: opts.source, stack: typeof e?.stack === 'string' ? e.stack : '', kind: opts.kind || 'app.error', online: live.online, unloading, automated: isAutomatedVisit() })
     if (verdict.action === 'drop') return null
     if (!allowed(message)) return null
     const level = opts.level === 'warn' || verdict.level === 'warn' ? 'warn' : 'error'

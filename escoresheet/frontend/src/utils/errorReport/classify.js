@@ -43,6 +43,12 @@ const ABORT = /AbortError|The (operation|user) (was|aborted)|aborted a request|s
 // A script the page did not ship: an extension, an injected helper
 const FOREIGN_SOURCE = /^(chrome|moz|safari|safari-web)-extension:|^webkit-masked-url:|^(chrome|edge):\/\/|\/inject|userscript/i
 
+// Google's page renderer for its crawler (the Web Rendering Service) stubs the
+// browser's APIs: its navigator.serviceWorker.register rejects with "Rejected"
+// (registerSW.js, 21.11.2026, reported as a guest on Android 10 / Chrome 138).
+// No person ever sees it.
+const GOOGLE_RENDERER = /\bwrsParams\b/
+
 /** Is this visit a robot (a crawler, a test runner, a link preview)? */
 export function isAutomatedVisit(win = typeof window !== 'undefined' ? window : undefined) {
   try {
@@ -55,12 +61,13 @@ export function isAutomatedVisit(win = typeof window !== 'undefined' ? window : 
 }
 
 /**
- * @param {{ message?: string, name?: string, source?: string, kind: string, online?: boolean|null, unloading?: boolean, automated?: boolean }} e
+ * @param {{ message?: string, name?: string, source?: string, stack?: string, kind: string, online?: boolean|null, unloading?: boolean, automated?: boolean }} e
  * @returns {{ action: 'drop'|'report', level: 'warn'|'error', kind: string }}
  */
-export function classifyError({ message = '', name = '', source = '', kind, online = null, unloading = false, automated = false }) {
+export function classifyError({ message = '', name = '', source = '', stack = '', kind, online = null, unloading = false, automated = false }) {
   const msg = String(message || '')
   if (unloading) return { action: 'drop', level: 'warn', kind }
+  if (GOOGLE_RENDERER.test(String(stack || ''))) return { action: 'drop', level: 'warn', kind }
   if (source && FOREIGN_SOURCE.test(String(source))) return { action: 'drop', level: 'warn', kind }
   if (NOISE.some((re) => re.test(msg))) {
     // an opaque "Script error." is kept as a warning (its count says something), the rest dropped
