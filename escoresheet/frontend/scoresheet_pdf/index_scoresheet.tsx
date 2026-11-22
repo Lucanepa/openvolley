@@ -1,12 +1,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './scoresheet.css'; // compiled Tailwind (was cdn.tailwindcss.com — broke offline)
-import { useLiveQuery } from 'dexie-react-hooks';
 import i18n from '../src/i18n'; // App_Scoresheet calls useTranslation: this entry needs its own i18n init
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import App from './App_Scoresheet';
-import { loadLocalMatchData, normalizeMatchData } from './utils/matchData';
+import { normalizeMatchData } from './utils/matchData';
+import { useLocalMatchData } from './utils/useLocalMatchData';
 import { describeScoresheetLoadError, fetchScoresheetJson, parseScoresheetName, type ScoresheetLoadError } from './utils/scoresheetStorage';
 
 // Initialize Dexie database (same as main app)
@@ -250,15 +250,14 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
     return () => { channel?.close(); };
   }, [matchId]);
 
-  // One live query, one read transaction (utils/matchData loadLocalMatchData,
-  // also the archive site's ?matchId=): the sheet never pairs the sets of one
-  // moment with the events of another. undefined while loading, null when the
-  // match is not on this device (deleted). refreshVersion re-reads it on a
-  // BroadcastChannel notice.
-  const live = useLiveQuery(
-    async () => (matchId ? await loadLocalMatchData(db, matchId) : null),
-    [matchId, refreshVersion]
-  );
+  // One read transaction (utils/matchData loadLocalMatchData, also the
+  // archive site's ?matchId=), read again on every change of the match
+  // (utils/useLocalMatchData: not a liveQuery, whose reads the scoring
+  // screen's writes threw away on a slow tablet): the sheet never pairs the
+  // sets of one moment with the events of another. undefined while loading,
+  // null when the match is not on this device (deleted). refreshVersion
+  // re-reads it on a BroadcastChannel notice.
+  const live = useLocalMatchData(db, matchId, refreshVersion);
   const isMatchLoading = live === undefined;
   const isMatchDeleted = live === null;
   const { t } = useTranslation();

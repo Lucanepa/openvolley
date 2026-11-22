@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import './i18n' // the page's words and the scoresheet components' (own entry, own i18n init)
-import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { apiFrom, apiStorage } from './lib/apiClient'
 import App from '../scoresheet_pdf/App_Scoresheet'
-import { loadLocalMatchData } from '../scoresheet_pdf/utils/matchData'
+import { useLocalMatchData } from '../scoresheet_pdf/utils/useLocalMatchData'
 import { ArrowLeft, ChevronRight, ClipboardList, FileX2, Lock, LogOut, X } from 'lucide-react'
 import { cn } from './ui/cn.js'
 import { Card } from './ui/Card.jsx'
@@ -577,10 +576,11 @@ const MatchIdViewer = ({ matchId, action }) => {
   // Convert matchId to number if it's a numeric string
   const numericMatchId = !isNaN(matchId) ? parseInt(matchId, 10) : matchId
 
-  // One live query, one read transaction (scoresheet_pdf/utils/matchData
-  // loadLocalMatchData, also the in-app sheet's): the sheet never pairs the
-  // sets of one moment with the events of another
-  const live = useLiveQuery(() => loadLocalMatchData(db, numericMatchId), [numericMatchId])
+  // One read transaction (scoresheet_pdf/utils/matchData loadLocalMatchData),
+  // read again on every change (useLocalMatchData, also the in-app sheet's):
+  // the sheet never pairs the sets of one moment with the events of another,
+  // and shows the match while the scoring screen keeps writing it
+  const live = useLocalMatchData(db, numericMatchId)
   const match = live === undefined ? undefined : (live?.match ?? null)
 
   // Show loading state while initial data is being fetched

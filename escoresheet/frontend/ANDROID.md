@@ -418,6 +418,20 @@ the 90 s limit alike. The same emulator run then gets the PDF (64 s at 20x;
 app windows run on their own thread: their ticks come on time, timed as
 before.
 
+**The preview on a slow tablet** (Galaxy Tab A7 Lite, 26.11.3, 2026-11-22:
+"Loading scoresheet..." for good, ~430 events in set 3). The scoring screen
+under the view writes the match row every 10 s (its heartbeat) and draws
+itself every second, on the same thread as the sheet's read. The sheet read
+the match through Dexie's `liveQuery`, which throws a read away when a write
+it observes lands while it reads: every read took longer than 10 s there, so
+none was ever shown. Emulator, 470 events, CPU slowed 6x: still loading after
+180 s, eleven reads started and thrown away (4x: shown after 94 s, the eighth
+read). The sheet now reads with `useLocalMatchData`
+(`scoresheet_pdf/utils/useLocalMatchData.ts`): every finished read is shown
+and a change heard meanwhile reads again. Same run: shown 17.5 s after
+Preview. Opened from Match setup (no scoring screen under it) it showed in 3 s
+even before the fix.
+
 ## Servers in the app
 
 The WebView origin is `https://localhost`, which has no backend behind it
