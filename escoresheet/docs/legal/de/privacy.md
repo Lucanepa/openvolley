@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.24 · Stand: 20. November 2026
+**OpenVolley und OpenBeach** · Version 1.25 · Stand: 22. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -657,6 +657,18 @@ E-Mail-Adresse des eigenen Kontos senden lassen; die App tut das beim Anlegen
 eines Spiels. Eine andere Adresse lässt sich nicht eingeben. Für den Versand
 wird der Dienst Resend (USA) eingesetzt (Abschnitt 15).
 
+**Spiel-PIN per E-Mail:** Direkt nach dem Anlegen eines neuen offiziellen
+Spiels zeigt die App dessen Spiel-PIN einmal an. Eine angemeldete Schreiberin
+oder ein angemeldeter Schreiber kann sich den Spiel-PIN dieses Spiels dann an
+die bestätigte E-Mail-Adresse des eigenen Kontos senden lassen, mit
+Spielnummer, Teams, Liga, Datum und Uhrzeit. Gesendet wird nur auf Wunsch,
+eine andere Adresse lässt sich nicht eingeben, und der Server sendet den PIN
+nur, wenn es der für dieses Spiel gespeicherte ist. Sein Protokoll enthält
+weder den PIN noch die Adresse. Für den Versand wird der Dienst Resend (USA)
+eingesetzt (Abschnitt 15). Die App kann auch das E-Mail-Programm des Geräts
+mit dem PIN öffnen, für eine beliebige Adresse; diese Nachricht verschickt das
+E-Mail-Programm, sie läuft nicht über meinen Server.
+
 ## 8. Öffentliche Anzeigen: Livescore, LED-Anzeige, öffentliche Daten
 
 Ohne Anmeldung und ohne PIN sind sichtbar:
@@ -1007,7 +1019,7 @@ brauche. Sie bearbeiten die Daten in meinem Auftrag.
 | Infomaniak Network SA | Betrieb des Servers: Datenbank, Dateien, Helpdesk und Download-Seite | Schweiz |
 | Cloudflare, Inc. | Auslieferung der Websites, DNS, sichere Verbindung zum Server | USA (weltweites Netz) |
 | Migadu | E-Mail-Versand (noreply@) und Postfach (support@) | Schweiz / Europa |
-| Resend, Inc. | Versand der Spielinfo per E-Mail (nur diese Funktion, falls aktiviert) | USA |
+| Resend, Inc. | Versand der Spielinfo und des Spiel-PINs per E-Mail (nur diese Funktionen, falls aktiviert) | USA |
 
 **Wichtig zu Cloudflare:** Die verschlüsselte Verbindung deines Geräts endet
 bei Cloudflare; von dort läuft sie verschlüsselt weiter zu meinem Server.

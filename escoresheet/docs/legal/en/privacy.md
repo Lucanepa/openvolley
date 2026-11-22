@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.24 · As of 20 November 2026
+**OpenVolley and OpenBeach** · Version 1.25 · As of 22 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -583,6 +583,17 @@ sent to the confirmed email address of their own account; the app does so when
 a match is created. No other address can be entered. The service Resend (USA)
 is used for sending (section 15).
 
+**Sending the game PIN by email:** right after a new official match is
+created, the app shows its game PIN once. A signed-in scorer can then have
+the game PIN of that match sent to the confirmed email address of their own
+account, with the game number, teams, league, date and time. Nothing is sent
+unless they ask for it, no other address can be entered, and the server sends
+it only if it is the PIN stored for that match. Its log records neither the
+PIN nor the address. The service Resend (USA) is used for sending
+(section 15). The app can also open the device's own email app with the PIN,
+for any address; that message is sent by the email app and does not pass
+through my server.
+
 ## 8. Public displays: livescore, LED boards, public data
 
 Without an account and without a PIN, the following is visible:
@@ -897,7 +908,7 @@ They process the data on my behalf.
 | Infomaniak Network SA | Hosting the server: database, files, helpdesk and download page | Switzerland |
 | Cloudflare, Inc. | Delivering the websites, DNS, secure connection to the server | USA (global network) |
 | Migadu | Sending email (noreply@) and mailbox (support@) | Switzerland / Europe |
-| Resend, Inc. | Sending the match info by email (this function only, if enabled) | USA |
+| Resend, Inc. | Sending the match info and the game PIN by email (these functions only, if enabled) | USA |
 
 **Important about Cloudflare:** the encrypted connection from your device ends
 at Cloudflare; from there it continues encrypted to my server. Cloudflare can
