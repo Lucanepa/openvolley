@@ -2085,9 +2085,10 @@ button:disabled {
    button 60 times a second through the whole line-up entry. The two glows
    are layers of their own that cross-fade (::before the narrow one, ::after
    the wide one). They take the button's own animation (inline, none while
-   the line-up dialog is open over it), so the three run in step and stop
-   together; stopped, the button has no glow (as in eink before). Reduced
-   motion changes nothing here: the buttons flash and glow, as on main. */
+   the line-up dialog is open over it, with data-still), so the three run in
+   step and stop together; stopped, the button has no glow (as in eink
+   before). Reduced motion changes nothing here: the buttons flash and glow,
+   as on main. */
 .lineup-button::before,
 .lineup-button::after {
   content: '';
@@ -2107,6 +2108,16 @@ button:disabled {
 .lineup-button::after {
   box-shadow: 0 0 30px rgba(34, 197, 94, 0.8);
   animation-name: lineupGlowWide;
+}
+
+/* Still with the button while the line-up dialog is open over it (the
+   data-still of Scoreboard.jsx): the glows keep their own animation names, so
+   a 'none' inherited from the button only took their duration to 0 and they
+   ran on from their first start, out of step with the button's flash once it
+   started again. Stopped here, all three start again together. */
+.lineup-button[data-still]::before,
+.lineup-button[data-still]::after {
+  animation: none;
 }
 
 @keyframes lineupFlash {

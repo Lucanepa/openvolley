@@ -16777,6 +16777,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {!leftTeamLineupSet && (
                         <button
                           className="lineup-button lineup-button-left"
+                          // still with its glows (styles.css): they start again in step
+                          data-still={lineupModal ? '' : undefined}
                           onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
                           style={{
                             position: 'absolute',
@@ -16812,6 +16814,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {!rightTeamLineupSet && (
                         <button
                           className="lineup-button lineup-button-right"
+                          data-still={lineupModal ? '' : undefined}
                           onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
                           style={{
                             position: 'absolute',

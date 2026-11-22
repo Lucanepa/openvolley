@@ -75,6 +75,13 @@ describe('Line-up buttons: the flash runs on the compositor', () => {
     expect(scoreboard.match(/animation: lineupModal \? 'none' : 'lineupFlash 1\.5s ease-in-out infinite'/g)).toHaveLength(2)
     expect(scoreboard).not.toMatch(/animation: 'lineupFlash/)
   })
+
+  it('its glows stop with it and start again in step (data-still while the dialog is open)', () => {
+    // a 'none' inherited from the button only zeroed the glows' duration:
+    // they ran on and were out of step once the button flashed again
+    expect(scoreboard.match(/data-still=\{lineupModal \? '' : undefined\}/g)).toHaveLength(2)
+    expect(rulesFor('.lineup-button[data-still]::before,\n.lineup-button[data-still]::after').join('\n')).toMatch(/^\s*animation: none;\s*$/)
+  })
 })
 
 describe('Missing signature: the flash runs on the compositor', () => {
