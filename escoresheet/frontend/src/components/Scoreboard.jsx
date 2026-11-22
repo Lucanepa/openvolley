@@ -9203,20 +9203,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.events])
 
   // Get substitution history for a team in the current set
+  // Built once per change of the log or the set for both teams: the bench
+  // chips asked it several times each per render, and each call looked up
+  // every substitution's place in the log with a pass over all events
+  // (eventIndex: the first event with its id, as findIndex gave). The arrays
+  // are shared, so nobody may change them (frozen in development).
+  const substitutionHistoryOf = (events, setIndex, teamKey, indexOf) => events
+    .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === setIndex)
+    .sort(compareBySeq)
+    .map((e, idx) => ({
+      ...e,
+      index: idx,
+      eventIndex: indexOf(e.id)
+    }))
+  const substitutionHistoryByTeam = useMemo(() => {
+    if (!data?.events || !data?.set) return null
+    const firstIndex = new Map()
+    data.events.forEach((e, i) => { if (!firstIndex.has(e.id)) firstIndex.set(e.id, i) })
+    // findIndex compares with ===: no event's id equals NaN
+    const indexOf = (id) => (Number.isNaN(id) ? -1 : firstIndex.get(id))
+    const of = (teamKey) => {
+      const list = substitutionHistoryOf(data.events, data.set.index, teamKey, indexOf)
+      if (import.meta.env.DEV) {
+        list.forEach(Object.freeze)
+        Object.freeze(list)
+      }
+      return list
+    }
+    return { home: of('home'), away: of('away') }
+  }, [data?.events, data?.set]) // eslint-disable-line react-hooks/exhaustive-deps
   const getSubstitutionHistory = useCallback((teamKey) => {
     if (!data?.events || !data?.set) return []
-
-    const substitutions = data.events
-      .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === data.set.index)
-      .sort(compareBySeq)
-      .map((e, idx) => ({
-        ...e,
-        index: idx,
-        eventIndex: data.events.findIndex(ev => ev.id === e.id)
-      }))
-
-    return substitutions
-  }, [data?.events, data?.set])
+    if (teamKey === 'home' || teamKey === 'away') return substitutionHistoryByTeam[teamKey]
+    return substitutionHistoryOf(data.events, data.set.index, teamKey, (id) => data.events.findIndex(ev => ev.id === id))
+  }, [data?.events, data?.set, substitutionHistoryByTeam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const leftTeamSubstitutionHistory = useMemo(() =>
     getSubstitutionHistory(leftIsHome ? 'home' : 'away'),
