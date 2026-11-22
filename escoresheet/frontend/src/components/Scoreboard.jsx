@@ -415,6 +415,18 @@ const SB_BENCH_CAPTAIN_RING = {
   two: captainRingStyle({ size: '1.5em', minWidth: '1em', pad: SB_BENCH_CAPTAIN_PAD })
 }
 const sbBenchChipPadding = (captain) => (captain ? `1.6cqw calc(3.1cqw - ${SB_BENCH_CAPTAIN_PAD})` : '1.6cqw 3.1cqw')
+// A substituted-out player's square ("① ↑↓ 8": his number, circled for the
+// captain, then the green / red arrows and the substitute's number in a box
+// of their own). Its spacing is in em of the text, not in cqw of the column:
+// the text keeps its px floor in a narrow column while the cqw padding shrank
+// to 1-2 px, and the captain's ring and the box touched the orange border
+// (owner, 22.11.2026: "can this get a little more space?"). The em follow
+// --bench-fit through the font size, so the squares still shrink together
+// (benchFit.js). No captain pad taken off here: the ring keeps a gap too.
+const SB_BENCH_SUB_CHIP = { padding: '0.3em 0.45em', gap: '0.4em' }
+/** The arrows-and-substitute box inside it: its padding, the gap between the
+ *  arrows (`gap`) and before the substitute's number (`inGap`). */
+const SB_BENCH_SUB_PAIR = { padding: '0.2em 0.45em', gap: '0.15em', inGap: '0.25em' }
 
 /** A bench chip's number; the captain's ringed in `ringColour` (the chip's
  *  state), `label` naming the mark for hover and screen readers. */
@@ -15730,6 +15742,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const isTouchDropTarget = touchDragState.isDragging && validDropTargets.some(t =>
                           t.type === 'bench' && t.team === teamKey && String(t.playerNumber) === String(player.number) && !t.isLibero
                         )
+                        // substituted out: the arrows and the substitute's number beside his own
+                        const showsSubPair = (waitingForPoint || canComeBack) && !hasComeBack && !showX
 
                         return (
                           <div
@@ -15764,7 +15778,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             style={{
-                              padding: sbBenchChipPadding(player.isCaptain),
+                              padding: showsSubPair ? SB_BENCH_SUB_CHIP.padding : sbBenchChipPadding(player.isCaptain),
                               minWidth: 'calc(44px * var(--bench-fit, 1))',
                               minHeight: 'calc(44px * var(--bench-fit, 1))',
                               justifyContent: 'center',
@@ -15782,7 +15796,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               fontSize: 'max(calc(15px * var(--bench-fit, 1)), calc(6.6cqw * var(--cqf, 1)))',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '1.25cqw',
+                              gap: showsSubPair ? SB_BENCH_SUB_CHIP.gap : '1.25cqw',
                               position: 'relative',
                               border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #b45309' : '1px solid var(--ov-hairline)'),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
@@ -15860,7 +15874,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 ✕
                               </span>
                             )}
-                            {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
+                            {showsSubPair && (
                               <span
                                 style={{
                                   fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(3.3cqw * var(--cqf, 1)))',
@@ -15868,9 +15882,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   display: 'flex',
                                   flexDirection: 'row',
                                   alignItems: 'center',
-                                  gap: '0.6cqw',
+                                  gap: SB_BENCH_SUB_PAIR.gap,
                                   background: 'var(--panel)',
-                                  padding: '0.3cqw 0.9cqw',
+                                  padding: SB_BENCH_SUB_PAIR.padding,
                                   borderRadius: '0.6cqw',
                                   minHeight: '3.75cqw',
                                   justifyContent: 'center',
@@ -15887,7 +15901,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     color: 'var(--text)',
                                     fontSize: 'max(calc(13px * var(--bench-fit, 1)), calc(5.6cqw * var(--cqf, 1)))',
                                     fontWeight: 600,
-                                    marginLeft: '0.6cqw'
+                                    marginLeft: SB_BENCH_SUB_PAIR.inGap
                                   }}>
                                     {playerWhoReplacedThem}
                                   </span>
@@ -19140,6 +19154,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const isTouchDropTarget = touchDragState.isDragging && validDropTargets.some(t =>
                           t.type === 'bench' && t.team === teamKey && String(t.playerNumber) === String(player.number) && !t.isLibero
                         )
+                        // substituted out: the arrows and the substitute's number beside his own
+                        const showsSubPair = (waitingForPoint || canComeBack) && !hasComeBack && !showX
 
                         return (
                           <div
@@ -19174,7 +19190,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             style={{
-                              padding: sbBenchChipPadding(player.isCaptain),
+                              padding: showsSubPair ? SB_BENCH_SUB_CHIP.padding : sbBenchChipPadding(player.isCaptain),
                               minWidth: 'calc(44px * var(--bench-fit, 1))',
                               minHeight: 'calc(44px * var(--bench-fit, 1))',
                               justifyContent: 'center',
@@ -19192,7 +19208,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               fontSize: 'max(calc(15px * var(--bench-fit, 1)), calc(6.6cqw * var(--cqf, 1)))',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '1.25cqw',
+                              gap: showsSubPair ? SB_BENCH_SUB_CHIP.gap : '1.25cqw',
                               position: 'relative',
                               border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #b45309' : '1px solid var(--ov-hairline)'),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
@@ -19270,7 +19286,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 ✕
                               </span>
                             )}
-                            {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
+                            {showsSubPair && (
                               <span
                                 style={{
                                   fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(3.3cqw * var(--cqf, 1)))',
@@ -19278,9 +19294,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   display: 'flex',
                                   flexDirection: 'row',
                                   alignItems: 'center',
-                                  gap: '0.6cqw',
+                                  gap: SB_BENCH_SUB_PAIR.gap,
                                   background: 'var(--panel)',
-                                  padding: '0.3cqw 0.9cqw',
+                                  padding: SB_BENCH_SUB_PAIR.padding,
                                   borderRadius: '0.6cqw',
                                   minHeight: '3.75cqw',
                                   justifyContent: 'center',
@@ -19297,7 +19313,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     color: 'var(--text)',
                                     fontSize: 'max(calc(13px * var(--bench-fit, 1)), calc(5.6cqw * var(--cqf, 1)))',
                                     fontWeight: 600,
-                                    marginLeft: '0.6cqw'
+                                    marginLeft: SB_BENCH_SUB_PAIR.inGap
                                   }}>
                                     {playerWhoReplacedThem}
                                   </span>

@@ -82,6 +82,26 @@ describe('referee score row: the SERVE block', () => {
     expect(slotStyle(base, 'left')).toEqual(slotStyle(base, 'right'))
   })
 
+  // Owner, 22.11.2026: "scorer on ref tablet can be 3% smaller" (the score
+  // digits and the colon, both layouts); the serve block stays as tall.
+  it('the score and colon are 3 % smaller than 15 / 11 (20 / 14 upright), the serve block as tall as them', () => {
+    expect(SCORE_ROW).toEqual({ scoreVmin: 14.55, colonVmin: 10.67, largeScoreVmin: 19.4, largeColonVmin: 13.58 })
+    for (const [now, was] of [[SCORE_ROW.scoreVmin, 15], [SCORE_ROW.colonVmin, 11], [SCORE_ROW.largeScoreVmin, 20], [SCORE_ROW.largeColonVmin, 14]]) {
+      expect(now).toBeCloseTo(was * 0.97, 2)
+    }
+    for (const large of [false, true]) {
+      const c = renderRow('left', { large })
+      const [left, colon, right] = c.querySelector('[data-score]').children
+      const score = large ? SCORE_ROW.largeScoreVmin : SCORE_ROW.scoreVmin
+      expect(left.style.fontSize, String(large)).toBe(`${vmin(score)}px`)
+      expect(right.style.fontSize, String(large)).toBe(`${vmin(score)}px`)
+      expect(colon.style.fontSize, String(large)).toBe(`${vmin(large ? SCORE_ROW.largeColonVmin : SCORE_ROW.colonVmin)}px`)
+      // the serve block and both slots: exactly the digits' height
+      expect(c.querySelector('[data-serve-block]').style.height, String(large)).toBe(`${vmin(score)}px`)
+      for (const side of ['left', 'right']) expect(c.querySelector(`[data-serve-slot="${side}"]`).style.height, String(large)).toBe(`${vmin(score)}px`)
+    }
+  })
+
   it('is big (as tall as the score digits) but never taller, so the court is not pushed down', () => {
     const c = renderRow('right')
     const digits = c.querySelector('[data-score] span')

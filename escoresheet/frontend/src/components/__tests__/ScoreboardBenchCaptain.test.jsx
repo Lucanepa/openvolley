@@ -184,4 +184,35 @@ describe('Scoreboard bench: the captain\'s number circled', () => {
     // #8 came in for the captain: on court, not on the bench
     expect(chip('home', 8)).toBeNull()
   }, 30000)
+
+  // Owner, 22.11.2026, on "① ↑↓ 8" crammed against the orange border: "can
+  // this get a little more space?". The cqw padding shrank to 1-2 px in a
+  // narrow column (the text keeps its px floor) and the captain's ring went
+  // past it; the substituted square is spaced in em of its text instead.
+  it('a substituted-out square keeps its number, arrows and substitute off the border', async () => {
+    const matchId = await setUpMatch({ captains: { home: 1, away: 12 }, homeSub: [1, 8] })
+    mount(matchId)
+    await waitFor(() => expect(chip('home', 1)).toBeTruthy(), { timeout: 10000 })
+    const el = chip('home', 1)
+    expect(el.textContent).toBe('1↑↓8')
+    // the square: em padding (no captain pad taken off) and a gap before the box
+    expect(el.style.padding).toBe('0.3em 0.45em')
+    expect(el.style.gap).toBe('0.4em')
+    expect(el.style.border).toBe('2px solid rgb(180, 83, 9)')
+    // the arrows-and-substitute box: its own padding, a gap between the
+    // arrows and before the substitute's number
+    const pair = el.children[1]
+    expect(pair.textContent).toBe('↑↓8')
+    expect(pair.style.padding).toBe('0.2em 0.45em')
+    expect(pair.style.gap).toBe('0.15em')
+    expect(pair.lastElementChild.textContent).toBe('8')
+    expect(pair.lastElementChild.style.marginLeft).toBe('0.25em')
+    // it still shrinks with the column: its 44 px minimum follows --bench-fit
+    expect(el.style.minWidth).toBe('calc(44px * var(--bench-fit, 1))')
+    expect(el.style.minHeight).toBe('calc(44px * var(--bench-fit, 1))')
+    // the others on the bench keep their squares as they were
+    const plain = chip('home', 9)
+    expect(plain.style.padding).toBe('1.6cqw 3.1cqw')
+    expect(plain.style.gap).toBe('1.25cqw')
+  }, 30000)
 })
