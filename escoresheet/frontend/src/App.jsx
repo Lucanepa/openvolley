@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, persistentStorage } from './db/db'
 import { wipeMatchEvents } from './db/eventHistory'
 import SavedBackupsList from './components/SavedBackupsList'
 import MatchSetup, { preloadMatchSetup } from './components/MatchSetup'
-import Scoreboard, { preloadScoreboard } from './components/Scoreboard'
+import ScoreboardScreen, { preloadScoreboard } from './components/Scoreboard'
 import CoinToss from './components/CoinToss'
 import MatchEnd, { preloadMatchEnd } from './components/MatchEnd'
 import ManualAdjustments from './components/ManualAdjustments'
@@ -37,12 +37,18 @@ import { isKnownClosedOnServer, isStaleClosedCopy, wasClosedOnServer } from './u
 import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
+import { useLatestCallback } from './hooks/useLatestCallback'
 import { pickNativeBackupFile } from './utils/nativeBackup'
 import { useBackupUnlock } from './hooks/useBackupUnlock'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import { publishEndedLiveStates } from './utils/matchEndLiveState'
 import ballFallback from './ball_fallback.png'
 import { isLocalOnly } from './domain/matchKind'
+
+// The scoring screen renders on its own state, data and contexts only: App's
+// renders while scoring (its live queries, the sync status) stop here. Its
+// callbacks keep one identity (useLatestCallback in App).
+const Scoreboard = memo(ScoreboardScreen)
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -1951,6 +1957,19 @@ export default function App() {
     setShowMatchSetup(false)
     setShowCoinToss(true)
   }
+
+  // The match info alone, over the scoring screen (its Menu)
+  const openMatchInfoFromScoreboard = () => {
+    setManualAdjustmentsFrom('scoreboard')
+    setShowManualAdjustments(true)
+  }
+
+  // The memoized scoring screen's callbacks: one identity, App's newest closure
+  const scoreboardFinishSet = useLatestCallback(finishSet)
+  const scoreboardOpenSetup = useLatestCallback(openMatchSetup)
+  const scoreboardOpenMatchSetup = useLatestCallback(openMatchSetupView)
+  const scoreboardOpenMatchInfo = useLatestCallback(openMatchInfoFromScoreboard)
+  const scoreboardOpenCoinToss = useLatestCallback(openCoinTossView)
 
   const returnToMatch = () => setShowMatchSetup(false)
 
@@ -4161,11 +4180,11 @@ export default function App() {
                 <Scoreboard
                   matchId={matchId}
                   scorerAttentionTrigger={scorerAttentionTrigger}
-                  onFinishSet={finishSet}
-                  onOpenSetup={openMatchSetup}
-                  onOpenMatchSetup={openMatchSetupView}
-                  onOpenMatchInfo={() => { setManualAdjustmentsFrom('scoreboard'); setShowManualAdjustments(true) }}
-                  onOpenCoinToss={openCoinTossView}
+                  onFinishSet={scoreboardFinishSet}
+                  onOpenSetup={scoreboardOpenSetup}
+                  onOpenMatchSetup={scoreboardOpenMatchSetup}
+                  onOpenMatchInfo={scoreboardOpenMatchInfo}
+                  onOpenCoinToss={scoreboardOpenCoinToss}
                   onTriggerEventBackup={backup.triggerEventBackup}
                 />
               )}
