@@ -9124,9 +9124,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   )
 
   // Get substitution details with scores
+  // Kept per side until the log, the set or the sides change: the SUB
+  // counters asked for them twice a render each (a pass over the log per
+  // substitution); nobody changes the list
+  const substitutionDetailsBySide = useMemo(() => new Map(), [data?.events, data?.set, mapSideToTeamKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const getSubstitutionDetails = useCallback(
     side => {
       if (!data?.events || !data?.set) return []
+      const cacheable = side === 'left' || side === 'right'
+      if (cacheable && substitutionDetailsBySide.has(side)) return substitutionDetailsBySide.get(side)
       const teamKey = mapSideToTeamKey(side)
       const setIndex = data.set.index
 
@@ -9167,9 +9173,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       })
 
+      if (cacheable) substitutionDetailsBySide.set(side, details)
       return details
     },
-    [data?.events, data?.set, mapSideToTeamKey]
+    [data?.events, data?.set, mapSideToTeamKey, substitutionDetailsBySide]
   )
 
   const handlePlaceholder = message => () => {
@@ -9938,11 +9945,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // 22.11.2026; libero_recovered). Numbers are compared as strings: a
   // sanction given from the court disc carries the number as a string.
   // MUST be defined before handlers that use it in dependency arrays
+  // Each answer is kept until its inputs change (the liberos' tiles, menus
+  // and the court asked it about 20 times a render): by team and number as a
+  // string, which is all liberoPlayState and the roster lookup compare by.
+  const liberoStates = useMemo(() => new Map(), [data?.events, data?.set?.index, data?.homePlayers, data?.awayPlayers]) // eslint-disable-line react-hooks/exhaustive-deps
   const liberoStateOf = useCallback((teamKey, liberoNumber) => {
+    const key = (teamKey === 'home' || teamKey === 'away') && liberoNumber != null ? `${teamKey}:${String(liberoNumber)}` : null
+    if (key && liberoStates.has(key)) return liberoStates.get(key)
     const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
     const player = teamPlayers?.find(p => p.number != null && String(p.number) === String(liberoNumber)) || null
-    return liberoPlayState(data?.events, teamKey, liberoNumber, { setIndex: data?.set?.index ?? null, player })
-  }, [data?.events, data?.set?.index, data?.homePlayers, data?.awayPlayers])
+    const state = liberoPlayState(data?.events, teamKey, liberoNumber, { setIndex: data?.set?.index ?? null, player })
+    if (key) liberoStates.set(key, state)
+    return state
+  }, [data?.events, data?.set?.index, data?.homePlayers, data?.awayPlayers, liberoStates])
 
   const isLiberoUnable = useCallback((teamKey, liberoNumber) => liberoStateOf(teamKey, liberoNumber).unable, [liberoStateOf])
 
@@ -12286,6 +12301,91 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     return []
   }, [data?.events, playerLogIndex])
+
+  // The S and T columns of the set results tables: a team's substitutions
+  // and time-outs in a set (e.setIndex === set.index, payload.team === the
+  // team, as the rows compared them), counted in one pass per log change
+  // instead of two passes over the log per row of every table
+  const setRequestCounts = useMemo(() => {
+    const counts = { substitution: new Map(), timeout: new Map() }
+    for (const e of data?.events || []) {
+      if (e.type !== 'substitution' && e.type !== 'timeout') continue
+      const byTeam = counts[e.type]
+      let bySet = byTeam.get(e.payload?.team)
+      if (!bySet) byTeam.set(e.payload?.team, bySet = new Map())
+      bySet.set(e.setIndex, (bySet.get(e.setIndex) || 0) + 1)
+    }
+    return counts
+  }, [data?.events])
+  const setRequestCount = (type, teamKey, setIndex) => setRequestCounts[type].get(teamKey)?.get(setIndex) || 0
+
+  // The Last action line under the rally buttons: the set's latest main
+  // event that has a description, and its short description. Each is worked
+  // out when the line first needs it after a change of the log or the set,
+  // then kept (the line copied and sorted the set's events and described
+  // them on every render)
+  const lastActionKept = useMemo(() => ({}), [data?.events, data?.set, getActionDescription, getShortActionDescription])
+  const lastActionEvent = () => {
+    if (!('event' in lastActionKept)) lastActionKept.event = findLastActionEvent()
+    return lastActionKept.event
+  }
+  const lastActionDescription = (lastEvent) => {
+    if (!('description' in lastActionKept)) lastActionKept.description = getShortActionDescription(lastEvent)
+    return lastActionKept.description
+  }
+  const findLastActionEvent = () => {
+    if (!(data?.events && data.events.length > 0 && data?.set)) return null
+    // IMPORTANT: Only show events from the CURRENT SET
+    const currentSetIndex = data.set.index
+    const currentSetEvents = data.events.filter(e => e.setIndex === currentSetIndex)
+
+    if (currentSetEvents.length === 0) return null
+
+    // Sort by sequence number (highest first)
+    const sortedEvents = [...currentSetEvents].sort((a, b) => {
+      const aSeq = a.seq || 0
+      const bSeq = b.seq || 0
+      if (aSeq !== 0 || bSeq !== 0) {
+        return bSeq - aSeq // Descending
+      }
+      // Fallback to timestamp
+      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+      return bTime - aTime
+    })
+
+    // Helper to check if an event is a sub-event (decimal sequence like 7.1)
+    const isSubEvent = (event) => {
+      const seq = event.seq || 0
+      return seq !== Math.floor(seq)
+    }
+
+    // Find the last main event (integer sequence)
+    let lastEvent = null
+    for (const e of sortedEvents) {
+      // Skip sub-events (they're part of their parent)
+      if (isSubEvent(e)) continue
+
+      // Skip rally_start; a replay is named ("Rally replayed", owner 22.11.2026)
+      if (e.type === 'rally_start') continue
+
+      // For lineup events, only show initial or substitution
+      if (e.type === 'lineup') {
+        const hasInitial = e.payload?.isInitial === true
+        const hasSubstitution = e.payload?.fromSubstitution === true
+        if (!hasInitial && !hasSubstitution) continue
+      }
+
+      // Try to get description
+      const desc = getActionDescription(e)
+      if (desc && desc !== 'Unknown action') {
+        lastEvent = e
+        break
+      }
+    }
+
+    return lastEvent
+  }
 
   // Confirm player sanction
   const runPlayerSanctionConfirm = useConfirmAction(onConfirmFailed)
@@ -16484,12 +16584,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && leftPoints > rightPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentLeftTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentLeftTeamKey, set.index)
                               let rowColor = 'inherit'
                               if (set.finished) {
                                 rowColor = won === 1 ? '#22c55e' : '#ef4444'
@@ -18096,12 +18192,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && leftPoints > rightPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentLeftTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentLeftTeamKey, set.index)
 
                               // Determine row color based on set status
                               let rowColor = 'inherit'
@@ -18479,58 +18571,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       >
                         {/* Last action - filtered to current set */}
                         {data?.events && data.events.length > 0 && data?.set && (() => {
-                          // IMPORTANT: Only show events from the CURRENT SET
-                          const currentSetIndex = data.set.index
-                          const currentSetEvents = data.events.filter(e => e.setIndex === currentSetIndex)
-
-                          if (currentSetEvents.length === 0) return null
-
-                          // Sort by sequence number (highest first)
-                          const sortedEvents = [...currentSetEvents].sort((a, b) => {
-                            const aSeq = a.seq || 0
-                            const bSeq = b.seq || 0
-                            if (aSeq !== 0 || bSeq !== 0) {
-                              return bSeq - aSeq // Descending
-                            }
-                            // Fallback to timestamp
-                            const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-                            const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-                            return bTime - aTime
-                          })
-
-                          // Helper to check if an event is a sub-event (decimal sequence like 7.1)
-                          const isSubEvent = (event) => {
-                            const seq = event.seq || 0
-                            return seq !== Math.floor(seq)
-                          }
-
-                          // Find the last main event (integer sequence)
-                          let lastEvent = null
-                          for (const e of sortedEvents) {
-                            // Skip sub-events (they're part of their parent)
-                            if (isSubEvent(e)) continue
-
-                            // Skip rally_start; a replay is named ("Rally replayed", owner 22.11.2026)
-                            if (e.type === 'rally_start') continue
-
-                            // For lineup events, only show initial or substitution
-                            if (e.type === 'lineup') {
-                              const hasInitial = e.payload?.isInitial === true
-                              const hasSubstitution = e.payload?.fromSubstitution === true
-                              if (!hasInitial && !hasSubstitution) continue
-                            }
-
-                            // Try to get description
-                            const desc = getActionDescription(e)
-                            if (desc && desc !== 'Unknown action') {
-                              lastEvent = e
-                              break
-                            }
-                          }
+                          // The set's latest main event with a description
+                          // (lastActionEvent: kept until the log or the set changes)
+                          const lastEvent = lastActionEvent()
 
                           if (!lastEvent || lineupCovered.includes(lastEvent.payload?.team)) return null
 
-                          const description = getShortActionDescription(lastEvent)
+                          const description = lastActionDescription(lastEvent)
 
                           return (
                             // One fixed line: a description that wrapped to two lines made the
@@ -18619,12 +18666,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && rightPoints > leftPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentRightTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentRightTeamKey, set.index)
 
                               // Determine row color based on set status
                               let rowColor = 'inherit'
@@ -18711,12 +18754,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && leftPoints > rightPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentLeftTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentLeftTeamKey, set.index)
                               let rowColor = 'inherit'
                               if (set.finished) rowColor = won === 1 ? '#22c55e' : '#ef4444'
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
@@ -18783,12 +18822,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && rightPoints > leftPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentRightTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentRightTeamKey, set.index)
                               let rowColor = 'inherit'
                               if (set.finished) rowColor = won === 1 ? '#22c55e' : '#ef4444'
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
@@ -19967,12 +20002,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && rightPoints > leftPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentRightTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentRightTeamKey, set.index)
                               let rowColor = 'inherit'
                               if (set.finished) {
                                 rowColor = won === 1 ? '#22c55e' : '#ef4444'
@@ -22091,12 +22122,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       const teamPoints = teamKey === 'home' ? set.homePoints : set.awayPoints
                       const oppPoints = teamKey === 'home' ? set.awayPoints : set.homePoints
                       const won = set.finished && teamPoints > oppPoints ? 1 : 0
-                      const substitutions = (data?.events || []).filter(e =>
-                        e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === teamKey
-                      ).length
-                      const timeouts = (data?.events || []).filter(e =>
-                        e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === teamKey
-                      ).length
+                      const substitutions = setRequestCount('substitution', teamKey, set.index)
+                      const timeouts = setRequestCount('timeout', teamKey, set.index)
                       let rowColor = 'inherit'
                       if (set.finished) {
                         rowColor = won === 1 ? '#22c55e' : '#ef4444'
