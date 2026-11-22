@@ -4,7 +4,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   keepCourtCaptainField, keepsGameCaptain, keptGameCaptain, automaticGameCaptain,
-  chosenGameCaptain, automaticDesignation, keepFieldsFromEvents
+  chosenGameCaptain, automaticDesignation, keepFieldsFromEvents, keepEdit,
+  actingCourtCaptains, courtCaptainsCleared, courtCaptainsRestored
 } from '../gameCaptainKeep'
 
 describe('the kept game captain', () => {
@@ -77,5 +78,35 @@ describe('a match rebuilt from the server copy', () => {
     expect(keepFieldsFromEvents([])).toEqual({})
     expect(keepFieldsFromEvents([{ seq: 1, type: 'court_captain_designation', payload: { team: 'away', playerNumber: 2, keep: true } }]))
       .toEqual({ awayRememberedCourtCaptain: 2, awayKeepCourtCaptain: true })
+  })
+})
+
+describe('the switch turned off from the Game captain button', () => {
+  const events = [
+    { id: 1, seq: 4, type: 'court_captain_designation', payload: { team: 'home', playerNumber: 3, keep: true } },
+    { id: 2, seq: 9, type: 'court_captain_designation', payload: { team: 'home', playerNumber: 8, keep: true, auto: true } },
+    { id: 3, seq: 7, type: 'court_captain_designation', payload: { team: 'away', playerNumber: 5 } }
+  ]
+  it('edits the newest designation of the team, which a continued match reads back', () => {
+    const edit = keepEdit(events, 'home', false)
+    expect(edit).toEqual({ id: 2, payload: { team: 'home', playerNumber: 8, keep: false, auto: true } })
+    const after = events.map(e => (e.id === edit.id ? { ...e, payload: edit.payload } : e))
+    expect(keepFieldsFromEvents(after)).toMatchObject({ homeRememberedCourtCaptain: 8, homeKeepCourtCaptain: false })
+  })
+  it('nothing to edit: already so, or no designation', () => {
+    expect(keepEdit(events, 'home', true)).toBeNull()
+    expect(keepEdit(events, 'away', false)).toBeNull()
+    expect(keepEdit([], 'home', true)).toBeNull()
+  })
+})
+
+describe('the set end ends the role (FIVB 5.1.2)', () => {
+  it('clears the acting game captains and keeps them for Undo / Reopen set', () => {
+    const previous = actingCourtCaptains({ homeCourtCaptain: 8, awayCourtCaptain: null, homeRememberedCourtCaptain: 8, homeKeepCourtCaptain: true })
+    expect(previous).toEqual({ home: 8 })
+    expect(courtCaptainsCleared(previous)).toEqual({ homeCourtCaptain: null })
+    expect(courtCaptainsRestored(previous)).toEqual({ homeCourtCaptain: 8 })
+    expect(actingCourtCaptains({})).toEqual({})
+    expect(courtCaptainsRestored(undefined)).toEqual({})
   })
 })

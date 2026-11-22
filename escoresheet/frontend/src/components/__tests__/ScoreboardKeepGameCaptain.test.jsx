@@ -19,6 +19,7 @@ import { LoggingProvider } from '../../contexts/LoggingContext'
 import { db } from '../../db/db'
 import Scoreboard from '../Scoreboard'
 import { GHOST_CLICK_MS } from '../../hooks/useConfirmAction'
+import { keepFieldsFromEvents } from '../../domain/gameCaptainKeep'
 
 class OfflineSocket {
   constructor() { this.readyState = 3 }
@@ -346,5 +347,160 @@ describe('Keep as game captain: the libero team captain leaves the court', () =>
     await waitFor(() => expect(captainDialog()).toBeTruthy())
     expect(captainDialog().textContent).toContain('#3 is game captain')
     expect(keepSwitch().getAttribute('aria-checked')).toBe('true')
+
+    // turned off there: the designation says so too, for a device that
+    // continues the match from the server's copy (keepFieldsFromEvents)
+    fireEvent.click(keepSwitch())
+    await waitFor(async () => expect((await db.matches.get(matchId)).homeKeepCourtCaptain).toBe(false))
+    await waitFor(async () => expect((await designations())[0].payload.keep).toBe(false))
+    expect(keepFieldsFromEvents(await db.events.toArray())).toMatchObject({ homeKeepCourtCaptain: false, homeRememberedCourtCaptain: '3' })
   }, 60000)
+})
+
+// Owner 22.11: a game captain's role ends with the set (FIVB 5.1.2). The next
+// set designates again: with "Keep as game captain" on and the kept player
+// in the starting six, a new designation event of that set without a
+// question; with it off, the dialog asks as usual (and proposes the last
+// one). Undo in the new set does not bring the old set's game captain back;
+// Reopen set does.
+describe('Keep as game captain: the set end ends the role', () => {
+  const SIX = { I: '2', II: '3', III: '4', IV: '5', V: '6', VI: '7' }
+  // home captain #1 is not in the six; #3 is the acting game captain; set 1
+  // at 24:20, the next home point ends it
+  async function setUpSetPoint({ keep }) {
+    const home = await db.teams.add({ name: 'Home VC', shortName: 'HOM' })
+    const away = await db.teams.add({ name: 'Away VC', shortName: 'AWY' })
+    const players = []
+    for (const teamId of [home, away]) {
+      for (let n = 1; n <= 12; n++) players.push({ teamId, number: n, name: `P${n}`, firstName: 'X', ...(n === 1 ? { isCaptain: true } : {}) })
+    }
+    await db.players.bulkAdd(players)
+    const matchId = await db.matches.add({
+      homeTeamId: home, awayTeamId: away, status: 'live', test: false, bestOf: 5,
+      firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossConfirmed: true,
+      homeCourtCaptain: 3, homeRememberedCourtCaptain: 3, homeKeepCourtCaptain: keep
+    })
+    const t = new Date(Date.now() - 40 * 60 * 1000).toISOString()
+    await db.sets.add({ matchId, index: 1, homePoints: 24, awayPoints: 20, finished: false, startTime: t })
+    let seq = 1
+    const ev = [{ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: seq++, ts: t }]
+    ev.push({ matchId, setIndex: 1, type: 'lineup', payload: { team: 'home', lineup: SIX, isInitial: true }, seq: seq++, ts: t })
+    ev.push({ matchId, setIndex: 1, type: 'lineup', payload: { team: 'away', lineup: LINEUP, isInitial: true }, seq: seq++, ts: t })
+    ev.push({ matchId, setIndex: 1, type: 'court_captain_designation', payload: { team: 'home', playerNumber: 3, previousCourtCaptain: null, keep, fromLineup: true }, seq: seq++, ts: t })
+    ev.push({ matchId, setIndex: 1, type: 'set_start', payload: {}, seq: seq++, ts: t })
+    for (const team of [...Array(20).fill('away'), ...Array(24).fill('home')]) {
+      ev.push({ matchId, setIndex: 1, type: 'rally_start', payload: {}, seq: seq++, ts: t })
+      ev.push({ matchId, setIndex: 1, type: 'point', payload: { team }, seq: seq++, ts: t })
+    }
+    await db.events.bulkAdd(ev)
+    return matchId
+  }
+
+  async function homeWinsSet1(matchId) {
+    mount(matchId)
+    await waitFor(() => expect(court('home', 3)).toBeTruthy(), { timeout: 10000 })
+    await rally('home')
+    const setEnd = await waitFor(() => {
+      const d = [...document.querySelectorAll('[role=dialog]')].find(x => /Set 1 end/.test(x.textContent))
+      expect(d).toBeTruthy()
+      return d
+    }, { timeout: 10000 })
+    await settle()
+    fireEvent.click([...setEnd.querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm'))
+    await waitFor(async () => expect((await ofType('set_end'))).toHaveLength(1), { timeout: 10000 })
+    await waitFor(async () => expect((await db.sets.toArray()).some(s => s.index === 2)).toBe(true), { timeout: 10000 })
+    await untilQuiet()
+  }
+
+  // The set 2 line-up of home: set 1's starting six ("Last set's line-up")
+  async function homeLineupSet2() {
+    const interval = await waitFor(() => { const b = button('End set interval'); expect(b).toBeTruthy(); return b }, { timeout: 10000 }).catch(() => null)
+    if (interval) { fireEvent.click(interval); await settle() }
+    const open = await waitFor(() => {
+      const b = [...document.querySelectorAll('button')].find(x => /^Line-?up\s*A/.test(x.textContent.trim()))
+      expect(b).toBeTruthy()
+      return b
+    }, { timeout: 10000 })
+    fireEvent.click(open)
+    const copy = await waitFor(() => { const b = document.querySelector('[data-testid="lineup-copy"] [data-copy-set="1"]'); expect(b).toBeTruthy(); return b }, { timeout: 10000 })
+    fireEvent.click(copy)
+    await waitFor(() => expect(document.querySelector('.lineup-gcapt')).toBeTruthy())
+  }
+  const lineupDialog = () => [...document.querySelectorAll('[role=dialog]')].find(d => d.querySelector('.lineup-gcapt')) || null
+
+  it('switch on: the set end clears the role; the kept player in the six is designated for set 2; Undo does not bring set 1\'s back', async () => {
+    const matchId = await setUpSetPoint({ keep: true })
+    await homeWinsSet1(matchId)
+    let match = await db.matches.get(matchId)
+    expect(match.homeCourtCaptain ?? null).toBeNull()
+    expect(match.homeRememberedCourtCaptain).toBe(3)
+    expect(match.homeKeepCourtCaptain).toBe(true)
+    const [setEnd] = await ofType('set_end')
+    expect(setEnd.payload.previousCourtCaptains).toEqual({ home: 3 })
+
+    await homeLineupSet2()
+    expect(lineupDialog().querySelector('[aria-label="Game captain: player 3"]').getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click([...lineupDialog().querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm'))
+    await waitFor(async () => expect(await designations()).toHaveLength(2), { timeout: 5000 })
+    const set2 = (await designations()).find(d => d.setIndex === 2)
+    expect(set2.payload).toMatchObject({ team: 'home', playerNumber: 3, fromLineup: true, keep: true, previousCourtCaptain: null })
+    await waitFor(async () => expect((await db.matches.get(matchId)).homeCourtCaptain).toBe(3))
+    await sleep(600)
+    expect(captainDialog()).toBeNull()
+    await untilQuiet()
+
+    // Undo in set 2: the designation goes, set 1's game captain stays gone
+    fireEvent.click(document.querySelector('[data-help-id="scoreboard-undo"]'))
+    const undoDialog = await waitFor(() => {
+      const d = [...document.querySelectorAll('[role=dialog]')].find(x => /undo/i.test(x.textContent))
+      expect(d).toBeTruthy()
+      return d
+    })
+    fireEvent.click([...undoDialog.querySelectorAll('button')].find(b => /^(Yes|Undo|Confirm)$/.test(b.textContent.trim())))
+    await waitFor(async () => expect((await designations()).filter(d => d.setIndex === 2)).toHaveLength(0), { timeout: 5000 })
+    match = await db.matches.get(matchId)
+    expect(match.homeCourtCaptain ?? null).toBeNull()
+    expect(match.homeRememberedCourtCaptain).toBe(3)
+  }, 90000)
+
+  it('switch off: set 1\'s game captain no longer counts; the dialog asks after the line-up, the last one proposed', async () => {
+    const matchId = await setUpSetPoint({ keep: false })
+    await homeWinsSet1(matchId)
+    await homeLineupSet2()
+    // nothing chosen: None
+    expect(lineupDialog().querySelector('.lineup-gcapt__choice--none').getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click([...lineupDialog().querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm'))
+    await waitFor(() => expect(captainDialog()).toBeTruthy(), { timeout: 5000 })
+    expect(keepSwitch().getAttribute('aria-checked')).toBe('false')
+    const proposed = [...captainDialog().querySelectorAll('button')].find(b => b.textContent.replace(/\s+/g, '') === '3Last')
+    expect(proposed).toBeTruthy()
+    fireEvent.click(proposed)
+    await waitFor(async () => expect((await designations()).filter(d => d.setIndex === 2)).toHaveLength(1), { timeout: 5000 })
+  }, 90000)
+
+  it('Reopen set 1: set 2 goes, set 1\'s game captain acts again', async () => {
+    localStorage.setItem('ov.corrections.view', 'list')
+    const matchId = await setUpSetPoint({ keep: true })
+    await homeWinsSet1(matchId)
+    await homeLineupSet2()
+    fireEvent.click([...lineupDialog().querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm'))
+    await waitFor(async () => expect(await designations()).toHaveLength(2), { timeout: 5000 })
+    await untilQuiet()
+
+    const matchButton = await waitFor(() => { const b = document.querySelector('.match-toolbar button[title="Match"]'); expect(b).toBeTruthy(); return b }, { timeout: 5000 })
+    fireEvent.click(matchButton)
+    const corrections = await waitFor(() => { const b = [...document.querySelectorAll('[role=menuitem]')].find(x => x.textContent.trim() === 'Corrections'); expect(b).toBeTruthy(); return b })
+    fireEvent.click(corrections)
+    const reopen = await waitFor(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Reopen set'); expect(b).toBeTruthy(); return b }, { timeout: 5000 })
+    await settle()
+    fireEvent.click(reopen)
+    const yes = await waitFor(() => { const b = button('Yes, reopen'); expect(b).toBeTruthy(); return b }, { timeout: 3000 })
+    await settle()
+    fireEvent.click(yes)
+    await waitFor(async () => expect((await db.sets.toArray()).map(x => x.index)).toEqual([1]), { timeout: 5000 })
+    expect(await ofType('set_end')).toHaveLength(0)
+    expect((await designations()).map(d => d.setIndex)).toEqual([1])
+    await waitFor(async () => expect((await db.matches.get(matchId)).homeCourtCaptain).toBe(3))
+    localStorage.removeItem('ov.corrections.view')
+  }, 90000)
 })

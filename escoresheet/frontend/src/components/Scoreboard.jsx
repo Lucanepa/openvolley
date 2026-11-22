@@ -124,7 +124,7 @@ import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } 
 import { coveredLineupTeams, coveredLineupTeamsOf, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
 import GameCaptainDialog from './scoreboard/GameCaptainDialog.jsx'
-import { automaticGameCaptain, automaticDesignation, chosenGameCaptain, keepCourtCaptainField, keepsGameCaptain, keptGameCaptain } from '../domain/gameCaptainKeep'
+import { actingCourtCaptains, automaticGameCaptain, automaticDesignation, chosenGameCaptain, courtCaptainsCleared, courtCaptainsRestored, keepCourtCaptainField, keepsGameCaptain, keptGameCaptain, keepEdit } from '../domain/gameCaptainKeep'
 import { toast } from '../ui/uiStore.js'
 import { earlierStartingLineups } from '../domain/lineupCopy'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
@@ -7112,6 +7112,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.log('[SET_END_DEBUG] STEP 3: Logging set_end event...')
       const setEndWritten = (await db.events.where('matchId').equals(matchId).toArray())
         .some(e => e.type === 'set_end' && e.setIndex === setIndex)
+      // A game captain's role ends with the set (FIVB 5.1.2, owner 22.11):
+      // the acting ones are cleared with the set end, which keeps them for
+      // Undo / Reopen set (reverseEventSideEffects); the next set designates
+      // again (the line-up dialog, the Game captain dialog, or "Keep as game
+      // captain"), a new designation event of that set
+      const matchAtSetEnd = await db.matches.get(matchId)
+      const previousCourtCaptains = actingCourtCaptains(matchAtSetEnd)
+      const clearsCourtCaptains = Object.keys(previousCourtCaptains).length > 0
       if (!setEndWritten) await logEvent('set_end', {
         team: winner,
         teamLabel: winnerLabel,
@@ -7120,8 +7128,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         awayPoints,
         startTime: startTime,
         endTime: roundToMinute(time),
-        ...(setEndReason ? { reason: setEndReason } : {})
-      })
+        ...(setEndReason ? { reason: setEndReason } : {}),
+        ...(clearsCourtCaptains ? { previousCourtCaptains } : {})
+      }, clearsCourtCaptains ? { beforeSnapshot: () => db.matches.update(matchId, courtCaptainsCleared(previousCourtCaptains)) } : {})
       console.log('[SET_END_DEBUG] STEP 3 DONE: set_end event logged')
 
       // Debug log: set end
@@ -8042,13 +8051,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           Object.prototype.hasOwnProperty.call(e.payload, 'previousKeepCourtCaptain')) {
         matchUpdate[keepCourtCaptainField(e.payload.team)] = e.payload.previousKeepCourtCaptain === true
       }
+      // The game captain in force before the removed designation, or before
+      // the removed set end (it ended their role); oldest last, so a Reopen
+      // set that also removes the next set's designations gets the set's own
+      if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
+        matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
+      }
+      if (e.type === 'set_end') Object.assign(matchUpdate, courtCaptainsRestored(e.payload?.previousCourtCaptains))
     }
 
     const rosterTeams = new Set()
     for (const e of removed) {
-      if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
-        matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
-      }
       if (e.type === 'libero_redesignation' && e.payload?.previousLiberoFlags) {
         const team = e.payload.team
         const { unableLibero, newLibero } = e.payload.previousLiberoFlags
@@ -14127,10 +14140,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // The switch turned on or off where nobody is to be chosen (the Game
   // captain button while the role is held, FIVB 5.1.2): a setting of the
-  // match, no event
+  // match, no new event. The newest designation of the team says so too
+  // (payload.keep, an edit the server's copy of the event gets), so a device
+  // continuing the match from it has the switch as it is
+  // (domain/gameCaptainKeep.js keepEdit, keepFieldsFromEvents)
   const handleKeepCaptainChange = useCallback((keep) => runAction('captainKeep', async () => {
     if (!captainOnCourtModal || !matchId) return
-    await db.matches.update(matchId, { [keepCourtCaptainField(captainOnCourtModal.team)]: keep === true })
+    const team = captainOnCourtModal.team
+    await db.matches.update(matchId, { [keepCourtCaptainField(team)]: keep === true })
+    const edit = keepEdit(await db.events.where('matchId').equals(matchId).toArray(), team, keep)
+    if (edit) await db.events.update(edit.id, { payload: edit.payload })
     syncToReferee()
   }), [runAction, captainOnCourtModal, matchId, syncToReferee])
 

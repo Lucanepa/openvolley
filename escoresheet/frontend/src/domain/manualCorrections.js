@@ -54,6 +54,7 @@ import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction }
 import { applyPlanToEvents, finalizePlan, isRotationLiberoExit, isRally } from './recompute'
 import { planRectificationReversal } from './rectify'
 import { referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber, renumberRemarkText } from './roster'
+import { courtCaptainsRestored } from './gameCaptainKeep'
 
 export { applyPlanToEvents }
 
@@ -1146,6 +1147,8 @@ function removalSideEffects(events, removed, ctx) {
     if (line) out.remarkRemove.push(line)
   }
   for (const e of list) {
+    // the game captains a removed set end had ended (domain/gameCaptainKeep.js)
+    if (e.type === 'set_end') Object.assign(out.matchPatch, courtCaptainsRestored(e.payload?.previousCourtCaptains))
     const team = e.payload?.team
     if (team !== 'home' && team !== 'away') continue
     if ((e.type === 'lineup' || e.type === 'court_captain_designation') && Object.prototype.hasOwnProperty.call(e.payload, 'previousRememberedCourtCaptain')) {

@@ -109,3 +109,56 @@ export function keepFieldsFromEvents(events = []) {
   }
   return out
 }
+
+/**
+ * The switch turned on or off where nobody is designated (the Game captain
+ * button while the role is held): the newest designation of the team says so
+ * too (payload.keep), an edit the server's copy of the event gets, so a
+ * device continuing the match from it reads the switch as it is
+ * (keepFieldsFromEvents). null when there is nothing to change.
+ * @returns {{ id: any, payload: object }|null}
+ */
+export function keepEdit(events = [], team, keep) {
+  let latest = null
+  for (const e of events || []) {
+    if (e?.type !== 'court_captain_designation' || e.payload?.team !== team) continue
+    if (!latest || (Number(e.seq) || 0) > (Number(latest.seq) || 0)) latest = e
+  }
+  if (!latest || (latest.payload?.keep === true) === (keep === true)) return null
+  return { id: latest.id, payload: { ...latest.payload, keep: keep === true } }
+}
+
+// ---------------------------------------------------------------------------
+// The set end ends a game captain's role (FIVB 5.1.2: until he is replaced,
+// the team captain returns, or the set ends; owner 22.11). The set end clears
+// the acting ones and keeps them on its event (payload.previousCourtCaptains)
+// for Undo and Reopen set. The last game captain (remembered, "Last") and the
+// switch stay: the next set designates again, by the line-up dialog, the
+// Game captain dialog or "Keep as game captain", with a new designation event
+// of that set.
+// ---------------------------------------------------------------------------
+
+/** The acting game captains on the match row, by team: { home?, away? }. */
+export function actingCourtCaptains(match) {
+  const out = {}
+  for (const team of ['home', 'away']) {
+    const n = match?.[courtCaptainField(team)]
+    if (!isBlank(n)) out[team] = n
+  }
+  return out
+}
+
+/** The match fields that clear them (only the teams that had one). */
+export function courtCaptainsCleared(previous = {}) {
+  const out = {}
+  for (const team of ['home', 'away']) if (previous && Object.prototype.hasOwnProperty.call(previous, team)) out[courtCaptainField(team)] = null
+  return out
+}
+
+/** The match fields that put them back (a set end undone or reopened). */
+export function courtCaptainsRestored(previous) {
+  const out = {}
+  if (!previous || typeof previous !== 'object') return out
+  for (const team of ['home', 'away']) if (Object.prototype.hasOwnProperty.call(previous, team)) out[courtCaptainField(team)] = previous[team] ?? null
+  return out
+}
