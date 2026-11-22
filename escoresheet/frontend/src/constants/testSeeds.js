@@ -47,12 +47,16 @@ export const TEST_MATCH_DEFAULTS = {
   bestOf: 5
 }
 
+// The assistant coach 2 and the medic are one person (one licence), not the
+// captain #1 of the same name: no official of a test bench is linked to a
+// player (domain/playerOfficials; owner 2026-11-22, they had #1's licence
+// and a test match showed AC2 and M greyed while #1 played)
 export const TEST_HOME_BENCH = [
   { role: 'Coach', firstName: 'Marco', lastName: 'Frei', dob: '100137' },
   { role: 'Assistant Coach 1', firstName: 'Jan', lastName: 'Widmer', dob: '100174' },
-  { role: 'Assistant Coach 2', firstName: 'Luca', lastName: 'Keller', dob: '100211' },
+  { role: 'Assistant Coach 2', firstName: 'Luca', lastName: 'Keller', dob: '101395' },
   { role: 'Physiotherapist', firstName: 'Eva', lastName: 'Gerber', dob: '100248' },
-  { role: 'Medic', firstName: 'Luca', lastName: 'Keller', dob: '100211' }
+  { role: 'Medic', firstName: 'Luca', lastName: 'Keller', dob: '101395' }
 ]
 
 export const TEST_AWAY_BENCH = [
