@@ -1,0 +1,7 @@
+OpenVolley 26.11.3
+- Scoreboard code: Match menu > "Show on a scoreboard"; a scoreboard or TV follows the match live.
+- Referee: SERVE box fits its number, no Advanced mode, the break shows the next set.
+- Bench: each sanction once; tiles fit phones.
+- Rules: sanctions only get heavier; replaced exceptionally = out for the match; injured libero can return unless re-designated. SUB counts exceptional subs.
+- Offline answers to bench requests are sent when back online.
+- Fixes, library updates.
