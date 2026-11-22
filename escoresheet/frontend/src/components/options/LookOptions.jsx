@@ -14,10 +14,10 @@ const BTN_OUTLINE = cn('inline-flex h-11 items-center justify-center gap-1.5 rou
 
 /**
  * Options › Effects and speed: the device check's last result in plain words
- * ("Checked on 22.11.2026: this device is on the slow side."), its
- * recommendation with Apply when it differs from the switches, the "Check
- * this device" button, and the four look switches (utils/lookSettings), each
- * applied at once. In the Home options and the scoring screen's; the check
+ * ("Checked on 22.11.2026: this device is on the slow side."), the "Check
+ * this device" button, the four look switches (utils/lookSettings), each
+ * applied at once and named for screen readers, and under them the
+ * result's recommendation with Apply when it differs from the switches. In the Home options and the scoring screen's; the check
  * itself only where no match is open (canCheck): the scoring screen's
  * options say where to check again.
  * `kit`: the dialog's own Row, InfoDot and ToggleSwitch, so the rows look like
@@ -62,12 +62,8 @@ export default function LookOptions({ kit, canCheck = false }) {
         </div>
         <p data-testid="device-check-result" className="m-0 flex items-start gap-1.5 text-xs leading-snug text-stone-600">
           <Gauge size={14} aria-hidden="true" className="mt-px shrink-0 text-stone-400" />
-          <span>
-            {resultText}
-            {matches && ` ${t('options.look.matches')}`}
-          </span>
+          <span>{resultText}</span>
         </p>
-        <DeviceCheckCard inOptions />
         {canCheck ? (
           <div>
             <button type="button" data-testid="device-check-run" onClick={runCheck} disabled={checking} aria-busy={checking || undefined} className={BTN_OUTLINE}>
@@ -88,6 +84,7 @@ export default function LookOptions({ kit, canCheck = false }) {
           <div data-testid={`look-${name}`} data-on={look[name] ? 'true' : 'false'}>
             <ToggleSwitch
               value={look[name]}
+              aria-label={t(`options.look.${name}`)}
               onToggle={() => {
                 const next = !look[name]
                 setLook({ [name]: next })
@@ -97,6 +94,16 @@ export default function LookOptions({ kit, canCheck = false }) {
           </div>
         </Row>
       ))}
+      {/* Under the switches, so a switch that stops or starts matching the
+          recommendation never moves them: its card with Apply, or that the
+          switches match it */}
+      {result && (
+        <Row style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+          {matches
+            ? <p data-testid="device-check-matches" className="m-0 text-xs leading-snug text-stone-600">{t('options.look.matches')}</p>
+            : <DeviceCheckCard inOptions />}
+        </Row>
+      )}
     </>
   )
 }

@@ -26,8 +26,9 @@ export function joinList(items, lang) {
  * answer the result and the card goes. Not over the first-start dialogs (App
  * does not pass it then).
  *
- * In Options (inOptions): shown whenever the result recommends a change, also
- * when it was answered on Home, with Apply only.
+ * In Options (inOptions, under the switches): shown whenever the result
+ * recommends a change, also when it was answered on Home, with Apply only and
+ * no gauge (the result line above has it).
  */
 export default function DeviceCheckCard({ inOptions = false, className = '' }) {
   const { t, i18n } = useTranslation()
@@ -59,7 +60,8 @@ export default function DeviceCheckCard({ inOptions = false, className = '' }) {
   return (
     <div className={cn('ov-kit', className)}>
       <div role="status" data-testid={inOptions ? 'device-check-options-card' : 'device-check-card'} data-tier={result.tier} className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-        <Gauge size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+        {/* in Options the result line above has the gauge already */}
+        {!inOptions && <Gauge size={14} aria-hidden="true" className="mt-0.5 shrink-0" />}
         <div className="min-w-0 flex-1">
           {!inOptions && <p className="m-0 font-semibold">{t(`home.deviceCheck.title.${result.tier}`)}</p>}
           {listed.length > 0 && <p className={cn('m-0', !inOptions && 'mt-0.5')}>{t(lighter ? 'home.deviceCheck.smoother' : 'home.deviceCheck.fuller', { list })}</p>}

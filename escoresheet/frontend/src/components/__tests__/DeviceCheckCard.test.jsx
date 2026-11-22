@@ -162,8 +162,8 @@ function Row({ children }) {
 function InfoDot({ title }) {
   return <span data-info={title} />
 }
-function ToggleSwitch({ value, onToggle }) {
-  return <button type="button" role="switch" aria-checked={!!value} onClick={onToggle} />
+function ToggleSwitch({ value, onToggle, ...rest }) {
+  return <button type="button" role="switch" aria-checked={!!value} onClick={onToggle} {...rest} />
 }
 const KIT = { Row, InfoDot, ToggleSwitch }
 
@@ -202,7 +202,26 @@ describe('LookOptions: Options › Effects and speed', () => {
     act(() => { fireEvent.click(screen.getByTestId('device-check-apply')) })
     expect(getLook()).toEqual(RECOMMENDED.slow)
     expect(screen.queryByTestId('device-check-options-card')).toBe(null)
-    expect(screen.getByTestId('device-check-result').textContent).toContain('Your settings match the recommendation.')
+    expect(screen.getByTestId('device-check-matches').textContent).toBe('Your settings match the recommendation.')
+  })
+
+  it('the recommendation sits under the switches: a switch that stops or starts matching it never moves them', () => {
+    setDeviceCheck(result({ answer: 'applied' }))
+    setLook(RECOMMENDED.slow)
+    const { container } = render(withI18n(<LookOptions kit={KIT} canCheck />))
+    const order = () => [...container.querySelectorAll('[data-testid^="look-"], [data-testid="device-check-options-card"], [data-testid="device-check-matches"], [data-testid="device-check-result"]')].map((el) => el.dataset.testid)
+    expect(order()).toEqual(['device-check-result', 'look-blur', 'look-motion', 'look-clockSeconds', 'look-pdfSharp', 'device-check-matches'])
+    act(() => { fireEvent.click(screen.getByTestId('look-blur').querySelector('[role=switch]')) })
+    expect(order()).toEqual(['device-check-result', 'look-blur', 'look-motion', 'look-clockSeconds', 'look-pdfSharp', 'device-check-options-card'])
+    // one gauge: the result line's, none in the card under it
+    expect(container.querySelectorAll('svg.lucide-gauge')).toHaveLength(1)
+  })
+
+  it('each switch has its name for screen readers', () => {
+    render(withI18n(<LookOptions kit={KIT} />))
+    for (const name of ['Blur behind dialogs', 'Animations', 'Seconds on the clock', 'Sharp PDF']) {
+      expect(screen.getByRole('switch', { name })).toBeTruthy()
+    }
   })
 
   it('Check this device runs the check and shows the new result', async () => {

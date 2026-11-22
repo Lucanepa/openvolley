@@ -72,9 +72,10 @@ function InfoDot({ title }) {
   )
 }
 
-function ToggleSwitch({ value, onToggle }) {
+function ToggleSwitch({ value, onToggle, ...rest }) {
   // Kit Switch, lg; on = slate-900 here, not brand red (R4: over the scoreboard).
-  return <Switch size="lg" checked={!!value} onCheckedChange={() => onToggle()} className={cn('ml-4', value && 'bg-slate-900')} />
+  // `rest`: its name (aria-label), which the kit asks every switch for.
+  return <Switch size="lg" checked={!!value} onCheckedChange={() => onToggle()} className={cn('ml-4', value && 'bg-slate-900')} {...rest} />
 }
 
 function Row({ children, style }) {

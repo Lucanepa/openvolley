@@ -65,9 +65,10 @@ function InfoDot({ title }) {
   )
 }
 
-function ToggleSwitch({ value, onToggle }) {
+function ToggleSwitch({ value, onToggle, ...rest }) {
   // Kit Switch, lg (h-7 w-12) for tablets; the row around it is the 48px hit row.
-  return <Switch size="lg" checked={!!value} onCheckedChange={() => onToggle()} className="ml-4" />
+  // `rest`: its name (aria-label), which the kit asks every switch for.
+  return <Switch size="lg" checked={!!value} onCheckedChange={() => onToggle()} className="ml-4" {...rest} />
 }
 
 function Row({ children, style }) {

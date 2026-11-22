@@ -54,6 +54,20 @@ describe('Options › Effects and speed', () => {
     for (const name of ['blur', 'motion', 'clockSeconds', 'pdfSharp']) expect(screen.getByTestId(`look-${name}`).dataset.on).toBe('true')
   })
 
+  it('both dialogs name the four switches (the kit Switch asks for a name)', () => {
+    homeOptions({ canCheckDevice: true })
+    for (const name of ['blur', 'motion', 'clockSeconds', 'pdfSharp']) {
+      expect(screen.getByTestId(`look-${name}`).querySelector('[role=switch]').getAttribute('aria-label')).toBe(`options.look.${name}`)
+    }
+  })
+
+  it('the scoring screen\'s dialog names them too', () => {
+    render(<ScoreboardOptionsModal open onClose={noop} matchId={7} matchOptions={{}} displayOptions={{}} />)
+    for (const name of ['blur', 'motion', 'clockSeconds', 'pdfSharp']) {
+      expect(screen.getByTestId(`look-${name}`).querySelector('[role=switch]').getAttribute('aria-label')).toBe(`options.look.${name}`)
+    }
+  })
+
   it('Home options over a match (set-up): no check button', () => {
     homeOptions({ canCheckDevice: false })
     expect(screen.queryByTestId('device-check-run')).toBe(null)
