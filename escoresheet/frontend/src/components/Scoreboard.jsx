@@ -559,6 +559,10 @@ export const preloadScoreboard = (matchId) => preload(scoreboardKey(matchId), ()
 // side-out rotations followed those (stress test 2026-10-25)
 const newestFirst = (a, b) => compareBySeq(b, a)
 
+// A match over opened here: how long after a failed try Match End is asked
+// for again (the "Check if match is already finished" effect)
+export const FINISHED_MATCH_RETRY_MS = 10000
+
 export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onOpenMatchInfo, onTriggerEventBackup }) {
   // diagnostics mode: React commits per user action (nothing while it is off)
   useDiagCommits('scoreboard')
@@ -3835,6 +3839,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.set, data?.match])
 
   // Check if set has ended on page load/refresh (score indicates set over but modal not shown)
+  // Checked again when a set end or forfait flow ends (setTransitionLoading
+  // cleared, released with the set-creation lock): a check skipped under the
+  // lock was re-run by the 10 s heartbeat's re-read, the only retry when the
+  // flow failed with the set won and still open (a set forfait whose forfait
+  // event could not be written).
   useEffect(() => {
     // Don't run if set creation is in progress (prevents race condition)
     if (setCreationInProgressRef.current) return
@@ -3875,7 +3884,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         setEndModalDismissedRef.current = null
       }
     }
-  }, [data?.set, data?.sets, setEndTimeModal])
+  }, [data?.set, data?.sets, setEndTimeModal, setTransitionLoading])
 
   // A set end confirmed in another tab (the set rows are shared): this tab's
   // dialog closes, there is nothing left to confirm
@@ -14320,7 +14329,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, { reason: 'undo' })), [runAction, deferUi, runCourtSwitchCancel, courtSwitchModal, matchId, discardEvents, resyncSetScoreFromEvents, syncToReferee, syncLiveStateToSupabase])
 
   // Check if match is already finished (loaded a completed match)
-  // If so, trigger onFinishSet to navigate to MatchEnd screen
+  // If so, trigger onFinishSet to navigate to MatchEnd screen.
+  // It is the only way out of the full-screen 'Loading...' below (no button),
+  // so a failed try (App's finishSet: a write refused, storage full, the
+  // database reopening) is tried again every FINISHED_MATCH_RETRY_MS while
+  // the screen still shows it. This effect used to re-run every 10 s (the
+  // heartbeat's re-read gave a new `data`) and at every App render (a new
+  // finishSet): an implicit retry, gone with the 5-minute heartbeat and
+  // App's stable callbacks. One call at a time: a re-run while a call is on
+  // its way or a retry is planned does nothing.
+  const finishedMatchRef = useRef({ running: false, timer: null, mounted: false })
+  const [finishedMatchRetry, setFinishedMatchRetry] = useState(0)
+  useEffect(() => {
+    const own = finishedMatchRef.current
+    own.mounted = true
+    return () => {
+      own.mounted = false
+      clearTimeout(own.timer)
+      own.timer = null
+    }
+  }, [])
   useEffect(() => {
     // The scoreboard already ended the match and navigated (match end / forfeit)
     if (matchEndingRef.current) return
@@ -14332,13 +14360,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, data?.match?.bestOf)
 
       if (isMatchFinished && onFinishSet) {
+        const own = finishedMatchRef.current
+        if (own.running || own.timer) return
         console.log('[Scoreboard] Match is already finished, navigating to MatchEnd')
         // Pass the last finished set to trigger match end navigation
         const lastSet = finishedSets.sort((a, b) => b.index - a.index)[0]
-        onFinishSet(lastSet)
+        own.running = true
+        Promise.resolve()
+          .then(() => onFinishSet(lastSet))
+          .then(() => { own.running = false }, (error) => {
+            own.running = false
+            console.error('[Scoreboard] Opening Match End failed, trying again:', error)
+            if (!own.mounted) return
+            own.timer = setTimeout(() => {
+              own.timer = null
+              setFinishedMatchRetry(n => n + 1)
+            }, FINISHED_MATCH_RETRY_MS)
+          })
       }
     }
-  }, [data, setTransitionLoading, onFinishSet])
+  }, [data, setTransitionLoading, onFinishSet, finishedMatchRetry])
 
   if (!data?.set || setTransitionLoading) {
     const loadingStep = setTransitionLoading?.step || 'Loading...'
