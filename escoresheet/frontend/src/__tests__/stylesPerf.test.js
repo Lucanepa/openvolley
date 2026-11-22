@@ -110,3 +110,23 @@ describe('Missing signature: the flash runs on the compositor', () => {
     expect(scoreboard.match(/still=\{!!preMatchSignTeam \|\| signaturesMissingOpen\}/g)).toHaveLength(2)
   })
 })
+
+describe('Tap hints: one offscreen layer per finger', () => {
+  const finger = () => rulesFor('.tap-hint:not(:disabled)::after,\n[data-tap-hint]::after').join('\n')
+
+  it('the 0.6 is the group opacity in the mask image, in both mask declarations', () => {
+    const masks = [...finger().matchAll(/^\s*(-webkit-mask|mask): url\("([^"]+)"\)/gm)]
+    expect(masks.map((m) => m[1])).toEqual(['-webkit-mask', 'mask'])
+    for (const [, , uri] of masks) {
+      const svg = decodeURIComponent(uri.replace(/^data:image\/svg\+xml,/, ''))
+      // every path of the finger inside the one group
+      expect(svg).toMatch(/^<svg [^>]*><g opacity='0\.6'>(<path d='[^']+'\/>){5}<\/g><\/svg>$/)
+    }
+    expect(masks[0][2]).toBe(masks[1][2])
+  })
+
+  it('the pseudo-element itself has no opacity (it would be a second layer)', () => {
+    expect(finger()).not.toMatch(/(^|\s)opacity:/m)
+    expect(finger()).toMatch(/background-color: currentColor;/)
+  })
+})
