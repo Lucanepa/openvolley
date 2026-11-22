@@ -3855,7 +3855,12 @@ export default function App() {
   // "Connecting..."); it stops at its next step when that changes. Its
   // recommendation is the card on Home (DeviceCheckCard), under the same rule.
   const firstStartDialog = (showStartupConnectivity && !offlineMode) || (toolMode === null && matchesLoaded && !matchId && !homeOptionsModal)
-  const homeQuiet = homeQuietForCheck({ matchId, homeVisible, firstStartDialog, openingMatch: !!openingMatch, covered: simpleBoardShown || !!manageTab || sizeGateShown })
+  // Home's own match set-up while no match id is set yet: the Easy match
+  // form, today's games, the new-match / replace and other confirms, the
+  // restore and delete dialogs, a test or easy match being prepared
+  const homeSetupDialog = !!easyMatchForm || todayGamesOpen || !!newMatchModal || !!confirmModal || !!restoreMatchModal || !!restorePreviewData ||
+    !!deleteMatchModal || testMatchLoading || easyMatchLoading || !!homeWhilePreparing
+  const homeQuiet = homeQuietForCheck({ matchId, homeVisible, firstStartDialog, openingMatch: !!openingMatch, covered: simpleBoardShown || !!manageTab || sizeGateShown || homeSetupDialog })
   useAutoDeviceCheck(homeQuiet && !homeOptionsModal, { matchOpen: matchOpenNoted, onResult: logDeviceCheck })
   // The home screen's list, each row with what the server does not have yet
   const homeDeviceMatches = deviceMatches?.filter(r => r.id !== closedMatchId)

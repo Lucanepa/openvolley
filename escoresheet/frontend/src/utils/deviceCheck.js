@@ -602,7 +602,9 @@ export function useDeviceCheckRunning() {
  * Whether Home is quiet enough for the automatic check and its card (App.jsx):
  * Home on show (no match id, its reads done), no first-start dialog ("How do
  * you use...", "Connecting..."), no match being opened, nothing covering
- * Home (the Scoreboard, the Manage console, the size gate).
+ * Home (the Scoreboard, the Manage console, the size gate, Home's own match
+ * set-up dialogs: the Easy match form, today's games, the confirms, restore,
+ * a test match being prepared).
  */
 export function homeQuietForCheck({ matchId = null, homeVisible = false, firstStartDialog = false, openingMatch = false, covered = false } = {}) {
   return matchId == null && !!homeVisible && !firstStartDialog && !openingMatch && !covered
