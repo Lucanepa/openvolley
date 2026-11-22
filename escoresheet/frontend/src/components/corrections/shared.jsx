@@ -2,7 +2,7 @@
 // scoresheet (set, team with its letter, "at which score" from the scores
 // the set went through, players from the roster) and the form shell with the
 // "What changes on the scoresheet" preview. volleyui kit parts only.
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { cn } from '../../ui/cn.js'
 import { Button, FOCUS_RING } from '../../ui/Button.jsx'
@@ -15,6 +15,7 @@ import { TEAM_COLOUR_MARK, discRing, HEADER_SURFACE } from '../../utils/teamColo
 import { formatScore, teamLabel, displaySetNumber, tr } from '../../domain/describe'
 import { errorText } from '../../domain/manualCorrections'
 import { issueText } from '../../domain/recompute'
+import { remarkDestination, sheetLineOf, withRemarkDestination } from '../../domain/technicalRemarks'
 
 /** Minimum touch target on a 32/36px kit button: a 44px+ hit area. */
 export const HIT = 'relative after:absolute after:-inset-1.5 after:content-[""]'
@@ -184,7 +185,7 @@ export function CourtMini({ lineup, highlight = [], caption }) {
  * that will be added (editable), the warnings; or, in plain language, why it
  * cannot be done.
  */
-export function PreviewBox({ plan, ctx, children, remark, onRemarkChange }) {
+export function PreviewBox({ plan, ctx, children, remark, onRemarkChange, destination = null }) {
   const t = ctx.t
   const failed = !!plan?.error
   return (
@@ -205,6 +206,7 @@ export function PreviewBox({ plan, ctx, children, remark, onRemarkChange }) {
               <Textarea size="sm" rows={3} value={remark} onChange={(e) => onRemarkChange?.(e.target.value)} />
             </div>
           )}
+          {destination && <RemarkDestination {...destination} t={t} />}
           {plan.notes?.length > 0 && (
             <ul className="space-y-1">
               {plan.notes.map((n, i) => (
@@ -239,6 +241,63 @@ export function NewIssues({ issues, t, max = 6 }) {
   )
 }
 
+/**
+ * Where the correction is noted (owner 22.11.2026, domain/technicalRemarks
+ * remarkDestination): "The rules require this on the scoresheet." for a line
+ * the rules want, else the scorer's choice between a remark on the sheet
+ * (with its editable line) and a technical remark, never printed.
+ */
+export function RemarkDestination({ dest, picked, onPick, proposal, onProposal, showRule = true, t }) {
+  if (!dest) return null
+  if (dest.locked) {
+    return showRule ? <p className="text-xs text-stone-500" data-testid="remark-destination-locked">{tr(t, 'corrections.destination.locked', 'The rules require this on the scoresheet.')}</p> : null
+  }
+  const label = tr(t, 'corrections.destination.label', 'Where is this noted?')
+  return (
+    <div className="space-y-2" data-testid="remark-destination">
+      <SegmentedControl
+        ariaLabel={label}
+        options={[
+          { value: 'technical', label: tr(t, 'corrections.destination.technical', 'Technical remark (not printed)') },
+          { value: 'sheet', label: tr(t, 'corrections.destination.sheet', 'Remark on the scoresheet') }
+        ]}
+        value={picked}
+        onChange={onPick}
+      />
+      {proposal != null && (
+        <div>
+          <label className="block text-xs font-medium text-stone-600 mb-1">{tr(t, 'corrections.preview.remark', 'Remark added to the scoresheet')}</label>
+          <Textarea size="sm" rows={2} value={proposal} onChange={(e) => onProposal?.(e.target.value)} data-testid="remark-destination-line" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The ask flow's state for one plan: the scorer's choice (the default until
+ * picked), the sheet line edited for this correction, and the plan to write.
+ */
+export function useRemarkDestination(plan, ctx) {
+  const [choice, setChoice] = useState(null)
+  const [edited, setEdited] = useState({ for: null, text: '' })
+  const dest = remarkDestination(plan, ctx)
+  if (!dest) return { dest: null, plan }
+  const picked = choice ?? dest.default
+  const key = plan?.log?.text ?? ''
+  const proposal = !dest.locked && picked === 'sheet' && dest.default === 'technical'
+    ? (edited.for === key ? edited.text : sheetLineOf(plan, ctx))
+    : null
+  return {
+    dest,
+    picked,
+    proposal,
+    onPick: setChoice,
+    onProposal: (text) => setEdited({ for: key, text }),
+    plan: withRemarkDestination(plan, picked, { line: proposal, ctx })
+  }
+}
+
 /** Apply an edited remark to a plan (remark line + the autoRemark the undo uses). */
 export function withRemark(plan, remark) {
   if (!plan || plan.error || remark == null || !plan.remarkAdd?.length) return plan
@@ -258,6 +317,10 @@ export function withRemark(plan, remark) {
 export function CorrectionForm({ title, ctx, onCancel, onConfirm, plan, busy, children, preview, remark, onRemarkChange, confirmLabel, danger = false }) {
   const t = ctx.t
   const blocked = !plan || !!plan.error
+  // where it is noted: on the scoresheet or as a technical remark (the ask flow)
+  const { plan: notedPlan, ...destination } = useRemarkDestination(plan, ctx)
+  // the rule line only where the plan writes its own remark
+  const showRule = !!(plan?.remarkAdd?.length || plan?.log?.action === 'addRemark')
   return (
     <Card className="ov-kit">
       <div className="flex items-center gap-2 mb-4">
@@ -266,11 +329,11 @@ export function CorrectionForm({ title, ctx, onCancel, onConfirm, plan, busy, ch
       </div>
       <div className="space-y-4">
         {children}
-        <PreviewBox plan={plan} ctx={ctx} remark={remark} onRemarkChange={onRemarkChange}>{preview}</PreviewBox>
+        <PreviewBox plan={plan} ctx={ctx} remark={remark} onRemarkChange={onRemarkChange} destination={destination.dest ? { ...destination, showRule } : null}>{preview}</PreviewBox>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-stone-100 pt-3">
         <Button variant="secondary" size="lg" onClick={onCancel}>{tr(t, 'corrections.action.cancel', 'Cancel')}</Button>
-        <Button variant={danger ? 'danger' : 'positive'} size="lg" disabled={blocked} loading={busy} onClick={() => onConfirm(plan)}>
+        <Button variant={danger ? 'danger' : 'positive'} size="lg" disabled={blocked} loading={busy} onClick={() => onConfirm(notedPlan)}>
           {confirmLabel || tr(t, 'corrections.action.confirm', 'Confirm')}
         </Button>
       </div>

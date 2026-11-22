@@ -23,7 +23,7 @@ import { db } from '../../../db/db'
 const HOME_PLAYERS = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ id: n, number: n, name: `Home ${n}` }))
 const AWAY_PLAYERS = [11, 12, 13, 14, 15, 16, 17, 18].map(n => ({ id: 100 + n, number: n, name: `Away ${n}` }))
 
-function setup({ events: evs, sets: st, mode = 'review', liveSetIndex = null } = {}) {
+function setup({ events: evs, sets: st, mode = 'review', liveSetIndex = null, match = MATCH } = {}) {
   const built = buildMatch({
     sets: [{ points: pointsFor(25, 20), finished: true }, { points: pointsFor(25, 18), finished: true }]
   })
@@ -31,7 +31,7 @@ function setup({ events: evs, sets: st, mode = 'review', liveSetIndex = null } =
     mode,
     matchId: 1,
     events: evs || built.events,
-    match: MATCH,
+    match,
     sets: st || built.sets,
     homeTeam: HOME_TEAM,
     awayTeam: AWAY_TEAM,
@@ -183,5 +183,78 @@ describe('CorrectionsPanel: a correction after the sheet was signed (fe-home-opt
     addDelayWarning()
     await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
     expect(dialog.calls).toHaveLength(0)
+  })
+})
+
+// Owner 22.11.2026: in a match with technical remarks the scorer is asked
+// where a correction is noted (domain/technicalRemarks remarkDestination)
+describe('CorrectionsPanel: where a correction is noted (technical remarks)', () => {
+  beforeEach(() => { applied.plans = []; resetGhostClickGuard() })
+  const TECH = { ...MATCH, remarksModel: 2 }
+  const addDelayWarning = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Add sanction' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Set' })).getByRole('radio', { name: 'Set 2' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /Volley Talberg/ }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Sanction' })).getByRole('radio', { name: /Delay warning/ }))
+  }
+  const destination = () => within(screen.getByTestId('remark-destination')).getByRole('radiogroup', { name: 'Where is this noted?' })
+
+  it('a correction is a technical remark by default: nothing on the sheet', async () => {
+    setup({ match: TECH })
+    addDelayWarning()
+    expect(within(destination()).getByRole('radio', { name: 'Technical remark (not printed)' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.queryByTestId('remark-destination-line')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
+    expect(applied.plans[0].remarkAdd).toEqual([])
+    expect(applied.plans[0].log.remarkTo).toBe('technical')
+  })
+
+  it('"Remark on the scoresheet": an editable line goes on the sheet with it', async () => {
+    setup({ match: TECH })
+    addDelayWarning()
+    fireEvent.click(within(destination()).getByRole('radio', { name: 'Remark on the scoresheet' }))
+    const line = screen.getByTestId('remark-destination-line')
+    expect(line.value).toMatch(/^Team B, Set 2: Added: Delay warning .* \(manual correction\)\.$/)
+    fireEvent.change(line, { target: { value: 'Team B, Set 2: delay warning added after the match (manual correction).' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
+    expect(applied.plans[0].remarkAdd).toEqual(['Team B, Set 2: delay warning added after the match (manual correction).'])
+    expect(applied.plans[0].log).toMatchObject({ remarkTo: 'sheet', sheetLine: 'Team B, Set 2: delay warning added after the match (manual correction).' })
+  })
+
+  it('the scorer\'s own remark: on the sheet by default, or a technical remark', async () => {
+    setup({ match: TECH })
+    fireEvent.click(screen.getByRole('button', { name: 'Add remark' }))
+    fireEvent.change(document.getElementById('ov-corr-remark'), { target: { value: 'Ball pump broken' } })
+    expect(within(destination()).getByRole('radio', { name: 'Remark on the scoresheet' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(within(destination()).getByRole('radio', { name: 'Technical remark (not printed)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
+    expect(applied.plans[0].remarkAdd).toEqual([])
+    expect(applied.plans[0].log).toMatchObject({ action: 'technicalRemark', category: 'technical', text: 'Technical remark: "Ball pump broken"' })
+  })
+
+  it('a remark the rules want is locked to the sheet', async () => {
+    setup({ match: TECH })
+    fireEvent.click(screen.getByRole('button', { name: 'Add remark' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Kind of remark' })).getByRole('radio', { name: 'Protest' }))
+    expect(screen.getByTestId('remark-destination-locked').textContent).toBe('The rules require this on the scoresheet.')
+    expect(screen.queryByTestId('remark-destination')).toBeNull()
+  })
+
+  it('an older match (no remarks model) is not asked', () => {
+    setup()
+    addDelayWarning()
+    expect(screen.queryByTestId('remark-destination')).toBeNull()
+    expect(screen.queryByTestId('remark-destination-locked')).toBeNull()
+  })
+
+  it('the correction log is the list of the technical remarks', () => {
+    const built = buildMatch({ sets: [{ points: pointsFor(25, 20), finished: true }] })
+    const events = [...built.events, { id: 'b1', setIndex: 1, seq: 999, ts: '2026-11-22T19:00:00Z', type: 'bench_injury', payload: { team: 'home', playerNumber: 4, autoRemark: 'Set 1, 20:00, A 3:2, #4 injured (bench)', remarkTo: 'technical' } }]
+    setup({ match: { ...TECH, manualChanges: [{ ts: '2026-11-22T18:00:00Z', category: 'technical', action: 'technicalRemark', text: 'Ball pump broken' }] }, events, sets: built.sets })
+    expect(screen.getByText('Technical remarks')).toBeTruthy()
+    expect(screen.getAllByTestId('technical-remark').map(n => n.textContent.replace(/^\d{2}:\d{2}/, ''))).toEqual(['Set 1, 20:00, A 3:2, #4 injured (bench)', 'Ball pump broken'])
   })
 })

@@ -26,6 +26,9 @@ import { Button } from '../../ui/Button.jsx'
 import { Banner } from '../../ui/Banner.jsx'
 import { Chip } from '../../ui/Chip.jsx'
 import { SegmentedControl } from '../../ui/SegmentedControl.jsx'
+import { Checkbox } from '../../ui/Checkbox.jsx'
+import { Textarea } from '../../ui/Textarea.jsx'
+import { remarkDestination, sheetLineOf, technicalRemarksOn, withRemarkDestination } from '../../domain/technicalRemarks'
 import { confirmDialog, toast } from '../../ui/uiStore.js'
 import { DialogHelpButton } from '../help/HelpButton.jsx'
 import {
@@ -162,8 +165,15 @@ const SetPreview = lazy(() => import('../../../scoresheet_pdf/SetPreview'))
  * entries", and the set box as the scoresheet will print it after them (the
  * sets the changes touch; the board's set when none names one).
  */
-function SaveReview({ t, lines, steps, issues, draft, homeTeam, awayTeam, currentSet, busy, onBack, onSave }) {
+function SaveReview({ t, ctx, lines, steps, issues, draft, homeTeam, awayTeam, currentSet, busy, onBack, onSave, noted = {}, onNote }) {
   const notes = steps.flatMap(s => s.plan.notes || [])
+  // the board's taps (a point, a removal, the first serve) are technical
+  // remarks; a line on the scoresheet too if the scorer ticks it (owner
+  // 22.11.2026, domain/technicalRemarks); a form's change was asked already
+  const askSheet = (index) => {
+    const dest = remarkDestination(steps[index]?.plan, ctx)
+    return !!dest && !dest.locked && dest.default === 'technical'
+  }
   const played = new Set((draft.events || []).map(e => e?.setIndex ?? 1))
   const touched = [...new Set(steps.flatMap(s => [s.plan.log?.setIndex, ...(s.plan.affectedSets || [])]).filter(n => Number.isInteger(n) && played.has(n)))].sort((a, b) => a - b)
   const sets = touched.length ? touched : (played.has(currentSet) ? [currentSet] : [])
@@ -181,7 +191,25 @@ function SaveReview({ t, lines, steps, issues, draft, homeTeam, awayTeam, curren
         </>
       )}>
       <div className="space-y-3 text-sm" data-testid="board-save-review">
-        <ol className="list-decimal space-y-1 pl-5 text-stone-800">{lines.map(l => <li key={l.index}>{l.text}</li>)}</ol>
+        <ol className="list-decimal space-y-1 pl-5 text-stone-800">{lines.map(l => (
+          <li key={l.index}>
+            {l.text}
+            {askSheet(l.index) && (
+              <div className="mt-1 space-y-1" data-testid="board-save-sheet-remark">
+                <Checkbox
+                  variant="dense"
+                  label={tr(t, 'corrections.destination.sheet', 'Remark on the scoresheet')}
+                  checked={noted[l.index] != null}
+                  onChange={(e) => onNote?.(l.index, e.target.checked ? sheetLineOf(steps[l.index].plan, ctx) : null)}
+                />
+                {noted[l.index] != null && (
+                  <Textarea size="sm" rows={2} value={noted[l.index]} aria-label={tr(t, 'corrections.preview.remark', 'Remark added to the scoresheet')}
+                    onChange={(e) => onNote?.(l.index, e.target.value)} />
+                )}
+              </div>
+            )}
+          </li>
+        ))}</ol>
         {notes.map((n, i) => <p key={`n${i}`} className="text-amber-800">{tr(t, n.key, n.text, n.params)}</p>)}
         {issues.length > 0 && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
@@ -205,7 +233,9 @@ function SaveReview({ t, lines, steps, issues, draft, homeTeam, awayTeam, curren
             </div>
           </section>
         )}
-        <p className="text-xs text-stone-500">{tr(t, 'correctionBoard.saveHint', 'Each change is listed in the correction log for the referee.')}</p>
+        <p className="text-xs text-stone-500">{technicalRemarksOn(ctx?.match)
+          ? tr(t, 'correctionBoard.saveHintTechnical', 'Each change is listed in the technical remarks, not printed on the scoresheet.')
+          : tr(t, 'correctionBoard.saveHint', 'Each change is listed in the correction log for the referee.')}</p>
       </div>
     </SheetCard>
   )
@@ -272,6 +302,8 @@ export default function CorrectionBoard({
   const [sheet, setSheet] = useState(null) // { kind: 'player'|'timeout'|'list', ... }
   const [busy, setBusy] = useState(false)
   const [reviewing, setReviewing] = useState(false)
+  // the review's "Remark on the scoresheet" lines, by step index (SaveReview)
+  const [noted, setNoted] = useState({})
   // the board's own Save changes the match too: not "changed under the board" while it writes
   const stale = base.fp !== fingerprint && !busy
 
@@ -413,11 +445,20 @@ export default function CorrectionBoard({
   // (scoresheet_pdf/SetPreview, drawn from the draft), then one write
   const save = () => {
     if (!steps.length || !editable) return
+    setNoted({})
     setReviewing(true)
   }
+  const noteStep = (index, line) => setNoted(prev => {
+    const next = { ...prev }
+    if (line == null) delete next[index]
+    else next[index] = line
+    return next
+  })
   const commit = async () => {
     if (!steps.length || !editable) return
-    const combined = combinedPlan(base.draft, steps)
+    // the steps the scorer put on the scoresheet too, with their line
+    const notedSteps = steps.map((s, i) => (noted[i] != null ? { ...s, plan: withRemarkDestination(s.plan, 'sheet', { line: noted[i], ctx }) } : s))
+    const combined = combinedPlan(base.draft, notedSteps)
     await runConfirm(async () => {
       if (mode === 'review' && planChangesSheet(combined) && signedAfterMatch(await db.matches.get(matchId))) {
         const clear = await confirmDialog({
@@ -872,7 +913,7 @@ export default function CorrectionBoard({
 
       {reviewing && (
         <BoardDialog onClose={() => { if (!busy) setReviewing(false) }} width={1080} label={tr(t, 'correctionBoard.saveTitle', 'Save {{count}} changes?', { count: lines.length })}>
-          <SaveReview t={t} lines={lines} steps={steps} issues={issues} draft={draft} homeTeam={homeTeam} awayTeam={awayTeam}
+          <SaveReview t={t} ctx={ctx} noted={noted} onNote={noteStep} lines={lines} steps={steps} issues={issues} draft={draft} homeTeam={homeTeam} awayTeam={awayTeam}
             currentSet={setIndex} busy={busy} onBack={() => setReviewing(false)} onSave={commit} />
         </BoardDialog>
       )}
