@@ -991,6 +991,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Relay refused this scoreboard (another device holds the match id, or too
   // many failed claims): shown to the scorer instead of failing silently.
   const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
+  // Shown for 45 s from the refusal: a timer of its own (the screen's 1 s
+  // clock used to hide it). A refusal again is a new object, from 45 s again.
+  useEffect(() => {
+    if (!relayRejection) return undefined
+    const timer = setTimeout(() => setRelayRejection(prev => (prev === relayRejection ? null : prev)), Math.max(0, relayRejection.at + 45000 - Date.now()))
+    return () => clearTimeout(timer)
+  }, [relayRejection])
   const noSleepVideoRef = useRef(null) // Video element for NoSleep fallback
   const checkAndRequestCaptainOnCourtRef = useRef(null) // Store latest captain check function
   const logEventRef = useRef(null) // Store latest logEvent function to avoid circular dependencies
@@ -14798,7 +14805,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         top={isPhoneView ? 52 : 112}
         {...benchActions}
       />
-      {relayRejection && now - relayRejection.at < 45000 && (
+      {relayRejection && (
         <div role="alert" className="no-print rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
           position: 'fixed',
           top: 8,
