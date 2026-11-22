@@ -126,8 +126,10 @@ export const RENDER_PROPERTIES = [
   'game.group.phase.name', 'game.group.phase.displayName',
   'game.encounter.teamHome.identifier', 'game.encounter.teamHome.name',
   'game.encounter.teamHome.displayName', 'game.encounter.teamHome.leagueCategory.name',
+  'game.encounter.teamHome.club.identifier',
   'game.encounter.teamAway.identifier', 'game.encounter.teamAway.name',
   'game.encounter.teamAway.displayName', 'game.encounter.teamAway.leagueCategory.name',
+  'game.encounter.teamAway.club.identifier',
   'game.hall.name', 'game.hall.displayName',
   'game.hall.primaryPostalAddress.additionToAddress',
   'game.hall.primaryPostalAddress.combinedAddress',
@@ -808,6 +810,70 @@ function deepGet(obj, ...keys) {
 }
 
 /**
+ * The text of a translatable VolleyManager field in one language. VM answers
+ * `name` in the language of the account that logged in (a club may give its
+ * team another name in French and Italian: "VBC Musterdorf HU23-1" can be
+ * "VBC Musterdorf 1" in it/fr), and sends all three under `translations`, so
+ * the sync never depends on how the shared account is set. An empty or
+ * missing text falls back to German, then to the plain field.
+ */
+export function translatedText(entity, lang = 'de', key = 'name') {
+  if (!entity || typeof entity !== 'object') return null
+  for (const l of lang === 'de' ? ['de'] : [lang, 'de']) {
+    const v = deepGet(entity, 'translations', l, key)
+    if (typeof v === 'string' && v.trim() !== '') return v
+  }
+  return entity[key] ?? null
+}
+
+/** League category, phase and hall names: always German (the regional association's language). */
+export function germanText(entity, key = 'name') {
+  return translatedText(entity, 'de', key)
+}
+
+// A Swiss Volley club number starts with its regional association's code
+// (VolleyManager's club.identifier, e.g. 912xxx = Zürich).
+const ASSOCIATION_LANGUAGE = {
+  901: 'fr', // Genève
+  902: 'fr', // Vaud
+  904: 'fr', // Neuchâtel
+  907: 'de', // Bern
+  909: 'de', // Nordwestschweiz
+  910: 'de', // Aargau / Solothurn
+  911: 'de', // Innerschweiz
+  912: 'de', // Zürich
+  913: 'de', // Ostschweiz
+  914: 'de', // Südostschweiz
+  915: 'it' // Ticino
+}
+// Bilingual associations (903 Valais, 905 Jura / Seeland, 906 Fribourg):
+// French, but for the clubs of their German-speaking part, listed by number.
+const BILINGUAL_ASSOCIATIONS = new Set(['903', '905', '906'])
+const GERMAN_SPEAKING_CLUBS = new Set([
+  '903025', '903059', '903095', '903100', '903155', '903190', '903192', '903300', // Oberwallis: Brig, Goms, Lalden, Raron, Visp
+  '905090', '905270', '905998', // Biel/Bienne (bilingual, German majority), Nidau
+  '906035', '906040', '906100', '906170', '906205', '906260', '906291', '906340', '906365', '906370' // Sense + See: Plaffeien, Bösingen, Düdingen, Gurmels, Kerzers, Murten, Rechthalten, Schmitten, Tafers, Ueberstorf
+])
+
+/**
+ * The language a team's name is shown in: the one of the region its club is
+ * in (Ticino Italian, Romandie French, German-speaking Switzerland German).
+ * No club number, or one of no known association: German.
+ */
+export function teamLanguage(team) {
+  const id = String(deepGet(team, 'club', 'identifier') ?? '').trim()
+  if (!/^\d{6}$/.test(id)) return 'de'
+  const assoc = id.slice(0, 3)
+  if (BILINGUAL_ASSOCIATIONS.has(assoc)) return GERMAN_SPEAKING_CLUBS.has(id) ? 'de' : 'fr'
+  return ASSOCIATION_LANGUAGE[assoc] ?? 'de'
+}
+
+/** A team's name in its own region's language (see teamLanguage). */
+export function teamName(team) {
+  return translatedText(team, teamLanguage(team))
+}
+
+/**
  * A referee's licence number (db/051) of VolleyManager's person: its
  * `associationId`, the Swiss Volley number (SV-Nr.), else `externalId`, which
  * holds the same number (svrz_rc's games sync reads the same field of the same
@@ -878,11 +944,11 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
   const ref1 = extractRefereeInfo(item, 'activeRefereeConvocationFirstHeadReferee')
   const ref2 = extractRefereeInfo(item, 'activeRefereeConvocationSecondHeadReferee')
 
-  const leagueName = String(leagueCat.name ?? '')
+  const leagueName = String(germanText(leagueCat) ?? '')
   const nameLower = leagueName.toLowerCase()
   const genderCode = league.gender ?? ''
   const juniorFlag = typeof leagueCat.isJuniorLeagueCategory === 'boolean' ? leagueCat.isJuniorLeagueCategory : null
-  const shortText = String(leagueCat.shortName ?? '')
+  const shortText = String(germanText(leagueCat, 'shortName') ?? '')
 
   const isCup = nameLower.includes('cup') || nameLower.includes('pokal')
   const matchGender = genderCode === 'm' ? 'men' : genderCode === 'f' ? 'women' : ''
@@ -890,7 +956,7 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
   const matchLevel = isJunior ? 'junior' : 'senior'
 
   // League text (e.g. "3L B", "1L D"); group display "Gruppe B" or "#27051 | D"
-  const leagueShort = leagueCat.shortName ?? leagueName
+  const leagueShort = germanText(leagueCat, 'shortName') ?? leagueName
   const groupDisplay = grp.displayName ?? ''
   const gruppeMatch = String(groupDisplay).match(/Gruppe\s+([A-Z0-9]+)/) || String(groupDisplay).match(/\|\s*([A-Z0-9]+)\s*$/)
   const leagueText = gruppeMatch ? `${leagueShort} ${gruppeMatch[1]}` : leagueShort
@@ -916,17 +982,17 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
     time: gameTime,
     datetime: rawDt,
     city: str(addr.city),
-    hall: str(hall.name),
+    hall: str(germanText(hall)),
     match_type: isCup ? 'cup' : 'championship',
     championship_type: ((nameLower.includes('1l') || nameLower.includes('1. liga')) && matchLevel === 'senior') ? 'national' : 'regional',
     gender: matchGender,
     match_level: matchLevel,
     league: str(leagueText),
-    league_category: str(leagueCat.name),
+    league_category: str(germanText(leagueCat)),
     junior_category: juniorFlag,
     match_format: matchFormat,
-    team_home: str(home.name),
-    team_away: str(away.name),
+    team_home: str(teamName(home)),
+    team_away: str(teamName(away)),
     referee_1: str(ref1.name ?? item.activeFirstHeadRefereeName),
     referee_1_first_name: str(ref1.firstName),
     referee_1_last_name: str(ref1.lastName),
@@ -939,7 +1005,7 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
     hall_address: str(addr.combinedAddress),
     hall_postal_code: str(addr.postalCode),
     group_display: str(groupDisplay),
-    phase_name: str(phase.name),
+    phase_name: str(germanText(phase)),
     linesman_1: str(item.activeFirstLinesmanRefereeName),
     linesman_2: str(item.activeSecondLinesmanRefereeName),
     is_supervised: !!item.isSupervised,
