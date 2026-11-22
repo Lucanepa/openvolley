@@ -60,7 +60,7 @@ import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
 import ToolbarClock from './scoreboard/ToolbarClock'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
-import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
+import { openAppWindow, openFailedMessageKey, isInAppViewOpen, onInAppViewChange } from '../utils/openAppWindow'
 import { scoresheetErrorFromEvent } from '../utils/scoresheetErrorMessage'
 import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
@@ -1259,11 +1259,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [matchId])
 
-  // Send heartbeat to indicate scoresheet is active
+  // Send heartbeat to indicate scoresheet is active: the match's updatedAt,
+  // which only says "opened lately" (currentMatch.js, the 7-day rule;
+  // deviceSelfCheck.js lastActivityAt, after the newest event). Every 5 min,
+  // not every 10 s: each write re-read the whole match here, re-ran App's
+  // match queries and, with the in-app view open, the scoresheet's read.
+  // Backups ignore it (matchWriteHook.js VOLATILE_MATCH_KEY). Not written
+  // under the in-app view; once when it closes and when the app is back.
   useEffect(() => {
     if (!matchId) return
 
+    const HEARTBEAT_MS = 5 * 60 * 1000
     const updateHeartbeat = async () => {
+      if (isInAppViewOpen()) return
       try {
         await db.matches.update(matchId, {
           updatedAt: new Date().toISOString()
@@ -1276,10 +1284,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Initial heartbeat
     updateHeartbeat()
 
-    // Update heartbeat every 10 seconds
-    const interval = setInterval(updateHeartbeat, 10000)
+    const interval = setInterval(updateHeartbeat, HEARTBEAT_MS)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') updateHeartbeat()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    const offInAppView = onInAppViewChange((open) => {
+      if (!open) updateHeartbeat()
+    })
 
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibility)
+      offInAppView()
+    }
   }, [matchId])
 
   // Clear confirmed set end tracking when match changes
