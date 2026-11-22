@@ -12,7 +12,8 @@ function fakeDb(row) {
       get: vi.fn(async (id) => rows[id])
     },
     sync_queue: { add: vi.fn(async (job) => { queue.push(job) }) },
-    transaction: vi.fn(async (_mode, _table, fn) => fn())
+    // (mode, ...tables, fn)
+    transaction: vi.fn(async (...args) => args[args.length - 1]())
   }
 }
 
@@ -59,6 +60,30 @@ describe('saveMatchSignature (owner 2026-10-07: saved as soon as the pad is conf
     expect(db.matches.update).toHaveBeenCalledTimes(1)
     expect(db.rows[1].homeCaptainSignature).toBe('data:new')
     expect(db.rows[1].remarks).toBe('Earlier line\nCaptain signature of Team V replaced')
+  })
+})
+
+// owner 22.11.2026: in a match with technical remarks, a cleared or replaced
+// signature is a technical remark (the change log, synced), not a sheet line
+describe('the signature lines of a match with technical remarks', () => {
+  it('a Re-sign: a technical remark in the change log, queued for the cloud; the remarks stay', async () => {
+    const db = fakeDb({ seed_key: 'k1', remarksModel: 2, homeCaptainSignature: 'data:old', remarks: 'Earlier line', manualChanges: [{ ts: 't0', text: 'Earlier change' }] })
+    await saveMatchSignature(db, 1, 'homeCaptainSignature', 'data:new', null, { remark: 'Captain signature of Team V replaced' })
+    expect(db.rows[1].homeCaptainSignature).toBe('data:new')
+    expect(db.rows[1].remarks).toBe('Earlier line')
+    expect(db.rows[1].manualChanges).toHaveLength(2)
+    expect(db.rows[1].manualChanges[1]).toMatchObject({ category: 'technical', action: 'resigned', text: 'Captain signature of Team V replaced', by: 'app' })
+    const log = db.queue.find(j => j.payload.manual_changes)
+    expect(log.payload).toEqual({ id: 'k1', manual_changes: db.rows[1].manualChanges })
+    expect(db.queue.some(j => j.payload.signatures)).toBe(true)
+  })
+  it('signatures cleared by a roster change: a technical remark; a test match keeps it on the device', async () => {
+    const db = fakeDb({ seed_key: 'k1', test: true, remarksModel: 2, homeCoachSignature: 'data:c', remarks: '' })
+    await clearMatchSignatures(db, 1, ['homeCoachSignature'], 'Roster changed')
+    expect(db.rows[1].homeCoachSignature).toBe(null)
+    expect(db.rows[1].remarks).toBe('')
+    expect(db.rows[1].manualChanges[0]).toMatchObject({ category: 'technical', action: 'signaturesCleared', text: 'Roster changed' })
+    expect(db.queue).toHaveLength(0)
   })
 })
 

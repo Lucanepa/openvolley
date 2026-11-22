@@ -424,7 +424,8 @@ describe('a bench player\'s injury', () => {
     return item()
   }
 
-  it('a double tap writes one remark line and one event', async () => {
+  // owner 22.11.2026: a technical remark (its event line), not on the sheet
+  it('a double tap writes one event with its technical remark line', async () => {
     const matchId = await liveMatch()
     mount(matchId)
     await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 15000 })
@@ -434,7 +435,10 @@ describe('a bench player\'s injury', () => {
     await waitFor(async () => expect(await ofType('bench_injury')).toHaveLength(1), { timeout: 5000 })
     await wait(800)
     expect(await ofType('bench_injury')).toHaveLength(1)
-    expect(((await db.matches.get(matchId)).remarks || '').split('\n').filter(l => /injured \(bench\)/.test(l))).toHaveLength(1)
+    const [injuryEvent] = await ofType('bench_injury')
+    expect(injuryEvent.payload).toMatchObject({ remarkTo: 'technical' })
+    expect(injuryEvent.payload.autoRemark).toMatch(/injured \(bench\)$/)
+    expect((await db.matches.get(matchId)).remarks || '').not.toMatch(/injured \(bench\)/)
   }, 60000)
 
   it('a failed write stores nothing and says so', async () => {

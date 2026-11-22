@@ -501,6 +501,10 @@ describe('Keep as game captain: the set end ends the role', () => {
     expect(await ofType('set_end')).toHaveLength(0)
     expect((await designations()).map(d => d.setIndex)).toEqual([1])
     await waitFor(async () => expect((await db.matches.get(matchId)).homeCourtCaptain).toBe(3))
+    // a technical remark (owner 22.11.2026): the change log with its set and
+    // score, no "Manual edit" line on the scoresheet
+    await waitFor(async () => expect(((await db.matches.get(matchId)).manualChanges || []).some(c => /^Reopened set 1 \(later sets deleted: 1\) \(Set \d, \d+-\d+\)$/.test(c.description))).toBe(true), { timeout: 5000 })
+    expect((await db.matches.get(matchId)).remarks || '').not.toMatch(/Manual edit/)
     localStorage.removeItem('ov.corrections.view')
   }, 90000)
 })

@@ -91,7 +91,8 @@ import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval,
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
 import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
 import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
-import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark, injurySubstitutionText, exceptionalSubstitutionText, liberoUnableText, liberoRecoveredText } from '../domain/remarks'
+import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark, injurySubstitutionText, exceptionalSubstitutionText, liberoUnableText, liberoRecoveredText, isSheetRemark, TECHNICAL } from '../domain/remarks'
+import { technicalRemarkTo, technicalRemarksOn } from '../domain/technicalRemarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
 import { describeEventText, compareBySeq } from '../domain/describe'
@@ -4955,10 +4956,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [matchId, data?.match, notifyScoresheetUpdate, deferUi, deferEffect, trackWrite])
 
   const logManualChangeWithRemark = useCallback(async (category, field, before, after, description, { setIndex, scoreStr } = {}) => {
-    logManualChange(category, field, before, after, description)
     const timeStr = remarkClock(new Date())
     const si = setIndex ?? data?.set?.index ?? '?'
     const sc = scoreStr ?? `${data?.set?.homePoints ?? '?'}-${data?.set?.awayPoints ?? '?'}`
+    // A technical remark (owner 22.11.2026): the change log only, with its
+    // set and score; on the sheet in an older match, as before
+    if (technicalRemarksOn(data?.match)) {
+      logManualChange(category, field, before, after, `${description} (Set ${si}, ${sc})`)
+      return
+    }
+    logManualChange(category, field, before, after, description)
     const remark = `Manual edit (Set ${si}, ${sc}, ${timeStr}): ${description}`
     // Append inside a transaction on a fresh read: the render-time remarks can be
     // stale when two edits land before the live query re-renders
@@ -4966,7 +4973,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const fresh = await db.matches.get(matchId)
       await db.matches.update(matchId, { remarks: appendRemark(fresh?.remarks || '', remark) })
     })
-  }, [logManualChange, matchId, data?.set?.index, data?.set?.homePoints, data?.set?.awayPoints])
+  }, [logManualChange, matchId, data?.match, data?.set?.index, data?.set?.homePoints, data?.set?.awayPoints])
 
   // ==================== REOPEN ROSTER HELPERS ====================
 
@@ -5102,8 +5109,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // render-time list, so only the last change of a save was kept
     {
       const now = new Date().toISOString()
-      const entries = changes.map(c => ({ ts: now, category: c.category, field: c.field, before: c.before, after: c.after, description: c.description }))
       const fresh = await db.matches.get(matchId)
+      // as a technical remark the sentence says when (the remark block's header)
+      const remarkPrefix = `${t('scoreboard.reopenRoster.remarkPrefix', 'Roster change after coin toss')} (Set ${data?.set?.index || '?'})`
+      const entries = changes.map(c => ({
+        ts: now, category: c.category, field: c.field, before: c.before, after: c.after, description: c.description,
+        ...(technicalRemarksOn(fresh) ? { text: `${remarkPrefix}: ${c.description}` } : {})
+      }))
       const manualChanges = [...(fresh?.manualChanges || []), ...entries]
       await db.matches.update(matchId, { manualChanges })
       await queueMatchUpdate(db, fresh?.seed_key, { manual_changes: manualChanges }, { test: isLocalOnly(fresh) })
@@ -5173,7 +5185,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const freshMatch = await db.matches.get(matchId)
     await db.matches.update(matchId, {
       [benchField]: benchToSave,
-      remarks: appendRemark(freshMatch?.remarks || '', remarkBlock)
+      // A technical remark (owner 22.11.2026): the change log above holds
+      // every change; on the sheet in an older match, as before
+      ...(technicalRemarksOn(freshMatch) ? {} : { remarks: appendRemark(freshMatch?.remarks || '', remarkBlock) })
     })
 
     // A renumbered player keeps their history, for the whole match: one
@@ -8047,7 +8061,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     let remarks = match?.remarks || ''
     for (const e of [...removed].sort((a, b) => (b.seq || 0) - (a.seq || 0))) {
-      if (e.payload?.autoRemark) remarks = removeRemarkLine(remarks, e.payload.autoRemark)
+      if (e.payload?.autoRemark && isSheetRemark(e.payload)) remarks = removeRemarkLine(remarks, e.payload.autoRemark)
     }
     if (remarks !== (match?.remarks || '')) matchUpdate.remarks = remarks
 
@@ -11857,6 +11871,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         autoRemark = remarkOf(exceptionalSubstitutionText(playerOut, playerIn, isExpelled ? 'expulsion' : isDisqualified ? 'disqualification' : null))
       }
     }
+    const subRemarkTo = isInjury && !isExceptional ? technicalRemarkTo(data?.match) : 'sheet'
 
     // Log the substitution event FIRST to get the main sequence number
     // (skipMutex: true because we already hold the mutex)
@@ -11871,7 +11886,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // A forced substitution (CB 4.9): neither a request of its own nor one
       // a decision change takes back (domain/interruptionRequests)
       ...(isInjury ? { isInjury: true } : {}),
-      ...(autoRemark ? { autoRemark } : {})
+      ...(autoRemark ? { autoRemark } : {}),
+      // an injury substitution with a legal substitute is a technical remark
+      // (owner 22.11.2026); an exceptional one stays on the sheet
+      ...(autoRemark && subRemarkTo === TECHNICAL ? { remarkTo: TECHNICAL } : {})
     }, { skipMutex: true })
 
     // Save the updated lineup as a SUB-EVENT (decimal sequence)
@@ -11905,7 +11923,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }, getStateSnapshot())
 
     // If injury or exceptional substitution, add the automatic remark
-    if (autoRemark) {
+    if (autoRemark && subRemarkTo !== TECHNICAL) {
       const freshMatch = await db.matches.get(matchId)
       await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', autoRemark) })
     }
@@ -22006,9 +22024,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const opponentScore = team === 'home' ? (set.awayPoints || 0) : (set.homePoints || 0)
                     // "Set 3, 14:28, B 15:5, #4 injured (bench)": the sheet's remark convention (owner 2026-10-07)
                     const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `#${playerNumber} injured (bench)` })
-                    const currentRemarks = (await db.matches.get(matchId))?.remarks || ''
-                    const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
-                    await db.matches.update(matchId, { remarks: newRemarks })
+                    // a technical remark (owner 22.11.2026), on the sheet in an older match
+                    const remarkTo = technicalRemarkTo(await db.matches.get(matchId))
+                    if (remarkTo !== TECHNICAL) {
+                      const currentRemarks = (await db.matches.get(matchId))?.remarks || ''
+                      const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
+                      await db.matches.update(matchId, { remarks: newRemarks })
+                    }
 
                     // Log as event so we can track and show red cross. It
                     // carries its remark line (autoRemark), as every entry
@@ -22018,7 +22040,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       team,
                       playerNumber,
                       setIndex,
-                      autoRemark: remark
+                      autoRemark: remark,
+                      ...(remarkTo === TECHNICAL ? { remarkTo } : {})
                     }, { setIndexOverride: setIndex })
 
                     deferUi(() => {

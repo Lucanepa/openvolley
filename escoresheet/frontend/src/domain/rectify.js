@@ -58,6 +58,7 @@ import { scoreFromPointEvents, getSetResult, servingTeamFromLog } from './rules'
 import { finalizePlan, applyPlanToEvents, POSITIONS } from './recompute'
 import { emptyPlan, scoreTimeline, entryGroupIds, pointGroupIds } from './manualCorrections'
 import { penaltyOfPoint } from './sanctions'
+import { isSheetRemark } from './remarks'
 
 const baseOf = (e) => Math.floor(e?.seq || 0)
 const setOf = (e) => e?.setIndex ?? 1
@@ -300,7 +301,7 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
   const takenBack = inSet.filter(e => e.type === 'substitution' && takeBack.has(e.id))
   for (const sub of takenBack) {
     for (const id of entryGroupIds(all, sub)) removedIds.add(id)
-    if (sub.payload?.autoRemark) plan.remarkRemove.push(sub.payload.autoRemark)
+    if (sub.payload?.autoRemark && isSheetRemark(sub.payload)) plan.remarkRemove.push(sub.payload.autoRemark)
   }
 
   // Whose points since then. The points of penalties (and their sanctions)
@@ -609,7 +610,7 @@ export function planRectificationReversal(events, id, ctx = {}) {
     // eslint-disable-next-line no-unused-vars
     const { id: _old, ...rest } = row
     plan.add.push(newRow(ctx, { ...rest, seq: placed.seqOf.get(row), stateSnapshot: null }))
-    if (row.type === 'substitution' && row.payload?.autoRemark) plan.remarkAdd.push(row.payload.autoRemark)
+    if (row.type === 'substitution' && row.payload?.autoRemark && isSheetRemark(row.payload)) plan.remarkAdd.push(row.payload.autoRemark)
   }
   plan.update.push(...placed.renumber)
   plan.affectedSets = [setIndex]

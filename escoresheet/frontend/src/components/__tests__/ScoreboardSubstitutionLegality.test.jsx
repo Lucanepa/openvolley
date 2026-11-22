@@ -503,3 +503,39 @@ describe('the SUB box counts exceptional substitutions (owner 22.11.2026)', () =
     expect(list.querySelectorAll('[data-sub-exceptional]')).toHaveLength(1)
   }, 60000)
 })
+
+// Owner 22.11.2026: an injury substitution with a legal substitute is a
+// technical remark (its event line, never the sheet's remarks); an
+// exceptional one stays on the scoresheet (SC p.69: the remark is its record)
+describe('the remark of an injury substitution (owner 22.11.2026)', () => {
+  it('a legal substitute: the line is a technical remark, the remarks stay empty', async () => {
+    const matchId = await setUp('libero')
+    await openScreen(matchId, 4)
+    fireEvent.click(court(4))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Injury', playerMenu()))
+    await waitFor(() => expect(dropdown()).toBeTruthy(), { timeout: 3000 })
+    expect(exceptionalChoice()).toBeFalsy()
+    fireEvent.click([...dropdown().querySelectorAll('button')].find(b => b.textContent.replace(/\s/g, '') === '#10'))
+    const written = await confirmYes(1)
+    expect(written).toMatchObject({ isInjury: true, isExceptional: false, remarkTo: 'technical' })
+    expect(written.autoRemark).toMatch(/#4 substituted, cannot continue playing$/)
+    await wait(300)
+    expect((await db.matches.get(matchId)).remarks || '').not.toMatch(/cannot continue playing/)
+  }, 60000)
+
+  it('no legal substitute: the exceptional substitution\'s line stays on the scoresheet', async () => {
+    const matchId = await setUp('cycle')
+    await openScreen(matchId, 3)
+    fireEvent.click(court(3))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Injury', playerMenu()))
+    await openExceptionalList()
+    fireEvent.click([...dropdown().querySelectorAll('button')].find(b => b.textContent.replace(/\s/g, '') === '#10'))
+    const written = await confirmYes(3)
+    expect(written.isExceptional).toBe(true)
+    expect(written.remarkTo).toBeUndefined()
+    expect(written.autoRemark).toBeTruthy()
+    await waitFor(async () => expect((await db.matches.get(matchId)).remarks || '').toContain(written.autoRemark), { timeout: 5000 })
+  }, 60000)
+})

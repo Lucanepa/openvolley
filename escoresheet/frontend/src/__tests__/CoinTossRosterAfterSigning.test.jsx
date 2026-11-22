@@ -42,7 +42,7 @@ async function openCoinToss (extra = {}) {
 }
 
 describe('Coin toss roster dialog after signing', () => {
-  it('Modify with a changed roster clears the team\'s signatures and writes a remark', async () => {
+  it('Modify with a changed roster clears the team\'s signatures and writes a technical remark', async () => {
     const { matchId, home } = await openCoinToss()
     const numbers = () => within(rosterDialog()).getAllByLabelText('Number')
     await waitFor(() => expect(numbers().length).toBe(7))
@@ -60,7 +60,10 @@ describe('Coin toss roster dialog after signing', () => {
     expect(m.homeCaptainSignature).toBeNull()
     expect(m.awayCoachSignature).toBe(INK)
     expect(m.awayCaptainSignature).toBe(INK)
-    expect(m.remarks).toMatch(/Roster of Home changed after signing.*Captain and Coach signatures removed/)
+    // a technical remark (owner 22.11.2026), not a sheet line
+    expect(m.remarks || '').not.toMatch(/changed after signing/)
+    expect(m.manualChanges.at(-1)).toMatchObject({ category: 'technical', action: 'signaturesCleared' })
+    expect(m.manualChanges.at(-1).text).toMatch(/Roster of Home changed after signing.*Captain and Coach signatures removed/)
   }, 60000)
 
   it('a signed slot in the dialog opens read-only with Re-sign', async () => {
