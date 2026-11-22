@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   transformGame, prepareRows, isExcludedLeague, resolveWindow, zonedTimeToUtc, zonedYmd,
   parseVmDateTime, formatZurichDateTime, addDaysYmd, isYmd, nextRunAt, buildSearchBody,
-  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf, GAME_COLUMNS, refereeLicenceOf, germanText
+  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf, GAME_COLUMNS, refereeLicenceOf, germanText, teamLanguage, teamName
 } from '../lib/vmSync.js'
 import { makeGame } from './helpers/fakeVolleyManager.js'
 
@@ -304,7 +304,7 @@ describe('nextRunAt (06:00 Europe/Zurich)', () => {
   })
 })
 
-describe('transformGame: German names whatever the account language', () => {
+describe('transformGame: German names (no club number) whatever the account language', () => {
   // VM's shape: `name` in the logged-in account's language, all three under translations
   const team = (de, other) => ({
     name: other,
@@ -357,5 +357,62 @@ describe('transformGame: German names whatever the account language', () => {
     assert.equal(germanText({}), null)
     assert.equal(germanText({ name: 'A', translations: { de: { name: 7 } } }), 'A')
     assert.equal(germanText({ shortName: 'S', translations: { de: { shortName: 'K' } } }, 'shortName'), 'K')
+  })
+})
+
+describe('transformGame: each team in its own region\'s language', () => {
+  const team = (clubId, names) => ({
+    name: names.it ?? names.de,
+    club: clubId == null ? undefined : { identifier: clubId },
+    translations: { de: { name: names.de ?? '' }, fr: { name: names.fr ?? '' }, it: { name: names.it ?? '' } }
+  })
+  const names = { de: 'Muster DE', fr: 'Muster FR', it: 'Muster IT' }
+
+  it('Ticino Italian, Romandie French, German-speaking Switzerland German', () => {
+    assert.equal(teamLanguage(team('915001', names)), 'it')
+    assert.equal(teamName(team('915001', names)), 'Muster IT')
+    for (const id of ['901001', '902001', '904001']) assert.equal(teamName(team(id, names)), 'Muster FR', id)
+    for (const id of ['907001', '909001', '910001', '911001', '912001', '913001', '914001']) assert.equal(teamName(team(id, names)), 'Muster DE', id)
+  })
+
+  it('bilingual associations: French unless the club is in the German-speaking part', () => {
+    assert.equal(teamName(team('903060', names)), 'Muster FR', 'Valais romand')
+    assert.equal(teamName(team('903300', names)), 'Muster DE', 'Oberwallis')
+    assert.equal(teamName(team('906150', names)), 'Muster FR', 'Fribourg')
+    assert.equal(teamName(team('906100', names)), 'Muster DE', 'Sense')
+    assert.equal(teamName(team('905320', names)), 'Muster FR', 'Jura')
+    assert.equal(teamName(team('905270', names)), 'Muster DE', 'Seeland')
+  })
+
+  it('no or unknown club number: German', () => {
+    assert.equal(teamName(team(null, names)), 'Muster DE')
+    assert.equal(teamName(team('999001', names)), 'Muster DE')
+    assert.equal(teamName(team('12', names)), 'Muster DE')
+    assert.equal(teamLanguage(null), 'de')
+  })
+
+  it('a club number sent as a number counts too', () => {
+    assert.equal(teamName(team(915001, names)), 'Muster IT')
+  })
+
+  it('an empty text in the region language falls back to German, then the plain name', () => {
+    assert.equal(teamName(team('915001', { de: 'Muster DE', it: ' ' })), 'Muster DE')
+    assert.equal(teamName({ name: 'Plain', club: { identifier: '901001' } }), 'Plain')
+  })
+
+  it('maps both sides of a game', () => {
+    const g = makeGame(406010)
+    g.game.encounter = {
+      teamHome: team('912001', { de: 'VBC Musterdorf HU23-1', fr: 'VBC Musterdorf 1', it: 'VBC Musterdorf 1' }),
+      teamAway: team('915001', { de: 'Pallavolo Esempio DE', fr: 'Pallavolo Esempio DE', it: 'Pallavolo Esempio' })
+    }
+    const r = t(g)
+    assert.equal(r.team_home, 'VBC Musterdorf HU23-1')
+    assert.equal(r.team_away, 'Pallavolo Esempio')
+  })
+
+  it('asks VolleyManager for the club numbers', () => {
+    assert.ok(RENDER_PROPERTIES.includes('game.encounter.teamHome.club.identifier'))
+    assert.ok(RENDER_PROPERTIES.includes('game.encounter.teamAway.club.identifier'))
   })
 })

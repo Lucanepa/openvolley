@@ -126,8 +126,10 @@ export const RENDER_PROPERTIES = [
   'game.group.phase.name', 'game.group.phase.displayName',
   'game.encounter.teamHome.identifier', 'game.encounter.teamHome.name',
   'game.encounter.teamHome.displayName', 'game.encounter.teamHome.leagueCategory.name',
+  'game.encounter.teamHome.club.identifier',
   'game.encounter.teamAway.identifier', 'game.encounter.teamAway.name',
   'game.encounter.teamAway.displayName', 'game.encounter.teamAway.leagueCategory.name',
+  'game.encounter.teamAway.club.identifier',
   'game.hall.name', 'game.hall.displayName',
   'game.hall.primaryPostalAddress.additionToAddress',
   'game.hall.primaryPostalAddress.combinedAddress',
@@ -808,19 +810,67 @@ function deepGet(obj, ...keys) {
 }
 
 /**
- * The German text of a translatable VolleyManager field. VM answers `name` in
- * the language of the account that logged in (a club may give its team
- * another name in French and Italian: "VBC Musterdorf HU23-1" can be "VBC
- * Musterdorf 1" in it/fr), and sends all three under `translations`.
- * The sync always keeps the German one, which club_teams and saved teams
- * match on, whatever language the shared account is set to; an empty or
- * missing German text falls back to the plain field.
+ * The text of a translatable VolleyManager field in one language. VM answers
+ * `name` in the language of the account that logged in (a club may give its
+ * team another name in French and Italian: "VBC Musterdorf HU23-1" can be
+ * "VBC Musterdorf 1" in it/fr), and sends all three under `translations`, so
+ * the sync never depends on how the shared account is set. An empty or
+ * missing text falls back to German, then to the plain field.
  */
-export function germanText(entity, key = 'name') {
+export function translatedText(entity, lang = 'de', key = 'name') {
   if (!entity || typeof entity !== 'object') return null
-  const de = deepGet(entity, 'translations', 'de', key)
-  if (typeof de === 'string' && de.trim() !== '') return de
+  for (const l of lang === 'de' ? ['de'] : [lang, 'de']) {
+    const v = deepGet(entity, 'translations', l, key)
+    if (typeof v === 'string' && v.trim() !== '') return v
+  }
   return entity[key] ?? null
+}
+
+/** League category, phase and hall names: always German (the regional association's language). */
+export function germanText(entity, key = 'name') {
+  return translatedText(entity, 'de', key)
+}
+
+// A Swiss Volley club number starts with its regional association's code
+// (VolleyManager's club.identifier, e.g. 912xxx = Zürich).
+const ASSOCIATION_LANGUAGE = {
+  901: 'fr', // Genève
+  902: 'fr', // Vaud
+  904: 'fr', // Neuchâtel
+  907: 'de', // Bern
+  909: 'de', // Nordwestschweiz
+  910: 'de', // Aargau / Solothurn
+  911: 'de', // Innerschweiz
+  912: 'de', // Zürich
+  913: 'de', // Ostschweiz
+  914: 'de', // Südostschweiz
+  915: 'it' // Ticino
+}
+// Bilingual associations (903 Valais, 905 Jura / Seeland, 906 Fribourg):
+// French, but for the clubs of their German-speaking part, listed by number.
+const BILINGUAL_ASSOCIATIONS = new Set(['903', '905', '906'])
+const GERMAN_SPEAKING_CLUBS = new Set([
+  '903025', '903059', '903095', '903100', '903155', '903190', '903192', '903300', // Oberwallis: Brig, Goms, Lalden, Raron, Visp
+  '905090', '905270', '905998', // Biel/Bienne (bilingual, German majority), Nidau
+  '906035', '906040', '906100', '906170', '906205', '906260', '906291', '906340', '906365', '906370' // Sense + See: Plaffeien, Bösingen, Düdingen, Gurmels, Kerzers, Murten, Rechthalten, Schmitten, Tafers, Ueberstorf
+])
+
+/**
+ * The language a team's name is shown in: the one of the region its club is
+ * in (Ticino Italian, Romandie French, German-speaking Switzerland German).
+ * No club number, or one of no known association: German.
+ */
+export function teamLanguage(team) {
+  const id = String(deepGet(team, 'club', 'identifier') ?? '').trim()
+  if (!/^\d{6}$/.test(id)) return 'de'
+  const assoc = id.slice(0, 3)
+  if (BILINGUAL_ASSOCIATIONS.has(assoc)) return GERMAN_SPEAKING_CLUBS.has(id) ? 'de' : 'fr'
+  return ASSOCIATION_LANGUAGE[assoc] ?? 'de'
+}
+
+/** A team's name in its own region's language (see teamLanguage). */
+export function teamName(team) {
+  return translatedText(team, teamLanguage(team))
 }
 
 /**
@@ -941,8 +991,8 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
     league_category: str(germanText(leagueCat)),
     junior_category: juniorFlag,
     match_format: matchFormat,
-    team_home: str(germanText(home)),
-    team_away: str(germanText(away)),
+    team_home: str(teamName(home)),
+    team_away: str(teamName(away)),
     referee_1: str(ref1.name ?? item.activeFirstHeadRefereeName),
     referee_1_first_name: str(ref1.firstName),
     referee_1_last_name: str(ref1.lastName),
