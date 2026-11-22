@@ -150,6 +150,14 @@ describe('game captain chosen in the line-up (FIVB 5.2)', () => {
     expect(d.undo).toEqual({ previousRememberedCourtCaptain: 4 })
   })
 
+  // "Keep as game captain" on (domain/gameCaptainKeep.js): the event says so,
+  // as the Game captain dialog's does
+  it('designate while "Keep as game captain" is on: the event carries keep', () => {
+    const d = lineupGameCaptainDecision({ lineup: withoutCaptain, players: roster, team: 'home', choice: '7', rememberedCourtCaptain: 7, keep: true })
+    expect(d.event).toEqual({ team: 'home', playerNumber: 7, previousCourtCaptain: null, fromLineup: true, keep: true })
+    expect(d.matchUpdate).toEqual({ homeCourtCaptain: 7 })
+  })
+
   it('designate of the player already acting as game captain logs no second event', () => {
     const d = lineupGameCaptainDecision({ lineup: withoutCaptain, players: roster, team: 'home', choice: '7', currentCourtCaptain: 7, rememberedCourtCaptain: '7' })
     expect(d).toEqual({ action: 'designate', playerNumber: 7, matchUpdate: {}, event: null, undo: {} })

@@ -603,7 +603,8 @@
         "none": "Aucun",
         "player": "Capitaine de jeu : joueur {{number}}",
         "enterFirst": "À choisir une fois les joueurs saisis",
-        "fromFirstRally": "Le capitaine {{captain}} n’est pas dans la composition : capitaine de jeu dès le premier échange"
+        "fromFirstRally": "Le capitaine {{captain}} n’est pas dans la composition : capitaine de jeu dès le premier échange",
+        "kept": "#{{n}} gardé comme capitaine de jeu, dès le premier échange"
       },
       "easyLiberos": "Libéros (facultatif)",
       "easyLiberoInput": "Libéro {{n}}",
@@ -901,7 +902,14 @@
       "designate": "Capitaine de jeu",
       "selectTitle": "Capitaine de jeu",
       "last": "Dernier capitaine en jeu",
-      "lastShort": "Dernier"
+      "lastShort": "Dernier",
+      "keep": "Garder comme capitaine de jeu",
+      "keepHint": "Plus de question tant que ce joueur est sur le terrain",
+      "acting": "#{{n}} est capitaine de jeu",
+      "captainOnCourt": "Capitaine #{{n}} sur le terrain",
+      "kept": "Gardé : #{{n}}",
+      "keptChip": "Capitaine de jeu #{{n}}",
+      "autoNotice": "{{team}} : #{{n}} capitaine de jeu"
     },
     "duplicateTabTitle": "Feuille de match déjà ouverte",
     "duplicateTabMessage": "La feuille de match est déjà ouverte dans un autre onglet ou navigateur. Pour éviter les conflits de données, tiens-la dans un seul onglet : ferme celui-ci, ou appuie sur « Continuer dans cet onglet » pour la reprendre ici (l’autre onglet cesse alors de la tenir).",

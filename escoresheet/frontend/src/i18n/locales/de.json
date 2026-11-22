@@ -597,7 +597,8 @@
         "none": "Keiner",
         "player": "Spielkapitän: Spieler {{number}}",
         "enterFirst": "Wählbar, sobald die Spieler eingetragen sind",
-        "fromFirstRally": "Kapitän {{captain}} ist nicht in der Aufstellung: Spielkapitän ab dem ersten Ballwechsel"
+        "fromFirstRally": "Kapitän {{captain}} ist nicht in der Aufstellung: Spielkapitän ab dem ersten Ballwechsel",
+        "kept": "#{{n}} als Spielkapitän behalten, ab dem ersten Ballwechsel"
       },
       "easyLiberos": "Liberos (optional)",
       "easyLiberoInput": "Libero {{n}}",
@@ -895,7 +896,14 @@
       "designate": "Spielkapitän",
       "selectTitle": "Spielführer",
       "last": "Letzter Spielkapitän",
-      "lastShort": "Zuletzt"
+      "lastShort": "Zuletzt",
+      "keep": "Als Spielkapitän behalten",
+      "keepHint": "Keine Nachfrage, solange diese Person auf dem Feld ist",
+      "acting": "#{{n}} ist Spielkapitän",
+      "captainOnCourt": "Kapitän #{{n}} ist auf dem Feld",
+      "kept": "Behalten: #{{n}}",
+      "keptChip": "Spielkapitän #{{n}}",
+      "autoNotice": "{{team}}: #{{n}} Spielkapitän"
     },
     "duplicateTabTitle": "Matchblatt bereits geöffnet",
     "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Führe es nur in einem Tab, um Datenkonflikte zu vermeiden: Schliesse diesen Tab, oder hol es mit «In diesem Tab weiterführen» hierher (der andere Tab führt es dann nicht mehr).",

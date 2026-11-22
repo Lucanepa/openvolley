@@ -605,7 +605,8 @@
         "none": "None",
         "player": "Game captain: player {{number}}",
         "enterFirst": "Choose once the players are entered",
-        "fromFirstRally": "Captain {{captain}} is not in the line-up: game captain from the first rally"
+        "fromFirstRally": "Captain {{captain}} is not in the line-up: game captain from the first rally",
+        "kept": "#{{n}} kept as game captain, from the first rally"
       },
       "easyLiberos": "Liberos (optional)",
       "easyLiberoInput": "Libero {{n}}",
@@ -903,7 +904,14 @@
       "designate": "Game captain",
       "selectTitle": "Game captain",
       "last": "Last game captain",
-      "lastShort": "Last"
+      "lastShort": "Last",
+      "keep": "Keep as game captain",
+      "keepHint": "Not asked again while this player is on court",
+      "acting": "#{{n}} is game captain",
+      "captainOnCourt": "Captain #{{n}} is on court",
+      "kept": "Kept: #{{n}}",
+      "keptChip": "Game captain #{{n}}",
+      "autoNotice": "{{team}}: #{{n}} game captain"
     },
     "duplicateTabTitle": "Scoresheet already open",
     "duplicateTabMessage": "This match scoresheet is already open in another tab or browser window. Score it in one tab only, to avoid data conflicts: close this tab, or press “Score in this tab” to move scoring here (the other tab then stops scoring).",

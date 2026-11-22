@@ -1151,6 +1151,10 @@ function removalSideEffects(events, removed, ctx) {
     if ((e.type === 'lineup' || e.type === 'court_captain_designation') && Object.prototype.hasOwnProperty.call(e.payload, 'previousRememberedCourtCaptain')) {
       out.matchPatch[team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'] = e.payload.previousRememberedCourtCaptain ?? null
     }
+    // "Keep as game captain" as before the designation that changed it (domain/gameCaptainKeep.js)
+    if (e.type === 'court_captain_designation' && Object.prototype.hasOwnProperty.call(e.payload, 'previousKeepCourtCaptain')) {
+      out.matchPatch[team === 'home' ? 'homeKeepCourtCaptain' : 'awayKeepCourtCaptain'] = e.payload.previousKeepCourtCaptain === true
+    }
     if (e.type === 'court_captain_designation' && latestDesignation(events, team)?.id === e.id) {
       out.matchPatch[courtCaptainField(team)] = e.payload.previousCourtCaptain ?? null
     }

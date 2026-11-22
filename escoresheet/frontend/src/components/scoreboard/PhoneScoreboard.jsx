@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Undo2, Menu } from 'lucide-react'
+import { Undo2, Menu, Pin } from 'lucide-react'
 import { ActionSheet } from '../../ui/Modal.jsx'
 import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextPaint } from '../../utils/teamColours'
 import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, recentLinesFor, tintOf } from './phoneLayout'
@@ -64,7 +64,10 @@ import PhonePairDock from '../phonePair/PhonePairDock.jsx'
  *   set interval, domain/interruptionRequests.js),
  *   easy, formalWarned, needsRedesignation, signaturesMissing (the coach /
  *   captain still to sign before the first serve: a flashing button that
- *   opens the team's roster, actions.openSignatures) }
+ *   opens the team's roster, actions.openSignatures), gameCaptain (null, or
+ *   { state: 'needed' }: no game captain while the team captain is off court,
+ *   or { state: 'kept', number }: "Keep as game captain" is on; a button
+ *   under the court opens the Game captain dialog, actions.gameCaptain) }
  */
 export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', limits = DEFAULT_LIMITS, actions }) {
   const { t } = useTranslation()
@@ -485,6 +488,38 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
               onClick={() => actions.openSignatures(team.side)}
               style={{ fontSize: 13 }}
             />
+          ) : <div key={team.side} aria-hidden="true" />)}
+        </section>
+      )}
+
+      {/* The Game captain button, as on the tablet: while a game captain is
+          needed, or quiet with the kept player's number while "Keep as game
+          captain" is on (where the scorer turns it off) */}
+      {(left.gameCaptain || right.gameCaptain) && (
+        <section aria-label={t('scoreboard.captainOnCourt.selectTitle', 'Game captain')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '4px 12px 0' }}>
+          {[left, right].map(team => team.gameCaptain ? (
+            <button
+              key={team.side}
+              type="button"
+              data-testid={`phone-game-captain-${team.side}`}
+              data-game-captain-chip={team.gameCaptain.state}
+              onClick={() => actions.gameCaptain?.(team.side)}
+              aria-label={team.gameCaptain.state === 'kept' ? `${teamTitle(team)}: ${t('scoreboard.captainOnCourt.keep', 'Keep as game captain')}: #${team.gameCaptain.number}` : `${teamTitle(team)}: ${t('scoreboard.captainOnCourt.designate', 'Game captain')}`}
+              style={{
+                justifySelf: team.side === 'left' ? 'start' : 'end', maxWidth: '100%', minWidth: 0, height: 36, padding: '0 10px',
+                display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 8, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden',
+                ...(team.gameCaptain.state === 'kept'
+                  ? { background: '#ffffff', color: '#92400e', border: '1px solid #fcd34d' }
+                  : { background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b' })
+              }}
+            >
+              {team.gameCaptain.state === 'kept' && <Pin size={13} aria-hidden="true" style={{ flex: 'none' }} />}
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {team.gameCaptain.state === 'kept'
+                  ? t('scoreboard.captainOnCourt.keptChip', { n: team.gameCaptain.number, defaultValue: 'Game captain #{{n}}' })
+                  : t('scoreboard.captainOnCourt.designate', 'Game captain')}
+              </span>
+            </button>
           ) : <div key={team.side} aria-hidden="true" />)}
         </section>
       )}
