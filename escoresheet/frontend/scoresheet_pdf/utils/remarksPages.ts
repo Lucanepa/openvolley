@@ -8,7 +8,7 @@ import { A3_LANDSCAPE_MM } from './pdfOutput';
 
 /** The part of jsPDF the remark pages use (the real jsPDF, or a test double). */
 export interface RemarksPdf {
-  addPage: (format?: string, orientation?: string) => unknown;
+  addPage: (format?: string, orientation?: 'l' | 'landscape' | 'p' | 'portrait') => unknown;
   setFontSize: (size: number) => unknown;
   text: (text: string | string[], x: number, y: number) => unknown;
   splitTextToSize: (text: string, maxWidth: number) => string[];
