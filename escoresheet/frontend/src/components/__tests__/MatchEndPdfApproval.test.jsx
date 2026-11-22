@@ -606,3 +606,42 @@ describe('MatchEnd: the scoresheet window reads the match from this device', () 
     expect(sessionStorage.getItem('scoresheetData')).toBeNull()
   })
 })
+
+// Perf pass 22.11.2026: jszip (~96 KB) was parsed with the app at every
+// start, for the approval's ZIP only. It is loaded once Match End shows, and
+// the approval waits for it first.
+describe('MatchEnd: the ZIP library', () => {
+  afterEach(() => { vi.doUnmock('jszip') })
+
+  it('is loaded when Match End shows; the approval\'s ZIP is made with it as before', async () => {
+    const zipFile = vi.spyOn(JSZip.prototype, 'file')
+    try {
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      expect(zipFile.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining(['x.pdf', expect.stringMatching(/^MatchData_.*\.json$/)]))
+    } finally {
+      zipFile.mockRestore()
+    }
+  })
+
+  it('a library that does not load stops the approval before anything is written or the PDF is asked for', async () => {
+    vi.doMock('jszip', () => { throw new Error('Failed to fetch dynamically imported module') })
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      render(<MatchEnd matchId={1} />)
+      await waitFor(() => expect(approveButton()).toBeEnabled())
+      fireEvent.click(approveButton())
+      const failed = en.matchEnd.errorApproving.split('{{')[0]
+      await waitFor(() => expect(alerts.showAlert).toHaveBeenCalledWith(expect.stringContaining(failed), 'error'))
+      expect(opened).toHaveLength(0)
+      expect(store.tables.matches.get(1).approved).toBeFalsy()
+      expect(approvedJobs()).toHaveLength(0)
+      expect([...store.tables.sync_queue.values()]).toHaveLength(0)
+      await waitFor(() => expect(approveButton()).toBeEnabled())
+    } finally {
+      quiet.mockRestore()
+    }
+  })
+})
