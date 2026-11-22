@@ -735,7 +735,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const scorerAttentionTriggerRef = useRef(scorerAttentionTrigger)
   useEffect(() => { timeoutModalRef.current = timeoutModal }, [timeoutModal])
   useEffect(() => { scorerAttentionTriggerRef.current = scorerAttentionTrigger }, [scorerAttentionTrigger])
-  const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
+  const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: seconds left when (re)started, started: boolean, anchor?, duration?: its clock } | null
   // The break between two sets runs on this screen (set by the effect after
   // isBetweenSets): every live-state push in it keeps the break
   const breakRunningRef = useRef(false)
@@ -3743,7 +3743,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       setBetweenSetsCountdown(null)
       return
     }
-    setBetweenSetsCountdown(prev => (prev && prev.started ? { ...prev, countdown: remaining } : prev))
+    // the digits and the bar count to the new length (their clock's duration)
+    const duration = betweenSetsInitialCountdownRef.current
+    setBetweenSetsCountdown(prev => (prev && prev.started ? { ...prev, countdown: remaining, duration } : prev))
   }, [longIntervalOn]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { longIntervalSeenRef.current = null }, [matchId])
 
@@ -3773,28 +3775,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Checked every 100 ms; the state changes only when the shown second does
-    // (a new object every 100 ms rendered the whole scoring screen ten times
-    // a second for the whole set interval, as the time-out countdown did)
+    // The digits and the bar tick by themselves from the countdown's clock
+    // (CountdownSeconds, breakClock), given to them once here: the shown
+    // second was this state, so the whole scoring screen rendered once a
+    // second for the whole interval, with the line-up dialog open over it
+    // (the time-out countdown was changed the same way)
+    const anchor = betweenSetsAnchorRef.current
+    const duration = betweenSetsInitialCountdownRef.current
+    if (betweenSetsCountdown.anchor !== anchor || betweenSetsCountdown.duration !== duration) {
+      setBetweenSetsCountdown(prev => (prev && prev.started ? { ...prev, anchor, duration } : prev))
+      return
+    }
+
+    // Checked every 100 ms; the state changes only when the clock runs out
     const timer = setInterval(() => {
       const remaining = secondsLeft(betweenSetsAnchorRef.current, betweenSetsInitialCountdownRef.current)
-      if (remaining === betweenSetsCountdown.countdown) return
+      if (remaining > 0) return
 
-      if (remaining <= 0) {
-        // Auto-end the set interval when countdown reaches 0
-        countdownDismissedRef.current = true
-        setBetweenSetsCountdown(null)
-        betweenSetsStartTimestampRef.current = null // Reset for next interval
-      } else {
-        setBetweenSetsCountdown(prev => {
-          if (!prev || !prev.started) return prev
-          return { ...prev, countdown: remaining }
-        })
-      }
+      // Auto-end the set interval when countdown reaches 0
+      countdownDismissedRef.current = true
+      setBetweenSetsCountdown(null)
+      betweenSetsStartTimestampRef.current = null // Reset for next interval
     }, 100)
 
     return () => clearInterval(timer)
   }, [betweenSetsCountdown])
+
+  // The running interval's clock for its digits and bar (CountdownSeconds,
+  // on the desktop and the phone): null in its first frame, which shows the
+  // seconds it started with (betweenSetsCountdown.countdown)
+  const breakClock = useMemo(() => (
+    betweenSetsCountdown?.anchor != null && betweenSetsCountdown?.duration != null
+      ? { anchor: betweenSetsCountdown.anchor, duration: betweenSetsCountdown.duration }
+      : null
+  ), [betweenSetsCountdown?.anchor, betweenSetsCountdown?.duration])
 
   // The change of courts in the deciding set on page load/refresh: the
   // scoring screen opened with a team on 8 and the courts not changed (the
@@ -14592,6 +14606,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
+    // The interval's digits as the desktop shows them (mm:ss, "0" at the end)
+    const breakCountdownText = (seconds) => (seconds <= 0 ? '0' : formatCountdown(seconds))
     let centre = null
     if (timeoutModal && timeoutModal.started) {
       centre = {
@@ -14609,16 +14625,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         confirmLabel: t('scoreboard.buttons.confirmSet5Setup', { number: displaySetNumber(5, data?.match?.bestOf) }),
         ...(betweenSetsCountdown ? {
           countdown: betweenSetsCountdown.countdown,
-          countdownText: betweenSetsCountdown.countdown <= 0 ? '0' : formatCountdown(betweenSetsCountdown.countdown),
-          total: currentBreakSeconds
+          countdownText: breakCountdownText(betweenSetsCountdown.countdown),
+          total: currentBreakSeconds,
+          // the phone's digits tick by themselves (CountdownSeconds), as mm:ss
+          clock: breakClock,
+          textOf: breakCountdownText
         } : {})
       }
     } else if (betweenSetsCountdown) {
       centre = {
         kind: 'interval',
         countdown: betweenSetsCountdown.countdown,
-        countdownText: betweenSetsCountdown.countdown <= 0 ? '0' : formatCountdown(betweenSetsCountdown.countdown),
-        total: currentBreakSeconds
+        countdownText: breakCountdownText(betweenSetsCountdown.countdown),
+        total: currentBreakSeconds,
+        clock: breakClock,
+        textOf: breakCountdownText
       }
     }
 
@@ -18360,13 +18381,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {/* Countdown beneath buttons - only shown if active */}
                     {betweenSetsCountdown && (
                       <div style={{ marginTop: 'calc(20px * var(--scale-factor))', textAlign: 'center', width: '100%' }}>
+                        {/* the digits and the bar tick by themselves (CountdownSeconds) */}
+                        <CountdownSeconds clock={breakClock} fallback={betweenSetsCountdown.countdown}>{(seconds) => (<>
                         <div style={{
                           fontSize: 'calc(49px * var(--scale-factor))',
                           fontWeight: 700,
-                          color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                          color: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                           fontFamily: getScoreFont()
                         }}>
-                          {betweenSetsCountdown.countdown <= 0 ? "0" : formatCountdown(betweenSetsCountdown.countdown)}
+                          {seconds <= 0 ? "0" : formatCountdown(seconds)}
                         </div>
                         <div style={{
                           width: '60%',
@@ -18379,27 +18402,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           marginRight: 'auto'
                         }}>
                           <div style={{
-                            width: `${currentBreakSeconds > 0 ? (betweenSetsCountdown.countdown / currentBreakSeconds) * 100 : 0}%`,
+                            width: `${currentBreakSeconds > 0 ? (seconds / currentBreakSeconds) * 100 : 0}%`,
                             height: '100%',
-                            background: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                            background: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                             borderRadius: '4px',
                             transition: 'width 1s linear, background 0.3s',
                             marginLeft: 'auto'
                           }} />
                         </div>
+                        </>)}</CountdownSeconds>
                       </div>
                     )}
                   </>
                 ) : (betweenSetsCountdown && !timeoutModal?.started) ? (
                   <>
+                    {/* the digits and the bar tick by themselves (CountdownSeconds) */}
+                    <CountdownSeconds clock={breakClock} fallback={betweenSetsCountdown.countdown}>{(seconds) => (<>
                     <div style={{
                       fontSize: '49px',
                       fontWeight: 700,
-                      color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                      color: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
                       fontFamily: getScoreFont()
                     }}>
-                      {betweenSetsCountdown.countdown <= 0 ? "0" : formatCountdown(betweenSetsCountdown.countdown)}
+                      {seconds <= 0 ? "0" : formatCountdown(seconds)}
                     </div>
                     {/* Progress bar */}
                     <div style={{
@@ -18414,14 +18440,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       marginRight: 'auto'
                     }}>
                       <div style={{
-                        width: `${currentBreakSeconds > 0 ? (betweenSetsCountdown.countdown / currentBreakSeconds) * 100 : 0}%`,
+                        width: `${currentBreakSeconds > 0 ? (seconds / currentBreakSeconds) * 100 : 0}%`,
                         height: '100%',
-                        background: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                        background: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
                         transition: 'width 1s linear, background 0.3s',
                         marginLeft: 'auto'
                       }} />
                     </div>
+                    </>)}</CountdownSeconds>
                     <button
                       className="secondary"
                       onClick={endSetInterval}

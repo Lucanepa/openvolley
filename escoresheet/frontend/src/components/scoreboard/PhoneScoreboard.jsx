@@ -41,7 +41,9 @@ import PhonePairDock from '../phonePair/PhonePairDock.jsx'
  * @param {null|{ kind: 'timeout', teamName: string, countdown: number, total: number }
  *   |{ kind: 'interval', countdown: number, total: number }
  *   |{ kind: 'set5', countdown?: number, total?: number, confirmLabel: string }} props.centre
- *   (each countdown also comes as `countdownText`, formatted as the desktop shows it)
+ *   (each countdown also comes as `countdownText`, formatted as the desktop shows it;
+ *   with its `clock` ({ anchor, duration }, utils/countdownClock) it ticks by
+ *   itself, CountdownSeconds, its text from `textOf(seconds)` when given)
  * @param {Array<{ id: any, text: string, time?: string|null }>} props.recent newest first
  * @param {boolean} props.canUndo
  * @param {string} [props.scoreFont] CSS font family of scores and countdowns
@@ -354,6 +356,12 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       </div>
     </>
   )
+  // The interval's countdown (and the deciding set's): with its clock it
+  // ticks by itself (CountdownSeconds), as the time-out's below; the
+  // Scoreboard no longer renders each second of it
+  const breakCountdown = (c, warnAt, size) => (c.clock
+    ? <CountdownSeconds clock={c.clock} fallback={c.countdown}>{(seconds) => countdown({ ...c, countdown: seconds, countdownText: c.textOf ? c.textOf(seconds) : String(seconds) }, warnAt, size)}</CountdownSeconds>
+    : countdown(c, warnAt, size))
   let overlay = null
   // The time-out, the interval and the deciding set's setup are each about
   // 131px high, under the point buttons of a 375x740 view (158px), so they
@@ -386,7 +394,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         </div>
         <button type="button" style={{ ...bigButton, background: 'var(--ov-success)', color: '#ffffff' }} onClick={() => actions.set5Confirm()}>{centre.confirmLabel}</button>
         {typeof centre.countdown === 'number' && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>{countdown(centre, 30, 32)}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>{breakCountdown(centre, 30, 32)}</div>
         )}
       </div>
     )
@@ -394,7 +402,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     overlay = (
       <div style={countdownCard}>
         <div style={cardTitle}>{t('scoreboard.phone.interval')}</div>
-        {countdown(centre, 30, 38)}
+        {breakCountdown(centre, 30, 38)}
         <button type="button" style={cardButton} onClick={() => actions.endInterval()}>{t('scoreboard.buttons.endSetInterval')}</button>
       </div>
     )
