@@ -1491,6 +1491,38 @@ describe('useSyncQueue flush loop', () => {
     scoreboard.unmount()
     app.unmount()
   })
+
+  // The scoring screen's instance (performance pass, 22.11): it sends the
+  // queue but does not follow the status, which only App shows
+  it('watchStatus false: the instance sends the queue but does not re-render at a status change', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
+    ])
+    // the session first refused (auth_required), then a sign-in (synced):
+    // two status changes, whatever the status was before
+    let signedIn = false
+    api.respond = (call) => (call.action === 'upsert' && !signedIn
+      ? { data: null, error: { message: 'Authentication required', code: 'missing_token', status: 401 } }
+      : defaultRespond(call))
+    let scoreboardRenders = 0
+    const scoreboard = renderHook(() => { scoreboardRenders++; return useSyncQueue({ watchStatus: false }) })
+    const statuses = []
+    const app = renderHook(() => { const q = useSyncQueue(); statuses.push(q.syncStatus); return q })
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+    expect(app.result.current.syncStatus).toBe('auth_required')
+    signedIn = true
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('api-auth-token-change', { detail: { access_token: 't' } }))
+      await vi.advanceTimersByTimeAsync(7000)
+    })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(app.result.current.syncStatus).toBe('synced')
+    expect(statuses).toContain('auth_required')
+    expect(scoreboardRenders).toBe(1)
+    expect(typeof scoreboard.result.current.flush).toBe('function')
+    scoreboard.unmount()
+    app.unmount()
+  })
 })
 
 // Stress test 2026-10-25 (network chaos): the cloud was down from before
