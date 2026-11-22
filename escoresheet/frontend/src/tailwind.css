@@ -1142,10 +1142,9 @@ html.ov-lite :is(.backdrop-blur-sm, .backdrop-blur) {
    kit's and the legacy layer's rules. animation: none, not a 0 s duration: an
    animation that ends hidden (the rally tap notice fades out, Scoreboard
    removes it) shows its plain style instead. Spinners still turn (Loader2's
-   animate-spin, the AppSpinner orbit, the inline 'spin' rings): a wait on a
-   slow device should not look like a frozen app, and a rotating ring is drawn
-   by the compositor. Countdowns still count; their bars step instead of
-   gliding. */
+   animate-spin, the AppSpinner orbit, the inline 'spin' rings): small, only
+   while something loads, and a wait on a slow device should not look like a
+   frozen app. Countdowns still count; their bars step instead of gliding. */
 html[data-no-motion] :not(.animate-spin, .svrz-orbit, [style*='animation: spin']),
 html[data-no-motion] ::before,
 html[data-no-motion] ::after {

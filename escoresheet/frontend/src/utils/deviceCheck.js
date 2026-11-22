@@ -359,7 +359,8 @@ export function classify({ workMs, layoutMs = null, hints = {} } = {}) {
   if (!Number.isFinite(workMs)) return null
   const score = workMs + (Number.isFinite(layoutMs) ? layoutMs : 0)
   let tier = score < TIER_LIMITS.fast ? 'fast' : score < TIER_LIMITS.ok ? 'ok' : 'slow'
-  if ((hints.memoryGb != null && hints.memoryGb <= 1) || (hints.cores != null && hints.cores <= 2)) tier = slower(tier)
+  const { memoryGb = null, cores = null } = hints || {}
+  if ((memoryGb != null && memoryGb <= 1) || (cores != null && cores <= 2)) tier = slower(tier)
   return tier
 }
 

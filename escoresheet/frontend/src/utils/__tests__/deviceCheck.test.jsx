@@ -67,9 +67,10 @@ describe('classify: the tier', () => {
     expect(classify({ workMs: 20, layoutMs: 5, hints: { memoryGb: null, cores: null } })).toBe('fast')
   })
 
-  it('no measure: no tier', () => {
+  it('no measure: no tier; no hints: as measured', () => {
     expect(classify({ workMs: NaN })).toBe(null)
     expect(classify()).toBe(null)
+    expect(classify({ workMs: 20, hints: null })).toBe('fast')
   })
 })
 
