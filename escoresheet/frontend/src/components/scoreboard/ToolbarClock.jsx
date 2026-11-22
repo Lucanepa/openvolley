@@ -1,17 +1,37 @@
 import { useEffect, useState } from 'react'
 import { useInAppViewOpen } from '../../hooks/useInAppViewOpen'
 
-// The options of toLocaleDateString / toLocaleTimeString the clock had, made
-// once: the same text, without building two formatters every second
-const DAY = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' })
-const TIME = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+// The options of toLocaleDateString / toLocaleTimeString the clock had
+const DAY_OPTIONS = { year: 'numeric', month: '2-digit', day: '2-digit' }
+const TIME_OPTIONS = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }
+
+// The two formatters, made again when the device's time zone or language
+// changes: a formatter keeps the zone it was made in, and the clock must
+// follow the device as toLocaleTimeString does (Android sets the zone from
+// the network a while after boot, with the app already open; the scorer can
+// fix a wrong zone in Settings). Checked at every tick: one formatter's
+// resolved options read, instead of two formatters built every second.
+let formatters = null
+function currentFormatters () {
+  const { locale, timeZone } = new Intl.DateTimeFormat().resolvedOptions()
+  const key = `${locale}|${timeZone}`
+  if (formatters?.key !== key) {
+    formatters = {
+      key,
+      day: new Intl.DateTimeFormat(undefined, DAY_OPTIONS),
+      time: new Intl.DateTimeFormat(undefined, TIME_OPTIONS)
+    }
+  }
+  return formatters
+}
 
 /**
  * Date and time apart, joined by a space: toLocaleString puts a comma
  * between them ("08/11/2026, 09:51:10", Point Hub board 2026-11-08).
  */
 export function formatToolbarClock (date) {
-  return `${DAY.format(date)} ${TIME.format(date)}`
+  const { day, time } = currentFormatters()
+  return `${day.format(date)} ${time.format(date)}`
 }
 
 /**

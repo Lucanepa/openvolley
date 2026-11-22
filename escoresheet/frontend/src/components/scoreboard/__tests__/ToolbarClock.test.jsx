@@ -11,10 +11,51 @@ const formatTimestamp = (date) => {
   return `${day} ${time}`
 }
 
+// The device's time zone changing while the app runs (Node follows a TZ
+// change at run time, as Chrome follows the system's)
+const ZONE = process.env.TZ
+const setZone = (zone) => { process.env.TZ = zone }
+
 afterEach(() => {
   currentInAppView()?.close()
   document.body.innerHTML = ''
   vi.useRealTimers()
+  setZone(ZONE)
+})
+
+describe('formatToolbarClock follows the device\'s time zone', () => {
+  it('a zone changed while the app runs: the new zone\'s time, as toLocaleTimeString', () => {
+    const d = new Date('2026-11-22T12:00:00Z')
+    setZone('Europe/Zurich')
+    expect(formatToolbarClock(d)).toBe(formatTimestamp(d))
+    expect(formatToolbarClock(d)).toMatch(/ 13:00:00$/)
+    setZone('Asia/Tokyo')
+    expect(formatToolbarClock(d)).toBe(formatTimestamp(d))
+    expect(formatToolbarClock(d)).toMatch(/ 21:00:00$/)
+    // and the date with it: 05:00 UTC is still the day before in Pago Pago
+    const early = new Date('2026-11-22T05:00:00Z')
+    setZone('Europe/Zurich')
+    const zurich = formatToolbarClock(early)
+    setZone('Pacific/Pago_Pago')
+    const pagoPago = formatToolbarClock(early)
+    expect(pagoPago).toBe(formatTimestamp(early))
+    expect(pagoPago).toMatch(/ 18:00:00$/)
+    expect(pagoPago.split(' ')[0]).not.toBe(zurich.split(' ')[0])
+    setZone('Europe/Zurich')
+    expect(formatToolbarClock(d)).toMatch(/ 13:00:00$/)
+  })
+
+  it('the ticking clock shows the new zone at its next second', () => {
+    setZone('Europe/Zurich')
+    vi.useFakeTimers({ now: new Date('2026-11-22T12:00:00Z') })
+    render(<span data-testid="clock"><ToolbarClock /></span>)
+    expect(screen.getByTestId('clock').textContent).toMatch(/ 13:00:00$/)
+    setZone('America/New_York')
+    act(() => { vi.advanceTimersByTime(1000) })
+    const shown = screen.getByTestId('clock').textContent
+    expect(shown).toBe(formatTimestamp(new Date('2026-11-22T12:00:01Z')))
+    expect(shown).toMatch(/ 07:00:01$/)
+  })
 })
 
 describe('formatToolbarClock', () => {
