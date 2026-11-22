@@ -57,7 +57,6 @@ import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload,
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { liveCodeForMatch, cachedCourtToken, getLiveCourt, liveListedForMatch } from '../utils/globalLive'
 import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
-import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import ToolbarClock from './scoreboard/ToolbarClock'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -1082,16 +1081,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
   }, [])
-  const [connectionStatuses, setConnectionStatuses] = useState({
-    api: 'unknown',
-    server: 'unknown',
-    websocket: 'unknown',
-    scoreboard: 'unknown',
-    match: 'unknown',
-    db: 'unknown'
-  })
-  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
-  const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
 
 
   useEffect(() => {
@@ -3063,105 +3052,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       window.removeEventListener(ACCESS_CHANGED_EVENT, onAccess)
     }
   }, [matchId])
-
-
-
-  // Check connection statuses
-  const matchStatus = matchLoaded ? (data.match.status ?? null) : undefined
-  const checkConnectionStatuses = useCallback(async () => {
-    const statuses = {
-      api: 'unknown',
-      server: 'unknown',
-      websocket: 'unknown',
-      scoreboard: 'unknown',
-      match: 'unknown',
-      db: 'unknown'
-    }
-    const debugInfo = {}
-
-    // Get the backend URL - use VITE_BACKEND_URL if configured, otherwise relative URL
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || ''
-    const isStaticHosting = !import.meta.env.DEV && (
-      window.location.hostname.includes('github.io') ||
-      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
-    )
-
-    // Skip API checks if on static hosting AND no backend URL configured
-    if (isStaticHosting && !backendUrl) {
-      statuses.api = 'n/a'
-      statuses.server = 'n/a'
-      statuses.websocket = 'n/a'
-      debugInfo.api = { status: 'n/a', message: 'Static hosting - no backend configured' }
-      debugInfo.server = { status: 'n/a', message: 'Static hosting - no backend configured' }
-      debugInfo.websocket = { status: 'n/a', message: 'Static hosting - no WebSocket configured' }
-    } else try {
-      // Use configured backend URL or relative URL
-      // A health check: /api/server/status (every relay has it), not the
-      // match list, which grows with every published match
-      const apiUrl = backendUrl ? `${backendUrl}/api/server/status` : '/api/server/status'
-      const response = await fetch(apiUrl)
-      if (response.ok) {
-        statuses.api = 'connected'
-        statuses.server = 'connected'
-        debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
-        debugInfo.server = { status: 'connected', message: 'Server is reachable' }
-      } else {
-        statuses.api = 'disconnected'
-        statuses.server = 'disconnected'
-        debugInfo.api = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
-        debugInfo.server = { status: 'disconnected', message: `Server returned status ${response.status}: ${response.statusText}` }
-      }
-    } catch (err) {
-      statuses.api = 'disconnected'
-      statuses.server = 'disconnected'
-      const errMsg = import.meta.env.DEV
-        ? `Network error: ${err.message || 'Failed to connect to API'}`
-        : 'Server not available (running in standalone mode)'
-      debugInfo.api = { status: 'disconnected', message: errMsg }
-      debugInfo.server = { status: 'disconnected', message: errMsg }
-    }
-
-    // Relay socket state. No throwaway probe socket: this check used to open
-    // one whenever wsRef was empty (it always was, see the relay effect), on
-    // every heartbeat write and rally.
-    const ws = wsRef.current
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      statuses.websocket = 'connected'
-    } else if (ws && ws.readyState === WebSocket.CONNECTING) {
-      statuses.websocket = 'connecting'
-    } else {
-      statuses.websocket = matchId ? 'connecting' : 'disconnected'
-    }
-
-    // Check Scoreboard connection (same as server for now)
-    statuses.scoreboard = statuses.server
-
-    // Check Match status
-    if (matchStatus !== undefined) {
-      statuses.match = matchStatus === 'live' ? 'live' : matchStatus === 'scheduled' ? 'scheduled' : matchStatus === 'final' ? 'final' : 'unknown'
-    } else {
-      statuses.match = 'no_match'
-    }
-
-    // Check DB (IndexedDB) - always available in browser
-    try {
-      await db.matches.count()
-      statuses.db = 'connected'
-    } catch (err) {
-      statuses.db = 'disconnected'
-    }
-
-    setConnectionStatuses(statuses)
-    // Primitives only: the heartbeat rewrites the match every 10 s, and a new
-    // match object re-ran this check (and its probes) each time.
-  }, [matchLoaded, matchStatus, matchId])
-
-  // Periodically check connection statuses (60s interval to reduce console spam when server is down)
-  useEffect(() => {
-    checkConnectionStatuses()
-    const interval = setInterval(checkConnectionStatuses, 60000) // Check every 60 seconds
-    return () => clearInterval(interval)
-  }, [checkConnectionStatuses])
 
   const ensuringSetRef = useRef(false)
   const setCreationInProgressRef = useRef(false) // Prevent race condition: don't auto-create set while confirmSetEndTime is running
@@ -14118,36 +14008,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [])
 
-  // Tablets the relay sees on this match's room (seed key). The heartbeat
-  // fields below are never written on this device, so they alone always read
-  // "not connected".
-  const relayTablets = useRelayTablets(
-    matchLoaded ? relayMatchKey(data.match) : null,
-    data?.match,
-    { enabled: !!(data?.match?.refereeConnectionEnabled || data?.match?.homeTeamConnectionEnabled || data?.match?.awayTeamConnectionEnabled) }
-  )
-
-  // Check if referees are connected (heartbeat within last 15 seconds, or on the relay)
-  // Must be before any early returns to comply with Rules of Hooks
-  const isReferee1Connected = useMemo(() => {
-    if (relayTablets.referee > 0) return true
-    if (!data?.match?.lastReferee1Heartbeat) return false
-    const lastHeartbeat = new Date(data.match.lastReferee1Heartbeat).getTime()
-    const currentTime = new Date().getTime()
-    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastReferee1Heartbeat, now, relayTablets.referee])
-
-  const isReferee2Connected = useMemo(() => {
-    if (!data?.match?.lastReferee2Heartbeat) return false
-    const lastHeartbeat = new Date(data.match.lastReferee2Heartbeat).getTime()
-    const currentTime = new Date().getTime()
-    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastReferee2Heartbeat, now])
-
-  const isAnyRefereeConnected = isReferee1Connected || isReferee2Connected
-  const refereeConnectionEnabled = data?.match?.refereeConnectionEnabled === true
-  const homeTeamConnectionEnabled = data?.match?.homeTeamConnectionEnabled === true
-  const awayTeamConnectionEnabled = data?.match?.awayTeamConnectionEnabled === true
+  // Which tablets are connected: the header's chip (TabletStatusIndicator)
+  // and the Connect dialog ask the relay. The memos that were here (relay
+  // poll, heartbeat fields nothing writes, a status per role) had no reader.
 
   // Team labels (A or B) based on coin toss assignment
   const homeLabel = data?.match?.coinTossTeamA === 'home' ? 'A' : (data?.match?.coinTossTeamB === 'home' ? 'B' : 'A')
@@ -14194,64 +14057,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const handleCancelCaptainOnCourt = useCallback(() => {
     setCaptainOnCourtModal(null)
   }, [])
-
-  // Check if bench teams are connected (heartbeat within last 15 seconds)
-  const isHomeTeamConnected = useMemo(() => {
-    if (relayTablets.benchHome > 0) return true
-    if (!data?.match?.lastHomeTeamHeartbeat) return false
-    const lastHeartbeat = new Date(data.match.lastHomeTeamHeartbeat).getTime()
-    const currentTime = new Date().getTime()
-    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastHomeTeamHeartbeat, now, relayTablets.benchHome])
-
-  const isAwayTeamConnected = useMemo(() => {
-    if (relayTablets.benchAway > 0) return true
-    if (!data?.match?.lastAwayTeamHeartbeat) return false
-    const lastHeartbeat = new Date(data.match.lastAwayTeamHeartbeat).getTime()
-    const currentTime = new Date().getTime()
-    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastAwayTeamHeartbeat, now, relayTablets.benchAway])
-
-  // Helper function to get connection status and color
-  const getConnectionStatus = useCallback((type) => {
-    if (type === 'referee') {
-      if (!refereeConnectionEnabled) {
-        return { status: 'disabled', color: 'var(--muted)' } // grey
-      }
-      if (isReferee1Connected || isReferee2Connected) {
-        return { status: 'connected', color: '#22c55e' } // green
-      }
-      // Enabled but not connected
-      return { status: 'not_connected', color: '#eab308' } // yellow
-    } else if (type === 'teamA') {
-      if (!homeTeamConnectionEnabled) {
-        return { status: 'disabled', color: 'var(--muted)' } // grey
-      }
-      const hasPin = !!data?.match?.homeTeamPin
-      if (!hasPin) {
-        return { status: 'error', color: '#ef4444' } // red - no PIN configured
-      }
-      if (isHomeTeamConnected) {
-        return { status: 'connected', color: '#22c55e' } // green
-      }
-      // Enabled, has PIN, but not connected
-      return { status: 'not_connected', color: '#eab308' } // yellow
-    } else if (type === 'teamB') {
-      if (!awayTeamConnectionEnabled) {
-        return { status: 'disabled', color: 'var(--muted)' } // grey
-      }
-      const hasPin = !!data?.match?.awayTeamPin
-      if (!hasPin) {
-        return { status: 'error', color: '#ef4444' } // red - no PIN configured
-      }
-      if (isAwayTeamConnected) {
-        return { status: 'connected', color: '#22c55e' } // green
-      }
-      // Enabled, has PIN, but not connected
-      return { status: 'not_connected', color: '#eab308' } // yellow
-    }
-    return { status: 'error', color: '#ef4444' } // red - unknown
-  }, [refereeConnectionEnabled, isReferee1Connected, isReferee2Connected, homeTeamConnectionEnabled, awayTeamConnectionEnabled, isHomeTeamConnected, isAwayTeamConnected, data?.match])
 
   const runCourtSwitchConfirm = useConfirmAction(onConfirmFailed)
   const confirmCourtSwitch = useCallback(() => runCourtSwitchConfirm(() => runAction('courtSwitch', async () => {
