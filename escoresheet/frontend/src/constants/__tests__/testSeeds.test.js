@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { TEST_MATCH_SEED_KEY, newTestMatchSeedKey, isTestMatchSeedKey, testMatchSeedKeyFor, getTestHomeTeamShortName, getTestAwayTeamShortName, getTestTeamByExternalId, TEST_HOME_TEAM_EXTERNAL_ID, TEST_AWAY_TEAM_EXTERNAL_ID, TEST_TEAM_SEED_DATA, seedTeamPatch } from '../testSeeds'
+import { TEST_MATCH_SEED_KEY, newTestMatchSeedKey, isTestMatchSeedKey, testMatchSeedKeyFor, getTestHomeTeamShortName, getTestAwayTeamShortName, getTestTeamByExternalId, TEST_HOME_TEAM_EXTERNAL_ID, TEST_AWAY_TEAM_EXTERNAL_ID, TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH, seedTeamPatch } from '../testSeeds'
+import { playerOfficialLinks } from '../../domain/playerOfficials'
 import { relayMatchKey } from '../../utils/serverDataSync'
 import { SHORT_NAME_MAX, cleanShortName } from '../../domain/teamIdentity'
 import { teamShortLabels } from '../../utils/teamShortLabels'
@@ -88,5 +89,18 @@ describe('test team colours', () => {
     for (const team of TEST_TEAM_SEED_DATA) expect(presetColour(team.color), team.name).toBeTruthy()
     const app = readFileSync(resolve(__dirname, '../../App.jsx'), 'utf8')
     expect(app).not.toMatch(/awayTeamData\?\.color \|\| '#ef4444'/)
+  })
+})
+
+// Owner 2026-11-22: a default test match links no official to a player (a
+// playing coach is made by hand, "Plays as"); the assistant coach 2 and the
+// medic of the home bench had captain #1's licence
+describe('test benches', () => {
+  it('no official shares a licence with a player of either test team', () => {
+    const [home, away] = TEST_TEAM_SEED_DATA
+    expect(playerOfficialLinks(TEST_HOME_BENCH, home.players)).toEqual([])
+    expect(playerOfficialLinks(TEST_AWAY_BENCH, away.players)).toEqual([])
+    const playerLicences = new Set(TEST_TEAM_SEED_DATA.flatMap(t => t.players.map(p => p.dob)))
+    for (const o of [...TEST_HOME_BENCH, ...TEST_AWAY_BENCH]) expect(playerLicences.has(o.dob)).toBe(false)
   })
 })

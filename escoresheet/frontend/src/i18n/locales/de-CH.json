@@ -244,6 +244,8 @@
     "noRefereeHistory": "No kei Schiri-Historie. Gib d Schiris manuell ii, dänn werded si für zuekünftigi Spiil gspeicheret."
   },
   "matchSetup": {
+    "playsAs": "Spiilt als",
+    "playsAsNone": "Spiilt nöd",
     "roleName": "Name der Funktion",
     "mixed": "Gmischt",
     "school": "Schuel",
@@ -546,6 +548,11 @@
     "teamContactEmailHint": "Überchunnt s fertige Matchblatt per E-Mail. Nur d Schriiber vo däm Spiil gsehnd si."
   },
   "scoreboard": {
+    "playerOfficials": {
+      "onCourtAs": "Uf em Fäld als #{{number}}",
+      "onBenchAs": "Uf de Bank als {{role}}",
+      "benchMenuHint": "Uf de Bank als {{role}}. Sanktione gönd a {{role}}."
+    },
     "serveLabel": "Ufschlag",
     "set": "Satz",
     "timeout": "Timeout",
@@ -5905,6 +5912,7 @@
       "disqualification": "Disqualifikation"
     },
     "target": {
+      "officialPlays": "{{role}} (#{{n}})",
       "player": "Spieler #{{n}}",
       "bench": "Spieler #{{n}} (Bank)",
       "libero": "Libero #{{n}}",

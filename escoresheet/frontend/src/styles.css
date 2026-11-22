@@ -698,11 +698,11 @@ button:disabled {
   grid-template-columns: auto auto auto auto auto auto auto auto auto;
 }
 
-/* Bench officials grid: 5 columns
-   Role  |  Last Name  |  First Name  |  DOB  |  Action */
+/* Bench officials grid: 6 columns
+   Role  |  Last Name  |  First Name  |  DOB  |  Plays as  |  Action */
 .bench-grid {
   display: grid;
-  grid-template-columns: auto auto auto auto auto;
+  grid-template-columns: auto auto auto auto auto auto;
   row-gap: calc(8px * var(--scale-factor));
   width: max-content;
   margin: 0 auto;
@@ -769,8 +769,20 @@ button:disabled {
   }
 
   .bench-grid-row {
-    grid-template-columns: minmax(120px, 284px) minmax(80px, 224px) minmax(80px, 224px) minmax(128px, 224px) minmax(68px, 1fr);
+    grid-template-columns: minmax(120px, 284px) minmax(80px, 224px) minmax(80px, 224px) minmax(128px, 224px) minmax(80px, 160px) minmax(68px, 1fr);
   }
+}
+
+/* "Plays as" (a player who is also this official, a playing coach:
+   domain/playerOfficials): the select in its own column, its label only in
+   the stacked rows (tailwind.css), where no column head names it */
+.bench-grid-row > .cell-plays {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.bench-grid-row > .cell-plays > .plays-label {
+  display: none;
 }
 
 /* Inputs/selects in grid: size to content, not 100% */

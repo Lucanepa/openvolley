@@ -237,6 +237,8 @@
     "noRefereeHistory": "Noch keine Schiedsrichter-Historie. Gib Schiedsrichter manuell ein und sie werden für zukünftige Spiele gespeichert."
   },
   "matchSetup": {
+    "playsAs": "Spielt als",
+    "playsAsNone": "Spielt nicht",
     "roleName": "Name der Funktion",
     "mixed": "Gemischt",
     "school": "Schule",
@@ -539,6 +541,11 @@
     "teamContactEmailHint": "Erhält das fertige Matchblatt per E-Mail. Nur die Schreiber dieses Spiels sehen sie."
   },
   "scoreboard": {
+    "playerOfficials": {
+      "onCourtAs": "Auf dem Feld als #{{number}}",
+      "onBenchAs": "Auf der Bank als {{role}}",
+      "benchMenuHint": "Auf der Bank als {{role}}. Sanktionen gehen an {{role}}."
+    },
     "serveLabel": "Aufschlag",
     "set": "Satz",
     "timeout": "Timeout",
@@ -5893,6 +5900,7 @@
       "disqualification": "Disqualifikation"
     },
     "target": {
+      "officialPlays": "{{role}} (#{{n}})",
       "player": "Spieler/in #{{n}}",
       "bench": "Spieler/in #{{n}} (Bank)",
       "libero": "Libero #{{n}}",

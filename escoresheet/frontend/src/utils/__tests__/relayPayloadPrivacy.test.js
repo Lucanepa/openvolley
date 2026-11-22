@@ -145,6 +145,9 @@ describe('the Scoreboard\'s sync and remarks', () => {
     expect(body).toMatch(/const shownValue = \(v\) => \(isDateValue\(v\) \? '\(date of birth\)' : v\)/)
     expect(body.match(/=== 'dob' \? shownValue\(raw(Old|New)\)/g)).toHaveLength(4)
     // every remark line is one of these: none writes the values of a dob change
-    expect(body.match(/remarkLines\.push\(/g)).toHaveLength(6)
+    // (the 7th: a playing coach's "plays as" link, a shirt number or
+    // "automatic" / "not a player", domain/playerOfficials)
+    expect(body.match(/remarkLines\.push\(/g)).toHaveLength(7)
+    expect(body).toMatch(/const playsText = \(v\) => \(v === false \? 'not a player' : \(v === undefined \|\| v === null \|\| v === ''\) \? 'automatic' : `#\$\{v\}`\)/)
   })
 })

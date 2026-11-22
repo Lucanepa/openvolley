@@ -101,5 +101,37 @@ describe('ReopenRosterModal', () => {
     const row = within(screen.getAllByRole('list')[0]).getAllByRole('listitem')[0]
     for (const el of row.querySelectorAll('input, select')) expect(el.className).toMatch(/\bh-11\b/)
     expect(within(row).getByRole('button', { name: 'Remove' }).className).toMatch(/\bh-11\b/)
+    const official = within(screen.getAllByRole('list')[1]).getAllByRole('listitem')[0]
+    for (const el of official.querySelectorAll('input, select')) expect(el.className).toMatch(/\bh-11\b/)
+  })
+
+  // A player who is also a bench official (a playing coach, domain/playerOfficials)
+  it('"Plays as": the coach plays as #7 by choice, or is not a player', () => {
+    const onSave = open()
+    const playsAs = within(screen.getAllByRole('list')[1]).getByLabelText('Plays as')
+    // Marco Frei is no player of the team: nothing found
+    expect(playsAs).toHaveValue('')
+    expect([...playsAs.options].map(o => o.textContent)).toEqual(['–', 'Not a player', '#1 Keller', '#7 Fischer', '#12 Huber'])
+    fireEvent.change(playsAs, { target: { value: '7' } })
+    expect(playsAs).toHaveValue('7')
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(onSave.mock.calls[0][2][0]).toEqual({ ...bench[0], plays: 7 })
+  })
+
+  it('"Plays as" shows the player found by licence or name, and "Not a player" undoes it', () => {
+    const onSave = vi.fn()
+    render(
+      <ReopenRosterModal
+        teamKey="home" teamName="VBC Musterdorf" players={players}
+        bench={[{ role: 'Coach', firstName: 'Erik', lastName: 'Fischer', dob: '09.02.1996' }]}
+        onSave={onSave} onClose={() => {}} t={tr} benchRoles={benchRoles}
+        toISODate={(d) => (d ? d.split('.').reverse().join('-') : '')}
+      />
+    )
+    const playsAs = within(screen.getAllByRole('list')[1]).getByLabelText('Plays as')
+    expect(playsAs).toHaveValue('7')
+    fireEvent.change(playsAs, { target: { value: 'none' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(onSave.mock.calls[0][2][0].plays).toBe(false)
   })
 })

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { db } from '../db/db'
-import { matchInfoFromLocal } from '../db/matchRepository'
+import { matchInfoFromLocal, benchPlays } from '../db/matchRepository'
 import { getToolMode } from '../utils/toolMode'
 import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
@@ -888,13 +888,15 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               role: b.role,
               first_name: b.firstName || '',
               last_name: b.lastName || '',
-              dob: b.dob || null
+              dob: b.dob || null,
+              ...benchPlays(b)
             })),
             bench_away: benchAway.map(b => ({
               role: b.role,
               first_name: b.firstName || '',
               last_name: b.lastName || '',
-              dob: b.dob || null
+              dob: b.dob || null,
+              ...benchPlays(b)
             })),
             officials: updatedMatch.officials || []
           },
@@ -1380,13 +1382,15 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               role: b.role,
               first_name: b.firstName || '',
               last_name: b.lastName || '',
-              dob: b.dob || null
+              dob: b.dob || null,
+              ...benchPlays(b)
             })),
             bench_away: benchAway.map(b => ({
               role: b.role,
               first_name: b.firstName || '',
               last_name: b.lastName || '',
-              dob: b.dob || null
+              dob: b.dob || null,
+              ...benchPlays(b)
             })),
             officials: matchData.officials || []
           },

@@ -45,16 +45,27 @@ export function toCloudPlayers(players) {
 /**
  * Bench officials in the cloud's snake_case shape (bench_home / bench_away),
  * as the coin toss sends them (CoinToss). importMatchFromSupabase reads both
- * shapes back into the app's.
- * @param {Array} bench local bench officials ({ role, firstName, lastName, dob })
+ * shapes back into the app's. `plays` (a playing coach's link to his shirt
+ * number, or false: not the same person; domain/playerOfficials) goes along
+ * when set, under the same name in both shapes.
+ * @param {Array} bench local bench officials ({ role, firstName, lastName, dob, plays? })
  */
 export function toCloudBench(bench) {
   return (Array.isArray(bench) ? bench : []).map(b => ({
     role: b.role,
     first_name: b.firstName ?? b.first_name ?? '',
     last_name: b.lastName ?? b.last_name ?? '',
-    dob: b.dob || null
+    dob: b.dob || null,
+    ...benchPlays(b)
   }))
+}
+
+/** A bench official's `plays` as the roster carries it: { plays } when set, else nothing. */
+export function benchPlays(b) {
+  const v = b?.plays
+  if (v === false) return { plays: false }
+  if (v === undefined || v === null || v === '') return {}
+  return { plays: v }
 }
 
 // db/017's CHECK on matches.remarks (characters, not bytes)

@@ -11,6 +11,7 @@
  */
 
 import { STAFF_ROLES, normalizeName, savedNumberFinder } from './savedTeams'
+import { licenceOf, dateValueText } from './idMode'
 
 // lib/teams.js (FIVB 4.1.1, VolleyManager's own limit)
 export const GAME_ROSTER_MAX_PLAYERS = 14
@@ -119,6 +120,32 @@ export function samePerson(a, b) {
   const lb = licenceKey(b)
   if (la && lb) return la === lb
   return nameKey(a) === nameKey(b) || nameKey(a) === swappedKey(b)
+}
+
+/**
+ * samePerson for two people of a match roster (a player and a bench
+ * official: { firstName, lastName, dob }, the value beside the name in `dob`,
+ * domain/idMode; the API shape works too). The same licence number when both
+ * have one; else the same name (also with first and last name swapped), a
+ * last name on both, and not two different dates of birth. Nobody is the
+ * same person as a row without a name. domain/playerOfficials links a
+ * playing coach with it.
+ */
+export function samePersonInMatch(a, b) {
+  if (!a || !b) return false
+  const api = (r) => ({
+    first_name: r.firstName ?? r.first_name,
+    last_name: r.lastName ?? r.last_name,
+    license_number: licenceOf(r.dob) ?? (clean(r.license_number) || null)
+  })
+  const pa = api(a)
+  const pb = api(b)
+  if (licenceKey(pa) && licenceKey(pb)) return licenceKey(pa) === licenceKey(pb)
+  if (!fold(pa.last_name) || !fold(pb.last_name)) return false
+  const da = dateValueText(a.dob)
+  const db = dateValueText(b.dob)
+  if (da && db && da !== db) return false
+  return samePerson(pa, pb)
 }
 
 export function mergeImportedRoster(players, staff, imported, makePlayer = (p) => p, makeStaff = (s) => s, squad = null) {

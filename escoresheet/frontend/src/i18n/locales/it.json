@@ -244,6 +244,8 @@
     "noRefereeHistory": "Nessuno storico arbitri. Inserisci gli arbitri manualmente e verranno salvati per le prossime partite."
   },
   "matchSetup": {
+    "playsAs": "Gioca come",
+    "playsAsNone": "Non gioca",
     "roleName": "Nome del ruolo",
     "mixed": "Misto",
     "school": "Scuola",
@@ -546,6 +548,11 @@
     "teamContactEmailHint": "Riceve il referto finale per e-mail. La vedono solo i segnapunti di questa partita."
   },
   "scoreboard": {
+    "playerOfficials": {
+      "onCourtAs": "In campo come #{{number}}",
+      "onBenchAs": "In panchina come {{role}}",
+      "benchMenuHint": "In panchina come {{role}}. Le sanzioni vanno a {{role}}."
+    },
     "serveLabel": "Servizio",
     "set": "Set",
     "timeout": "Timeout",
@@ -5910,6 +5917,7 @@
       "disqualification": "Squalifica"
     },
     "target": {
+      "officialPlays": "{{role}} (#{{n}})",
       "player": "Giocatore/trice #{{n}}",
       "bench": "Giocatore/trice #{{n}} (panchina)",
       "libero": "Libero #{{n}}",

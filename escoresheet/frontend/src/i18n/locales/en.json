@@ -245,6 +245,8 @@
     "noRefereeHistory": "No referee history yet. Enter referees manually and they will be saved for future matches."
   },
   "matchSetup": {
+    "playsAs": "Plays as",
+    "playsAsNone": "Not a player",
     "roleName": "Role name",
     "mixed": "Mixed",
     "school": "School",
@@ -547,6 +549,11 @@
     "teamContactEmailHint": "Gets the final scoresheet by email. Only this match's scorers see it."
   },
   "scoreboard": {
+    "playerOfficials": {
+      "onCourtAs": "On court as #{{number}}",
+      "onBenchAs": "On the bench as {{role}}",
+      "benchMenuHint": "On the bench as {{role}}. Sanctions go to {{role}}."
+    },
     "serveLabel": "Serve",
     "set": "Set",
     "timeout": "Timeout",
@@ -5911,6 +5918,7 @@
       "disqualification": "Disqualification"
     },
     "target": {
+      "officialPlays": "{{role}} (#{{n}})",
       "player": "Player #{{n}}",
       "bench": "Player #{{n}} (bench)",
       "libero": "Libero #{{n}}",
