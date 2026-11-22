@@ -24629,37 +24629,41 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
       {/* Post-match captain signature. SignaturePad is the modal itself: wrapped
-          in another Modal without `open` it rendered nothing (B1). */}
-      <SignaturePad
-        open={!!postMatchSignature}
-        title={postMatchSignature
-          ? t('scoreboard.captainLabel', { team: postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) }) + ' ' + t('common.signature')
-          : ''}
-        onClose={() => setPostMatchSignature(null)}
-        onSave={async (signatureDataUrl, meta) => {
-          const fieldName = postMatchSignature === 'home-captain' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature'
-          // saved and queued for the cloud at once, as MatchEnd does, with the
-          // phone-signing record in the same update
-          await saveMatchSignature(db, matchId, fieldName, signatureDataUrl, signatureUpdate(fieldName, signatureDataUrl, meta))
-          setPostMatchSignature(null)
-        }}
-        phone={postMatchSignature && data?.match ? {
-          slot: postMatchSignature === 'home-captain' ? 'captain-post-home' : 'captain-post-away',
-          matchKey: data.match.seed_key || data.match.seedKey || null,
-          gamePin: data.match.gamePin || null,
-          context: phoneSignContext({
-            match: data.match,
+          in another Modal without `open` it rendered nothing (B1). Mounted
+          only while open: closed, its hooks (the phone-signing transports)
+          still ran in every render of the scoring screen. */}
+      {postMatchSignature && (
+        <SignaturePad
+          open={!!postMatchSignature}
+          title={postMatchSignature
+            ? t('scoreboard.captainLabel', { team: postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) }) + ' ' + t('common.signature')
+            : ''}
+          onClose={() => setPostMatchSignature(null)}
+          onSave={async (signatureDataUrl, meta) => {
+            const fieldName = postMatchSignature === 'home-captain' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature'
+            // saved and queued for the cloud at once, as MatchEnd does, with the
+            // phone-signing record in the same update
+            await saveMatchSignature(db, matchId, fieldName, signatureDataUrl, signatureUpdate(fieldName, signatureDataUrl, meta))
+            setPostMatchSignature(null)
+          }}
+          phone={postMatchSignature && data?.match ? {
             slot: postMatchSignature === 'home-captain' ? 'captain-post-home' : 'captain-post-away',
-            homeTeam: data.homeTeam,
-            awayTeam: data.awayTeam,
-            homeCaptain: (data.homePlayers || []).find(p => p.isCaptain || p.captain) || null,
-            awayCaptain: (data.awayPlayers || []).find(p => p.isCaptain || p.captain) || null,
-            lang: i18n.language,
-            fallbackHome: t('common.home'),
-            fallbackAway: t('common.away')
-          })
-        } : null}
-      />
+            matchKey: data.match.seed_key || data.match.seedKey || null,
+            gamePin: data.match.gamePin || null,
+            context: phoneSignContext({
+              match: data.match,
+              slot: postMatchSignature === 'home-captain' ? 'captain-post-home' : 'captain-post-away',
+              homeTeam: data.homeTeam,
+              awayTeam: data.awayTeam,
+              homeCaptain: (data.homePlayers || []).find(p => p.isCaptain || p.captain) || null,
+              awayCaptain: (data.awayPlayers || []).find(p => p.isCaptain || p.captain) || null,
+              lang: i18n.language,
+              fallbackHome: t('common.home'),
+              fallbackAway: t('common.away')
+            })
+          } : null}
+        />
+      )}
 
     </div>
   )
