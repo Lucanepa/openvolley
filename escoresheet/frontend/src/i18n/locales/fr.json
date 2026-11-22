@@ -243,6 +243,8 @@
     "noRefereeHistory": "Pas encore d'historique d'arbitres. Entre les arbitres manuellement et ils seront sauvegardés pour les prochains matchs."
   },
   "matchSetup": {
+    "playsAs": "Joue comme",
+    "playsAsNone": "Ne joue pas",
     "roleName": "Nom de la fonction",
     "mixed": "Mixte",
     "school": "École",
@@ -545,6 +547,11 @@
     "teamContactEmailHint": "Reçoit la feuille de match finale par e-mail. Seuls les marqueurs de ce match la voient."
   },
   "scoreboard": {
+    "playerOfficials": {
+      "onCourtAs": "Sur le terrain comme #{{number}}",
+      "onBenchAs": "Sur le banc comme {{role}}",
+      "benchMenuHint": "Sur le banc comme {{role}}. Les sanctions vont à {{role}}."
+    },
     "serveLabel": "Service",
     "set": "Set",
     "timeout": "Temps mort",
@@ -5914,6 +5921,7 @@
       "disqualification": "Disqualification"
     },
     "target": {
+      "officialPlays": "{{role}} (#{{n}})",
       "player": "Joueur/euse #{{n}}",
       "bench": "Joueur/euse #{{n}} (banc)",
       "libero": "Libéro #{{n}}",

@@ -115,6 +115,7 @@ import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/sc
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
 import { generateSecurePin } from './utils/stringUtils'
 import { setErrorView } from './utils/errorReport'
+import { benchPlays } from './db/matchRepository'
 
 function readStoredDisplayMode() {
   try {
@@ -2261,7 +2262,9 @@ export default function App() {
       role: member?.role || '',
       firstName: member?.firstName || member?.first_name || '',
       lastName: member?.lastName || member?.last_name || '',
-      dob: member?.dob || member?.date_of_birth || member?.dateOfBirth || ''
+      dob: member?.dob || member?.date_of_birth || member?.dateOfBirth || '',
+      // a playing coach's link (domain/playerOfficials)
+      ...benchPlays(member)
     })
 
     const homeBenchRaw = Array.isArray(homeTeamData?.bench_staff)
