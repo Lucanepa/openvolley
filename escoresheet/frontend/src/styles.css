@@ -2969,6 +2969,20 @@ button.start-rally-button {
   padding: calc(16px * var(--scale-factor)) calc(28px * var(--scale-factor));
 }
 
+/* Pressed: Point and Start rally / Start set darken the moment the finger
+   lands, before the action is written and the screen redrawn (hundreds of
+   ms on the hall tablet, where a tap looked ignored and was tapped again).
+   A wash drawn inside the button: no transform, filter or blur for the
+   tablet's GPU, and nothing in React (the tap guard and "Not counted" keep
+   their timing). Start rally keeps its hairline. */
+.rally-point-button:not(:disabled):active {
+  box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.12);
+}
+
+.rally-controls button.start-rally-button:not(:disabled):active {
+  box-shadow: inset 0 0 0 1px var(--ov-hairline-strong), inset 0 0 0 999px rgba(0, 0, 0, 0.12);
+}
+
 @media (max-width: 1400px) {
   .rally-controls {
     gap: calc(8px * var(--scale-factor));

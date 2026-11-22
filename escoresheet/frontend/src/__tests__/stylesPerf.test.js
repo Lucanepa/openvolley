@@ -130,3 +130,22 @@ describe('Tap hints: one offscreen layer per finger', () => {
     expect(finger()).toMatch(/background-color: currentColor;/)
   })
 })
+
+describe('Point and Start rally: a pressed look the moment the finger lands', () => {
+  const point = () => rulesFor('.rally-point-button:not(:disabled):active').join('\n')
+  const start = () => rulesFor('.rally-controls button.start-rally-button:not(:disabled):active').join('\n')
+
+  it('a wash inside the button, nothing else', () => {
+    expect(point()).toMatch(/^\s*box-shadow: inset 0 0 0 999px rgba\(0, 0, 0, 0\.12\);\s*$/)
+    // Start rally keeps the hairline of .rally-controls button.secondary under the wash
+    expect(rulesFor('.rally-controls button.secondary').join('\n')).toMatch(/box-shadow: inset 0 0 0 1px var\(--ov-hairline-strong\);/)
+    expect(start()).toMatch(/^\s*box-shadow: inset 0 0 0 1px var\(--ov-hairline-strong\), inset 0 0 0 999px rgba\(0, 0, 0, 0\.12\);\s*$/)
+  })
+
+  it('no transform, filter, blur, opacity or transition on any :active rule', () => {
+    for (const m of css.matchAll(/([^{}]*:active[^{}]*)\{/g)) {
+      const body = blockAt(css, m.index + m[0].length - 1)
+      expect(body, m[1].trim()).not.toMatch(/transform|filter|blur|opacity|transition/)
+    }
+  })
+})
