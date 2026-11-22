@@ -71,6 +71,19 @@
   </screenshots>
 
   <releases>
+    <release version="26.11.3" date="2026-11-22">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.3</url>
+      <description>
+        <ul>
+          <li>Scoreboard code: Match menu &gt; "Show on a scoreboard"; a scoreboard or TV follows the match live.</li>
+          <li>Referee: SERVE box fits its number, no Advanced mode, the break shows the next set.</li>
+          <li>Bench: each sanction once; tiles fit phones.</li>
+          <li>Rules: sanctions only get heavier; replaced exceptionally = out for the match; injured libero can return unless re-designated. SUB counts exceptional subs.</li>
+          <li>Offline answers to bench requests are sent when back online.</li>
+          <li>Fixes, library updates.</li>
+        </ul>
+      </description>
+    </release>
     <release version="26.11.2" date="2026-11-21">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.2</url>
       <description>

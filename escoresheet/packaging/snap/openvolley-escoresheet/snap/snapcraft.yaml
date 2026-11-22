@@ -8,7 +8,7 @@
 # not work inside the snap.
 name: openvolley-escoresheet
 title: OpenVolley eScoresheet
-version: '26.11.2'
+version: '26.11.3'
 summary: Open Source Volleyball eScoresheet
 description: |
   Fully offline volleyball e-scoresheet. Runs the scoretable and a built-in
@@ -74,9 +74,9 @@ slots:
 parts:
   openvolley-escoresheet:
     plugin: dump
-    source: https://github.com/Lucanepa/openvolley/releases/download/desktop-v26.11.2/openvolley-escoresheet_26.11.2_amd64.deb
+    source: https://github.com/Lucanepa/openvolley/releases/download/desktop-v26.11.3/openvolley-escoresheet_26.11.3_amd64.deb
     source-type: deb
-    source-checksum: sha256/7f9cc0b07bca33ee6c60d5243aa17b5e8f27c88b7e86e97c17e3fd9ac154e226
+    source-checksum: sha256/6a1142d4eaf3b75980cf25f3d5db3b41e82c896eafd54b9eab60da5b7d0b3aa2
     # GTK 3, WebKitGTK 4.1, libsoup 3 and libayatana-appindicator3 (the
     # tray) all come from the gnome-46-2404 runtime: nothing is staged
     prime:
