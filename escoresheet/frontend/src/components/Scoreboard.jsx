@@ -9334,26 +9334,78 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }
 
+  // What the per-player checks below look up, in one pass over the log per
+  // change of it: each bench chip, court disc, libero and official ran those
+  // checks with a pass over all events each, about a dozen a chip, every
+  // render. Per team (payload.team, as `===`), keyed by the number as a
+  // string (`String(a) === String(b)`), each with the predicate of the check
+  // that reads it, unchanged:
+  //  - outExpelled / outDisqualified / outBarred: the substitutions that
+  //    took the player out expelled, disqualified, exceptionally (for the match)
+  //  - disqualified: his disqualifications (the sanctioned number, a
+  //    playing coach's too); expelledInSets: the sets (setIndex || 1) of
+  //    his expulsions
+  //  - formalByNumber / formalByRole: the formal sanctions (warning,
+  //    penalty, expulsion, disqualification) by number / role, in log order
+  //  - lastPointAt: per set (setIndex || 1), the log position of its last point
+  const playerLogIndex = useMemo(() => {
+    if (!data?.events) return null
+    const byTeam = () => new Map()
+    const inTeam = (map, team) => {
+      let m = map.get(team)
+      if (!m) map.set(team, m = new Map())
+      return m
+    }
+    const mark = (map, team, key) => inTeam(map, team).set(key, true)
+    const push = (map, team, key, value) => {
+      const m = inTeam(map, team)
+      let list = m.get(key)
+      if (!list) m.set(key, list = [])
+      list.push(value)
+    }
+    const index = {
+      outExpelled: byTeam(), outDisqualified: byTeam(), outBarred: byTeam(),
+      disqualified: byTeam(), expelledInSets: byTeam(),
+      formalByNumber: byTeam(), formalByRole: byTeam(),
+      lastPointAt: new Map()
+    }
+    const FORMAL = ['warning', 'penalty', 'expulsion', 'disqualification']
+    data.events.forEach((e, i) => {
+      if (e.type === 'substitution') {
+        const team = e.payload?.team
+        const out = String(e.payload?.playerOut)
+        if (e.payload?.isExpelled === true) mark(index.outExpelled, team, out)
+        if (e.payload?.isDisqualified === true) mark(index.outDisqualified, team, out)
+        if (e.payload?.isExceptional === true && substitutionBarsForMatch(e.payload)) mark(index.outBarred, team, out)
+      } else if (e.type === 'sanction') {
+        const team = e.payload?.team
+        const type = e.payload?.type
+        if (type === 'disqualification' || type === 'expulsion') {
+          const number = String(sanctionedPlayerNumber(e.payload))
+          if (type === 'disqualification') mark(index.disqualified, team, number)
+          else push(index.expelledInSets, team, number, e.setIndex || 1)
+        }
+        if (FORMAL.includes(type)) {
+          push(index.formalByNumber, team, String(e.payload?.playerNumber), e)
+          push(index.formalByRole, team, e.payload?.role, e)
+        }
+      } else if (e.type === 'point') {
+        index.lastPointAt.set(e.setIndex || 1, i)
+      }
+    })
+    return index
+  }, [data?.events])
+
   // Helper functions to check substitution types
   const wasSubstitutedDueToExpulsion = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return false
-    return data.events.some(e =>
-      e.type === 'substitution' &&
-      e.payload?.team === teamKey &&
-      String(e.payload?.playerOut) === String(playerNumber) &&
-      e.payload?.isExpelled === true
-    )
-  }, [data?.events])
+    return playerLogIndex.outExpelled.get(teamKey)?.has(String(playerNumber)) === true
+  }, [data?.events, playerLogIndex])
 
   const wasSubstitutedDueToDisqualification = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return false
-    return data.events.some(e =>
-      e.type === 'substitution' &&
-      e.payload?.team === teamKey &&
-      String(e.payload?.playerOut) === String(playerNumber) &&
-      e.payload?.isDisqualified === true
-    )
-  }, [data?.events])
+    return playerLogIndex.outDisqualified.get(teamKey)?.has(String(playerNumber)) === true
+  }, [data?.events, playerLogIndex])
 
   // Out for the match by an exceptional substitution (FIVB 15.7, 15.8): an
   // injured, expelled or disqualified player replaced beyond the legal
@@ -9362,14 +9414,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // for that set only, as wasSubstitutedDueToExpulsion handles.
   const wasExceptionallySubstituted = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return false
-    return data.events.some(e =>
-      e.type === 'substitution' &&
-      e.payload?.team === teamKey &&
-      String(e.payload?.playerOut) === String(playerNumber) &&
-      e.payload?.isExceptional === true &&
-      substitutionBarsForMatch(e.payload)
-    )
-  }, [data?.events])
+    return playerLogIndex.outBarred.get(teamKey)?.has(String(playerNumber)) === true
+  }, [data?.events, playerLogIndex])
 
   const canPlayerReEnter = useCallback((teamKey, playerNumber, currentSetIndex) => {
     if (!data?.events || !currentSetIndex) return true
@@ -9817,14 +9863,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Check if player is disqualified - disqualified players cannot re-enter
     // (numbers as strings: a sanction from the court disc carries a string;
-    // also one given to him as a team official, a playing coach)
-    const playerSanctions = data.events.filter(e =>
-      e.type === 'sanction' &&
-      e.payload?.team === teamKey &&
-      String(sanctionedPlayerNumber(e.payload)) === String(playerNumber) &&
-      e.payload?.type === 'disqualification'
-    )
-    if (playerSanctions.length > 0) return false // Disqualified, cannot re-enter
+    // also one given to him as a team official, a playing coach;
+    // playerLogIndex: the sanctions of that kind, team and number)
+    if (playerLogIndex.disqualified.get(teamKey)?.has(String(playerNumber))) return false // Disqualified, cannot re-enter
 
     const substitutions = getSubstitutionHistory(teamKey)
 
@@ -9840,23 +9881,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Check if player was expelled - expelled players can only re-enter in next set
     // If expelled in current set, cannot re-enter in current set
-    const expulsionSanctions = data.events.filter(e =>
-      e.type === 'sanction' &&
-      e.payload?.team === teamKey &&
-      String(sanctionedPlayerNumber(e.payload)) === String(playerNumber) &&
-      e.payload?.type === 'expulsion' &&
-      (e.setIndex || 1) === data.set.index
-    )
-    if (expulsionSanctions.length > 0) {
+    // (the sets, setIndex || 1, of his expulsions)
+    if (playerLogIndex.expelledInSets.get(teamKey)?.get(String(playerNumber))?.includes(data.set.index)) {
       return false // Expelled in this set, can only re-enter next set
     }
 
-    // Check if there was a point change since substitution
-    const eventsAfterSub = data.events
-      .filter((e, idx) => idx > lastSubstitutionIndex && (e.setIndex || 1) === data.set.index)
-      .sort(compareBySeq)
-
-    const pointAfterSub = eventsAfterSub.find(e => e.type === 'point')
+    // Check if there was a point change since substitution: a point of this
+    // set (setIndex || 1) later in the log than the substitution
+    const pointAfterSub = playerLogIndex.lastPointAt.get(data.set.index) > lastSubstitutionIndex
 
     if (!pointAfterSub) return false // No point change yet
 
@@ -9869,7 +9901,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (hasComeBack) return false // Already came back
 
     return true // Can come back
-  }, [data?.events, data?.set, getSubstitutionHistory])
+  }, [data?.events, data?.set, getSubstitutionHistory, playerLogIndex])
 
   // Check if a bench player already came back (got in and out again)
   const hasPlayerComeBack = useCallback((teamKey, playerNumber) => {
@@ -9888,10 +9920,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const lastSubstitutionIn = playerSubstitutionsIn[playerSubstitutionsIn.length - 1]
     const lastSubstitutionInIndex = lastSubstitutionIn.eventIndex
 
-    // Check if player was substituted out after being substituted in
+    // Check if player was substituted out after being substituted in (its
+    // eventIndex: data.events.findIndex(e => e.id === s.id), worked out once)
     const hasBeenSubstitutedOut = substitutions.some(s =>
       String(s.payload?.playerOut) === String(playerNumber) &&
-      data.events.findIndex(e => e.id === s.id) > lastSubstitutionInIndex
+      s.eventIndex > lastSubstitutionInIndex
     )
 
     return hasBeenSubstitutedOut
@@ -12235,33 +12268,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const sanctionMemberOf = useCallback((teamKey, member) => sanctionMember(linksOfTeam(teamKey), { team: teamKey, ...member }), [linksOfTeam])
 
   // Get sanctions for a player or official
+  // (the team's formal sanctions, warning, penalty, expulsion and
+  // disqualification, in log order: playerLogIndex)
   const getPlayerSanctions = useCallback((teamKey, playerNumber, role = null) => {
     if (!data?.events) return []
 
-    const sanctions = data.events.filter(e => {
-      if (e.type !== 'sanction') return false
-      if (e.payload?.team !== teamKey) return false
+    // For player sanctions
+    // Convert both to strings for comparison to handle number/string mismatches
+    if (playerNumber !== null && playerNumber !== undefined) {
+      return (playerLogIndex.formalByNumber.get(teamKey)?.get(String(playerNumber)) || []).slice()
+    }
 
-      // For player sanctions
-      if (playerNumber !== null && playerNumber !== undefined) {
-        // Convert both to strings for comparison to handle number/string mismatches
-        const eventPlayerNumber = e.payload?.playerNumber
-        const matchesPlayer = String(eventPlayerNumber) === String(playerNumber)
-        const isFormalSanction = ['warning', 'penalty', 'expulsion', 'disqualification'].includes(e.payload?.type)
-        return matchesPlayer && isFormalSanction
-      }
+    // For official sanctions
+    if (role) {
+      return (playerLogIndex.formalByRole.get(teamKey)?.get(role) || []).slice()
+    }
 
-      // For official sanctions
-      if (role) {
-        return e.payload?.role === role &&
-          ['warning', 'penalty', 'expulsion', 'disqualification'].includes(e.payload?.type)
-      }
-
-      return false
-    })
-
-    return sanctions
-  }, [data?.events])
+    return []
+  }, [data?.events, playerLogIndex])
 
   // Confirm player sanction
   const runPlayerSanctionConfirm = useConfirmAction(onConfirmFailed)
