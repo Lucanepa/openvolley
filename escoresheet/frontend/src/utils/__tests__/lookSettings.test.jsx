@@ -11,6 +11,7 @@ import {
 } from '../lookSettings'
 import { LITE_GRAPHICS_CLASS, liteGraphicsOn, privacyCoverFill } from '../liteGraphics'
 import { APP_VIEW_ATTR, currentInAppView, openAppWindow } from '../openAppWindow'
+import LineupSetOverlay from '../../components/scoreboard/LineupSetOverlay'
 
 const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; SM-T220 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Safari/537.36'
 const IOS_UA = 'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
@@ -176,6 +177,27 @@ describe('the line-up cover follows the blur switch', () => {
     expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
     setLook({ blur: false })
     expect(privacyCoverFill()).toEqual({ background: 'rgb(15, 23, 42)' })
+  })
+
+  it('the phone court\'s cover too: frosted 8 px, or the near-opaque panel', () => {
+    runOn('web')
+    setLook({ blur: true })
+    const { unmount } = render(<LineupSetOverlay side="left" onPeek={() => {}} />)
+    let cover = screen.getByTestId('phone-lineup-hidden-left')
+    expect(cover.style.backdropFilter).toBe('blur(8px)')
+    expect(cover.style.background).toMatch(/rgba\(15, 23, 42, 0\.55\)/)
+    unmount()
+    setLook({ blur: false })
+    render(<LineupSetOverlay side="left" onPeek={() => {}} />)
+    cover = screen.getByTestId('phone-lineup-hidden-left')
+    expect(cover.style.backdropFilter || '').toBe('')
+    expect(cover.style.background).toMatch(/rgba\(15, 23, 42, 0\.92\)/)
+  })
+
+  it('the scoring screen\'s full-screen notices (turn the tablet, turn the phone back) only dim with the blur off', () => {
+    const scoreboard = readFileSync(resolve(__dirname, '../../components/Scoreboard.jsx'), 'utf8')
+    expect(scoreboard.match(/\.\.\.\(liteGraphicsOn\(\) \? null : \{ backdropFilter: 'blur\(4px\)' \}\),/g)).toHaveLength(2)
+    expect(scoreboard).not.toMatch(/^\s*backdropFilter: 'blur\(\d+px\)',$/m)
   })
 
   it('the scoring screen renders again on a change (useLook)', () => {

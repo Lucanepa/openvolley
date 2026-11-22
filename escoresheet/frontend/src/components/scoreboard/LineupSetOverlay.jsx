@@ -1,9 +1,15 @@
 import { useTranslation } from 'react-i18next'
+import { privacyCoverFill } from '../../utils/liteGraphics'
+
+// The phone court's cover with the blur on; the blur switch off
+// (Options › Effects and speed): the near-opaque panel (privacyCoverFill)
+const PHONE_COVER_FROSTED = Object.freeze({ background: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' })
 
 /**
  * Over a team's half court on the phone scoring screen while its line-up is
  * the only one recorded (domain/lineupPrivacy.js), as the tablet court does:
- * "Line-up set", Show line-up (press and hold) and Change line-up.
+ * "Line-up set", Show line-up (press and hold) and Change line-up. Re-drawn
+ * on a change of the blur switch by the Scoreboard around it (useLook).
  */
 export default function LineupSetOverlay({ side, onPeek, onChange }) {
   const { t } = useTranslation()
@@ -13,7 +19,7 @@ export default function LineupSetOverlay({ side, onPeek, onChange }) {
       data-testid={`phone-lineup-hidden-${side}`}
       style={{
         position: 'absolute', inset: 0, zIndex: 5, borderRadius: 8,
-        background: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        ...privacyCoverFill(undefined, PHONE_COVER_FROSTED),
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 6
       }}
     >

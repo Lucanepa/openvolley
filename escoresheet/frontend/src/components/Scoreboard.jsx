@@ -113,7 +113,7 @@ import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
-import { privacyCoverFill } from '../utils/liteGraphics'
+import { liteGraphicsOn, privacyCoverFill } from '../utils/liteGraphics'
 import { useLook } from '../utils/lookSettings'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, officialsAsRoles, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
@@ -14893,7 +14893,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           right: 0,
           bottom: 0,
           backgroundColor: 'rgb(28 25 23 / 0.6)',
-          backdropFilter: 'blur(4px)',
+          // the blur switch off (ov-lite): it only dims
+          ...(liteGraphicsOn() ? null : { backdropFilter: 'blur(4px)' }),
           zIndex: 99999,
           display: 'flex',
           flexDirection: 'column',
@@ -14977,7 +14978,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             position: 'fixed',
             inset: 0,
             backgroundColor: 'rgb(28 25 23 / 0.6)',
-            backdropFilter: 'blur(4px)',
+            // the blur switch off (ov-lite): it only dims; the clock under
+            // it is not blurred again every second
+            ...(liteGraphicsOn() ? null : { backdropFilter: 'blur(4px)' }),
             zIndex: 99999,
             display: 'flex',
             flexDirection: 'column',
