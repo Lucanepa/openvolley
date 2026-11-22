@@ -337,11 +337,26 @@ describe('Save PDF', () => {
     expect(clicked).toHaveLength(0)
   })
 
+  // Perf pass 22.11.2026: the approval waited a fixed 500 ms before it began
+  it('an automatic getBlob begins at once: no fixed wait before the capture', async () => {
+    vi.useFakeTimers()
+    try {
+      const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={() => {}} />)
+      // the fonts and two frames (jsdom has no frames: at most 100 ms), then the PDF is being made
+      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      expect(view.queryByTestId('pdf-generating')).not.toBeNull()
+      view.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('the view closed before the capture began: no failure is reported either', async () => {
     const got: any[] = []
     const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
-    // after the automatic start (500 ms), inside the waits before the capture (jsdom
-    // loads no picture: picturesReady waits its 3 s)
+    // after the automatic start (no fixed wait since 22.11.2026; it was 500 ms),
+    // inside the waits before the capture (jsdom loads no picture: picturesReady
+    // waits its 3 s)
     await new Promise(r => setTimeout(r, 600))
     view.unmount()
     await new Promise(r => setTimeout(r, 400))

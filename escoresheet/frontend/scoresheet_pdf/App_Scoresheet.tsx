@@ -123,6 +123,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // sheet, and the PDF prints the whole text on further pages (field-spec 8:
   // never truncate)
   const [remarksClipped, setRemarksClipped] = useState(false);
+  // ... as the sheet last drawn, for the PDF made from it: its further pages
+  // follow the sheet captured, also when the capture began before the REMARKS
+  // box's first fit was reported (an automatic save right after the load)
+  const remarksClippedRef = useRef(remarksClipped);
+  remarksClippedRef.current = remarksClipped;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sheetBoxRef = useRef<HTMLDivElement>(null);
 
@@ -463,7 +468,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         pdf.setFontSize(6);
         pdf.text(searchLine, SHEET_OFFSET_MM.x, 3, { renderingMode: 'invisible' } as any);
       } catch { /* text layer is optional */ }
-      if (remarksClipped) {
+      if (remarksClippedRef.current) {
         const all = remarksText({ overflowSanctions, remarks, generated: autoRemarks });
         await applyTextFont(pdf, `${title}\n${all}`);
         // as many pages as the text needs (utils/remarksPages)
@@ -546,6 +551,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
     const timer = setTimeout(async () => {
       await (document as any).fonts?.ready;
+      // the first renders' own updates land first (Fit's zoom, the REMARKS
+      // box's fit): handleSavePdfRef is then the closure that holds them
+      await nextFrames();
       if (!mountedRef.current) return;
       if (autoAction === 'print' || autoAction === 'save') {
         await handleSavePdfRef.current();
@@ -562,7 +570,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         if (onBlobRef.current) onBlobRef.current(out || null);
         else await deliverPdfToOpener(out || null);
       }
-    }, 500);
+      // No fixed wait (it was 500 ms): the frames above, and handleSavePdf
+      // waits for two more, the fonts and the pictures. The timer stays, so
+      // its cleanup cancels the first of the two runs of this effect under
+      // React's StrictMode (index_scoresheet).
+    }, 0);
 
     return () => { clearTimeout(timer); autoActionDone.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
