@@ -24,6 +24,7 @@
 // on a fast desktop; the lean copy is ~100 properties and ~12 MB (~1 s).
 
 import { wellFormedText } from '../../src/utils/stringUtils.js';
+import { inAndroidApp } from '../../src/utils/liteGraphics.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -45,6 +46,20 @@ export function isWebKitEngine(ua: string = typeof navigator !== 'undefined' ? n
   // WebKit itself says AppleWebKit/605 and later; Chromium (and jsdom) keep 537.36
   const v = /AppleWebKit\/(\d+)/.exec(ua);
   return !!v && Number(v[1]) >= 600 && !/(Chrome|Chromium|Edg|OPR|Android|SamsungBrowser)/.test(ua);
+}
+
+/**
+ * The capture's pixel ratio: 2, ~190 dpi on A3, sharp enough for print, a
+ * reasonable file size. In the Android app 1.5 (~145 dpi, owner 22.11.2026):
+ * the hall tablet (Galaxy Tab A7 Lite) draws, encodes and holds a canvas of
+ * about half the pixels, where the approval's PDF took 43 s. The web, the
+ * desktop apps, iOS and the server render stay at 2. The sheet is placed on
+ * the page in mm (SHEET_MM): only the picture's resolution changes.
+ */
+export const CAPTURE_PIXEL_RATIO = 2;
+export const ANDROID_APP_CAPTURE_PIXEL_RATIO = 1.5;
+export function capturePixelRatio(win: Window | undefined = typeof window !== 'undefined' ? window : undefined): number {
+  return inAndroidApp(win as (Window & typeof globalThis) | undefined) ? ANDROID_APP_CAPTURE_PIXEL_RATIO : CAPTURE_PIXEL_RATIO;
 }
 
 /** What html-to-image copies by default: every property of a computed style. */

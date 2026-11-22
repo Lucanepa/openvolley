@@ -8,6 +8,7 @@
 // yes (performance pass 22.11.2026): LITE_GRAPHICS_ON_ANDROID. Never on the
 // web, the desktop apps or iOS.
 import { isNativeApp } from './backendConfig'
+import { detectAppPlatform, isInAppView } from './openAppWindow'
 
 /** The owner's call (yes, 22.11.2026): true puts ov-lite on <html> in the Android app. */
 export const LITE_GRAPHICS_ON_ANDROID = true
@@ -17,6 +18,22 @@ export const LITE_GRAPHICS_CLASS = 'ov-lite'
 /** The Android app (Capacitor): not the web (Android's Chrome too), the desktop apps or iOS. */
 export function isAndroidApp(nav = typeof navigator !== 'undefined' ? navigator : null) {
   return isNativeApp() && /Android/i.test(nav?.userAgent || '')
+}
+
+/**
+ * isAndroidApp for a page that may be shown in the app's in-app view (a
+ * same-origin iframe of the app, utils/openAppWindow: the scoresheet): the
+ * check is made on the app's own window, the one with Capacitor. The app's
+ * page itself is checked as it is.
+ */
+export function inAndroidApp(win = typeof window !== 'undefined' ? window : undefined) {
+  if (!win) return false
+  try {
+    const host = isInAppView(win) ? win.parent : win
+    return detectAppPlatform(host) === 'capacitor' && /Android/i.test(host.navigator?.userAgent || '')
+  } catch {
+    return false
+  }
 }
 
 /**

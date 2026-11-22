@@ -335,6 +335,30 @@ describe('Save PDF', () => {
     expect(opts.includeStyleProperties).not.toContain('margin-inline-start')
   })
 
+  // owner 22.11.2026: the hall tablet's capture at 1.5 (capturePixelRatio);
+  // the web, the desktop apps, iOS and the server render keep 2 (above)
+  it('in the Android app the capture is made at pixel ratio 1.5, the PDF placed in mm as before', async () => {
+    const htmlToImage: any = await import('html-to-image')
+    htmlToImage.toCanvas.mockClear()
+    pdfCalls.length = 0
+    const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; SM-T220 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Safari/537.36'
+    ;(window as any).Capacitor = { isNativePlatform: () => true }
+    Object.defineProperty(window.navigator, 'userAgent', { configurable: true, get: () => ANDROID_UA })
+    try {
+      const got: any[] = []
+      render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+      await waitFor(() => expect(got).toHaveLength(1))
+      expect(got[0].blob.type).toBe('application/pdf')
+      expect(htmlToImage.toCanvas).toHaveBeenCalledTimes(1)
+      expect(htmlToImage.toCanvas.mock.calls[0][1].pixelRatio).toBe(1.5)
+      // the picture on the A3 page: 410 x 287 mm at 5 mm, whatever its pixels
+      expect(pdfCalls.find(c => c[0] === 'addImage')).toEqual(['addImage', 'JPEG', 5, 5, 410, 287])
+    } finally {
+      delete (window as any).Capacitor
+      delete (window.navigator as any).userAgent
+    }
+  })
+
   it('a lean capture that fails in Chromium is tried once more with the lean list, never with the full copy (~8x larger)', async () => {
     const htmlToImage: any = await import('html-to-image')
     htmlToImage.toCanvas.mockClear()

@@ -7,8 +7,9 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
-  LITE_GRAPHICS_CLASS, LITE_GRAPHICS_ON_ANDROID, applyLiteGraphics, isAndroidApp, liteGraphicsOn, privacyCoverFill
+  LITE_GRAPHICS_CLASS, LITE_GRAPHICS_ON_ANDROID, applyLiteGraphics, inAndroidApp, isAndroidApp, liteGraphicsOn, privacyCoverFill
 } from '../utils/liteGraphics'
+import { APP_VIEW_ATTR, currentInAppView, openAppWindow } from '../utils/openAppWindow'
 
 const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; SM-T220 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Safari/537.36'
 const IOS_UA = 'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
@@ -118,5 +119,65 @@ describe('tailwind.css: the scrims without blur under ov-lite', () => {
     }
     expect(depth).toBe(0)
     expect(at).toBeGreaterThan(css.indexOf('@layer theme, base, legacy, components, utilities;'))
+  })
+})
+
+// The scoresheet's capture in the Android app (pdfCapture capturePixelRatio):
+// the page runs in the app's in-app view, a same-origin iframe of the app,
+// so the check is made on the app's window
+describe('inAndroidApp: the Android app\'s page, or a page in its in-app view', () => {
+  const setUserAgent = (ua, win = window) => Object.defineProperty(win.navigator, 'userAgent', { configurable: true, get: () => ua })
+  // the in-app view's window, its app (its parent, as the frame sees it)
+  // native or not, with `userAgent`
+  let app = null
+  const inAppViewWindow = (native, userAgent) => {
+    openAppWindow('/scoresheet/?matchId=7', { win: window, platform: 'capacitor' })
+    const frame = document.querySelector(`iframe[${APP_VIEW_ATTR}]`)
+    expect(frame).toBeTruthy()
+    const view = frame.contentWindow
+    app = view.parent
+    app.Capacitor = native ? { isNativePlatform: () => true } : undefined
+    setUserAgent(userAgent, app)
+    return view
+  }
+  afterEach(() => {
+    currentInAppView()?.close()
+    delete window.navigator.userAgent
+    if (app) {
+      delete app.Capacitor
+      delete app.navigator.userAgent
+      app = null
+    }
+  })
+
+  it('the Android app itself', () => {
+    nativeApp(true)
+    setUserAgent(ANDROID_UA)
+    expect(inAndroidApp(window)).toBe(true)
+  })
+
+  it('a page in the Android app\'s in-app view: the app\'s window decides', () => {
+    const view = inAppViewWindow(true, ANDROID_UA)
+    expect(view.Capacitor).toBeUndefined()
+    expect(inAndroidApp(view)).toBe(true)
+  })
+
+  for (const [where, native, userAgent] of [
+    ['the web on an Android tablet', false, ANDROID_UA],
+    ['the iOS app', true, IOS_UA],
+    ['the desktop and the web', false, DESKTOP_UA]
+  ]) {
+    it(`never ${where}, nor a page in its view`, () => {
+      nativeApp(native)
+      setUserAgent(userAgent)
+      expect(inAndroidApp(window)).toBe(false)
+      if (native) expect(inAndroidApp(inAppViewWindow(native, userAgent))).toBe(false)
+    })
+  }
+
+  it('never the desktop app (Tauri), nor without a window', () => {
+    setUserAgent(ANDROID_UA)
+    expect(inAndroidApp({ __TAURI__: {}, navigator: { userAgent: DESKTOP_UA } })).toBe(false)
+    expect(inAndroidApp(undefined)).toBe(false)
   })
 })

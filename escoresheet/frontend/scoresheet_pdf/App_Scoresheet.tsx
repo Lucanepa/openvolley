@@ -8,7 +8,7 @@ import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { SheetPage } from './components/SheetPage';
 import type { SanctionRecord } from './types_scoresheet';
 import { buildScoresheetFilename, buildScoresheetTitle } from './utils/sheetFormat';
-import { drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, nextFrames, picturesReady, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
+import { capturePixelRatio, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, nextFrames, picturesReady, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
 import { matchLfpTracking, deviceLfpSetting } from '../src/domain/sheetInputs.js';
 import { useMatchTz } from '../src/ui/useMatchTz.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
@@ -389,9 +389,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       const fontCss = await fontEmbedCSS;
       stillShown();
 
-      // pixelRatio 2: ~190 dpi on A3, sharp enough for print, a reasonable file size
+      // pixelRatio 2: ~190 dpi on A3, sharp enough for print, a reasonable file
+      // size; 1.5 in the Android app (the hall tablet; capturePixelRatio,
+      // utils/pdfCapture.ts). The PDF places the picture in mm, at any ratio.
+      const pixelRatio = capturePixelRatio(window);
       const capture = (props: string[]) => htmlToImage.toCanvas(sheet!, {
-        pixelRatio: 2,
+        pixelRatio,
         backgroundColor: '#ffffff',
         style: {
           transform: 'none',
