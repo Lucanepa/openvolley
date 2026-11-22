@@ -78,7 +78,10 @@ export function liberoReplacedByRedesignation(events, teamKey, liberoNumber, { p
  * mayReturn: unable only because of an injury or illness, and not replaced
  * by a re-designation. As long as no re-designation replaced him, the
  * injured libero may play again; the scorer records it (libero_recovered).
- * A libero declared unable (by the coach or the game captain) stays out.
+ * A libero declared unable (by the coach or the game captain) is out for the
+ * rest of the match, whatever comes after it, a libero_recovered too (owner
+ * 22.11.2026: "Once declared or becoming unable and re-designated: can't
+ * continue playing").
  * @param {Array} events all events of the match
  * @param {'home'|'away'} teamKey
  * @param {number|string} liberoNumber
@@ -91,6 +94,10 @@ export function liberoPlayState(events, teamKey, liberoNumber, { setIndex = null
   const mine = (events || []).filter(e => e && e.payload?.team === teamKey)
   if (liberoReplacedByRedesignation(mine, teamKey, liberoNumber, { player })) {
     return { unable: true, mayReturn: false, replaced: true }
+  }
+  // declared unable once: out for the match (an older libero_unable without a reason is a declaration)
+  if (mine.some(e => e.type === 'libero_unable' && same(e.payload?.liberoNumber, liberoNumber) && (e.payload?.reason || 'declared') === 'declared')) {
+    return { unable: true, mayReturn: false, replaced: false }
   }
   // a disqualification (any set) or an expulsion (its set) of him, also one
   // given to him as a team official (a playing coach)
