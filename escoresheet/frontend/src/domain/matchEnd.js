@@ -16,8 +16,9 @@
  *    set, for the MATCH the match. The opponent is given the points (and the
  *    sets) needed to win; the incomplete team keeps its points and sets.
  *     - for the SET: an injured or expelled player who cannot be substituted
- *       legally or exceptionally (the player may be back next set), or a
- *       disqualified player when the team can still field six next set;
+ *       legally or exceptionally (not replaced, the player may be back next
+ *       set), or a disqualified player when the team can still field six
+ *       next set;
  *     - for the MATCH: a team that cannot field six players for the next set,
  *       or the manual "Stop the match" > "A team is incomplete".
  * Sets are created lazily in this app, so the sets still needed for a match
@@ -315,10 +316,10 @@ const PLAYER_SANCTION_TYPES = new Set([undefined, null, 'player', 'bench', 'libe
 /**
  * Players of a team who may still take part in the NEXT set: non-liberos who
  * are not disqualified and were not taken out by a disqualification
- * substitution or an exceptional substitution of an injured player (FIVB
- * 15.7, 21.3.3 — they cannot re-enter for the rest of the match). Expelled
- * players are back next set, so they count, also when they were replaced
- * exceptionally (21.3.2).
+ * substitution or by an exceptional substitution (FIVB 15.7, 15.8, 21.3.3 —
+ * they cannot re-enter for the rest of the match; an expelled player replaced
+ * exceptionally too, owner 22.11.2026). A player expelled and replaced by a
+ * legal substitution is back next set, so he counts (21.3.2).
  * @param {Array} players the team roster
  * @param {Array} events
  * @param {'home'|'away'} teamKey

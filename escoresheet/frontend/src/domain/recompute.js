@@ -166,6 +166,7 @@ const ISSUE_DEFAULTS = {
   timeoutLimit: 'Set {{set}}, {{score}}: {{team}} has {{n}} time-outs in this set (2 allowed).',
   sanctionLadder: 'Set {{set}}, {{score}}: {{what}} of {{team}}: by the rules this is a {{expected}}.',
   sameSanctionTwice: 'Set {{set}}, {{score}}: {{what}} of {{team}}: this person already has this sanction.',
+  lighterSanction: 'Set {{set}}, {{score}}: {{what}} of {{team}}: this person already had a heavier sanction (each further sanction must be heavier).',
   teamAlreadyWarned: 'Set {{set}}, {{score}}: {{what}} of {{team}}: the team was already warned.',
   pointsAfterWin: 'Set {{set}} was already won at {{score}}; {{n}} more point(s) follow.',
   setScoreInvalid: 'Set {{set}} ended {{score}}: not a possible final score.',

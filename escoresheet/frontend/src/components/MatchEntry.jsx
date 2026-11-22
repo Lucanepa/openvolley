@@ -37,10 +37,10 @@ const SURFACE = {
 }
 import { setsToWin, displaySetNumber, resolveBestOf } from '../utils/matchFormat'
 import { getSideAForSet, getFirstServeForSet } from '../domain/rules'
-import { countRegularSubstitutions } from '../domain/substitutions'
+import { countRegularSubstitutions, countAllSubstitutions } from '../domain/substitutions'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours'
-import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName } from './bench/benchLayout.js'
+import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName, teamSanctionsForDisplay } from './bench/benchLayout.js'
 import BenchRequestPanel from './bench/BenchRequestPanel.jsx'
 import { benchSetIndex } from '../domain/benchRequests'
 
@@ -239,13 +239,15 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // a set's override, odd sets A left / even sets A right, set 5 its coin toss
   // and the change of courts at 8). It had A on the right in every set from 2
   // to 4 (set 3 is A's left) and read no override.
+  // Between two sets the coming set's side, as on the scorer's court (it fell
+  // back to the left).
   const teamSide = useMemo(() => {
-    if (!data?.set || !data?.match) return 'left'
+    if (!data?.match) return 'left'
     const teamAKey = data.match.coinTossTeamA || 'home'
-    const sideA = getSideAForSet(data.set.index, data.match)
+    const sideA = getSideAForSet(data.set?.index ?? benchSetIndex(data.allSets, data.liveState), data.match)
     const isTeamA = team === teamAKey
     return isTeamA ? sideA : (sideA === 'left' ? 'right' : 'left')
-  }, [data?.set, data?.match, team])
+  }, [data?.set, data?.allSets, data?.liveState, data?.match, team])
 
   // Get team info
   const teamInfo = useMemo(() => {
@@ -439,10 +441,18 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     ).length
   }, [data?.events, data?.set, team])
 
-  // Regular substitutions used in current set (exceptional ones do not count toward the 6)
+  // Regular substitutions used in current set (exceptional ones do not count
+  // toward the 6): the SUB counter's colour and pips
   const substitutionsUsed = useMemo(() => {
     if (!data?.events || !data?.set) return 0
     return countRegularSubstitutions(data.events, team, data.set.index)
+  }, [data?.events, data?.set, team])
+
+  // The SUB counter's number: every substitution of the set, exceptional ones
+  // included (owner 22.11.2026), as the scorer and the referee show it
+  const substitutionsShown = useMemo(() => {
+    if (!data?.events || !data?.set) return 0
+    return countAllSubstitutions(data.events, team, data.set.index)
   }, [data?.events, data?.set, team])
 
   // Get who is serving
@@ -462,28 +472,44 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     return lastPoint.payload?.team === team
   }, [data?.events, data?.set, data?.match, team])
 
+  // The set whose line-up the court and the bench rows show: the one under
+  // way. In the interval between two sets none is (the next line-up creates
+  // it): the court is empty and every player is on the bench row, as the
+  // scorer and the referee show it. The bench row was empty then, as if
+  // nobody had played (full-match test 2026-11-21).
+  const courtSetIndex = data?.set?.index ?? null
+
+  // The team's newest line-up of that set (null: none yet)
+  const courtLineupEvent = useMemo(() => {
+    if (!data?.events || courtSetIndex == null) return null
+    const lineupEvents = data.events
+      .filter(e => e.type === 'lineup' && e.setIndex === courtSetIndex && e.payload?.team === team)
+      .sort(newestFirst)
+    return lineupEvents[0] || null
+  }, [data?.events, courtSetIndex, team])
+
+  // The shirt numbers on the court in it
+  const onCourtNumbers = useMemo(() => {
+    const numbers = new Set()
+    const lineup = courtLineupEvent?.payload?.lineup
+    if (lineup && typeof lineup === 'object') {
+      Object.values(lineup).forEach(posData => {
+        // Handle both rich format (object with number) and legacy format (just number)
+        const num = posData && typeof posData === 'object' && posData.number !== undefined
+          ? posData.number
+          : posData
+        if (num) numbers.add(Number(num))
+      })
+    }
+    return numbers
+  }, [courtLineupEvent])
+
   // Get players on court
   const playersOnCourt = useMemo(() => {
-    if (!data?.events || !data?.set) {
-      // Return empty placeholders if no set data
-      return ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => ({
-        number: null,
-        position: pos,
-        isCaptain: false,
-        isLibero: false,
-        liberoType: null
-      }))
-    }
-    
-    // Get lineup events for current set
-    const lineupEvents = data.events
-      .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
-      .sort(newestFirst)
-    
     const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-    
-    // If no lineup events, return empty placeholders
-    if (lineupEvents.length === 0) {
+
+    // No line-up yet: empty placeholders
+    if (!courtLineupEvent) {
       return positions.map(pos => ({
         number: null,
         position: pos,
@@ -492,8 +518,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         liberoType: null
       }))
     }
-    
-    const latestLineupEvent = lineupEvents[0]
+
+    const latestLineupEvent = courtLineupEvent
     const latestLineup = latestLineupEvent?.payload?.lineup
     
     // Lineup is stored as an object { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 }
@@ -554,7 +580,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     })
     
     return players
-  }, [data?.events, data?.set, team, teamInfo])
+  }, [courtLineupEvent, teamInfo])
 
   // Get player sanctions. The scorer stores the number as text ("7", from
   // the court disc), the roster and the line-up as a number: compare as text,
@@ -580,46 +606,31 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     )
   }, [data?.events, team])
 
-  // Get bench players (players not on court, excluding liberos)
+  // Get bench players (players not on court, excluding liberos; all of
+  // them before the set's line-up and between two sets)
   const benchPlayersWithSanctions = useMemo(() => {
-    if (!teamInfo?.players || !data?.events || !data?.set) return []
-    
-    // Get players currently on court
-    const lineupEvents = data.events
-      .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
-      .sort(newestFirst)
-    
-    const playersOnCourtSet = new Set()
-    if (lineupEvents.length > 0) {
-      const latestLineup = lineupEvents[0].payload?.lineup
-      if (latestLineup && typeof latestLineup === 'object') {
-        Object.values(latestLineup).forEach(posData => {
-          // Handle both rich format (object with number) and legacy format (just number)
-          const num = posData && typeof posData === 'object' && posData.number !== undefined
-            ? posData.number
-            : posData
-          if (num) playersOnCourtSet.add(Number(num))
-        })
-      }
-    }
+    if (!teamInfo?.players) return []
 
     // Get bench players: all players not on court, excluding liberos
     const benchPlayers = teamInfo.players
       .filter(p => {
         const playerNumber = Number(p.number)
         if (Number.isNaN(playerNumber)) return false
-        if (playersOnCourtSet.has(playerNumber)) return false
+        if (onCourtNumbers.has(playerNumber)) return false
         if (p.libero && p.libero !== '') return false // Exclude liberos
         
-        // Filter out players who were exceptionally substituted
-        const wasExceptionallySubstituted = data.events?.some(e =>
+        // A player an exceptional substitution replaced takes no further
+        // part in the match, injured, expelled or disqualified (FIVB 15.7,
+        // 15.8; owner 22.11.2026): off the row. His sanction stays in the
+        // sanctions box (allSanctionsForDisplay reads the events alone).
+        const replacedExceptionally = data.events?.some(e =>
           e.type === 'substitution' &&
           e.payload?.team === team &&
           String(e.payload?.playerOut) === String(playerNumber) &&
           e.payload?.isExceptional === true
         )
-        if (wasExceptionallySubstituted) return false
-        
+        if (replacedExceptionally) return false
+
         return true
       })
       .map(p => {
@@ -634,30 +645,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       .sort((a, b) => (a.number || 0) - (b.number || 0))
     
     return benchPlayers
-  }, [teamInfo, data?.events, data?.set, team, getPlayerSanctions])
+  }, [teamInfo, onCourtNumbers, data?.events, team, getPlayerSanctions])
 
   // Get liberos (not currently on court)
   const benchLiberos = useMemo(() => {
-    if (!teamInfo?.players || !data?.events || !data?.set) return []
-
-    // Get players currently on court
-    const lineupEvents = data.events
-      .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
-      .sort(newestFirst)
-
-    const playersOnCourtSet = new Set()
-    if (lineupEvents.length > 0) {
-      const latestLineup = lineupEvents[0].payload?.lineup
-      if (latestLineup && typeof latestLineup === 'object') {
-        Object.values(latestLineup).forEach(posData => {
-          // Handle both rich format (object with number) and legacy format (just number)
-          const num = posData && typeof posData === 'object' && posData.number !== undefined
-            ? posData.number
-            : posData
-          if (num) playersOnCourtSet.add(Number(num))
-        })
-      }
-    }
+    if (!teamInfo?.players) return []
 
     // Get liberos not on court
     const liberos = teamInfo.players
@@ -665,7 +657,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         const playerNumber = Number(p.number)
         if (Number.isNaN(playerNumber)) return false
         if (!p.libero || p.libero === '') return false
-        if (playersOnCourtSet.has(playerNumber)) return false
+        if (onCourtNumbers.has(playerNumber)) return false
         return true
       })
       .map(p => {
@@ -687,7 +679,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       })
     
     return liberos
-  }, [teamInfo, data?.events, data?.set, team, getPlayerSanctions])
+  }, [teamInfo, onCourtNumbers, getPlayerSanctions])
 
   // Get bench officials
   const benchOfficials = useMemo(() => {
@@ -705,80 +697,15 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       })
   }, [teamInfo, getOfficialSanctions])
 
-  // Get overall team sanctions
-  const overallSanctions = useMemo(() => {
-    if (!data?.events) return []
-    return data.events.filter(
-      e => e.type === 'sanction' &&
-      e.payload?.team === team &&
-      (!e.payload?.playerNumber || e.payload?.role)
-    )
-  }, [data?.events, team])
-
-  // Collect all sanctions for display - MUST be before any early returns to maintain consistent hook order
-  const allSanctionsForDisplay = useMemo(() => {
-    const sanctions = []
-
-    // Player sanctions (on court)
-    playersOnCourt.forEach(player => {
-      if (player.number) {
-        const playerSanctions = getPlayerSanctions(player.number)
-        playerSanctions.forEach(s => {
-          sanctions.push({
-            type: 'player',
-            number: player.number,
-            sanctionType: s.payload?.type || 'warning'
-          })
-        })
-      }
-    })
-
-    // Bench player sanctions
-    benchPlayersWithSanctions.forEach(player => {
-      player.sanctions.forEach(s => {
-        sanctions.push({
-          type: 'bench',
-          number: player.number,
-          sanctionType: s.payload?.type || 'warning'
-        })
-      })
-    })
-
-    // Libero sanctions
-    benchLiberos.forEach(libero => {
-      libero.sanctions.forEach(s => {
-        sanctions.push({
-          type: 'libero',
-          number: libero.number,
-          sanctionType: s.payload?.type || 'warning'
-        })
-      })
-    })
-
-    // Official sanctions
-    benchOfficials.forEach(official => {
-      if (official.sanctions) {
-        official.sanctions.forEach(s => {
-          sanctions.push({
-            type: 'official',
-            role: official.role,
-            sanctionType: s.payload?.type || 'warning'
-          })
-        })
-      }
-    })
-
-    // Overall team sanctions
-    overallSanctions.forEach(s => {
-      sanctions.push({
-        type: 'team',
-        role: s.payload?.role || 'Team',
-        sanctionType: s.payload?.type || 'warning'
-      })
-    })
-
-    return sanctions
-  }, [playersOnCourt, benchPlayersWithSanctions, benchLiberos, benchOfficials, overallSanctions, getPlayerSanctions])
+  // The team's sanctions box: every sanction event of the team in the match,
+  // once each, in the order the scorer recorded them (MUST be before any early
+  // returns to keep the hook order). Read from the events alone, never from
+  // who is on the court or the bench now: a coach's warning was listed twice
+  // ("Coach, Coach": by the officials row and again as a team sanction), the
+  // box said "None" during the interval between two sets (no set under way)
+  // and lost a player an exceptional substitution took off the court, whom
+  // the referee still showed (full-match test 2026-11-21).
+  const allSanctionsForDisplay = useMemo(() => teamSanctionsForDisplay(data?.events, team), [data?.events, team])
 
   if (!data || !teamInfo) {
     if (embedded) {
@@ -1008,7 +935,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   ]
   const counters = [
     { key: 'to', label: t('matchEntry.to', 'TO'), value: timeoutsUsed, limit: TIMEOUT_LIMIT, tone: counterTone(timeoutsUsed, TIMEOUT_LIMIT) },
-    { key: 'sub', label: t('matchEntry.sub', 'SUB'), value: substitutionsUsed, limit: SUBSTITUTION_LIMIT, tone: counterTone(substitutionsUsed, SUBSTITUTION_LIMIT, { warnNear: true }) }
+    // SUB: every substitution (6 regular + 1 exceptional read "7 /6"); the
+    // colour and the pips follow the regular ones, the 6 of the rule
+    { key: 'sub', label: t('matchEntry.sub', 'SUB'), value: substitutionsShown, pipsUsed: substitutionsUsed, limit: SUBSTITUTION_LIMIT, tone: counterTone(substitutionsUsed, SUBSTITUTION_LIMIT, { warnNear: true }) }
   ]
   const toneInk = { max: 'var(--ov-danger-text)', near: 'var(--ov-warning-ink)' }
   const liberoCount = teamInfo?.players?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
@@ -1029,8 +958,6 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       background: embedded ? 'transparent' : 'var(--bg)',
       color: 'var(--ov-text)',
       padding: 'clamp(8px, 1.6vw, 16px)',
-      // the test match's badge (bottom right, fixed) never covers the bench row
-      paddingBottom: isTest ? '56px' : 'clamp(8px, 1.6vw, 16px)',
       display: 'flex',
       flexDirection: 'column',
       flex: embedded ? '1 0 auto' : 'none',
@@ -1146,7 +1073,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(6px, 1vh, 10px)', minWidth: 0 }}>
               <span style={{ fontSize: 'clamp(15px, 2.2vh, 24px)', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--ov-text-muted)', lineHeight: 1 }}>{c.label}</span>
               <span aria-hidden="true" style={{ display: 'flex', gap: 'clamp(3px, 0.5vh, 6px)' }}>
-                {counterPips(c.value, c.limit).map((on, i) => (
+                {counterPips(c.pipsUsed ?? c.value, c.limit).map((on, i) => (
                   <span key={i} style={{
                     width: 'clamp(8px, 1.2vh, 14px)',
                     height: 'clamp(8px, 1.2vh, 14px)',
@@ -1182,13 +1109,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             <span style={{ color: 'var(--ov-text-muted)', fontSize: 'clamp(15px, 2vh, 20px)' }}>{t('matchEntry.none', 'None')}</span>
           ) : (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: '8px 16px', alignItems: 'center', minWidth: 0 }}>
-              {allSanctionsForDisplay.map((s, idx) => {
+              {allSanctionsForDisplay.map((s) => {
                 const card = cardOfSanctionType(s.sanctionType)
-                const who = s.type === 'player' || s.type === 'bench' || s.type === 'libero'
+                const who = s.type === 'player'
                   ? `#${s.number}`
-                  : card?.delay ? 'D' : card?.improperRequest ? t('scoreboard.sanctions.improperRequest', 'Improper request') : s.role
+                  : card?.delay || s.delay ? 'D' : card?.improperRequest ? t('scoreboard.sanctions.improperRequest', 'Improper request') : s.role
                 return (
-                  <li key={idx} data-bench-sanction={s.sanctionType} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <li key={s.key} data-bench-sanction={s.sanctionType} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {card?.kind && <CardGlyph kind={card.kind} height="clamp(22px, 3.2vh, 36px)" />}
                     <span style={{ fontWeight: 700, fontSize: card?.improperRequest ? '14px' : 'clamp(18px, 2.6vh, 30px)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{who}</span>
                   </li>
@@ -1333,17 +1260,20 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         )}
       </section>
 
-      {/* Test Mode Controls - only shown in test mode */}
+      {/* Test Mode Controls - only shown in test mode. The badge in the
+          page's own flow under the bench rows: floating over the bottom right
+          corner it covered the last officials chip on a 360 x 740 phone (the
+          page scrolls there, so no bottom padding kept it clear) */}
       {isTest && (
         <TestModeControls
           matchId={matchId}
+          inline
+          style={{ alignSelf: 'flex-end' }}
           onRefresh={() => {
             if (matchId && matchId !== -1) {
-              getMatchData(matchId).then(result => {
-                if (result.success) {
-                  setData(result)
-                }
-              })
+              // the bundle as the live updates read it (it set the raw
+              // bundle: no current set, no sorted events)
+              getMatchData(matchId).then(updateFromMatchData)
             }
           }}
         />

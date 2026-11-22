@@ -196,7 +196,7 @@ const pushInBreak = () => onScorer(async () => {
   await db.events.add({ matchId, setIndex: 1, type: 'set_end', payload: { setIndex: 1, winner: 'home' }, seq: 2, ts: end1 })
 
   renderScoreboard(matchId)
-  const open = () => [...document.querySelectorAll('button')].find(b => /^LineupA/.test(b.textContent.trim()))
+  const open = () => [...document.querySelectorAll('button')].find(b => /^Line-?upA/.test(b.textContent.trim()))
   await waitFor(() => expect(open()).toBeTruthy(), { timeout: 10000 })
   await wait(GHOST_CLICK_MS + 150)
   fireEvent.click(open())

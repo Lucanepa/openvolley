@@ -386,6 +386,15 @@ db.version(22).stores({
   club_players: 'clubId, userId'
 })
 
+// Version 23: the scoreboard code of a match (utils/scoreboardCode.js,
+// docs/scoreboard-code-spec.md): { matchId, relayKey, code, issuedAt }, one
+// row per match, made on this device and kept with the match beyond an app
+// restart. Its own table so the code never travels in the match's sync,
+// backups or exports. A new table, no upgrade function: nothing to migrate.
+db.version(23).stores({
+  scoreboard_codes: 'matchId, relayKey'
+})
+
 // Undo / delete / edit history of events, from Dexie hooks (see db/eventHistory.js)
 installEventHistoryHooks(db)
 

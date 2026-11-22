@@ -16,6 +16,7 @@ import {
   getCloudWebSocketUrl,
   isCloudApiSplit,
   isLanBackendUrl,
+  isLocalRelayUrl,
   isServedFromLanOrigin,
   isCloudBlockedOnThisPort,
   learnRelayWsPort,
@@ -449,12 +450,36 @@ describe('cloud API split from the relay', () => {
   })
 
   it('isLanBackendUrl tells venue relays from cloud hosts', () => {
-    for (const u of ['http://localhost:8080', 'http://127.0.0.1:5173', 'http://192.168.1.20:8080', 'http://10.0.0.183:5173', 'http://172.20.1.2', 'http://openvolley.local:5173', 'http://[::1]:8080']) {
+    for (const u of [
+      'http://localhost:8080', 'http://127.0.0.1:5173', 'http://192.168.1.20:8080', 'http://10.0.0.183:5173', 'http://172.20.1.2', 'http://openvolley.local:5173', 'http://[::1]:8080',
+      // 100.64/10, as Tailscale numbers a tailnet's machines (the same range isLocalRelayUrl counts)
+      'http://100.76.39.66:48240', 'http://100.64.0.1', 'http://100.127.255.254:5173'
+    ]) {
       expect(isLanBackendUrl(u), u).toBe(true)
+      expect(isLocalRelayUrl(u), u).toBe(true)
     }
-    for (const u of ['https://backend.openvolley.app', 'https://cloud.example.org', 'http://172.32.0.1', null, '', 'not a url']) {
+    for (const u of ['https://backend.openvolley.app', 'https://cloud.example.org', 'http://172.32.0.1', 'http://100.63.255.254', 'http://100.128.0.1', 'http://1100.64.0.1', null, '', 'not a url']) {
       expect(isLanBackendUrl(u), String(u)).toBe(false)
     }
+  })
+
+  // Full-match test 2026-11-21: the Local server field refused a scorer
+  // laptop's Tailscale address. A relay there is a venue relay like one on
+  // the hall Wi-Fi: its WebSocket port is learnt, and the cloud API stays the
+  // cloud (a venue relay has no database)
+  it('a Tailscale (100.64/10) override is a venue relay, not the cloud', () => {
+    setLocation('https://localhost/')
+    window.Capacitor = { isNativePlatform: () => true }
+    setBackendOverride('http://100.76.39.66:5173')
+    expect(getBackendOverride()).toBe('http://100.76.39.66:5173')
+    expect(getApiUrl('/api/match/list')).toBe('http://100.76.39.66:5173/api/match/list')
+    expect(getRelayWebSocketUrl()).toBe('ws://100.76.39.66:8080')
+    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+    expect(getCloudWebSocketUrl()).toBe('wss://backend.openvolley.app')
+    rememberRelayWsPort('http://100.76.39.66:48240', 48241)
+    setBackendOverride('http://100.76.39.66:48240')
+    expect(getRelayWebSocketUrl()).toBe('ws://100.76.39.66:48241')
+    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
   })
 })
 
@@ -468,7 +493,9 @@ describe('isAllowedBackendUrl', () => {
     for (const u of [
       'http://localhost:8080', 'http://127.0.0.1:5173', 'http://[::1]:8080', 'http://192.168.1.20:5173',
       'http://10.0.0.183:8080', 'http://172.16.0.1', 'http://172.31.255.254:8080', 'http://openvolley.local',
-      'https://192.168.1.20:5173', 'https://openvolley.local:8443'
+      'https://192.168.1.20:5173', 'https://openvolley.local:8443',
+      // a Tailscale address (100.64/10)
+      'http://100.76.39.66:48240', 'http://100.64.0.1', 'http://100.127.255.254:8080', 'https://100.101.102.103:8443'
     ]) {
       expect(isAllowedBackendUrl(u), u).toBe(true)
     }
@@ -489,7 +516,8 @@ describe('isAllowedBackendUrl', () => {
       'https://example.com', 'http://example.com', 'https://openvolley.app.evil.example', 'https://backend.openvolley.app.evil.example',
       'https://xopenvolley.app', 'https://backend-openvolley.app', 'https://evil.example/backend.openvolley.app',
       'https://evil.example?x=.openvolley.app', 'https://backend.openvolley.app.', 'http://203.0.113.5', 'https://8.8.8.8',
-      'http://172.32.0.1', 'http://172.15.0.1', 'http://192.169.1.1', 'http://11.0.0.1', 'http://100.101.102.103:8080',
+      'http://172.32.0.1', 'http://172.15.0.1', 'http://192.169.1.1', 'http://11.0.0.1', 'http://100.63.255.254:8080',
+      'http://100.128.0.1:8080', 'http://100.200.1.1', 'http://1100.64.0.1', 'http://100.64.0.1.evil.example',
       'http://scorer-laptop:8080', 'http://evil.localhost.example', 'ws://192.168.1.20:8080', 'ftp://192.168.1.20',
       'javascript:alert(1)', 'data:text/html,x', 'not a url', '', null, undefined, 42
     ]) {
@@ -514,6 +542,8 @@ describe('normalizeServerAddress (connection screen and links)', () => {
     expect(normalizeServerAddress('  10.0.0.2:8080/ ')).toBe('http://10.0.0.2:8080')
     expect(normalizeServerAddress('openvolley.local')).toBe('http://openvolley.local')
     expect(normalizeServerAddress('localhost:8080')).toBe('http://localhost:8080')
+    expect(normalizeServerAddress('100.76.39.66:48240')).toBe('http://100.76.39.66:48240') // Tailscale
+    expect(normalizeServerAddress('100.128.0.1:8080')).toBe('https://100.128.0.1:8080') // outside 100.64/10
     expect(normalizeServerAddress('backend.openvolley.app')).toBe('https://backend.openvolley.app')
     expect(normalizeServerAddress('scorer-laptop:8080')).toBe('https://scorer-laptop:8080')
     expect(normalizeServerAddress('https://backend.openvolley.app/')).toBe('https://backend.openvolley.app')
@@ -636,9 +666,9 @@ describe('a role link ?server= (applyServerParam)', () => {
   })
 
   // Review: a page a venue relay serves on an address the allow-list does not
-  // cover (plain host name, IPv6, 100.64/10): a link naming that relay was
-  // 'none', and the connection screen refused it
-  it.each(['http://scorer-laptop:5173', 'http://[fd00::20]:5173', 'http://100.64.3.20:5173'])(
+  // cover (plain host name, IPv6): a link naming that relay was 'none', and
+  // the connection screen refused it
+  it.each(['http://scorer-laptop:5173', 'http://[fd00::20]:5173'])(
     'a link naming the page\'s own server on %s is known, and used with no override', (own) => {
       setLocation(`${own}/referee`)
       setAppEntry('referee')
@@ -672,6 +702,25 @@ describe('a role link ?server= (applyServerParam)', () => {
     expect(localStorage.getItem('openvolley_backend_override')).toBe('http://192.168.1.30:8080')
     sessionStorage.clear()
     expect(getBackendUrl()).toBe('http://192.168.1.30:8080')
+  })
+
+  // 100.64/10 is on the allow-list now: a link naming a Tailscale relay is
+  // asked about first, like one on the hall Wi-Fi, and a page that relay
+  // serves knows its own server
+  it('a Tailscale (100.64/10) server in a link is asked about first; on its own page it is known', () => {
+    setLocation('https://referee.openvolley.app/')
+    setAppEntry('referee')
+    expect(linkServerState('100.76.39.66:48240')).toEqual({ state: 'ask', url: 'http://100.76.39.66:48240' })
+    expect(applyServerParam('100.76.39.66:48240')).toBe('ask')
+    expect(getBackendOverride()).toBeNull()
+    expect(fetchSpy).not.toHaveBeenCalled()
+
+    const own = 'http://100.64.3.20:5173'
+    setLocation(`${own}/referee`)
+    expect(linkServerState(own)).toEqual({ state: 'known', url: own })
+    expect(applyServerParam(own)).toBe('known')
+    expect(getBackendUrl()).toBe(own)
+    expect(localStorage.getItem('openvolley_backend_override')).toBeNull()
   })
 
   it('another plain host name stays refused, also on such a page', () => {

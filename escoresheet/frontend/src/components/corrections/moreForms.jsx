@@ -142,6 +142,7 @@ const ENTRY_TITLES = {
   libero_exit: ['corrections.form.editLiberoExit', 'Edit libero exit'],
   libero_exchange: ['corrections.form.editLiberoExchange', 'Edit libero exchange'],
   libero_unable: ['corrections.form.editLiberoUnable', 'Edit libero declared unable'],
+  libero_recovered: ['corrections.form.editLiberoRecovered', 'Edit libero able to play again'],
   libero_redesignation: ['corrections.form.editRedesignation', 'Edit libero re-designation'],
   court_captain_designation: ['corrections.form.editGameCaptain', 'Edit game captain'],
   bench_injury: ['corrections.form.editInjury', 'Edit injury']
@@ -153,7 +154,7 @@ const FIELD_LABELS = {
   newLiberoNumber: ['corrections.field.newLibero', 'New libero'],
   playerNumber: ['corrections.field.player', 'Player']
 }
-const MOVABLE = new Set(['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_redesignation', 'court_captain_designation', 'bench_injury'])
+const MOVABLE = new Set(['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_recovered', 'libero_redesignation', 'court_captain_designation', 'bench_injury'])
 
 /**
  * Edit a libero replacement, a libero declared unable or re-designated, a

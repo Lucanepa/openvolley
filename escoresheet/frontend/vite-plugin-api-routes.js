@@ -132,7 +132,7 @@ export function vitePluginApiRoutes(options = {}) {
       // Use a function to ensure it's called for every request
       const apiMiddleware = (req, res, next) => {
         // Early return if not an API request (shouldn't happen due to .use('/api'), but just in case)
-        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/') && !req.url.startsWith('/sign/') && !req.url.startsWith('/pair/') && req.url.split('?')[0] !== '/health') {
+        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/') && !req.url.startsWith('/sign/') && !req.url.startsWith('/pair/') && !req.url.startsWith('/display/') && req.url.split('?')[0] !== '/health') {
           return next()
         }
         // Vite's connect middleware strips the prefix when using .use('/api', ...)
@@ -159,7 +159,8 @@ export function vitePluginApiRoutes(options = {}) {
         res.setHeader('X-Frame-Options', 'SAMEORIGIN')
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
 
-        // Handle OPTIONS preflight
+        // Handle OPTIONS preflight (the scoreboard codes answer their own: CORS *)
+        if (req.method === 'OPTIONS' && urlPath.startsWith('/display/') && relay.handleApiRequest(req, res, '/api' + req.url)) return
         if (req.method === 'OPTIONS') {
           res.writeHead(200)
           res.end()

@@ -365,6 +365,23 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   }))
   const picked = PICKABLE_ROLES.includes(selectedRole) ? selectedRole : 'referee'
   const summary = connectedSummary(statuses)
+  const connectedRoles = summary.connected.map(r => labels[r]).join(', ')
+  // One tablet per role: "1 of 2 tablets" counts both. A role with more than
+  // one (two referee tablets on one PIN) counts tablets and roles apart:
+  // "4 tablets for 3 of 3 roles", never "3 of 3 tablets" with 4 connected.
+  const connectedText = !summary.connected.length
+    ? null
+    : summary.tablets > summary.connected.length
+      ? summary.on > 1
+        ? t('connectTablets.footer.connectedTablets', 'Connected: {{roles}} · {{tablets}} tablets for {{count}} of {{total}} roles', {
+          roles: connectedRoles, tablets: summary.tablets, count: summary.connected.length, total: summary.on
+        })
+        : t('connectTablets.footer.connectedTabletsOnly', 'Connected: {{roles}} · {{tablets}} tablets', { roles: connectedRoles, tablets: summary.tablets })
+      : summary.on > 1
+        ? t('connectTablets.footer.connected', 'Connected: {{roles}} · {{count}} of {{total}} tablets', {
+          roles: connectedRoles, count: summary.connected.length, total: summary.on
+        })
+        : t('connectTablets.footer.connectedOnly', 'Connected: {{roles}}', { roles: connectedRoles })
 
   const step1Id = 'connect-step-1'
   const step2Id = 'connect-step-2'
@@ -372,17 +389,9 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   const footer = (
     <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2">
       <p className="w-full min-w-0 text-xs text-stone-600 sm:w-auto sm:flex-1" data-testid="devices-connected">
-        {seedKey && (summary.connected.length
-          ? summary.on > 1
-            ? t('connectTablets.footer.connected', 'Connected: {{roles}} · {{count}} of {{total}} tablets', {
-              roles: summary.connected.map(r => labels[r]).join(', '),
-              count: summary.connected.length,
-              total: summary.on
-            })
-            : t('connectTablets.footer.connectedOnly', 'Connected: {{roles}}', { roles: summary.connected.map(r => labels[r]).join(', ') })
-          : transport !== 'server' && !relayTablets.reachable
-            ? t('connectTablets.card.unknown', 'Live status not available')
-            : t('connectTablets.footer.none', 'No tablet connected yet'))}
+        {seedKey && (connectedText || (transport !== 'server' && !relayTablets.reachable
+          ? t('connectTablets.card.unknown', 'Live status not available')
+          : t('connectTablets.footer.none', 'No tablet connected yet')))}
         {seedKey && transport === 'server' && (
           <span className="text-stone-400"> · {t('connectTablets.footer.thisNetworkOnly', 'Live status shows tablets on this network only')}</span>
         )}

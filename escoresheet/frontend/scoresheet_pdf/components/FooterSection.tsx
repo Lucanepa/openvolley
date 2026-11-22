@@ -224,13 +224,14 @@ const RemarksView: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks =
 
 interface SetResult {
   setNumber: number;
-  teamATimeouts: number;
-  teamASubstitutions: number;
-  teamAWon: number;
+  // null: the set has not been played (the row stays blank)
+  teamATimeouts: number | null;
+  teamASubstitutions: number | null;
+  teamAWon: number | null;
   teamAPoints: number;
-  teamBTimeouts: number;
-  teamBSubstitutions: number;
-  teamBWon: number;
+  teamBTimeouts: number | null;
+  teamBSubstitutions: number | null;
+  teamBWon: number | null;
   teamBPoints: number;
   duration: string;
   endTime?: string; // Add endTime to track when set ended

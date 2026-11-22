@@ -124,6 +124,15 @@ describe('playerPlayStatus', () => {
     expect(playerPlayStatus(ev, 'home', p(1, { libero: 'libero1' }), 1)).toEqual({ out: 'unable', injured: true })
   })
 
+  it('an injured libero back in play (libero_recovered, owner 22.11.2026) is no longer unable; still marked injured', () => {
+    const ev = [
+      { type: 'libero_unable', setIndex: 1, seq: 6, payload: { team: 'home', liberoNumber: 1, reason: 'injury' } },
+      { type: 'libero_recovered', setIndex: 2, seq: 9, payload: { team: 'home', liberoNumber: 1 } }
+    ]
+    expect(playerPlayStatus(ev, 'home', p(1, { libero: 'libero1' }), 2)).toEqual({ out: null, injured: true })
+    expect(playerPlayStatus(ev.slice(0, 1), 'home', p(1, { libero: 'libero1' }), 2)).toEqual({ out: 'unable', injured: true })
+  })
+
   it('a libero re-designated away is unable', () => {
     expect(playerPlayStatus([], 'home', p(2, { libero: 'unable' }), 1).out).toBe('unable')
   })

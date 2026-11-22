@@ -8,6 +8,10 @@ import {
   deriveTeamSanctionFlags,
   deferredPenaltyPoints,
   penaltyOfPoint,
+  validateMemberSanction,
+  heaviestMemberSanction,
+  memberSanctionOptions,
+  MEMBER_SANCTION_SCALE,
 } from '../sanctions'
 
 describe('nextDelaySanction (FIVB 16.2)', () => {
@@ -142,5 +146,69 @@ describe('penaltyOfPoint (Undo takes a penalty back with its point)', () => {
     expect(penaltyOfPoint(events, point(13, 'away', 14))).toBeNull()
     expect(penaltyOfPoint(events, events[0])).toBeNull()
     expect(penaltyOfPoint(events, null)).toBeNull()
+  })
+})
+
+describe('member sanctions are progressive (FIVB 21.3 scale, 21.4.2)', () => {
+  const player = (seq, setIndex, team, playerNumber, type, playerType = 'player') => ({ seq, setIndex, type: 'sanction', payload: { team, type, playerType, playerNumber } })
+  const official = (seq, setIndex, team, role, type) => ({ seq, setIndex, type: 'sanction', payload: { team, type, playerType: 'official', role } })
+  const legalTypes = (events, member) => Object.entries(memberSanctionOptions(events, member)).filter(([, v]) => v.legal).map(([k]) => k)
+
+  it('the scale runs warning < penalty < expulsion < disqualification', () => {
+    expect(MEMBER_SANCTION_SCALE).toEqual(['warning', 'penalty', 'expulsion', 'disqualification'])
+  })
+
+  it('heaviestMemberSanction: the heaviest of the member, by number or by role', () => {
+    const events = [player(1, 1, 'away', 6, 'expulsion'), player(2, 2, 'away', 6, 'warning'), official(3, 1, 'away', 'Coach', 'penalty'), player(4, 1, 'away', 7, 'delay_warning')]
+    expect(heaviestMemberSanction(events, { team: 'away', playerNumber: 6 })).toBe('expulsion')
+    expect(heaviestMemberSanction(events, { team: 'away', playerNumber: '6' })).toBe('expulsion')
+    expect(heaviestMemberSanction(events, { team: 'away', role: 'Coach' })).toBe('penalty')
+    expect(heaviestMemberSanction(events, { team: 'home', playerNumber: 6 })).toBeNull()
+    expect(heaviestMemberSanction(events, { team: 'away', playerNumber: 7 })).toBeNull() // a delay is a team sanction
+    expect(heaviestMemberSanction(null, { team: 'away', playerNumber: 6 })).toBeNull()
+  })
+
+  it('expelled in set 1: in set 2 only a disqualification is left, never a penalty (the 21.11 test, away #6)', () => {
+    const events = [player(10, 1, 'away', 6, 'expulsion')]
+    expect(validateMemberSanction(events, { team: 'away', playerNumber: 6, type: 'penalty' })).toEqual({ legal: false, reason: 'lighterSanction', heaviest: 'expulsion' })
+    expect(validateMemberSanction(events, { team: 'away', playerNumber: 6, type: 'warning' })).toEqual({ legal: false, reason: 'lighterSanction', heaviest: 'expulsion' })
+    expect(validateMemberSanction(events, { team: 'away', playerNumber: 6, type: 'expulsion' })).toEqual({ legal: false, reason: 'sameSanctionTwice' })
+    expect(validateMemberSanction(events, { team: 'away', playerNumber: 6, type: 'disqualification' })).toEqual({ legal: true })
+    expect(legalTypes(events, { team: 'away', playerNumber: 6 })).toEqual(['disqualification'])
+  })
+
+  it('after a penalty: expulsion or disqualification, no warning even while the team is not warned', () => {
+    const events = [player(3, 1, 'away', 5, 'penalty')]
+    expect(legalTypes(events, { team: 'away', playerNumber: 5 })).toEqual(['expulsion', 'disqualification'])
+    // another member of the team may still be warned
+    expect(legalTypes(events, { team: 'away', playerNumber: 4 })).toEqual(['warning', 'penalty', 'expulsion', 'disqualification'])
+  })
+
+  it('after a warning: anything heavier; the team warning is spent for everyone (one per team per match)', () => {
+    const events = [player(2, 1, 'home', 5, 'warning')]
+    expect(legalTypes(events, { team: 'home', playerNumber: 5 })).toEqual(['penalty', 'expulsion', 'disqualification'])
+    expect(validateMemberSanction(events, { team: 'home', playerNumber: 7, type: 'warning' })).toEqual({ legal: false, reason: 'teamAlreadyWarned' })
+    expect(legalTypes(events, { team: 'home', playerNumber: 7 })).toEqual(['penalty', 'expulsion', 'disqualification'])
+    expect(legalTypes(events, { team: 'away', playerNumber: 7 })).toEqual(['warning', 'penalty', 'expulsion', 'disqualification'])
+  })
+
+  it('an expulsion or disqualification needs no earlier sanction (21.4.3); a disqualified member gets nothing more', () => {
+    expect(legalTypes([], { team: 'home', playerNumber: 9 })).toEqual(['warning', 'penalty', 'expulsion', 'disqualification'])
+    expect(legalTypes([player(4, 2, 'home', 9, 'disqualification')], { team: 'home', playerNumber: 9 })).toEqual([])
+  })
+
+  it('applies to bench officials by role and to liberos and bench players by number, match-wide', () => {
+    const events = [official(5, 1, 'away', 'Coach', 'expulsion'), player(6, 1, 'away', 1, 'penalty', 'libero'), player(7, 2, 'away', 10, 'penalty', 'bench')]
+    expect(legalTypes(events, { team: 'away', role: 'Coach' })).toEqual(['disqualification'])
+    expect(legalTypes(events, { team: 'away', role: 'Assistant Coach 1' })).toEqual(['warning', 'penalty', 'expulsion', 'disqualification'])
+    expect(legalTypes(events, { team: 'away', playerNumber: 1 })).toEqual(['expulsion', 'disqualification'])
+    // set 4: the set-2 penalty still counts
+    expect(validateMemberSanction(events, { team: 'away', playerNumber: 10, type: 'warning' })).toEqual({ legal: false, reason: 'lighterSanction', heaviest: 'penalty' })
+  })
+
+  it('team delay sanctions and improper requests stay out of the member scale', () => {
+    const events = [{ seq: 1, setIndex: 1, type: 'sanction', payload: { team: 'home', type: 'delay_penalty' } }, { seq: 2, setIndex: 1, type: 'sanction', payload: { team: 'home', type: 'improper_request' } }]
+    expect(legalTypes(events, { team: 'home', playerNumber: 3 })).toEqual(['warning', 'penalty', 'expulsion', 'disqualification'])
+    expect(validateMemberSanction([player(1, 1, 'home', 3, 'expulsion')], { team: 'home', playerNumber: 3, type: 'delay_warning' })).toEqual({ legal: true })
   })
 })

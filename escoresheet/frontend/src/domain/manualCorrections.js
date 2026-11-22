@@ -95,6 +95,7 @@ export const ERROR_DEFAULTS = {
   setNotFinished: 'Set {{set}} is not finished.',
   ladder: 'By the rules this is a {{expected}} (the team\'s earlier sanctions).',
   sameSanctionTwice: 'This person already has this sanction.',
+  lighterSanction: 'This person already has a heavier sanction: each further sanction must be heavier.',
   teamAlreadyWarned: 'The team has already been warned: only one warning per team per match.',
   chooseTarget: 'Choose who was sanctioned.',
   readOnlyApproved: 'The match is approved. Reopen it for corrections first.',
@@ -125,6 +126,7 @@ export const ERROR_DEFAULTS = {
 export const NOTE_DEFAULTS = {
   ladder: 'By the rules this would have been a {{expected}}; recorded as the referee decided.',
   sameSanctionTwice: 'This person already has this sanction.',
+  lighterSanction: 'This person already had a heavier sanction (each further sanction must be heavier).',
   teamAlreadyWarned: 'The team had already been warned (only one warning per team per match).',
   circledPoint: '{{team}}\'s point at {{score}} becomes the circled penalty point.',
   pointNow: 'The point for {{team}} is added after the sanction.',
@@ -763,13 +765,14 @@ export const ENTRY_FIELDS = Object.freeze({
   libero_exit: [],
   libero_exchange: [{ key: 'liberoIn', pick: 'libero' }],
   libero_unable: [{ key: 'liberoNumber', pick: 'libero' }],
+  libero_recovered: [{ key: 'liberoNumber', pick: 'libero' }],
   libero_redesignation: [{ key: 'newLiberoNumber', pick: 'player' }],
   court_captain_designation: [{ key: 'playerNumber', pick: 'player' }],
   bench_injury: [{ key: 'playerNumber', pick: 'player' }]
 })
 
 // Entries the generic editor can move to another score
-const MOVABLE = new Set(['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_redesignation', 'court_captain_designation', 'bench_injury'])
+const MOVABLE = new Set(['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_recovered', 'libero_redesignation', 'court_captain_designation', 'bench_injury'])
 
 /** The team's game captain designation in force (its latest one), or null. */
 function latestDesignation(events, team) {

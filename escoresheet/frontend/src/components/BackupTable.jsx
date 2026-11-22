@@ -24,6 +24,7 @@ function formatEventType(type, t) {
     'libero_exit': t('backupTable.eventTypes.liberoExit', 'Libero exit'),
     'libero_exchange': t('backupTable.eventTypes.liberoExchange', 'Libero exchange'),
     'libero_unable': t('backupTable.eventTypes.liberoUnable', 'Libero unable'),
+    'libero_recovered': t('backupTable.eventTypes.liberoRecovered', 'Libero able to play again'),
     'libero_redesignation': t('backupTable.eventTypes.liberoRedesignation', 'Libero redesignation'),
     'set_start': t('backupTable.eventTypes.setStart', 'Set start'),
     'set_end': t('backupTable.eventTypes.setEnd', 'Set end'),

@@ -45,6 +45,29 @@ describe('PhoneScoreboard: counters at the limit', () => {
     expect(screen.getByTestId('phone-sub-sheet')).toBeTruthy()
   })
 
+  // owner 22.11.2026: SUB counts exceptional substitutions; its colour stays
+  // with the regular ones (subsRegular), the 6 of the rule
+  it('SUB shows every substitution; 6 regular + 1 exceptional read 7, red', () => {
+    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { subs: 7, subsRegular: 6 }))} />)
+    const count = screen.getByTestId('phone-sub-left').querySelector('[data-count-state]')
+    expect(count.textContent).toBe('7')
+    expect(count.dataset.countState).toBe('max')
+  })
+
+  it('5 regular + 1 exceptional read 6, amber: one regular substitution is left', () => {
+    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { subs: 6, subsRegular: 5 }))} />)
+    const count = screen.getByTestId('phone-sub-left').querySelector('[data-count-state]')
+    expect(count.textContent).toBe('6')
+    expect(count.dataset.countState).toBe('warn')
+  })
+
+  it('an exceptional substitution alone reads 1, no colour', () => {
+    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { subs: 1, subsRegular: 0 }))} />)
+    const tile = screen.getByTestId('phone-sub-left')
+    expect(tile.textContent).toContain('1')
+    expect(tile.querySelector('[data-count-state]')).toBeNull()
+  })
+
   it('still closed while a rally is in play', () => {
     const p = props(team('left', 'home', 'A', { timeouts: 2 }))
     render(<PhoneScoreboard {...p} rally={{ ...p.rally, status: 'in_play' }} />)
@@ -65,5 +88,29 @@ describe('PhoneScoreboard: the libero sheet', () => {
     expect(unable.textContent).not.toContain('L2')
     expect(unable.textContent).toContain('Unable')
     expect(unable.disabled).toBe(true)
+  })
+})
+
+// Owner 22.11.2026: an injured libero no re-designation replaced may come
+// back: his button stays open, marked injured, and opens his menu
+describe('PhoneScoreboard: an injured libero who may come back', () => {
+  it('is tappable and marked injured; one replaced by a re-designation stays closed', () => {
+    const liberoClick = vi.fn()
+    const liberos = [
+      { number: 12, libero: 'libero1', unable: true, canReturn: true, onCourt: false, position: null },
+      { number: 11, libero: 'unable', unable: true, canReturn: false, onCourt: false, position: null }
+    ]
+    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { liberos }), { liberoClick })} />)
+    fireEvent.click(screen.getByTestId('phone-action-libero'))
+    const injured = screen.getByTestId('phone-libero-left-12')
+    expect(injured.disabled).toBe(false)
+    expect(injured.getAttribute('data-libero-state')).toBe('injured')
+    expect(injured.textContent).toContain('injured')
+    fireEvent.click(injured)
+    expect(liberoClick).toHaveBeenCalledWith('home', liberos[0], expect.anything())
+    fireEvent.click(screen.getByTestId('phone-action-libero'))
+    const replaced = screen.getByTestId('phone-libero-left-11')
+    expect(replaced.disabled).toBe(true)
+    expect(replaced.getAttribute('data-libero-state')).toBe('unable')
   })
 })

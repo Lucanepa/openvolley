@@ -189,6 +189,23 @@ describe('recompute after a correction', () => {
     expect(issues[1].text).toBe('Set 1, B 3:3 A: Delay warning of Volley Talberg: by the rules this is a delay penalty.')
   })
 
+  it('lists a sanction lighter than the member\'s earlier one (FIVB 21.4.2), never refusing', () => {
+    const { events } = buildMatch({
+      sets: [{
+        points: pointsFor(25, 20),
+        finished: true,
+        extras: [
+          { at: 2, type: 'sanction', payload: { team: 'away', type: 'expulsion', playerType: 'player', playerNumber: 6 } },
+          { at: 8, type: 'sanction', payload: { team: 'away', type: 'warning', playerType: 'player', playerNumber: 6 } },
+          { at: 9, type: 'sanction', payload: { team: 'away', type: 'disqualification', playerType: 'player', playerNumber: 6 } }
+        ]
+      }]
+    })
+    const issues = matchIssues(events, ctx)
+    expect(issues.map(i => i.key)).toEqual(['corrections.issue.lighterSanction'])
+    expect(issues[0].text).toMatch(/: Warning of Volley Talberg: this person already had a heavier sanction \(each further sanction must be heavier\)\.$/)
+  })
+
   it('a finished set whose last point changes team: the set end follows the new winner, the score is flagged', () => {
     const { events } = buildMatch({ sets: [{ points: pointsFor(25, 23), finished: true }] })
     const last = events.filter(e => e.type === 'point').sort(compareBySeq).pop()

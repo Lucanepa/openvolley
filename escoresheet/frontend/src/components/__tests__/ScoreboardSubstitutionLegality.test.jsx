@@ -383,3 +383,123 @@ describe('a bench request card goes through the court tap\'s checks (FIVB 15.6.2
     expect(String(written.playerIn)).toBe('9')
   }, 60000)
 })
+
+// Owner 22.11.2026: whoever is replaced exceptionally (injury, expulsion or
+// disqualification with no legal substitution) takes no further part in the
+// match, and every dialog on the way says so.
+describe('exceptional substitution: out for the match (owner 22.11.2026)', () => {
+  const OUT_FOR_MATCH = 'Player #3 cannot take part in the game anymore.'
+  const sanctionFromMenu = async (pattern) => {
+    fireEvent.click(court(3))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Sanction', playerMenu()))
+    await waitFor(() => expect([...playerMenu().querySelectorAll('button')].some(b => pattern.test(b.textContent))).toBe(true))
+    fireEvent.click([...playerMenu().querySelectorAll('button')].find(b => pattern.test(b.textContent)))
+    await settle()
+    const sanctionYes = [...document.querySelectorAll('[role="dialog"] button')].find(b => /^(confirm|yes)/i.test(b.textContent.trim()) && !b.disabled)
+    fireEvent.click(sanctionYes)
+    await waitFor(async () => expect(await ofType('sanction')).toHaveLength(1), { timeout: 5000 })
+  }
+
+  it('Injury: "cannot take part anymore" on the choice and the confirmation', async () => {
+    const matchId = await setUp('cycle')
+    await openScreen(matchId, 3)
+    fireEvent.click(court(3))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Injury', playerMenu()))
+    await waitFor(() => expect(exceptionalChoice()).toBeTruthy(), { timeout: 3000 })
+    expect(exceptionalChoice().textContent).toContain(OUT_FOR_MATCH)
+    await openExceptionalList()
+    fireEvent.click([...dropdown().querySelectorAll('button')].find(b => b.textContent.replace(/\s/g, '') === '#10'))
+    await waitFor(() => expect(confirmDialog()).toBeTruthy(), { timeout: 3000 })
+    expect(confirmDialog().textContent).toContain('player cannot take part anymore')
+  }, 60000)
+
+  it('Expulsion: "cannot take part anymore"; the list offers "Cancel sanction", no plain Cancel', async () => {
+    const matchId = await setUp('cycle')
+    await openScreen(matchId, 3)
+    await sanctionFromMenu(/expul/i)
+    await waitFor(() => expect(exceptionalChoice()).toBeTruthy(), { timeout: 3000 })
+    expect(exceptionalChoice().textContent).toContain(OUT_FOR_MATCH)
+    await openExceptionalList()
+    expect(screen.queryByTestId('substitution-dropdown-cancel')).toBeNull()
+    expect(button('Cancel sanction', dropdown())).toBeTruthy()
+    fireEvent.click([...dropdown().querySelectorAll('button')].find(b => b.textContent.replace(/\s/g, '') === '#9'))
+    await waitFor(() => expect(confirmDialog()).toBeTruthy(), { timeout: 3000 })
+    expect(confirmDialog().textContent).toContain('player cannot take part anymore')
+  }, 60000)
+
+  it('Disqualification: the same', async () => {
+    const matchId = await setUp('cycle')
+    await openScreen(matchId, 3)
+    await sanctionFromMenu(/disqual/i)
+    await waitFor(() => expect(exceptionalChoice()).toBeTruthy(), { timeout: 3000 })
+    expect(exceptionalChoice().textContent).toContain(OUT_FOR_MATCH)
+    await openExceptionalList()
+    expect(screen.queryByTestId('substitution-dropdown-cancel')).toBeNull()
+    expect(button('Cancel sanction', dropdown())).toBeTruthy()
+  }, 60000)
+})
+
+// Owner 22.11.2026 ("Add it"): the exceptional substitution's list after an
+// injury had no Cancel (the one after an expulsion has "Cancel sanction"),
+// only a tap outside closed it. Nothing is recorded before the substitution.
+describe('the exceptional substitution after an injury can be cancelled (owner 22.11.2026)', () => {
+  it('Cancel closes the list and records nothing; the injury can be started again', async () => {
+    const matchId = await setUp('cycle')
+    await openScreen(matchId, 3)
+    const before = (await db.events.toArray()).length
+    fireEvent.click(court(3))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Injury', playerMenu()))
+    await openExceptionalList()
+    const cancel = screen.getByTestId('substitution-dropdown-cancel')
+    expect(cancel.textContent.trim()).toBe('Cancel')
+    expect(dropdown().textContent).not.toContain('Cancel sanction')
+    fireEvent.click(cancel)
+    await waitFor(() => expect(dropdown()).toBeFalsy())
+    await settle()
+    // as before the injury: no event, no dialog, #3 still on court
+    expect((await db.events.toArray()).length).toBe(before)
+    expect(confirmDialog()).toBeFalsy()
+    expect(exceptionalChoice()).toBeFalsy()
+    expect(playerMenu()).toBeFalsy()
+    expect((await homeLineups()).at(-1).payload.lineup.III).toBe('3')
+    expect(court(3)).toBeTruthy()
+
+    fireEvent.click(court(3))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Injury', playerMenu()))
+    expect(await openExceptionalList()).toEqual(['#7', '#8', '#9', '#10', '#11'])
+  }, 60000)
+})
+
+// Owner 22.11.2026: "SUB shall count exceptional substitutions": the SUB box
+// shows every substitution of the set; its colour follows the regular ones.
+describe('the SUB box counts exceptional substitutions (owner 22.11.2026)', () => {
+  const subBox = () => [...document.querySelectorAll('.to-sub-counter')].find(b => b.querySelector('.to-sub-label')?.textContent.trim() === 'SUB')
+
+  it('6 regular + 1 exceptional: 7, red; the details list marks the exceptional one', async () => {
+    const matchId = await setUp('six')
+    await openScreen(matchId, 8)
+    expect(subBox().querySelector('.to-sub-value').textContent).toBe('6')
+    fireEvent.click(court(8))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Injury', playerMenu()))
+    const offered = await openExceptionalList()
+    fireEvent.click([...dropdown().querySelectorAll('button')].find(b => b.textContent.replace(/\s/g, '') === offered[0]))
+    const written = await confirmYes(7)
+    expect(written.isExceptional).toBe(true)
+    await waitFor(() => expect(subBox().querySelector('.to-sub-value').textContent).toBe('7'))
+    expect(subBox().querySelector('.to-sub-value').style.color).toBe('rgb(239, 68, 68)')
+
+    await settle()
+    fireEvent.click(subBox())
+    const list = await waitFor(() => {
+      const d = [...document.querySelectorAll('[role="dialog"]')].find(x => /Substitution 7/.test(x.textContent))
+      expect(d).toBeTruthy()
+      return d
+    }, { timeout: 3000 })
+    expect(list.querySelectorAll('[data-sub-exceptional]')).toHaveLength(1)
+  }, 60000)
+})

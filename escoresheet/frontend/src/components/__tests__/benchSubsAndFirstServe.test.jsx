@@ -28,12 +28,29 @@ const lineup = (team, setIndex, seq) => ({ type: 'lineup', setIndex, seq, payloa
 describe('bench header', () => {
   beforeEach(() => { cleanup(); bundle = null })
 
-  it('counts regular substitutions only', async () => {
-    const subs = [7, 8, 9, 10, 11, 12].map((n, i) => ({ type: 'substitution', setIndex: 1, seq: 10 + i, payload: { team: 'home', playerOut: i + 1, playerIn: n, ...(i === 5 ? { isExceptional: true } : {}) } }))
-    bundle = base([{ index: 1, homePoints: 3, awayPoints: 2, finished: false }], [lineup('home', 1, 1), lineup('away', 1, 2), ...subs])
+  // owner 22.11.2026: "SUB shall count exceptional substitutions"; the
+  // colour and the pips follow the regular ones (the 6 of the rule)
+  const subsOf = (count, exceptionalAt) => Array.from({ length: count }, (_, i) => ({ type: 'substitution', setIndex: 1, seq: 10 + i, payload: { team: 'home', playerOut: i + 1, playerIn: 30 + i, ...(exceptionalAt.includes(i) ? { isExceptional: true } : {}) } }))
+  const subCounter = (container) => container.querySelector('[data-bench-counter="sub"]')
+  // a filled pip has the ink as its background, an empty one none
+  const filledPips = (counter) => [...counter.querySelectorAll('span[aria-hidden="true"] > span')].filter(p => /background: var\(/.test(p.getAttribute('style'))).length
+
+  it('counts every substitution, exceptional ones included: 5 regular + 1 exceptional read 6 /6, amber, 5 pips', async () => {
+    bundle = base([{ index: 1, homePoints: 3, awayPoints: 2, finished: false }], [lineup('home', 1, 1), lineup('away', 1, 2), ...subsOf(6, [5])])
     const { container } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
-    await waitFor(() => expect(container.querySelector('[data-bench-counter="sub"]')).not.toBeNull())
-    expect(container.querySelector('[data-bench-counter="sub"]').textContent).toContain('5')
+    await waitFor(() => expect(subCounter(container)).not.toBeNull())
+    expect(subCounter(container).textContent).toContain('6/6')
+    expect(subCounter(container).getAttribute('data-tone')).toBe('near')
+    expect(filledPips(subCounter(container))).toBe(5)
+  })
+
+  it('6 regular + 1 exceptional read 7 /6, red, all 6 pips filled', async () => {
+    bundle = base([{ index: 1, homePoints: 3, awayPoints: 2, finished: false }], [lineup('home', 1, 1), lineup('away', 1, 2), ...subsOf(7, [6])])
+    const { container } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+    await waitFor(() => expect(subCounter(container)).not.toBeNull())
+    expect(subCounter(container).textContent).toContain('7/6')
+    expect(subCounter(container).getAttribute('data-tone')).toBe('max')
+    expect(filledPips(subCounter(container))).toBe(6)
   })
 
   it('set 2 before its first point: the other team serves first', async () => {

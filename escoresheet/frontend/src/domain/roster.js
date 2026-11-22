@@ -38,6 +38,7 @@ const NUMBER_FIELDS = {
   libero_exit: LIBERO_FIELDS,
   libero_exchange: LIBERO_FIELDS,
   libero_unable: LIBERO_FIELDS,
+  libero_recovered: LIBERO_FIELDS,
   libero_redesignation: LIBERO_FIELDS,
   court_captain_designation: ['playerNumber', 'previousCourtCaptain', 'previousRememberedCourtCaptain'],
   bench_injury: ['playerNumber'],

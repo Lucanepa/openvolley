@@ -62,7 +62,7 @@ async function openLineupA({ easy = false } = {}) {
   await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: new Date(Date.now() - 60000).toISOString() })
 
   render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
-  const open = () => [...document.querySelectorAll('button')].find(b => /^LineupA/.test(b.textContent.trim()))
+  const open = () => [...document.querySelectorAll('button')].find(b => /^Line-?upA/.test(b.textContent.trim()))
   await waitFor(() => expect(open()).toBeTruthy())
   fireEvent.click(open())
   await waitFor(() => expect(dialog()).toBeTruthy())

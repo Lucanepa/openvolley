@@ -102,6 +102,14 @@ export function liberoUnableText(liberoNumber, reason) {
 }
 
 /**
+ * An injured libero back in play, as long as no re-designation replaced him
+ * (owner 22.11.2026; the libero_recovered event). No diagnosis, as above.
+ */
+export function liberoRecoveredText(liberoNumber) {
+  return `Libero #${liberoNumber} able to play again`
+}
+
+/**
  * Set 1's actual start, when the scorer confirmed a time other than the
  * scheduled one (owner 2026-10-08): "Actual game start: 12:45". Always in
  * English, like the other automatic remarks the match writes, so the line is

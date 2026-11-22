@@ -222,10 +222,10 @@ export async function enterLineups (page) {
   for (let i = 0; i < 3; i++) {
     const set5 = page.locator('button:visible').filter({ hasText: /^Confirm set \d setup$/ })
     if (await set5.count()) { await set5.first().click(); await sleep(700); await answerDialogs(page) }
-    const btn = page.locator('button:visible').filter({ hasText: /^Lineup\s*[AB]\s*[-·]/ })
+    const btn = page.locator('button:visible').filter({ hasText: /^Line-?up\s*[AB]\s*[-·]/ })
     if (!(await btn.count())) break
     const b = btn.first()
-    const letter = /Lineup\s*([AB])/.exec(await b.innerText())[1]
+    const letter = /Line-?up\s*([AB])/.exec(await b.innerText())[1]
     const lineup = await defaultLineup(page, letter)
     await b.click()
     const dlg = page.locator('[role=dialog]:visible').last()

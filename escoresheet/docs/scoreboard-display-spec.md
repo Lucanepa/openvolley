@@ -2,6 +2,8 @@
 
 A scoreboard display (an LED board in the hall, a hall screen) can follow a match on the relay like a livescore does. It can also name its own settings page, such as brightness or orientation. While it follows the match, the scorer's **Match** menu gets one more row, **Scoreboard settings** (Devices and data), which opens that page. With no display, or a display that names no usable page, the row is not there.
 
+A display finds its match by the room key, or, on any network, by the scorer's scoreboard code (`subscribe-match { code }`, docs/scoreboard-code-spec.md and docs/scoreboard-feed.md).
+
 OpenVolley knows nothing about any particular board. The display announces itself, and the relay passes the page on only when it is on the hall's own network.
 
 ## Wire contract

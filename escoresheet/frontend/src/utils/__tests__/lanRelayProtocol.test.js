@@ -23,6 +23,7 @@ import { readRelayBundle } from '../serverDataSync'
 import { runBeachVenueContract } from '../../../../backend/tests/helpers/beachVenueContract.js'
 import { runBenchRequestContract } from '../../../../backend/tests/helpers/benchRequestContract.js'
 import { runDisplayPresenceContract, SETTINGS_URL_CASES, BOARD_URL } from '../../../../backend/tests/helpers/displayPresenceContract.js'
+import { runDisplayCodeContract } from '../../../../backend/tests/helpers/displayCodeContract.js'
 import { displaySettingsUrl as backendDisplaySettingsUrl } from '../../../../backend/lib/displayPresence.js'
 import lanCore from '../../../electron/lanRelayCore.cjs'
 import { TAURI_RELAY_BIN, startTauriRelay } from './tauriRelay.js'
@@ -1226,6 +1227,107 @@ describe('scoreboard displays (display-presence)', () => {
   })
 })
 
+describe('scoreboard codes (display-code-set, subscribe-match { code })', () => {
+  const live = { points_a: 4, points_b: 2, subs_count_a: 1, lineup_a: [{ number: 77 }], subs_a: [{ playerIn: 61 }], sanctions_a: [], last_event_data: { player: 64 } }
+  const setup = (displayOptions = {}) => {
+    let clock = 1000
+    const relay = createLanRelay({ displayOptions: { now: () => clock, ...displayOptions } })
+    const scorer = connect(relay)
+    msg(relay, scorer, syncMessage(makeMatch({ seed_key: 'room-code' })))
+    return { relay, scorer, tick: (ms) => { clock += ms } }
+  }
+
+  it('only the room\'s scorer sets a code, and the answer names no code', () => {
+    const { relay, scorer } = setup()
+    const other = connect(relay, '192.168.1.60')
+    msg(relay, other, { type: 'display-code-set', matchId: 'room-code', code: 'ABCD2345' })
+    expect(other.last('display-code-state')).toEqual({ type: 'display-code-state', matchId: 'room-code', active: false, reason: 'not-match-owner' })
+    msg(relay, scorer, { type: 'display-code-set', matchId: 'room-code', code: 'ABCD2345', issuedAt: 1000 })
+    expect(scorer.last('display-code-state')).toEqual({ type: 'display-code-state', matchId: 'room-code', active: true, endsAt: 1000 + 12 * 3600 * 1000 })
+    expect(scorer.raw.join('')).not.toContain('ABCD2345')
+    expect(relay.displayStats()).toMatchObject({ codes: 1 })
+  })
+
+  it('a board by code gets the public live state; an ordinary subscriber keeps what it got before', () => {
+    const { relay, scorer } = setup()
+    msg(relay, scorer, { type: 'display-code-set', matchId: 'room-code', code: 'ABCD2345', issuedAt: 1000 })
+    msg(relay, scorer, { type: 'live-state-update', matchId: 'room-code', liveState: live })
+    const board = connect(relay, '192.168.1.61')
+    const plain = connect(relay, '192.168.1.62')
+    msg(relay, board, { type: 'subscribe-match', code: 'abcd 2345', device: 'display', pin: PINS.gamePin })
+    msg(relay, plain, { type: 'subscribe-match', matchId: 'room-code', device: 'livescore' })
+    expect(board.last('display-code')).toMatchObject({ ok: true, matchId: 'room-code' })
+    expect(board.last('match-full-data').access).toBe('summary')
+    expect(board.last('match-full-data').liveState).toEqual({ points_a: 4, points_b: 2, subs_count_a: 1 })
+    expect(board.last('match-full-data').data.liveState).toEqual({ points_a: 4, points_b: 2, subs_count_a: 1 })
+    expect(plain.last('match-full-data').liveState).toEqual(live)
+    msg(relay, scorer, { type: 'live-state-update', matchId: 'room-code', liveState: { ...live, points_a: 5 } })
+    expect(board.last('live-state-update').liveState).toEqual({ points_a: 5, points_b: 2, subs_count_a: 1 })
+    expect(plain.last('live-state-update').liveState).toEqual({ ...live, points_a: 5 })
+    msg(relay, scorer, syncMessage(makeMatch({ seed_key: 'room-code' })))
+    expect(board.last('match-data-update').liveState).toEqual({ points_a: 5, points_b: 2, subs_count_a: 1 })
+    expect(board.raw.filter((t) => containsPin(t) || t.includes('"lineup_a"') || t.includes('"lastName"'))).toEqual([])
+    // the scorer hears a display follows
+    expect(scorer.last('display-presence')).toMatchObject({ present: true })
+  })
+
+  it('a code that runs out ends its boards and tells the scorer', () => {
+    const { relay, scorer, tick } = setup()
+    msg(relay, scorer, { type: 'display-code-set', matchId: 'room-code', code: 'ABCD2345', issuedAt: 1000 })
+    const board = connect(relay, '192.168.1.61')
+    msg(relay, board, { type: 'subscribe-match', code: 'ABCD2345', device: 'display' })
+    tick(12 * 3600 * 1000)
+    // the next lookup (or the sweep) finds it run out
+    const late = connect(relay, '192.168.1.63')
+    msg(relay, late, { type: 'subscribe-match', code: 'ABCD2345', device: 'display' })
+    expect(late.last('display-code')).toEqual({ type: 'display-code', ok: false, reason: 'ended' })
+    expect(board.last('display-code')).toEqual({ type: 'display-code', ok: false, reason: 'ended', matchId: 'room-code' })
+    expect(scorer.last('display-code-state')).toEqual({ type: 'display-code-state', matchId: 'room-code', active: false, reason: 'expired' })
+    const before = board.sent.length
+    msg(relay, scorer, { type: 'live-state-update', matchId: 'room-code', liveState: live })
+    expect(board.sent.length).toBe(before)
+  })
+
+  it('a board that unsubscribes or goes leaves no follower behind; the scorer hears it left', () => {
+    const { relay, scorer } = setup()
+    msg(relay, scorer, { type: 'display-code-set', matchId: 'room-code', code: 'ABCD2345', issuedAt: 1000 })
+    const board = connect(relay, '192.168.1.61')
+    msg(relay, board, { type: 'subscribe-match', code: 'ABCD2345', device: 'display' })
+    msg(relay, board, { type: 'unsubscribe-match', matchId: 'room-code' })
+    expect(scorer.last('display-presence')).toMatchObject({ present: false })
+    const again = connect(relay, '192.168.1.64')
+    msg(relay, again, { type: 'subscribe-match', code: 'ABCD2345', device: 'display' })
+    relay.removeClient(again)
+    expect(scorer.last('display-presence')).toMatchObject({ present: false })
+    // a new code: nobody left to tell, nothing thrown
+    msg(relay, scorer, { type: 'display-code-set', matchId: 'room-code', code: 'WXYZ6789', issuedAt: 1000 })
+    expect(again.last('display-code')).toMatchObject({ ok: true })
+    expect(board.sent.filter((m) => m.type === 'display-code' && m.ok === false)).toEqual([])
+  })
+
+  it('wrong codes are limited per address, a right one from there too once over', () => {
+    const { relay, scorer } = setup({ caps: { failPerIp: 2 } })
+    msg(relay, scorer, { type: 'display-code-set', matchId: 'room-code', code: 'ABCD2345', issuedAt: 1000 })
+    const guesser = connect(relay, '192.168.1.70')
+    msg(relay, guesser, { type: 'subscribe-match', code: 'ZZZZZZZZ' })
+    msg(relay, guesser, { type: 'subscribe-match', code: 'ZZZZZZZY' })
+    msg(relay, guesser, { type: 'subscribe-match', code: 'ABCD2345' })
+    expect(guesser.last('display-code')).toMatchObject({ ok: false, reason: 'rate-limited', retryAfter: 300 })
+    expect(guesser.last('match-full-data')).toBeUndefined()
+    const other = connect(relay, '192.168.1.71')
+    msg(relay, other, { type: 'subscribe-match', code: 'ABCD2345' })
+    expect(other.last('display-code')).toMatchObject({ ok: true })
+  })
+
+  it('a relay without the code core answers every code with not-found', () => {
+    const relay = lanCore.createLanRelay({})
+    const ws = connect(relay)
+    msg(relay, ws, { type: 'subscribe-match', code: 'ABCD2345' })
+    expect(ws.last('display-code')).toEqual({ type: 'display-code', ok: false, reason: 'not-found' })
+    expect(relay.displayStats()).toBeNull()
+  })
+})
+
 describe('main-instance lock (shared by every relay)', () => {
   const interfaces = () => ({ lo: [{ address: '127.0.0.1' }], wlan0: [{ address: '192.168.1.5' }] })
 
@@ -1671,6 +1773,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await scorerPresenceScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runDisplayPresenceContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
+      await runDisplayCodeContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, httpBase: `http://127.0.0.1:${port}`, openClient, tag: 'server-js' })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
@@ -1776,6 +1879,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await pinCheckBudgetScenario({ httpBase, wsUrl })
       await scorerPresenceScenario({ wsUrl })
       await runDisplayPresenceContract({ wsUrl, openClient, tag: 'tauri' })
+      await runDisplayCodeContract({ wsUrl, httpBase, openClient, tag: 'tauri' })
       const unknown = await fetch(`${httpBase}/api/nope`)
       expect(unknown.status).toBe(404)
     } finally {
@@ -1830,6 +1934,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await pinCheckBudgetScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await scorerPresenceScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runDisplayPresenceContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'vite' })
+      await runDisplayCodeContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, httpBase, openClient, tag: 'vite' })
     })
   })
 })

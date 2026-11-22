@@ -646,7 +646,7 @@ class ErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('Scoresheet Error Boundary caught:', error, errorInfo);
-    sendErrorToParent(error, errorInfo.componentStack);
+    sendErrorToParent(error, errorInfo.componentStack ?? undefined);
     // The match-end approval waits for this window's PDF (?action=getBlob): tell it
     // now that there will be none, instead of letting it wait for its timeout
     if (initialAction === 'getBlob') {

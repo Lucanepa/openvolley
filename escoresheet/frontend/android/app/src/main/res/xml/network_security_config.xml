@@ -6,8 +6,8 @@
   cleartext is allowed app-wide, except for openvolley.app and its subdomains:
   the cloud is https only, whatever an address field says. Which hosts the app
   may talk to at all is enforced in src/utils/backendConfig.js
-  (isAllowedBackendUrl: localhost, RFC 1918 ranges and *.local over http or
-  https, *.openvolley.app over https only).
+  (isAllowedBackendUrl: localhost, RFC 1918 ranges, 100.64/10 (Tailscale) and
+  *.local over http or https, *.openvolley.app over https only).
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true">

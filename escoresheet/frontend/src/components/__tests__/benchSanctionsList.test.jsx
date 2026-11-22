@@ -1,0 +1,233 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, waitFor, cleanup } from '@testing-library/react'
+
+// The bench's sanctions box (full-match test 2026-11-21, 26.11.2):
+// - a coach's warning was listed twice ("Coach, Coach"): once by the
+//   officials row, once more as a team sanction;
+// - in the interval between two sets (no set under way) it said "None" and
+//   the bench row was empty;
+// - a player an exceptional substitution took off the court (home #11,
+//   expelled with no legal substitute) lost his sanction, which the referee
+//   still showed.
+// It lists the team's sanction events of the match, once each, in the order
+// the scorer recorded them, whoever is on the court now.
+
+let bundle = null
+vi.mock('../../utils/serverDataSync', () => ({ getMatchData: vi.fn(async () => bundle), addRelayMessageListener: () => () => {}, sendRelayMessage: () => false }))
+vi.mock('../../hooks/useRealtimeConnection', () => ({ useRealtimeConnection: () => ({}) }))
+vi.mock('../../db/db', () => ({ db: { matches: { get: vi.fn(async () => null), update: vi.fn(async () => 0) } } }))
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k, d, o) => (typeof d === 'string' ? d : (o?.defaultValue || k)), i18n: { language: 'en' } }) }))
+
+const { default: MatchEntry } = await import('../MatchEntry.jsx')
+
+const players = (list) => list.map(number => ({ number, firstName: 'A', lastName: `P${number}` }))
+let seq = 0
+const ev = (type, setIndex, payload) => ({ id: ++seq, seq, type, setIndex, ts: seq, payload })
+const lineup = (team, setIndex, l) => ev('lineup', setIndex, { team, lineup: l })
+const sanction = (team, setIndex, payload) => ev('sanction', setIndex, { team, ...payload })
+
+function benchBundle({ sets, events, match = {} }) {
+  return {
+    success: true,
+    match: {
+      id: 'm1', status: 'live', coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossConfirmed: true, firstServe: 'home', bestOf: 5,
+      bench_home: [{ role: 'Coach', lastName: 'Boss' }, { role: 'Assistant Coach 1', lastName: 'One' }],
+      ...match
+    },
+    homeTeam: { name: 'Home', color: '#e2001a' },
+    awayTeam: { name: 'Away', color: '#3b82f6' },
+    homePlayers: players([1, 10, 88, 14, 99, 12, 7, 11]),
+    awayPlayers: players([2, 21, 55, 66, 98, 13]),
+    sets,
+    events
+  }
+}
+const home1 = { I: 10, II: 88, III: 14, IV: 99, V: 12, VI: 1 }
+
+const listOf = (container) => [...container.querySelectorAll('[data-bench-sanctions] li')]
+  .map(li => [li.getAttribute('data-bench-sanction'), li.textContent])
+const rowText = (container, key) => container.querySelector(`[data-bench-row="${key}"]`)?.textContent || ''
+
+async function renderBench(team = 'home') {
+  const view = render(<MatchEntry matchId="m1" team={team} onBack={() => {}} embedded />)
+  await waitFor(() => expect(view.container.querySelector('[data-bench-sanctions]')).not.toBeNull())
+  return view
+}
+
+describe('bench sanctions box: each sanction once', () => {
+  beforeEach(() => { cleanup(); bundle = null; seq = 0 })
+
+  it("a coach's warning is listed once, not \"Coach, Coach\"", async () => {
+    bundle = benchBundle({
+      sets: [{ index: 1, homePoints: 3, awayPoints: 2, finished: false }],
+      events: [
+        lineup('home', 1, home1),
+        sanction('home', 1, { type: 'warning', playerType: 'official', role: 'Coach' })
+      ]
+    })
+    const { container } = await renderBench()
+    await waitFor(() => expect(listOf(container).length).toBe(1))
+    expect(listOf(container)).toEqual([['warning', 'Coach']])
+    // the coach's chip still shows the card
+    const coachChip = container.querySelector('[title="Coach"]')
+    expect(coachChip.querySelector('[data-card-glyph="warning"]')).not.toBeNull()
+  })
+
+  it("an official whose role is not on the team's bench list is listed once", async () => {
+    bundle = benchBundle({
+      sets: [{ index: 1, homePoints: 3, awayPoints: 2, finished: false }],
+      events: [
+        lineup('home', 1, home1),
+        sanction('home', 1, { type: 'penalty', playerType: 'official', role: 'Physiotherapist' })
+      ]
+    })
+    const { container } = await renderBench()
+    await waitFor(() => expect(listOf(container).length).toBe(1))
+    expect(listOf(container)).toEqual([['penalty', 'Physiotherapist']])
+  })
+
+  it('lists players, officials, delay and improper request in the order they were given', async () => {
+    bundle = benchBundle({
+      sets: [{ index: 1, homePoints: 3, awayPoints: 2, finished: false }],
+      events: [
+        lineup('home', 1, home1),
+        sanction('home', 1, { type: 'delay_warning' }),
+        sanction('home', 1, { type: 'warning', playerType: 'player', playerNumber: '14', position: 'III' }),
+        sanction('home', 1, { type: 'penalty', playerType: 'bench', playerNumber: 7 }),
+        sanction('home', 1, { type: 'warning', playerType: 'official', role: 'Coach' }),
+        sanction('home', 1, { type: 'improper_request' }),
+        sanction('away', 1, { type: 'penalty', playerType: 'player', playerNumber: 21 })
+      ]
+    })
+    const { container } = await renderBench()
+    await waitFor(() => expect(listOf(container).length).toBe(5))
+    expect(listOf(container)).toEqual([
+      ['delay_warning', 'D'],
+      ['warning', '#14'],
+      ['penalty', '#7'],
+      ['warning', 'Coach'],
+      ['improper_request', 'Improper request']
+    ])
+  })
+
+  it('the same event twice in the bundle is listed once', async () => {
+    const warning = sanction('home', 1, { type: 'warning', playerType: 'official', role: 'Coach' })
+    bundle = benchBundle({
+      sets: [{ index: 1, homePoints: 3, awayPoints: 2, finished: false }],
+      events: [lineup('home', 1, home1), warning, { ...warning }]
+    })
+    const { container } = await renderBench()
+    await waitFor(() => expect(listOf(container).length).toBe(1))
+  })
+})
+
+describe('bench sanctions box and rows: the interval between two sets', () => {
+  beforeEach(() => { cleanup(); bundle = null; seq = 0 })
+
+  it('keeps the sanctions and the bench players while no set is under way', async () => {
+    bundle = benchBundle({
+      // set 1 over, set 2 not created yet (its line-up creates it)
+      sets: [{ index: 1, homePoints: 25, awayPoints: 20, finished: true }],
+      events: [
+        lineup('home', 1, home1),
+        sanction('home', 1, { type: 'warning', playerType: 'official', role: 'Coach' }),
+        sanction('home', 1, { type: 'penalty', playerType: 'player', playerNumber: 14, position: 'III' })
+      ],
+      match: { status: 'interval' }
+    })
+    bundle.liveState = { current_set: 2, set_interval_active: true, match_status: 'interval' }
+    const { container, queryByText } = await renderBench()
+    await waitFor(() => expect(listOf(container).length).toBe(2))
+    expect(listOf(container)).toEqual([['warning', 'Coach'], ['penalty', '#14']])
+    expect(queryByText('None')).toBeNull()
+    // no line-up yet: an empty court and every player on the bench row, as
+    // the scorer and the referee show the interval; #14 with his card
+    await waitFor(() => expect(rowText(container, 'players')).toContain('#14'))
+    for (const n of [1, 7, 10, 11, 12, 88, 99]) expect(rowText(container, 'players')).toContain(`#${n}`)
+    const chip14 = [...container.querySelectorAll('[data-bench-row="players"] div')].find(d => d.textContent === '#14')
+    expect(chip14.querySelector('[data-card-glyph="penalty"]')).not.toBeNull()
+    expect(rowText(container, 'officials')).toContain('C')
+    expect([...container.querySelectorAll('.court-player')].map(d => d.textContent.replace(/[IV]+/, '')).join('')).toBe('——————')
+    // the coming set's side: team A (home) on the right in set 2
+    expect(container.querySelector('.court-side').classList.contains('court-side-right')).toBe(true)
+  })
+
+  it('before the first set: no set at all, every player on the bench row', async () => {
+    bundle = benchBundle({ sets: [], events: [] })
+    const { container, getByText } = await renderBench()
+    await waitFor(() => expect(rowText(container, 'players')).toContain('#11'))
+    for (const n of [1, 7, 10, 11, 12, 14, 88, 99]) expect(rowText(container, 'players')).toContain(`#${n}`)
+    expect(getByText('None')).toBeInTheDocument()
+  })
+})
+
+describe('bench sanctions: a player replaced by an exceptional substitution', () => {
+  beforeEach(() => { cleanup(); bundle = null; seq = 0 })
+
+  it('an expelled #11 replaced exceptionally leaves the bench row (out for the match), his sanction stays in the box', async () => {
+    const withEleven = { ...home1, III: 11 }
+    bundle = benchBundle({
+      sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
+      events: [
+        lineup('home', 1, withEleven),
+        sanction('home', 1, { type: 'expulsion', playerType: 'player', playerNumber: '11', position: 'III' }),
+        ev('substitution', 1, { team: 'home', position: 'III', playerOut: 11, playerIn: 7, isExpelled: true, isExceptional: true }),
+        lineup('home', 1, { ...home1, III: 7 })
+      ]
+    })
+    const { container } = await renderBench()
+    await waitFor(() => expect(listOf(container).length).toBe(1))
+    expect(listOf(container)).toEqual([['expulsion', '#11']])
+    // whoever is replaced exceptionally takes no further part in the match
+    // (owner 22.11.2026): off the row, as an injured one
+    await waitFor(() => expect(rowText(container, 'players')).toContain('#14'))
+    expect(rowText(container, 'players')).not.toContain('#11')
+  })
+
+  it('an expelled #11 replaced by a legal substitution stays on the bench row with his card (back next set, 21.3.2)', async () => {
+    bundle = benchBundle({
+      sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
+      events: [
+        lineup('home', 1, { ...home1, III: 11 }),
+        sanction('home', 1, { type: 'expulsion', playerType: 'player', playerNumber: '11', position: 'III' }),
+        ev('substitution', 1, { team: 'home', position: 'III', playerOut: 11, playerIn: 7, isExpelled: true, isExceptional: false }),
+        lineup('home', 1, { ...home1, III: 7 })
+      ]
+    })
+    const { container } = await renderBench()
+    await waitFor(() => expect(listOf(container)).toEqual([['expulsion', '#11']]))
+    await waitFor(() => expect(rowText(container, 'players')).toContain('#11'))
+    const chip = [...container.querySelectorAll('[data-bench-row="players"] div')].find(d => d.textContent === '#11')
+    expect(chip.querySelector('[data-card-glyph="expulsion"]')).not.toBeNull()
+  })
+
+  it('a disqualified player replaced exceptionally is off the row in a later set, his sanction listed', async () => {
+    bundle = benchBundle({
+      sets: [{ index: 1, homePoints: 25, awayPoints: 20, finished: true }, { index: 2, homePoints: 4, awayPoints: 4, finished: false }],
+      events: [
+        lineup('home', 1, { ...home1, III: 11 }),
+        sanction('home', 1, { type: 'disqualification', playerType: 'player', playerNumber: 11, position: 'III' }),
+        ev('substitution', 1, { team: 'home', position: 'III', playerOut: 11, playerIn: 7, isDisqualified: true, isExceptional: true }),
+        lineup('home', 2, { ...home1, III: 7 })
+      ]
+    })
+    const { container } = await renderBench()
+    await waitFor(() => expect(listOf(container)).toEqual([['disqualification', '#11']]))
+    expect(rowText(container, 'players')).not.toContain('#11')
+  })
+
+  it('an injured player replaced exceptionally (out for the match) leaves the bench row, his earlier warning stays in the box', async () => {
+    bundle = benchBundle({
+      sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
+      events: [
+        lineup('home', 1, { ...home1, III: 11 }),
+        sanction('home', 1, { type: 'warning', playerType: 'player', playerNumber: 11, position: 'III' }),
+        ev('substitution', 1, { team: 'home', position: 'III', playerOut: 11, playerIn: 7, isInjury: true, isExceptional: true }),
+        lineup('home', 1, { ...home1, III: 7 })
+      ]
+    })
+    const { container } = await renderBench()
+    await waitFor(() => expect(listOf(container)).toEqual([['warning', '#11']]))
+    expect(rowText(container, 'players')).not.toContain('#11')
+  })
+})

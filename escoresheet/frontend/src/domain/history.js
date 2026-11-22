@@ -145,7 +145,7 @@ export function courtsAfterRallies(events) {
 
 // Entries whose sentence already names the team: no team after it
 const TITLE_NAMES_TEAM = new Set(['point', 'cancelled_point', 'set_end', 'decision_change', 'rectification', 'coin_toss', 'set5_coin_toss', 'remark', 'match_stopped'])
-const MUTED = new Set(['court_captain_designation', 'libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_redesignation'])
+const MUTED = new Set(['court_captain_designation', 'libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_recovered', 'libero_redesignation'])
 
 /**
  * The row's tone: 'set' (set start / end, light blue), 'sanction' (amber),

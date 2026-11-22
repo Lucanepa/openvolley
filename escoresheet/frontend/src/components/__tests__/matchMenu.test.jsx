@@ -61,6 +61,31 @@ describe('match menu sections', () => {
     expect(en.phonePair.menu).toBe('Pair a phone (keyboard)')
   })
 
+  it('"Show on a scoreboard" sits after Pair a phone, before Scoreboard settings, in every language', () => {
+    const sections = matchMenuSections(keyT, { ...allActions(), pairPhone: vi.fn(), showOnScoreboard: vi.fn(), scoreboardSettings: vi.fn() })
+    const devices = sections.find(s => s.key === 'devices')
+    expect(devices.items.map(i => i.key)).toEqual(['pins', 'pair-phone', 'show-on-scoreboard', 'scoreboard-settings', 'export'])
+    expect(devices.items.find(i => i.key === 'show-on-scoreboard').Icon).toBeTruthy()
+    for (const [lang, dict] of Object.entries(LOCALES)) {
+      const label = lookup(dict, 'scoreboardCode.menu')
+      expect(typeof label, lang).toBe('string')
+      expect(label.length, lang).toBeGreaterThan(3)
+    }
+    expect(en.scoreboardCode.menu).toBe('Show on a scoreboard')
+  })
+
+  it('"Show on a scoreboard" opens from the menu list', () => {
+    const showOnScoreboard = vi.fn()
+    const enT = (key, fallback) => (typeof lookup(en, key) === 'string' ? lookup(en, key) : fallback)
+    render(<MenuList buttonLabel="Match" menuTitle="Match" columns={2} sections={toMenuListSections(matchMenuSections(enT, { ...allActions(), showOnScoreboard }))} />)
+    fireEvent.click(screen.getByRole('button', { name: /Match/ }))
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Match' })).getByRole('menuitem', { name: 'Show on a scoreboard' }))
+    expect(showOnScoreboard).toHaveBeenCalledTimes(1)
+    for (const [lng, dict] of Object.entries(LOCALES)) {
+      expect(JSON.stringify(lookup(dict, 'scoreboardCode')), lng).not.toMatch(/point ?hub|kscw|ledbox/i)
+    }
+  })
+
   it('drops a row without a handler (no match setup page) and an empty section', () => {
     const actions = allActions()
     delete actions.openMatchSetup
@@ -102,7 +127,7 @@ describe('match menu sections', () => {
 
   it('every section title and row label exists in all five languages', () => {
     const keys = new Set()
-    matchMenuSections((key) => { keys.add(key); return key }, { ...allActions(), scoreboardSettings: vi.fn() })
+    matchMenuSections((key) => { keys.add(key); return key }, { ...allActions(), scoreboardSettings: vi.fn(), showOnScoreboard: vi.fn() })
     expect(keys.size).toBeGreaterThan(10)
     for (const [lng, dict] of Object.entries(LOCALES)) {
       for (const key of keys) {

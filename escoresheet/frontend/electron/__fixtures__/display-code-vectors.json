@@ -1,0 +1,1731 @@
+{
+ "about": "Scoreboard codes (docs/scoreboard-code-spec.md): shared vectors for electron/displayCodeCore.cjs, its generated backend copy backend/lib/displayCodes.js and src-tauri/src/display_code.rs. Scenario clocks start at 0 (a step's \"at\" sets the clock first); default via lan, ip 192.0.2.1, owner \"o1\". resolve expectations leave out the hash. \"ends\" lists the onEnd calls [room, reason] since the last \"ends\". \"repeat\" runs its step n times without checking it. http \"body\" is sent as JSON text, \"text\" as it is.",
+ "codes": [
+  {
+   "in": "ABCD2345",
+   "out": "ABCD2345"
+  },
+  {
+   "in": "abcd-2345",
+   "out": "ABCD2345"
+  },
+  {
+   "in": " ABCD 2345 ",
+   "out": "ABCD2345"
+  },
+  {
+   "in": "ab-cd-23-45",
+   "out": "ABCD2345"
+  },
+  {
+   "in": "ABCD234",
+   "out": null
+  },
+  {
+   "in": "ABCD23456",
+   "out": null
+  },
+  {
+   "in": "ABCD2340",
+   "out": null
+  },
+  {
+   "in": "ABCD234O",
+   "out": null
+  },
+  {
+   "in": "ABCD2341",
+   "out": null
+  },
+  {
+   "in": "ABCDI345",
+   "out": null
+  },
+  {
+   "in": "",
+   "out": null
+  },
+  {
+   "in": 42,
+   "out": null
+  },
+  {
+   "in": null,
+   "out": null
+  },
+  {
+   "in": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+   "out": null
+  },
+  {
+   "in": "ÄBCD2345",
+   "out": null
+  }
+ ],
+ "display": [
+  {
+   "in": "ABCD2345",
+   "out": "ABCD-2345"
+  },
+  {
+   "in": "ABC",
+   "out": "ABC"
+  }
+ ],
+ "fromBytes": [
+  {
+   "in": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "out": "AAAAAAAA"
+  },
+  {
+   "in": [
+    255,
+    255,
+    255,
+    255,
+    255
+   ],
+   "out": "99999999"
+  },
+  {
+   "in": [
+    1,
+    35,
+    69,
+    103,
+    137
+   ],
+   "out": "AETWL36K"
+  }
+ ],
+ "endpoints": [
+  {
+   "path": "/api/display/lookup",
+   "out": "lookup"
+  },
+  {
+   "path": "/api/display/live",
+   "out": "live"
+  },
+  {
+   "path": "/api/display/live/",
+   "out": null
+  },
+  {
+   "path": "/api/display",
+   "out": null
+  },
+  {
+   "path": "/api/display/start",
+   "out": null
+  }
+ ],
+ "bodies": [
+  {
+   "contentType": "application/json",
+   "text": "{\"code\":\"ABCD-2345\"}",
+   "out": "ABCD-2345"
+  },
+  {
+   "contentType": "application/json; charset=utf-8",
+   "text": "{\"code\":\"x\"}",
+   "out": "x"
+  },
+  {
+   "contentType": "text/plain;charset=UTF-8",
+   "text": "{\"code\":\"abcd2345\"}",
+   "out": "abcd2345"
+  },
+  {
+   "contentType": "application/x-www-form-urlencoded",
+   "text": "{\"code\":\"ABCD2345\"}",
+   "out": null
+  },
+  {
+   "contentType": "",
+   "text": "{\"code\":\"ABCD2345\"}",
+   "out": null
+  },
+  {
+   "contentType": "application/json",
+   "text": "{\"code\":",
+   "out": null
+  },
+  {
+   "contentType": "application/json",
+   "text": "{\"code\":5}",
+   "out": null
+  },
+  {
+   "contentType": "application/json",
+   "text": "[\"ABCD2345\"]",
+   "out": null
+  },
+  {
+   "contentType": "application/json",
+   "text": "null",
+   "out": null
+  }
+ ],
+ "publicLive": [
+  {
+   "in": {
+    "points_a": 3,
+    "points_b": 1,
+    "lineup_a": [
+     1
+    ],
+    "lineup_b": [
+     2
+    ],
+    "sanctions_a": [],
+    "sanctions_b": [],
+    "subs_a": [],
+    "subs_b": [],
+    "last_event_data": {
+     "n": 7
+    },
+    "scorer_attention_trigger": 1,
+    "subs_count_a": 2,
+    "set_results": [],
+    "_seq": 4
+   },
+   "out": {
+    "points_a": 3,
+    "points_b": 1,
+    "subs_count_a": 2,
+    "set_results": [],
+    "_seq": 4
+   }
+  },
+  {
+   "in": null,
+   "out": null
+  },
+  {
+   "in": [
+    1,
+    2
+   ],
+   "out": null
+  },
+  {
+   "in": "x",
+   "out": null
+  }
+ ],
+ "messages": [
+  {
+   "fn": "state",
+   "matchId": "r",
+   "in": {
+    "ok": true,
+    "endsAt": 5
+   },
+   "out": {
+    "type": "display-code-state",
+    "matchId": "r",
+    "active": true,
+    "endsAt": 5
+   }
+  },
+  {
+   "fn": "state",
+   "matchId": "r",
+   "in": {
+    "ok": false,
+    "reason": "taken"
+   },
+   "out": {
+    "type": "display-code-state",
+    "matchId": "r",
+    "active": false,
+    "reason": "taken"
+   }
+  },
+  {
+   "fn": "state",
+   "matchId": "r",
+   "in": {
+    "ok": false,
+    "reason": "weird"
+   },
+   "out": {
+    "type": "display-code-state",
+    "matchId": "r",
+    "active": false,
+    "reason": "bad-code"
+   }
+  },
+  {
+   "fn": "answer",
+   "in": {
+    "ok": true,
+    "room": "r",
+    "endsAt": 9,
+    "hash": "h"
+   },
+   "out": {
+    "type": "display-code",
+    "ok": true,
+    "matchId": "r",
+    "endsAt": 9
+   }
+  },
+  {
+   "fn": "answer",
+   "in": {
+    "ok": false,
+    "reason": "bad-code"
+   },
+   "out": {
+    "type": "display-code",
+    "ok": false,
+    "reason": "not-found"
+   }
+  },
+  {
+   "fn": "answer",
+   "in": {
+    "ok": false,
+    "reason": "ended"
+   },
+   "out": {
+    "type": "display-code",
+    "ok": false,
+    "reason": "ended"
+   }
+  },
+  {
+   "fn": "answer",
+   "in": {
+    "ok": false,
+    "reason": "rate-limited",
+    "retryAfter": 12
+   },
+   "out": {
+    "type": "display-code",
+    "ok": false,
+    "reason": "rate-limited",
+    "retryAfter": 12
+   }
+  },
+  {
+   "fn": "ended",
+   "matchId": "r",
+   "out": {
+    "type": "display-code",
+    "ok": false,
+    "reason": "ended",
+    "matchId": "r"
+   }
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "set, look up, revoke",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 0,
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "abcd-2345",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "resolve",
+     "code": " ABCD 2345 ",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "codeOfRoom",
+     "room": "room-1",
+     "expect": {
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "isLive",
+     "code": "ABCD2345",
+     "room": "room-1",
+     "expect": true
+    },
+    {
+     "op": "isLive",
+     "code": "ABCD2345",
+     "room": "room-2",
+     "expect": false
+    },
+    {
+     "op": "stats",
+     "expect": {
+      "codes": 1,
+      "tombstones": 0
+     }
+    },
+    {
+     "op": "ends",
+     "expect": []
+    },
+    {
+     "op": "revoke",
+     "room": "room-1",
+     "expect": true
+    },
+    {
+     "op": "ends",
+     "expect": [
+      [
+       "room-1",
+       "revoked"
+      ]
+     ]
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": false,
+      "reason": "ended"
+     }
+    },
+    {
+     "op": "revoke",
+     "room": "room-1",
+     "expect": false
+    },
+    {
+     "op": "codeOfRoom",
+     "room": "room-1",
+     "expect": null
+    },
+    {
+     "op": "isLive",
+     "code": "ABCD2345",
+     "room": "room-1",
+     "expect": false
+    },
+    {
+     "op": "stats",
+     "expect": {
+      "codes": 0,
+      "tombstones": 1
+     }
+    }
+   ]
+  },
+  {
+   "name": "a revoke by set with code null",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": null,
+     "expect": {
+      "ok": false,
+      "reason": "revoked"
+     }
+    },
+    {
+     "op": "ends",
+     "expect": [
+      [
+       "room-1",
+       "revoked"
+      ]
+     ]
+    },
+    {
+     "op": "set",
+     "room": "room-9",
+     "code": null,
+     "expect": {
+      "ok": false,
+      "reason": "revoked"
+     }
+    },
+    {
+     "op": "ends",
+     "expect": []
+    }
+   ]
+  },
+  {
+   "name": "a new code replaces the old one",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 0,
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "at": 1000,
+     "op": "set",
+     "room": "room-1",
+     "code": "WXYZ6789",
+     "issuedAt": 1000,
+     "expect": {
+      "ok": true,
+      "endsAt": 43201000
+     }
+    },
+    {
+     "op": "ends",
+     "expect": [
+      [
+       "room-1",
+       "replaced"
+      ]
+     ]
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": false,
+      "reason": "ended"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "WXYZ6789",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43201000
+     }
+    },
+    {
+     "op": "stats",
+     "expect": {
+      "codes": 1,
+      "tombstones": 1
+     }
+    }
+   ]
+  },
+  {
+   "name": "the same code again keeps its first start",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 0,
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "at": 5000,
+     "op": "set",
+     "room": "room-1",
+     "code": "abcd-2345",
+     "issuedAt": 5000,
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "ends",
+     "expect": []
+    }
+   ]
+  },
+  {
+   "name": "the same code again with an earlier start (after a relay restart) takes it",
+   "steps": [
+    {
+     "at": 60000,
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 60000,
+     "expect": {
+      "ok": true,
+      "endsAt": 43260000
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 1000,
+     "expect": {
+      "ok": true,
+      "endsAt": 43201000
+     }
+    }
+   ]
+  },
+  {
+   "name": "issuedAt in the future counts as now, none as now",
+   "steps": [
+    {
+     "at": 5000,
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 999999999999,
+     "expect": {
+      "ok": true,
+      "endsAt": 43205000
+     }
+    },
+    {
+     "at": 7000,
+     "op": "set",
+     "room": "room-2",
+     "code": "WXYZ6789",
+     "expect": {
+      "ok": true,
+      "endsAt": 43207000
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-3",
+     "code": "HJKL2345",
+     "issuedAt": -5,
+     "expect": {
+      "ok": true,
+      "endsAt": 43207000
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-4",
+     "code": "MNPQ3456",
+     "issuedAt": 1.5,
+     "expect": {
+      "ok": true,
+      "endsAt": 43207000
+     }
+    }
+   ]
+  },
+  {
+   "name": "a code older than 12 hours is refused",
+   "steps": [
+    {
+     "at": 43200000,
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 0,
+     "expect": {
+      "ok": false,
+      "reason": "expired"
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 1,
+     "expect": {
+      "ok": true,
+      "endsAt": 43200001
+     }
+    }
+   ]
+  },
+  {
+   "name": "a code ends 12 hours after it was made",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 0,
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "at": 43199999,
+     "op": "resolve",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "at": 43200000,
+     "op": "resolve",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": false,
+      "reason": "ended"
+     }
+    },
+    {
+     "op": "ends",
+     "expect": [
+      [
+       "room-1",
+       "expired"
+      ]
+     ]
+    },
+    {
+     "op": "codeOfRoom",
+     "room": "room-1",
+     "expect": null
+    }
+   ]
+  },
+  {
+   "name": "the sweep ends what ran out and forgets old tombstones",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "issuedAt": 0,
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "at": 43200000,
+     "op": "sweep"
+    },
+    {
+     "op": "ends",
+     "expect": [
+      [
+       "room-1",
+       "expired"
+      ]
+     ]
+    },
+    {
+     "op": "stats",
+     "expect": {
+      "codes": 0,
+      "tombstones": 1
+     }
+    },
+    {
+     "at": 43799999,
+     "op": "sweep"
+    },
+    {
+     "op": "stats",
+     "expect": {
+      "codes": 0,
+      "tombstones": 1
+     }
+    },
+    {
+     "at": 43800000,
+     "op": "sweep"
+    },
+    {
+     "op": "stats",
+     "expect": {
+      "codes": 0,
+      "tombstones": 0
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": false,
+      "reason": "not-found"
+     }
+    }
+   ]
+  },
+  {
+   "name": "a code another room has is taken, an ended one for its tombstone time",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-2",
+     "code": "abcd2345",
+     "expect": {
+      "ok": false,
+      "reason": "taken"
+     }
+    },
+    {
+     "op": "revoke",
+     "room": "room-1",
+     "expect": true
+    },
+    {
+     "op": "set",
+     "room": "room-2",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": false,
+      "reason": "taken"
+     }
+    },
+    {
+     "at": 600000,
+     "op": "set",
+     "room": "room-2",
+     "code": "ABCD2345",
+     "issuedAt": 600000,
+     "expect": {
+      "ok": true,
+      "endsAt": 43800000
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "room": "room-2",
+      "endsAt": 43800000
+     }
+    }
+   ]
+  },
+  {
+   "name": "the same room may set its revoked code again",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "revoke",
+     "room": "room-1",
+     "expect": true
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "stats",
+     "expect": {
+      "codes": 1,
+      "tombstones": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "codes and rooms that are not valid",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD234",
+     "expect": {
+      "ok": false,
+      "reason": "bad-code"
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2340",
+     "expect": {
+      "ok": false,
+      "reason": "bad-code"
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": 42,
+     "expect": {
+      "ok": false,
+      "reason": "bad-code"
+     }
+    },
+    {
+     "op": "set",
+     "room": "",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": false,
+      "reason": "bad-code"
+     }
+    },
+    {
+     "op": "set",
+     "room": {
+      "$repeat": [
+       "r",
+       129
+      ]
+     },
+     "code": "ABCD2345",
+     "expect": {
+      "ok": false,
+      "reason": "bad-code"
+     }
+    },
+    {
+     "op": "set",
+     "room": {
+      "$repeat": [
+       "r",
+       128
+      ]
+     },
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "set",
+     "room": 7,
+     "code": "WXYZ6789",
+     "expect": {
+      "ok": false,
+      "reason": "bad-code"
+     }
+    }
+   ]
+  },
+  {
+   "name": "wrong codes are limited per address, before any comparison",
+   "caps": {
+    "failPerIp": 3
+   },
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ZZZZZZZZ",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "not-found"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "nonsense",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "bad-code"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "at": 1000,
+     "op": "resolve",
+     "code": "ZZZZZZZY",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "not-found"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "rate-limited",
+      "retryAfter": 299
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "b",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "at": 300000,
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    }
+   ]
+  },
+  {
+   "name": "every lookup counts",
+   "caps": {
+    "lookupPerIp": 2
+   },
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "repeat",
+     "n": 2,
+     "step": {
+      "op": "resolve",
+      "code": "ABCD2345",
+      "ip": "a"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "rate-limited",
+      "retryAfter": 300
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "b",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    }
+   ]
+  },
+  {
+   "name": "the cloud budget is 20 wrong codes per address",
+   "via": "cloud",
+   "steps": [
+    {
+     "op": "repeat",
+     "n": 20,
+     "step": {
+      "op": "resolve",
+      "code": "ZZZZZZZZ",
+      "ip": "a"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ZZZZZZZZ",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "rate-limited",
+      "retryAfter": 300
+     }
+    }
+   ]
+  },
+  {
+   "name": "the LAN budget is 60 wrong codes per address",
+   "steps": [
+    {
+     "op": "repeat",
+     "n": 59,
+     "step": {
+      "op": "resolve",
+      "code": "ZZZZZZZZ",
+      "ip": "a"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ZZZZZZZZ",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "not-found"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ZZZZZZZZ",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "rate-limited",
+      "retryAfter": 300
+     }
+    }
+   ]
+  },
+  {
+   "name": "a full table refuses a new room, not a new code of a room",
+   "caps": {
+    "total": 1
+   },
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-2",
+     "code": "WXYZ6789",
+     "expect": {
+      "ok": false,
+      "reason": "busy"
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "WXYZ6789",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "ends",
+     "expect": [
+      [
+       "room-1",
+       "replaced"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "sets per scorer socket are limited",
+   "caps": {
+    "setPerOwner": 2
+   },
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "owner": "o1",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "WXYZ6789",
+     "owner": "o1",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "HJKL2345",
+     "owner": "o1",
+     "expect": {
+      "ok": false,
+      "reason": "rate-limited"
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "HJKL2345",
+     "owner": "o2",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    }
+   ]
+  },
+  {
+   "name": "a dropped room ends its code",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "drop",
+     "room": "room-2",
+     "expect": false
+    },
+    {
+     "op": "drop",
+     "room": "room-1",
+     "expect": true
+    },
+    {
+     "op": "ends",
+     "expect": [
+      [
+       "room-1",
+       "dropped"
+      ]
+     ]
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": false,
+      "reason": "ended"
+     }
+    }
+   ]
+  },
+  {
+   "name": "HTTP lookup and live",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "body": {
+      "code": "abcd-2345"
+     },
+     "expect": {
+      "status": 200,
+      "body": {
+       "ok": true,
+       "matchId": "room-1",
+       "endsAt": 43200000
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "text/plain;charset=UTF-8",
+     "body": {
+      "code": "ABCD2345",
+      "extra": 1
+     },
+     "expect": {
+      "status": 200,
+      "body": {
+       "ok": true,
+       "matchId": "room-1",
+       "endsAt": 43200000
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "live",
+     "contentType": "application/json",
+     "body": {
+      "code": "ABCD2345"
+     },
+     "summary": {
+      "room-1": {
+       "match": {
+        "status": "live",
+        "gameNumber": 4711
+       },
+       "homeTeam": {
+        "name": "VBC Musterdorf",
+        "color": "#e2001a"
+       },
+       "awayTeam": {
+        "name": "Volley Beispiel",
+        "color": "#1d4ed8"
+       },
+       "sets": [
+        {
+         "index": 1,
+         "homePoints": 25,
+         "awayPoints": 20,
+         "finished": true
+        }
+       ],
+       "liveState": {
+        "points_a": 3,
+        "points_b": 1,
+        "lineup_a": [
+         7
+        ],
+        "subs_a": [
+         {
+          "playerIn": 9
+         }
+        ],
+        "sanctions_b": [
+         {
+          "type": "warning"
+         }
+        ],
+        "last_event_data": {
+         "player": 4
+        },
+        "scorer_attention_trigger": 2,
+        "subs_count_a": 1,
+        "set_results": [
+         {
+          "set": 1,
+          "home": 25,
+          "away": 20,
+          "a": 25,
+          "b": 20
+         }
+        ]
+       }
+      }
+     },
+     "expect": {
+      "status": 200,
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      },
+      "body": {
+       "ok": true,
+       "matchId": "room-1",
+       "endsAt": 43200000,
+       "match": {
+        "status": "live",
+        "gameNumber": 4711
+       },
+       "homeTeam": {
+        "name": "VBC Musterdorf",
+        "color": "#e2001a"
+       },
+       "awayTeam": {
+        "name": "Volley Beispiel",
+        "color": "#1d4ed8"
+       },
+       "sets": [
+        {
+         "index": 1,
+         "homePoints": 25,
+         "awayPoints": 20,
+         "finished": true
+        }
+       ],
+       "liveState": {
+        "points_a": 3,
+        "points_b": 1,
+        "subs_count_a": 1,
+        "set_results": [
+         {
+          "set": 1,
+          "home": 25,
+          "away": 20,
+          "a": 25,
+          "b": 20
+         }
+        ]
+       }
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "live",
+     "contentType": "application/json",
+     "body": {
+      "code": "ABCD2345"
+     },
+     "expect": {
+      "status": 200,
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      },
+      "body": {
+       "ok": true,
+       "matchId": "room-1",
+       "endsAt": 43200000,
+       "match": null,
+       "homeTeam": null,
+       "awayTeam": null,
+       "sets": [],
+       "liveState": null
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "live",
+     "contentType": "application/json",
+     "body": {
+      "code": "ABCD2345"
+     },
+     "summary": {
+      "room-1": {
+       "match": {
+        "status": "live"
+       },
+       "homeTeam": "Home VC",
+       "awayTeam": "Away VC",
+       "sets": []
+      }
+     },
+     "expect": {
+      "status": 200,
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      },
+      "body": {
+       "ok": true,
+       "matchId": "room-1",
+       "endsAt": 43200000,
+       "match": {
+        "status": "live"
+       },
+       "homeTeam": "Home VC",
+       "awayTeam": "Away VC",
+       "sets": [],
+       "liveState": null
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "body": {
+      "code": "ZZZZZZZZ"
+     },
+     "expect": {
+      "status": 404,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_NOT_FOUND",
+       "message": "This scoreboard code is not valid"
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "body": {
+      "code": "nope"
+     },
+     "expect": {
+      "status": 404,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_NOT_FOUND",
+       "message": "This scoreboard code is not valid"
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/xml",
+     "body": {
+      "code": "ABCD2345"
+     },
+     "expect": {
+      "status": 400,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_BAD_REQUEST",
+       "message": "Invalid request"
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "text": "{\"code\":",
+     "expect": {
+      "status": 400,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_BAD_REQUEST",
+       "message": "Invalid request"
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "body": {
+      "code": 5
+     },
+     "expect": {
+      "status": 400,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_BAD_REQUEST",
+       "message": "Invalid request"
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "text": {
+      "$repeat": [
+       "x",
+       1025
+      ]
+     },
+     "expect": {
+      "status": 413,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_TOO_LARGE",
+       "message": "Request body too large"
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "start",
+     "contentType": "application/json",
+     "body": {
+      "code": "ABCD2345"
+     },
+     "expect": {
+      "status": 404,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_NOT_FOUND",
+       "message": "This scoreboard code is not valid"
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "revoke",
+     "room": "room-1",
+     "expect": true
+    },
+    {
+     "op": "http",
+     "endpoint": "live",
+     "contentType": "application/json",
+     "body": {
+      "code": "ABCD2345"
+     },
+     "expect": {
+      "status": 410,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_ENDED",
+       "message": "This scoreboard code has ended"
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "HTTP rate limit",
+   "caps": {
+    "failPerIp": 1
+   },
+   "steps": [
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "body": {
+      "code": "ZZZZZZZZ"
+     },
+     "ip": "a",
+     "expect": {
+      "status": 404,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_NOT_FOUND",
+       "message": "This scoreboard code is not valid"
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "at": 60000,
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "body": {
+      "code": "ZZZZZZZZ"
+     },
+     "ip": "a",
+     "expect": {
+      "status": 429,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_RATE_LIMITED",
+       "message": "Too many requests. Please wait a moment."
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*",
+       "Retry-After": "240"
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

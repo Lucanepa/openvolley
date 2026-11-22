@@ -17,8 +17,18 @@ import { Button } from '../ui/Button.jsx'
  * - Trigger match end
  * - Trigger set end
  * - Call referee
+ *
+ * @param {object} props
+ * @param {number|string} props.matchId
+ * @param {() => void} [props.onRefresh]
+ * @param {boolean} [props.inline] the collapsed badge sits in the page's own
+ *   layout (the parent places it, `style`) instead of floating over the bottom
+ *   right corner, where it covered the bench's last officials chip and the
+ *   referee's "Last action" on a 360 x 740 phone (full-match test
+ *   2026-11-21). The open panel still floats.
+ * @param {object} [props.style] the inline badge's placement
  */
-export default function TestModeControls({ matchId, onRefresh }) {
+export default function TestModeControls({ matchId, onRefresh, inline = false, style = null }) {
   const [expanded, setExpanded] = useState(false)
   const [lastAction, setLastAction] = useState(null)
 
@@ -371,28 +381,34 @@ export default function TestModeControls({ matchId, onRefresh }) {
   // (secondary md, h-9) in a dense developer panel scoped by `.ov-kit`.
   const TOOL_CLASS = 'whitespace-nowrap px-2.5 text-xs'
 
-  if (!expanded) {
-    return (
-      // The kit TEST badge (amber-800 on amber-100, amber-300 hairline;
-      // was amber text on a pale amber wash at about 2:1).
-      <div
-        onClick={() => setExpanded(true)}
-        className="no-print inline-flex items-center rounded-full border border-amber-300 bg-amber-100 text-[11px] font-semibold uppercase tracking-wide text-amber-800 shadow-sm"
-        style={{
-          position: 'fixed',
-          bottom: '10px',
-          right: '10px',
-          padding: '6px 12px',
-          cursor: 'pointer',
-          zIndex: 9999
-        }}
-      >
-        Test mode
-      </div>
-    )
-  }
+  // The kit TEST badge (amber-800 on amber-100, amber-300 hairline;
+  // was amber text on a pale amber wash at about 2:1).
+  const badge = (
+    <div
+      onClick={() => setExpanded(true)}
+      className="no-print inline-flex items-center rounded-full border border-amber-300 bg-amber-100 text-[11px] font-semibold uppercase tracking-wide text-amber-800 shadow-sm"
+      style={inline ? {
+        padding: '6px 12px',
+        cursor: 'pointer',
+        flexShrink: 0,
+        whiteSpace: 'nowrap',
+        ...style
+      } : {
+        position: 'fixed',
+        bottom: '10px',
+        right: '10px',
+        padding: '6px 12px',
+        cursor: 'pointer',
+        zIndex: 9999
+      }}
+    >
+      Test mode
+    </div>
+  )
 
-  return (
+  if (!expanded) return badge
+
+  const panel = (
     <div className="ov-kit no-print rounded-2xl border border-stone-200/70 bg-white shadow-card-lg" style={{
       position: 'fixed',
       bottom: '10px',
@@ -473,4 +489,7 @@ export default function TestModeControls({ matchId, onRefresh }) {
       )}
     </div>
   )
+
+  // inline: the badge keeps its place under the open panel (no layout jump)
+  return inline ? <>{badge}{panel}</> : panel
 }

@@ -6,6 +6,7 @@
  */
 
 import { substitutionBarsForMatch } from './substitutions'
+import { liberoPlayState } from './liberos'
 
 export const COURT_POSITIONS = ['I', 'II', 'III', 'IV', 'V', 'VI']
 
@@ -114,10 +115,12 @@ const isInjurySub = e =>
  * injured during the match (the Rosters dialog marks both).
  *  - 'disqualified': disqualification (any set) - out for the match
  *  - 'expelled'    : expulsion in the current set - out for this set
- *  - 'exceptional' : exceptionally substituted (injury) - out for the match;
- *                    an expelled player substituted exceptionally is
- *                    'expelled' in that set only (FIVB 21.3.2)
- *  - 'unable'      : libero declared unable / re-designated away
+ *  - 'exceptional' : exceptionally substituted (injury, expulsion or
+ *                    disqualification with no legal substitution) - out for
+ *                    the match (owner 22.11.2026); an expelled one shows
+ *                    'expelled' in the set of the expulsion
+ *  - 'unable'      : libero unable now (declared, injured and not back,
+ *                    re-designated away; domain/liberos liberoPlayState)
  * @returns {{ out: null|'disqualified'|'expelled'|'exceptional'|'unable', injured: boolean }}
  */
 export function playerPlayStatus(events, teamKey, player, currentSetIndex) {
@@ -139,8 +142,10 @@ export function playerPlayStatus(events, teamKey, player, currentSetIndex) {
   } else if (subsOut.some(e => e.payload?.isExceptional === true && substitutionBarsForMatch(e.payload))) {
     status.out = 'exceptional'
   } else if (
-    player?.libero === 'unable' ||
-    mine.some(e => e.type === 'libero_unable' && str(e.payload?.liberoNumber) === num)
+    (player?.libero === 'unable' ||
+      mine.some(e => e.type === 'libero_unable' && str(e.payload?.liberoNumber) === num)) &&
+    // unable now: an injured libero who came back is not (owner 22.11.2026)
+    liberoPlayState(events, teamKey, player?.number, { setIndex: currentSetIndex ?? null, player }).unable
   ) {
     status.out = 'unable'
   }
