@@ -1,6 +1,6 @@
 pkgbase = openvolley-escoresheet-bin
 	pkgdesc = Open source volleyball eScoresheet: offline scoretable with a LAN server for referee, bench and livescore tablets
-	pkgver = 26.11.2
+	pkgver = 26.11.3
 	pkgrel = 1
 	url = https://openvolley.app
 	arch = x86_64
@@ -22,12 +22,12 @@ pkgbase = openvolley-escoresheet-bin
 	optdepends = xdg-utils: open links, the PDF and the backup folder
 	provides = openvolley-escoresheet
 	conflicts = openvolley-escoresheet
-	noextract = openvolley-escoresheet-26.11.2-amd64.deb
+	noextract = openvolley-escoresheet-26.11.3-amd64.deb
 	options = !strip
 	options = !debug
-	source = LICENSE-26.11.2::https://raw.githubusercontent.com/Lucanepa/openvolley/desktop-v26.11.2/escoresheet/LICENSE
+	source = LICENSE-26.11.3::https://raw.githubusercontent.com/Lucanepa/openvolley/desktop-v26.11.3/escoresheet/LICENSE
 	sha256sums = 4916eae672b6d1d5ec8d97c2bb9838815fdd4e313473d2c16ff759c51d9b7aec
-	source_x86_64 = openvolley-escoresheet-26.11.2-amd64.deb::https://github.com/Lucanepa/openvolley/releases/download/desktop-v26.11.2/openvolley-escoresheet_26.11.2_amd64.deb
-	sha256sums_x86_64 = 7f9cc0b07bca33ee6c60d5243aa17b5e8f27c88b7e86e97c17e3fd9ac154e226
+	source_x86_64 = openvolley-escoresheet-26.11.3-amd64.deb::https://github.com/Lucanepa/openvolley/releases/download/desktop-v26.11.3/openvolley-escoresheet_26.11.3_amd64.deb
+	sha256sums_x86_64 = 6a1142d4eaf3b75980cf25f3d5db3b41e82c896eafd54b9eab60da5b7d0b3aa2
 
 pkgname = openvolley-escoresheet-bin
