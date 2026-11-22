@@ -243,7 +243,16 @@ export function createNativeBackupEngine({
   }
 
   async function backupOnce(matchId, { force = false } = {}) {
-    const data = await exportMatch(matchId)
+    let data
+    try {
+      data = await exportMatch(matchId)
+    } catch (e) {
+      // The match left this device while its backup waited (approved and
+      // cleared, or deleted): nothing to back up, not an error (22.11.2026,
+      // backup.error "Match not found" in the same second as match.local_remove)
+      if (readMatch && !(await Promise.resolve(readMatch(matchId)).catch(() => null))) return null
+      throw e
+    }
     if (!data?.match) return null
     if (!force && skipMatch(data.match)) return null
     const { key, build } = serializeBackup(data)
