@@ -41,17 +41,18 @@ export function touchesMatchData(dbName: string, parts: Record<string, unknown> 
 }
 
 /**
- * The same match row as far as the sheet goes: equal without the bookkeeping
+ * A match row as far as the sheet goes: its JSON without the bookkeeping
  * keys (heartbeats, sessions, sync stamps, updatedAt: stableMatch, the
  * backups' own list, nativeBackup/redact.js; the sheet prints none of them).
- * Both missing is the same; anything it cannot compare is not.
+ * Two rows with the same key are the same for the sheet. null: no row (both
+ * missing is the same); undefined: a row it cannot compare (never the same).
  */
-function sameSheetRow(a: unknown, b: unknown): boolean {
-  if (!a || !b) return !a && !b;
+export function sheetRowKey(row: unknown): string | null | undefined {
+  if (!row) return null;
   try {
-    return JSON.stringify(stableMatch(a)) === JSON.stringify(stableMatch(b));
+    return JSON.stringify(stableMatch(row));
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -74,8 +75,9 @@ function sameSheetRow(a: unknown, b: unknown): boolean {
  *
  * A notice of match rows only (matchDataChange 'match': a heartbeat, a sync
  * stamp, another match's row) reads this match's row alone and compares it
- * with the row shown (sameSheetRow): the same, nothing is read; changed, gone
- * or unreadable, everything is read again. Any other notice of these tables,
+ * with the row shown (sheetRowKey, the shown row's kept from its read): the
+ * same, nothing is read; changed, gone or unreadable, everything is read
+ * again. Any other notice of these tables,
  * and 'all', reads everything again, as before. On the in-app view each full
  * read and the sheet it rebuilds ran on the scorer's thread.
  *
@@ -93,18 +95,19 @@ export function useLocalMatchData(db: any, matchId: unknown, refresh: unknown = 
     let busy = false;
     // what the next turn does ('all' wins over 'match')
     let pending: 'all' | 'match' | null = null;
-    // the match row of the data shown (null: not on this device); undefined:
-    // not known (nothing read yet, the last read failed): a check reads everything
-    let shownRow: Record<string, any> | null | undefined;
+    // the sheetRowKey of the data shown, made once per read (null: not on
+    // this device); undefined: not known (nothing read yet, the last read
+    // failed, a row it cannot compare): a check reads everything
+    let shownKey: string | null | undefined;
 
     const readAll = () => loadLocalMatchData(db, matchId).then(
       (data) => {
         if (closed) return;
-        shownRow = data ? data.match : null;
+        shownKey = !data ? null : data.match === undefined ? undefined : sheetRowKey(data.match);
         setState({ matchId, data });
       },
       (error) => {
-        shownRow = undefined;
+        shownKey = undefined;
         // as liveQuery: a closed database (Dexie reopens it) or an
         // aborted read is no error to show; the next change reads again
         if (closed || IGNORED_ERRORS.includes(error?.name)) return;
@@ -112,7 +115,7 @@ export function useLocalMatchData(db: any, matchId: unknown, refresh: unknown = 
       }
     );
     const checkRow = async () => {
-      if (shownRow === undefined) return readAll();
+      if (shownKey === undefined) return readAll();
       let row: unknown;
       try {
         const key = localMatchKey(matchId);
@@ -120,7 +123,10 @@ export function useLocalMatchData(db: any, matchId: unknown, refresh: unknown = 
       } catch {
         return readAll();
       }
-      if (closed || sameSheetRow(row, shownRow)) return;
+      if (closed) return;
+      // only the row just read is turned into JSON: the shown one's is kept
+      const rowKey = sheetRowKey(row);
+      if (rowKey !== undefined && rowKey === shownKey) return;
       return readAll();
     };
     const run = () => {

@@ -27,6 +27,13 @@ vi.mock('../matchData', async (importOriginal) => {
   };
 });
 
+// every row turned into the sheet's comparison JSON (sheetRowKey)
+const stable = vi.hoisted(() => ({ args: [] as unknown[] }));
+vi.mock('../../../src/utils/nativeBackup/redact.js', async (importOriginal) => {
+  const orig = await importOriginal<any>();
+  return { ...orig, stableMatch: (row: unknown) => { stable.args.push(row); return orig.stableMatch(row); } };
+});
+
 import { db as appDb } from '../../../src/db/db';
 import { useLocalMatchData, touchesMatchData, matchDataChange } from '../useLocalMatchData';
 
@@ -61,7 +68,7 @@ async function addMatch(gameNumber: number, events: number) {
 let previousAct: unknown;
 beforeAll(() => { previousAct = (globalThis as any).IS_REACT_ACT_ENVIRONMENT; (globalThis as any).IS_REACT_ACT_ENVIRONMENT = false; });
 afterAll(() => { (globalThis as any).IS_REACT_ACT_ENVIRONMENT = previousAct; });
-afterEach(() => { cleanup(); slow.ms = 0; slow.fail = null; slow.reads = 0; vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); slow.ms = 0; slow.fail = null; slow.reads = 0; stable.args.length = 0; vi.restoreAllMocks(); });
 
 describe('useLocalMatchData: the scoresheet shows the match while the scoring screen writes', () => {
   it('shows the match, then the next point, although a write lands during every read', async () => {
@@ -223,6 +230,35 @@ describe('useLocalMatchData: a write the sheet does not print reads nothing more
     await settle();
     await db.teams.add({ name: 'Not on this sheet' });
     await waitFor(() => expect(slow.reads).toBe(reads + 5));
+  });
+
+  it('the shown row is turned into JSON once, at its read; each notice only the row it reads', async () => {
+    const matchId = await addMatch(2010, 2);
+    let shownData: any;
+    function Probe() {
+      shownData = useLocalMatchData(db, matchId);
+      return null;
+    }
+    render(<Probe />);
+    await waitFor(() => expect(shownData?.match?.gameNumber).toBe(2010));
+    await settle();
+    const reads = slow.reads;
+    const shownRow = shownData.match;
+    const ofShownRow = () => stable.args.filter((row) => row === shownRow).length;
+    expect(ofShownRow()).toBe(1);
+    const get = vi.spyOn(db.matches, 'get');
+    stable.args.length = 0;
+    for (let i = 0; i < 5; i++) {
+      await db.matches.update(matchId, { updatedAt: new Date(Date.now() + i).toISOString() });
+      await settle();
+    }
+    // every heartbeat checked the row and read nothing more
+    expect(slow.reads).toBe(reads);
+    const checks = get.mock.calls.filter(([key]) => key === matchId).length;
+    expect(checks).toBe(5);
+    // the row each check read, never the shown one again (it was 2 a check)
+    expect(ofShownRow()).toBe(0);
+    expect(stable.args.filter((row: any) => row?.gameNumber === 2010)).toHaveLength(checks);
   });
 
   it("deleting the shown match shows it as not on this device", async () => {
