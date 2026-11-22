@@ -1903,6 +1903,24 @@ export default function App() {
     setShowManualAdjustments(true)
   }
 
+  // Leaving the match info / corrections (Close, Save): back to Match End, or
+  // to the scoring screen once it has read the match (preloadScoreboard), so
+  // its remount paints the match instead of "Loading..." while it reads every
+  // event. Save calls onSave and onClose one after the other: one read.
+  const scoreboardReturn = useRef(null)
+  const leaveManualAdjustments = async () => {
+    const from = manualAdjustmentsFrom
+    if (from === 'scoreboard') {
+      if (!scoreboardReturn.current) {
+        scoreboardReturn.current = preloadScoreboard(matchId).finally(() => { scoreboardReturn.current = null })
+      }
+      await scoreboardReturn.current
+    }
+    setShowManualAdjustments(false)
+    if (from !== 'scoreboard') setShowMatchEnd(true)
+    setManualAdjustmentsFrom('matchEnd')
+  }
+
   // The memoized scoring screen's callbacks: one identity, App's newest closure
   const scoreboardFinishSet = useLatestCallback(finishSet)
   const scoreboardOpenSetup = useLatestCallback(openMatchSetup)
@@ -4032,16 +4050,8 @@ export default function App() {
                   matchId={matchId}
                   // from the scoreboard during the match: the match info alone
                   {...(manualAdjustmentsFrom === 'scoreboard' ? { initialTab: 'info', tabIds: ['info'] } : {})}
-                  onClose={() => {
-                    setShowManualAdjustments(false)
-                    if (manualAdjustmentsFrom !== 'scoreboard') setShowMatchEnd(true)
-                    setManualAdjustmentsFrom('matchEnd')
-                  }}
-                  onSave={() => {
-                    setShowManualAdjustments(false)
-                    if (manualAdjustmentsFrom !== 'scoreboard') setShowMatchEnd(true)
-                    setManualAdjustmentsFrom('matchEnd')
-                  }}
+                  onClose={leaveManualAdjustments}
+                  onSave={leaveManualAdjustments}
                 />
               ) : showMatchEnd && matchId ? (
                 <MatchEnd

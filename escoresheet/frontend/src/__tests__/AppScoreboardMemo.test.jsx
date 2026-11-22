@@ -10,9 +10,10 @@
 // App render: no memo, no state of its own).
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
-import { waitFor, cleanup, act } from '@testing-library/react'
-import { offline, online, mountApp, sleep } from './appMount'
+import { waitFor, cleanup, act, fireEvent } from '@testing-library/react'
+import { offline, online, mountApp, sleep, button } from './appMount'
 import { db } from '../db/db'
+import { preloadScoreboard } from '../components/Scoreboard'
 import { seedMatch, reloadInto } from './selfCheckFixtures'
 
 const seen = vi.hoisted(() => ({ scoreboard: [], app: 0 }))
@@ -111,10 +112,25 @@ describe('App renders stop at the scoring screen', () => {
     expect((await db.matches.get(matchId)).status).toBe('ended')
   })
 
-  it('onOpenMatchInfo opens the match info over the scoring screen', async () => {
-    await openScoringScreen()
+  it('onOpenMatchInfo opens the match info; Close comes back once the scoreboard has read the match', async () => {
+    const matchId = await openScoringScreen()
     const first = seen.scoreboard[0]
     await act(async () => { first.onOpenMatchInfo() })
-    await waitFor(() => expect(stubShown()).toBe(false))
+    await waitFor(() => expect(button('Close')).toBeTruthy())
+    expect(stubShown()).toBe(false)
+
+    // the scoreboard's read (preloadScoreboard) is under way: the match info stays
+    let readDone
+    vi.mocked(preloadScoreboard).mockClear()
+    vi.mocked(preloadScoreboard).mockImplementationOnce(() => new Promise(resolve => { readDone = resolve }))
+    fireEvent.click(button('Close'))
+    await waitFor(() => expect(preloadScoreboard).toHaveBeenCalledWith(matchId))
+    await sleep(200)
+    expect(stubShown()).toBe(false)
+    expect(button('Close')).toBeTruthy()
+    // read: the scoring screen, at once
+    await act(async () => { readDone() })
+    await waitFor(() => expect(stubShown()).toBe(true))
+    expect(preloadScoreboard).toHaveBeenCalledTimes(1)
   })
 })
