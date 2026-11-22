@@ -154,3 +154,58 @@ describe('the support timeline of a captured session', () => {
     expect(getBufferedLogs().filter(e => e.category === 'ui').map(e => e.type)).toEqual(expect.arrayContaining(['touchstart', 'touchend', 'mousedown', 'mouseup', 'click', 'touchmove', 'scroll', 'focus', 'blur', 'keydown', 'input', 'change']))
   })
 })
+
+describe('what a captured entry keeps (performance pass, 22.11)', () => {
+  const LIGHT = ['touchstart', 'touchend', 'mousedown', 'mouseup', 'touchmove', 'scroll', 'focus', 'blur']
+  const newest = (type) => getBufferedLogs().filter(e => e.category === 'ui' && e.type === type).at(-1)
+
+  it('a press, move, scroll, focus or blur: tag, id and component, no text, path, classes or data', () => {
+    document.body.innerHTML = PAGE
+    const panel = $('#home-panel')
+    fireEvent.touchStart(panel, touch(1, 2))
+    fireEvent.touchEnd(panel, { touches: [], changedTouches: [{ clientX: 1, clientY: 2 }] })
+    fireEvent.mouseDown(panel)
+    fireEvent.mouseUp(panel)
+    step(200)
+    fireEvent.touchMove(panel, touch(3, 4))
+    step(600)
+    fireEvent.scroll($('#scroller'))
+    fireEvent.focus($('input[name="remarks"]'))
+    fireEvent.blur($('input[name="remarks"]'))
+    for (const type of LIGHT) {
+      const e = newest(type)
+      expect(e, type).toBeTruthy()
+      expect(Object.keys(e.target).sort(), type).toEqual(['ariaLabel', 'id', 'name', 'tagName', 'type'])
+      expect(JSON.stringify(e.target), type).not.toMatch(/Musterdorf|771234|team-panel|court/)
+    }
+    expect(newest('touchstart').target).toMatchObject({ tagName: 'div', id: 'home-panel' })
+    expect(newest('touchstart').component).toBe('Scoreboard')
+    expect(newest('focus').target).toMatchObject({ tagName: 'input', name: 'remarks', type: 'text' })
+    // the payload is as before (where the finger was)
+    expect(newest('touchstart').payload).toMatchObject({ touches: 1, changedTouches: 1, clientX: 1, clientY: 2 })
+  })
+
+  it('a press on a PIN field is still one of a secret field', async () => {
+    document.body.innerHTML = PAGE
+    const { isSecretEntry } = await import('../comprehensiveLogger')
+    const pin = $('input[type="password"]')
+    fireEvent.touchStart(pin, touch(5, 5))
+    fireEvent.focus(pin)
+    expect(isSecretEntry(newest('touchstart'))).toBe(true)
+    expect(isSecretEntry(newest('focus'))).toBe(true)
+    // by its label too
+    document.body.insertAdjacentHTML('beforeend', '<input id="ref-pin-field" type="text" aria-label="Referee PIN">')
+    fireEvent.mouseDown($('#ref-pin-field'))
+    expect(isSecretEntry(newest('mousedown'))).toBe(true)
+  })
+
+  it('a tap (click) keeps its text, path and component as before, the PIN in its text redacted', () => {
+    document.body.innerHTML = PAGE
+    fireEvent.click($('#home-panel'))
+    const e = newest('click')
+    expect(e.component).toBe('Scoreboard')
+    expect(e.target).toMatchObject({ tagName: 'div', id: 'home-panel', path: expect.stringContaining('div#home-panel') })
+    expect(e.target.textContent).toMatch(/^VBC Musterdorf 12 set 2/)
+    expect(e.target.textContent).not.toContain('771234')
+  })
+})
