@@ -106,6 +106,32 @@ describe('fitBenchColumn: the same factor as the full search, from any start', (
     expect(cases).toBe(heights.length * fixeds.length * squaresList.length ** 2)
   })
 
+  it('measures less: two reads for the run the observer starts after a fit, fewer over the grid', () => {
+    let reads = 0
+    let fullReads = 0
+    for (const height of heights) {
+      for (const fixed of fixeds) {
+        for (const before of squaresList) {
+          for (const squares of squaresList) {
+            const col = changingColumn({ height, fixed, squares: before })
+            fitBenchColumn(col)
+            col.content = { fixed, squares }
+            col.reads = 0
+            fitBenchColumn(col)
+            reads += col.reads
+            const fits = fitsWith(height, col.content)
+            fullSearch((f) => { fullReads++; return fits(f) })
+            // the squares changed size, so the observer fits again: same content
+            col.reads = 0
+            fitBenchColumn(col)
+            expect(col.reads).toBeLessThanOrEqual(2)
+          }
+        }
+      }
+    }
+    expect(reads).toBeLessThan(fullReads)
+  })
+
   it('after the other column set a smaller shared factor on this one', () => {
     for (const height of heights) {
       for (const squares of squaresList) {
