@@ -18406,7 +18406,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             height: '100%',
                             background: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                             borderRadius: '4px',
-                            transition: 'width 1s linear, background 0.3s',
+                            transition: 'background 0.3s', // steps once a second: a width glide laid out every frame
                             marginLeft: 'auto'
                           }} />
                         </div>
@@ -18444,7 +18444,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         height: '100%',
                         background: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
-                        transition: 'width 1s linear, background 0.3s',
+                        transition: 'background 0.3s', // steps once a second: a width glide laid out every frame
                         marginLeft: 'auto'
                       }} />
                     </div>
@@ -18509,7 +18509,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         height: '100%',
                         background: seconds <= 10 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
-                        transition: 'width 1s linear, background 0.3s',
+                        transition: 'background 0.3s', // steps once a second: a width glide laid out every frame
                         marginLeft: 'auto'
                       }} />
                     </div>
