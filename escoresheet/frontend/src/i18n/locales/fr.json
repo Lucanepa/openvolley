@@ -1847,6 +1847,14 @@
     "diagnosticsExportFailed": "Le diagnostic n’a pas pu être exporté."
   },
   "matchEnd": {
+    "technicalRemarks": {
+      "title": "Remarques techniques",
+      "hint": "Non imprimées sur la feuille de match",
+      "add": "Ajouter une remarque technique",
+      "empty": "Aucune remarque technique.",
+      "intro": "Conservée avec le match et envoyée avec la feuille de match finale, sans y être imprimée. Les signatures restent.",
+      "saveFailed": "La remarque technique n’a pas pu être enregistrée."
+    },
     "globalNotStored": "La feuille de match n’a pas pu être enregistrée en ligne. Elle reste sur cet appareil : télécharge le PDF maintenant.",
     "title": "Match terminé",
     "winner": "Vainqueur",
@@ -3184,7 +3192,7 @@
       "a_saveChanges": "Les corrections sont enregistrées une par une quand tu les confirmes. Les modifications dans « Équipes » et « Info match » sont enregistrées ensemble avec « Enregistrer les modifications » en haut. « Fermer » demande avant d'abandonner des modifications non enregistrées.",
       "tip_saveChanges": "Enregistre les modifications de « Équipes » et « Info match ».",
       "q_whereCorrections": "Où corriger une erreur ?",
-      "a_whereCorrections": "Pendant le match : Match › « Corrections » (le tableau de correction sur une tablette ou un ordinateur, la liste sur un téléphone), ou Match › « Revenir en arrière » quand les arbitres annulent une partie du set. À la fin du match : le bouton « Corrections ». La liste enregistre chaque correction quand tu la confirmes, le tableau quand tu appuies sur « Enregistrer ». Chaque correction figure dans le journal des corrections pour l’arbitre.",
+      "a_whereCorrections": "Pendant le match : Match › « Corrections » (le tableau de correction sur une tablette ou un ordinateur, la liste sur un téléphone), ou Match › « Revenir en arrière » quand les arbitres annulent une partie du set. À la fin du match : le bouton « Corrections ». La liste enregistre chaque correction quand tu la confirmes, le tableau quand tu appuies sur « Enregistrer ». Chaque correction est une remarque technique : listée dans les corrections et à la fin du match, non imprimée sur la feuille de match, envoyée avec l’e-mail de la feuille de match finale. Une ligne que le règlement veut sur papier va dans les remarques ; pour toute autre correction, choisis « Remarque sur la feuille de match » pour l’y noter aussi.",
       "q_missedPoint": "J'ai oublié un point pendant le set ?",
       "a_missedPoint": "Sur le tableau de correction, appuie sur « + » pour l’équipe ; dans la liste, sur « Ajouter un point oublié ». Il est ajouté au score actuel avec sa rotation et son service, comme avec le bouton de point. Si le dernier point est allé à la mauvaise équipe, appuie sur « Le dernier point a été donné à la mauvaise équipe ».",
       "q_serveSidesLineup": "Comment corriger le service, les côtés ou la formation ?",
@@ -5934,6 +5942,15 @@
     }
   },
   "corrections": {
+    "destination": {
+      "label": "Où le noter ?",
+      "technical": "Remarque technique (non imprimée)",
+      "sheet": "Remarque sur la feuille de match",
+      "locked": "Le règlement exige cette remarque sur la feuille de match."
+    },
+    "technical": {
+      "hint": "Non imprimées sur la feuille de match"
+    },
     "teamLetter": "Équipe {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",
     "score": "{{first}} {{a}}:{{b}} {{second}}",
@@ -6004,6 +6021,7 @@
       "disqualification": "disqualification"
     },
     "remark": {
+      "manualCorrectionWhat": "{{what}} (correction manuelle).",
       "exceptionalSub": "Équipe {{team}}, set {{set}}, résultat {{score}} : le/la joueur/euse n° {{out}} est remplacé/e exceptionnellement par le/la joueur/euse n° {{in}} pour cause de {{reason}}.",
       "liberoUnable": "Équipe {{team}}, set {{set}}, résultat {{score}} : le libéro n° {{n}} est déclaré inapte à jouer.",
       "liberoRedesignated": "Équipe {{team}}, set {{set}}, résultat {{score}} : le/la joueur/euse n° {{n}} est désigné/e comme nouveau libéro.",
@@ -6014,6 +6032,7 @@
       "result": "Résultat {{score}}"
     },
     "log": {
+      "technicalRemarkAdded": "Remarque technique : « {{text}} »",
       "unknown": "Correction",
       "added": "Ajouté : {{what}}",
       "removed": "Supprimé : {{what}}",
@@ -6109,6 +6128,7 @@
     "saved": "Correction enregistrée",
     "saveError": "La correction n'a pas pu être enregistrée : {{message}}",
     "section": {
+      "technical": "Remarques techniques",
       "scoreServe": "Score et service",
       "sets": "Résultats des sets",
       "lineup": "Formation",
@@ -6129,6 +6149,7 @@
       "remark": "Ajouter une remarque"
     },
     "empty": {
+      "technical": "Pas encore de remarque technique.",
       "timeouts": "Aucun temps mort enregistré.",
       "substitutions": "Aucun remplacement enregistré.",
       "sanctions": "Aucune sanction enregistrée.",
@@ -6373,6 +6394,7 @@
     }
   },
   "correctionBoard": {
+    "saveHintTechnical": "Chaque modification figure dans les remarques techniques, pas sur la feuille de match.",
     "title": "Tableau de correction",
     "list": "Liste",
     "boardView": "Tableau",

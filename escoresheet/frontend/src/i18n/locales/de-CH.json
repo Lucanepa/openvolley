@@ -1848,6 +1848,14 @@
     "diagnosticsExportFailed": "D Diagnose hät nöd chönne exportiert werde."
   },
   "matchEnd": {
+    "technicalRemarks": {
+      "title": "Technischi Bemerkige",
+      "hint": "Wird nöd ufs Matchblatt druckt",
+      "add": "Technischi Bemerkig hinzuefüege",
+      "empty": "Kei technischi Bemerkige.",
+      "intro": "Wird mit em Spiil gspeicheret und mit em fertige Matchblatt verschickt, aber nöd druf druckt. D Unterschrifte bliibed.",
+      "saveFailed": "D technischi Bemerkig het nöd chöne gspeicheret werde."
+    },
     "globalNotStored": "Der Spielbericht konnte nicht online gespeichert werden. Er bleibt auf diesem Gerät: Lade jetzt das PDF herunter.",
     "title": "Spiil beendet",
     "winner": "Gwünner",
@@ -3185,7 +3193,7 @@
       "a_saveChanges": "Korrekture werded einzeln gspeicheret, wänn du si bestätigsch. Änderige i «Teams» und «Spiilinfo» speicheret «Änderige speichere» obe zäme. «Schliesse» fröget nache, bevor nöd gspeicherti Änderige verlore gönd.",
       "tip_saveChanges": "Speicheret d Änderige i «Teams» und «Spiilinfo».",
       "q_whereCorrections": "Wo korrigier ich en Fähler?",
-      "a_whereCorrections": "Während em Spiil: Spiil › «Korrekture» (ufem Tablet oder Computer s Korrektur-Board, ufem Handy d Liste), oder Spiil › «Zrugg», wänn d Schiris en Teil vom Satz zruggnämed. Am Spiilend: de Chnopf «Korrekture». D Liste speicheret jedi Korrektur, wänn du si bestätigsch, s Board, wänn du uf «Speichere» tippsch. Jedi Korrektur staht im Korrekturprotokoll für de Schiri.",
+      "a_whereCorrections": "Während em Spiil: Spiil › «Korrekture» (ufem Tablet oder Computer s Korrektur-Board, ufem Handy d Liste), oder Spiil › «Zrugg», wänn d Schiris en Teil vom Satz zruggnämed. Am Spiilend: de Chnopf «Korrekture». D Liste speicheret jedi Korrektur, wänn du si bestätigsch, s Board, wänn du uf «Speichere» tippsch. Jedi Korrektur isch e technischi Bemerkig: ufgfüehrt i de Korrekture und am Spiilend, nöd ufs Matchblatt druckt, mit de E-Mail vom fertige Matchblatt verschickt. E Ziile, wo d Regle uf Papier verlanged, chunnt i d Bemerkige; bi jeder andere Korrektur wählsch du «Bemerkig uf em Matchblatt», damit si au det staht.",
       "q_missedPoint": "Ich ha im Satz en Punkt vergässe?",
       "a_missedPoint": "Tipp im Korrektur-Board bim Team uf «+», i de Liste uf «Vergässene Punkt hinzuefüege». Er wird bim aktuelle Spielstand mit Rotation und Ufschlag iitreit, wie mit em Punkt-Chnopf. Isch de letscht Punkt as falsch Team gange, tipp uf «Letschte Punkt isch as falsch Team gange».",
       "q_serveSidesLineup": "Wie korrigier ich Ufschlag, Siite oder Ufstellig?",
@@ -5935,6 +5943,15 @@
     }
   },
   "corrections": {
+    "destination": {
+      "label": "Wo wird das notiert?",
+      "technical": "Technischi Bemerkig (wird nöd druckt)",
+      "sheet": "Bemerkig uf em Matchblatt",
+      "locked": "D Regle verlanged das uf em Matchblatt."
+    },
+    "technical": {
+      "hint": "Wird nöd ufs Matchblatt druckt"
+    },
     "teamLetter": "Team {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",
     "score": "{{first}} {{a}}:{{b}} {{second}}",
@@ -6005,6 +6022,7 @@
       "disqualification": "Disqualifikation"
     },
     "remark": {
+      "manualCorrectionWhat": "{{what}} (manuelle Korrektur).",
       "exceptionalSub": "Team {{team}}, Satz {{set}}, Resultat {{score}}: Spieler/in Nr. {{out}} wird wegen {{reason}} ausserordentlich durch Spieler/in Nr. {{in}} ersetzt.",
       "liberoUnable": "Team {{team}}, Satz {{set}}, Resultat {{score}}: Libero Nr. {{n}} wird spielunfähig erklärt.",
       "liberoRedesignated": "Team {{team}}, Satz {{set}}, Resultat {{score}}: Spieler/in Nr. {{n}} wird als neue/r Libero bestimmt.",
@@ -6015,6 +6033,7 @@
       "result": "Resultat {{score}}"
     },
     "log": {
+      "technicalRemarkAdded": "Technischi Bemerkig: «{{text}}»",
       "unknown": "Korrektur",
       "added": "Hinzuegfüegt: {{what}}",
       "removed": "Entfernt: {{what}}",
@@ -6110,6 +6129,7 @@
     "saved": "Korrektur gspeicheret",
     "saveError": "D Korrektur hät nöd chöne gspeicheret werde: {{message}}",
     "section": {
+      "technical": "Technischi Bemerkige",
       "scoreServe": "Spielstand und Ufschlag",
       "sets": "Satzresultat",
       "lineup": "Ufstellig",
@@ -6130,6 +6150,7 @@
       "remark": "Bemerkig hinzuefüege"
     },
     "empty": {
+      "technical": "No kei technischi Bemerkige.",
       "timeouts": "Kei Timeouts erfasst.",
       "substitutions": "Kei Wächsel erfasst.",
       "sanctions": "Kei Sanktione erfasst.",
@@ -6374,6 +6395,7 @@
     }
   },
   "correctionBoard": {
+    "saveHintTechnical": "Jedi Änderig staht i de technische Bemerkige, nöd uf em Matchblatt.",
     "title": "Korrektur-Board",
     "list": "Liste",
     "boardView": "Board",

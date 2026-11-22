@@ -1848,6 +1848,14 @@
     "diagnosticsExportFailed": "Non è stato possibile esportare la diagnostica."
   },
   "matchEnd": {
+    "technicalRemarks": {
+      "title": "Osservazioni tecniche",
+      "hint": "Non stampate sul referto",
+      "add": "Aggiungi osservazione tecnica",
+      "empty": "Nessuna osservazione tecnica.",
+      "intro": "Conservata con la partita e inviata con il referto finale, senza esservi stampata. Le firme restano.",
+      "saveFailed": "Non è stato possibile salvare l’osservazione tecnica."
+    },
     "globalNotStored": "Il referto non è stato salvato online. Resta su questo dispositivo: scarica subito il PDF.",
     "title": "Partita terminata",
     "winner": "Vincitore",
@@ -3190,7 +3198,7 @@
       "a_saveChanges": "Le correzioni vengono salvate una per una quando le confermi. Le modifiche in «Squadre» e «Info partita» si salvano insieme con «Salva le modifiche» in alto. «Chiudi» chiede prima di scartare modifiche non salvate.",
       "tip_saveChanges": "Salva le modifiche in «Squadre» e «Info partita».",
       "q_whereCorrections": "Dove correggo un errore?",
-      "a_whereCorrections": "Durante la partita: Partita › «Correzioni» (il tabellone delle correzioni su tablet o computer, l’elenco sul telefono), oppure Partita › «Tornare indietro» quando gli arbitri annullano una parte del set. A fine partita: il pulsante «Correzioni». L’elenco salva ogni correzione quando la confermi, il tabellone quando tocchi «Salva». Ogni correzione compare nel registro delle correzioni per l’arbitro.",
+      "a_whereCorrections": "Durante la partita: Partita › «Correzioni» (il tabellone delle correzioni su tablet o computer, l’elenco sul telefono), oppure Partita › «Tornare indietro» quando gli arbitri annullano una parte del set. A fine partita: il pulsante «Correzioni». L’elenco salva ogni correzione quando la confermi, il tabellone quando tocchi «Salva». Ogni correzione è un’osservazione tecnica: elencata nelle correzioni e a fine partita, non stampata sul referto, inviata con l’e-mail del referto finale. Una riga che il regolamento vuole su carta va nelle osservazioni; per ogni altra correzione scegli «Osservazione sul referto» per annotarla anche lì.",
       "q_missedPoint": "Ho dimenticato un punto durante il set?",
       "a_missedPoint": "Sul tabellone delle correzioni tocca «+» per la squadra; nell’elenco, «Aggiungi un punto dimenticato». Viene aggiunto al punteggio attuale con rotazione e servizio, come con il pulsante del punto. Se l’ultimo punto è andato alla squadra sbagliata, tocca «L’ultimo punto è andato alla squadra sbagliata».",
       "q_serveSidesLineup": "Come correggo il servizio, i lati o la formazione?",
@@ -5940,6 +5948,15 @@
     }
   },
   "corrections": {
+    "destination": {
+      "label": "Dove lo annoti?",
+      "technical": "Osservazione tecnica (non stampata)",
+      "sheet": "Osservazione sul referto",
+      "locked": "Il regolamento richiede questa osservazione sul referto."
+    },
+    "technical": {
+      "hint": "Non stampate sul referto"
+    },
     "teamLetter": "Squadra {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",
     "score": "{{first}} {{a}}:{{b}} {{second}}",
@@ -6010,6 +6027,7 @@
       "disqualification": "squalifica"
     },
     "remark": {
+      "manualCorrectionWhat": "{{what}} (correzione manuale).",
       "exceptionalSub": "Squadra {{team}}, set {{set}}, risultato {{score}}: il/la giocatore/trice n. {{out}} è sostituito/a eccezionalmente dal/la giocatore/trice n. {{in}} per {{reason}}.",
       "liberoUnable": "Squadra {{team}}, set {{set}}, risultato {{score}}: il libero n. {{n}} è dichiarato inabile a giocare.",
       "liberoRedesignated": "Squadra {{team}}, set {{set}}, risultato {{score}}: il/la giocatore/trice n. {{n}} è designato/a come nuovo libero.",
@@ -6020,6 +6038,7 @@
       "result": "Risultato {{score}}"
     },
     "log": {
+      "technicalRemarkAdded": "Osservazione tecnica: «{{text}}»",
       "unknown": "Correzione",
       "added": "Aggiunto: {{what}}",
       "removed": "Rimosso: {{what}}",
@@ -6115,6 +6134,7 @@
     "saved": "Correzione salvata",
     "saveError": "Impossibile salvare la correzione: {{message}}",
     "section": {
+      "technical": "Osservazioni tecniche",
       "scoreServe": "Punteggio e servizio",
       "sets": "Risultati dei set",
       "lineup": "Formazione",
@@ -6135,6 +6155,7 @@
       "remark": "Aggiungi osservazione"
     },
     "empty": {
+      "technical": "Ancora nessuna osservazione tecnica.",
       "timeouts": "Nessun tempo di riposo registrato.",
       "substitutions": "Nessuna sostituzione registrata.",
       "sanctions": "Nessuna sanzione registrata.",
@@ -6379,6 +6400,7 @@
     }
   },
   "correctionBoard": {
+    "saveHintTechnical": "Ogni modifica figura nelle osservazioni tecniche, non sul referto.",
     "title": "Tabellone delle correzioni",
     "list": "Elenco",
     "boardView": "Tabellone",
