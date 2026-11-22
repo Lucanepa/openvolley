@@ -312,7 +312,10 @@ export default function App() {
   // queue write does not re-render the whole app); it only needs to know
   // whether the cloud is waiting for a sign-in.
   const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
-  const backup = useAutoBackup(matchId)
+  // The native backup status (folder, last file, error) is shown on Home, in
+  // Match Setup and in the Options dialog only: while scoring, App does not
+  // re-render at each backup file (one after nearly every scoring write)
+  const backup = useAutoBackup(matchId, { watchStatus: !matchId || showMatchSetup || homeOptionsModal })
   const { unlock: unlockBackup, dialog: backupUnlockDialog } = useBackupUnlock()
   // Backup file for a restore: the desktop app opens its own dialog in the
   // backup folder; elsewhere the browser file picker. A whole-database export
