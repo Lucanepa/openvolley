@@ -329,9 +329,11 @@ describe('pictures before the capture (logo, signatures)', () => {
   })
 })
 
-// The capture's pixel ratio (owner 22.11.2026): 1.5 in the Android app only,
-// the page itself or the sheet in the app's in-app view (a same-origin
-// iframe: the app's window holds Capacitor); 2 everywhere else
+// The capture's pixel ratio (owner 22.11.2026): Options › Effects and speed ›
+// Sharp PDF (utils/lookSettings pdfSharpFor), read from the window that makes
+// the PDF; never set, 1.5 in the Android app only, the page itself or the
+// sheet in the app's in-app view (a same-origin iframe: the app's window
+// holds Capacitor), 2 everywhere else
 describe('capturePixelRatio', () => {
   const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; SM-T220 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Safari/537.36'
   const IPAD_UA = 'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
@@ -368,5 +370,26 @@ describe('capturePixelRatio', () => {
     // jsdom's own window
     expect(capturePixelRatio(window)).toBe(2)
     expect(capturePixelRatio(undefined)).toBe(2)
+  })
+
+  it('the device\'s Sharp PDF switch, read from the window\'s storage when the PDF is made', () => {
+    const store = (value: string | null) => ({ getItem: (k: string) => (k === 'ov.look.pdfSharp' ? value : null) })
+    // set off on a computer: 1.5; set on in the Android app: 2
+    expect(capturePixelRatio(appWindow(false, DESKTOP_UA, { localStorage: store('false') }))).toBe(1.5)
+    expect(capturePixelRatio(appWindow(true, ANDROID_UA, { localStorage: store('true') }))).toBe(2)
+    // never set, or unreadable: the default
+    expect(capturePixelRatio(appWindow(true, ANDROID_UA, { localStorage: store(null) }))).toBe(1.5)
+    expect(capturePixelRatio(appWindow(false, DESKTOP_UA, { localStorage: store('maybe') }))).toBe(2)
+    const locked = appWindow(false, DESKTOP_UA)
+    Object.defineProperty(locked, 'localStorage', { get: () => { throw new Error('SecurityError') } })
+    expect(capturePixelRatio(locked)).toBe(2)
+    // jsdom's window: the app's localStorage
+    localStorage.setItem('ov.look.pdfSharp', 'false')
+    try {
+      expect(capturePixelRatio(window)).toBe(1.5)
+    } finally {
+      localStorage.removeItem('ov.look.pdfSharp')
+    }
+    expect(capturePixelRatio(window)).toBe(2)
   })
 })

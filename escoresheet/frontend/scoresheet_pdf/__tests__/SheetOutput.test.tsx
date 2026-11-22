@@ -359,6 +359,27 @@ describe('Save PDF', () => {
     }
   })
 
+  // Options › Effects and speed › Sharp PDF off (utils/lookSettings): the
+  // device's choice, read when the PDF is made
+  it('with Sharp PDF off on this device the capture is made at 1.5, on again at 2', async () => {
+    const htmlToImage: any = await import('html-to-image')
+    for (const [stored, ratio] of [['false', 1.5], ['true', 2]] as const) {
+      htmlToImage.toCanvas.mockClear()
+      pdfCalls.length = 0
+      localStorage.setItem('ov.look.pdfSharp', stored)
+      try {
+        const got: any[] = []
+        const { unmount } = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+        await waitFor(() => expect(got).toHaveLength(1))
+        expect(htmlToImage.toCanvas.mock.calls[0][1].pixelRatio).toBe(ratio)
+        expect(pdfCalls.find(c => c[0] === 'addImage')).toEqual(['addImage', 'JPEG', 5, 5, 410, 287])
+        unmount()
+      } finally {
+        localStorage.removeItem('ov.look.pdfSharp')
+      }
+    }
+  })
+
   it('a lean capture that fails in Chromium is tried once more with the lean list, never with the full copy (~8x larger)', async () => {
     const htmlToImage: any = await import('html-to-image')
     htmlToImage.toCanvas.mockClear()

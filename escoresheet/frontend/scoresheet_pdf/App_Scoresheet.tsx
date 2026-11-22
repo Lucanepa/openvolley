@@ -390,8 +390,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       stillShown();
 
       // pixelRatio 2: ~190 dpi on A3, sharp enough for print, a reasonable file
-      // size; 1.5 in the Android app (the hall tablet; capturePixelRatio,
-      // utils/pdfCapture.ts). The PDF places the picture in mm, at any ratio.
+      // size; 1.5 with Options › Effects and speed › Sharp PDF off, the
+      // default in the Android app (capturePixelRatio, utils/pdfCapture.ts:
+      // the device's choice, read now). The PDF places the picture in mm, at
+      // any ratio.
       const pixelRatio = capturePixelRatio(window);
       const capture = (props: string[]) => htmlToImage.toCanvas(sheet!, {
         pixelRatio,
