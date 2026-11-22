@@ -66,9 +66,9 @@ describe('Line-up buttons: the flash runs on the compositor', () => {
     expect(wide).toMatch(/animation-name: lineupGlowWide;/)
   })
 
-  it('stands still under reduced motion, over the inline animation', () => {
+  it('flashes under reduced motion too, as before the perf pass (no rule stops it)', () => {
     const blocks = reducedMotionBlocks().join('\n')
-    expect(rulesFor('.lineup-button', blocks).join('\n')).toMatch(/animation: none !important;/)
+    expect(blocks).not.toMatch(/lineup/)
   })
 
   it('stands still while the line-up dialog is open over it (both buttons)', () => {
@@ -101,9 +101,17 @@ describe('Missing signature: the flash runs on the compositor', () => {
 
   it('stands still under its dialog (data-still) and, strong amber, under reduced motion', () => {
     expect(rulesFor('.missing-signature-button[data-still]::before').join('\n')).toMatch(/animation: none;/)
-    const reduced = rulesFor('.missing-signature-button::before', reducedMotionBlocks().join('\n')).join('\n')
-    expect(reduced).toMatch(/animation: none;/)
-    expect(reduced).toMatch(/opacity: 1;/)
+    // reduced motion: as before the perf pass, the button itself in the
+    // strong amber with its darker border, no layer (its edge over the
+    // border made the rounded corners lighter)
+    const blocks = reducedMotionBlocks().join('\n')
+    const reducedButton = rulesFor('.missing-signature-button', blocks).join('\n')
+    expect(reducedButton).toMatch(/background: #fcd34d;/)
+    expect(reducedButton).toMatch(/border-color: #b45309;/)
+    expect(reducedButton).not.toMatch(/box-shadow/)
+    const reducedLayer = rulesFor('.missing-signature-button::before', blocks).join('\n')
+    expect(reducedLayer).toMatch(/animation: none;/)
+    expect(reducedLayer).toMatch(/display: none;/)
   })
 
   it('the scoring screen stills both buttons while a signing dialog is open', () => {

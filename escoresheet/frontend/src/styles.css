@@ -2086,7 +2086,8 @@ button:disabled {
    are layers of their own that cross-fade (::before the narrow one, ::after
    the wide one). They take the button's own animation (inline, none while
    the line-up dialog is open over it), so the three run in step and stop
-   together; stopped, the button has no glow (as in eink before). */
+   together; stopped, the button has no glow (as in eink before). Reduced
+   motion changes nothing here: the buttons flash and glow, as on main. */
 .lineup-button::before,
 .lineup-button::after {
   content: '';
@@ -2141,14 +2142,6 @@ button:disabled {
 
   50% {
     opacity: 1;
-  }
-}
-
-/* Reduced motion (Android's Remove animations): the Line-up buttons stand
-   still. Their animation is inline, which only !important beats. */
-@media (prefers-reduced-motion: reduce) {
-  .lineup-button {
-    animation: none !important;
   }
 }
 
@@ -2250,12 +2243,18 @@ button:disabled {
   }
 }
 
-/* Reduced motion: no flash, the strong amber stays (without the outer ring) */
+/* Reduced motion: no flash, the strong amber stays, drawn by the button
+   itself as before the perf pass (the layer over the border left a lighter
+   fringe on the rounded corners) */
 @media (prefers-reduced-motion: reduce) {
+  .missing-signature-button {
+    background: #fcd34d;
+    border-color: #b45309;
+  }
+
   .missing-signature-button::before {
     animation: none;
-    opacity: 1;
-    box-shadow: inset 0 0 0 2px #b45309;
+    display: none;
   }
 }
 
