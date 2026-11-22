@@ -1,16 +1,21 @@
-// Lite graphics for the Android app: <html> carries ov-lite, and then
+// Lite graphics: <html> carries ov-lite while Options › Effects and speed ›
+// Blur behind dialogs is off (utils/lookSettings), and then
 //  - dialog scrims dim without their backdrop blur (tailwind.css, at the end);
 //  - the line-up privacy cover on the court is an opaque panel instead of a
 //    blurred one (privacyCoverFill, Scoreboard.jsx).
 // The hall tablet (Galaxy Tab A7 Lite, PowerVR GE8320) runs a full-screen
 // two-pass blur for every frame anything under a dialog changes, at least once
-// a second for the toolbar clock. On in the Android app since the owner said
-// yes (performance pass 22.11.2026): LITE_GRAPHICS_ON_ANDROID. Never on the
-// web, the desktop apps or iOS.
+// a second for the toolbar clock. Off by default in the Android app since the
+// owner said yes (performance pass 22.11.2026): LITE_GRAPHICS_ON_ANDROID. On
+// by default on the web, the desktop apps and iOS; the device check
+// (utils/deviceCheck) may recommend otherwise, the scorer decides.
 import { isNativeApp } from './backendConfig'
 import { detectAppPlatform, isInAppView } from './openAppWindow'
 
-/** The owner's call (yes, 22.11.2026): true puts ov-lite on <html> in the Android app. */
+/**
+ * The owner's call (yes, 22.11.2026): true makes the blur's default off in
+ * the Android app (ov-lite on <html> until the scorer turns the blur on).
+ */
 export const LITE_GRAPHICS_ON_ANDROID = true
 
 export const LITE_GRAPHICS_CLASS = 'ov-lite'
@@ -37,19 +42,17 @@ export function inAndroidApp(win = typeof window !== 'undefined' ? window : unde
 }
 
 /**
- * At start (main.jsx): ov-lite on <html> in the Android app while lite
- * graphics are switched on.
- * @param {object} [options] for tests: the document, the switch, the platform
- * @returns {boolean} whether it applied
+ * ov-lite on <html> or not (utils/lookSettings applyLook, at start and at
+ * each change of the blur switch).
+ * @param {boolean} on lite graphics: no blur
+ * @param {Document} [doc]
+ * @returns {boolean} whether <html> carries it now
  */
-export function applyLiteGraphics({
-  doc = typeof document !== 'undefined' ? document : null,
-  enabled = LITE_GRAPHICS_ON_ANDROID,
-  android = isAndroidApp()
-} = {}) {
-  if (!doc || !enabled || !android) return false
-  doc.documentElement.classList.add(LITE_GRAPHICS_CLASS)
-  return true
+export function applyLiteGraphics(on, doc = typeof document !== 'undefined' ? document : null) {
+  const root = doc?.documentElement
+  if (!root) return false
+  root.classList.toggle(LITE_GRAPHICS_CLASS, !!on)
+  return !!on
 }
 
 /** Whether <html> carries ov-lite. */

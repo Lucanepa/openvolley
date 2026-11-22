@@ -1,14 +1,17 @@
-// Lite graphics (utils/liteGraphics): ov-lite on <html> only in the Android
-// app, while LITE_GRAPHICS_ON_ANDROID is on (on since the owner said yes,
-// 22.11.2026). Then dialog scrims lose their backdrop blur (tailwind.css) and
-// the line-up privacy cover is an opaque panel (Scoreboard.jsx). The
-// switch is injected here, so both of its values are covered.
+// Lite graphics (utils/liteGraphics): ov-lite on <html> while the blur switch
+// (utils/lookSettings, Options › Effects and speed) is off; its default is off
+// only in the Android app, while LITE_GRAPHICS_ON_ANDROID is on (on since the
+// owner said yes, 22.11.2026). Then dialog scrims lose their backdrop blur
+// (tailwind.css) and the line-up privacy cover is an opaque panel
+// (Scoreboard.jsx). The defaults per platform and the start-up are pinned in
+// utils/__tests__/lookSettings.test.jsx.
 import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   LITE_GRAPHICS_CLASS, LITE_GRAPHICS_ON_ANDROID, applyLiteGraphics, inAndroidApp, isAndroidApp, liteGraphicsOn, privacyCoverFill
 } from '../utils/liteGraphics'
+import { lookDefaults } from '../utils/lookSettings'
 import { APP_VIEW_ATTR, currentInAppView, openAppWindow } from '../utils/openAppWindow'
 
 const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; SM-T220 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Safari/537.36'
@@ -24,19 +27,12 @@ afterEach(() => {
   document.documentElement.classList.remove(LITE_GRAPHICS_CLASS)
 })
 
-describe('ov-lite: only the Android app, only when switched on', () => {
-  it('is on (owner, 22.11.2026): the Android app gets the class by default', () => {
+describe('ov-lite: the blur switch off', () => {
+  it('is on (owner, 22.11.2026): the Android app has the blur off by default', () => {
     expect(LITE_GRAPHICS_ON_ANDROID).toBe(true)
     nativeApp(true)
-    expect(applyLiteGraphics({ android: isAndroidApp({ userAgent: ANDROID_UA }) })).toBe(true)
-    expect(liteGraphicsOn()).toBe(true)
-    expect(privacyCoverFill()).toEqual({ background: 'rgb(15, 23, 42)' })
-  })
-
-  it('switched off: not even the Android app', () => {
-    nativeApp(true)
-    expect(applyLiteGraphics({ enabled: false, android: isAndroidApp({ userAgent: ANDROID_UA }) })).toBe(false)
-    expect(liteGraphicsOn()).toBe(false)
+    expect(isAndroidApp({ userAgent: ANDROID_UA })).toBe(true)
+    expect(lookDefaults({ androidApp: isAndroidApp({ userAgent: ANDROID_UA }) }).blur).toBe(false)
   })
 
   for (const [where, native, userAgent] of [
@@ -44,41 +40,28 @@ describe('ov-lite: only the Android app, only when switched on', () => {
     ['the iOS app', true, IOS_UA],
     ['the desktop apps and the web', false, DESKTOP_UA]
   ]) {
-    it(`by default: never ${where}`, () => {
+    it(`by default the blur stays on ${where}`, () => {
       nativeApp(native)
-      expect(applyLiteGraphics({ android: isAndroidApp({ userAgent }) })).toBe(false)
+      const android = isAndroidApp({ userAgent })
+      expect(android).toBe(false)
+      expect(lookDefaults({ androidApp: android }).blur).toBe(true)
       expect(liteGraphicsOn()).toBe(false)
       expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
     })
   }
 
-  it('switched on: the Android app gets the class', () => {
-    nativeApp(true)
-    const android = isAndroidApp({ userAgent: ANDROID_UA })
-    expect(android).toBe(true)
-    expect(applyLiteGraphics({ enabled: true, android })).toBe(true)
+  it('applyLiteGraphics puts the class on and takes it off again', () => {
+    expect(applyLiteGraphics(true)).toBe(true)
     expect(document.documentElement.classList.contains(LITE_GRAPHICS_CLASS)).toBe(true)
     expect(liteGraphicsOn()).toBe(true)
+    expect(privacyCoverFill()).toEqual({ background: 'rgb(15, 23, 42)' })
+    expect(applyLiteGraphics(false)).toBe(false)
+    expect(liteGraphicsOn()).toBe(false)
   })
 
-  for (const [where, native, userAgent] of [
-    ['the web on an Android tablet', false, ANDROID_UA],
-    ['the iOS app', true, IOS_UA],
-    ['the desktop apps and the web', false, DESKTOP_UA]
-  ]) {
-    it(`switched on: never ${where}`, () => {
-      nativeApp(native)
-      const android = isAndroidApp({ userAgent })
-      expect(android).toBe(false)
-      expect(applyLiteGraphics({ enabled: true, android })).toBe(false)
-      expect(liteGraphicsOn()).toBe(false)
-    })
-  }
-
-  it('main.jsx applies it at start with the switch as it is', () => {
-    const main = readFileSync(resolve(__dirname, '../main.jsx'), 'utf8')
-    expect(main).toMatch(/^import \{ applyLiteGraphics \} from '\.\/utils\/liteGraphics'$/m)
-    expect(main).toMatch(/^applyLiteGraphics\(\)$/m)
+  it('without a document: nothing', () => {
+    expect(applyLiteGraphics(true, null)).toBe(false)
+    expect(liteGraphicsOn(null)).toBe(false)
   })
 })
 
@@ -95,7 +78,6 @@ describe('the line-up privacy cover', () => {
     const fill = privacyCoverFill()
     expect(fill.backdropFilter).toBeUndefined()
     expect(fill.background).toMatch(/^rgb\(\d+, \d+, \d+\)$/)
-    expect(fill).toEqual({ background: 'rgb(15, 23, 42)' })
   })
 
   it('both tablet covers on the scoring screen take it', () => {

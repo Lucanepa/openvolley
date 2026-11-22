@@ -114,6 +114,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import { privacyCoverFill } from '../utils/liteGraphics'
+import { useLook } from '../utils/lookSettings'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, officialsAsRoles, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { setSummaryFit } from './scoreboard/setSummaryFit'
@@ -569,6 +570,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { vmin } = useScaledLayout()
+  // Options › Effects and speed: the line-up covers (privacyCoverFill) follow
+  // the blur switch at once
+  useLook()
   const { flush: flushSyncQueue } = useSyncQueue({ watchStatus: false })
   const cLogger = useComponentLogging('Scoreboard')
   const { syncState, syncSetEnd, resetSyncState } = useSequentialSync()

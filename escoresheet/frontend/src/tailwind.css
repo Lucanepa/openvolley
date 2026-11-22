@@ -1125,11 +1125,50 @@
   }
 }
 
-/* Lite graphics (html.ov-lite, utils/liteGraphics.js: the Android app, once
-   the owner switches it on): dialog scrims dim without the backdrop blur. On
-   the hall tablet's GPU a full-screen blur is redrawn for every frame that
-   anything under a dialog changes. Unlayered, so it beats the utilities. */
+/* Lite graphics (html.ov-lite, utils/liteGraphics.js: Options › Effects and
+   speed › Blur behind dialogs off, the default in the Android app): dialog
+   scrims dim without the backdrop blur. On the hall tablet's GPU a
+   full-screen blur is redrawn for every frame that anything under a dialog
+   changes. Unlayered, so it beats the utilities. */
 html.ov-lite :is(.backdrop-blur-sm, .backdrop-blur) {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* Animations off (html[data-no-motion], utils/lookSettings.js: Options ›
+   Effects and speed › Animations). Nothing moves: no keyframes, no
+   transitions, no smooth scrolling, also where a component sets its animation
+   inline (only !important beats an inline style). Unlayered, so it beats the
+   kit's and the legacy layer's rules. animation: none, not a 0 s duration: an
+   animation that ends hidden (the rally tap notice fades out, Scoreboard
+   removes it) shows its plain style instead. Spinners still turn (Loader2's
+   animate-spin, the AppSpinner orbit, the inline 'spin' rings): a wait on a
+   slow device should not look like a frozen app, and a rotating ring is drawn
+   by the compositor. Countdowns still count; their bars step instead of
+   gliding. */
+html[data-no-motion] :not(.animate-spin, .svrz-orbit, [style*='animation: spin']),
+html[data-no-motion] ::before,
+html[data-no-motion] ::after {
+  animation: none !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+/* The state cues keep a still look. The Line-up buttons on the court stay
+   green-lit: the narrow glow of the flash at rest (styles.css .lineup-button
+   ::before), the button at full opacity. */
+html[data-no-motion] .lineup-button::before {
+  opacity: 1;
+}
+
+/* Missing signature: the strong amber of the flash's peak, drawn by the button
+   itself, as under reduced motion (styles.css). */
+html[data-no-motion] .missing-signature-button {
+  background: #fcd34d;
+  border-color: #b45309;
+}
+
+html[data-no-motion] .missing-signature-button::before {
+  display: none;
 }
