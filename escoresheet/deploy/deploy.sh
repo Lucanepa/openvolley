@@ -94,7 +94,11 @@ env_value() {  # NAME: its value in .env, quotes and CR stripped (nothing is exp
 }
 set_image() {  # TAG: OV_BACKEND_IMAGE in .env, then check that compose sees it
   sed -i "s|^OV_BACKEND_IMAGE=.*|OV_BACKEND_IMAGE=$1|" "$OV_ENV_FILE"
-  compose config --images | grep -qxF "$1" || die "after editing ${OV_ENV_FILE}, docker compose does not use $1"
+  # The list goes into a variable first: piped into grep -q under pipefail, compose got SIGPIPE whenever
+  # grep matched before the last line (compose lists the images in random order), and the check failed.
+  local images
+  images=$(compose config --images) || die "after editing ${OV_ENV_FILE}, docker compose config failed"
+  grep -qxF "$1" <<<"$images" || die "after editing ${OV_ENV_FILE}, docker compose does not use $1"
 }
 backend_health() {  # prints "<status> <body>" of /health from inside the running ov-backend
   compose exec -T ov-backend node -e '
