@@ -46,6 +46,8 @@ beforeEach(async () => {
 })
 
 const stubShown = () => !!document.querySelector('[data-testid="scoreboard-stub"]')
+// The match info's form locked (ManualAdjustments: its fields in a disabled fieldset)
+const formLocked = (field) => field.matches(':disabled') && field.closest('fieldset')?.disabled === true
 
 // The match on its scoring screen (a reload lands there), every read settled
 async function openScoringScreen(fields = {}) {
@@ -172,6 +174,9 @@ describe('App renders stop at the scoring screen', () => {
     await sleep(300)
     expect(getConfirmSnapshot()).toBeNull()
     expect((await db.matches.get(matchId)).manualChanges).toHaveLength(1)
+    // ... and the form is locked: an edit typed now would go with the page
+    // (review R1). A disabled fieldset disables the field, the focused one too.
+    expect(formLocked(hall)).toBe(true)
 
     await act(async () => { readDone() })
     await waitFor(() => expect(stubShown()).toBe(true))
@@ -182,6 +187,76 @@ describe('App renders stop at the scoring screen', () => {
     expect(after.manualChanges).toHaveLength(1)
     expect((await matchJobs()).length - jobsBefore).toBe(1)
     expect(getConfirmSnapshot()).toBeNull()
+  }, 30000)
+
+  it('Close with nothing changed from the scoreboard: the form is locked until the scoring screen is back', async () => {
+    const matchId = await openScoringScreen({ hall: 'North Hall' })
+    const first = seen.scoreboard[0]
+    await act(async () => { first.onOpenMatchInfo() })
+    let hall
+    await waitFor(() => {
+      hall = screen.getByRole('textbox', { name: 'Hall' })
+      expect(hall.value).toBe('North Hall')
+    }, { timeout: 5000 })
+    expect(formLocked(hall)).toBe(false)
+
+    let readDone
+    vi.mocked(preloadScoreboard).mockClear()
+    vi.mocked(preloadScoreboard).mockImplementationOnce(() => new Promise(resolve => { readDone = resolve }))
+    fireEvent.click(button('Close'))
+    await waitFor(() => expect(preloadScoreboard).toHaveBeenCalledWith(matchId))
+    await waitFor(() => expect(formLocked(hall)).toBe(true))
+    expect(stubShown()).toBe(false)
+    // a second Close does nothing
+    fireEvent.click(button('Close'))
+    await sleep(300)
+    expect(getConfirmSnapshot()).toBeNull()
+
+    await act(async () => { readDone() })
+    await waitFor(() => expect(stubShown()).toBe(true))
+    expect(preloadScoreboard).toHaveBeenCalledTimes(1)
+    expect((await db.matches.get(matchId)).hall).toBe('North Hall')
+  }, 30000)
+
+  it('Close while the changes are being written: no "Discard unsaved changes?", saved once', async () => {
+    const matchId = await openScoringScreen({ hall: 'North Hall' })
+    const first = seen.scoreboard[0]
+    await act(async () => { first.onOpenMatchInfo() })
+    let hall
+    await waitFor(() => {
+      hall = screen.getByRole('textbox', { name: 'Hall' })
+      expect(hall.value).toBe('North Hall')
+    }, { timeout: 5000 })
+    fireEvent.change(hall, { target: { value: 'South Hall' } })
+    await waitFor(() => expect(button('Save changes (1)')).toBeTruthy())
+
+    // the save's first write waits (a busy tablet)
+    let writeGo
+    const realUpdate = db.teams.update.bind(db.teams)
+    const update = vi.spyOn(db.teams, 'update').mockImplementationOnce(async (...args) => {
+      await new Promise(resolve => { writeGo = resolve })
+      return realUpdate(...args)
+    })
+    vi.mocked(preloadScoreboard).mockClear()
+    try {
+      fireEvent.click(button('Save changes (1)'))
+      await waitFor(() => expect(writeGo).toBeTypeOf('function'))
+      expect(formLocked(hall)).toBe(true)
+      fireEvent.click(button('Close'))
+      await sleep(300)
+      expect(getConfirmSnapshot()).toBeNull()
+      expect(preloadScoreboard).not.toHaveBeenCalled()
+      await act(async () => { writeGo() })
+      await waitFor(() => expect(stubShown()).toBe(true))
+    } finally {
+      update.mockRestore()
+    }
+    await sleep(200)
+    expect(getConfirmSnapshot()).toBeNull()
+    expect(preloadScoreboard).toHaveBeenCalledTimes(1)
+    const after = await db.matches.get(matchId)
+    expect(after.hall).toBe('South Hall')
+    expect(after.manualChanges).toHaveLength(1)
   }, 30000)
 
   it('Close and Discard from the scoreboard: nothing is saved while the scoring screen comes back', async () => {
