@@ -1418,6 +1418,7 @@
       },
       "smoother": "Für eine flüssigere Erfassung empfehlen wir: {{list}}.",
       "fuller": "Es schafft die volle Darstellung: {{list}}.",
+      "lessMotion": "Dein Gerät ist auf weniger Bewegung eingestellt, darum empfehlen wir: keine Animationen.",
       "item": {
         "blurOff": "keine Unschärfe hinter Dialogen",
         "blurOn": "Unschärfe hinter Dialogen",

@@ -1425,6 +1425,7 @@
       },
       "smoother": "Per un punteggio più fluido ti consigliamo: {{list}}.",
       "fuller": "Può mostrare l'aspetto completo: {{list}}.",
+      "lessMotion": "Il tuo dispositivo è impostato per meno movimento, quindi ti consigliamo: nessuna animazione.",
       "item": {
         "blurOff": "nessuna sfocatura dietro le finestre",
         "blurOn": "la sfocatura dietro le finestre",

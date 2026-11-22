@@ -113,7 +113,6 @@ export default function HomePage({
         <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">
         {!globalMode && <PendingApprovalBanner className="mb-4" />}
         {selfCheckNotice}
-        {deviceCheckCard}
 
         <Card className="w-full space-y-3">
           {/* Continue: the match in progress on this device, first and in one
@@ -351,6 +350,19 @@ export default function HomePage({
               <Download size={16} aria-hidden="true" className="shrink-0 text-stone-400" />
               <span>{t('home.downloads', 'Download OpenVolley')}</span>
             </a>
+          </div>
+        )}
+
+        {/* The device check's card (App, DeviceCheckCard): out of the flow,
+            so nothing on Home moves or changes width when it comes in, 3-5 s
+            after Home shows, which is when a scorer taps New match or Test
+            match. It hangs under the last row: under everything in one
+            column (where Home is centred, in its empty space below), under
+            Options and Support on a wide screen (home-wide: a slot of no
+            height at the foot of the actions' column) */}
+        {deviceCheckCard && (
+          <div data-testid="device-check-slot" className="relative h-0 home-wide:col-start-2 home-wide:row-start-4 home-wide:self-end">
+            <div className="absolute inset-x-0 top-0 pt-4">{deviceCheckCard}</div>
           </div>
         )}
 

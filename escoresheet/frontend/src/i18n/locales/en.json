@@ -1426,6 +1426,7 @@
       },
       "smoother": "For smoother scoring we recommend: {{list}}.",
       "fuller": "It can show the full look: {{list}}.",
+      "lessMotion": "Your device is set to show less motion, so we recommend: no animations.",
       "item": {
         "blurOff": "no blur behind dialogs",
         "blurOn": "blur behind dialogs",

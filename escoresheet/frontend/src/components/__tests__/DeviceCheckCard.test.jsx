@@ -102,6 +102,41 @@ describe('DeviceCheckCard on Home', () => {
     expect(liteGraphicsOn()).toBe(false)
   })
 
+  it('Apply and Keep as is are touch size (44 px)', () => {
+    setDeviceCheck(result())
+    render(withI18n(<DeviceCheckCard />))
+    for (const id of ['device-check-apply', 'device-check-keep']) expect(screen.getByTestId(id).className).toMatch(/\bh-11\b/)
+  })
+
+  it('a fast device that asks for less motion: said as its own setting, not "for smoother scoring"', () => {
+    const hints = { platform: 'web', cores: 8, memoryGb: 8, dpr: 1, screen: '1280x800', reducedMotion: true }
+    setDeviceCheck(result({ tier: 'fast', hints, recommended: { ...ALL_ON, motion: false } }))
+    render(withI18n(<DeviceCheckCard />))
+    const card = screen.getByTestId('device-check-card')
+    expect(card.textContent).toContain('This device is fast.')
+    expect(card.textContent).not.toContain('For smoother scoring')
+    expect(screen.getByTestId('device-check-less-motion').textContent).toBe('Your device is set to show less motion, so we recommend: no animations.')
+    act(() => { fireEvent.click(screen.getByTestId('device-check-apply')) })
+    expect(root().hasAttribute(NO_MOTION_ATTR)).toBe(true)
+  })
+
+  it('less motion asked for, and something else to change: both lines', () => {
+    const hints = { platform: 'android-app', cores: 8, memoryGb: 4, dpr: 1.5, screen: '1340x800', reducedMotion: true }
+    setLook({ blur: false })
+    setDeviceCheck(result({ tier: 'fast', hints, recommended: { ...ALL_ON, motion: false } }))
+    render(withI18n(<DeviceCheckCard />))
+    const card = screen.getByTestId('device-check-card')
+    expect(card.textContent).toContain('It can show the full look: blur behind dialogs.')
+    expect(screen.getByTestId('device-check-less-motion')).toBeTruthy()
+  })
+
+  it('a slow device that also asks for less motion: no animations stays in the speed list', () => {
+    setDeviceCheck(result({ hints: { ...result().hints, reducedMotion: true } }))
+    render(withI18n(<DeviceCheckCard />))
+    expect(screen.getByTestId('device-check-card').textContent).toContain('no blur behind dialogs, no animations, the clock')
+    expect(screen.queryByTestId('device-check-less-motion')).toBe(null)
+  })
+
   it('in the scorer\'s language', async () => {
     setDeviceCheck(result({ tier: 'ok', recommended: { ...RECOMMENDED.ok } }))
     render(withI18n(<DeviceCheckCard />))

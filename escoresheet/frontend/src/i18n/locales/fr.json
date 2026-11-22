@@ -1424,6 +1424,7 @@
       },
       "smoother": "Pour une saisie plus fluide, nous recommandons : {{list}}.",
       "fuller": "Il peut afficher l'aspect complet : {{list}}.",
+      "lessMotion": "Ton appareil est réglé pour moins de mouvement, nous recommandons donc : pas d'animations.",
       "item": {
         "blurOff": "pas de flou derrière les dialogues",
         "blurOn": "le flou derrière les dialogues",

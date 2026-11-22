@@ -4128,7 +4128,7 @@ export default function App() {
                     continueMatch={(id) => openFromHome(() => continueMatch(id, { checkServer: true }))}
                     continueTestMatch={() => openFromHome(continueTestMatch)}
                     continueInfo={continueInfo}
-                    deviceCheckCard={homeQuiet ? <DeviceCheckCard className="mb-4" /> : null}
+                    deviceCheckCard={homeQuiet ? <DeviceCheckCard /> : null}
                     selfCheckNotice={
                       <SelfCheckNotice
                         report={shownSelfCheck}

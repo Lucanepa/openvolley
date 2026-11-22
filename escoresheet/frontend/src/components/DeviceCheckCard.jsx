@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Gauge } from 'lucide-react'
 import { cn, FOCUS_RING } from '../ui'
 import { setLook, useLook } from '../utils/lookSettings'
-import { answerDeviceCheck, cardChanges, changesFor, useDeviceCheck } from '../utils/deviceCheck'
+import { RECOMMENDED, answerDeviceCheck, cardChanges, changesFor, useDeviceCheck } from '../utils/deviceCheck'
 import { logState } from '../utils/comprehensiveLogger'
 
 /** "a, b and c" in the reader's language (Intl.ListFormat where there is one). */
@@ -35,9 +35,15 @@ export default function DeviceCheckCard({ inOptions = false, className = '' }) {
   const look = useLook()
   const changes = inOptions ? changesFor(result, look) : cardChanges(result, look)
   if (!changes.length) return null
+  // No animations because the device asks for less motion (its own setting,
+  // e.g. Android's "Remove animations"), not because of its speed: said on a
+  // line of its own, so a fast device is not told it needs it to be smoother
+  const motionByDevice = !!result.hints?.reducedMotion && RECOMMENDED[result.tier]?.motion === true &&
+    changes.some((c) => c.name === 'motion' && c.value === false)
+  const listed = motionByDevice ? changes.filter((c) => c.name !== 'motion') : changes
   // something turned off: smoother; only things turned on: the full look
-  const lighter = changes.some((c) => !c.value)
-  const list = joinList(changes.map((c) => t(`home.deviceCheck.item.${c.name}${c.value ? 'On' : 'Off'}`)), i18n?.language)
+  const lighter = listed.some((c) => !c.value)
+  const list = joinList(listed.map((c) => t(`home.deviceCheck.item.${c.name}${c.value ? 'On' : 'Off'}`)), i18n?.language)
   const switches = Object.fromEntries(changes.map((c) => [c.name, c.value]))
   const apply = () => {
     setLook(switches)
@@ -48,14 +54,16 @@ export default function DeviceCheckCard({ inOptions = false, className = '' }) {
     answerDeviceCheck('kept')
     logState('DeviceCheck', 'keep', { tier: result.tier })
   }
-  const miniButton = cn('inline-flex h-8 items-center rounded-lg border border-sky-300 bg-white px-3 text-xs font-semibold text-sky-800 hover:bg-sky-100', FOCUS_RING)
+  // touch size (44 px): the card's one-tap decision, on tablets and phones
+  const miniButton = cn('inline-flex h-11 items-center rounded-lg border border-sky-300 bg-white px-4 text-sm font-semibold text-sky-800 hover:bg-sky-100', FOCUS_RING)
   return (
     <div className={cn('ov-kit', className)}>
       <div role="status" data-testid={inOptions ? 'device-check-options-card' : 'device-check-card'} data-tier={result.tier} className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
         <Gauge size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
           {!inOptions && <p className="m-0 font-semibold">{t(`home.deviceCheck.title.${result.tier}`)}</p>}
-          <p className={cn('m-0', !inOptions && 'mt-0.5')}>{t(lighter ? 'home.deviceCheck.smoother' : 'home.deviceCheck.fuller', { list })}</p>
+          {listed.length > 0 && <p className={cn('m-0', !inOptions && 'mt-0.5')}>{t(lighter ? 'home.deviceCheck.smoother' : 'home.deviceCheck.fuller', { list })}</p>}
+          {motionByDevice && <p data-testid="device-check-less-motion" className={cn('m-0', (!inOptions || listed.length > 0) && 'mt-0.5')}>{t('home.deviceCheck.lessMotion')}</p>}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <button type="button" data-testid="device-check-apply" onClick={apply} className={miniButton}>
               {t('home.deviceCheck.apply')}
