@@ -18,6 +18,7 @@ import LegalLinks from '../../legal/LegalLinks'
 import ActivityLogModal from '../ActivityLogModal'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
+import LookOptions from './LookOptions'
 import { exportNativeFilesToDocuments } from '../../utils/nativeBackup'
 import { configuredRecoveryKey } from '../../utils/backupCrypto/recovery'
 import { useToolMode } from '../../utils/toolMode'
@@ -286,7 +287,9 @@ export default function HomeOptionsModal({
   // (App clears matchId on Home, so backup.activeMatchId alone is null there)
   backupMatchId = null,
   dashboardServer = null, // Optional dashboard server props from useDashboardServer
-  toolMode = null // { mode, locked, onChange }: Swiss / Global (utils/toolMode)
+  toolMode = null, // { mode, locked, onChange }: Swiss / Global (utils/toolMode)
+  // Effects and speed: Check this device only where no match is open (App)
+  canCheckDevice = false
 }) {
   const globalTool = useToolMode() === 'global'
   const { t } = useTranslation()
@@ -794,6 +797,11 @@ export default function HomeOptionsModal({
             </div>
             <ToggleSwitch value={wakeLockActive} onToggle={toggleWakeLock} />
           </Row>
+        </Section>
+
+        {/* The device check and the four look switches (utils/lookSettings) */}
+        <Section title={t('options.look.title')}>
+          <LookOptions kit={{ Row, InfoDot, ToggleSwitch }} canCheck={canCheckDevice} />
         </Section>
 
         {dashboardServer && (

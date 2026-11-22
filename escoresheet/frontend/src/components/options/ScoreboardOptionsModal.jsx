@@ -29,6 +29,7 @@ import { diagnosticLogQuery } from '../../utils/activity/logQuery'
 import { reloadWithReason } from '../../diagnostics/reload'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
+import LookOptions from './LookOptions'
 import { useToolMode } from '../../utils/toolMode'
 import { readShowTapHints, setShowTapHints } from '../../utils/tapHints'
 
@@ -938,6 +939,12 @@ export default function ScoreboardOptionsModal({
           <Row style={{ alignItems: 'flex-start' }}>
             <ThemeOption info={<InfoDot title={t('options.themeInfo')} />} />
           </Row>
+        </Section>
+
+        {/* The four look switches (utils/lookSettings); the device check
+            itself runs from Home, never with a match open */}
+        <Section title={t('options.look.title')}>
+          <LookOptions kit={{ Row, InfoDot, ToggleSwitch }} />
         </Section>
 
         <div className="mb-6 flex flex-col gap-3">

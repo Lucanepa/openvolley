@@ -33,9 +33,11 @@ import { isScorerMoved, takeBackScoring, relaySyncDevice, serverScoreForTakeBack
 import ScorerMovedModal from './components/ScorerMovedModal'
 import ClosedOnServerModal from './components/ClosedOnServerModal'
 import SelfCheckNotice from './components/SelfCheckNotice'
+import DeviceCheckCard from './components/DeviceCheckCard'
+import { homeQuietForCheck, useAutoDeviceCheck } from './utils/deviceCheck'
 import { isKnownClosedOnServer, isStaleClosedCopy, wasClosedOnServer } from './utils/matchReopen'
 import { readHomeMatchStatus } from './utils/homeMatchStatus'
-import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
+import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { useLatestCallback } from './hooks/useLatestCallback'
@@ -155,6 +157,10 @@ function startupCheckShownRecently(now = Date.now()) {
 }
 // read once per page load (not in a render: StrictMode calls initializers twice)
 const STARTUP_CHECK_SHOWN_RECENTLY = typeof window !== 'undefined' && startupCheckShownRecently()
+
+// The device check stops when a match screen is noted open (deviceSelfCheck
+// noteOpenMatch), whatever App's state says
+const matchOpenNoted = () => readOpenMatch() != null
 
 export default function App() {
   const { t, i18n } = useTranslation()
@@ -3837,6 +3843,15 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [onHome, homeReadsDone])
   const homeVisible = homeShown || homeReadsDone
+
+  // The device check (utils/deviceCheck, owner 22.11.2026): once per device,
+  // on Home once it shows, never while a match is open (scored, set up, at its
+  // end, being opened) or under a first-start dialog ("How do you use...",
+  // "Connecting..."); it stops at its next step when that changes. Its
+  // recommendation is the card on Home (DeviceCheckCard), under the same rule.
+  const firstStartDialog = (showStartupConnectivity && !offlineMode) || (toolMode === null && matchesLoaded && !matchId && !homeOptionsModal)
+  const homeQuiet = homeQuietForCheck({ matchId, homeVisible, firstStartDialog, openingMatch: !!openingMatch, covered: simpleBoardShown || !!manageTab || sizeGateShown })
+  useAutoDeviceCheck(homeQuiet && !homeOptionsModal, { matchOpen: matchOpenNoted })
   // The home screen's list, each row with what the server does not have yet
   const homeDeviceMatches = deviceMatches?.filter(r => r.id !== closedMatchId)
     .map(r => ({ ...r, unsent: unsentByKey?.get(r.seedKey)?.changes || 0 }))
@@ -4103,6 +4118,7 @@ export default function App() {
                     continueMatch={(id) => openFromHome(() => continueMatch(id, { checkServer: true }))}
                     continueTestMatch={() => openFromHome(continueTestMatch)}
                     continueInfo={continueInfo}
+                    deviceCheckCard={homeQuiet ? <DeviceCheckCard className="mb-4" /> : null}
                     selfCheckNotice={
                       <SelfCheckNotice
                         report={shownSelfCheck}
@@ -4698,6 +4714,7 @@ export default function App() {
             <ToolModeChooser open={toolMode === null && matchesLoaded && !matchId && !homeOptionsModal} />
             <HomeOptionsModal
               toolMode={{ mode: toolMode, locked: toolLocked, onChange: setToolMode }}
+              canCheckDevice={!matchId && !openingMatch}
               open={homeOptionsModal}
               onClose={() => setHomeOptionsModal(false)}
               onOpenConnectionSetup={() => setConnectionSetupModal(true)}

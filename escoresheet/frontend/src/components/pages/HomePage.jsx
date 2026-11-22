@@ -76,6 +76,8 @@ export default function HomePage({
   onRestoreMatch,
   // what the self-check found (App, SelfCheckNotice)
   selfCheckNotice = null,
+  // the device check's recommendation (App, DeviceCheckCard)
+  deviceCheckCard = null,
   // the match Continue resumes (App): { home, away, score, stage, lastSaved, state, unsent }
   continueInfo = null
 }) {
@@ -111,6 +113,7 @@ export default function HomePage({
         <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">
         {!globalMode && <PendingApprovalBanner className="mb-4" />}
         {selfCheckNotice}
+        {deviceCheckCard}
 
         <Card className="w-full space-y-3">
           {/* Continue: the match in progress on this device, first and in one

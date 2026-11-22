@@ -1417,6 +1417,28 @@
   "idMode": {"title": "Neben jedem Namen", "dob": "Geburtsdaten verwenden", "number": "ID-Nummer verwenden", "text": "Text verwenden", "label": {"dob": "Geburtsdatum", "number": "ID-Nummer", "text": "Info", "licence": "Lizenz"}, "hint": {"licence": "oder Geburtsdatum (tt.mm.jjjj)"}},
   "globalImport": {"templateGames": "Spiele-Vorlage (Excel)", "templateRosters": "Kader-Vorlage (Excel)", "gamesTitle": "Spiele importieren", "rostersTitle": "Kader importieren", "gamesHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Spiel: Spiel, Datum, Zeit, Halle, Ort, Liga, Heim, Gast, Best of, Schiedsrichter. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "rostersHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Person: Mannschaft, Nummer, Vorname, Nachname, Rolle (Spieler, Libero, Kapitän, Trainer ...), Geburtsdatum. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "choose": "Datei wählen", "template": "Vorlage", "errFile": "Die Datei konnte nicht gelesen werden.", "errEmpty": "Die Datei enthält keine Zeilen.", "errColumns": "Die Spalten wurden nicht gefunden. Nimm die Vorlage.", "noTeamName": "(ohne Mannschaftsname)", "counts": "{{players}} Spieler, {{staff}} Betreuer", "warnings": "{{count}} Zeilen waren nicht sauber: {{list}}", "applied": "{{count}} Spieler hinzugefügt", "gamesButton": "Spiele importieren (Excel)", "rostersButton": "Kader importieren (Excel)"},
   "home": {
+    "deviceCheck": {
+      "title": {
+        "fast": "Das Grät isch schnell.",
+        "ok": "Das Grät isch mittelschnell.",
+        "slow": "Das Grät isch eher langsam."
+      },
+      "smoother": "Für e flüssigeri Erfassig empfähled mir: {{list}}.",
+      "fuller": "Es schafft di voll Darstellig: {{list}}.",
+      "item": {
+        "blurOff": "kei Unschärfi hinder Dialög",
+        "blurOn": "Unschärfi hinder Dialög",
+        "motionOff": "kei Animatione",
+        "motionOn": "Animatione",
+        "clockSecondsOff": "d Uhr ohni Sekunde",
+        "clockSecondsOn": "d Uhr mit Sekunde",
+        "pdfSharpOff": "es liechters PDF",
+        "pdfSharpOn": "es scharfs PDF"
+      },
+      "apply": "Übernäh",
+      "keep": "So laa",
+      "changeLater": "Du chasch das jederziit i de Optione ändere."
+    },
     "storageWarning": "Dieser Browser darf die Daten der App löschen, und ein Spiel auf diesem Gerät hat noch nicht gesendete Änderungen. Melde dich an, damit sie synchronisiert werden, installiere die App oder füge sie dem Startbildschirm hinzu, oder schalte in den Optionen Backup-Downloads ein.",
     "tool": {"label": "Werkzeug", "swiss": "Schweiz", "global": "Global", "globalNote": "Jedes Turnier: ohne Login, ohne Spielliste. Teams und Spieler bleiben auf diesem Gerät."},
     "match": "Spiil",
@@ -1570,6 +1592,30 @@
     "err_io": "Diese Sicherung konnte nicht gelesen werden."
   },
   "options": {
+    "look": {
+      "title": "Effekt und Tempo",
+      "check": "Gerätetescht",
+      "checkInfo": "D App misst öppe e Sekunde lang, wie schnell das Grät schaffet. Nüt verlaat s Grät.",
+      "checkNow": "Das Grät teschte",
+      "checking": "Wird teschtet…",
+      "notChecked": "No nöd teschtet.",
+      "checkedOn": "Teschtet am {{date}}: {{verdict}}",
+      "verdict": {
+        "fast": "Das Grät isch schnell.",
+        "ok": "Das Grät isch mittelschnell.",
+        "slow": "Das Grät isch eher langsam."
+      },
+      "matches": "Dini Iistellige entspräched de Empfählig.",
+      "checkFromHome": "Für en neue Tescht mach d Optione uf de Startsiite uf.",
+      "blur": "Unschärfi hinder Dialög",
+      "blurInfo": "Hinder emene offne Dialog wird de Bildschirm unscharf. Us: Er wird nur abdunklet, das isch weniger Arbet für es langsams Grät.",
+      "motion": "Animatione",
+      "motionInfo": "Blinkendi Chnöpf (Ufstellig, Underschrift fehlt), gleitendi Menüs und Balke. Us: Nüt bewegt sich, und was dini Ufmerksamkeit bruucht, bhaltet sini Farb.",
+      "clockSeconds": "Sekunde uf de Uhr",
+      "clockSecondsInfo": "D Uhr uf em Erfassigsbildschirm zeigt Sekunde. Us: nur Stunde und Minute, si wächslet eimal pro Minute.",
+      "pdfSharp": "Scharfs PDF",
+      "pdfSharpInfo": "S PDF vom Matchblatt, uf däm Grät gmacht, i voller Schärfi. Us: echli weniger scharf, defür schneller gmacht."
+    },
     "tool": {"title": "Werkzeug", "locked": "Auf diesem Gerät ist ein Spiel. Lösche es, um das Werkzeug zu wechseln.", "swissNote": "Schweizer Ligaspiele: Anmeldung, Spielliste, Einsatzliste, Club-Kader und die Cloud."},
     "title": "Optione",
     "close": "Schliesse",
