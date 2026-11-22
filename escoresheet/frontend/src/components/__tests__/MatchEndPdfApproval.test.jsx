@@ -153,6 +153,8 @@ vi.mock('../../db/db', () => {
   return { db, default: db }
 })
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import JSZip from 'jszip'
 import MatchEnd from '../MatchEnd'
 import { matchBackupFromFile } from '../../utils/backupManager'
@@ -607,13 +609,19 @@ describe('MatchEnd: the scoresheet window reads the match from this device', () 
   })
 })
 
-// Perf pass 22.11.2026: jszip (~96 KB) was parsed with the app at every
-// start, for the approval's ZIP only. It is loaded once Match End shows, and
-// the approval waits for it first.
+// The ZIP library comes with the app (owner 22.11.2026): the perf pass loaded
+// jszip only once Match End showed, so the approval depended on fetching a
+// chunk at the match end, and a browser without a service worker that had
+// lost the network then could not approve at all ("Failed to fetch
+// dynamically imported module"). Static import, as before.
 describe('MatchEnd: the ZIP library', () => {
-  afterEach(() => { vi.doUnmock('jszip') })
+  it('is imported with the app, never loaded at the approval', () => {
+    const source = readFileSync(resolve(__dirname, '../MatchEnd.jsx'), 'utf8')
+    expect(source).toMatch(/^import JSZip from 'jszip'$/m)
+    expect(source).not.toMatch(/import\(\s*['"]jszip['"]\s*\)/)
+  })
 
-  it('is loaded when Match End shows; the approval\'s ZIP is made with it as before', async () => {
+  it('makes the approval\'s ZIP with the PDF and the match data', async () => {
     const zipFile = vi.spyOn(JSZip.prototype, 'file')
     try {
       render(<MatchEnd matchId={1} />)
@@ -623,25 +631,6 @@ describe('MatchEnd: the ZIP library', () => {
       expect(zipFile.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining(['x.pdf', expect.stringMatching(/^MatchData_.*\.json$/)]))
     } finally {
       zipFile.mockRestore()
-    }
-  })
-
-  it('a library that does not load stops the approval before anything is written or the PDF is asked for', async () => {
-    vi.doMock('jszip', () => { throw new Error('Failed to fetch dynamically imported module') })
-    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
-    try {
-      render(<MatchEnd matchId={1} />)
-      await waitFor(() => expect(approveButton()).toBeEnabled())
-      fireEvent.click(approveButton())
-      const failed = en.matchEnd.errorApproving.split('{{')[0]
-      await waitFor(() => expect(alerts.showAlert).toHaveBeenCalledWith(expect.stringContaining(failed), 'error'))
-      expect(opened).toHaveLength(0)
-      expect(store.tables.matches.get(1).approved).toBeFalsy()
-      expect(approvedJobs()).toHaveLength(0)
-      expect([...store.tables.sync_queue.values()]).toHaveLength(0)
-      await waitFor(() => expect(approveButton()).toBeEnabled())
-    } finally {
-      quiet.mockRestore()
     }
   })
 })

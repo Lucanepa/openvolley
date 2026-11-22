@@ -11,6 +11,7 @@ import SignaturePad from './SignaturePad'
 import MenuList from './MenuList'
 import Modal from './Modal'
 import ballFallback from '../ball_fallback.png'
+import JSZip from 'jszip'
 import { apiFrom } from '../lib/apiClient'
 import { admin as adminApi, approvalsApi, errorKeyOf, isApprovalUnavailable, sendTestScoresheet } from '../lib/accountApi'
 import { useAuth } from '../contexts/AuthContext'
@@ -452,23 +453,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // no PDF came (Retry / Approve without PDF / Cancel)
   const exportAbortRef = useRef(null)
   const pdfChoiceRef = useRef(null)
-  // jszip (~96 KB) only for the approval's ZIP: loaded once this page shows,
-  // not with the app at every start. A failed load is tried again at the
-  // approval, which waits for it before anything is written (handleApprove).
-  const jszipRef = useRef(null)
-  const loadJsZip = () => {
-    if (!jszipRef.current) {
-      jszipRef.current = import('jszip').catch((err) => {
-        jszipRef.current = null
-        throw err
-      })
-    }
-    return jszipRef.current
-  }
-  useEffect(() => {
-    loadJsZip().catch(() => { /* tried again at the approval */ })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
   const [pdfFailure, setPdfFailure] = useState(null) // { reason }
   const [isClosing, setIsClosing] = useState(false)
   // The missing PDF of an approved match being made again (pdfMissing)
@@ -1490,10 +1474,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     cLogger.logHandler('handleApprove', { matchId, allSignaturesDone })
     setIsSaving(true)
     try {
-      // the ZIP's library first: a failed load ends here, before anything
-      // is written or approved and before the PDF wait
-      const { default: JSZip } = await loadJsZip()
-
       // Only check signatures for official matches
       // (a Global match is a real scoresheet: its signatures count too)
       if ((!match.test || match.global === true) && !allSignaturesDone) {
