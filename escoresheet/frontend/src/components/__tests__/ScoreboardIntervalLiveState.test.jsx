@@ -98,7 +98,7 @@ describe('Scoreboard: the live state keeps the break between sets', () => {
     await settle()
 
     // team A's line-up for set 2, entered during the interval
-    const open = () => [...document.querySelectorAll('button')].find(b => /^LineupA/.test(b.textContent.trim()))
+    const open = () => [...document.querySelectorAll('button')].find(b => /^Line-?upA/.test(b.textContent.trim()))
     await waitFor(() => expect(open()).toBeTruthy(), { timeout: 10000 })
     fireEvent.click(open())
     await waitFor(() => expect(document.querySelector('[role=dialog]')).toBeTruthy())
