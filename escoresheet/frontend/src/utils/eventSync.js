@@ -143,9 +143,20 @@ export async function queueSetScoreSync(db, { matchId, setIndex }) {
     const set = await db.sets.where('matchId').equals(matchId).and(s => s.index === setIndex).first()
     if (!set) return false
     const externalId = setExtId(match.seed_key, set.id)
-    const stale = await db.sync_queue.where('status').equals('queued')
-      .and(j => isScoreOnlySetUpdate(j, externalId))
-      .toArray()
+    // The queued set jobs, found by their keys only: a filter on the queued
+    // rows read each one with its value, and offline (or signed out) every
+    // point adds an event job with a state snapshot and two line-ups, so
+    // each point inside its transaction read a growing backlog. Nor the set
+    // jobs with their values: the sent ones stay 7 days, one per point.
+    // Awaited one after the other (no Promise.all inside the caller's
+    // transaction). The same rows as `where('status').equals('queued')
+    // .and(isScoreOnlySetUpdate)`, which asks for resource 'set' too.
+    const queuedIds = new Set(await db.sync_queue.where('status').equals('queued').primaryKeys())
+    const setJobIds = await db.sync_queue.where('resource').equals('set').primaryKeys()
+    const candidates = setJobIds.filter(id => queuedIds.has(id))
+    const stale = candidates.length > 0
+      ? (await db.sync_queue.bulkGet(candidates)).filter(j => isScoreOnlySetUpdate(j, externalId))
+      : []
     if (stale.length > 0) await db.sync_queue.bulkDelete(stale.map(j => j.id))
     await db.sync_queue.add({
       resource: 'set',

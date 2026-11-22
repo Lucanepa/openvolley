@@ -29,12 +29,14 @@ function fakeTable(rows = []) {
   let nextId = Math.max(0, ...rows.map(r => r.id)) + 1
   const collection = (pred) => ({
     toArray: async () => [...map.values()].filter(pred).sort((a, b) => a.id - b.id),
+    primaryKeys: async () => [...map.values()].filter(pred).map(r => r.id).sort((a, b) => a - b),
     first: async () => [...map.values()].filter(pred)[0],
     and: (fn) => collection(r => pred(r) && fn(r))
   })
   return {
     map,
     get: async (id) => map.get(id),
+    bulkGet: async (ids) => ids.map(id => map.get(id)),
     add: async (row) => { const id = nextId++; map.set(id, { ...row, id }); return id },
     bulkDelete: async (ids) => { for (const id of ids) map.delete(id) },
     where: (field) => ({
@@ -132,6 +134,26 @@ describe('queueSetScoreSync', () => {
   it('drops exactly the jobs the old query found, among many queued and sent jobs', async () => {
     const real = new Dexie(`eventSync-score-${Math.random()}`, { indexedDB: new IDBFactory(), IDBKeyRange: FakeIDBKeyRange })
     real.version(1).stores({ matches: '++id', sets: '++id,matchId', sync_queue: '++id,resource,action,payload,ts,status' })
+    // what reads the queue's rows with their values (keys alone are cheap)
+    const valueReads = []
+    real.use({
+      stack: 'dbcore',
+      name: 'countQueueValueReads',
+      create: (down) => ({
+        ...down,
+        table: (name) => {
+          const table = down.table(name)
+          if (name !== 'sync_queue') return table
+          return {
+            ...table,
+            query: (req) => { if (req.values) valueReads.push('query'); return table.query(req) },
+            openCursor: (req) => { if (req.values !== false) valueReads.push('cursor'); return table.openCursor(req) },
+            get: (req) => { valueReads.push('get'); return table.get(req) },
+            getMany: (req) => { valueReads.push(...req.keys.map(() => 'get')); return table.getMany(req) }
+          }
+        }
+      })
+    })
     await real.matches.add({ id: 1, seed_key: 'match_100_aaa' })
     await real.sets.bulkAdd([
       { id: 5, matchId: 1, index: 1, homePoints: 25, awayPoints: 20, finished: true },
@@ -162,7 +184,11 @@ describe('queueSetScoreSync', () => {
     expect(oracle).toHaveLength(3)
 
     // inside a transaction, as the point's
+    valueReads.length = 0
     expect(await real.transaction('rw', real.tables, () => queueSetScoreSync(real, { matchId: 1, setIndex: 2 }))).toBe(true)
+    // only the 6 queued set jobs are read whole, never the 60 event jobs
+    // or the 40 sent ones
+    expect(valueReads).toEqual(Array(6).fill('get'))
 
     const after = await real.sync_queue.toArray()
     const afterIds = new Set(after.map(j => j.id))

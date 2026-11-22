@@ -385,9 +385,9 @@ describe('the tap path, recorded', () => {
     await expectGolden('rallyStart')
     const reads = await point('A', 2)
     // the point's one read (its tap check and the serve before it; was 2),
-    // the point's snapshot, the action's final snapshot; the queued jobs
-    // (queueSetScoreSync)
-    expectReads('pointNoSideOut', reads, { match: 3, set: 0, queueValues: 1 })
+    // the point's snapshot, the action's final snapshot; no queued job read
+    // with its value (queueSetScoreSync finds them by key; was 1)
+    expectReads('pointNoSideOut', reads, { match: 3, set: 0, queueValues: 0 })
     await expectGolden('pointNoSideOut')
   }, 90000)
 
@@ -399,7 +399,7 @@ describe('the tap path, recorded', () => {
     const reads = await point('B', 2)
     // the rotation takes its line-up from the point's read (was 5: the tap
     // check, the serve and writeSideOutRows each read)
-    expectReads('pointSideOut', reads, { match: 3, set: 0, queueValues: 1 })
+    expectReads('pointSideOut', reads, { match: 3, set: 0, queueValues: 0 })
     await expectGolden('pointSideOut')
   }, 90000)
 
@@ -546,8 +546,9 @@ describe('the tap path, recorded', () => {
     mount(matchId)
     await startRally()
     const reads = await point('A', 45 + 5 + 1)
-    // the queued jobs read with their values (each event job's snapshot)
-    expectReads('offlineQueue', reads, { match: 3, set: 0, queueValues: 1 })
+    // the queued jobs are no longer read with their values (each event
+    // job's snapshot) to find the set's older score (was 1)
+    expectReads('offlineQueue', reads, { match: 3, set: 0, queueValues: 0 })
     const queued = (await db.sync_queue.toArray()).filter(j => j.resource === 'set' && j.status === 'queued')
     expect(queued.map(j => [j.payload.home_points, j.payload.away_points, 'start_time' in j.payload])).toEqual([[25, 20, false], [0, 0, true], [4, 2, false]])
     await expectGolden('offlineQueue')
