@@ -587,7 +587,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncProceedCallbackRef.current = null
     }
   }, [])
-  const [now, setNow] = useState(() => new Date())
+  // No `now` state: the toolbar clock ticks in ToolbarClock, so the whole
+  // screen does not render every second
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   )
@@ -1080,12 +1081,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         noSleepVideoRef.current = null
       }
     }
-  }, [])
-
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(timer)
   }, [])
 
   // Single-tab enforcement - prevent opening scoresheet in multiple tabs for same match
