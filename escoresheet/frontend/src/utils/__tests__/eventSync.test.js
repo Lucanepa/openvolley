@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import Dexie from 'dexie'
+import { IDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb'
 import {
   buildEventInsertJob,
   queueEventSync,
@@ -121,6 +123,56 @@ describe('queueSetScoreSync', () => {
   it('skips test matches', async () => {
     expect(await queueSetScoreSync(db, { matchId: 2, setIndex: 1 })).toBe(false)
     expect(db.sync_queue.map.size).toBe(0)
+  })
+
+  // On Dexie over fake-indexeddb, with a long offline queue: every queued
+  // event job carries a state snapshot and the line-ups, and the sent set
+  // jobs (one per point) stay 7 days. The same jobs are dropped as by the
+  // query used until 2026-11 (the oracle below).
+  it('drops exactly the jobs the old query found, among many queued and sent jobs', async () => {
+    const real = new Dexie(`eventSync-score-${Math.random()}`, { indexedDB: new IDBFactory(), IDBKeyRange: FakeIDBKeyRange })
+    real.version(1).stores({ matches: '++id', sets: '++id,matchId', sync_queue: '++id,resource,action,payload,ts,status' })
+    await real.matches.add({ id: 1, seed_key: 'match_100_aaa' })
+    await real.sets.bulkAdd([
+      { id: 5, matchId: 1, index: 1, homePoints: 25, awayPoints: 20, finished: true },
+      { id: 6, matchId: 1, index: 2, homePoints: 4, awayPoints: 2, finished: false }
+    ])
+    const set6 = 'match_100_aaa:s:6'
+    const score = (externalId, home, away, extra = {}) => ({ external_id: externalId, home_points: home, away_points: away, ...extra })
+    const jobs = []
+    for (let i = 0; i < 60; i++) {
+      jobs.push({ resource: 'event', action: 'insert', status: 'queued', ts: i, payload: { external_id: `match_100_aaa:e:${i}`, state_snapshot: { pointsA: i, filler: 'x'.repeat(500) } } })
+    }
+    for (let i = 0; i < 40; i++) jobs.push({ resource: 'set', action: 'update', status: 'sent', ts: 100 + i, payload: score(set6, 1, i) })
+    jobs.push(
+      { resource: 'set', action: 'update', status: 'queued', ts: 200, payload: score(set6, 2, 2) },
+      { resource: 'set', action: 'update', status: 'queued', ts: 201, payload: score(set6, 3, 2, { sport_type: 'indoor' }) },
+      { resource: 'set', action: 'update', status: 'queued', ts: 202, payload: score('match_100_aaa:s:5', 25, 20) },
+      { resource: 'set', action: 'update', status: 'queued', ts: 203, payload: score(set6, 0, 0, { start_time: '2026-11-22T18:00:00.000Z' }) },
+      { resource: 'set', action: 'update', status: 'sending', ts: 204, payload: score(set6, 3, 1) },
+      { resource: 'set', action: 'update', status: 'error', ts: 205, payload: score(set6, 3, 1) },
+      { resource: 'set', action: 'insert', status: 'queued', ts: 206, payload: score(set6, 0, 0) },
+      { resource: 'match', action: 'update', status: 'queued', ts: 207, payload: { id: 'match_100_aaa', current_set: 2 } },
+      { resource: 'set', action: 'update', status: 'queued', ts: 208, payload: score(set6, 4, 1) }
+    )
+    await real.sync_queue.bulkAdd(jobs)
+    const before = await real.sync_queue.toArray()
+    // the query used until 2026-11 (a value cursor over every queued job)
+    const oracle = (await real.sync_queue.where('status').equals('queued').and(j => isScoreOnlySetUpdate(j, set6)).toArray()).map(j => j.id)
+    expect(oracle).toHaveLength(3)
+
+    // inside a transaction, as the point's
+    expect(await real.transaction('rw', real.tables, () => queueSetScoreSync(real, { matchId: 1, setIndex: 2 }))).toBe(true)
+
+    const after = await real.sync_queue.toArray()
+    const afterIds = new Set(after.map(j => j.id))
+    expect(before.filter(j => !afterIds.has(j.id)).map(j => j.id)).toEqual(oracle)
+    // everything else as it was, the new score last
+    const beforeIds = new Set(before.map(j => j.id))
+    expect(after.filter(j => beforeIds.has(j.id))).toEqual(before.filter(j => !oracle.includes(j.id)))
+    expect(after.filter(j => !beforeIds.has(j.id))).toMatchObject([{ resource: 'set', action: 'update', status: 'queued', payload: score(set6, 4, 2) }])
+    expect(after.at(-1).payload).toEqual(score(set6, 4, 2))
+    real.close()
   })
 
   it('recognises score-only updates', () => {
