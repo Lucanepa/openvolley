@@ -2918,7 +2918,6 @@
     "goOffline": "Offline gah",
     "continueAnyway": "Trotzdem wiiterfahre",
     "someConnectionsFailed": "Es paar Verbindige händ nöd chönne hergstellt werde. Du chasch mit iigschränkter Funktionalität wiiterfahre oder offline gah.",
-    "serverUnavailable": "Punkteerfassig funktioniert vollständig offline. Schiri, Bank und Livescore synchronisiered über Supabase — de Server wird nur als Fallback bruucht.",
     "backgroundRetry": "D Verbindig wird im Hintergrund wiiter probiert.",
     "allConnected": "Alli Dienscht verbunde!",
     "dismiss": "Schliesse",

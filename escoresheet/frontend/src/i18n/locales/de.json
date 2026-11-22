@@ -2655,7 +2655,6 @@
     "goOffline": "Offline gehen",
     "continueAnyway": "Trotzdem fortfahren",
     "someConnectionsFailed": "Einige Verbindungen konnten nicht hergestellt werden. Du kannst mit eingeschränkter Funktionalität fortfahren oder offline gehen.",
-    "serverUnavailable": "Punkteerfassung funktioniert vollständig offline. Schiedsrichter, Bank und Livescore synchronisieren über Supabase — der Server wird nur als Fallback benötigt.",
     "backgroundRetry": "Die Verbindung wird im Hintergrund weiter versucht.",
     "allConnected": "Alle Dienste verbunden!",
     "dismiss": "Schliessen",
