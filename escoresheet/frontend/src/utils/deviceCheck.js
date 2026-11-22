@@ -537,14 +537,16 @@ let running = null
  * and the automatic check). A check already running is the one returned.
  * @returns {Promise<object|null>} null: stopped
  */
-export function checkDeviceNow({ keepGoing = () => true, win = typeof window !== 'undefined' ? window : undefined, run = runDeviceCheck } = {}) {
+export function checkDeviceNow({ keepGoing = () => true, win = typeof window !== 'undefined' ? window : undefined, run = runDeviceCheck, onResult = null } = {}) {
   if (running) return running
   running = Promise.resolve()
     .then(() => run({ win, keepGoing }))
     .then((result) => {
       if (!result) return null
       ranHere = true
-      return setDeviceCheck(result)
+      const kept = setDeviceCheck(result)
+      try { onResult?.(kept) } catch { /* a log never breaks the check */ }
+      return kept
     })
     .catch(() => null)
     .finally(() => { running = null })
@@ -573,9 +575,10 @@ export const AUTO_CHECK_IDLE_TIMEOUT_MS = 3000
  * no first-start dialog), once per device and CHECK_VERSION. It starts
  * AUTO_CHECK_DELAY_MS after `ready`, at an idle moment, and stops at its next
  * step when `ready` goes false, the page is hidden or matchOpen() says a
- * match screen is open (App: deviceSelfCheck readOpenMatch).
+ * match screen is open (App: deviceSelfCheck readOpenMatch). onResult gets
+ * the kept result (App: a line in the local interaction log).
  */
-export function useAutoDeviceCheck(ready, { matchOpen = () => false, win = typeof window !== 'undefined' ? window : undefined, run = runDeviceCheck } = {}) {
+export function useAutoDeviceCheck(ready, { matchOpen = () => false, onResult = null, win = typeof window !== 'undefined' ? window : undefined, run = runDeviceCheck } = {}) {
   useEffect(() => {
     if (!ready || ranHere || !checkDue(getDeviceCheck())) return undefined
     let stopped = false
@@ -583,7 +586,7 @@ export function useAutoDeviceCheck(ready, { matchOpen = () => false, win = typeo
     const keepGoing = () => !stopped && !win?.document?.hidden && !matchOpen()
     const start = () => {
       idle = null
-      if (keepGoing()) checkDeviceNow({ keepGoing, win, run })
+      if (keepGoing()) checkDeviceNow({ keepGoing, win, run, onResult })
     }
     const timer = setTimeout(() => {
       if (typeof win?.requestIdleCallback === 'function') idle = win.requestIdleCallback(start, { timeout: AUTO_CHECK_IDLE_TIMEOUT_MS })
@@ -594,5 +597,5 @@ export function useAutoDeviceCheck(ready, { matchOpen = () => false, win = typeo
       clearTimeout(timer)
       if (idle != null) win?.cancelIdleCallback?.(idle)
     }
-  }, [ready, matchOpen, win, run])
+  }, [ready, matchOpen, onResult, win, run])
 }

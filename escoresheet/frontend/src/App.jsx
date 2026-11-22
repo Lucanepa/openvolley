@@ -35,6 +35,7 @@ import ClosedOnServerModal from './components/ClosedOnServerModal'
 import SelfCheckNotice from './components/SelfCheckNotice'
 import DeviceCheckCard from './components/DeviceCheckCard'
 import { homeQuietForCheck, useAutoDeviceCheck } from './utils/deviceCheck'
+import { logState } from './utils/comprehensiveLogger'
 import { isKnownClosedOnServer, isStaleClosedCopy, wasClosedOnServer } from './utils/matchReopen'
 import { readHomeMatchStatus } from './utils/homeMatchStatus'
 import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
@@ -159,8 +160,12 @@ function startupCheckShownRecently(now = Date.now()) {
 const STARTUP_CHECK_SHOWN_RECENTLY = typeof window !== 'undefined' && startupCheckShownRecently()
 
 // The device check stops when a match screen is noted open (deviceSelfCheck
-// noteOpenMatch), whatever App's state says
+// noteOpenMatch), whatever App's state says; its result goes into the local
+// interaction log (numbers only, never sent: utils/comprehensiveLogger)
 const matchOpenNoted = () => readOpenMatch() != null
+const logDeviceCheck = (r) => logState('DeviceCheck', 'result', {
+  tier: r.tier, score: r.score, workMs: r.workMs, layoutMs: r.layoutMs, platform: r.hints?.platform, cores: r.hints?.cores, memoryGb: r.hints?.memoryGb, from: 'home'
+})
 
 export default function App() {
   const { t, i18n } = useTranslation()
@@ -3851,7 +3856,7 @@ export default function App() {
   // recommendation is the card on Home (DeviceCheckCard), under the same rule.
   const firstStartDialog = (showStartupConnectivity && !offlineMode) || (toolMode === null && matchesLoaded && !matchId && !homeOptionsModal)
   const homeQuiet = homeQuietForCheck({ matchId, homeVisible, firstStartDialog, openingMatch: !!openingMatch, covered: simpleBoardShown || !!manageTab || sizeGateShown })
-  useAutoDeviceCheck(homeQuiet && !homeOptionsModal, { matchOpen: matchOpenNoted })
+  useAutoDeviceCheck(homeQuiet && !homeOptionsModal, { matchOpen: matchOpenNoted, onResult: logDeviceCheck })
   // The home screen's list, each row with what the server does not have yet
   const homeDeviceMatches = deviceMatches?.filter(r => r.id !== closedMatchId)
     .map(r => ({ ...r, unsent: unsentByKey?.get(r.seedKey)?.changes || 0 }))
