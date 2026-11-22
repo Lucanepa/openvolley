@@ -79,6 +79,18 @@ describe('App renders stop at the scoring screen', () => {
     expect(r.scoreboard).toBe(0)
   })
 
+  it('a point (a sets and an events write) re-renders neither App nor the Scoreboard', async () => {
+    const matchId = await openScoringScreen()
+    const set3 = await db.sets.where({ matchId }).filter(s => s.index === 3).first()
+    const r = await rendersDuring(async () => {
+      await db.transaction('rw', db.sets, db.events, async () => {
+        await db.events.add({ matchId, setIndex: 3, type: 'point', payload: { team: 'home' }, seq: 2, ts: new Date().toISOString() })
+        await db.sets.update(set3.id, { homePoints: 13 })
+      })
+    })
+    expect(r).toEqual({ app: 0, scoreboard: 0 })
+  })
+
   it("the callbacks keep one identity, and onFinishSet runs App's finishSet (Match End opens)", async () => {
     const matchId = await openScoringScreen({ bestOf: 3 })
     const first = seen.scoreboard[0]

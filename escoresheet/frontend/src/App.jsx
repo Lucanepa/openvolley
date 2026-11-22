@@ -34,6 +34,7 @@ import ScorerMovedModal from './components/ScorerMovedModal'
 import ClosedOnServerModal from './components/ClosedOnServerModal'
 import SelfCheckNotice from './components/SelfCheckNotice'
 import { isKnownClosedOnServer, isStaleClosedCopy, wasClosedOnServer } from './utils/matchReopen'
+import { readHomeMatchStatus } from './utils/homeMatchStatus'
 import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
@@ -1068,99 +1069,21 @@ export default function App() {
     if (implied) setToolMode(implied)
   }, [toolMode, matchesLoaded, currentOfficialMatch, currentTestMatch])
 
-  // Get match status and details
+  // The current match's status (utils/homeMatchStatus): the header's match
+  // chip and Home's New match / Test match / Easy warnings. { match, status }
+  // for the match the status was read for. The same object while neither
+  // changes: the query re-runs at every point (it reads the sets), but App
+  // re-renders only when the status or the match row changes (useLiveQuery
+  // compares by identity), and a live match's events are not read at all.
+  const matchStatusShown = useRef(null)
   const matchStatus = useLiveQuery(async () => {
-    if (!currentMatch) return null
-
-    // For test matches that have been restarted (no signatures, only initial set, no events), don't show status
-    if (currentMatch.test === true) {
-      const hasSignatures = currentMatch.homeCoachSignature ||
-        currentMatch.homeCaptainSignature ||
-        currentMatch.awayCoachSignature ||
-        currentMatch.awayCaptainSignature
-
-      if (!hasSignatures) {
-        const sets = await db.sets.where('matchId').equals(currentMatch.id).toArray()
-        const events = await db.events.where('matchId').equals(currentMatch.id).toArray()
-        // If only initial set exists and no events, it's been restarted - don't show status
-        if (sets.length === 1 && events.length === 0) {
-          return null
-        }
-      }
-    }
-
-    const homeTeamPromise = currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : Promise.resolve(null)
-    const awayTeamPromise = currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : Promise.resolve(null)
-
-    const setsPromise = db.sets.where('matchId').equals(currentMatch.id).toArray()
-    const eventsPromise = db.events.where('matchId').equals(currentMatch.id).toArray()
-    const homePlayersPromise = currentMatch.homeTeamId
-      ? db.players.where('teamId').equals(currentMatch.homeTeamId).count()
-      : Promise.resolve(0)
-    const awayPlayersPromise = currentMatch.awayTeamId
-      ? db.players.where('teamId').equals(currentMatch.awayTeamId).count()
-      : Promise.resolve(0)
-
-    const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
-      homeTeamPromise,
-      awayTeamPromise,
-      setsPromise,
-      eventsPromise,
-      homePlayersPromise,
-      awayPlayersPromise
-    ])
-
-    const signaturesComplete = Boolean(
-      currentMatch.homeCoachSignature &&
-      currentMatch.homeCaptainSignature &&
-      currentMatch.awayCoachSignature &&
-      currentMatch.awayCaptainSignature
-    )
-
-    const infoConfigured = Boolean(
-      (currentMatch.scheduledAt && String(currentMatch.scheduledAt).trim() !== '') ||
-      (currentMatch.city && String(currentMatch.city).trim() !== '') ||
-      (currentMatch.hall && String(currentMatch.hall).trim() !== '') ||
-      (currentMatch.league && String(currentMatch.league).trim() !== '')
-    )
-
-    const rostersReady = homePlayers >= 6 && awayPlayers >= 6
-    const matchReadyForPlay = infoConfigured && signaturesComplete && rostersReady
-
-    const hasActiveSet = sets.some(set => {
-      return Boolean(
-        set.finished ||
-        set.startTime ||
-        set.homePoints > 0 ||
-        set.awayPoints > 0
-      )
-    })
-
-    const hasEventActivity = events.some(event =>
-      ['set_start', 'rally_start', 'point'].includes(event.type)
-    )
-
-    let status = 'No data'
-    // A copy the server has closed is no match being recorded: the header
-    // does not say so, and New match warns instead of doing nothing
-    if (currentMatch.status === 'final' || (sets.length > 0 && sets.every(s => s.finished)) || isStaleClosedCopy(currentMatch)) {
-      status = 'Match ended'
-    } else if ((currentMatch.status === 'live' || hasActiveSet || hasEventActivity) && matchReadyForPlay) {
-      status = 'Match recording'
-    } else if (homePlayers > 0 || awayPlayers > 0 || currentMatch.homeCoachSignature || currentMatch.awayCoachSignature) {
-      if (signaturesComplete) {
-        status = 'Coin toss'
-      } else {
-        status = 'Setup'
-      }
-    }
-
-    return {
-      match: currentMatch,
-      homeTeam,
-      awayTeam,
-      status
-    }
+    const status = await readHomeMatchStatus(db, currentMatch)
+    if (status == null) return null
+    const shown = matchStatusShown.current
+    if (shown && shown.match === currentMatch && shown.status === status) return shown
+    const next = { match: currentMatch, status }
+    matchStatusShown.current = next
+    return next
   }, [currentMatch])
 
   // Query for match info menu (teams for active match or home view)
