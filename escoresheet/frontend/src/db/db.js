@@ -3,6 +3,7 @@ import { rewriteQueuedSyncJobs } from '../utils/syncIds'
 import { installEventHistoryHooks } from './eventHistory'
 import { installRemarksSyncHook } from './remarksSync'
 import { toolTz } from '../ui/format.js'
+import { REMARKS_MODEL } from '../domain/technicalRemarks.js'
 
 /**
  * ============================================================================
@@ -405,8 +406,13 @@ installRemarksSyncHook(db)
 // 2026-11-16): the tool's when it is created (Zürich in the Swiss tool, the
 // device's own in the Global tool), so every device prints its times alike.
 // A match restored from the server brings its own (localFromMatchInfo).
+// A new match also keeps its technical remarks off the scoresheet (owner
+// 22.11.2026, domain/technicalRemarks.js): it carries the remarks model of
+// this version. A match restored from a backup or the server brings its own,
+// null for an older one (backupManager), so it draws as it always did.
 db.matches.hook('creating', (_key, obj) => {
   if (obj && (typeof obj.tz !== 'string' || !obj.tz)) obj.tz = toolTz()
+  if (obj && obj.remarksModel === undefined) obj.remarksModel = REMARKS_MODEL
 })
 
 // Request DURABLE storage for the origin. All match state lives in IndexedDB;

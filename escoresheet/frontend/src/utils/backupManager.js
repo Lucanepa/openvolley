@@ -10,6 +10,7 @@ import { wipeMatchEvents, withoutEventHistory } from '../db/eventHistory'
 import { apiFrom, apiStorage, apiMatchRestoreByPin } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
 import { filterMatchPayload, localFromMatchInfo, matchInfoFromLocal, remarksForServer, toCloudPlayers } from '../db/matchRepository'
+import { remarksModelOf } from '../domain/technicalRemarks'
 import { getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { swappedSides, liveRowTeamA } from '../domain/coinToss'
 import { setExtId, eventExtId, jobMatchKey, parseExtId } from './syncIds'
@@ -852,6 +853,9 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
       homeTeamId,
       awayTeamId,
       seed_key: externalId, // Ensure seed_key is set for sync
+      // The backup's own remarks model, none for an older match: never the
+      // marker a new match gets (db/db.js, domain/technicalRemarks)
+      remarksModel: remarksModelOf(match.remarksModel),
       // This device's own live-state clock (serverDataSync.liveClockOffset),
       // never the one of the device that wrote the backup: its states come
       // after the cloud's last one. 2026-10-26: a match continued from a
@@ -1924,6 +1928,9 @@ export function localMatchRowFromCloud(cloudData, { homeTeamId = null, awayTeamI
     // Match info: prefer JSONB, fallback to legacy. All of it: the match
     // type, gender and level too (they were left out, and the sheet of a
     // match taken over on another device had only "Regional" X'd)
+    // The match's remarks model (match_info.remarks_model), none for an
+    // older match: never the marker a new match gets (db/db.js)
+    remarksModel: null,
     ...localFromMatchInfo(matchInfo, match),
     bestOf: cloudBestOf(match),
     refereePin: match.referee_pin,

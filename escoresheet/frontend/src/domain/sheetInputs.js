@@ -16,6 +16,11 @@
  * long_interval_after_set2. A false travels too (switched off after the coin
  * toss): the server replaces match_info whole and a missing key never
  * overwrites a device's value.
+ *
+ * And the match's remarks model (remarksModel, owner 2026-11-22,
+ * domain/technicalRemarks.js): in match_info as remarks_model, so a
+ * restored match, Rebuild PDF and the server's render service keep its
+ * technical remarks off the sheet as the scorer's device did.
  */
 
 /** An IANA time zone this engine knows (a string Intl accepts). */
@@ -50,12 +55,16 @@ export function deviceLfpSetting() {
   }
 }
 
+/** A remarks model value (a positive integer, domain/technicalRemarks REMARKS_MODEL). */
+const validRemarksModel = (v) => Number.isInteger(v) && v > 0
+
 /** The match_info keys for the two inputs (only those the match has). */
 export function sheetInputsToMatchInfo(m) {
   const out = {}
   if (typeof m?.lfpTracking === 'boolean') out.lfp_tracking = m.lfpTracking
   if (validTz(m?.tz)) out.tz = m.tz
   if (typeof m?.longIntervalAfterSet2 === 'boolean') out.long_interval_after_set2 = m.longIntervalAfterSet2
+  if (validRemarksModel(m?.remarksModel)) out.remarks_model = m.remarksModel
   return out
 }
 
@@ -65,5 +74,6 @@ export function sheetInputsFromMatchInfo(info) {
   if (typeof info?.lfp_tracking === 'boolean') out.lfpTracking = info.lfp_tracking
   if (validTz(info?.tz)) out.tz = info.tz
   if (typeof info?.long_interval_after_set2 === 'boolean') out.longIntervalAfterSet2 = info.long_interval_after_set2
+  if (validRemarksModel(info?.remarks_model)) out.remarksModel = info.remarks_model
   return out
 }

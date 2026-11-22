@@ -7,6 +7,19 @@
  */
 import { zonedParts } from '../ui/format'
 
+/**
+ * Where an event's remark line (payload.autoRemark) goes (owner 22.11.2026):
+ * on the scoresheet (match.remarks; the default, and every older event) or,
+ * with payload.remarkTo 'technical', into the match's technical remarks
+ * (domain/technicalRemarks.js: never on the PDF, never in match.remarks).
+ * Undo, removals, renumbering and going back take a line out of (or put it
+ * back into) match.remarks only when it is a sheet line.
+ */
+export const TECHNICAL = 'technical'
+export function isSheetRemark(payload) {
+  return payload?.remarkTo !== TECHNICAL
+}
+
 /** Append one line to the remarks text. */
 export function appendRemark(remarks, line) {
   if (!line) return remarks || ''
