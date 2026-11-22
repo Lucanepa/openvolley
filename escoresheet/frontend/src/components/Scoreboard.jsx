@@ -5932,7 +5932,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         console.warn('[Scoreboard] Point on a match that is over: ignored')
         return
       }
-      if (tap && await readRallyStatus() !== 'in_play') {
+      // The match's sets and events, read once: every read of the events is
+      // a whole-match read on the path from the tap to the score. The tap
+      // check, the serve before the point and the side-out's line-ups below
+      // all use these. No line-up or libero_exit row of this point is
+      // written before those uses (the set score and the point row come
+      // first, the libero exit and the rotation after the line-up lookups in
+      // writeSideOutRows), and they keep only line-up rows. The whole match,
+      // not the set ([matchId+setIndex]): servingTeamFromLog counts a row
+      // without a setIndex as set 1 (domain/rules).
+      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+      const allEventsBeforePoint = await db.events
+        .where('matchId')
+        .equals(matchId)
+        .toArray()
+      // CRITICAL: the set being played from IndexedDB, not from the screen
+      // (stale after set transitions): per index the newest row, as the live query
+      const freshCurrentSet = currentSetOf(allSets)
+      // (as readRallyStatus: no set, no rally in play)
+      if (tap && (!freshCurrentSet || rallyStatusOf(allEventsBeforePoint, freshCurrentSet.index) !== 'in_play')) {
         console.warn('[Scoreboard] Point tap without a rally in play (the screen was behind): ignored')
         return
       }
@@ -5953,18 +5971,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
-      // CRITICAL: Query fresh current set from IndexedDB to avoid stale data after set transitions
-      // Use same deduplication logic as useLiveQuery: prefer highest ID for duplicate indices
-      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-      const setsByIndex = new Map()
-      for (const set of allSets) {
-        const existing = setsByIndex.get(set.index)
-        if (!existing || set.id > existing.id) {
-          setsByIndex.set(set.index, set)
-        }
-      }
-      const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
-      const freshCurrentSet = dedupedSets.find(s => !s.finished) || dedupedSets[dedupedSets.length - 1]
       if (!freshCurrentSet) return
       // A set its score has won takes no point more: its Set end dialog is
       // open, its end not confirmed yet (a 26th point under it was kept in
@@ -5979,12 +5985,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const homePoints = teamKey === 'home' ? newPoints : (freshCurrentSet.homePoints || 0)
       const awayPoints = teamKey === 'away' ? newPoints : (freshCurrentSet.awayPoints || 0)
 
-      // Check who has serve BEFORE this point by querying database directly
+      // Check who has serve BEFORE this point, from the database (read above)
       // The team that scored the last point has serve, so check the last point in DB
-      const allEventsBeforePoint = await db.events
-        .where('matchId')
-        .equals(matchId)
-        .toArray()
       const pointEventsBefore = allEventsBeforePoint
         .filter(e => e.type === 'point' && e.setIndex === freshCurrentSet.index)
         .sort(newestFirst) // Most recent first
@@ -6024,12 +6026,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const writeSideOutRows = async (pointSeq) => {
         if (scoringTeamHadServe) return
 
-        // Query database directly for the most recent lineup (data.events might be stale)
-        const allLineupEvents = await db.events
-          .where('matchId')
-          .equals(matchId)
-          .toArray()
-        const teamLineupEvents = allLineupEvents
+        // The most recent lineup, from the database (data.events might be
+        // stale): the point's read above, no line-up row written since
+        const teamLineupEvents = allEventsBeforePoint
           .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
           .sort(newestFirst) // Most recent first
 
@@ -6090,12 +6089,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const [position, liberoNumber] = liberoInFrontRow
 
               // Find the original player that should be in this position
-              // Query database directly for lineup events (data.events might be stale)
-              const allLineupEventsForLibero = await db.events
-                .where('matchId')
-                .equals(matchId)
-                .toArray()
-              const allLineupEventsFiltered = allLineupEventsForLibero
+              // Lineup events from the database (data.events might be stale):
+              // the point's read, no line-up row written since
+              const allLineupEventsFiltered = allEventsBeforePoint
                 .filter(e =>
                   e.type === 'lineup' &&
                   e.payload?.team === teamKey &&
@@ -6427,7 +6423,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // reaches. Awaited (Dexie reads only): its dialog opens with the point
       await afterPointScored({ set: freshCurrentSet, homePoints, awayPoints, teamKey })
     }),
-    [data?.set, data?.events, logEvent, mapSideToTeamKey, afterPointScored, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi, readRallyStatus]
+    [data?.set, data?.events, logEvent, mapSideToTeamKey, afterPointScored, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi]
   )
 
   // One action (runAction): a second tap while it is written is dropped

@@ -383,9 +383,10 @@ describe('the tap path, recorded', () => {
     expectReads('rallyStart', rally, { match: 2, set: 0 })
     await expectGolden('rallyStart')
     const reads = await point('A', 2)
-    // readRallyStatus, the serve before the point, the point's snapshot, the
-    // action's final snapshot; the queued jobs (queueSetScoreSync)
-    expectReads('pointNoSideOut', reads, { match: 4, set: 0, queueValues: 1 })
+    // the point's one read (its tap check and the serve before it; was 2),
+    // the point's snapshot, the action's final snapshot; the queued jobs
+    // (queueSetScoreSync)
+    expectReads('pointNoSideOut', reads, { match: 3, set: 0, queueValues: 1 })
     await expectGolden('pointNoSideOut')
   }, 90000)
 
@@ -395,8 +396,9 @@ describe('the tap path, recorded', () => {
     mount(matchId)
     await startRally()
     const reads = await point('B', 2)
-    // + writeSideOutRows' own read of the line-ups
-    expectReads('pointSideOut', reads, { match: 5, set: 0, queueValues: 1 })
+    // the rotation takes its line-up from the point's read (was 5: the tap
+    // check, the serve and writeSideOutRows each read)
+    expectReads('pointSideOut', reads, { match: 3, set: 0, queueValues: 1 })
     await expectGolden('pointSideOut')
   }, 90000)
 
@@ -419,10 +421,11 @@ describe('the tap path, recorded', () => {
     mount(matchId)
     await startRally()
     const reads = await point('B', 2)
-    // + the libero branch's read, the libero_exit's own snapshot. Fewer here:
-    // under jsdom the action loses its transaction zone after the libero
-    // exit (see isEnvPrematureCommit), and the rest reads outside it
-    expectReads('pointSideOutLiberoExit', reads, { match: 5, set: 0, queueValues: 0 })
+    // the point's read (the libero branch's line-ups too), the libero_exit's
+    // own snapshot (was 5). Fewer than in Chrome: under jsdom the action
+    // loses its transaction zone after the libero exit (see
+    // isEnvPrematureCommit), and the rest reads outside it
+    expectReads('pointSideOutLiberoExit', reads, { match: 2, set: 0, queueValues: 0 })
     expect(await ofType('libero_exit')).toHaveLength(1)
     await expectGolden('pointSideOutLiberoExit')
   }, 90000)
@@ -456,9 +459,10 @@ describe('the tap path, recorded', () => {
     await waitFor(async () => expect(await ofType('point')).toHaveLength(2), { timeout: 10000 })
     await quiet()
     const own = eventReadsSince(from)
-    // the line-up save's reads, then per point: the serve before it, a
-    // side-out's line-ups, its snapshot; the final snapshot
-    expectReads('owedPenaltyPoints', own, { match: 8, set: 0 })
+    // the line-up save's read, then per point: the point's read (the serve
+    // before it and a side-out's line-ups; was 2), its snapshot; the final
+    // snapshot
+    expectReads('owedPenaltyPoints', own, { match: 6, set: 0 })
     await expectGolden('owedPenaltyPoints')
   }, 90000)
 
@@ -540,7 +544,7 @@ describe('the tap path, recorded', () => {
     await startRally()
     const reads = await point('A', 45 + 5 + 1)
     // the queued jobs read with their values (each event job's snapshot)
-    expectReads('offlineQueue', reads, { match: 4, set: 0, queueValues: 1 })
+    expectReads('offlineQueue', reads, { match: 3, set: 0, queueValues: 1 })
     const queued = (await db.sync_queue.toArray()).filter(j => j.resource === 'set' && j.status === 'queued')
     expect(queued.map(j => [j.payload.home_points, j.payload.away_points, 'start_time' in j.payload])).toEqual([[25, 20, false], [0, 0, true], [4, 2, false]])
     await expectGolden('offlineQueue')
