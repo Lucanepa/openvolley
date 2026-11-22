@@ -608,6 +608,12 @@
         "fromFirstRally": "Captain {{captain}} is not in the line-up: game captain from the first rally",
         "kept": "#{{n}} kept as game captain, from the first rally"
       },
+      "copy": {
+        "group": "Starting line-up of an earlier set",
+        "lastSet": "Last set's line-up",
+        "set": "Set {{n}}",
+        "setTitle": "Starting line-up of set {{n}}"
+      },
       "easyLiberos": "Liberos (optional)",
       "easyLiberoInput": "Libero {{n}}",
       "easyLiberoErrors": {
@@ -6831,7 +6837,6 @@
       "send": "Send line-up",
       "net": "Net",
       "players": "Players",
-      "asInSet": "As in set {{set}}",
       "noLiberos": "Liberos ({{numbers}}) are not in the line-up.",
       "gameCaptainHint": "Captain {{captain}} is not in the line-up: who is game captain on court?"
     },

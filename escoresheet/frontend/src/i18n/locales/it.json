@@ -607,6 +607,12 @@
         "fromFirstRally": "Il capitano {{captain}} non è nella formazione: capitano in gioco dal primo scambio",
         "kept": "#{{n}} tenuto come capitano in gioco, dal primo scambio"
       },
+      "copy": {
+        "group": "Formazione iniziale di un set precedente",
+        "lastSet": "Formazione set precedente",
+        "set": "Set {{n}}",
+        "setTitle": "Formazione iniziale del set {{n}}"
+      },
       "easyLiberos": "Liberi (facoltativo)",
       "easyLiberoInput": "Libero {{n}}",
       "easyLiberoErrors": {
@@ -6830,7 +6836,6 @@
       "send": "Invia la formazione",
       "net": "Rete",
       "players": "Giocatori",
-      "asInSet": "Come nel set {{set}}",
       "noLiberos": "I liberi ({{numbers}}) non fanno parte della formazione.",
       "gameCaptainHint": "Il capitano {{captain}} non è nella formazione: chi è capitano in gioco in campo?"
     },

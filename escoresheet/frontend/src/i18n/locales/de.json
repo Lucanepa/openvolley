@@ -600,6 +600,12 @@
         "fromFirstRally": "Kapitän {{captain}} ist nicht in der Aufstellung: Spielkapitän ab dem ersten Ballwechsel",
         "kept": "#{{n}} als Spielkapitän behalten, ab dem ersten Ballwechsel"
       },
+      "copy": {
+        "group": "Startaufstellung eines früheren Satzes",
+        "lastSet": "Aufstellung letzter Satz",
+        "set": "Satz {{n}}",
+        "setTitle": "Startaufstellung Satz {{n}}"
+      },
       "easyLiberos": "Liberos (optional)",
       "easyLiberoInput": "Libero {{n}}",
       "easyLiberoErrors": {
@@ -6813,7 +6819,6 @@
       "send": "Aufstellung senden",
       "net": "Netz",
       "players": "Spieler",
-      "asInSet": "Wie in Satz {{set}}",
       "noLiberos": "Liberos ({{numbers}}) gehören nicht in die Aufstellung.",
       "gameCaptainHint": "Kapitän {{captain}} ist nicht in der Aufstellung: wer ist Spielkapitän auf dem Feld?"
     },

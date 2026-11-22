@@ -1890,6 +1890,24 @@ button:disabled {
   gap: 8px;
 }
 
+/* The starting line-up of an earlier set (domain/lineupCopy.js): "Last set's
+   line-up" first, the older sets as short buttons beside it, one row
+   (wrapping only when it must) */
+.lineup-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lineup-copy button {
+  min-width: 0 !important;
+  gap: 6px;
+  white-space: nowrap;
+}
+/* (SbButton: the class is on the button, its wrapper is display: contents) */
+.lineup-copy .lineup-copy__last {
+  flex: 1 1 auto;
+}
+
 .lineup-rotate {
   display: flex;
   align-items: center;
@@ -1980,6 +1998,14 @@ button:disabled {
   }
   .lineup-modal__side {
     gap: 10px;
+  }
+  /* the earlier sets' line-ups: a lower row on a phone */
+  .lineup-copy {
+    gap: 6px;
+  }
+  .lineup-copy button {
+    height: 38px !important;
+    font-size: 13px !important;
   }
   .lineup-pool {
     padding: 8px 6px 6px;

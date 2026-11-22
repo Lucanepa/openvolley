@@ -607,6 +607,12 @@
         "fromFirstRally": "Captain {{captain}} isch nöd i de Ufstellig: Spiilcaptain ab em erschte Ballwächsel",
         "kept": "#{{n}} als Spiilcaptain bhalte, ab em erschte Ballwächsel"
       },
+      "copy": {
+        "group": "Startufstellig vomene früenere Satz",
+        "lastSet": "Ufstellig letschte Satz",
+        "set": "Satz {{n}}",
+        "setTitle": "Startufstellig Satz {{n}}"
+      },
       "easyLiberos": "Liberos (optional)",
       "easyLiberoInput": "Libero {{n}}",
       "easyLiberoErrors": {
@@ -6825,7 +6831,6 @@
       "send": "Ufstellig schicke",
       "net": "Netz",
       "players": "Spieler",
-      "asInSet": "Wie im Satz {{set}}",
       "noLiberos": "Liberos ({{numbers}}) ghöred nöd i d Ufstellig.",
       "gameCaptainHint": "Kapitän {{captain}} isch nöd i de Ufstellig: wer isch Spielkapitän uf em Feld?"
     },

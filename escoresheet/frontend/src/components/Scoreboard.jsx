@@ -126,6 +126,7 @@ import { captainRingStyle } from './scoreboard/captainRing'
 import GameCaptainDialog from './scoreboard/GameCaptainDialog.jsx'
 import { automaticGameCaptain, automaticDesignation, chosenGameCaptain, keepCourtCaptainField, keepsGameCaptain, keptGameCaptain } from '../domain/gameCaptainKeep'
 import { toast } from '../ui/uiStore.js'
+import { earlierStartingLineups } from '../domain/lineupCopy'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -137,7 +138,7 @@ import { DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
 import { freeStorageBytes, isStorageFullError, LOW_STORAGE_BYTES } from '../utils/storageSpace'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
-import { ArrowUpDown, ChevronDown, Cross, LayoutDashboard, Pin, Pointer } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Cross, LayoutDashboard, Pin, Pointer, RotateCcw } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
 import { preload, usePreloaded } from '../utils/preload'
 
@@ -20650,6 +20651,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         courtCaptain={lineupModal.team === 'home' ? data?.match?.homeCourtCaptain : data?.match?.awayCourtCaptain}
         rememberedCourtCaptain={lineupModal.team === 'home' ? data?.match?.homeRememberedCourtCaptain : data?.match?.awayRememberedCourtCaptain}
         keptCourtCaptain={keptGameCaptain(data?.match, lineupModal.team)}
+        bestOf={data?.match?.bestOf}
         easy={data?.match?.easy === true}
         onClose={() => setLineupModal(null)}
         // One action: the line-up, its owed penalty points and the game
@@ -24713,7 +24715,7 @@ function EasyNewSubstitute({ players, onCourt, available, onPick }) {
   )
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, presetGameCaptain = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, keptCourtCaptain = null, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, presetGameCaptain = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, keptCourtCaptain = null, bestOf = 5, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -24724,7 +24726,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   // 'Required' only shows once the scorer has tried to confirm (until Clear)
   const [confirmAttempted, setConfirmAttempted] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
-  const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }]
+  const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }] | [{ lineup }] (a copied line-up)
 
   // Determine if this team is A or B
   const isTeamA = team === teamAKey
@@ -24901,13 +24903,36 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     if (editHistory.length === 0) return
 
     const lastEdit = editHistory[editHistory.length - 1]
-    // Restore the previous value (skip history tracking for undo)
-    handleInputChange(lastEdit.index, lastEdit.previousValue, true)
+    if (lastEdit.lineup) {
+      // a copied line-up: the six as they were before it
+      setLineup(lastEdit.lineup)
+      setSaveFailed(false)
+    } else {
+      // Restore the previous value (skip history tracking for undo)
+      handleInputChange(lastEdit.index, lastEdit.previousValue, true)
+    }
     // Remove the last entry from history
     setEditHistory(prev => prev.slice(0, -1))
   }
 
   const hasEntries = lineup.some(v => v && v.trim() !== '')
+
+  // The starting line-up of an earlier set as a pre-fill (owner 2026-11-22,
+  // domain/lineupCopy.js): "Last set's line-up", the other earlier sets
+  // beside it. Checked as typed numbers (lineupEntryErrors: a player out of
+  // the set or the match, or a libero now, is flagged); Undo last edit puts
+  // back the six it replaced
+  const earlierSets = useMemo(
+    () => (mode === 'initial' && setIndex > 1 ? earlierStartingLineups(events || [], team, setIndex) : []),
+    [mode, setIndex, events, team]
+  )
+  const copyLineupOf = (entry) => {
+    const next = LINEUP_POSITIONS.map(pos => entry.lineup[pos] ?? '')
+    if (next.every((v, i) => v === (lineup[i] ?? ''))) return
+    setEditHistory(prev => [...prev, { lineup: [...lineup] }])
+    setLineup(next)
+    setSaveFailed(false)
+  }
 
   // Clear all lineup entries (a fresh start: no 'Required' until the next Confirm)
   const handleClearLineup = () => {
@@ -25269,6 +25294,27 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     )
                   })}
                 </div>
+              </div>
+            )}
+            {/* The starting line-up of an earlier set: the last set's, then
+                the others (set 1, 2...) */}
+            {earlierSets.length > 0 && (
+              <div className="lineup-copy" role="group" aria-label={t('scoreboard.lineupModal.copy.group', 'Starting line-up of an earlier set')} data-testid="lineup-copy">
+                <SbButton className="lineup-copy__last" onClick={() => copyLineupOf(earlierSets[0])} data-copy-set={earlierSets[0].setIndex} title={t('scoreboard.lineupModal.copy.setTitle', { n: displaySetNumber(earlierSets[0].setIndex, bestOf), defaultValue: 'Starting line-up of set {{n}}' })}>
+                  <RotateCcw size={16} aria-hidden="true" />
+                  {t('scoreboard.lineupModal.copy.lastSet', "Last set's line-up")}
+                </SbButton>
+                {earlierSets.slice(1).map(entry => (
+                  <SbButton
+                    key={entry.setIndex}
+                    className="lineup-copy__set"
+                    onClick={() => copyLineupOf(entry)}
+                    data-copy-set={entry.setIndex}
+                    aria-label={t('scoreboard.lineupModal.copy.setTitle', { n: displaySetNumber(entry.setIndex, bestOf), defaultValue: 'Starting line-up of set {{n}}' })}
+                  >
+                    {t('scoreboard.lineupModal.copy.set', { n: displaySetNumber(entry.setIndex, bestOf), defaultValue: 'Set {{n}}' })}
+                  </SbButton>
+                ))}
               </div>
             )}
             {/* Available players (excluding liberos and players out of the game);

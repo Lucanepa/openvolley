@@ -606,6 +606,12 @@
         "fromFirstRally": "Le capitaine {{captain}} n’est pas dans la composition : capitaine de jeu dès le premier échange",
         "kept": "#{{n}} gardé comme capitaine de jeu, dès le premier échange"
       },
+      "copy": {
+        "group": "Composition de départ d’un set précédent",
+        "lastSet": "Composition du set précédent",
+        "set": "Set {{n}}",
+        "setTitle": "Composition de départ du set {{n}}"
+      },
       "easyLiberos": "Libéros (facultatif)",
       "easyLiberoInput": "Libéro {{n}}",
       "easyLiberoErrors": {
@@ -6824,7 +6830,6 @@
       "send": "Envoyer la composition",
       "net": "Filet",
       "players": "Joueurs",
-      "asInSet": "Comme au set {{set}}",
       "noLiberos": "Les libéros ({{numbers}}) ne font pas partie de la composition.",
       "gameCaptainHint": "Le capitaine {{captain}} n’est pas dans la composition : qui est capitaine de jeu sur le terrain ?"
     },
