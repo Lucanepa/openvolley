@@ -260,6 +260,27 @@ describe('substitution limit (domain/substitutions)', () => {
 })
 
 describe('sanctions', () => {
+  // A playing coach (domain/playerOfficials): #8 is the coach too
+  it('a playing coach\'s sanction records his number and counts for #8 too', () => {
+    const { events } = fixture()
+    const tl = scoreTimeline(events, 1)
+    const ctx = {
+      ...review,
+      match: { ...MATCH, bench_home: [{ role: 'Coach', firstName: 'Erik', lastName: 'Fischer', plays: 8 }] },
+      players: { home: [{ number: 8, firstName: 'Erik', lastName: 'Fischer' }, { number: 3 }], away: [] }
+    }
+    const first = planAddSanction(events, { setIndex: 1, team: 'home', type: 'penalty', target: { playerType: 'official', role: 'Coach' }, at: idxOf(tl, 11, 9) }, ctx)
+    expect(first.error).toBeUndefined()
+    expect(first.add[0].payload).toEqual({ team: 'home', type: 'penalty', playerType: 'official', role: 'Coach', plays: 8 })
+    const after = applyPlanToEvents(events, first)
+    // a second penalty, now on #8 on the bench: the same member (a note at the match end)
+    const second = planAddSanction(after, { setIndex: 1, team: 'home', type: 'penalty', target: { playerType: 'bench', playerNumber: 8 }, at: idxOf(scoreTimeline(after, 1), 15, 12) }, ctx)
+    expect(second.notes.map(n => n.key)).toContain('corrections.note.sameSanctionTwice')
+    // #3 is someone else
+    const other = planAddSanction(after, { setIndex: 1, team: 'home', type: 'penalty', target: { playerType: 'bench', playerNumber: 3 }, at: idxOf(scoreTimeline(after, 1), 15, 12) }, ctx)
+    expect(other.notes.map(n => n.key)).not.toContain('corrections.note.sameSanctionTwice')
+  })
+
   it('a penalty marks the next opponent point (no score change)', () => {
     const { events } = fixture()
     const tl = scoreTimeline(events, 1)

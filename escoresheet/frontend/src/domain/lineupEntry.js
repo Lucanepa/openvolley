@@ -5,6 +5,7 @@
 // field), so fixing a duplicate in either box clears it in both.
 
 import { substitutionBarsForMatch } from './substitutions'
+import { sanctionedPlayerNumber } from './sanctions'
 
 /** Line-up array order used by the modal: front row IV III II, back row V VI I */
 export const LINEUP_POSITIONS = ['IV', 'III', 'II', 'V', 'VI', 'I']
@@ -25,11 +26,12 @@ const isBlank = (v) => v == null || String(v).trim() === ''
 const sameNumber = (a, b) => a != null && b != null && String(a) === String(b)
 const isLiberoPlayer = (p) => !!(p?.libero && p.libero !== '')
 
+// (also as a team official: a playing coach, sanctionedPlayerNumber)
 function isDisqualified(events, team, number) {
   return (events || []).some(e =>
     e.type === 'sanction' &&
     e.payload?.team === team &&
-    sameNumber(e.payload?.playerNumber, number) &&
+    sameNumber(sanctionedPlayerNumber(e.payload), number) &&
     e.payload?.type === 'disqualification'
   )
 }
@@ -56,7 +58,7 @@ function wasExpelledInSet(events, team, number, setIndex) {
   return (events || []).some(e =>
     e.payload?.team === team &&
     (e.setIndex ?? 1) === setIndex &&
-    ((e.type === 'sanction' && e.payload?.type === 'expulsion' && sameNumber(e.payload?.playerNumber, number)) ||
+    ((e.type === 'sanction' && e.payload?.type === 'expulsion' && sameNumber(sanctionedPlayerNumber(e.payload), number)) ||
       (e.type === 'substitution' && e.payload?.isExpelled === true && sameNumber(e.payload?.playerOut, number)))
   )
 }

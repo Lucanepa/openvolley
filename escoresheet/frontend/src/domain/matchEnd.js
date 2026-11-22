@@ -30,6 +30,7 @@
  */
 import { setsToWin, getNextSetIndex, isMatchFinished, displaySetNumber } from '../utils/matchFormat'
 import { substitutionBarsForMatch } from './substitutions'
+import { sanctionedPlayerNumber } from './sanctions'
 import { pointsToWinFor, DEFAULT_SET_TARGETS, setTargetsOf, scoreFromPointEvents } from './rules'
 
 /** Match statuses that mean "no more rallies will be played". */
@@ -310,8 +311,12 @@ function planDefault({ sets, forfeitingTeam, currentSetIndex, bestOf, targets = 
 const isLiberoPlayer = (p) => !!p?.libero && p.libero !== ''
 
 // Sanctions of a player (on court, on the bench, a libero), not of a bench
-// official; older events have no playerType
+// official; older events have no playerType. A team official's counts when
+// he also plays (a playing coach: the number it recorded, `plays`)
 const PLAYER_SANCTION_TYPES = new Set([undefined, null, 'player', 'bench', 'libero'])
+const sanctionedPlayerOf = (p) => (PLAYER_SANCTION_TYPES.has(p.playerType)
+  ? (p.playerNumber ?? null)
+  : (p.playerType === 'official' ? sanctionedPlayerNumber({ plays: p.plays }) : null))
 
 /**
  * Players of a team who may still take part in the NEXT set: non-liberos who
@@ -332,9 +337,8 @@ export function playersAvailableForNextSet(players, events, teamKey, { exclude =
   for (const e of events || []) {
     const p = e.payload
     if (!p || p.team !== teamKey) continue
-    if (e.type === 'sanction' && p.type === 'disqualification' && p.playerNumber != null &&
-      PLAYER_SANCTION_TYPES.has(p.playerType)) {
-      out.add(String(p.playerNumber))
+    if (e.type === 'sanction' && p.type === 'disqualification' && sanctionedPlayerOf(p) != null) {
+      out.add(String(sanctionedPlayerOf(p)))
     }
     if (e.type === 'substitution' && substitutionBarsForMatch(p) && p.playerOut != null) {
       out.add(String(p.playerOut))

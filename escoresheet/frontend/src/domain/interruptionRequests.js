@@ -31,7 +31,7 @@
 
 import { MAX_SUBSTITUTIONS_PER_SET, countRegularSubstitutions, classifySubstitutionRequest, substitutionBarsForMatch } from './substitutions'
 import { TIMEOUTS_PER_SET } from './timeouts'
-import { resolveSanction, teamSanctionCounts } from './sanctions'
+import { resolveSanction, teamSanctionCounts, sanctionedPlayerNumber } from './sanctions'
 import { playerReplacedByLibero } from './liberos'
 import { isBookkeepingEvent } from './rally'
 import { getFirstServeForSet } from './rules'
@@ -318,13 +318,15 @@ export function substituteInIllegalReason(events, setIndex, team, playerOut, pla
  * Sent off for good or for this set: expelled this set (FIVB 21.3.2),
  * disqualified, or replaced by an exceptional substitution (15.7, 15.8: an
  * injury, an expulsion or a disqualification with no legal substitution),
- * which keeps him out for the rest of the match (owner 22.11.2026).
+ * which keeps him out for the rest of the match (owner 22.11.2026). A
+ * playing coach sent off as the coach is sent off as the player too
+ * (sanctionedPlayerNumber: the number his sanction recorded).
  */
 export function isSentOff(events, team, number, setIndex) {
   const n = str(number)
   return (events || []).some((e) => {
     if (e.payload?.team !== team) return false
-    if (e.type === 'sanction' && str(e.payload?.playerNumber) === n) {
+    if (e.type === 'sanction' && str(sanctionedPlayerNumber(e.payload)) === n) {
       return e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === setIndex)
     }
     if (e.type === 'substitution' && str(e.payload?.playerOut) === n) {

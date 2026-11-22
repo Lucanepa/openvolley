@@ -10,6 +10,7 @@
  */
 
 import { playersAvailableForNextSet } from './matchEnd'
+import { sanctionedPlayerNumber } from './sanctions'
 
 const same = (a, b) => a != null && b != null && String(a) === String(b)
 const bySeqDesc = (a, b) => (b.seq || 0) - (a.seq || 0)
@@ -91,8 +92,9 @@ export function liberoPlayState(events, teamKey, liberoNumber, { setIndex = null
   if (liberoReplacedByRedesignation(mine, teamKey, liberoNumber, { player })) {
     return { unable: true, mayReturn: false, replaced: true }
   }
-  // a disqualification (any set) or an expulsion (its set) of him
-  const sentOff = mine.some(e => e.type === 'sanction' && same(e.payload?.playerNumber, liberoNumber) &&
+  // a disqualification (any set) or an expulsion (its set) of him, also one
+  // given to him as a team official (a playing coach)
+  const sentOff = mine.some(e => e.type === 'sanction' && same(sanctionedPlayerNumber(e.payload), liberoNumber) &&
     (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && thisSet(e))))
   // what happened since he last came back
   const back = mine
@@ -130,7 +132,7 @@ export function liberoToReplaceByRedesignation(players, events, teamKey, { setIn
   const lastUnableSeq = (number) => (events || [])
     .filter(e => e?.payload?.team === teamKey && (
       (e.type === 'libero_unable' && same(e.payload?.liberoNumber, number)) ||
-      (e.type === 'sanction' && same(e.payload?.playerNumber, number) && (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification'))))
+      (e.type === 'sanction' && same(sanctionedPlayerNumber(e.payload), number) && (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification'))))
     .reduce((max, e) => Math.max(max, seqOf(e)), -Infinity)
   const candidates = (players || [])
     .filter(p => p?.libero && p.libero !== '' && p.libero !== 'unable')
