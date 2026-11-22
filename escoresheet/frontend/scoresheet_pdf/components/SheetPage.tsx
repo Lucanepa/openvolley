@@ -211,8 +211,8 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
           <div className="flex">
             <div>
               <LeftInfoBox
-                lineup={set5Shown ? set5Data.leftLineup : ['', '', '', '', '', '']}
-                subs={set5Shown ? set5Data.leftSubs : [[], [], [], [], [], []]}
+                lineup={set5Shown ? set5Data!.leftLineup : ['', '', '', '', '', '']}
+                subs={set5Shown ? set5Data!.leftSubs : [[], [], [], [], [], []]}
                 serviceRounds={set5Shown ? set5ServiceRoundsLeftTeam_Before : []}
                 isSet5={true}
               />
@@ -235,18 +235,18 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
                   // SetFive expects firstServeTeamA to indicate if the team in Panel 1 serves
                   ? set5FirstServeTeamKey === set5TeamOnLeft
                   : undefined}
-                startTime={set5Shown ? set5Data.startTime : ''}
-                endTime={set5Shown ? set5Data.endTime : ''}
-                setFinished={set5Shown ? set5Data.setFinished : false}
+                startTime={set5Shown ? set5Data!.startTime : ''}
+                endTime={set5Shown ? set5Data!.endTime : ''}
+                setFinished={set5Shown ? set5Data!.setFinished : false}
                 unused={emptyGrid[5]}
-                lineupA={set5Shown ? set5Data.leftLineup : ['', '', '', '', '', '']}
-                subsA={set5Shown ? set5Data.leftSubs : [[], [], [], [], [], []]}
-                timeoutsA={set5Shown ? set5Data.leftTimeouts : ['', '']}
-                subsA_Right={set5Shown ? set5Data.leftSubs_After : [[], [], [], [], [], []]}
-                timeoutsA_Right={set5Shown ? set5Data.leftTimeouts_After : ['', '']}
-                lineupB={set5Shown ? set5Data.rightLineup : ['', '', '', '', '', '']}
-                subsB={set5Shown ? set5Data.rightSubs : [[], [], [], [], [], []]}
-                timeoutsB={set5Shown ? set5Data.rightTimeouts : ['', '']}
+                lineupA={set5Shown ? set5Data!.leftLineup : ['', '', '', '', '', '']}
+                subsA={set5Shown ? set5Data!.leftSubs : [[], [], [], [], [], []]}
+                timeoutsA={set5Shown ? set5Data!.leftTimeouts : ['', '']}
+                subsA_Right={set5Shown ? set5Data!.leftSubs_After : [[], [], [], [], [], []]}
+                timeoutsA_Right={set5Shown ? set5Data!.leftTimeouts_After : ['', '']}
+                lineupB={set5Shown ? set5Data!.rightLineup : ['', '', '', '', '', '']}
+                subsB={set5Shown ? set5Data!.rightSubs : [[], [], [], [], [], []]}
+                timeoutsB={set5Shown ? set5Data!.rightTimeouts : ['', '']}
                 finalScoreA={set5Shown ? set5FinalScoreLeft : 0}
                 markedPointsA_Left={set5Shown ? markedPointsA_Left : []}
                 circledPointsA_Left={set5Shown ? circledPointsA_Left : []}
@@ -258,7 +258,7 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
                 markedPointsA_Right={set5Shown ? markedPointsA_Right : []}
                 circledPointsA_Right={set5Shown ? circledPointsA_Right : []}
                 serviceRoundsA_Right={set5Shown ? set5ServiceRoundsLeftTeam_After : []}
-                pointsAtChangeA={set5Shown ? (set5Data.leftScoreAtCourtChange ?? null) : null}
+                pointsAtChangeA={set5Shown ? (set5Data!.leftScoreAtCourtChange ?? null) : null}
                 switchAt={set5SwitchAt}
               />
             </div>

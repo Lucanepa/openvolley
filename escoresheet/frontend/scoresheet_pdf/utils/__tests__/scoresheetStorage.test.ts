@@ -70,7 +70,7 @@ describe('scoresheet names', () => {
       { id: '4', name: `game7_${key}.pdf` },
       { id: null, name: 'game7_sub' }
     ]
-    const storage = { list: async (dir: string, opts: object) => { calls.push([dir, opts]); return { data: files, error: null } } }
+    const storage = { list: async (dir: string, opts?: object) => { calls.push([dir, opts]); return { data: files, error: null } } }
     expect(await findOwnScoresheet(storage, '2026-10-05', 7)).toEqual({ path: `2026-10-05/game7_${key}_final.json`, error: null })
     expect(calls[0][0]).toBe('2026-10-05')
     expect(calls[0][1]).toMatchObject({ search: 'game7' })
