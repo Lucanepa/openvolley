@@ -6,10 +6,11 @@
 // time (Date and the monotonic clock stand still), its DOM written out with
 // the inline styles left out (the paint pass changes those on purpose) and
 // compared with the golden recorded on the unchanged screen.
-//  - set 4 under way: regular substitutions (one back, one waiting for a
-//    point), an expulsion and its substitution, an exceptional (injury)
-//    substitution, warnings, a penalty, a coach's warning, a delay warning,
-//    liberos on court and an injured one, time-outs, results of sets 1-3
+//  - set 4 under way: regular substitutions (one back, one free to come
+//    back, one waiting for a point), an expulsion and its substitution (and
+//    one in set 3), an exceptional (injury) substitution, a disqualification,
+//    warnings, a penalty, a coach's warning, a delay warning, liberos on
+//    court and an injured one, time-outs, results of sets 1-3
 //  - a replay pending (time-outs and substitutions closed)
 //  - a set interval running, and the one before the deciding set (its setup)
 //  - the phone layout: set 4 and the set interval
@@ -225,6 +226,8 @@ async function setFourUnderWay() {
       l.event('sanction', { team: 'home', type: 'warning', playerType: 'official', role: 'Coach' })
       l.event('libero_unable', { team: 'home', liberoNumber: 11, liberoType: 'libero2', reason: 'injury', autoRemark: 'Set 2, 18:40, A 1:1, Libero #11 becomes unable to play' })
       l.event('sanction', { team: 'away', type: 'penalty', playerType: 'player', playerNumber: 9, position: 'II' })
+      // a bench player disqualified (out for the match)
+      l.event('sanction', { team: 'away', type: 'disqualification', playerType: 'player', playerNumber: '8' })
     }
   })
   setRows.push({ index: 2, homePoints: 22, awayPoints: 25, finished: true, startTime: iso(start + 28 * MIN), endTime: iso(start + 52 * MIN) })
@@ -234,6 +237,9 @@ async function setFourUnderWay() {
     extras: (l) => {
       l.event('sanction', { team: 'away', type: 'delay_warning' })
       l.sub(l.event('substitution', { team: 'away', position: 'IV', playerOut: 4, playerIn: 10, isExceptional: false }), { team: 'away', lineup: { ...LINEUP, IV: '10' }, fromSubstitution: true })
+      // home #4 expelled in set 3, #14 in for him (#4 plays again in set 4)
+      l.event('sanction', { team: 'home', type: 'expulsion', playerType: 'player', playerNumber: 4, position: 'IV' })
+      l.sub(l.event('substitution', { team: 'home', position: 'IV', playerOut: 4, playerIn: 14, isExpelled: true, isExceptional: false }), { team: 'home', lineup: { ...LINEUP, IV: '14' }, fromSubstitution: true })
     }
   })
   setRows.push({ index: 3, homePoints: 25, awayPoints: 23, finished: true, startTime: iso(start + 55 * MIN), endTime: iso(start + 80 * MIN) })
@@ -271,6 +277,9 @@ async function setFourUnderWay() {
   home = { ...home, II: '8' }
   log.sub(log.event('substitution', { team: 'home', position: 'II', playerOut: 2, playerIn: 8, isExceptional: false }), { team: 'home', lineup: home, fromSubstitution: true })
   log.rally('home')
+  // away: #3 out for #11 (III) with no rally since: #3 waits for a point
+  away = { ...away, III: '11' }
+  log.sub(log.event('substitution', { team: 'away', position: 'III', playerOut: 3, playerIn: 11, isExceptional: false }), { team: 'away', lineup: away, fromSubstitution: true })
   const score = log.points(4)
   setRows.push({ index: 4, ...score, finished: false, startTime: iso(start + 83 * MIN) })
   for (const row of setRows) await db.sets.add({ matchId, ...row })

@@ -63,9 +63,11 @@
             <button aria-label="Player 6, team B" data-court-cell="VI" type="button">
               <span>
                 "6"
-            <button aria-label="Player 3, team B" data-court-cell="III" type="button">
+            <button aria-label="Player 11, team B, in for 3" data-court-cell="III" type="button">
               <span>
-                "3"
+                "11"
+                <span aria-hidden="true" data-testid="phone-mark-replaced">
+                  "3"
             <button aria-label="Player 1, team B" data-court-cell="I" type="button">
               <span>
                 "1"
@@ -103,6 +105,11 @@
               <span>
                 "5"
       <section aria-label="Last actions" data-testid="phone-recent">
+        <span title="19:18 Substitution B · #11 in for #3 · B 12:14 A">
+          <span data-testid="phone-recent-time">
+            "19:18"
+          <span>
+            "Substitution B · #11 in for #3 · B 12:14 A"
         <span title="19:18 Point A · A 14:12 B">
           <span data-testid="phone-recent-time">
             "19:18"
@@ -113,11 +120,6 @@
             "19:18"
           <span>
             "Substitution A · #8 in for #2 · A 13:12 B"
-        <span title="19:18 Point B · A 13:12 B">
-          <span data-testid="phone-recent-time">
-            "19:18"
-          <span>
-            "Point B · A 13:12 B"
       <section aria-label="Team actions">
         <div>
           <button data-testid="phone-timeout-left" type="button">
@@ -129,7 +131,7 @@
             <span>
               "SUB"
             <span>
-              "1"
+              "2"
         <div>
           <button data-testid="phone-timeout-right" type="button">
             <span>

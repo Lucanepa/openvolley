@@ -72,7 +72,7 @@
             <div class="to-sub-label">
               "SUB"
             <div class="to-sub-value">
-              "1"
+              "2"
         <div>
           <button class="tap-hint tap-hint-sm">
             "Improper request"
@@ -90,6 +90,16 @@
                 "Bench"
             <div class="bench-fit">
               <div>
+                <div data-bench-player="3" data-is-libero="false" data-tap-hint="" data-team="away" draggable="false">
+                  <span>
+                    "3"
+                  <span>
+                    <span>
+                      "↑"
+                    <span>
+                      "↓"
+                    <span>
+                      "11"
                 <div data-bench-player="4" data-is-libero="false" data-tap-hint="" data-team="away" draggable="false">
                   <span>
                     "4"
@@ -100,9 +110,14 @@
                     "5"
                   <span>
                     "L1"
-                <div data-bench-player="8" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                <div data-bench-player="8" data-is-libero="false" data-tap-hint="" data-team="away" draggable="false">
                   <span>
                     "8"
+                  <span title="Disqualified - cannot play rest of match">
+                    "✕"
+                  <span>
+                    <div class="sanction-card yellow">
+                    <div class="sanction-card red">
                 <div data-bench-player="9" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
                   <span>
                     "9"
@@ -111,9 +126,6 @@
                 <div data-bench-player="10" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
                   <span>
                     "10"
-                <div data-bench-player="11" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
-                  <span>
-                    "11"
                 <div data-bench-player="12" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
                   <span>
                     "12"
@@ -169,10 +181,12 @@
                     <span class="court-player-position">
                       "IV"
                     "7"
-                  <div class="court-player" data-court-position="III" data-player-number="3" data-team="away" draggable="true">
+                  <div class="court-player" data-court-position="III" data-player-number="11" data-team="away" draggable="true">
+                    <span>
+                      "3"
                     <span class="court-player-position">
                       "III"
-                    "3"
+                    "11"
                   <div class="court-player" data-court-position="II" data-player-number="2" data-team="away" draggable="true">
                     <span class="court-player-position">
                       "II"
@@ -222,6 +236,7 @@
                     <div>
                       <div>
                         <div class="sanction-card yellow">
+                        <div class="sanction-card red">
                 <div class="court-row court-row-back">
                   <div class="court-player" data-court-position="I" data-player-number="1" data-team="home" draggable="true">
                     <img alt="Volleyball" src="/src/ball_fallback.png">
@@ -306,7 +321,7 @@
                       <td>
                         "0"
                       <td>
-                        "1"
+                        "2"
                       <td>
                         "1"
           <div class="rally-controls">
@@ -320,14 +335,14 @@
                   <button class="danger tap-hint" data-help-id="scoreboard-undo">
                     "Undo"
                 <div>
-                  <div title="Point A · A 14:12 B">
+                  <div title="Substitution B · #11 in for #3 · B 12:14 A">
                     <span class="summary-label">
                       "Last action:"
                     <span class="summary-value">
-                      "Point A · A 14:12 B"
+                      "Substitution B · #11 in for #3 · B 12:14 A"
                       <span>
                         "(seq:"
-                        "107"
+                        "111"
                         ")"
           <div class="set-summary-col">
             <div class="set-summary-card" data-set-summary="right">
@@ -379,7 +394,7 @@
                       <td>
                         "1"
                       <td>
-                        "0"
+                        "1"
                       <td>
                         "0"
                     <tr>
