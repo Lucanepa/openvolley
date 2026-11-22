@@ -15474,6 +15474,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 testId="missing-signature-left"
                 roles={preMatchMissing[leftTeamKeyNow]}
                 onClick={() => setPreMatchSignTeam(leftTeamKeyNow)}
+                still={!!preMatchSignTeam || signaturesMissingOpen}
                 style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(4.4cqw * var(--cqf, 1))' : 'max(12px, calc(5.6cqw * var(--cqf, 1)))' }}
               />
             )}
@@ -18902,6 +18903,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 testId="missing-signature-right"
                 roles={preMatchMissing[rightTeamKeyNow]}
                 onClick={() => setPreMatchSignTeam(rightTeamKeyNow)}
+                still={!!preMatchSignTeam || signaturesMissingOpen}
                 style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(4.4cqw * var(--cqf, 1))' : 'max(12px, calc(5.6cqw * var(--cqf, 1)))' }}
               />
             )}

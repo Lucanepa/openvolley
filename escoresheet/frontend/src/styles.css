@@ -2170,8 +2170,14 @@ button:disabled {
 
 /* "Missing signature" on the scoring screen (PreMatchSignDialog.jsx): a team's
    coach or captain has not signed yet; it flashes until the match starts.
-   amber-950 on amber-100..300 stays above 7:1 at both ends of the flash. */
+   amber-950 on amber-100..300 stays above 7:1 at both ends of the flash.
+   The flash is a layer under the text (::before, the strong amber of its
+   peak) that fades in and out: opacity only, so it runs on the compositor.
+   An animated background, border and ring ran on the main thread 60 times a
+   second, also while a coach signed in the dialog over it. */
 .missing-signature-button {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2189,7 +2195,25 @@ button:disabled {
   line-height: 1.15;
   text-align: center;
   cursor: pointer;
+}
+
+/* Over the border too (inset -2px): the peak's darker border is its ring */
+.missing-signature-button::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: inherit;
+  background: #fcd34d;
+  box-shadow: inset 0 0 0 2px #b45309, 0 0 0 4px rgba(217, 119, 6, 0.35);
+  pointer-events: none;
+  opacity: 0;
   animation: missingSignatureFlash 1.2s ease-in-out infinite;
+}
+
+/* Still while its signing dialog is open over it (the still prop) */
+.missing-signature-button[data-still]::before {
+  animation: none;
 }
 
 .missing-signature-button:focus-visible {
@@ -2218,24 +2242,20 @@ button:disabled {
 
   0%,
   100% {
-    background: #fef3c7;
-    border-color: #d97706;
-    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.55);
+    opacity: 0;
   }
 
   50% {
-    background: #fcd34d;
-    border-color: #b45309;
-    box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.35);
+    opacity: 1;
   }
 }
 
-/* Reduced motion: no flash, the strong amber stays */
+/* Reduced motion: no flash, the strong amber stays (without the outer ring) */
 @media (prefers-reduced-motion: reduce) {
-  .missing-signature-button {
+  .missing-signature-button::before {
     animation: none;
-    background: #fcd34d;
-    border-color: #b45309;
+    opacity: 1;
+    box-shadow: inset 0 0 0 2px #b45309;
   }
 }
 

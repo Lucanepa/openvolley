@@ -76,3 +76,37 @@ describe('Line-up buttons: the flash runs on the compositor', () => {
     expect(scoreboard).not.toMatch(/animation: 'lineupFlash/)
   })
 })
+
+describe('Missing signature: the flash runs on the compositor', () => {
+  const button = () => rulesFor('.missing-signature-button').join('\n')
+  const layer = () => rulesFor('.missing-signature-button::before').join('\n')
+
+  it('missingSignatureFlash animates only opacity, of a layer under the text', () => {
+    expect(animatedProperties(keyframes('missingSignatureFlash'))).toEqual(['opacity'])
+    expect(button()).toMatch(/position: relative;/)
+    expect(button()).toMatch(/isolation: isolate;/)
+    expect(button()).not.toMatch(/animation/)
+    expect(layer()).toMatch(/z-index: -1;/)
+    expect(layer()).toMatch(/inset: -2px;/)
+    expect(layer()).toMatch(/opacity: 0;/)
+    expect(layer()).toMatch(/animation: missingSignatureFlash 1\.2s ease-in-out infinite;/)
+  })
+
+  it('the button keeps the flash\'s two ends: pale at rest, the layer the strong amber of its peak', () => {
+    expect(button()).toMatch(/background: #fef3c7;/)
+    expect(button()).toMatch(/border: 2px solid #d97706;/)
+    expect(layer()).toMatch(/background: #fcd34d;/)
+    expect(layer()).toMatch(/box-shadow: inset 0 0 0 2px #b45309, 0 0 0 4px rgba\(217, 119, 6, 0\.35\);/)
+  })
+
+  it('stands still under its dialog (data-still) and, strong amber, under reduced motion', () => {
+    expect(rulesFor('.missing-signature-button[data-still]::before').join('\n')).toMatch(/animation: none;/)
+    const reduced = rulesFor('.missing-signature-button::before', reducedMotionBlocks().join('\n')).join('\n')
+    expect(reduced).toMatch(/animation: none;/)
+    expect(reduced).toMatch(/opacity: 1;/)
+  })
+
+  it('the scoring screen stills both buttons while a signing dialog is open', () => {
+    expect(scoreboard.match(/still=\{!!preMatchSignTeam \|\| signaturesMissingOpen\}/g)).toHaveLength(2)
+  })
+})
