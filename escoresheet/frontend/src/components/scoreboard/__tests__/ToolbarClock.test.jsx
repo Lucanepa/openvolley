@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
-import ToolbarClock, { formatToolbarClock } from '../ToolbarClock'
+import ToolbarClock, { formatToolbarClock, msToNextMinute } from '../ToolbarClock'
 import { openAppWindow, currentInAppView } from '../../../utils/openAppWindow'
+import { LOOK_KEYS, resetLookForTests, setLook } from '../../../utils/lookSettings'
 
 // The text the scoring screen's clock had (Scoreboard formatTimestamp until
 // 22.11.2026): the leaf must write exactly the same
@@ -21,7 +22,16 @@ afterEach(() => {
   document.body.innerHTML = ''
   vi.useRealTimers()
   setZone(ZONE)
+  localStorage.clear()
+  resetLookForTests()
 })
+
+// The clock's text without seconds: the day as before, the time HH:MM
+const minutesText = (date) => {
+  const day = date.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' })
+  const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${day} ${time}`
+}
 
 describe('formatToolbarClock follows the device\'s time zone', () => {
   it('a zone changed while the app runs: the new zone\'s time, as toLocaleTimeString', () => {
@@ -127,5 +137,87 @@ describe('ToolbarClock', () => {
     expect(screen.getByTestId('clock').textContent).toBe(formatTimestamp(new Date('2026-11-22T10:01:00')))
     act(() => { vi.advanceTimersByTime(1000) })
     expect(screen.getByTestId('clock').textContent).toBe(formatTimestamp(new Date('2026-11-22T10:01:01')))
+  })
+})
+
+// Options › Effects and speed › Seconds on the clock (utils/lookSettings
+// clockSeconds): off, HH:MM and one tick a minute, on the minute
+describe('ToolbarClock without seconds', () => {
+  it('the default is with seconds, as before', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+    render(<span data-testid="clock"><ToolbarClock /></span>)
+    expect(screen.getByTestId('clock').textContent).toMatch(/ 10:00:30$/)
+  })
+
+  it('shows HH:MM and ticks once a minute, on the minute', () => {
+    localStorage.setItem(LOOK_KEYS.clockSeconds, 'false')
+    vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+    render(<span data-testid="clock"><ToolbarClock /></span>)
+    const clock = () => screen.getByTestId('clock').textContent
+    expect(clock()).toBe(minutesText(new Date('2026-11-22T10:00:30')))
+    expect(clock()).toMatch(/ 10:00$/)
+    // one timer, no second-by-second interval
+    expect(vi.getTimerCount()).toBe(1)
+    act(() => { vi.advanceTimersToNextTimer() })
+    expect(new Date(Date.now()).toISOString()).toBe(new Date('2026-11-22T10:01:00').toISOString())
+    expect(clock()).toMatch(/ 10:01$/)
+    for (const minute of ['02', '03', '04']) {
+      act(() => { vi.advanceTimersToNextTimer() })
+      expect(new Date(Date.now()).getSeconds()).toBe(0)
+      expect(new Date(Date.now()).getMilliseconds()).toBe(0)
+      expect(clock()).toMatch(new RegExp(` 10:${minute}$`))
+      expect(vi.getTimerCount()).toBe(1)
+    }
+  })
+
+  it('59 s on, the text has not changed; at the minute it has', () => {
+    localStorage.setItem(LOOK_KEYS.clockSeconds, 'false')
+    vi.useFakeTimers({ now: new Date('2026-11-22T23:59:00') })
+    render(<span data-testid="clock"><ToolbarClock /></span>)
+    const before = screen.getByTestId('clock').textContent
+    act(() => { vi.advanceTimersByTime(59999) })
+    expect(screen.getByTestId('clock').textContent).toBe(before)
+    act(() => { vi.advanceTimersByTime(1) })
+    // midnight: the date turns with it
+    expect(screen.getByTestId('clock').textContent).toBe(minutesText(new Date('2026-11-23T00:00:00')))
+  })
+
+  it('turned off and on while it shows: applies at once', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+    render(<span data-testid="clock"><ToolbarClock /></span>)
+    expect(screen.getByTestId('clock').textContent).toMatch(/ 10:00:30$/)
+    act(() => { setLook({ clockSeconds: false }) })
+    expect(screen.getByTestId('clock').textContent).toMatch(/ 10:00$/)
+    expect(vi.getTimerCount()).toBe(1)
+    act(() => { vi.advanceTimersByTime(5000) })
+    expect(screen.getByTestId('clock').textContent).toMatch(/ 10:00$/)
+    act(() => { setLook({ clockSeconds: true }) })
+    expect(screen.getByTestId('clock').textContent).toMatch(/ 10:00:35$/)
+  })
+
+  it('stops under the Android in-app view too', () => {
+    localStorage.setItem(LOOK_KEYS.clockSeconds, 'false')
+    vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+    render(<span data-testid="clock"><ToolbarClock /></span>)
+    act(() => { openAppWindow('/scoresheet/?matchId=7', { win: window, platform: 'capacitor' }) })
+    expect(vi.getTimerCount()).toBe(0)
+    act(() => { vi.advanceTimersByTime(120000) })
+    expect(screen.getByTestId('clock').textContent).toMatch(/ 10:00$/)
+    act(() => { currentInAppView().close() })
+    expect(screen.getByTestId('clock').textContent).toMatch(/ 10:02$/)
+  })
+
+  it('formatToolbarClock({ seconds: false }) writes what toLocaleTimeString writes without seconds', () => {
+    for (const iso of ['2026-11-08T09:51:10', '2026-03-29T03:30:00', '2026-12-31T23:59:59', '2028-02-29T00:00:00']) {
+      const d = new Date(iso)
+      expect(formatToolbarClock(d, { seconds: false })).toBe(minutesText(d))
+      expect(formatToolbarClock(d, { seconds: false })).not.toContain(',')
+    }
+  })
+
+  it('msToNextMinute', () => {
+    expect(msToNextMinute(Date.UTC(2026, 10, 22, 10, 0, 30))).toBe(30000)
+    expect(msToNextMinute(Date.UTC(2026, 10, 22, 10, 0, 0))).toBe(60000)
+    expect(msToNextMinute(Date.UTC(2026, 10, 22, 10, 0, 59, 999))).toBe(1)
   })
 })
