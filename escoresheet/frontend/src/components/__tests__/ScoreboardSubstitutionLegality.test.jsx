@@ -473,3 +473,33 @@ describe('the exceptional substitution after an injury can be cancelled (owner 2
     expect(await openExceptionalList()).toEqual(['#7', '#8', '#9', '#10', '#11'])
   }, 60000)
 })
+
+// Owner 22.11.2026: "SUB shall count exceptional substitutions": the SUB box
+// shows every substitution of the set; its colour follows the regular ones.
+describe('the SUB box counts exceptional substitutions (owner 22.11.2026)', () => {
+  const subBox = () => [...document.querySelectorAll('.to-sub-counter')].find(b => b.querySelector('.to-sub-label')?.textContent.trim() === 'SUB')
+
+  it('6 regular + 1 exceptional: 7, red; the details list marks the exceptional one', async () => {
+    const matchId = await setUp('six')
+    await openScreen(matchId, 8)
+    expect(subBox().querySelector('.to-sub-value').textContent).toBe('6')
+    fireEvent.click(court(8))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Injury', playerMenu()))
+    const offered = await openExceptionalList()
+    fireEvent.click([...dropdown().querySelectorAll('button')].find(b => b.textContent.replace(/\s/g, '') === offered[0]))
+    const written = await confirmYes(7)
+    expect(written.isExceptional).toBe(true)
+    await waitFor(() => expect(subBox().querySelector('.to-sub-value').textContent).toBe('7'))
+    expect(subBox().querySelector('.to-sub-value').style.color).toBe('rgb(239, 68, 68)')
+
+    await settle()
+    fireEvent.click(subBox())
+    const list = await waitFor(() => {
+      const d = [...document.querySelectorAll('[role="dialog"]')].find(x => /Substitution 7/.test(x.textContent))
+      expect(d).toBeTruthy()
+      return d
+    }, { timeout: 3000 })
+    expect(list.querySelectorAll('[data-sub-exceptional]')).toHaveLength(1)
+  }, 60000)
+})

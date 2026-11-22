@@ -37,7 +37,7 @@ const SURFACE = {
 }
 import { setsToWin, displaySetNumber, resolveBestOf } from '../utils/matchFormat'
 import { getSideAForSet, getFirstServeForSet } from '../domain/rules'
-import { countRegularSubstitutions } from '../domain/substitutions'
+import { countRegularSubstitutions, countAllSubstitutions } from '../domain/substitutions'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours'
 import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName, teamSanctionsForDisplay } from './bench/benchLayout.js'
@@ -441,10 +441,18 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     ).length
   }, [data?.events, data?.set, team])
 
-  // Regular substitutions used in current set (exceptional ones do not count toward the 6)
+  // Regular substitutions used in current set (exceptional ones do not count
+  // toward the 6): the SUB counter's colour and pips
   const substitutionsUsed = useMemo(() => {
     if (!data?.events || !data?.set) return 0
     return countRegularSubstitutions(data.events, team, data.set.index)
+  }, [data?.events, data?.set, team])
+
+  // The SUB counter's number: every substitution of the set, exceptional ones
+  // included (owner 22.11.2026), as the scorer and the referee show it
+  const substitutionsShown = useMemo(() => {
+    if (!data?.events || !data?.set) return 0
+    return countAllSubstitutions(data.events, team, data.set.index)
   }, [data?.events, data?.set, team])
 
   // Get who is serving
@@ -927,7 +935,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   ]
   const counters = [
     { key: 'to', label: t('matchEntry.to', 'TO'), value: timeoutsUsed, limit: TIMEOUT_LIMIT, tone: counterTone(timeoutsUsed, TIMEOUT_LIMIT) },
-    { key: 'sub', label: t('matchEntry.sub', 'SUB'), value: substitutionsUsed, limit: SUBSTITUTION_LIMIT, tone: counterTone(substitutionsUsed, SUBSTITUTION_LIMIT, { warnNear: true }) }
+    // SUB: every substitution (6 regular + 1 exceptional read "7 /6"); the
+    // colour and the pips follow the regular ones, the 6 of the rule
+    { key: 'sub', label: t('matchEntry.sub', 'SUB'), value: substitutionsShown, pipsUsed: substitutionsUsed, limit: SUBSTITUTION_LIMIT, tone: counterTone(substitutionsUsed, SUBSTITUTION_LIMIT, { warnNear: true }) }
   ]
   const toneInk = { max: 'var(--ov-danger-text)', near: 'var(--ov-warning-ink)' }
   const liberoCount = teamInfo?.players?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
@@ -1063,7 +1073,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(6px, 1vh, 10px)', minWidth: 0 }}>
               <span style={{ fontSize: 'clamp(15px, 2.2vh, 24px)', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--ov-text-muted)', lineHeight: 1 }}>{c.label}</span>
               <span aria-hidden="true" style={{ display: 'flex', gap: 'clamp(3px, 0.5vh, 6px)' }}>
-                {counterPips(c.value, c.limit).map((on, i) => (
+                {counterPips(c.pipsUsed ?? c.value, c.limit).map((on, i) => (
                   <span key={i} style={{
                     width: 'clamp(8px, 1.2vh, 14px)',
                     height: 'clamp(8px, 1.2vh, 14px)',

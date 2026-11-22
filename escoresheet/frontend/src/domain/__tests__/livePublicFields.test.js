@@ -7,10 +7,19 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { livePublicFields, liveSetResultsOf, regularSubstitutionCount } from '../livePublicFields'
+import { livePublicFields, liveSetResultsOf, regularSubstitutionCount, substitutionCount } from '../livePublicFields'
 
 const sub = (playerOut, playerIn, exceptional = false) => ({ playerIn, playerOut, position: 'I', exceptional, ts: 't' })
 const set = (index, homePoints, awayPoints, finished) => ({ id: index, matchId: 1, index, homePoints, awayPoints, finished })
+
+describe('substitutionCount', () => {
+  it('counts every substitution, exceptional ones included (owner 22.11.2026)', () => {
+    expect(substitutionCount([sub(1, 2), sub(3, 4), sub(5, 6, true)])).toBe(3)
+    expect(substitutionCount([])).toBe(0)
+    expect(substitutionCount(null)).toBe(0)
+    expect(substitutionCount([null, 'x', sub(1, 2)])).toBe(1)
+  })
+})
 
 describe('regularSubstitutionCount', () => {
   it('counts the regular substitutions, not the exceptional ones (FIVB 15.6 / 15.7)', () => {
@@ -61,9 +70,9 @@ describe('livePublicFields', () => {
   }
   const sets = [set(1, 25, 21, true), set(2, 18, 16, false)]
 
-  it('during a set: the regular substitutions of that set per team, the finished sets', () => {
+  it('during a set: the substitutions of that set per team, exceptional ones included, the finished sets', () => {
     expect(livePublicFields({ snapshot: snapshotOfSet2, sets, pushedSetIndex: 2 })).toEqual({
-      subs_count_a: 2,
+      subs_count_a: 3,
       subs_count_b: 1,
       set_results: [{ set: 1, home: 25, away: 21, a: 25, b: 21 }]
     })
@@ -72,7 +81,7 @@ describe('livePublicFields', () => {
   it('Team A is the away team: counts and a / b by Team A', () => {
     const snapshot = { ...snapshotOfSet2, teamAKey: 'away' }
     const out = livePublicFields({ snapshot, sets, pushedSetIndex: 2 })
-    expect([out.subs_count_a, out.subs_count_b]).toEqual([2, 1])
+    expect([out.subs_count_a, out.subs_count_b]).toEqual([3, 1])
     expect(out.set_results).toEqual([{ set: 1, home: 25, away: 21, a: 21, b: 25 }])
   })
 
@@ -99,7 +108,7 @@ describe('livePublicFields', () => {
     const reopened = [set(1, 25, 21, true), set(2, 24, 23, false)]
     const snapshot = { ...snapshotOfSet2, pointsA: 24, pointsB: 23 }
     expect(livePublicFields({ snapshot, sets: reopened, pushedSetIndex: 2, countFinishedSet: false })).toEqual({
-      subs_count_a: 2,
+      subs_count_a: 3,
       subs_count_b: 1,
       set_results: [{ set: 1, home: 25, away: 21, a: 25, b: 21 }]
     })

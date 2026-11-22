@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   validateManualSubstitution, getSetSubstitutions, validateManualTimeout, planSubstitutionDeletion,
-  countRegularSubstitutions, canMakeRegularSubstitution, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET,
+  countRegularSubstitutions, countAllSubstitutions, canMakeRegularSubstitution, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET,
 } from '../substitutions'
 
 const sub = (team, setIndex, playerOut, playerIn, seq) => ({
@@ -104,6 +104,22 @@ describe('substitution limit (FIVB 15.6, 15.7, 16.1.3)', () => {
     expect(countRegularSubstitutions(sixPlusExc, 'away', 3)).toBe(6)
     expect(classifySubstitutionRequest(sixPlusExc, 'away', 3, {})).toBe('improper_request')
     expect(classifySubstitutionRequest(sixPlusExc, 'away', 3, { isInjury: true })).toBe('exceptional')
+  })
+
+  // owner 22.11.2026: "SUB shall count exceptional substitutions"; the rule
+  // (the 6 regular ones) is unchanged
+  it('countAllSubstitutions: what a SUB counter shows, exceptional ones included', () => {
+    const sixPlusExc = [...ownerSet, exc('away', 3, 1, 10, 8)]
+    expect(countAllSubstitutions(sixPlusExc, 'away', 3)).toBe(7)
+    expect(countRegularSubstitutions(sixPlusExc, 'away', 3)).toBe(6)
+    expect(canMakeRegularSubstitution(sixPlusExc, 'away', 3)).toBe(false)
+    const fivePlusExc = [...ownerSet.slice(0, 6), exc('away', 3, 1, 10, 8)] // 5 regular and the point
+    expect(countAllSubstitutions(fivePlusExc, 'away', 3)).toBe(6)
+    expect(canMakeRegularSubstitution(fivePlusExc, 'away', 3)).toBe(true)
+    // another team, another set, libero moves: not counted
+    expect(countAllSubstitutions(sixPlusExc, 'home', 3)).toBe(0)
+    expect(countAllSubstitutions(sixPlusExc, 'away', 2)).toBe(0)
+    expect(countAllSubstitutions([{ type: 'libero_entry', setIndex: 3, seq: 9, payload: { team: 'away' } }], 'away', 3)).toBe(0)
   })
 
   it('undo of the 6th substitution gives the regular substitution back', () => {

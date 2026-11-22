@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, act, waitFor, cleanup } from '@testing-library/react'
 
 // The referee's SUB counter with an exceptional substitution (FIVB 15.7) in
-// the scorer's live state: beyond the 6 of a set, it is not counted, as on
-// the scorer's SUB box and the bench tablet (full-match test 21.11.2026: the
-// referee showed 7, the scorer and the bench 6).
+// the scorer's live state: SUB counts every substitution, exceptional ones
+// included (owner 22.11.2026: "SUB shall count exceptional substitutions"),
+// as the scorer's SUB box and the bench tablet; its colour follows the
+// regular ones, the 6 of the rule.
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, fallback) => (typeof fallback === 'string' ? fallback : key), i18n: { language: 'en', changeLanguage: () => {} } })
@@ -93,16 +94,29 @@ async function mount(liveState) {
 // 1024 x 768): the side columns (lcnt / rcnt)
 const counters = (side) => document.querySelector(`[data-team-counters="${side}"], [data-team-counters="${side === 'left' ? 'lcnt' : 'rcnt'}"]`)
 const subCount = (side) => counters(side)?.querySelector('[data-counter="SUB"]')?.textContent.replace('SUB', '').trim()
+const subTone = (side) => counters(side)?.querySelector('[data-counter="SUB"]')?.getAttribute('data-tone') || null
 
-describe('Referee SUB counter: exceptional substitutions are not among the 6', () => {
+describe('Referee SUB counter: exceptional substitutions are counted, the colour follows the 6 regular ones', () => {
   beforeEach(() => { cleanup(); relay.subscriber = null; relay.onData = null })
 
-  it('6 regular + 1 exceptional shows 6, as the scorer and the bench', async () => {
+  it('6 regular + 1 exceptional shows 7, red, as the scorer and the bench', async () => {
     await mount({
       subs_a: [sub(8, 1), sub(9, 2), sub(10, 3), sub(1, 8), sub(2, 9), sub(3, 10), sub(4, 11, true)],
       subs_b: [sub(17, 15, true)]
     })
+    expect(subCount('left')).toBe('7')
+    expect(subTone('left')).toBe('max')
+    // an exceptional substitution alone: 1, no colour (all 6 regular left)
+    expect(subCount('right')).toBe('1')
+    expect(subTone('right')).toBe(null)
+  })
+
+  it('5 regular + 1 exceptional shows 6, amber: one regular substitution is left', async () => {
+    await mount({
+      subs_a: [sub(8, 1), sub(9, 2), sub(10, 3), sub(1, 8), sub(2, 9), sub(4, 11, true)],
+      subs_b: []
+    })
     expect(subCount('left')).toBe('6')
-    expect(subCount('right')).toBe('0')
+    expect(subTone('left')).toBe('near')
   })
 })

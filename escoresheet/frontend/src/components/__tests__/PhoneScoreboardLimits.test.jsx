@@ -45,6 +45,29 @@ describe('PhoneScoreboard: counters at the limit', () => {
     expect(screen.getByTestId('phone-sub-sheet')).toBeTruthy()
   })
 
+  // owner 22.11.2026: SUB counts exceptional substitutions; its colour stays
+  // with the regular ones (subsRegular), the 6 of the rule
+  it('SUB shows every substitution; 6 regular + 1 exceptional read 7, red', () => {
+    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { subs: 7, subsRegular: 6 }))} />)
+    const count = screen.getByTestId('phone-sub-left').querySelector('[data-count-state]')
+    expect(count.textContent).toBe('7')
+    expect(count.dataset.countState).toBe('max')
+  })
+
+  it('5 regular + 1 exceptional read 6, amber: one regular substitution is left', () => {
+    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { subs: 6, subsRegular: 5 }))} />)
+    const count = screen.getByTestId('phone-sub-left').querySelector('[data-count-state]')
+    expect(count.textContent).toBe('6')
+    expect(count.dataset.countState).toBe('warn')
+  })
+
+  it('an exceptional substitution alone reads 1, no colour', () => {
+    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { subs: 1, subsRegular: 0 }))} />)
+    const tile = screen.getByTestId('phone-sub-left')
+    expect(tile.textContent).toContain('1')
+    expect(tile.querySelector('[data-count-state]')).toBeNull()
+  })
+
   it('still closed while a rally is in play', () => {
     const p = props(team('left', 'home', 'A', { timeouts: 2 }))
     render(<PhoneScoreboard {...p} rally={{ ...p.rally, status: 'in_play' }} />)

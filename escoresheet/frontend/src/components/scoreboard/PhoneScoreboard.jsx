@@ -49,7 +49,9 @@ import PhonePairDock from '../phonePair/PhonePairDock.jsx'
  * @param {object} props.actions the Scoreboard's handlers (see Scoreboard.jsx)
  *
  * TeamVM: { side, teamKey, label ('A'|'B'), name, shortName, color, setsWon,
- *   points, timeouts, subs, lineupSet, lineupOptional (easy match),
+ *   points, timeouts, subs (every substitution of the set, exceptional
+ *   ones included), subsRegular (the regular ones: the SUB tile's colour,
+ *   the limit), lineupSet, lineupOptional (easy match),
  *   liberoPaint ({ background, color, textShadow?, ring } | null),
  *   court: [{ position, number, isLibero, isCaptain, replaced }] (isCaptain:
  *   the team captain or the acting game captain; replaced: the player a
@@ -322,7 +324,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const teamActions = (team) => (
     <div key={team.side} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
       {counter(team, { label: t('scoreboard.phone.timeOut'), value: team.timeouts, state: countState(team.timeouts, limits.timeouts), disabled: toDisabled(team), onClick: () => actions.timeout(team.side), testId: `phone-timeout-${team.side}` })}
-      {counter(team, { label: t('scoreboard.labels.sub'), value: team.subs, state: countState(team.subs, limits.subs, { warnBefore: true }), disabled: subDisabled(team), onClick: () => {
+      {counter(team, { label: t('scoreboard.labels.sub'), value: team.subs, state: countState(team.subsRegular ?? team.subs, limits.subs, { warnBefore: true }), disabled: subDisabled(team), onClick: () => {
         // The Scoreboard may answer with its request warning instead (the
         // 7th substitution): then no sheet
         if (actions.requestSubstitution?.(team.side) === false) return

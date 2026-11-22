@@ -41,7 +41,7 @@ import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
 import RefereeRosters from './referee/RefereeRosters.jsx'
 import { TeamSanctionList, hasTeamSanctions } from './referee/SanctionCards.jsx'
 import { bundleHasFullAccess } from './referee/scoresheetInput.js'
-import { liveStateCounters } from './referee/liveCounters.js'
+import { liveStateCounters, eventCounters, subCounterTone } from './referee/liveCounters.js'
 import { refereeSetBreak } from './referee/setBreak.js'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours.js'
@@ -1405,16 +1405,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       const liveState = data.liveState
       const teamAIsHome = (liveRowTeamA(liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || data.match?.coinTossTeamA || 'home') === 'home'
 
-      // Regular substitutions only: an exceptional one (FIVB 15.7) is beyond
-      // the 6, as on the scorer and the bench (referee/liveCounters.js)
+      // SUB: every substitution, exceptional ones included (owner
+      // 22.11.2026), as on the scorer and the bench; its colour from the
+      // regular ones (referee/liveCounters.js)
       return liveStateCounters(liveState, teamAIsHome)
     }
 
     // Fallback: count from events (when data comes from local IndexedDB or WebSocket)
     if (!data || !data.events || !data.currentSet) {
       return {
-        home: { timeouts: 0, substitutions: 0 },
-        away: { timeouts: 0, substitutions: 0 }
+        home: { timeouts: 0, substitutions: 0, regularSubstitutions: 0 },
+        away: { timeouts: 0, substitutions: 0, regularSubstitutions: 0 }
       }
     }
 
@@ -1422,17 +1423,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       e => (e.setIndex || 1) === (data.currentSet?.index || 1)
     )
 
-    // Regular substitutions only: exceptional ones (FIVB 15.7) are beyond the 6
-    return {
-      home: {
-        timeouts: currentSetEvents.filter(e => e.type === 'timeout' && e.payload?.team === 'home').length,
-        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'home' && !e.payload?.isExceptional).length
-      },
-      away: {
-        timeouts: currentSetEvents.filter(e => e.type === 'timeout' && e.payload?.team === 'away').length,
-        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'away' && !e.payload?.isExceptional).length
-      }
-    }
+    // SUB: every substitution, exceptional ones included; colour from the regular ones
+    return eventCounters(currentSetEvents)
   }, [data])
 
   // Get lineup for current set - returns null for team if no lineup exists
@@ -2123,10 +2115,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const leftLineup = (isMatchEnded || intervalClearsLineups) ? null : (leftTeam === 'home' ? lineup.home : lineup.away)
   const rightLineup = (isMatchEnded || intervalClearsLineups) ? null : (rightTeam === 'home' ? lineup.home : lineup.away)
   const leftStats = (isInSetInterval || isMatchEnded)
-    ? { timeouts: 0, substitutions: 0 }
+    ? { timeouts: 0, substitutions: 0, regularSubstitutions: 0 }
     : (leftTeam === 'home' ? stats.home : stats.away)
   const rightStats = (isInSetInterval || isMatchEnded)
-    ? { timeouts: 0, substitutions: 0 }
+    ? { timeouts: 0, substitutions: 0, regularSubstitutions: 0 }
     : (rightTeam === 'home' ? stats.home : stats.away)
 
   // Get the last finished set's final score for display when match ends
@@ -3556,7 +3548,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             side columns beside the court (grid areas). */}
         {(() => {
           const counter = (label, value, tone) => (
-            <div data-counter={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+            <div data-counter={label} data-tone={tone || undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
               <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>{label}</span>
               <span style={{
                 background: tone === 'max' ? 'rgba(239, 68, 68, 0.3)' : tone === 'near' ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
@@ -3584,9 +3576,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               fontSize: row ? 'clamp(18px, 3.6vw, 34px)' : vmin(4),
               fontWeight: 700
             }}>
-              {mirrored && counter('SUB', stats.substitutions, stats.substitutions >= 6 ? 'max' : stats.substitutions >= 5 ? 'near' : null)}
+              {mirrored && counter('SUB', stats.substitutions, subCounterTone(stats))}
               {counter('TO', stats.timeouts, stats.timeouts >= 2 ? 'max' : null)}
-              {!mirrored && counter('SUB', stats.substitutions, stats.substitutions >= 6 ? 'max' : stats.substitutions >= 5 ? 'near' : null)}
+              {!mirrored && counter('SUB', stats.substitutions, subCounterTone(stats))}
             </div>
           )
           const sanctionsTitle = t('refereeDashboard.sanctions.title', 'Sanctions')

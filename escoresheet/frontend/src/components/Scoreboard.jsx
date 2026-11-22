@@ -85,7 +85,7 @@ import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero, playersForLiberoRedesignation } from '../domain/liberos'
-import { planSubstitutionDeletion, countRegularSubstitutions, MAX_SUBSTITUTIONS_PER_SET, substitutionBarsForMatch } from '../domain/substitutions'
+import { planSubstitutionDeletion, countRegularSubstitutions, countAllSubstitutions, MAX_SUBSTITUTIONS_PER_SET, substitutionBarsForMatch } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
 import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
@@ -3494,13 +3494,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       )
   }, [data?.events, data?.set])
 
-  // Regular substitutions of the current set; exceptional ones (FIVB 15.7) are
-  // made beyond the 6 and are not counted, matching the details list.
+  // Regular substitutions of the current set: the limit of 6 (FIVB 15.6) and
+  // the SUB box's colour; exceptional ones (15.7, 15.8) are made beyond it.
   const substitutionsUsed = useMemo(() => {
     if (!data?.events || !data?.set) return { home: 0, away: 0 }
     return {
       home: countRegularSubstitutions(data.events, 'home', data.set.index),
       away: countRegularSubstitutions(data.events, 'away', data.set.index)
+    }
+  }, [data?.events, data?.set])
+
+  // What the SUB box shows: every substitution of the set, exceptional ones
+  // included (owner 22.11.2026), as the details list and the result's S
+  // column; 6 regular + 1 exceptional read 7, red (substitutionsUsed)
+  const substitutionsShown = useMemo(() => {
+    if (!data?.events || !data?.set) return { home: 0, away: 0 }
+    return {
+      home: countAllSubstitutions(data.events, 'home', data.set.index),
+      away: countAllSubstitutions(data.events, 'away', data.set.index)
     }
   }, [data?.events, data?.set])
 
@@ -9023,6 +9034,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     [mapSideToTeamKey, substitutionsUsed]
   )
 
+  // The SUB box's number: all substitutions (its colour: getSubstitutionsUsed)
+  const getSubstitutionsShown = useCallback(
+    side => {
+      const teamKey = mapSideToTeamKey(side)
+      return (substitutionsShown && substitutionsShown[teamKey]) || 0
+    },
+    [mapSideToTeamKey, substitutionsShown]
+  )
+
   // Get timeout details with scores
   const getTimeoutDetails = useCallback(
     side => {
@@ -9074,12 +9094,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const teamKey = mapSideToTeamKey(side)
       const setIndex = data.set.index
 
-      // Get all substitution events for this team in current set
+      // Every substitution of this team in the current set, exceptional
+      // ones included and marked, as the SUB box counts them (owner 22.11.2026)
       const substitutionEvents = data.events.filter(e =>
         e.type === 'substitution' &&
         e.setIndex === setIndex &&
-        e.payload?.team === teamKey &&
-        !e.payload?.isExceptional
+        e.payload?.team === teamKey
       )
 
       // Calculate scores at the time of each substitution
@@ -9106,6 +9126,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           playerOut: event.payload?.playerOut,
           playerIn: event.payload?.playerIn,
           position: event.payload?.position,
+          exceptional: event.payload?.isExceptional === true,
           index: index + 1
         }
       })
@@ -14386,7 +14407,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         setsWon: setsWon?.[side] || 0,
         points: pointsBySide[side] || 0,
         timeouts: getTimeoutsUsed(side),
-        subs: getSubstitutionsUsed(side),
+        // every substitution (owner 22.11.2026); the colour from the regular ones
+        subs: getSubstitutionsShown(side),
+        subsRegular: getSubstitutionsUsed(side),
         lineupSet: isLeft ? leftTeamLineupSet : rightTeamLineupSet,
         lineupOptional: lineupsOptional,
         // coach / captain still to sign before the first serve (empty: none)
@@ -15370,7 +15393,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   fontSize: (isCompactMode || isShortHeight) ? 'calc(6.6cqw * var(--cqf, 1))' : 'calc(11.25cqw * var(--cqf, 1))',
                   fontWeight: 700,
                   color: getSubstitutionsUsed('left') >= 6 ? '#ef4444' : getSubstitutionsUsed('left') >= 5 ? '#eab308' : 'inherit'
-                }}>{getSubstitutionsUsed('left')}</div>
+                }}>{getSubstitutionsShown('left')}</div>
               </div>
             </div>
             {/* Closed time-out / substitution: the reason in one line (replay
@@ -18772,7 +18795,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   fontSize: (isCompactMode || isShortHeight) ? 'calc(6.6cqw * var(--cqf, 1))' : 'calc(11.25cqw * var(--cqf, 1))',
                   fontWeight: 700,
                   color: getSubstitutionsUsed('right') >= 6 ? '#ef4444' : getSubstitutionsUsed('right') >= 5 ? '#eab308' : 'inherit'
-                }}>{getSubstitutionsUsed('right')}</div>
+                }}>{getSubstitutionsShown('right')}</div>
               </div>
             </div>
             {/* Closed time-out / substitution: the reason in one line (replay
@@ -25388,8 +25411,13 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <div style={{ fontSize: '16px', fontWeight: 600 }}>
+                      <div style={{ fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {t('scoreboard.dialogs.substitutionN', { defaultValue: 'Substitution {{n}}', n: detail.index })}
+                        {detail.exceptional && (
+                          <span data-sub-exceptional="" style={{ fontSize: '12px', fontWeight: 700, padding: '2px 8px', borderRadius: '6px', background: '#fef3c7', color: '#78350f', border: '1px solid #fcd34d' }}>
+                            {t('corrections.chip.exceptional', 'Exceptional')}
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
                         {detail.score}

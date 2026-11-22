@@ -3,11 +3,12 @@
  * a scoreboard (Point Hub, the LedBox, a TV page) needs without the match's
  * PIN, and without a shirt number in it.
  *
- *   subs_count_a / subs_count_b  regular substitutions of Team A / Team B in
- *       the set the live state names (current_set). Exceptional substitutions
- *       (FIVB 15.7) are not counted: they are not among the 6 of a set (15.6).
- *       0 once current_set moves on to a set nobody has substituted in yet
- *       (the set end's push names the next set).
+ *   subs_count_a / subs_count_b  substitutions of Team A / Team B in the
+ *       set the live state names (current_set), exceptional ones included
+ *       (owner 22.11.2026: "SUB shall count exceptional substitutions", as
+ *       the scorer, the bench and the referee show SUB). 0 once current_set
+ *       moves on to a set nobody has substituted in yet (the set end's push
+ *       names the next set).
  *   set_results  the finished sets, oldest first: [{ set, home, away, a, b }].
  *       `set` is the set's index (a best-of-3 decider is stored as 5, as on
  *       the match row), home / away as the match row's set_results, a / b the
@@ -23,8 +24,20 @@
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 
 /**
+ * Every substitution in a live-state substitution list (Scoreboard
+ * captureFullStateSnapshot subsA / subsB), exceptional ones included.
+ * @param {Array<object>|null|undefined} subs
+ * @returns {number}
+ */
+export function substitutionCount(subs) {
+  if (!Array.isArray(subs)) return 0
+  return subs.filter((s) => s && typeof s === 'object').length
+}
+
+/**
  * Regular substitutions in a live-state substitution list (Scoreboard
- * captureFullStateSnapshot subsA / subsB: { playerIn, playerOut, exceptional }).
+ * captureFullStateSnapshot subsA / subsB: { playerIn, playerOut, exceptional }):
+ * the 6 of the rule, the referee's SUB colour.
  * @param {Array<object>|null|undefined} subs
  * @returns {number}
  */
@@ -85,8 +98,8 @@ export function livePublicFields({ snapshot, sets, pushedSetIndex, countFinished
   // the push has moved on to
   const sameSet = Number(pushedSetIndex) === snapSet
   return {
-    subs_count_a: sameSet ? regularSubstitutionCount(snapshot?.subsA) : 0,
-    subs_count_b: sameSet ? regularSubstitutionCount(snapshot?.subsB) : 0,
+    subs_count_a: sameSet ? substitutionCount(snapshot?.subsA) : 0,
+    subs_count_b: sameSet ? substitutionCount(snapshot?.subsB) : 0,
     set_results: liveSetResultsOf(sets, {
       teamAKey: snapshot?.teamAKey === 'away' ? 'away' : 'home',
       endingSetIndex: countFinishedSet && Number.isFinite(snapSet) ? snapSet : null,

@@ -66,6 +66,18 @@ export function substitutionBarsForMatch(payload) {
   return payload.isDisqualified === true || payload.isExceptional === true
 }
 
+/**
+ * Every substitution a team has made in a set, exceptional ones included:
+ * what a SUB counter shows (owner 22.11.2026: "SUB shall count exceptional
+ * substitutions"; the scorer's SUB box on the tablet and the phone, the
+ * bench tablet, the referee, the public live state), as the result's S
+ * column does. The limit is unchanged: the 6 are regular substitutions
+ * (countRegularSubstitutions), so a counter's warning colour follows those.
+ */
+export function countAllSubstitutions(events, teamKey, setIndex) {
+  return getSetSubstitutions(events, teamKey, setIndex).length
+}
+
 /** True while the team still has a regular substitution left in the set. */
 export function canMakeRegularSubstitution(events, teamKey, setIndex, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET } = {}) {
   return countRegularSubstitutions(events, teamKey, setIndex) < maxPerSet

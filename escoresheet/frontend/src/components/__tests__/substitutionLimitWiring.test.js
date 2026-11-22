@@ -52,15 +52,27 @@ describe('Scoreboard substitution limit', () => {
     expect(body).toMatch(/const isExceptional = verdict === 'exceptional'/)
   })
 
-  it('the counter and the legal-substitute list count regular substitutions only', () => {
+  it('the limit (the SUB box colour) and the legal-substitute list count regular substitutions only', () => {
     expect(slice('const substitutionsUsed = useMemo(', 400)).toMatch(/countRegularSubstitutions\(data\.events, 'home', data\.set\.index\)/)
     expect(slice('const getAvailableSubstitutes = useCallback(', 500))
       .toMatch(/if \(!allowExceptional && data\.set && countRegularSubstitutions\(data\.events, teamKey, data\.set\.index\) >= MAX_SUBSTITUTIONS_PER_SET\) return \[\]/)
     expect(slice('const isSubstitutionLegal = useCallback(', 400)).toMatch(/countRegularSubstitutions\(/)
   })
 
-  it('the referee counter leaves exceptional substitutions out too', () => {
-    expect(referee).toMatch(/e\.type === 'substitution' && e\.payload\?\.team === 'home' && !e\.payload\?\.isExceptional/)
-    expect(referee).toMatch(/e\.type === 'substitution' && e\.payload\?\.team === 'away' && !e\.payload\?\.isExceptional/)
+  // owner 22.11.2026: "SUB shall count exceptional substitutions"; the colour
+  // stays with the regular ones (the limit)
+  it('the SUB box shows every substitution, exceptional ones included; its colour the regular ones', () => {
+    expect(slice('const substitutionsShown = useMemo(', 400)).toMatch(/countAllSubstitutions\(data\.events, 'home', data\.set\.index\)/)
+    for (const side of ['left', 'right']) {
+      expect(scoreboard).toContain(`}}>{getSubstitutionsShown('${side}')}</div>`)
+      expect(scoreboard).toContain(`color: getSubstitutionsUsed('${side}') >= 6 ? '#ef4444'`)
+    }
+    // the phone tile: the number shown and the regular count for its colour
+    expect(scoreboard).toMatch(/subs: getSubstitutionsShown\(side\),\s*subsRegular: getSubstitutionsUsed\(side\)/)
+  })
+
+  it('the referee counter counts every substitution too, its colour from the regular ones', () => {
+    expect(referee).toMatch(/return eventCounters\(currentSetEvents\)/)
+    expect(referee).toMatch(/counter\('SUB', stats\.substitutions, subCounterTone\(stats\)\)/)
   })
 })
