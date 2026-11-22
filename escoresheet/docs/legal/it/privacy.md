@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.25 · Aggiornata al 22 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.26 · Aggiornata al 22 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -415,7 +415,13 @@ dispositivo o su un telefono), sorteggio, svolgimento della partita con tutti gl
 sostituzioni e sanzioni, risultati e correzioni successive, nonché le
 **osservazioni** (il riquadro delle osservazioni del referto: ciò che scrive
 il segnapunti e le righe che aggiunge l'app, per esempio per una sostituzione
-obbligata o un libero che non può più giocare).
+obbligata o un libero che non può più giocare). Con la partita vengono
+conservate anche le **osservazioni tecniche**: ciò che l'app annota su come è
+stata registrata la partita (correzioni, una modifica della lista squadra dopo
+il sorteggio, un set riaperto, firme cancellate o date di nuovo, una
+sostituzione per infortunio con un sostituto regolare, un infortunio in
+panchina) e ciò che il segnapunti aggiunge come tale. Non vengono stampate sul
+referto.
 
 **Numero di licenza o data di nascita:** nella versione svizzera accanto a un
 nome figura il numero di licenza. Il segnapunti può digitarvi invece una data
@@ -434,7 +440,11 @@ osservazioni scritte dal segnapunti possono dire di più: scrivi solo ciò che
 serve al verbale. Le osservazioni le vedono coloro che vedono tutto (tabella
 qui sotto) e, durante la partita, il tablet dell'arbitro e chi ha il PIN
 della partita, mai i tablet della panchina né il pubblico; figurano sul
-referto e raggiungono così i suoi destinatari (qui sotto). Base giuridica:
+referto e raggiungono così i suoi destinatari (qui sotto). Una sostituzione
+per infortunio con un sostituto regolare e un infortunio in panchina sono
+invece osservazioni tecniche: non figurano sul referto né sul tablet
+dell'arbitro, restano con il verbale della partita e sono elencate nell'e-mail
+del referto finale (qui sotto). Base giuridica:
 sezione 20; conservate con la partita (sezione 16).
 
 **Chi inserisce i dati:** il segnapunti nell'app, i responsabili di squadra
@@ -455,7 +465,7 @@ dell'idoneità (numero di licenza), livescore.
 |---|---|
 | L'account che ha registrato o chiuso la partita; gli amministratori | Tutto |
 | Gli account che hanno inserito il PIN della partita (per esempio un tablet che riprende la partita) | Tutto, fino alla chiusura della partita |
-| Tablet dell'arbitro con il PIN arbitro | Squadre, entrambe le liste squadra con nomi e numeri, punteggio, osservazioni. **Nessuna** data di nascita, firma, ufficiale di gara o approvazione |
+| Tablet dell'arbitro con il PIN arbitro | Squadre, entrambe le liste squadra con nomi e numeri, punteggio, osservazioni (senza le osservazioni tecniche). **Nessuna** data di nascita, firma, ufficiale di gara o approvazione |
 | Tablet della panchina con il PIN della sua squadra | La lista della propria squadra con nomi e numeri, i numeri di maglia dell'altra squadra, punteggio. **Nessuna** osservazione, data di nascita, firma, ufficiale di gara o approvazione |
 | Tutti (pubblico) | Vedi sezione 8 |
 
@@ -497,7 +507,9 @@ volta ai destinatari. Vengono salvati solo il momento dell'invio e il numero
 di indirizzi, non gli indirizzi. Le partite chiuse prima dell'accensione non
 vengono inviate. L'indirizzo e-mail di un arbitro o di una squadra è
 facoltativo, fa parte della partita e non è mai pubblico; lo vede solo chi può leggere tutta la
-partita (tabella sopra). L'invio avviene tramite Migadu (sezione 15).
+partita (tabella sopra). L'e-mail elenca nel testo anche le osservazioni
+tecniche della partita (sopra); non figurano nel PDF. L'invio avviene tramite
+Migadu (sezione 15).
 
 **Referto di una partita di prova:** se alla fine di una partita di prova
 approvi il risultato da connesso, l'app invia il referto in PDF all'indirizzo
