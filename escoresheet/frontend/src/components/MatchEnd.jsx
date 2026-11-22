@@ -1612,8 +1612,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // Open the scoresheet with the getBlob action and wait for its PDF
       // (requestPdf): the page reads the match from this device's database
-      // (?matchId=), which holds the account approvals as checked above. Approve without PDF: the JSON, the approval and the ZIP
-      // go ahead, and the approved view makes the PDF again (pdfMissing).
+      // (?matchId=), which holds the account approvals as checked above.
+      // Approve without PDF: the JSON, the approval and the ZIP go ahead,
+      // and the approved view makes the PDF again (pdfMissing).
       // Cancel: nothing is approved.
       const { pdfResult, choice: pdfChoice, reason: pdfFailReason } = await requestPdf()
       if (pdfChoice === 'cancel') {
