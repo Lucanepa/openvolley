@@ -334,6 +334,8 @@ describe('an expelled bench player whom the libero replaced (FIVB 15.8, Casebook
       expect(d).toBeTruthy()
       return d
     }, { timeout: 3000 })
+    // out for the match, as every player replaced exceptionally (owner 22.11.2026)
+    expect(required.textContent).toContain('Player #5 cannot take part in the game anymore.')
     await settle()
     const pick = [...required.querySelectorAll('button')].find(b => /7/.test(b.textContent))
     fireEvent.click(pick)

@@ -602,10 +602,6 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // them before the set's line-up and between two sets)
   const benchPlayersWithSanctions = useMemo(() => {
     if (!teamInfo?.players) return []
-    const sentOff = (number) => getPlayerSanctions(number).some(e => {
-      const type = e.payload?.type || e.payload?.sanctionType
-      return type === 'expulsion' || type === 'disqualification'
-    })
 
     // Get bench players: all players not on court, excluding liberos
     const benchPlayers = teamInfo.players
@@ -615,21 +611,17 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         if (onCourtNumbers.has(playerNumber)) return false
         if (p.libero && p.libero !== '') return false // Exclude liberos
         
-        // An injured or ill player an exceptional substitution replaced is
-        // out for the match (FIVB 15.7): off the row. An expelled or
-        // disqualified one stays on it with his card, whichever substitution
-        // replaced him (an expelled player is back next set, 21.3.2): home
-        // #11, expelled and replaced exceptionally, was on no chip
-        // (full-match test 2026-11-21).
-        const outInjured = data.events?.some(e =>
+        // A player an exceptional substitution replaced takes no further
+        // part in the match, injured, expelled or disqualified (FIVB 15.7,
+        // 15.8; owner 22.11.2026): off the row. His sanction stays in the
+        // sanctions box (allSanctionsForDisplay reads the events alone).
+        const replacedExceptionally = data.events?.some(e =>
           e.type === 'substitution' &&
           e.payload?.team === team &&
           String(e.payload?.playerOut) === String(playerNumber) &&
-          e.payload?.isExceptional === true &&
-          e.payload?.isExpelled !== true &&
-          e.payload?.isDisqualified !== true
+          e.payload?.isExceptional === true
         )
-        if (outInjured && !sentOff(p.number)) return false
+        if (replacedExceptionally) return false
 
         return true
       })

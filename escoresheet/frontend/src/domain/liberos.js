@@ -53,12 +53,13 @@ export function playerReplacedByLibero(events, teamKey, setIndex, liberoNumber) 
  *  - no libero (original, re-designated or unable) and not re-designated
  *    before, nor the libero who became unable,
  *  - still allowed to play in the match: not disqualified and not taken out
- *    by a disqualification substitution or an exceptional substitution of an
- *    injured player (FIVB 15.7, 21.3.3), the rule the next set's line-up
- *    follows (playersAvailableForNextSet).
- * A player expelled in the set being played stays on the list: he plays
- * again next set (21.3.2) and is not offered as libero before then (whether
- * he may be re-designated during that set is an open owner decision).
+ *    by a disqualification substitution or by any exceptional substitution
+ *    (FIVB 15.7, 15.8, 21.3.3; owner 22.11.2026), the rule the next set's
+ *    line-up follows (playersAvailableForNextSet).
+ * A player expelled in the set being played and replaced by a legal
+ * substitution stays on the list: he plays again next set (21.3.2) and is
+ * not offered as libero before then (whether he may be re-designated during
+ * that set is an open owner decision).
  * @param {Array} players the team's roster
  * @param {Array} events all events of the match
  * @param {'home'|'away'} teamKey

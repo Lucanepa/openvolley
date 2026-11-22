@@ -9278,9 +9278,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     )
   }, [data?.events])
 
-  // Out for the match by an exceptional substitution: an injured player
-  // (FIVB 15.7). An expelled one replaced exceptionally is out for that set
-  // only (21.3.2), as wasSubstitutedDueToExpulsion handles.
+  // Out for the match by an exceptional substitution (FIVB 15.7, 15.8): an
+  // injured, expelled or disqualified player replaced beyond the legal
+  // substitutions (owner 22.11.2026: whoever is replaced exceptionally takes
+  // no further part in the match). A legal expulsion substitution bars him
+  // for that set only, as wasSubstitutedDueToExpulsion handles.
   const wasExceptionallySubstituted = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return false
     return data.events.some(e =>
@@ -23690,6 +23692,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   color: '#f59e0b'
                 }}>
                   {t('scoreboard.dialogs.noLegalSubsExceptional', 'No legal substitutes available - exceptional substitution required.')}
+                  {' '}
+                  {/* out for the match, as every player replaced exceptionally (owner 22.11.2026) */}
+                  {t('scoreboard.dialogs.playerOutForMatch', { defaultValue: 'Player #{{number}} cannot take part in the game anymore.', number: expelledPlayer })}
                 </p>
               )}
 

@@ -34,9 +34,10 @@ function isDisqualified(events, team, number) {
   )
 }
 
-// Out for the match by a substitution: substituted exceptionally because of
-// an injury or illness (FIVB 15.7). An expelled player replaced exceptionally
-// is back the next set (21.3.2); a disqualified one is caught above.
+// Out for the match by an exceptional substitution (FIVB 15.7, 15.8): an
+// injured or ill, expelled or disqualified player replaced beyond the legal
+// substitutions (owner 22.11.2026: whoever is replaced exceptionally takes
+// no further part in the match; domain/substitutions substitutionBarsForMatch).
 function wasExceptionallySubstituted(events, team, number) {
   return (events || []).some(e =>
     e.type === 'substitution' &&

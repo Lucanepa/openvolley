@@ -97,9 +97,13 @@ describe('playersForLiberoRedesignation (FIVB 19.4.2: only a player who may stil
     expect(list([sub(9, 8, 3, { isInjury: true })], { onCourt: [2, 3, 4, 5, 6, 12] })).toEqual([7, 8, 9, 10, 11])
   })
 
-  it('keeps a player expelled in this set, also when replaced exceptionally (back next set, 21.3.2; owner decision pending)', () => {
+  it('keeps a player expelled in this set and replaced legally (back next set, 21.3.2; owner decision pending)', () => {
     expect(list([sanction(4, 7, 'expulsion'), sub(4.1, 7, 3, { isExpelled: true })], { onCourt: [2, 3, 4, 5, 6, 12] })).toContain(7)
-    expect(list([sanction(4, 7, 'expulsion'), sub(4.1, 7, 10, { isExceptional: true, isExpelled: true })], { onCourt: [2, 4, 5, 6, 10, 12] })).toContain(7)
+  })
+
+  it('leaves out a player expelled or disqualified and replaced exceptionally: out for the match (owner 22.11.2026)', () => {
+    expect(list([sanction(4, 7, 'expulsion'), sub(4.1, 7, 10, { isExceptional: true, isExpelled: true })], { onCourt: [2, 4, 5, 6, 10, 12] })).not.toContain(7)
+    expect(list([sanction(4, 7, 'expulsion', 1), sub(4.1, 7, 10, { isExceptional: true, isExpelled: true }, 1)], { onCourt: [2, 4, 5, 6, 10, 12] })).toEqual([3, 8, 9, 11])
   })
 
   it('leaves out a disqualification of any set, also of a bench player, never another team\'s', () => {

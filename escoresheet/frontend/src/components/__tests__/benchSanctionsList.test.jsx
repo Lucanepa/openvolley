@@ -164,7 +164,7 @@ describe('bench sanctions box and rows: the interval between two sets', () => {
 describe('bench sanctions: a player replaced by an exceptional substitution', () => {
   beforeEach(() => { cleanup(); bundle = null; seq = 0 })
 
-  it('an expelled #11 replaced exceptionally keeps his sanction in the box and on his chip', async () => {
+  it('an expelled #11 replaced exceptionally leaves the bench row (out for the match), his sanction stays in the box', async () => {
     const withEleven = { ...home1, III: 11 }
     bundle = benchBundle({
       sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
@@ -178,13 +178,30 @@ describe('bench sanctions: a player replaced by an exceptional substitution', ()
     const { container } = await renderBench()
     await waitFor(() => expect(listOf(container).length).toBe(1))
     expect(listOf(container)).toEqual([['expulsion', '#11']])
-    // back for the next set (FIVB 21.3.2): on the bench row with his card
+    // whoever is replaced exceptionally takes no further part in the match
+    // (owner 22.11.2026): off the row, as an injured one
+    await waitFor(() => expect(rowText(container, 'players')).toContain('#14'))
+    expect(rowText(container, 'players')).not.toContain('#11')
+  })
+
+  it('an expelled #11 replaced by a legal substitution stays on the bench row with his card (back next set, 21.3.2)', async () => {
+    bundle = benchBundle({
+      sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
+      events: [
+        lineup('home', 1, { ...home1, III: 11 }),
+        sanction('home', 1, { type: 'expulsion', playerType: 'player', playerNumber: '11', position: 'III' }),
+        ev('substitution', 1, { team: 'home', position: 'III', playerOut: 11, playerIn: 7, isExpelled: true, isExceptional: false }),
+        lineup('home', 1, { ...home1, III: 7 })
+      ]
+    })
+    const { container } = await renderBench()
+    await waitFor(() => expect(listOf(container)).toEqual([['expulsion', '#11']]))
     await waitFor(() => expect(rowText(container, 'players')).toContain('#11'))
     const chip = [...container.querySelectorAll('[data-bench-row="players"] div')].find(d => d.textContent === '#11')
     expect(chip.querySelector('[data-card-glyph="expulsion"]')).not.toBeNull()
   })
 
-  it('a disqualified player replaced exceptionally stays listed in a later set', async () => {
+  it('a disqualified player replaced exceptionally is off the row in a later set, his sanction listed', async () => {
     bundle = benchBundle({
       sets: [{ index: 1, homePoints: 25, awayPoints: 20, finished: true }, { index: 2, homePoints: 4, awayPoints: 4, finished: false }],
       events: [
@@ -196,7 +213,7 @@ describe('bench sanctions: a player replaced by an exceptional substitution', ()
     })
     const { container } = await renderBench()
     await waitFor(() => expect(listOf(container)).toEqual([['disqualification', '#11']]))
-    expect(rowText(container, 'players')).toContain('#11')
+    expect(rowText(container, 'players')).not.toContain('#11')
   })
 
   it('an injured player replaced exceptionally (out for the match) leaves the bench row, his earlier warning stays in the box', async () => {
