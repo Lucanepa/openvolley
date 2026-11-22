@@ -4,12 +4,13 @@
 //    a blurred one (privacyCoverFill, Scoreboard.jsx).
 // The hall tablet (Galaxy Tab A7 Lite, PowerVR GE8320) runs a full-screen
 // two-pass blur for every frame anything under a dialog changes, at least once
-// a second for the toolbar clock. Off until the owner says yes
-// (performance pass 22.11.2026): LITE_GRAPHICS_ON_ANDROID.
+// a second for the toolbar clock. On in the Android app since the owner said
+// yes (performance pass 22.11.2026): LITE_GRAPHICS_ON_ANDROID. Never on the
+// web, the desktop apps or iOS.
 import { isNativeApp } from './backendConfig'
 
-/** The owner's call: true puts ov-lite on <html> in the Android app. */
-export const LITE_GRAPHICS_ON_ANDROID = false
+/** The owner's call (yes, 22.11.2026): true puts ov-lite on <html> in the Android app. */
+export const LITE_GRAPHICS_ON_ANDROID = true
 
 export const LITE_GRAPHICS_CLASS = 'ov-lite'
 

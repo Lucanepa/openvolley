@@ -91,8 +91,8 @@ if (onPointHubBoard()) {
 }
 
 // The Android app: lite graphics (dialogs without the backdrop blur, an opaque
-// line-up cover) once LITE_GRAPHICS_ON_ANDROID is on; off for now
-// (utils/liteGraphics)
+// line-up cover), LITE_GRAPHICS_ON_ANDROID (utils/liteGraphics; never the web,
+// the desktop apps or iOS)
 applyLiteGraphics()
 
 // The Android app: the referee view locks the activity upright

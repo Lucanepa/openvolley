@@ -1,8 +1,8 @@
 // Lite graphics (utils/liteGraphics): ov-lite on <html> only in the Android
-// app, and only once LITE_GRAPHICS_ON_ANDROID is on (off until the owner says
-// yes). Then dialog scrims lose their backdrop blur (tailwind.css) and the
-// line-up privacy cover is a near-opaque panel (Scoreboard.jsx). The switch is
-// injected here, so both of its values are covered.
+// app, while LITE_GRAPHICS_ON_ANDROID is on (on since the owner said yes,
+// 22.11.2026). Then dialog scrims lose their backdrop blur (tailwind.css) and
+// the line-up privacy cover is a near-opaque panel (Scoreboard.jsx). The
+// switch is injected here, so both of its values are covered.
 import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -24,12 +24,32 @@ afterEach(() => {
 })
 
 describe('ov-lite: only the Android app, only when switched on', () => {
-  it('is off until the owner switches it on', () => {
-    expect(LITE_GRAPHICS_ON_ANDROID).toBe(false)
+  it('is on (owner, 22.11.2026): the Android app gets the class by default', () => {
+    expect(LITE_GRAPHICS_ON_ANDROID).toBe(true)
     nativeApp(true)
-    expect(applyLiteGraphics({ android: isAndroidApp({ userAgent: ANDROID_UA }) })).toBe(false)
+    expect(applyLiteGraphics({ android: isAndroidApp({ userAgent: ANDROID_UA }) })).toBe(true)
+    expect(liteGraphicsOn()).toBe(true)
+    expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.92)' })
+  })
+
+  it('switched off: not even the Android app', () => {
+    nativeApp(true)
+    expect(applyLiteGraphics({ enabled: false, android: isAndroidApp({ userAgent: ANDROID_UA }) })).toBe(false)
     expect(liteGraphicsOn()).toBe(false)
   })
+
+  for (const [where, native, userAgent] of [
+    ['the web on an Android tablet', false, ANDROID_UA],
+    ['the iOS app', true, IOS_UA],
+    ['the desktop apps and the web', false, DESKTOP_UA]
+  ]) {
+    it(`by default: never ${where}`, () => {
+      nativeApp(native)
+      expect(applyLiteGraphics({ android: isAndroidApp({ userAgent }) })).toBe(false)
+      expect(liteGraphicsOn()).toBe(false)
+      expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
+    })
+  }
 
   it('switched on: the Android app gets the class', () => {
     nativeApp(true)
