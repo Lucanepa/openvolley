@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, act } from '@testing-library/react'
 import {
-  AUTO_CHECK_DELAY_MS, CHECK_BUDGET_MS, CHECK_KEY, CHECK_VERSION, RECOMMENDED, TIER_LIMITS, WORK_EVENTS, WORK_REPEAT, WORK_RUNS, WORK_SPLIT, WORK_STEPS,
+  AUTO_CHECK_DELAY_MS, CHECK_BUDGET_MS, CHECK_KEY, CHECK_VERSION, PROBE_STILL, RECOMMENDED, TIER_LIMITS, WORK_EVENTS, WORK_REPEAT, WORK_RUNS, WORK_SPLIT, WORK_STEPS,
   answerDeviceCheck, appPlatformOf, cardChanges, changesFor, checkDeviceNow, checkDue, classify, getDeviceCheck, homeQuietForCheck,
   measureLayout, measureWork, median, readCheck, readHints, recommend, recommendationOf, resetDeviceCheckForTests, runDeviceCheck,
   saveCheck, setDeviceCheck, syntheticMatch, useAutoDeviceCheck, useDeviceCheck
@@ -141,6 +141,30 @@ describe('the work and the layout probe', () => {
     expect(style).toMatch(/visibility: hidden/)
     expect(style).toMatch(/left: -20000px/)
     expect(style).toMatch(/pointer-events: none/)
+  })
+
+  it('the layout probe runs still: no transition, no animation on its box, rows and cells (reduced motion measured as fast as without)', async () => {
+    expect(PROBE_STILL).toBe('transition:none!important;animation:none!important;')
+    let attrs = null
+    await measureLayout({
+      pause: () => {
+        const box = document.querySelector('[data-device-check]')
+        if (box && box.firstChild && !attrs) attrs = [box, ...box.querySelectorAll('div')].map((el) => el.getAttribute('style'))
+        return noPause()
+      },
+      now: tickingClock(2)
+    })
+    // the box, 30 rows and their 8 cells each
+    expect(attrs).toHaveLength(1 + 30 + 30 * 8)
+    for (const style of attrs) {
+      expect(style.replace(/\s/g, '')).toMatch(/transition:none!important/)
+      expect(style.replace(/\s/g, '')).toMatch(/animation:none!important/)
+    }
+  })
+
+  it('a device that checked with version 1 (reduced motion measured too slow) checks again', () => {
+    expect(CHECK_VERSION).toBeGreaterThanOrEqual(2)
+    expect(checkDue(result({ v: 1 }))).toBe(true)
   })
 
   it('the layout probe: stopped, false (and the box gone); no document, null', async () => {

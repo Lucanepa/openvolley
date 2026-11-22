@@ -28,7 +28,8 @@
 //      off the screen and invisible (visibility: hidden, nothing painted, so
 //      nothing flickers), laid out LAYOUT_PASSES times at alternating widths
 //      and text sizes; median of LAYOUT_RUNS. It runs against the app's whole
-//      stylesheet, as the app's own screens do. No paint or frame probe: the
+//      stylesheet, as the app's own screens do, with no transition or
+//      animation of its own (PROBE_STILL). No paint or frame probe: the
 //      GPU cannot be measured without drawing something on the screen, and
 //      idle frames only tell the screen's refresh rate.
 //  (c) hints: the platform (Android app, iOS app, desktop app, web), cores
@@ -60,11 +61,24 @@
 // check, and anything slower). The ok tier
 // keeps the owner's recommendation (no blur, the rest on, the sharp PDF):
 // the calibration gives no reason to change it.
+// Version 2 (22.11.2026, the probe without transitions, PROBE_STILL): under
+// reduced motion the kit's 0.01 ms transitions had made the layout 4-5 times
+// slower (2x: ok at 92-106, 6x: 286-296). Again 6 checks per rate, reduced
+// motion off / on:
+//   1x   25.7 - 27.7  / 25.7 - 29.0     4x   89.2 - 93.0  / 86.3 - 95.3
+//   2x   44.3 - 48.5  / 40.8 - 45.0     5x   109.3 - 121.9 / 108.5 - 113.7
+//   3x   65.3 - 67.7  / 65.9 - 72.0     6x   128.5 - 141.7 / 132.3 - 135.3
+//   8x   176.7 - 183.4 / 175.7 - 185.3
+// The same with reduced motion as without; the limits stay.
 import { useEffect, useSyncExternalStore } from 'react'
 import { detectAppPlatform } from './openAppWindow'
 
-/** Raise when the work, the limits or the recommendations change: every device checks again. */
-export const CHECK_VERSION = 1
+/**
+ * Raise when the work, the limits or the recommendations change: every device
+ * checks again. 2: the layout probe without transitions (a device with reduced
+ * motion was measured too slow by version 1).
+ */
+export const CHECK_VERSION = 2
 export const CHECK_KEY = 'ov.deviceCheck'
 
 export const TIERS = Object.freeze(['fast', 'ok', 'slow'])
@@ -265,6 +279,16 @@ export async function measureWork({ runs = WORK_RUNS, repeat = WORK_REPEAT, even
 }
 
 /**
+ * On the probe's box, rows and cells: no transition, no animation. The kit
+ * gives every element a 0.01 ms transition under reduced motion (tokens.css),
+ * so each pass started a transition of the new text size on every cell: the
+ * layout took 4-5 times as long and a device asking for less motion was
+ * called one or two tiers slower (22.11.2026: 6x 290 instead of 140). Inline
+ * !important beats every stylesheet's !important, layered or not.
+ */
+export const PROBE_STILL = 'transition:none!important;animation:none!important;'
+
+/**
  * (b) Style and layout of a roster-like table in an invisible box off the
  * screen (nothing is painted). Without a document (a worker, a test that
  * passes none): null.
@@ -276,12 +300,12 @@ export async function measureLayout({ doc = typeof document !== 'undefined' ? do
   const box = doc.createElement('div')
   box.setAttribute('aria-hidden', 'true')
   box.setAttribute('data-device-check', '')
-  box.style.cssText = 'position:fixed;left:-20000px;top:0;width:900px;visibility:hidden;pointer-events:none;contain:layout style;'
+  box.style.cssText = `position:fixed;left:-20000px;top:0;width:900px;visibility:hidden;pointer-events:none;contain:layout style;${PROBE_STILL}`
   let html = ''
   for (let r = 0; r < LAYOUT_ROWS; r++) {
-    html += '<div style="display:flex;gap:4px;align-items:center;border-bottom:1px solid #e7e5e4;padding:2px 4px">'
+    html += `<div style="display:flex;gap:4px;align-items:center;border-bottom:1px solid #e7e5e4;padding:2px 4px;${PROBE_STILL}">`
     for (let c = 0; c < LAYOUT_COLUMNS; c++) {
-      html += `<div style="flex:${c === 2 ? 3 : 1} 1 0;min-width:0;padding:2px;font:600 1em/1.3 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c === 2 ? `Lastname${r} Firstname${r}` : r * LAYOUT_COLUMNS + c}</div>`
+      html += `<div style="flex:${c === 2 ? 3 : 1} 1 0;min-width:0;padding:2px;font:600 1em/1.3 sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${PROBE_STILL}">${c === 2 ? `Lastname${r} Firstname${r}` : r * LAYOUT_COLUMNS + c}</div>`
     }
     html += '</div>'
   }
