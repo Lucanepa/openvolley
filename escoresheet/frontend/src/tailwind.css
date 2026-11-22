@@ -1124,3 +1124,12 @@
     box-shadow: none;
   }
 }
+
+/* Lite graphics (html.ov-lite, utils/liteGraphics.js: the Android app, once
+   the owner switches it on): dialog scrims dim without the backdrop blur. On
+   the hall tablet's GPU a full-screen blur is redrawn for every frame that
+   anything under a dialog changes. Unlayered, so it beats the utilities. */
+html.ov-lite :is(.backdrop-blur-sm, .backdrop-blur) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

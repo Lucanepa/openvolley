@@ -113,6 +113,7 @@ import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
+import { privacyCoverFill } from '../utils/liteGraphics'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, officialsAsRoles, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { setSummaryFit } from './scoreboard/setSummaryFit'
@@ -17355,8 +17356,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          background: 'rgba(15, 23, 42, 0.5)',
-                          backdropFilter: 'blur(8px)',
+                          ...privacyCoverFill(),
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
@@ -17994,8 +17994,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          background: 'rgba(15, 23, 42, 0.5)',
-                          backdropFilter: 'blur(8px)',
+                          ...privacyCoverFill(),
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',

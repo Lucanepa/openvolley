@@ -28,6 +28,7 @@ import { startActivityLog } from './utils/activity'
 import { installDiagnostics } from './diagnostics'
 import { initTheme } from './utils/theme'
 import { isNativeApp } from './utils/backendConfig'
+import { applyLiteGraphics } from './utils/liteGraphics'
 import { unlockOrientation } from './utils/nativeOrientation'
 import { startNativeFileHousekeeping } from './utils/nativeBackup'
 import { startDobCleanup } from './db/dobCleanup'
@@ -88,6 +89,11 @@ if (onPointHubBoard()) {
   installOnScreenKeyboardHelp()
   blockPagePinch()
 }
+
+// The Android app: lite graphics (dialogs without the backdrop blur, an opaque
+// line-up cover) once LITE_GRAPHICS_ON_ANDROID is on; off for now
+// (utils/liteGraphics)
+applyLiteGraphics()
 
 // The Android app: the referee view locks the activity upright
 // (components/referee/upright.js) and is left by a page load (back), which
