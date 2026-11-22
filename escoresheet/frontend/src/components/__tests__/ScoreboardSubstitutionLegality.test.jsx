@@ -440,3 +440,36 @@ describe('exceptional substitution: out for the match (owner 22.11.2026)', () =>
     expect(button('Cancel sanction', dropdown())).toBeTruthy()
   }, 60000)
 })
+
+// Owner 22.11.2026 ("Add it"): the exceptional substitution's list after an
+// injury had no Cancel (the one after an expulsion has "Cancel sanction"),
+// only a tap outside closed it. Nothing is recorded before the substitution.
+describe('the exceptional substitution after an injury can be cancelled (owner 22.11.2026)', () => {
+  it('Cancel closes the list and records nothing; the injury can be started again', async () => {
+    const matchId = await setUp('cycle')
+    await openScreen(matchId, 3)
+    const before = (await db.events.toArray()).length
+    fireEvent.click(court(3))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Injury', playerMenu()))
+    await openExceptionalList()
+    const cancel = screen.getByTestId('substitution-dropdown-cancel')
+    expect(cancel.textContent.trim()).toBe('Cancel')
+    expect(dropdown().textContent).not.toContain('Cancel sanction')
+    fireEvent.click(cancel)
+    await waitFor(() => expect(dropdown()).toBeFalsy())
+    await settle()
+    // as before the injury: no event, no dialog, #3 still on court
+    expect((await db.events.toArray()).length).toBe(before)
+    expect(confirmDialog()).toBeFalsy()
+    expect(exceptionalChoice()).toBeFalsy()
+    expect(playerMenu()).toBeFalsy()
+    expect((await homeLineups()).at(-1).payload.lineup.III).toBe('3')
+    expect(court(3)).toBeTruthy()
+
+    fireEvent.click(court(3))
+    await waitFor(() => expect(playerMenu()).toBeTruthy())
+    fireEvent.click(button('Injury', playerMenu()))
+    expect(await openExceptionalList()).toEqual(['#7', '#8', '#9', '#10', '#11'])
+  }, 60000)
+})

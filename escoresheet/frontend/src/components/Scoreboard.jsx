@@ -21120,6 +21120,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {t('scoreboard.playerMenu.cancelSanction')}
                   </SbMenuItem>
                 )}
+                {/* The exceptional substitution after an injury: the injury
+                    writes nothing before the substitution, so Cancel leaves
+                    everything as it was (owner 22.11.2026; only a tap
+                    outside closed it) */}
+                {isExceptional && !mustSubstitute && (
+                  <SbMenuItem
+                    data-testid="substitution-dropdown-cancel"
+                    className="mt-2"
+                    onClick={() => {
+                      setSubstitutionDropdown(null)
+                      setLiberoDropdown(null)
+                      setInjuryDropdown(null)
+                      setPlayerActionMenu(null)
+                    }}
+                  >
+                    {t('common.cancel')}
+                  </SbMenuItem>
+                )}
               </div>
             </div>
           </>
