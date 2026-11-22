@@ -138,7 +138,9 @@ The activity uploads themselves are never logged.
 - no data URLs or JWTs;
 - strings ≤ 200 characters, depth ≤ 3, ≤ 4 KB.
 
-A manual change of a sensitive field becomes "changed". Remarks are logged by
+A manual change of a sensitive field becomes "changed". A technical remark
+(`category: 'technical'`, 2026-11-22) is logged by its kind (`action`) only,
+never its text. Remarks are logged by
 length only. A signature is logged by role and signed/cleared only. An
 approval is logged by role and method only. The server runs the same code
 (`lib/activitySanitize.js`, compared by a test).
