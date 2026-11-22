@@ -664,7 +664,7 @@ export default function CorrectionsPanel({
       </SectionCard>
 
       {/* 8. Correction log */}
-      <CorrectionLog changes={match?.manualChanges} ctx={ctx} />
+      <CorrectionLog changes={match?.manualChanges} ctx={ctx} events={sorted} />
 
       {/* 9. Advanced: event log */}
       <EventLogAdvanced events={sorted} filterSet={filter} ctx={ctx} readOnly={!editable} onRemove={removeEvent} onEdit={editEvent}

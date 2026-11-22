@@ -10,6 +10,7 @@
  */
 import { compareEventsBySeq, displaySetNumber } from './scoresheetModel'
 import { isDefaultForfait } from '../../src/domain/matchEnd.js'
+import { technicalRemarksOn } from '../../src/domain/technicalRemarks.js'
 
 type TeamKey = 'home' | 'away'
 
@@ -155,4 +156,25 @@ export function rebuildRemark(reason: unknown, at: Date = new Date()): string {
   const why = typeof reason === 'string' ? reason.replace(/\s+/g, ' ').trim() : ''
   const when = zurichStamp.format(at)
   return why ? `${REBUILT_AFTER_MATCH}: ${when} - ${why}` : `${REBUILT_AFTER_MATCH}: ${when}`
+}
+
+/**
+ * Every remark the sheet writes itself, as Match End and the PDF print them
+ * before the scorer's own: the generated ones, and in a match of the older
+ * remarks model the changes after the match ("Corrected after the match")
+ * and a rebuilt sheet's line ("Rebuilt after the match", `extraRemarks`).
+ * In a match of the technical-remarks model (owner 22.11.2026,
+ * src/domain/technicalRemarks.js) those two are technical remarks: kept with
+ * the match, never printed.
+ */
+export function sheetAutoRemarks({ sets, events, teamAKey, bestOf, match, extraRemarks }: {
+  sets: any[]; events: any[]; teamAKey: TeamKey; bestOf?: unknown; match?: any; extraRemarks?: unknown
+}): string[] {
+  const generated = generatedRemarks({ sets, events, teamAKey, bestOf } as any)
+  if (technicalRemarksOn(match)) return generated
+  return [
+    ...generated,
+    ...correctionRemarks(match?.manualChanges),
+    ...(Array.isArray(extraRemarks) ? extraRemarks.filter((r) => typeof r === 'string' && r.trim()) : [])
+  ]
 }

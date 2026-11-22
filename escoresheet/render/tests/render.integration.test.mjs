@@ -96,3 +96,29 @@ test('REMARKS that do not fit go on further pages as text', { skip, timeout: 120
     await renderer.close()
   }
 })
+
+// owner 2026-11-22: a match with technical remarks (match_info.remarks_model 2)
+// prints neither its changes after the match nor the rebuilt line; the
+// scorer's remarks stay. The fixture's older match (above) prints both.
+test('technical remarks are not printed (remarks model 2)', { skip, timeout: 120_000 }, async () => {
+  const renderer = createRenderer({ distDir: DIST, launch: () => chromium.launch({ executablePath: exe, args: LAUNCH_ARGS }) })
+  try {
+    const out = await renderer.render({ record: fixtureRecord({ remarksModel: 2 }), rebuildReason: 'Set start times corrected', rebuiltAt: '2026-11-16T13:03:00Z', withText: true })
+    assert.equal(out.pdf.subarray(0, 5).toString('latin1'), '%PDF-')
+    const sheet = (out.info.sheetText || '').toLowerCase()
+    assert.ok(sheet.includes('late start: the hall was busy'), 'the scorer\'s remark is on the sheet')
+    for (const w of ['rebuilt after the match', 'corrected after the match', 'set 2 times corrected']) assert.equal(sheet.includes(w), false, `"${w}" not on the sheet`)
+    if (has('pdftotext')) {
+      const dir = mkdtempSync(join(tmpdir(), 'ov-vector-'))
+      const file = join(dir, 'sheet.pdf')
+      writeFileSync(file, out.pdf)
+      const text = execFileSync('pdftotext', ['-layout', file, '-']).toString().toLowerCase()
+      assert.ok(text.includes('late start: the hall was busy'))
+      assert.equal(text.includes('rebuilt after the match'), false)
+      assert.equal(text.includes('corrected after the match'), false)
+    }
+  } finally {
+    await renderer.close()
+  }
+})
+
