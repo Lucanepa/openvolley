@@ -622,13 +622,17 @@ export default function App() {
   // Never a copy the server has closed (isStaleClosedCopy): a phone reopened
   // one on its scoring screen at every start (2026-10-23). It is not the
   // live match either, for the update check and the Back / close prompts.
+  // Only its status and test flag, as one string ('live|1'): a write of the
+  // live match's row (the heartbeat) no longer re-renders App. undefined when
+  // there is none (first() finds nothing), null when it cannot be read.
   const activeMatch = useLiveQuery(async () => {
     try {
-      return await db.matches
+      const live = await db.matches
         .where('status')
         .equals('live')
         .filter(m => !isStaleClosedCopy(m))
         .first()
+      return live ? `${live.status}|${live.test ? 1 : 0}` : live
     } catch (error) {
       console.error('Unable to load active match', error)
       return null
@@ -641,8 +645,8 @@ export default function App() {
   useEffect(() => installAppLifecycle(), [])
   // Android app: who installed it, the opt-in update check (utils/androidUpdate.js)
   useEffect(() => installAndroidUpdates(), [])
-  const activeMatchStatus = activeMatch?.status
-  const activeMatchIsTest = !!activeMatch?.test
+  const [activeMatchStatus, activeMatchTest] = typeof activeMatch === 'string' ? activeMatch.split('|') : []
+  const activeMatchIsTest = activeMatchTest === '1'
   // undefined until the live query has answered: before that "no live match"
   // is only a guess, and the Android update check must not run on a guess
   const activeMatchLoaded = activeMatch !== undefined
@@ -719,7 +723,12 @@ export default function App() {
   // (utils/deviceMatches.js): Continue and Delete above only reach the newest.
   // Copies of one match that the self-check flagged are listed and marked;
   // each row says what the server said about it (deviceSelfCheck copyState).
+  // The same array while the rows are equal: a match-row write while scoring
+  // (the heartbeat) re-reads the list but no longer re-renders App. Still read
+  // off Home: the list is current when the home screen comes back, in one
+  // change (AppCloseMatchOneChange).
   const serverHereKey = serverHere.join(',')
+  const deviceMatchesShown = useRef(null)
   const deviceMatches = useLiveQuery(async () => {
     try {
       const matches = await db.matches.toArray()
@@ -727,10 +736,14 @@ export default function App() {
       const teams = teamIds.length ? await db.teams.bulkGet(teamIds) : []
       const names = new Map(teams.filter(Boolean).map(tm => [tm.id, tm.name]))
       const here = new Set(serverHereKey ? serverHereKey.split(',').map(Number) : [])
-      return deviceMatchRows(matches, names, {
+      const rows = deviceMatchRows(matches, names, {
         duplicateIds: duplicateCopyIds(matches),
         stateOf: (m) => copyState(m, { checkedHere: here.has(m.id) })
       })
+      const key = JSON.stringify(rows)
+      if (deviceMatchesShown.current?.key === key) return deviceMatchesShown.current.rows
+      deviceMatchesShown.current = { key, rows }
+      return rows
     } catch (error) {
       console.error('Unable to list the matches on this device', error)
       return []
