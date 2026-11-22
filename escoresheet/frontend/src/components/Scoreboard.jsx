@@ -58,6 +58,7 @@ import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveStat
 import { liveCodeForMatch, cachedCourtToken, getLiveCourt, liveListedForMatch } from '../utils/globalLive'
 import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
+import ToolbarClock from './scoreboard/ToolbarClock'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
@@ -4664,14 +4665,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       links
     }
   }, [data, leftIsHome, getTeamLineupState, teamAKey, data?.events])
-
-  // Date and time apart, joined by a space: toLocaleString puts a comma
-  // between them ("08/11/2026, 09:51:10")
-  const formatTimestamp = useCallback(date => {
-    const day = date.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' })
-    const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-    return `${day} ${time}`
-  }, [])
 
   // Player discs wear the team's shirt colour, the libero the colour that
   // stands out most from both teams (the two liberos picked together, so
@@ -14943,10 +14936,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </div>
       )}
       {/* The phone layout has its own header (undo, match menu) */}
-      {!isPhoneView && <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)} clock={formatTimestamp(now)}>
-        {/* Column 1: Date/Time, with the fold-away chevron right beside it */}
+      {!isPhoneView && <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)} clock={<ToolbarClock />}>
+        {/* Column 1: Date/Time (ticks by itself, not the whole screen), with the fold-away chevron right beside it */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '0.4cqw' }}>
-          <span className="toolbar-clock" style={{ fontSize: 'calc(1.28cqw * var(--cqf, 1))' }}>{formatTimestamp(now)}</span>
+          <span className="toolbar-clock" style={{ fontSize: 'calc(1.28cqw * var(--cqf, 1))' }}><ToolbarClock /></span>
           <ToolbarChevron collapsed={false} onToggle={() => setHeaderCollapsed(true)} />
           <NativeBackupAlert onOpen={() => setShowOptionsInMenu(true)} />
         </div>
