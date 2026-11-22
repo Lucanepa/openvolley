@@ -17,6 +17,10 @@ import { isLocalOnly } from '../domain/matchKind'
 // same set makes an older, still queued one pointless.
 const SCORE_ONLY_KEYS = new Set(['external_id', 'home_points', 'away_points', 'sport_type'])
 
+// Up to this many queued jobs, queueSetScoreSync reads them all whole; above
+// it, only the queued set jobs (found by key). Online 1-3 jobs are queued.
+export const SHORT_QUEUE_JOBS = 32
+
 export function isScoreOnlySetUpdate(job, setExternalId) {
   return job?.resource === 'set' && job.action === 'update' && job.status === 'queued' &&
     job.payload?.external_id === setExternalId &&
@@ -143,17 +147,23 @@ export async function queueSetScoreSync(db, { matchId, setIndex }) {
     const set = await db.sets.where('matchId').equals(matchId).and(s => s.index === setIndex).first()
     if (!set) return false
     const externalId = setExtId(match.seed_key, set.id)
-    // The queued set jobs, found by their keys only: a filter on the queued
-    // rows read each one with its value, and offline (or signed out) every
-    // point adds an event job with a state snapshot and two line-ups, so
-    // each point inside its transaction read a growing backlog. Nor the set
-    // jobs with their values: the sent ones stay 7 days, one per point.
-    // Awaited one after the other (no Promise.all inside the caller's
-    // transaction). The same rows as `where('status').equals('queued')
-    // .and(isScoreOnlySetUpdate)`, which asks for resource 'set' too.
-    const queuedIds = new Set(await db.sync_queue.where('status').equals('queued').primaryKeys())
-    const setJobIds = await db.sync_queue.where('resource').equals('set').primaryKeys()
-    const candidates = setJobIds.filter(id => queuedIds.has(id))
+    // The queued jobs' keys first. Online (the usual case) only the few
+    // jobs of the last point or two are queued: those are read directly.
+    // Offline (or signed out) every point adds an event job with a state
+    // snapshot and two line-ups, so a filter on the queued rows read a
+    // growing backlog inside each point's transaction: then only the queued
+    // set jobs are read, found by intersecting with the set jobs' keys. That
+    // key list holds the sent set jobs too (kept 7 days, one per point), so
+    // a short queue does not read it. Awaited one after the other (no
+    // Promise.all inside the caller's transaction). The same rows as
+    // `where('status').equals('queued').and(isScoreOnlySetUpdate)`, which
+    // asks for resource 'set' too.
+    const queuedIds = await db.sync_queue.where('status').equals('queued').primaryKeys()
+    let candidates = queuedIds
+    if (queuedIds.length > SHORT_QUEUE_JOBS) {
+      const queued = new Set(queuedIds)
+      candidates = (await db.sync_queue.where('resource').equals('set').primaryKeys()).filter(id => queued.has(id))
+    }
     const stale = candidates.length > 0
       ? (await db.sync_queue.bulkGet(candidates)).filter(j => isScoreOnlySetUpdate(j, externalId))
       : []

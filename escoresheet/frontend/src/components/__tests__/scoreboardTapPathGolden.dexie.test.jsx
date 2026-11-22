@@ -414,8 +414,9 @@ describe('the tap path, recorded', () => {
     await expectGolden('rallyStart')
     const reads = await point('A', 2)
     // the point's one read (its tap check and the serve before it; was 2),
-    // the point's snapshot, the action's final snapshot; no queued job read
-    // with its value (queueSetScoreSync finds them by key; was 1)
+    // the point's snapshot, the action's final snapshot; no scan of the
+    // queued jobs' values (queueSetScoreSync takes their keys and reads the
+    // few of a short queue by key; was 1)
     expectReads('pointNoSideOut', reads, { match: 3, set: 0, queueValues: 0 })
     await expectGolden('pointNoSideOut')
   }, 90000)

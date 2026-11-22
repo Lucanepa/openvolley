@@ -5,6 +5,7 @@ import {
   buildEventInsertJob,
   queueEventSync,
   queueSetScoreSync,
+  SHORT_QUEUE_JOBS,
   isScoreOnlySetUpdate,
   buildSetEndMatchPayload,
   buildSetReopenMatchPayload,
@@ -127,18 +128,28 @@ describe('queueSetScoreSync', () => {
     expect(db.sync_queue.map.size).toBe(0)
   })
 
-  // On Dexie over fake-indexeddb, with a long offline queue: every queued
-  // event job carries a state snapshot and the line-ups, and the sent set
-  // jobs (one per point) stay 7 days. The same jobs are dropped as by the
-  // query used until 2026-11 (the oracle below).
-  it('drops exactly the jobs the old query found, among many queued and sent jobs', async () => {
+  // On Dexie over fake-indexeddb. Online only the last point or two's jobs
+  // are queued; offline every point adds an event job with a state snapshot
+  // and the line-ups. Either way the sent set jobs (one per point) stay 7
+  // days. The same jobs are dropped as by the query used until 2026-11 (the
+  // oracle below). 7 of the queued jobs are not event jobs.
+  it.each([
+    ['online, a short queue', 2, 'short'],
+    ['the longest short queue', SHORT_QUEUE_JOBS - 7, 'short'],
+    ['one job past it', SHORT_QUEUE_JOBS - 6, 'long'],
+    ['offline, a long queue', 60, 'long']
+  ])('drops exactly the jobs the old query found, among queued and sent jobs: %s', async (_name, queuedEvents, queue) => {
     const real = new Dexie(`eventSync-score-${Math.random()}`, { indexedDB: new IDBFactory(), IDBKeyRange: FakeIDBKeyRange })
     real.version(1).stores({ matches: '++id', sets: '++id,matchId', sync_queue: '++id,resource,action,payload,ts,status' })
-    // what reads the queue's rows with their values (keys alone are cheap)
+    // what reads the queue's rows with their values, and which index's keys
+    // are read (keys alone are cheaper, but the set jobs' keys take in every
+    // sent one)
     const valueReads = []
+    const keyReads = []
+    const keysOf = (req) => keyReads.push(req.query?.index?.name || 'id')
     real.use({
       stack: 'dbcore',
-      name: 'countQueueValueReads',
+      name: 'countQueueReads',
       create: (down) => ({
         ...down,
         table: (name) => {
@@ -146,8 +157,8 @@ describe('queueSetScoreSync', () => {
           if (name !== 'sync_queue') return table
           return {
             ...table,
-            query: (req) => { if (req.values) valueReads.push('query'); return table.query(req) },
-            openCursor: (req) => { if (req.values !== false) valueReads.push('cursor'); return table.openCursor(req) },
+            query: (req) => { if (req.values) valueReads.push('query'); else keysOf(req); return table.query(req) },
+            openCursor: (req) => { if (req.values !== false) valueReads.push('cursor'); else keysOf(req); return table.openCursor(req) },
             get: (req) => { valueReads.push('get'); return table.get(req) },
             getMany: (req) => { valueReads.push(...req.keys.map(() => 'get')); return table.getMany(req) }
           }
@@ -162,7 +173,7 @@ describe('queueSetScoreSync', () => {
     const set6 = 'match_100_aaa:s:6'
     const score = (externalId, home, away, extra = {}) => ({ external_id: externalId, home_points: home, away_points: away, ...extra })
     const jobs = []
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < queuedEvents; i++) {
       jobs.push({ resource: 'event', action: 'insert', status: 'queued', ts: i, payload: { external_id: `match_100_aaa:e:${i}`, state_snapshot: { pointsA: i, filler: 'x'.repeat(500) } } })
     }
     for (let i = 0; i < 40; i++) jobs.push({ resource: 'set', action: 'update', status: 'sent', ts: 100 + i, payload: score(set6, 1, i) })
@@ -179,16 +190,28 @@ describe('queueSetScoreSync', () => {
     )
     await real.sync_queue.bulkAdd(jobs)
     const before = await real.sync_queue.toArray()
+    const queuedJobs = before.filter(j => j.status === 'queued').length
+    expect(queuedJobs).toBe(queuedEvents + 7)
+    expect(queuedJobs > SHORT_QUEUE_JOBS).toBe(queue === 'long')
     // the query used until 2026-11 (a value cursor over every queued job)
     const oracle = (await real.sync_queue.where('status').equals('queued').and(j => isScoreOnlySetUpdate(j, set6)).toArray()).map(j => j.id)
     expect(oracle).toHaveLength(3)
 
     // inside a transaction, as the point's
     valueReads.length = 0
+    keyReads.length = 0
     expect(await real.transaction('rw', real.tables, () => queueSetScoreSync(real, { matchId: 1, setIndex: 2 }))).toBe(true)
-    // only the 6 queued set jobs are read whole, never the 60 event jobs
-    // or the 40 sent ones
-    expect(valueReads).toEqual(Array(6).fill('get'))
+    if (queue === 'short') {
+      // the few queued jobs are read whole; the set jobs' keys (the 40 sent
+      // ones among them) are not read
+      expect(keyReads).toEqual(['status'])
+      expect(valueReads).toEqual(Array(queuedJobs).fill('get'))
+    } else {
+      // only the 6 queued set jobs are read whole, never the queued event
+      // jobs or the 40 sent ones
+      expect(keyReads).toEqual(['status', 'resource'])
+      expect(valueReads).toEqual(Array(6).fill('get'))
+    }
 
     const after = await real.sync_queue.toArray()
     const afterIds = new Set(after.map(j => j.id))
