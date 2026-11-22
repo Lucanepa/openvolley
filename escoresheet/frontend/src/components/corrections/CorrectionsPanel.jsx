@@ -40,7 +40,7 @@ import EventLogAdvanced from './EventLogAdvanced.jsx'
 // The live action buttons: left-aligned, a long team name wraps inside the button
 const LIVE_BTN = 'justify-start text-left h-auto min-h-11 py-2 [&>svg]:shrink-0'
 
-const LIBERO_TYPES = ['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_redesignation']
+const LIBERO_TYPES = ['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_recovered', 'libero_redesignation']
 
 function AddButton({ children, onClick, disabled }) {
   return (

@@ -56,7 +56,9 @@ import PhonePairDock from '../phonePair/PhonePairDock.jsx'
  *   court: [{ position, number, isLibero, isCaptain, replaced }] (isCaptain:
  *   the team captain or the acting game captain; replaced: the player a
  *   substitute or the libero came in for),
- *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
+ *   liberos: [{ number, libero, unable, canReturn, onCourt, position }]
+ *   (canReturn: injured, no re-designation in his place: his menu brings
+ *   him back), benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
  *   blocked ({ timeout, substitution }: closed by a replay pending or the
  *   set interval, domain/interruptionRequests.js),
@@ -856,8 +858,9 @@ function LiberoColumn({ team, ink, title, actions, onDone }) {
           key={l.number}
           type="button"
           data-testid={`phone-libero-${team.side}-${l.number}`}
-          disabled={l.unable}
-          style={{ ...wideButton, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, ...(l.unable ? { background: 'var(--ov-sunken-strong)', color: 'var(--ov-text-faint)' } : null) }}
+          data-libero-state={l.canReturn ? 'injured' : l.unable ? 'unable' : undefined}
+          disabled={l.unable && !l.canReturn}
+          style={{ ...wideButton, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, ...(l.unable && !l.canReturn ? { background: 'var(--ov-sunken-strong)', color: 'var(--ov-text-faint)' } : null) }}
           onClick={(e) => { onDone(); actions.liberoClick(team.teamKey, l, e) }}
         >
           <span style={{ fontSize: 15, fontWeight: 800 }}>{l.number}</span>
@@ -865,7 +868,10 @@ function LiberoColumn({ team, ink, title, actions, onDone }) {
             {/* a libero declared unable keeps libero 'unable' (re-designation) */}
             {l.libero === 'libero1' ? 'L1' : l.libero === 'libero2' ? 'L2' : l.libero === 'redesignated' ? 'LR' : l.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : 'L'}
             {l.onCourt ? ` · ${t('scoreboard.phone.onCourt')}` : ''}
+            {/* injured: a tap opens his menu, "Able to play again" */}
+            {l.canReturn ? ` · ${t('scoreboard.phone.injured', 'injured')}` : ''}
           </span>
+          {l.canReturn && <span aria-hidden="true" style={{ color: '#dc2626', fontWeight: 800 }}>✚</span>}
         </button>
       ))}
       {team.needsRedesignation && (

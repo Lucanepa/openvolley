@@ -90,3 +90,27 @@ describe('PhoneScoreboard: the libero sheet', () => {
     expect(unable.disabled).toBe(true)
   })
 })
+
+// Owner 22.11.2026: an injured libero no re-designation replaced may come
+// back: his button stays open, marked injured, and opens his menu
+describe('PhoneScoreboard: an injured libero who may come back', () => {
+  it('is tappable and marked injured; one replaced by a re-designation stays closed', () => {
+    const liberoClick = vi.fn()
+    const liberos = [
+      { number: 12, libero: 'libero1', unable: true, canReturn: true, onCourt: false, position: null },
+      { number: 11, libero: 'unable', unable: true, canReturn: false, onCourt: false, position: null }
+    ]
+    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { liberos }), { liberoClick })} />)
+    fireEvent.click(screen.getByTestId('phone-action-libero'))
+    const injured = screen.getByTestId('phone-libero-left-12')
+    expect(injured.disabled).toBe(false)
+    expect(injured.getAttribute('data-libero-state')).toBe('injured')
+    expect(injured.textContent).toContain('injured')
+    fireEvent.click(injured)
+    expect(liberoClick).toHaveBeenCalledWith('home', liberos[0], expect.anything())
+    fireEvent.click(screen.getByTestId('phone-action-libero'))
+    const replaced = screen.getByTestId('phone-libero-left-11')
+    expect(replaced.disabled).toBe(true)
+    expect(replaced.getAttribute('data-libero-state')).toBe('unable')
+  })
+})

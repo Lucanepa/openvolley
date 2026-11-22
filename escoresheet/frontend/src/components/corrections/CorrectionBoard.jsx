@@ -66,7 +66,7 @@ export function boardFits(win = typeof window !== 'undefined' ? window : null) {
 }
 
 const COURT_ROWS = [['IV', 'III', 'II'], ['V', 'VI', 'I']]
-const LIBERO_TYPES = ['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_redesignation']
+const LIBERO_TYPES = ['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_recovered', 'libero_redesignation']
 const setOf = (e) => e?.setIndex ?? 1
 
 /** Changes under the board's feet: a new, removed or renumbered entry. */

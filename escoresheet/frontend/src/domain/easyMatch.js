@@ -81,7 +81,7 @@ export function playedAsPlayer(events, team, number) {
   })
 }
 
-const LIBERO_EVENTS = ['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_redesignation', 'sanction']
+const LIBERO_EVENTS = ['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_recovered', 'libero_redesignation', 'sanction']
 
 /** Has the libero done anything yet (entry, exit, exchange, unable, a sanction...)? */
 export function liberoUsed(events, team, number) {

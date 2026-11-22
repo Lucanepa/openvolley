@@ -765,13 +765,14 @@ export const ENTRY_FIELDS = Object.freeze({
   libero_exit: [],
   libero_exchange: [{ key: 'liberoIn', pick: 'libero' }],
   libero_unable: [{ key: 'liberoNumber', pick: 'libero' }],
+  libero_recovered: [{ key: 'liberoNumber', pick: 'libero' }],
   libero_redesignation: [{ key: 'newLiberoNumber', pick: 'player' }],
   court_captain_designation: [{ key: 'playerNumber', pick: 'player' }],
   bench_injury: [{ key: 'playerNumber', pick: 'player' }]
 })
 
 // Entries the generic editor can move to another score
-const MOVABLE = new Set(['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_redesignation', 'court_captain_designation', 'bench_injury'])
+const MOVABLE = new Set(['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_recovered', 'libero_redesignation', 'court_captain_designation', 'bench_injury'])
 
 /** The team's game captain designation in force (its latest one), or null. */
 function latestDesignation(events, team) {

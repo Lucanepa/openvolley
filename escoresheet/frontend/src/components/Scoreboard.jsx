@@ -84,13 +84,13 @@ import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice
 import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
-import { playerReplacedByLibero, playersForLiberoRedesignation } from '../domain/liberos'
+import { playerReplacedByLibero, playersForLiberoRedesignation, liberoPlayState, liberoToReplaceByRedesignation, LIBERO_RECOVERED } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, countAllSubstitutions, MAX_SUBSTITUTIONS_PER_SET, substitutionBarsForMatch } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
 import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
 import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
-import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark, injurySubstitutionText, exceptionalSubstitutionText, liberoUnableText } from '../domain/remarks'
+import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark, injurySubstitutionText, exceptionalSubstitutionText, liberoUnableText, liberoRecoveredText } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
 import { describeEventText, compareBySeq } from '../domain/describe'
@@ -9840,51 +9840,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return hasBeenSubstitutedOut
   }, [data?.events, data?.set, getSubstitutionHistory])
 
-  // Check if a libero is unable to play (injured, expelled, disqualified, or declared unable)
+  // Whether a libero may play now, and whether an injured one may come back
+  // (domain/liberos liberoPlayState): unable when a re-designation replaced
+  // him (out for the match), disqualified, expelled in this set (FIVB
+  // 21.3.2), declared unable, or injured since he last came back. An injured
+  // libero may play again as long as no re-designation replaced him (owner
+  // 22.11.2026; libero_recovered). Numbers are compared as strings: a
+  // sanction given from the court disc carries the number as a string.
   // MUST be defined before handlers that use it in dependency arrays
-  // Numbers are compared as strings (domain/liberos.js): a sanction given from
-  // the court disc carries the number as a string, the roster as a number.
-  // An expulsion bars the libero for its set only (FIVB 21.3.2); a
-  // disqualification, an injury and a declaration for the rest of the match.
-  const isLiberoUnable = useCallback((teamKey, liberoNumber) => {
-    const same = (n) => n != null && String(n) === String(liberoNumber)
-    // Check if player is marked as 'unable' in database (from libero redesignation)
+  const liberoStateOf = useCallback((teamKey, liberoNumber) => {
     const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-    const player = teamPlayers?.find(p => same(p.number))
-    if (player?.libero === 'unable') return true
+    const player = teamPlayers?.find(p => p.number != null && String(p.number) === String(liberoNumber)) || null
+    return liberoPlayState(data?.events, teamKey, liberoNumber, { setIndex: data?.set?.index ?? null, player })
+  }, [data?.events, data?.set?.index, data?.homePlayers, data?.awayPlayers])
 
-    if (!data?.events) return false
-    const setIndex = data?.set?.index
-    const thisSet = (e) => setIndex == null || (e.setIndex ?? 1) === setIndex
+  const isLiberoUnable = useCallback((teamKey, liberoNumber) => liberoStateOf(teamKey, liberoNumber).unable, [liberoStateOf])
 
-    // Check for expulsion (this set) or disqualification
-    const sanctions = data.events.filter(e =>
-      e.type === 'sanction' &&
-      e.payload?.team === teamKey &&
-      same(e.payload?.playerNumber) &&
-      (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && thisSet(e)))
-    )
-    if (sanctions.length > 0) return true
+  // An injured libero no re-designation replaced: the scorer may bring him back
+  const canLiberoReturn = useCallback((teamKey, liberoNumber) => liberoStateOf(teamKey, liberoNumber).mayReturn, [liberoStateOf])
 
-    // Check for libero_unable event (declared by coach, injury, sanction)
-    const unableEvents = data.events.filter(e =>
-      e.type === 'libero_unable' &&
-      e.payload?.team === teamKey &&
-      same(e.payload?.liberoNumber) &&
-      (e.payload?.reason !== 'expulsion' || thisSet(e))
-    )
-    if (unableEvents.length > 0) return true
-
-    // Check if libero was injured (substituted due to injury)
-    const injurySubs = data.events.filter(e =>
-      e.type === 'substitution' &&
-      e.payload?.team === teamKey &&
-      same(e.payload?.playerOut) &&
-      e.payload?.isInjury === true
-    )
-    if (injurySubs.length > 0) return true
-
-    return false
+  // The unable libero a re-designation replaces (and puts out for the match):
+  // one who may not come back anyway before an injured one who may, else the
+  // latest to become unable (domain/liberos liberoToReplaceByRedesignation)
+  const redesignationTargetOf = useCallback((teamKey) => {
+    const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
+    return liberoToReplaceByRedesignation(teamPlayers, data?.events, teamKey, { setIndex: data?.set?.index ?? null })
   }, [data?.events, data?.set?.index, data?.homePlayers, data?.awayPlayers])
 
   // Get libero currently on court for a team
@@ -11308,14 +11288,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Show re-designation modal
+    // Show re-designation modal. The libero it replaces is out for the
+    // match: one who may not come back anyway before an injured one who may
+    // (owner 22.11.2026; redesignationTargetOf)
+    const target = redesignationTargetOf(teamKey)
     setLiberoRedesignationModal({
       team: teamKey,
-      unableLiberoNumber: liberoNumber,
-      unableLiberoType: liberoType,
+      unableLiberoNumber: target?.number ?? liberoNumber,
+      unableLiberoType: target?.libero ?? liberoType,
       reason: reason
     })
-  }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation])
+  }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation, redesignationTargetOf])
 
   // Handle forfait (FIVB 6.4, 7.3.1, 15.8; domain/matchEnd, tested).
   //  scope 'set'   - the team is INCOMPLETE for the SET (injured / expelled
@@ -13534,9 +13517,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
 
       // Check if redesignation is needed - if so, show prompt in same modal
+      // (the other libero may be unable too, by its events: an injury, a
+      // declaration, a sanction)
       const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
       const activeLiberos = teamPlayers?.filter(p =>
-        p.libero && p.libero !== 'unable' && p.number !== liberoNumber
+        p.libero && p.libero !== 'unable' && String(p.number) !== String(liberoNumber) && !isLiberoUnable(team, p.number)
       ) || []
 
       if (activeLiberos.length === 0) {
@@ -13555,7 +13540,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.error('[confirmLiberoUnable] Error:', error)
       throw error
     }
-  }), [runAction, deferUi, liberoUnableModal, data?.set, data?.events, data?.match?.remarks, logEvent, logManualChange, checkLiberoRedesignation, getLiberoOnCourt, teamAKey, teamBKey, matchId])
+  }), [runAction, deferUi, liberoUnableModal, data?.set, data?.events, data?.match?.remarks, logEvent, logManualChange, checkLiberoRedesignation, getLiberoOnCourt, isLiberoUnable, teamAKey, teamBKey, matchId])
+
+  // An injured libero back in play (owner 22.11.2026: "they may return to
+  // play later unless a redesignation occurs"), only while no
+  // re-designation replaced him (canLiberoReturn). An event of its own
+  // (libero_recovered) with its remark (autoRemark), so undo, the
+  // scoresheet's remarks, the referee and the bench follow it.
+  const confirmLiberoRecovered = useCallback((team, liberoNumber, liberoType) => runAction('liberoRecovered', async () => {
+    if (!data?.set || !canLiberoReturn(team, liberoNumber)) return
+    const setIndex = data.set.index
+    const teamLabel = team === teamAKey ? 'A' : 'B'
+    const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
+    const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
+    const text = liberoRecoveredText(liberoNumber)
+    const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text })
+    await logEvent(LIBERO_RECOVERED, { team, liberoNumber, liberoType, autoRemark: remark })
+    const freshMatch = await db.matches.get(matchId)
+    await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', remark) })
+    logManualChange('Libero', 'Able to play again', `#${liberoNumber} unable`, `#${liberoNumber} active`,
+      `${text} (Team ${teamLabel}, Set ${setIndex}, ${teamScore}:${opponentScore})`)
+  }), [runAction, canLiberoReturn, data?.set, data?.match?.bestOf, logEvent, logManualChange, teamAKey, matchId])
 
   // Handle libero in button click
   const handleLiberoIn = useCallback((side, event) => {
@@ -14391,7 +14396,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
         .map(p => {
           const onCourt = court.find(pl => pl.isLibero && String(pl.number) === String(p.number))
-          return { number: p.number, libero: p.libero, unable: isLiberoUnable(teamKey, p.number), onCourt: !!onCourt, position: onCourt?.position || null }
+          const unable = isLiberoUnable(teamKey, p.number)
+          // canReturn: injured, no re-designation in his place (owner 22.11.2026)
+          return { number: p.number, libero: p.libero, unable, canReturn: unable && canLiberoReturn(teamKey, p.number), onCourt: !!onCourt, position: onCourt?.position || null }
         })
       // As the side column: a redesignation once the team has no libero left
       const designated = allLiberos.filter(p => p.libero !== 'unable')
@@ -14558,13 +14565,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             handlePlayerClick(teamKey, libero.position, libero.number, e)
             return
           }
-          if ((rallyStatus !== 'idle' && rallyStatus !== 'in_play') || libero.unable) return
+          if ((rallyStatus !== 'idle' && rallyStatus !== 'in_play') || (libero.unable && !libero.canReturn)) return
           setLiberoBenchActionMenu({ team: teamKey, liberoNumber: libero.number, liberoType: libero.libero, side: mapTeamKeyToSide(teamKey), ...anchorOf(e) })
         },
         redesignateLibero: (teamKey) => {
           const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
           const unable = teamPlayers.filter(p => p.libero && p.libero !== '' && p.libero !== 'unable' && isLiberoUnable(teamKey, p.number))
-          const lastUnable = unable[unable.length - 1]
+          const lastUnable = redesignationTargetOf(teamKey) || unable[unable.length - 1]
           if (!lastUnable) return
           setLiberoRedesignationModal({ team: teamKey, unableLiberoNumber: lastUnable.number, unableLiberoType: lastUnable.libero })
         },
@@ -14931,6 +14938,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 case 'libero_exit': return t('backupTable.eventTypes.liberoExit')
                 case 'libero_exchange': return t('backupTable.eventTypes.liberoExchange')
                 case 'libero_unable': return t('backupTable.eventTypes.liberoUnable')
+                case 'libero_recovered': return t('backupTable.eventTypes.liberoRecovered')
                 case 'libero_redesignation': return t('backupTable.eventTypes.liberoRedesignation')
                 case 'decision_change': return t('backupTable.eventTypes.decisionChange')
                 case 'sanction': {
@@ -15418,7 +15426,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const needsRedesignation = liberos.length > 0 && activeLiberos.length === 0
 
               if (needsRedesignation) {
-                const lastUnable = unableLiberos[unableLiberos.length - 1]
+                const lastUnable = redesignationTargetOf(teamKey) || unableLiberos[unableLiberos.length - 1]
                 return (
                   <div style={{ display: 'flex', gap: '2.5cqw', marginBottom: '2.5cqw', width: '100%' }}>
                     <button
@@ -15960,6 +15968,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {leftTeamBench.liberos.map(player => {
                         const teamKey = leftIsHome ? 'home' : 'away'
                         const isUnable = isLiberoUnable(teamKey, player.number)
+                        // injured, no re-designation in his place: his menu
+                        // brings him back (owner 22.11.2026)
+                        const mayReturn = isUnable && canLiberoReturn(teamKey, player.number)
                         const liberoOnCourt = getLiberoOnCourt(teamKey)
                         const canDragLibero = rallyStatus === 'idle' && !isUnable && !liberoOnCourt && hasPointSinceLastLiberoExchange(teamKey)
                         const isDraggingLibero = draggedPlayer?.team === teamKey && draggedPlayer?.playerNumber === player.number && draggedPlayer?.type === 'bench'
@@ -15993,6 +16004,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               data-bench-player={player.number}
                               data-team={teamKey}
                               data-is-libero="true"
+                              data-libero-state={mayReturn ? 'injured' : isUnable ? 'unable' : undefined}
                               draggable={canDragLibero}
                               onDragStart={(e) => canDragLibero && handleBenchDragStart(e, teamKey, player.number, true)}
                               onDragEnd={handleBenchDragEnd}
@@ -16004,7 +16016,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onTouchEnd={handleTouchEnd}
                               onTouchCancel={handleTouchCancel}
                               onClick={(e) => {
-                                if (rallyStatus === 'idle' && !isUnable && !touchDragState.isDragging) {
+                                if (rallyStatus === 'idle' && (!isUnable || mayReturn) && !touchDragState.isDragging) {
                                   // Open action menu for libero on bench
                                   const rect = e.currentTarget.getBoundingClientRect()
                                   setLiberoBenchActionMenu({
@@ -16034,8 +16046,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 gap: '1.25cqw',
                                 border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                                 boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
-                                cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && !isUnable) ? 'pointer' : 'default',
-                                opacity: isDraggingLibero ? 0.5 : isUnable ? 0.6 : 1
+                                cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && (!isUnable || mayReturn)) ? 'pointer' : 'default',
+                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : 1
                               }}
                             >
                               {/* The number; a libero-captain's circled in the libero colour */}
@@ -16049,6 +16061,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
+                              {/* injured, may come back: the injury cross */}
+                              {mayReturn && (
+                                <span style={{ color: '#ef4444', fontSize: 'calc(4.65cqw * var(--cqf, 1))', fontWeight: 700 }} title={t('scoreboard.playerMenu.liberoInjuredMayReturn', 'Injured: may play again while no new libero is re-designated in his place')}>✚</span>
+                              )}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
@@ -16137,7 +16153,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         return (
                           <button
                             onClick={() => {
-                              const lastUnable = unableLiberos[unableLiberos.length - 1]
+                              const lastUnable = redesignationTargetOf(teamKey) || unableLiberos[unableLiberos.length - 1]
                               setLiberoRedesignationModal({
                                 team: teamKey,
                                 unableLiberoNumber: lastUnable.number,
@@ -18820,7 +18836,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const needsRedesignation = liberos.length > 0 && activeLiberos.length === 0
 
               if (needsRedesignation) {
-                const lastUnable = unableLiberos[unableLiberos.length - 1]
+                const lastUnable = redesignationTargetOf(teamKey) || unableLiberos[unableLiberos.length - 1]
                 return (
                   <div style={{ display: 'flex', gap: '2.5cqw', marginBottom: '2.5cqw', width: '100%' }}>
                     <button
@@ -19362,6 +19378,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {rightTeamBench.liberos.map(player => {
                         const teamKey = leftIsHome ? 'away' : 'home'
                         const isUnable = isLiberoUnable(teamKey, player.number)
+                        // injured, no re-designation in his place: his menu
+                        // brings him back (owner 22.11.2026)
+                        const mayReturn = isUnable && canLiberoReturn(teamKey, player.number)
                         const liberoOnCourt = getLiberoOnCourt(teamKey)
                         const canDragLibero = rallyStatus === 'idle' && !isUnable && !liberoOnCourt && hasPointSinceLastLiberoExchange(teamKey)
                         const isDraggingLibero = draggedPlayer?.team === teamKey && draggedPlayer?.playerNumber === player.number && draggedPlayer?.type === 'bench'
@@ -19396,6 +19415,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               data-bench-player={player.number}
                               data-team={teamKey}
                               data-is-libero="true"
+                              data-libero-state={mayReturn ? 'injured' : isUnable ? 'unable' : undefined}
                               draggable={canDragLibero}
                               onDragStart={(e) => canDragLibero && handleBenchDragStart(e, teamKey, player.number, true)}
                               onDragEnd={handleBenchDragEnd}
@@ -19407,7 +19427,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               onTouchEnd={handleTouchEnd}
                               onTouchCancel={handleTouchCancel}
                               onClick={(e) => {
-                                if (rallyStatus === 'idle' && !isUnable && !touchDragState.isDragging) {
+                                if (rallyStatus === 'idle' && (!isUnable || mayReturn) && !touchDragState.isDragging) {
                                   // Open action menu for libero on bench
                                   const rect = e.currentTarget.getBoundingClientRect()
                                   setLiberoBenchActionMenu({
@@ -19434,8 +19454,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 gap: '1.25cqw',
                                 border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                                 boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
-                                cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && !isUnable) ? 'pointer' : 'default',
-                                opacity: isDraggingLibero ? 0.5 : isUnable ? 0.6 : 1
+                                cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && (!isUnable || mayReturn)) ? 'pointer' : 'default',
+                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : 1
                               }}
                             >
                               {/* The number; a libero-captain's circled in the libero colour */}
@@ -19449,6 +19469,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
+                              {/* injured, may come back: the injury cross */}
+                              {mayReturn && (
+                                <span style={{ color: '#ef4444', fontSize: 'calc(4.65cqw * var(--cqf, 1))', fontWeight: 700 }} title={t('scoreboard.playerMenu.liberoInjuredMayReturn', 'Injured: may play again while no new libero is re-designated in his place')}>✚</span>
+                              )}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
@@ -19537,7 +19561,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         return (
                           <button
                             onClick={() => {
-                              const lastUnable = unableLiberos[unableLiberos.length - 1]
+                              const lastUnable = redesignationTargetOf(teamKey) || unableLiberos[unableLiberos.length - 1]
                               setLiberoRedesignationModal({
                                 team: teamKey,
                                 unableLiberoNumber: lastUnable.number,
@@ -22906,7 +22930,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // Check if libero is already on court
         const liberoOnCourt = getLiberoOnCourt(teamKey)
-        const canPutIn = !liberoOnCourt && eligiblePlayers.length > 0 && rallyStatus === 'idle'
+        // An injured libero no re-designation replaced: the menu brings him
+        // back (owner 22.11.2026); nothing else until then but a sanction
+        const recovering = isLiberoUnable(teamKey, liberoBenchActionMenu.liberoNumber) && canLiberoReturn(teamKey, liberoBenchActionMenu.liberoNumber)
+        const canPutIn = !recovering && !liberoOnCourt && eligiblePlayers.length > 0 && rallyStatus === 'idle'
 
         return (
           <>
@@ -22960,7 +22987,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                 )}
 
+                {/* Injured, back in play (libero_recovered) */}
+                {recovering && (
+                  <SbMenuItem
+                    tone="positive-soft"
+                    data-testid="libero-able-again"
+                    disabled={rallyStatus === 'in_play'}
+                    onClick={() => {
+                      confirmLiberoRecovered(liberoBenchActionMenu.team, liberoBenchActionMenu.liberoNumber, liberoBenchActionMenu.liberoType)
+                      setLiberoBenchActionMenu(null)
+                      setLiberoBenchReplaceExpanded(false)
+                      setLiberoBenchUnableExpanded(false)
+                    }}
+                  >
+                    {t('scoreboard.playerMenu.ableToPlayAgain', 'Able to play again')}
+                  </SbMenuItem>
+                )}
+
                 {/* Unable to play - expandable */}
+                {!recovering && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <SbMenuItem tone="danger" expanded={liberoBenchUnableExpanded} onClick={() => setLiberoBenchUnableExpanded(!liberoBenchUnableExpanded)}>
                     {t('scoreboard.playerMenu.unableToPlay')}
@@ -23004,6 +23049,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* Sanction */}
                 <SbMenuItem
@@ -23212,7 +23258,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       const courtText = liberoUnableModal.isOnCourt ? ' ' + t('scoreboard.dialogs.replacedReturns', 'The replaced player will return to court.') : ''
                       switch (liberoUnableModal.reason) {
                         case 'injury':
-                          return t('scoreboard.dialogs.liberoUnableInjury', 'The libero will be marked as injured. They may return to play later unless a redesignation occurs.') + courtText
+                          return t('scoreboard.dialogs.liberoUnableInjury', 'The libero will be marked as injured. They may play again later (tap the libero: “Able to play again”), unless a new libero is re-designated in their place: then they cannot take part in the game anymore.') + courtText
                         case 'expulsion':
                           return t('scoreboard.dialogs.liberoUnableExpulsion', 'The libero is expelled and cannot play for the remainder of this set. They may return in the next set.') + courtText
                         case 'disqualification':
