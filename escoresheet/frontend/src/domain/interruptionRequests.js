@@ -315,9 +315,10 @@ export function substituteInIllegalReason(events, setIndex, team, playerOut, pla
 }
 
 /**
- * Sent off for good or for this set: expelled this set (also when replaced
- * exceptionally, FIVB 21.3.2), disqualified, or substituted exceptionally
- * because of an injury (15.7).
+ * Sent off for good or for this set: expelled this set (FIVB 21.3.2),
+ * disqualified, or replaced by an exceptional substitution (15.7, 15.8: an
+ * injury, an expulsion or a disqualification with no legal substitution),
+ * which keeps him out for the rest of the match (owner 22.11.2026).
  */
 export function isSentOff(events, team, number, setIndex) {
   const n = str(number)

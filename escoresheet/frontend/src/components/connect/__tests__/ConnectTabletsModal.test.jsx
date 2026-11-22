@@ -256,6 +256,36 @@ describe('ConnectTabletsModal', () => {
     expect(screen.getByTestId('devices-connected')).not.toHaveTextContent('of')
   })
 
+  // Full-match test 2026-11-21: two referee tablets on one PIN and both
+  // benches read "Connected: Referee, Home bench, Away bench · 3 of 3 tablets"
+  // with 4 tablets connected (it counted roles)
+  it('footer: two referee tablets count as two tablets, the roles apart', async () => {
+    relayTablets.value = {
+      reachable: true,
+      connections: {
+        clients: [
+          { role: 'referee', matchId: SEED, ip: '192.168.1.23', connectedAt: '2026-10-06T12:32:00.000Z' },
+          { role: 'referee', matchId: SEED, ip: '192.168.1.24', connectedAt: '2026-10-06T12:33:00.000Z' },
+          { role: 'bench', team: 'home', matchId: SEED, ip: '192.168.1.25', connectedAt: '2026-10-06T12:34:00.000Z' },
+          { role: 'bench', team: 'away', matchId: SEED, ip: '192.168.1.26', connectedAt: '2026-10-06T12:35:00.000Z' }
+        ]
+      },
+      referee: 2,
+      benchHome: 1,
+      benchAway: 1
+    }
+    const { unmount } = renderModal({ match: { ...MATCH, awayTeamConnectionEnabled: true }, fetchImpl: okFetch(), win: {} })
+    expect(screen.getByTestId('role-status-referee')).toHaveTextContent('2 tablets use this PIN')
+    expect(screen.getByTestId('devices-connected')).toHaveTextContent('Connected: Referee, Home bench, Away bench · 4 tablets for 3 of 3 roles')
+    expect(screen.getByTestId('devices-connected')).not.toHaveTextContent('3 of 3 tablets')
+    unmount()
+
+    // the referee alone let in, with two tablets
+    renderModal({ match: { ...MATCH, homeTeamConnectionEnabled: false }, fetchImpl: okFetch(), win: {} })
+    expect(screen.getByTestId('devices-connected')).toHaveTextContent('Connected: Referee · 2 tablets')
+    expect(screen.getByTestId('devices-connected')).not.toHaveTextContent('of')
+  })
+
   it('live status: never "waiting" when the relay cannot be read', () => {
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
     expect(screen.getByTestId('role-status-referee')).toHaveTextContent('Live status not available')

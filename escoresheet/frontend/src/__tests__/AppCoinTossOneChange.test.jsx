@@ -40,7 +40,7 @@ describe('App: confirming the coin toss', () => {
         returnToMatch: !![...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Return to match'),
         progress: [...document.querySelectorAll('[role=dialog]')].map(d => d.textContent).find(x => /initiali[sz]|checks|Syncing/i.test(x))?.slice(0, 40) || null,
         loading: /Loading\.\.\./.test(text),
-        scoreboard: !![...document.querySelectorAll('button')].find(b => /^Lineup/.test(b.textContent.trim()))
+        scoreboard: !![...document.querySelectorAll('button')].find(b => /^Line-?up/.test(b.textContent.trim()))
       }
     })
     fireEvent.click(button('Confirm coin toss result'))

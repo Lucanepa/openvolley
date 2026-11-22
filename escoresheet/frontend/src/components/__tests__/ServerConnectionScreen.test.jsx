@@ -132,10 +132,25 @@ describe('ServerConnectionScreen', () => {
     expect(order).toEqual(['learn', 'override', 'connected'])
   })
 
+  // Full-match test 2026-11-21: a scorer laptop's Tailscale address
+  // (100.64/10) was refused as "can't be used"
+  it('takes a Tailscale address (100.64/10) as a local server, over http', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true })
+    render(<ServerConnectionScreen onConnected={mockOnConnected} />)
+    fireEvent.change(screen.getByPlaceholderText(/192\.168/), { target: { value: '100.76.39.66:48240' } })
+    fireEvent.click(screen.getByText('Connect'))
+
+    await waitFor(() => expect(mockOnConnected).toHaveBeenCalledWith({ serverUrl: 'http://100.76.39.66:48240' }))
+    expect(screen.queryByText(/This address can't be used/)).toBeNull()
+    expect(global.fetch).toHaveBeenCalledWith('http://100.76.39.66:48240/health', expect.objectContaining({ method: 'GET' }))
+    expect(learnRelayWsPort).toHaveBeenCalledWith('http://100.76.39.66:48240')
+    expect(getBackendOverride()).toBe('http://100.76.39.66:48240')
+  })
+
   // fe-secondary-apps-4: an address setBackendOverride drops (a plain host
-  // name, a VPN or public address) answered /health, was shown as
-  // "Connected!" and the page kept the default backend.
-  it.each(['scorer-laptop:8080', '100.101.102.103:8080', 'https://example.com', 'http://backend.openvolley.app'])(
+  // name, a public address, one just outside 100.64/10) answered /health,
+  // was shown as "Connected!" and the page kept the default backend.
+  it.each(['scorer-laptop:8080', '100.128.0.1:8080', 'https://example.com', 'http://backend.openvolley.app'])(
     'refuses %s before any request, and says why', async (address) => {
       global.fetch = vi.fn().mockResolvedValue({ ok: true })
       render(<ServerConnectionScreen onConnected={mockOnConnected} />)

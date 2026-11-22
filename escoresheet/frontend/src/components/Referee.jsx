@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
-import i18n from '../i18n'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker, isLiveStateNewerThanBundle } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import { useScorerAway } from '../hooks/useScorerAway'
@@ -42,6 +41,8 @@ import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
 import RefereeRosters from './referee/RefereeRosters.jsx'
 import { TeamSanctionList, hasTeamSanctions } from './referee/SanctionCards.jsx'
 import { bundleHasFullAccess } from './referee/scoresheetInput.js'
+import { liveStateCounters, eventCounters, subCounterTone } from './referee/liveCounters.js'
+import { refereeSetBreak } from './referee/setBreak.js'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours.js'
 import { compareBySeq } from '../domain/describe'
@@ -63,64 +64,10 @@ import { useMatchTz } from '../ui/useMatchTz'
 // A lineup position: the rich format's { number, ... } or the legacy plain number
 const lineupNumber = (pos) => (pos && typeof pos === 'object') ? pos.number : (pos || '')
 
-// Get current version from package.json (injected by Vite at build time)
-const currentVersion = __APP_VERSION__
-
 // The scorer's pushes that end the break between sets ahead of time (a row
 // with set_interval_active false): "End interval" and the set 5 setup's
 // confirmation (Scoreboard endSetInterval / syncSet5Setup)
 const BREAK_END_EVENTS = new Set(['end_interval', 'manual_set5_setup'])
-
-// Flag SVG components for language selector
-const FlagGB = () => (
-  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="60" height="42" fill="#012169" />
-    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7" />
-    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)" />
-    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12" />
-    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7" />
-  </svg>
-)
-
-const FlagIT = () => (
-  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="20" height="42" fill="#009246" />
-    <rect x="20" width="20" height="42" fill="#fff" />
-    <rect x="40" width="20" height="42" fill="#CE2B37" />
-  </svg>
-)
-
-const FlagDE = () => (
-  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="60" height="14" fill="#000" />
-    <rect y="14" width="60" height="14" fill="#DD0000" />
-    <rect y="28" width="60" height="14" fill="#FFCE00" />
-  </svg>
-)
-
-const FlagFR = () => (
-  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="20" height="42" fill="#002395" />
-    <rect x="20" width="20" height="42" fill="#fff" />
-    <rect x="40" width="20" height="42" fill="#ED2939" />
-  </svg>
-)
-
-const FlagCH = () => (
-  <svg className="flag" width="14" height="14" viewBox="0 0 32 32" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
-    <rect width="32" height="32" fill="#ff0000" />
-    <rect x="14" y="6" width="4" height="20" fill="#fff" />
-    <rect x="6" y="14" width="20" height="4" fill="#fff" />
-  </svg>
-)
-
-const languages = [
-  { code: 'en', Flag: FlagGB, label: 'EN' },
-  { code: 'it', Flag: FlagIT, label: 'IT' },
-  { code: 'de', Flag: FlagDE, label: 'DE' },
-  { code: 'de-CH', Flag: FlagCH, label: 'DE' },
-  { code: 'fr', Flag: FlagFR, label: 'FR' }
-]
 
 // Hook to compute synced font size for paired texts using off-screen measurement
 function useSyncedFontSize(texts, containerWidth, baseFontSize, minFontSize, isSingleLine = false, maxLines = 3) {
@@ -232,7 +179,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const lastAttentionTriggerRef = useRef(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const theme = useTheme()
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   // Score/countdown font from settings
   const [scoreFont, setScoreFont] = useState(() => {
     const saved = localStorage.getItem('scoreFont')
@@ -1459,30 +1405,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       const liveState = data.liveState
       const teamAIsHome = (liveRowTeamA(liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || data.match?.coinTossTeamA || 'home') === 'home'
 
-      // Helper to get count from either array (new format) or number (old format)
-      const getCount = (value) => {
-        if (Array.isArray(value)) return value.length
-        if (typeof value === 'number') return value
-        return 0
-      }
-
-      return {
-        home: {
-          timeouts: teamAIsHome ? getCount(liveState.timeouts_a) : getCount(liveState.timeouts_b),
-          substitutions: teamAIsHome ? getCount(liveState.subs_a) : getCount(liveState.subs_b)
-        },
-        away: {
-          timeouts: teamAIsHome ? getCount(liveState.timeouts_b) : getCount(liveState.timeouts_a),
-          substitutions: teamAIsHome ? getCount(liveState.subs_b) : getCount(liveState.subs_a)
-        }
-      }
+      // SUB: every substitution, exceptional ones included (owner
+      // 22.11.2026), as on the scorer and the bench; its colour from the
+      // regular ones (referee/liveCounters.js)
+      return liveStateCounters(liveState, teamAIsHome)
     }
 
     // Fallback: count from events (when data comes from local IndexedDB or WebSocket)
     if (!data || !data.events || !data.currentSet) {
       return {
-        home: { timeouts: 0, substitutions: 0 },
-        away: { timeouts: 0, substitutions: 0 }
+        home: { timeouts: 0, substitutions: 0, regularSubstitutions: 0 },
+        away: { timeouts: 0, substitutions: 0, regularSubstitutions: 0 }
       }
     }
 
@@ -1490,17 +1423,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       e => (e.setIndex || 1) === (data.currentSet?.index || 1)
     )
 
-    // Regular substitutions only: exceptional ones (FIVB 15.7) are beyond the 6
-    return {
-      home: {
-        timeouts: currentSetEvents.filter(e => e.type === 'timeout' && e.payload?.team === 'home').length,
-        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'home' && !e.payload?.isExceptional).length
-      },
-      away: {
-        timeouts: currentSetEvents.filter(e => e.type === 'timeout' && e.payload?.team === 'away').length,
-        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'away' && !e.payload?.isExceptional).length
-      }
-    }
+    // SUB: every substitution, exceptional ones included; colour from the regular ones
+    return eventCounters(currentSetEvents)
   }, [data])
 
   // Get lineup for current set - returns null for team if no lineup exists
@@ -1571,6 +1495,26 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     }
   }, [data])
 
+  // Between two sets: the set that comes next, its sides and its first
+  // server (referee/setBreak.js). Also while the next set's row is not in the
+  // bundle yet (data.currentSet null for the whole break): the defaults below
+  // put home on the left and gave set 1's server the SERVE box. null while a
+  // set is under way.
+  const setBreak = useMemo(() => {
+    const matchTeamA = data?.match?.coinTossTeamA || 'home'
+    return refereeSetBreak({
+      sets: data?.sets,
+      currentSet: data?.currentSet,
+      liveState: data?.liveState,
+      events: data?.events,
+      match: data?.match,
+      bestOf: data?.match?.bestOf ?? data?.liveState?.best_of ?? 5,
+      teamAKey: matchTeamA,
+      liveTeamAKey: liveRowTeamA(data?.liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || matchTeamA,
+      liveStateOnly: dataSourceRef.current === 'live_state'
+    })
+  }, [data])
+
   // Determine who has serve
   const getCurrentServe = useMemo(() => {
     console.log('[Referee] getCurrentServe - data:', {
@@ -1578,6 +1522,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       matchFirstServe: data?.match?.firstServe,
       setIndex: data?.currentSet?.index
     })
+    // Between sets: the next set's first server; none while it is not known
+    // (the deciding set before its coin toss): no SERVE box then
+    if (setBreak) return setBreak.servingTeam
+
     // First priority: use servingTeam from Supabase live state (most accurate)
     if (data?.currentSet?.servingTeam) {
       console.log('[Referee] Using currentSet.servingTeam:', data.currentSet.servingTeam)
@@ -1610,7 +1558,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     // the last rally's winner, or the team a going back gave the serve to
     return servingTeamFromLog(data.events, data.currentSet.index, data.match) || currentSetFirstServe
-  }, [data?.events, data?.currentSet, data?.match])
+  }, [data?.events, data?.currentSet, data?.match, setBreak])
 
   // Determine team labels
   const teamAKey = data?.match?.coinTossTeamA || 'home'
@@ -1625,6 +1573,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Which team is on the left for the 2nd referee (the scorer's side): the
   // scorer's live state, else the scorer's own rule (getSideAForSet)
   const homeOnLeftFor2ndRef = useMemo(() => {
+    // Between sets: the next set's sides (the teams change sides after every
+    // set; the deciding set after its coin toss), not the set that ended
+    if (setBreak) return setBreak.homeLeft
     if (!data?.currentSet) return true
 
     // PRIORITY 1: Live state from server (Scoreboard source of truth)
@@ -1643,7 +1594,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // If sideA='left' (Team A on left), then home is on left only if teamAKey='home'
     // If sideA='right' (Team A on right), then home is on left only if teamAKey!='home' (i.e., Team B is on left)
     return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.currentSet, data?.match, teamAKey, liveTeamAKey, data?.liveState?.side_a])
+  }, [data?.currentSet, data?.match, teamAKey, liveTeamAKey, data?.liveState?.side_a, setBreak])
 
   const homeTeamOnLeft = refereeView === '1st' ? !homeOnLeftFor2ndRef : homeOnLeftFor2ndRef
 
@@ -2122,23 +2073,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   }, [isFullscreen, reEnableWakeLock])
 
   // Format countdown
-  // Detect if we're between sets (previous set finished but current set not started)
-  const isBetweenSets = useMemo(() => {
-    if (!data?.sets || !data?.currentSet) return false
-
-    const currentSetIndex = data.currentSet.index
-    if (currentSetIndex <= 1) return false
-
-    const previousSet = data.sets.find(s => s.index === currentSetIndex - 1)
-    if (!previousSet || !previousSet.finished) return false
-
-    // Has the current set started? A set_start, a rally start or a rally
-    // point; a penalty point awarded before the first serve (a sanction at
-    // the end of the set before) does not start it (domain/rally
-    // isFirstRallyOf, as the scorer): it ended the interval and showed an
-    // empty court (owner 15.11, start of set 2 at 0:1)
-    return isFirstRallyOf(data.events, currentSetIndex)
-  }, [data?.sets, data?.currentSet, data?.events])
+  // Between sets: the set before finished and the next one not started
+  // (referee/setBreak.js). Also while the next set's row is not in the bundle
+  // yet: with no unfinished set this was false, and a live state without the
+  // break flag then showed "SET 1 · 0:0" (full-match test 21.11.2026). Has
+  // the next set started? A set_start, a rally start or a rally point; a
+  // penalty point awarded before the first serve (a sanction at the end of
+  // the set before) does not start it (domain/rally isFirstRallyOf, as the
+  // scorer): it ended the interval and showed an empty court (owner 15.11,
+  // start of set 2 at 0:1)
+  const isBetweenSets = !!setBreak?.betweenSets
 
   // Check if match has ended (from liveState status or sets won)
   const refBestOf = data?.match?.bestOf ?? data?.liveState?.best_of ?? 5
@@ -2149,11 +2093,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Check if we're in set interval (from liveState or local detection)
   // But NOT if match is already finished
   const isInSetInterval = !isMatchEnded && (data?.liveState?.set_interval_active || isBetweenSets)
-  // During interval, currentSet is already the NEW set (Scoreboard creates it immediately on set_end)
-  // So we should use currentSet.index directly, not add +1
-  // Also check liveState.current_set which is already set to the next set index
+  // The set the header shows when none is known (a bundle without an
+  // unfinished set outside the break): the last one shown, never set 1
+  const lastShownSetRef = useRef(null)
+  const lastShownSet = lastShownSetRef.current?.matchId === matchId ? lastShownSetRef.current.index : null
+  // During the interval: the set that comes next (setBreak: the next set's
+  // row, else the set after the last finished one, else the live state's
+  // current_set, which the set end's push already moves on)
   const nextSetIndex = isInSetInterval
-    ? (data?.liveState?.current_set || data?.currentSet?.index || 1)
+    ? (setBreak?.setIndex || data?.liveState?.current_set || data?.currentSet?.index || lastShownSet || 1)
     : null
 
   // Match ended: cleared. In the set interval the NEW set's line-ups show
@@ -2167,10 +2115,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const leftLineup = (isMatchEnded || intervalClearsLineups) ? null : (leftTeam === 'home' ? lineup.home : lineup.away)
   const rightLineup = (isMatchEnded || intervalClearsLineups) ? null : (rightTeam === 'home' ? lineup.home : lineup.away)
   const leftStats = (isInSetInterval || isMatchEnded)
-    ? { timeouts: 0, substitutions: 0 }
+    ? { timeouts: 0, substitutions: 0, regularSubstitutions: 0 }
     : (leftTeam === 'home' ? stats.home : stats.away)
   const rightStats = (isInSetInterval || isMatchEnded)
-    ? { timeouts: 0, substitutions: 0 }
+    ? { timeouts: 0, substitutions: 0, regularSubstitutions: 0 }
     : (rightTeam === 'home' ? stats.home : stats.away)
 
   // Get the last finished set's final score for display when match ends
@@ -2188,11 +2136,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     ? (rightTeam === 'home' ? lastFinishedSet.homePoints : lastFinishedSet.awayPoints)
     : (rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
 
-  // Sets won by each side - use liveState if available (from Supabase), otherwise fall back to setsWon
-  const liveStateSetsWonHome = liveTeamAKey === 'home'
+  // Sets won by each side - use liveState if available (from Supabase), otherwise fall back to setsWon.
+  // Every set row finished (the next set's not in the bundle yet): the rows,
+  // which hold the set just ended; a live state can be from before its end
+  const setsWonFromRows = isBetweenSets && !data?.currentSet
+  const liveStateSetsWonHome = setsWonFromRows ? setsWon.home : liveTeamAKey === 'home'
     ? (data?.liveState?.sets_won_a ?? setsWon.home)
     : (data?.liveState?.sets_won_b ?? setsWon.home)
-  const liveStateSetsWonAway = liveTeamAKey === 'home'
+  const liveStateSetsWonAway = setsWonFromRows ? setsWon.away : liveTeamAKey === 'home'
     ? (data?.liveState?.sets_won_b ?? setsWon.away)
     : (data?.liveState?.sets_won_a ?? setsWon.away)
   const leftSetsWon = leftTeam === 'home' ? liveStateSetsWonHome : liveStateSetsWonAway
@@ -2203,10 +2154,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightDisplayScore = isInSetInterval ? rightSetsWon : rightPoints
   // Display set index - during interval show the NEXT set, but never show more than Set 5
   // (a best-of-3 decider is stored as set 5 and shown as set 3)
-  const displaySetIndex = displaySetNumber(Math.min(
-    isInSetInterval ? nextSetIndex : (data?.currentSet?.index || 1),
+  const shownSetIndex = Math.min(
+    isInSetInterval ? nextSetIndex : (data?.currentSet?.index || lastShownSet || 1),
     5
-  ), refBestOf)
+  )
+  if (data?.currentSet?.index || isInSetInterval) lastShownSetRef.current = { matchId, index: shownSetIndex }
+  const displaySetIndex = displaySetNumber(shownSetIndex, refBestOf)
 
   // Check if this is the first rally of the set (no points scored yet)
   const isFirstRally = useMemo(() => {
@@ -2220,11 +2173,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const leftLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!leftLineup, otherEntered: !!rightLineup })
   const rightLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!rightLineup, otherEntered: !!leftLineup })
 
-  // Start between-sets countdown when we detect we're between sets
+  // Start between-sets countdown when we detect we're between sets: on the
+  // next set's row, as before. Without it (the set just ended) the set end's
+  // action and the live state start it: started here, a reload after the
+  // break had run out or been ended showed a new full countdown
+  const nextSetRowBetweenSets = isBetweenSets && !!data?.currentSet
   useEffect(() => {
     // Only start countdown if between sets AND countdown hasn't been started yet (null means never started)
     // AND it wasn't manually dismissed
-    if (isBetweenSets && betweenSetsCountdown === null && !intervalDismissedRef.current) {
+    if (nextSetRowBetweenSets && betweenSetsCountdown === null && !intervalDismissedRef.current) {
       const endedSet = endedSetBefore(data?.currentSet?.index, data?.sets, null, data?.match?.bestOf)
       const breakSeconds = breakSecondsAfter(data?.match, endedSet, 180)
       setBetweenSetsCountdown({
@@ -2236,13 +2193,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         endedSet
       })
       setShowIntervalModal(true)
-    } else if (!isBetweenSets) {
+    } else if (!nextSetRowBetweenSets) {
       // Reset to null only when no longer between sets (new set started)
       setBetweenSetsCountdown(null)
       setShowIntervalModal(false) // Hide the modal when set starts
       intervalDismissedRef.current = false // Reset dismissal flag when set starts
     }
-  }, [isBetweenSets]) // Remove betweenSetsCountdown from deps to prevent restart loop
+  }, [nextSetRowBetweenSets]) // Remove betweenSetsCountdown from deps to prevent restart loop
 
   // Handle between-sets countdown timer
   useEffect(() => {
@@ -2394,6 +2351,89 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     </div>
   ) : null
 
+  // The header menu, in the match and before the coin toss (SimpleHeader adds
+  // the language, the version and Clear cache)
+  const refereeMenuItems = [
+    // The live scoresheet (also in the bar; here with its name on a phone)
+    ...(canShowScoresheet ? [
+      { icon: <FileText size={13} aria-hidden="true" />, label: t('refereeDashboard.scoresheet.open', 'Scoresheet'), onClick: () => setScoresheetOpen(true) },
+      { icon: <Users size={13} aria-hidden="true" />, label: t('refereeDashboard.rosters.open', 'Rosters'), onClick: () => setRostersOpen(true) },
+      { divider: true }
+    ] : []),
+    // Screen options
+    { header: t('refereeDashboard.screenOptions') },
+    {
+      icon: wakeLockActive ? <SunIcon size={13} /> : <MoonIcon size={13} />,
+      label: t('refereeDashboard.keepScreenOn'),
+      onClick: toggleWakeLock,
+      toggle: wakeLockActive,
+      keepOpen: true
+    },
+    // Colour theme: one row per choice, the chosen one inverted
+    ...themeMenuItems(t, theme),
+    { divider: true },
+    // Connection (only if not master mode)
+    ...(!isMasterMode ? [
+      { header: t('refereeDashboard.connection.title') },
+      {
+        icon: <RefreshIcon size={13} />,
+        label: t('refereeDashboard.connection.auto'),
+        onClick: () => setConnectionType(CONNECTION_TYPES.AUTO),
+        active: connectionType === CONNECTION_TYPES.AUTO
+      },
+      {
+        icon: <DatabaseIcon size={13} />,
+        label: t('refereeDashboard.connection.dbOnly'),
+        onClick: () => setConnectionType(CONNECTION_TYPES.SUPABASE),
+        active: connectionType === CONNECTION_TYPES.SUPABASE,
+        color: '#22c55e'
+      },
+      {
+        icon: <SatelliteDishIcon size={13} />,
+        label: t('refereeDashboard.connection.directOnly'),
+        onClick: () => setConnectionType(CONNECTION_TYPES.WEBSOCKET),
+        active: connectionType === CONNECTION_TYPES.WEBSOCKET,
+        color: '#3b82f6'
+      },
+      { divider: true }
+    ] : []),
+    // Test mode indicator
+    ...(isMasterMode ? [
+      {
+        icon: <WarningIcon size={13} />,
+        label: t('refereeDashboard.testMode'),
+        disabled: true,
+        color: '#fbbf24'
+      },
+      { divider: true }
+    ] : []),
+    // Refresh (always visible)
+    {
+      icon: <RefreshIcon size={13} />,
+      label: t('refereeDashboard.refresh'),
+      onClick: fetchFreshData,
+      color: '#3b82f6'
+    },
+    { divider: true },
+    // Exit
+    {
+      icon: '✕',
+      label: t('refereeDashboard.exit'),
+      onClick: onExit,
+      color: '#ef4444'
+    },
+    // Opened from the scorer's Home menu on this device: back to it
+    // (utils/scorerReturn.js)
+    ...(scorerReturnUrl() ? [
+      {
+        icon: <House size={14} aria-hidden="true" />,
+        label: t('dashboards.backToScorer', 'Back to scorer'),
+        onClick: () => returnToScorer(),
+        testId: 'dashboard-back-to-scorer'
+      }
+    ] : [])
+  ]
+
   // A phone or tablet held sideways: the dashboard is upright only (owner,
   // 2026-11-09), the mirror of the scorer's landscape-only scoreboard. The
   // notice stands in for every dashboard screen; the state above keeps
@@ -2422,60 +2462,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         overflow: 'hidden'
       }}>
         <ContextualHelpPanel open={helpOpen} onClose={closeHelp} screen="referee" />
-        {/* Header - same as main view */}
-        <div style={{
-          height: '40px',
-          minHeight: '40px',
-          maxHeight: '40px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '0 12px',
-          background: 'var(--panel-2)',
-          borderBottom: '1px solid var(--border)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              onClick={toggleFullscreen}
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                background: 'var(--panel)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                height: '25px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                display: 'flex',
-              }}
-            >
-              {isFullscreen ? `⛶ ${t('refereeDashboard.exitFullscreen')}` : '⛶'}
-            </button>
-
-            <button
-              onClick={toggleWakeLock}
-              style={{
-                padding: '2px 8px',
-                fontSize: '9px',
-                fontWeight: 600,
-                background: wakeLockActive ? 'var(--ov-selected)' : 'var(--panel)',
-                color: wakeLockActive ? 'var(--ov-on-dark)' : 'var(--text)',
-                border: wakeLockActive ? '1px solid var(--ov-selected)' : '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                height: '25px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                display: 'flex',
-              }}
-              title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
-            >
-              {wakeLockActive ? <SunIcon size={14} /> : <MoonIcon size={14} />}
-            </button>
-
+        {/* Header: the bar of the match view (SimpleHeader). The row of its
+            own (fullscreen, screen on, connection, refresh, ?, language,
+            version, exit) was wider than a 360 px phone and its last button
+            sat off the screen (full-match test 21.11.2026): screen on,
+            refresh and exit are in the menu now, with the language and the
+            version */}
+        <SimpleHeader
+          leading={
             <ConnectionStatus
               connectionStatuses={connectionStatuses}
               connectionDebugInfo={{
@@ -2489,188 +2483,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               }}
               queueStats={syncStatus}
               onRetryErrors={retryErrors}
-              position="right"
+              position="left"
               size="small"
             />
-          </div>
-
-          {/* Center - Refresh Button */}
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <button
-              onClick={fetchFreshData}
-              style={{
-                padding: '6px 16px',
-                fontSize: '12px',
-                fontWeight: 600,
-                height: '25px',
-                justifyContent: 'center',
-                background: 'var(--ov-card)',
-                color: 'var(--ov-text-body)',
-                border: '1px solid var(--ov-hairline-strong)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-              title={t('refereeDashboard.refresh')}
-            >
-              <RefreshIcon size={14} /> {window.innerWidth >= 500 && t('refereeDashboard.refresh')}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            {/* Help: the panel with the referee's help */}
-            <button
-              type="button"
-              onClick={toggleHelp}
-              aria-pressed={helpOpen}
-              aria-label={t('contextHelp.helpButton', 'Help')}
-              title={t('contextHelp.helpButton', 'Help')}
-              style={{
-                padding: '4px 9px',
-                fontSize: '12px',
-                fontWeight: 700,
-                height: '25px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                display: 'flex',
-                background: helpOpen ? 'var(--ov-selected)' : 'var(--panel)',
-                color: helpOpen ? 'var(--ov-on-dark)' : 'var(--text)',
-                border: helpOpen ? '1px solid var(--ov-selected)' : '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-            >
-              ?
-            </button>
-            {/* Language Selector */}
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setLanguageMenuOpen(!languageMenuOpen)
-                }}
-                style={{
-                  padding: '4px 8px',
-                  fontSize: '10px',
-                  height: '25px',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  display: 'flex',
-                  gap: '4px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-                title={t('header.language', 'Language')}
-              >
-                {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
-                <span style={{ fontSize: '8px' }}>▼</span>
-              </button>
-
-              {/* Language Dropdown */}
-              {languageMenuOpen && (
-                <>
-                  <div
-                    {...backdropDismiss(() => setLanguageMenuOpen(false))}
-                    style={{
-                      position: 'fixed',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      zIndex: 998
-                    }}
-                  />
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    marginTop: '4px',
-                    background: 'var(--panel)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                    zIndex: 1000,
-                    minWidth: '100px',
-                    boxShadow: 'var(--ov-shadow-card-lg)'
-                  }}>
-                    {languages.map((lang) => (
-                      <button
-                        key={lang.code}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          i18n.changeLanguage(lang.code)
-                          setLanguageMenuOpen(false)
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          width: '100%',
-                          padding: '10px 12px',
-                          fontSize: '12px',
-                          fontWeight: i18n.language === lang.code ? 600 : 400,
-                          background: i18n.language === lang.code ? 'var(--ov-sunken-strong)' : 'transparent',
-                          color: 'var(--text)',
-                          border: 'none',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.15s'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (i18n.language !== lang.code) {
-                            e.currentTarget.style.background = 'var(--panel-2)'
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (i18n.language !== lang.code) {
-                            e.currentTarget.style.background = 'transparent'
-                          }
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center' }}><lang.Flag /></span>
-                        <span>{lang.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Version */}
-            <span style={{ fontSize: '8px', color: 'var(--muted)' }}>
-              v{currentVersion}
-            </span>
-            {/* Exit Button with Icon */}
-            <button
-              onClick={onExit}
-              style={{
-                padding: '4px 8px',
-                fontSize: '10px',
-                height: '25px',
-                width: '25px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                display: 'flex',
-                fontWeight: 600,
-                background: 'var(--ov-card)',
-                color: 'var(--ov-danger-text)',
-                border: '1px solid var(--ov-danger-border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                lineHeight: 1
-              }}
-              title={t('header.exit')}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+          }
+          onFullscreen={toggleFullscreen}
+          isFullscreen={isFullscreen}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
+          menuItems={refereeMenuItems}
+        />
 
         {/* Content */}
         <div className="ov-kit flex flex-1 flex-col items-center overflow-y-auto bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6">
@@ -3050,7 +2872,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {(() => {
                 const teamLineup = setterSelectionModal === 'left' ? leftLineup : rightLineup
                 const currentSetter = setterSelectionModal === 'left' ? setterNumber.left : setterNumber.right
-                if (!teamLineup) return <div className="col-span-full text-sm text-stone-500">{t('refereeDashboard.noLineup', 'No lineup available')}</div>
+                if (!teamLineup) return <div className="col-span-full text-sm text-stone-500">{t('refereeDashboard.noLineup', 'No line-up available')}</div>
 
                 return Object.entries(teamLineup).map(([position, posData]) => {
                   // Handle both rich format (posData is object with number) and legacy format (posData is number)
@@ -3127,86 +2949,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         isFullscreen={isFullscreen}
         onHelp={toggleHelp}
         helpOpen={helpOpen}
-        menuItems={[
-          // The live scoresheet (also in the bar; here with its name on a phone)
-          ...(canShowScoresheet ? [
-            { icon: <FileText size={13} aria-hidden="true" />, label: t('refereeDashboard.scoresheet.open', 'Scoresheet'), onClick: () => setScoresheetOpen(true) },
-            { icon: <Users size={13} aria-hidden="true" />, label: t('refereeDashboard.rosters.open', 'Rosters'), onClick: () => setRostersOpen(true) },
-            { divider: true }
-          ] : []),
-          // Screen options
-          { header: t('refereeDashboard.screenOptions') },
-          {
-            icon: wakeLockActive ? <SunIcon size={13} /> : <MoonIcon size={13} />,
-            label: t('refereeDashboard.keepScreenOn'),
-            onClick: toggleWakeLock,
-            toggle: wakeLockActive,
-            keepOpen: true
-          },
-          // Colour theme: one row per choice, the chosen one inverted
-          ...themeMenuItems(t, theme),
-          { divider: true },
-          // Connection (only if not master mode)
-          ...(!isMasterMode ? [
-            { header: t('refereeDashboard.connection.title') },
-            {
-              icon: <RefreshIcon size={13} />,
-              label: t('refereeDashboard.connection.auto'),
-              onClick: () => setConnectionType(CONNECTION_TYPES.AUTO),
-              active: connectionType === CONNECTION_TYPES.AUTO
-            },
-            {
-              icon: <DatabaseIcon size={13} />,
-              label: t('refereeDashboard.connection.dbOnly'),
-              onClick: () => setConnectionType(CONNECTION_TYPES.SUPABASE),
-              active: connectionType === CONNECTION_TYPES.SUPABASE,
-              color: '#22c55e'
-            },
-            {
-              icon: <SatelliteDishIcon size={13} />,
-              label: t('refereeDashboard.connection.directOnly'),
-              onClick: () => setConnectionType(CONNECTION_TYPES.WEBSOCKET),
-              active: connectionType === CONNECTION_TYPES.WEBSOCKET,
-              color: '#3b82f6'
-            },
-            { divider: true }
-          ] : []),
-          // Test mode indicator
-          ...(isMasterMode ? [
-            {
-              icon: <WarningIcon size={13} />,
-              label: t('refereeDashboard.testMode'),
-              disabled: true,
-              color: '#fbbf24'
-            },
-            { divider: true }
-          ] : []),
-          // Refresh (always visible)
-          {
-            icon: <RefreshIcon size={13} />,
-            label: t('refereeDashboard.refresh'),
-            onClick: fetchFreshData,
-            color: '#3b82f6'
-          },
-          { divider: true },
-          // Exit
-          {
-            icon: '✕',
-            label: t('refereeDashboard.exit'),
-            onClick: onExit,
-            color: '#ef4444'
-          },
-          // Opened from the scorer's Home menu on this device: back to it
-          // (utils/scorerReturn.js)
-          ...(scorerReturnUrl() ? [
-            {
-              icon: <House size={14} aria-hidden="true" />,
-              label: t('dashboards.backToScorer', 'Back to scorer'),
-              onClick: () => returnToScorer(),
-              testId: 'dashboard-back-to-scorer'
-            }
-          ] : [])
-        ]}
+        menuItems={refereeMenuItems}
       />
       <ContextualHelpPanel open={helpOpen} onClose={closeHelp} screen="referee" />
 
@@ -3805,7 +3548,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             side columns beside the court (grid areas). */}
         {(() => {
           const counter = (label, value, tone) => (
-            <div data-counter={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+            <div data-counter={label} data-tone={tone || undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
               <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>{label}</span>
               <span style={{
                 background: tone === 'max' ? 'rgba(239, 68, 68, 0.3)' : tone === 'near' ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
@@ -3833,9 +3576,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               fontSize: row ? 'clamp(18px, 3.6vw, 34px)' : vmin(4),
               fontWeight: 700
             }}>
-              {mirrored && counter('SUB', stats.substitutions, stats.substitutions >= 6 ? 'max' : stats.substitutions >= 5 ? 'near' : null)}
+              {mirrored && counter('SUB', stats.substitutions, subCounterTone(stats))}
               {counter('TO', stats.timeouts, stats.timeouts >= 2 ? 'max' : null)}
-              {!mirrored && counter('SUB', stats.substitutions, stats.substitutions >= 6 ? 'max' : stats.substitutions >= 5 ? 'near' : null)}
+              {!mirrored && counter('SUB', stats.substitutions, subCounterTone(stats))}
             </div>
           )
           const sanctionsTitle = t('refereeDashboard.sanctions.title', 'Sanctions')
@@ -3991,48 +3734,50 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               <span style={{ opacity: 0.4 }}>{t('refereeDashboard.events.noAction')}</span>
             )}
           </span>
+          {/* Test Mode Controls - only shown in test mode. The badge at the
+              footer's end, beside the last action: floating over the corner
+              it covered the last action on a 360 px phone */}
+          {(matchId === -1 || data?.match?.test === true) && (
+            <TestModeControls
+              matchId={matchId}
+              inline
+              style={{ marginLeft: '8px' }}
+              onRefresh={async () => {
+                console.log('[TestModeControls] onRefresh called', { matchId, isMasterMode })
+                // In test mode, reload from local IndexedDB
+                try {
+                  const match = await db.matches.get(matchId)
+                  const sets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+                  const events = await db.events.where('matchId').equals(matchId).sortBy('seq')
+                  const homeTeam = await db.teams.get(match?.homeTeamId)
+                  const awayTeam = await db.teams.get(match?.awayTeamId)
+
+                  console.log('[TestModeControls] Reloaded from IndexedDB:', {
+                    matchId,
+                    sets: sets.length,
+                    events: events.length,
+                    currentSet: sets.find(s => !s.finished)?.index
+                  })
+
+                  // Update state with fresh local data
+                  setData({
+                    success: true,
+                    match,
+                    homeTeam,
+                    awayTeam,
+                    sets,
+                    events
+                  })
+                } catch (err) {
+                  console.error('[TestModeControls] Error reloading from IndexedDB:', err)
+                }
+              }}
+            />
+          )}
         </div>
 
       </div>{/* End main content wrapper */}
 
-      {/* Test Mode Controls - only shown in test mode */}
-      {
-        (matchId === -1 || data?.match?.test === true) && (
-          <TestModeControls
-            matchId={matchId}
-            onRefresh={async () => {
-              console.log('[TestModeControls] onRefresh called', { matchId, isMasterMode })
-              // In test mode, reload from local IndexedDB
-              try {
-                const match = await db.matches.get(matchId)
-                const sets = await db.sets.where('matchId').equals(matchId).sortBy('index')
-                const events = await db.events.where('matchId').equals(matchId).sortBy('seq')
-                const homeTeam = await db.teams.get(match?.homeTeamId)
-                const awayTeam = await db.teams.get(match?.awayTeamId)
-
-                console.log('[TestModeControls] Reloaded from IndexedDB:', {
-                  matchId,
-                  sets: sets.length,
-                  events: events.length,
-                  currentSet: sets.find(s => !s.finished)?.index
-                })
-
-                // Update state with fresh local data
-                setData({
-                  success: true,
-                  match,
-                  homeTeam,
-                  awayTeam,
-                  sets,
-                  events
-                })
-              } catch (err) {
-                console.error('[TestModeControls] Error reloading from IndexedDB:', err)
-              }
-            }}
-          />
-        )
-      }
       {/* The live scoresheet: read only, from the last full relay bundle */}
       {scoresheetLayer}
       {/* What the scorer just recorded (time-outs, substitutions, sanctions) */}

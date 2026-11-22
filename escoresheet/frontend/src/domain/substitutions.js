@@ -52,16 +52,30 @@ export function countRegularSubstitutions(events, teamKey, setIndex) {
 
 /**
  * True when a substitution keeps its player out (playerOut) for the rest of
- * the match: a substitution because of a disqualification (FIVB 21.3.3), or
- * an exceptional substitution of an injured or ill player (15.7). An expelled
- * player replaced exceptionally (beyond the 6) is out for that set only
- * (21.3.2, 15.8), as after a regular expulsion substitution.
+ * the match: a substitution because of a disqualification (FIVB 21.3.3), and
+ * every exceptional substitution (15.7, 15.8), whatever replaced him: an
+ * injury or illness, an expulsion or a disqualification with no legal
+ * substitution possible. Owner decision 22.11.2026: "whoever gets replaced
+ * exceptionally can't take part anymore in the game", so an expelled player
+ * replaced exceptionally is out for the match too. A regular (legal)
+ * expulsion substitution bars him for that set only (21.3.2; isSentOff).
  * @param {object} payload the substitution event's payload
  */
 export function substitutionBarsForMatch(payload) {
   if (!payload) return false
-  if (payload.isDisqualified === true) return true
-  return payload.isExceptional === true && payload.isExpelled !== true
+  return payload.isDisqualified === true || payload.isExceptional === true
+}
+
+/**
+ * Every substitution a team has made in a set, exceptional ones included:
+ * what a SUB counter shows (owner 22.11.2026: "SUB shall count exceptional
+ * substitutions"; the scorer's SUB box on the tablet and the phone, the
+ * bench tablet, the referee, the public live state), as the result's S
+ * column does. The limit is unchanged: the 6 are regular substitutions
+ * (countRegularSubstitutions), so a counter's warning colour follows those.
+ */
+export function countAllSubstitutions(events, teamKey, setIndex) {
+  return getSetSubstitutions(events, teamKey, setIndex).length
 }
 
 /** True while the team still has a regular substitution left in the set. */
@@ -120,7 +134,7 @@ export function validateManualSubstitution(events, teamKey, setIndex, playerOut,
   if (cameOnAs && Number(cameOnAs.payload?.playerOut) !== inn) {
     return { legal: false, reason: `#${out} came on for #${cameOnAs.payload?.playerOut}; only that player may return for him.` }
   }
-  // Disqualified, expelled this set or replaced exceptionally: not back (FIVB 15.7, 15.8)
+  // Disqualified, expelled this set or replaced exceptionally (the match): not back (FIVB 15.7, 15.8)
   if (isSentOff(allEvents || events, teamKey, inn, setIndex)) {
     return { legal: false, reason: `#${inn} was expelled, disqualified or replaced exceptionally; he may not come back.` }
   }

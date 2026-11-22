@@ -10,6 +10,7 @@ import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
 import LineupSetOverlay from './LineupSetOverlay.jsx'
 import { lineupHiddenUntilBoth } from '../../domain/lineupPrivacy'
 import CountdownSeconds from './CountdownSeconds.jsx'
+import PhonePairDock from '../phonePair/PhonePairDock.jsx'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -48,12 +49,16 @@ import CountdownSeconds from './CountdownSeconds.jsx'
  * @param {object} props.actions the Scoreboard's handlers (see Scoreboard.jsx)
  *
  * TeamVM: { side, teamKey, label ('A'|'B'), name, shortName, color, setsWon,
- *   points, timeouts, subs, lineupSet, lineupOptional (easy match),
+ *   points, timeouts, subs (every substitution of the set, exceptional
+ *   ones included), subsRegular (the regular ones: the SUB tile's colour,
+ *   the limit), lineupSet, lineupOptional (easy match),
  *   liberoPaint ({ background, color, textShadow?, ring } | null),
  *   court: [{ position, number, isLibero, isCaptain, replaced }] (isCaptain:
  *   the team captain or the acting game captain; replaced: the player a
  *   substitute or the libero came in for),
- *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
+ *   liberos: [{ number, libero, unable, canReturn, onCourt, position }]
+ *   (canReturn: injured, no re-designation in his place: his menu brings
+ *   him back), benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
  *   blocked ({ timeout, substitution }: closed by a replay pending or the
  *   set interval, domain/interruptionRequests.js),
@@ -114,6 +119,11 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // ---- header -------------------------------------------------------------
   const header = (
     <header style={{ flex: 'none', height: 52, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px 0 14px', borderBottom: '1px solid var(--ov-hairline)', background: 'var(--ov-card)' }}>
+      {/* "Phone keyboard" while a phone is paired or awaited (PhonePairHost):
+          in the header, not over the actions at the bottom; at its left, as
+          the middle takes the folded app header's taps (MainHeader
+          header-expand-target) and the right has Undo and Menu */}
+      <PhonePairDock variant="phone" />
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
         <span data-testid="phone-header-sets" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ov-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {t('scoreboard.phone.setInfo', { set: setNumber, home: home.setsWon, away: away.setsWon })}
@@ -316,7 +326,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const teamActions = (team) => (
     <div key={team.side} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
       {counter(team, { label: t('scoreboard.phone.timeOut'), value: team.timeouts, state: countState(team.timeouts, limits.timeouts), disabled: toDisabled(team), onClick: () => actions.timeout(team.side), testId: `phone-timeout-${team.side}` })}
-      {counter(team, { label: t('scoreboard.labels.sub'), value: team.subs, state: countState(team.subs, limits.subs, { warnBefore: true }), disabled: subDisabled(team), onClick: () => {
+      {counter(team, { label: t('scoreboard.labels.sub'), value: team.subs, state: countState(team.subsRegular ?? team.subs, limits.subs, { warnBefore: true }), disabled: subDisabled(team), onClick: () => {
         // The Scoreboard may answer with its request warning instead (the
         // 7th substitution): then no sheet
         if (actions.requestSubstitution?.(team.side) === false) return
@@ -848,8 +858,9 @@ function LiberoColumn({ team, ink, title, actions, onDone }) {
           key={l.number}
           type="button"
           data-testid={`phone-libero-${team.side}-${l.number}`}
-          disabled={l.unable}
-          style={{ ...wideButton, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, ...(l.unable ? { background: 'var(--ov-sunken-strong)', color: 'var(--ov-text-faint)' } : null) }}
+          data-libero-state={l.canReturn ? 'injured' : l.unable ? 'unable' : undefined}
+          disabled={l.unable && !l.canReturn}
+          style={{ ...wideButton, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, ...(l.unable && !l.canReturn ? { background: 'var(--ov-sunken-strong)', color: 'var(--ov-text-faint)' } : null) }}
           onClick={(e) => { onDone(); actions.liberoClick(team.teamKey, l, e) }}
         >
           <span style={{ fontSize: 15, fontWeight: 800 }}>{l.number}</span>
@@ -857,7 +868,10 @@ function LiberoColumn({ team, ink, title, actions, onDone }) {
             {/* a libero declared unable keeps libero 'unable' (re-designation) */}
             {l.libero === 'libero1' ? 'L1' : l.libero === 'libero2' ? 'L2' : l.libero === 'redesignated' ? 'LR' : l.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : 'L'}
             {l.onCourt ? ` · ${t('scoreboard.phone.onCourt')}` : ''}
+            {/* injured: a tap opens his menu, "Able to play again" */}
+            {l.canReturn ? ` · ${t('scoreboard.phone.injured', 'injured')}` : ''}
           </span>
+          {l.canReturn && <span aria-hidden="true" style={{ color: '#dc2626', fontWeight: 800 }}>✚</span>}
         </button>
       ))}
       {team.needsRedesignation && (

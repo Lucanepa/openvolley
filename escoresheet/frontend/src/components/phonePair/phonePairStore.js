@@ -28,6 +28,32 @@ export function closePhonePairPanel() {
   emitPanel()
 }
 
+// Where the "Phone keyboard" indicator sits: the slot a screen keeps for it
+// in its own bar (PhonePairDock: the phone scoreboard's header, the tablet
+// scoreboard's toolbar), so it never lies over a control; without one, the
+// fixed corner. The newest slot mounted wins; a screen mounts one at a time.
+const docks = []
+const dockListeners = new Set()
+const emitDock = () => { for (const fn of dockListeners) fn() }
+
+/** A screen's slot for the indicator (an element; its data-variant sizes it) -> unregister. */
+export function registerPhonePairDock(el) {
+  if (!el) return () => {}
+  docks.push(el)
+  emitDock()
+  return () => {
+    const i = docks.indexOf(el)
+    if (i >= 0) docks.splice(i, 1)
+    emitDock()
+  }
+}
+
+/** The slot the indicator goes into, or null (the fixed corner). */
+export function usePhonePairDock() {
+  return useSyncExternalStore((fn) => { dockListeners.add(fn); return () => dockListeners.delete(fn) }, currentDock, () => null)
+}
+const currentDock = () => docks[docks.length - 1] || null
+
 /** The pairing's state (status, phoneConnected, handle, ...). */
 export function usePhonePairState() {
   const c = phonePairController()

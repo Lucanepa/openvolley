@@ -189,6 +189,17 @@ describe('the controller', () => {
     c.unpair()
   })
 
+  it('a pairing still waiting for its phone is stopped (Stop pairing), the relay told', async () => {
+    html('<input id="n">')
+    const { api, calls } = fakeApi()
+    const c = createPhonePairController({ api })
+    await c.start({ transport: 'lan', apiBase: '', phoneBase: 'http://x', context: { home: 'A', away: 'B' } })
+    expect(c.getState().status).toBe('pending')
+    await c.unpair()
+    expect(c.getState()).toMatchObject({ status: 'ended', ended: 'stopped', handle: null })
+    expect(calls.close).toBe(1)
+  })
+
   it('the relay ending the pairing (closed / expired) ends it here', async () => {
     html('<input id="n">')
     const { api, push } = fakeApi()

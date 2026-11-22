@@ -8,6 +8,7 @@ import {
   shouldAutoConnect,
   applyMatchRowChange,
   jitterDelay,
+  liveLoadErrorKind,
   SETUP_EVENT_TYPES,
   IN_PLAY_EVENT_TYPES
 } from '../livescoreModel'
@@ -218,5 +219,29 @@ describe('jitterDelay', () => {
     expect(jitterDelay(1000, () => 0)).toBe(700)
     expect(jitterDelay(1000, () => 0.5)).toBe(1000)
     expect(jitterDelay(1000, () => 0.999999)).toBe(1300)
+  })
+})
+
+// The list's error view says what happened in words (full-match test
+// 2026-11-21: it showed the browser's "Failed to fetch")
+describe('liveLoadErrorKind', () => {
+  it('no answer at all is "unreachable"', () => {
+    expect(liveLoadErrorKind({ message: 'Failed to fetch', status: 0, network: true })).toBe('unreachable')
+    expect(liveLoadErrorKind({ message: 'Backend not available' })).toBe('unreachable')
+    expect(liveLoadErrorKind(new TypeError('Failed to fetch'))).toBe('unreachable')
+    expect(liveLoadErrorKind('Failed to fetch')).toBe('unreachable')
+    expect(liveLoadErrorKind('The relay did not answer')).toBe('unreachable')
+  })
+
+  it('an answer with an HTTP error is "server"', () => {
+    expect(liveLoadErrorKind({ message: 'Database operation failed (503)', status: 503 })).toBe('server')
+    expect(liveLoadErrorKind({ message: 'Too many requests', status: 429 })).toBe('server')
+    expect(liveLoadErrorKind('HTTP 502')).toBe('server')
+  })
+
+  it('no error is null', () => {
+    expect(liveLoadErrorKind(null)).toBeNull()
+    expect(liveLoadErrorKind(undefined)).toBeNull()
+    expect(liveLoadErrorKind('')).toBeNull()
   })
 })

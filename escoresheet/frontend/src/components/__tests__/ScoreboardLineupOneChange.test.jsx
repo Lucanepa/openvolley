@@ -59,7 +59,7 @@ describe('Scoreboard: confirming a starting line-up', () => {
     await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: toss })
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
-    const open = () => [...document.querySelectorAll('button')].find(b => /^LineupA/.test(b.textContent.trim()))
+    const open = () => [...document.querySelectorAll('button')].find(b => /^Line-?upA/.test(b.textContent.trim()))
     await waitFor(() => expect(open()).toBeTruthy())
     fireEvent.click(open())
     await waitFor(() => expect(document.querySelector('[role=dialog]')).toBeTruthy())

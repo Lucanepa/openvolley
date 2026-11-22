@@ -384,6 +384,9 @@ export function describeEvent(event, events, ctx = {}) {
     case 'libero_unable':
       title = tr(t, 'corrections.describe.liberoUnable', 'Libero #{{n}} declared unable to play', { n: num(p.liberoNumber) })
       break
+    case 'libero_recovered':
+      title = tr(t, 'corrections.describe.liberoRecovered', 'Libero #{{n}} able to play again', { n: num(p.liberoNumber) })
+      break
     case 'libero_redesignation':
       title = tr(t, 'corrections.describe.liberoRedesignated', 'Player #{{n}} designated as new libero', { n: num(p.newLiberoNumber) })
       break

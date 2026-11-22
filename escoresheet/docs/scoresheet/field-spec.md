@@ -541,7 +541,7 @@ Rows, from top to bottom:
 | 5th or 6th substitution | Recorded normally. The scorer tells the referee. |
 | Injury, legal substitution possible | Regular substitution in the column (FIVB 15.7, legal first). |
 | Injury, no legal substitution | **Exceptional substitution** (FIVB 15.7): **remarks only**, counted in the result S. The replaced player may not play again in the match (SC p.68). |
-| Expulsion | E column (7.2). The player must be substituted at once: legal (column) → exceptional (remarks) → otherwise the team is incomplete **for that set**. The player may return in the next set (SC p.66). |
+| Expulsion | E column (7.2). The player must be substituted at once: legal (column) → exceptional (remarks) → otherwise the team is incomplete **for that set**. Replaced legally, the player may return in the next set (SC p.66); replaced exceptionally, he takes no further part in the match (owner decision 22.11.2026, as every exceptional substitution). |
 | Disqualification | D column. Same substitution order as expulsion. Out for the match. If no player can replace them, the team is incomplete for the set, and for the match if the next set cannot be started with 6 players. |
 | Libero unable to play / re-designation (FIVB 19.4) | Remarks text (section 8). The new libero's number is **not** added to the printed libero rows, because those show the pre-match list. |
 | Penalty or delay penalty | Opponent's point **circled**. Side-out marks if the opponent was receiving (4.6). |
