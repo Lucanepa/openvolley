@@ -650,7 +650,9 @@ function checkSanctions(all, ctx, issue) {
       })
       if (expected !== type) issue('sanctionLadder', { set, score: sc, what, team: name, expected: sanctionLabel(expected, ctx.t).toLowerCase() }, e, setIndex)
     } else {
-      const v = validateMemberSanction(prior, { team, playerNumber: p.playerNumber, role: p.role, type })
+      // a playing coach's sanction as the coach records his number (plays):
+      // one member in both roles (domain/playerOfficials)
+      const v = validateMemberSanction(prior, { team, playerNumber: p.playerNumber, role: p.role, plays: p.plays, type })
       if (!v.legal) issue(v.reason, { set, score: sc, what, team: name }, e, setIndex)
     }
     prior.push(e)

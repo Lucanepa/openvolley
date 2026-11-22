@@ -5,6 +5,7 @@
 // field), so fixing a duplicate in either box clears it in both.
 
 import { substitutionBarsForMatch } from './substitutions'
+import { sanctionedPlayerNumber } from './sanctions'
 
 /** Line-up array order used by the modal: front row IV III II, back row V VI I */
 export const LINEUP_POSITIONS = ['IV', 'III', 'II', 'V', 'VI', 'I']
@@ -25,11 +26,12 @@ const isBlank = (v) => v == null || String(v).trim() === ''
 const sameNumber = (a, b) => a != null && b != null && String(a) === String(b)
 const isLiberoPlayer = (p) => !!(p?.libero && p.libero !== '')
 
+// (also as a team official: a playing coach, sanctionedPlayerNumber)
 function isDisqualified(events, team, number) {
   return (events || []).some(e =>
     e.type === 'sanction' &&
     e.payload?.team === team &&
-    sameNumber(e.payload?.playerNumber, number) &&
+    sameNumber(sanctionedPlayerNumber(e.payload), number) &&
     e.payload?.type === 'disqualification'
   )
 }
@@ -56,7 +58,7 @@ function wasExpelledInSet(events, team, number, setIndex) {
   return (events || []).some(e =>
     e.payload?.team === team &&
     (e.setIndex ?? 1) === setIndex &&
-    ((e.type === 'sanction' && e.payload?.type === 'expulsion' && sameNumber(e.payload?.playerNumber, number)) ||
+    ((e.type === 'sanction' && e.payload?.type === 'expulsion' && sameNumber(sanctionedPlayerNumber(e.payload), number)) ||
       (e.type === 'substitution' && e.payload?.isExpelled === true && sameNumber(e.payload?.playerOut, number)))
   )
 }
@@ -148,8 +150,10 @@ export function lineupCandidates({ players = [], lineup = [], events = [], team 
 // player on court as game captain until the team captain comes back, and the
 // scoresheet records it. The app keeps this in two match fields:
 //   <team>CourtCaptain            the player acting as game captain now
-//   <team>RememberedCourtCaptain  the player used again, without asking, the
-//                                 next time the team captain leaves the court
+//   <team>RememberedCourtCaptain  the last game captain: proposed the next time
+//                                 the team captain leaves the court, designated
+//                                 without asking while "Keep as game captain"
+//                                 is on (<team>KeepCourtCaptain, gameCaptainKeep.js)
 // and logs a 'court_captain_designation' event when someone becomes game
 // captain (the same path as the "Game captain" prompt on the scoreboard).
 //
@@ -240,13 +244,16 @@ export function initialGameCaptainChoice({ lineup = [], players = [], events = [
  * {}), so undoing them puts the remembered game captain back too and a line-up
  * entered again with "None" asks again instead of reusing the undone choice.
  *
+ * keep: "Keep as game captain" is on for the team (domain/gameCaptainKeep.js):
+ * the designation event says so (payload.keep), as the dialog's does.
+ *
  * @returns {{ action: 'none'|'designate'|'remember', playerNumber: number|null,
  *   matchUpdate: object, event: object|null, undo: object }}
  *   matchUpdate: fields to write on the match ({} = nothing);
  *   event: payload of the 'court_captain_designation' event to log, or null;
  *   undo: fields to add to the line-up event's payload
  */
-export function lineupGameCaptainDecision({ lineup = [], players = [], events = [], team, choice, currentCourtCaptain = null, rememberedCourtCaptain = null }) {
+export function lineupGameCaptainDecision({ lineup = [], players = [], events = [], team, choice, currentCourtCaptain = null, rememberedCourtCaptain = null, keep = false }) {
   const none = { action: 'none', playerNumber: null, matchUpdate: {}, event: null, undo: {} }
   if (isBlank(choice)) return none
   const chosen = String(Number(choice))
@@ -279,7 +286,10 @@ export function lineupGameCaptainDecision({ lineup = [], players = [], events = 
       playerNumber,
       previousCourtCaptain: isBlank(currentCourtCaptain) ? null : currentCourtCaptain,
       ...undo,
-      fromLineup: true
+      fromLineup: true,
+      // "Keep as game captain" on: the chosen player is the kept one from now
+      // on (domain/gameCaptainKeep.js; a continued match reads it from here)
+      ...(keep ? { keep: true } : {})
     },
     undo
   }

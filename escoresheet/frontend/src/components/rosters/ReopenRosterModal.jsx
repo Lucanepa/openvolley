@@ -9,6 +9,8 @@ import IdField from '../IdField'
 import { idLabelOf } from '../../domain/idMode'
 import { SectionHeader } from '../../ui/SectionHeader.jsx'
 import { cn } from '../../ui/cn.js'
+import { playsChoice, withPlays } from '../../domain/playerOfficials'
+import { playsAsOptions } from './playsAs'
 
 // "Edit home / away roster" in the scorer's match menu (Corrections), after
 // the coin toss. Edits a copy of the players and bench officials; Save hands
@@ -27,7 +29,9 @@ import { cn } from '../../ui/cn.js'
 //   >=560px  # | last | first | date of birth | libero | C | remove, under a
 //            column head
 // Bench: role + date of birth over last + first name + remove, so the names
-// get a line; one line from 560 px. Every control is 44 px tall
+// get a line; one line from 560 px; "Plays as" (a player who is also this
+// official, a playing coach: domain/playerOfficials) on a line of its own
+// under them, with its label. Every control is 44 px tall
 // (courtside). The number, captain and remove columns are 44-48 px at any
 // font size (a 2.75rem toggle in a 44 px track ran out of the row at 130 %).
 // The date's track is as wide as the date at the text size (.dob-sizer in
@@ -54,10 +58,12 @@ const PLAYER_GRID = cn(
 const BENCH_GRID = cn(
   'dob-sizer',
   'grid-cols-[minmax(0,5fr)_minmax(0,1fr)_minmax(6.5rem,max-content)_44px]',
-  "[grid-template-areas:'role_role_dob_dob'_'last_first_first_del']",
+  "[grid-template-areas:'role_role_dob_dob'_'last_first_first_del'_'plays_plays_plays_plays']",
   '@[560px]:grid-cols-[15.5rem_minmax(0,1fr)_minmax(0,1fr)_minmax(9rem,max-content)_44px]',
-  "@[560px]:[grid-template-areas:'role_last_first_dob_del']"
+  "@[560px]:[grid-template-areas:'role_last_first_dob_del'_'plays_plays_plays_plays_plays']"
 )
+// the column head has no Plays as line
+const BENCH_HEAD_AREAS = "@[560px]:[grid-template-areas:'role_last_first_dob_del']"
 // Column head: the one-line rows only.
 const HEAD = 'hidden @[560px]:grid border-stone-200 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500'
 const REMOVE = 'h-11 w-[44px] min-w-0 px-0'
@@ -124,6 +130,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
   const firstNameLabel = t('scoreboard.reopenRoster.firstName', 'First name')
   const lastNameLabel = t('scoreboard.reopenRoster.lastName', 'Last name')
   const dobLabel = idLabelOf(t, idMode, t('matchSetup.dateOfBirth', 'Date of birth'))
+  const playsAsLabel = t('matchSetup.playsAs', 'Plays as')
 
   return (
     <Modal
@@ -242,7 +249,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
             )}
           />
           <div role="list" className={cn(LIST, 'mt-2')}>
-            <div className={cn(HEAD, BENCH_GRID, 'gap-1.5')} aria-hidden="true">
+            <div className={cn(HEAD, BENCH_GRID, BENCH_HEAD_AREAS, 'gap-1.5')} aria-hidden="true">
               <span>{t('matchSetup.role', 'Role')}</span>
               <span>{lastNameLabel}</span>
               <span>{firstNameLabel}</span>
@@ -299,6 +306,21 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                     <Trash2 size={16} aria-hidden="true" />
                   </Button>
                 </span>
+                {/* A player who is also this official (a playing coach):
+                    found by licence or name, or the scorer's choice */}
+                <label className="flex min-w-0 items-center gap-2 [grid-area:plays]">
+                  <span className="shrink-0 text-sm text-stone-500">{playsAsLabel}</span>
+                  <Select
+                    size="lg"
+                    aria-label={playsAsLabel}
+                    data-testid={`reopen-plays-${idx}`}
+                    value={playsChoice(staff, editingPlayers).value}
+                    onChange={(e) => setEditingBench(prev => prev.map((b, i) => i === idx ? withPlays(b, e.target.value) : b))}
+                    className="min-w-0 max-w-[16rem] flex-1 pl-2.5"
+                  >
+                    {playsAsOptions(editingPlayers, t).map(o => <option key={o.value || 'auto'} value={o.value}>{o.label}</option>)}
+                  </Select>
+                </label>
               </div>
             ))}
           </div>

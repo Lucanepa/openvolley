@@ -160,19 +160,52 @@ export const MEMBER_SANCTION_SCALE = ['warning', 'penalty', 'expulsion', 'disqua
 
 const scaleLevel = (type) => MEMBER_SANCTION_SCALE.indexOf(type)
 
-/** The member's misconduct sanctions among the events: a player by number, an official by role. */
-function memberSanctions(events, { team, playerNumber, role } = {}) {
-  const sameMember = (e) => hasNumber(playerNumber)
-    ? String(e.payload?.playerNumber) === String(playerNumber)
-    : (!!role && e.payload?.role === role && !hasNumber(e.payload?.playerNumber))
+/**
+ * The shirt number a misconduct sanction counts against: the player's own,
+ * or for a team official who also plays (a playing coach,
+ * domain/playerOfficials) the number recorded with it (`plays`). An
+ * expulsion or disqualification of the coach keeps #7 off the court too.
+ * Null for an official who does not play and for a team sanction.
+ * @param {object} payload a sanction event's payload
+ * @returns {any|null}
+ */
+export function sanctionedPlayerNumber(payload) {
+  if (hasNumber(payload?.playerNumber)) return payload.playerNumber
+  if (hasNumber(payload?.plays) && payload.plays !== false) return payload.plays
+  return null
+}
+
+/**
+ * The member's misconduct sanctions among the events: a player by number, an
+ * official by role. One person in two roles (domain/playerOfficials
+ * sanctionMember) is one member: a player with `alsoRoles` (the official
+ * roles he holds) also has those roles' sanctions, an official with `plays`
+ * (the number he plays with) also that number's; an official's sanction that
+ * recorded the number (`plays`) is that player's too.
+ */
+function memberSanctions(events, { team, playerNumber, role, plays, alsoRoles } = {}) {
+  const numbers = new Set()
+  const roles = new Set()
+  if (hasNumber(playerNumber)) {
+    numbers.add(String(playerNumber))
+    for (const r of alsoRoles || []) if (r) roles.add(r)
+  } else if (role) {
+    roles.add(role)
+    if (hasNumber(plays) && plays !== false) numbers.add(String(plays))
+  }
+  const sameMember = (e) => {
+    const p = e.payload || {}
+    if (hasNumber(p.playerNumber)) return numbers.has(String(p.playerNumber))
+    return (!!p.role && roles.has(p.role)) || (hasNumber(p.plays) && p.plays !== false && numbers.has(String(p.plays)))
+  }
   return (events || []).filter(e => e?.type === 'sanction' && e.payload?.team === team && sameMember(e))
 }
 
 /**
  * The heaviest misconduct sanction a team member (player, libero or bench
- * official) has in the match, or null.
+ * official; a playing coach in both roles) has in the match, or null.
  * @param {Array} events
- * @param {{team:'home'|'away', playerNumber?:any, role?:string}} member
+ * @param {{team:'home'|'away', playerNumber?:any, role?:string, plays?:any, alsoRoles?:string[]}} member
  * @returns {'warning'|'penalty'|'expulsion'|'disqualification'|null}
  */
 export function heaviestMemberSanction(events, member) {
@@ -186,6 +219,8 @@ export function heaviestMemberSanction(events, member) {
  * rules the live sanction flow applies (Scoreboard confirmPlayerSanction and
  * its sanction menus):
  *  - a member cannot receive the same sanction type twice in the match;
+ *    a player who is also a team official (a playing coach) is one member
+ *    in both roles (memberSanctions: `alsoRoles`, `plays`);
  *  - repeated misconduct of the same member in the match is sanctioned
  *    progressively (FIVB 21.4.2): a member's next sanction must be heavier
  *    than his heaviest earlier one (warning < penalty < expulsion <
@@ -196,20 +231,20 @@ export function heaviestMemberSanction(events, member) {
  * Delays and improper requests are team sanctions and are not checked here
  * (resolveSanction does).
  * @param {Array} priorEvents events BEFORE the sanction (any set of the match)
- * @param {{team:'home'|'away', playerNumber?:any, role?:string, type:string}} sanction
+ * @param {{team:'home'|'away', playerNumber?:any, role?:string, plays?:any, alsoRoles?:string[], type:string}} sanction
  * @returns {{legal:boolean, reason?:'sameSanctionTwice'|'lighterSanction'|'teamAlreadyWarned', heaviest?:string}}
  *   heaviest: with 'lighterSanction', the member's heaviest earlier sanction
  */
-export function validateMemberSanction(priorEvents, { team, playerNumber, role, type } = {}) {
-  const own = memberSanctions(priorEvents, { team, playerNumber, role })
+export function validateMemberSanction(priorEvents, { type, ...member } = {}) {
+  const own = memberSanctions(priorEvents, member)
   if (own.some(e => e.payload?.type === type)) {
     return { legal: false, reason: 'sameSanctionTwice' }
   }
-  const heaviest = heaviestMemberSanction(own, { team, playerNumber, role })
+  const heaviest = heaviestMemberSanction(own, member)
   if (heaviest && scaleLevel(type) >= 0 && scaleLevel(type) < scaleLevel(heaviest)) {
     return { legal: false, reason: 'lighterSanction', heaviest }
   }
-  if (type === 'warning' && (priorEvents || []).some(e => e?.type === 'sanction' && e.payload?.team === team && e.payload?.type === 'warning')) {
+  if (type === 'warning' && (priorEvents || []).some(e => e?.type === 'sanction' && e.payload?.team === member.team && e.payload?.type === 'warning')) {
     return { legal: false, reason: 'teamAlreadyWarned' }
   }
   return { legal: true }
@@ -220,9 +255,26 @@ export function validateMemberSanction(priorEvents, { team, playerNumber, role, 
  * scale order, each with validateMemberSanction's verdict: the court
  * player, bench player and sanction menus (the phone's too) all read it.
  * @param {Array} events all events of the match so far
- * @param {{team:'home'|'away', playerNumber?:any, role?:string}} member
+ * @param {{team:'home'|'away', playerNumber?:any, role?:string, plays?:any, alsoRoles?:string[]}} member
  * @returns {Record<'warning'|'penalty'|'expulsion'|'disqualification', {legal:boolean, reason?:string}>}
  */
 export function memberSanctionOptions(events, member) {
   return Object.fromEntries(MEMBER_SANCTION_SCALE.map(type => [type, validateMemberSanction(events, { ...member, type })]))
+}
+
+/**
+ * Is the member out now: 'disqualified' (any set, for the match), 'expelled'
+ * (in `setIndex`, for the set), else null (FIVB 21.3.2-21.3.3). A playing
+ * coach in either role (memberSanctions): expelled as #7 he is out as the
+ * coach for the set too, disqualified as the coach out as #7 for the match.
+ * @param {Array} events
+ * @param {{team:'home'|'away', playerNumber?:any, role?:string, plays?:any, alsoRoles?:string[]}} member
+ * @param {number} setIndex the set being played
+ * @returns {'disqualified'|'expelled'|null}
+ */
+export function memberSentOff(events, member, setIndex) {
+  const own = memberSanctions(events, member)
+  if (own.some(e => e.payload?.type === 'disqualification')) return 'disqualified'
+  if (own.some(e => e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === setIndex)) return 'expelled'
+  return null
 }

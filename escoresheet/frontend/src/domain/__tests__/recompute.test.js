@@ -254,6 +254,16 @@ describe('removing and editing the other entries', () => {
     expect(applyPlanToEvents(events, viaCard).find(e => e.id === des.id).payload.playerNumber).toBe(6)
   })
 
+  // "Keep as game captain" (domain/gameCaptainKeep.js): a designation that
+  // turned the switch on, removed, turns it off again (as Undo does)
+  it('a game captain designation that turned "Keep as game captain" on, removed: the switch as it was', async () => {
+    const { planRemoveEntry } = await import('../manualCorrections')
+    const { events } = buildMatch({ sets: [{ points: pointsFor(10, 8), finished: false, extras: [{ at: 2, type: 'court_captain_designation', payload: { team: 'home', playerNumber: 3, previousCourtCaptain: null, keep: true, previousRememberedCourtCaptain: 7, previousKeepCourtCaptain: false } }] }] })
+    const des = events.find(e => e.type === 'court_captain_designation')
+    const removed = planRemoveEntry(events, des.id, { ...ctx, match: { ...LIVE_MATCH, homeCourtCaptain: 3, homeRememberedCourtCaptain: 3, homeKeepCourtCaptain: true } })
+    expect(removed.matchPatch).toEqual({ homeCourtCaptain: null, homeRememberedCourtCaptain: 7, homeKeepCourtCaptain: false })
+  })
+
   it('a libero re-designation removed puts the roster libero marks back', async () => {
     const { planRemoveEntry } = await import('../manualCorrections')
     const { events } = buildMatch({ sets: [{ points: pointsFor(10, 8), finished: false, extras: [{ at: 3, type: 'libero_redesignation', payload: { team: 'home', unableLiberoNumber: 9, newLiberoNumber: 8, previousLiberoFlags: { unableLibero: { id: 9, libero: 'libero1' }, newLibero: { id: 8, libero: '' } } } }] }] })

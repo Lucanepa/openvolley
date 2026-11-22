@@ -73,7 +73,8 @@ import { breakSecondsAfter, hasLongIntervalAfterSet2, isLongInterval, retimedBre
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getToolMode } from '../utils/toolMode'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from '../domain/rules'
-import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction, memberSanctionOptions } from '../domain/sanctions'
+import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction, memberSanctionOptions, sanctionedPlayerNumber, memberSentOff } from '../domain/sanctions'
+import { playerOfficialLinks, officialChipState, benchNumberState, sanctionMember, sanctionPlays, renumberPlays } from '../domain/playerOfficials'
 import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
@@ -123,6 +124,10 @@ import { useBenchRequestBridge, lineupAcceptBlock } from './scoreboard/useBenchR
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
 import { coveredLineupTeams, coveredLineupTeamsOf, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
+import GameCaptainDialog from './scoreboard/GameCaptainDialog.jsx'
+import { actingCourtCaptains, automaticGameCaptain, automaticDesignation, chosenGameCaptain, courtCaptainsCleared, courtCaptainsRestored, keepCourtCaptainField, keepsGameCaptain, keptGameCaptain, keepEdit } from '../domain/gameCaptainKeep'
+import { toast } from '../ui/uiStore.js'
+import { earlierStartingLineups } from '../domain/lineupCopy'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -134,7 +139,7 @@ import { DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
 import { freeStorageBytes, isStorageFullError, LOW_STORAGE_BYTES } from '../utils/storageSpace'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
-import { ArrowUpDown, ChevronDown, Cross, LayoutDashboard, Pointer } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Cross, LayoutDashboard, Pin, Pointer, RotateCcw } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
 import { preload, usePreloaded } from '../utils/preload'
 
@@ -4141,7 +4146,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // onCourt: the six just saved by the line-up modal, which `data` may not
   // show yet (it then read an empty court and asked for a game captain even
   // with the captain, or a chosen game captain, on court)
-  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey, onCourt = null) => {
+  // ask: open the dialog even when "Keep as game captain" would designate the
+  // kept player (the line-up dialog's game captain set to None on purpose)
+  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey, onCourt = null, { ask = false } = {}) => {
     // Check if manage captain on court is enabled
     if (!localManageCaptainOnCourt) return
 
@@ -4198,9 +4205,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // replaced, or the team captain came back and left again): a new one is
     // designated (FIVB 5.1.2). The dialog proposes the last game captain when
     // that player is on court (one tap); any player on court can be chosen.
+    // "Keep as game captain" on and the kept player on court: he is
+    // designated without the dialog (domain/gameCaptainKeep.js)
+    const kept = ask ? null : automaticGameCaptain({ match, team: teamKey, playersOnCourt })
+    if (kept != null) {
+      await designateKeptCaptainRef.current?.(teamKey, kept)
+      return
+    }
     console.log(`[CaptainOnCourt] Asking for a game captain for ${teamKey} - playersOnCourt:`, playersOnCourt, `captain #${captainNumberStr}`, `last #${rememberedCourtCaptain ?? '-'}`)
     setCaptainOnCourtModal({ team: teamKey })
   }, [localManageCaptainOnCourt, data, matchId, getTeamLineupState, syncLiveStateToSupabase, syncToReferee])
+
+  // The kept game captain designated without asking: the same
+  // 'court_captain_designation' event as a chosen one (auto: true), so the
+  // scoresheet, the referee and the benches follow and Undo takes it back,
+  // and a short notice instead of the dialog. One action per team at a time;
+  // checked again inside it (a substitution and the effect below can both
+  // ask for the same exit)
+  const designateKeptCaptainRef = useRef(null)
+  designateKeptCaptainRef.current = (teamKey, playerNumber) => runAction(`captainKept:${teamKey}`, async () => {
+    if (!matchId) return
+    const match = await db.matches.get(matchId)
+    if (!keepsGameCaptain(match, teamKey) || String(keptGameCaptain(match, teamKey)) !== String(playerNumber)) return
+    if (String(match?.[teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] ?? '') === String(playerNumber)) return
+    const { matchUpdate, payload } = automaticDesignation({ match, team: teamKey, playerNumber })
+    await db.matches.update(matchId, matchUpdate)
+    await logEventRef.current?.('court_captain_designation', payload)
+    const team = teamKey === 'home' ? data?.homeTeam : data?.awayTeam
+    const teamName = team?.shortName || team?.name || (teamKey === 'home' ? t('common.home', 'Home') : t('common.away', 'Away'))
+    deferUi(() => toast.info(t('scoreboard.captainOnCourt.autoNotice', { team: teamName, n: playerNumber, defaultValue: '{{team}}: #{{n}} game captain' }), { duration: 3000 }))
+  })
 
   // A game captain who left the court without a live action (a line-up
   // correction replaced him, owner 15.11): the team captain is off court too,
@@ -4518,7 +4552,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Get bench players, liberos, and bench officials for each team
   const leftTeamBench = useMemo(() => {
-    if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [] }
+    if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [], links: [] }
     const teamKey = leftIsHome ? 'home' : 'away'
     const players = leftIsHome ? data.homePlayers : data.awayPlayers
     const benchOfficials = leftIsHome ? (data.match?.bench_home || []) : (data.match?.bench_away || [])
@@ -4559,15 +4593,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       })
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
 
+    // A player who is also a bench official (a playing coach,
+    // domain/playerOfficials): on court his official's chip is greyed, off
+    // court (the bench, the libero in his place) his number (asOfficial)
+    const links = playerOfficialLinks(benchOfficials, players)
+    const where = { onCourt: playersOnCourt }
+    const asOfficialOf = (p) => (links.length ? benchNumberState(links, p.number, where).asOfficial : null)
+
     return {
-      benchPlayers,
-      liberos,
-      benchOfficials
+      benchPlayers: benchPlayers.map(p => ({ ...p, asOfficial: asOfficialOf(p) })),
+      liberos: liberos.map(p => ({ ...p, asOfficial: asOfficialOf(p) })),
+      benchOfficials: links.length ? benchOfficials.map(o => ({ ...o, ...officialChipState(links, o?.role, where) })) : benchOfficials,
+      links
     }
   }, [data, leftIsHome, getTeamLineupState, teamAKey, data?.events])
 
   const rightTeamBench = useMemo(() => {
-    if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [] }
+    if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [], links: [] }
     const teamKey = leftIsHome ? 'away' : 'home'
     const players = leftIsHome ? data.awayPlayers : data.homePlayers
     const benchOfficials = leftIsHome ? (data.match?.bench_away || []) : (data.match?.bench_home || [])
@@ -4608,10 +4650,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       })
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
 
+    // A player who is also a bench official (a playing coach,
+    // domain/playerOfficials): on court his official's chip is greyed, off
+    // court (the bench, the libero in his place) his number (asOfficial)
+    const links = playerOfficialLinks(benchOfficials, players)
+    const where = { onCourt: playersOnCourt }
+    const asOfficialOf = (p) => (links.length ? benchNumberState(links, p.number, where).asOfficial : null)
+
     return {
-      benchPlayers,
-      liberos,
-      benchOfficials
+      benchPlayers: benchPlayers.map(p => ({ ...p, asOfficial: asOfficialOf(p) })),
+      liberos: liberos.map(p => ({ ...p, asOfficial: asOfficialOf(p) })),
+      benchOfficials: links.length ? benchOfficials.map(o => ({ ...o, ...officialChipState(links, o?.role, where) })) : benchOfficials,
+      links
     }
   }, [data, leftIsHome, getTeamLineupState, teamAKey, data?.events])
 
@@ -5001,6 +5051,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             remarkLines.push(`- ${f === 'dob' ? `Bench official ${orig.role || edit.role} ${valueName} changed (${teamLabel})` : desc}`)
           }
         }
+        // A player who is also this official (a playing coach,
+        // domain/playerOfficials): "plays as #7", not a player, or automatic
+        const playsText = (v) => (v === false ? 'not a player' : (v === undefined || v === null || v === '') ? 'automatic' : `#${v}`)
+        if (playsText(orig.plays) !== playsText(edit.plays)) {
+          const desc = `Bench official ${orig.role || edit.role} plays as: ${playsText(orig.plays)} → ${playsText(edit.plays)} (${teamLabel})`
+          changes.push({ category: 'benchOfficial', field: 'plays', before: playsText(orig.plays), after: playsText(edit.plays), description: desc })
+          remarkLines.push(`- ${desc}`)
+        }
       }
     }
 
@@ -5108,11 +5166,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
-    // Persist bench officials
+    // Persist bench officials; an official who plays as a renumbered player
+    // plays as his new number (domain/playerOfficials)
     const benchField = teamKey === 'home' ? 'bench_home' : 'bench_away'
+    const benchToSave = renumberPlays(editedBench, renumbers || [])
     const freshMatch = await db.matches.get(matchId)
     await db.matches.update(matchId, {
-      [benchField]: editedBench,
+      [benchField]: benchToSave,
       remarks: appendRemark(freshMatch?.remarks || '', remarkBlock)
     })
 
@@ -5144,7 +5204,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // captain, numbers, the officials): the tablets' cloud fallback and a
     // hand-over read them from there. The bench stayed on this device: the
     // server kept the pre-match bench for good
-    await queueTeamRoster(matchId, teamKey, { [benchField]: toCloudBench(editedBench) })
+    await queueTeamRoster(matchId, teamKey, { [benchField]: toCloudBench(benchToSave) })
     notifyScoresheetUpdate('roster_reopen')
     syncToReferee()
     syncLiveStateToSupabase('manual_roster', null, null)
@@ -5724,10 +5784,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // team captain is off court and no acting game captain is among the six.
   // Once designated the role cannot be changed (FIVB 5.1.2: it lasts until
   // that player leaves the court, the team captain returns or the set ends).
+  // While "Keep as game captain" is on it stays, quiet, with the kept
+  // player's number ('kept'): the scorer turns the switch off there.
   const needsGameCaptain = (status) => !status.captainOnCourt && !status.courtCaptainOnCourt
+  const gameCaptainChipOf = (lineupSet, teamKey) => {
+    if (!lineupSet) return false
+    if (needsGameCaptain(captainOnCourtStatus[teamKey])) return 'needed'
+    return keptGameCaptain(data?.match, teamKey) != null ? 'kept' : false
+  }
   const gameCaptainChip = {
-    left: leftTeamLineupSet && needsGameCaptain(captainOnCourtStatus[leftIsHome ? 'home' : 'away']),
-    right: rightTeamLineupSet && needsGameCaptain(captainOnCourtStatus[leftIsHome ? 'away' : 'home'])
+    left: gameCaptainChipOf(leftTeamLineupSet, leftIsHome ? 'home' : 'away'),
+    right: gameCaptainChipOf(rightTeamLineupSet, leftIsHome ? 'away' : 'home')
   }
 
   // One side of the row above the court: the SERVE indicator (its label and
@@ -5833,10 +5900,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           {chip && (
             <button
               className="serve-side__chip"
+              data-game-captain-chip={chip}
               onClick={() => setCaptainOnCourtModal({ team: teamKey })}
-              style={GAME_CAPTAIN_CHIP}
+              aria-label={chip === 'kept' ? `${t('scoreboard.captainOnCourt.keep', 'Keep as game captain')}: #${keptGameCaptain(data?.match, teamKey)}` : undefined}
+              style={chip === 'kept' ? GAME_CAPTAIN_CHIP_KEPT : GAME_CAPTAIN_CHIP}
             >
-              {t('scoreboard.captainOnCourt.designate', 'Game captain')}
+              {chip === 'kept' ? (
+                <>
+                  <Pin size={14} aria-hidden="true" style={{ flex: 'none' }} />
+                  {t('scoreboard.captainOnCourt.keptChip', { n: keptGameCaptain(data?.match, teamKey), defaultValue: 'Game captain #{{n}}' })}
+                </>
+              ) : t('scoreboard.captainOnCourt.designate', 'Game captain')}
             </button>
           )}
         </div>
@@ -6257,10 +6331,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   reason: 'rotation_to_front_row'
                 }, { parentSeq: pointSeq })
 
-                // Check if the libero leaving is the court captain
+                // Check if the libero leaving is the court captain, or the
+                // team captain (a libero may be captain: he leaves the court
+                // at this rotation, a game captain is needed, FIVB 5.1.2)
                 const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
                 const currentCourtCaptain = data?.match?.[captainOnCourtField]
-                if (String(currentCourtCaptain) === String(liberoNumber)) {
+                if (String(currentCourtCaptain) === String(liberoNumber) || liberoPlayer?.isCaptain || liberoPlayer?.captain) {
                   // Counted from when the rotated lineup is shown
                   deferUi(() => setTimeout(() => {
                     checkAndRequestCaptainOnCourtRef.current?.(teamKey)
@@ -6484,7 +6560,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           .pop()?.payload?.lineup
         const sentOff = Object.values(lineup || {}).map(v => (v && typeof v === 'object' ? v.number : v)).find(n => n != null && data.events.some(e =>
           e.type === 'sanction' && e.payload?.team === team &&
-          String(e.payload?.playerNumber) === String(n) &&
+          String(sanctionedPlayerNumber(e.payload)) === String(n) &&
           (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === data.set.index))))
         if (sentOff != null) {
           deferUi(() => showAlert(t('scoreboard.sentOffOnCourt', { number: sentOff }), 'warning'))
@@ -7050,6 +7126,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.log('[SET_END_DEBUG] STEP 3: Logging set_end event...')
       const setEndWritten = (await db.events.where('matchId').equals(matchId).toArray())
         .some(e => e.type === 'set_end' && e.setIndex === setIndex)
+      // A game captain's role ends with the set (FIVB 5.1.2, owner 22.11):
+      // the acting ones are cleared with the set end, which keeps them for
+      // Undo / Reopen set (reverseEventSideEffects); the next set designates
+      // again (the line-up dialog, the Game captain dialog, or "Keep as game
+      // captain"), a new designation event of that set
+      const matchAtSetEnd = await db.matches.get(matchId)
+      const previousCourtCaptains = actingCourtCaptains(matchAtSetEnd)
+      const clearsCourtCaptains = Object.keys(previousCourtCaptains).length > 0
       if (!setEndWritten) await logEvent('set_end', {
         team: winner,
         teamLabel: winnerLabel,
@@ -7058,8 +7142,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         awayPoints,
         startTime: startTime,
         endTime: roundToMinute(time),
-        ...(setEndReason ? { reason: setEndReason } : {})
-      })
+        ...(setEndReason ? { reason: setEndReason } : {}),
+        ...(clearsCourtCaptains ? { previousCourtCaptains } : {})
+      }, clearsCourtCaptains ? { beforeSnapshot: () => db.matches.update(matchId, courtCaptainsCleared(previousCourtCaptains)) } : {})
       console.log('[SET_END_DEBUG] STEP 3 DONE: set_end event logged')
 
       // Debug log: set end
@@ -7975,13 +8060,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           Object.prototype.hasOwnProperty.call(e.payload, 'previousRememberedCourtCaptain')) {
         matchUpdate[e.payload.team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'] = e.payload.previousRememberedCourtCaptain ?? null
       }
+      // "Keep as game captain" as it was before the tap that changed it
+      // (domain/gameCaptainKeep.js chosenGameCaptain)
+      if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away') &&
+          Object.prototype.hasOwnProperty.call(e.payload, 'previousKeepCourtCaptain')) {
+        matchUpdate[keepCourtCaptainField(e.payload.team)] = e.payload.previousKeepCourtCaptain === true
+      }
+      // The game captain in force before the removed designation, or before
+      // the removed set end (it ended their role); oldest last, so a Reopen
+      // set that also removes the next set's designations gets the set's own
+      if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
+        matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
+      }
+      if (e.type === 'set_end') Object.assign(matchUpdate, courtCaptainsRestored(e.payload?.previousCourtCaptains))
     }
 
     const rosterTeams = new Set()
     for (const e of removed) {
-      if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
-        matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
-      }
       if (e.type === 'libero_redesignation' && e.payload?.previousLiberoFlags) {
         const team = e.payload.team
         const { unableLibero, newLibero } = e.payload.previousLiberoFlags
@@ -9760,11 +9855,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!data?.events || !data?.set) return false
 
     // Check if player is disqualified - disqualified players cannot re-enter
-    // (numbers as strings: a sanction from the court disc carries a string)
+    // (numbers as strings: a sanction from the court disc carries a string;
+    // also one given to him as a team official, a playing coach)
     const playerSanctions = data.events.filter(e =>
       e.type === 'sanction' &&
       e.payload?.team === teamKey &&
-      String(e.payload?.playerNumber) === String(playerNumber) &&
+      String(sanctionedPlayerNumber(e.payload)) === String(playerNumber) &&
       e.payload?.type === 'disqualification'
     )
     if (playerSanctions.length > 0) return false // Disqualified, cannot re-enter
@@ -9786,7 +9882,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const expulsionSanctions = data.events.filter(e =>
       e.type === 'sanction' &&
       e.payload?.team === teamKey &&
-      String(e.payload?.playerNumber) === String(playerNumber) &&
+      String(sanctionedPlayerNumber(e.payload)) === String(playerNumber) &&
       e.payload?.type === 'expulsion' &&
       (e.setIndex || 1) === data.set.index
     )
@@ -12168,6 +12264,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return teamSanctions.length > 0
   }, [data?.events])
 
+  // The team's players who are also bench officials (a playing coach,
+  // domain/playerOfficials), and the member a sanction checks: one person
+  // in both roles (the player with his roles, the official with his number)
+  const linksOfTeam = useCallback((teamKey) => playerOfficialLinks(
+    teamKey === 'home' ? data?.match?.bench_home : data?.match?.bench_away,
+    (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
+  ), [data?.match?.bench_home, data?.match?.bench_away, data?.homePlayers, data?.awayPlayers])
+  const sanctionMemberOf = useCallback((teamKey, member) => sanctionMember(linksOfTeam(teamKey), { team: teamKey, ...member }), [linksOfTeam])
+
   // Get sanctions for a player or official
   const getPlayerSanctions = useCallback((teamKey, playerNumber, role = null) => {
     if (!data?.events) return []
@@ -12203,12 +12308,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!sanctionConfirmModal || !data?.set) return
 
     const { team, type, playerNumber, position, role, sanctionType } = sanctionConfirmModal
+    // A team official who also plays (a playing coach): his sanction records
+    // the number (plays), so it counts for #7 too (domain/playerOfficials)
+    const plays = sanctionPlays(linksOfTeam(team), { type, playerNumber, role })
 
     // Validate the sanction for this member: a player or a team official (by
     // role), the domain rule recompute and the manual corrections use too
-    // (validateMemberSanction)
+    // (validateMemberSanction); a playing coach is one member in both roles
     if (playerNumber || role) {
-      const check = validateMemberSanction(data.events, { team, playerNumber, role, type: sanctionType })
+      const check = validateMemberSanction(data.events, { ...sanctionMemberOf(team, { playerNumber, role }), type: sanctionType })
       const who = playerNumber ? t('scoreboard.dialogs.playerNumber', { defaultValue: 'Player {{number}}', number: playerNumber }) : role
 
       // Prevent giving the same sanction type again
@@ -12252,7 +12360,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         playerType: type,
         playerNumber,
         position,
-        role
+        role,
+        ...plays
       })
 
       // Check if this is a libero on court - if so, handle specially
@@ -12438,9 +12547,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     } else if (sanctionType === 'expulsion' || sanctionType === 'disqualification') {
       // Check if this bench player is currently being replaced by a libero on court
-      // Per FIVB Casebook: libero stays on court, substitute the bench player
+      // Per FIVB Casebook: libero stays on court, substitute the bench player.
+      // Also a team official who plays as that player (a playing coach: off
+      // court while the libero is in his place, so his sanction goes to the
+      // official, domain/playerOfficials): sent off as the coach, #7 may not
+      // come back for the libero and is substituted the same way
       const liberoOnCourt = getLiberoOnCourt(team)
-      if (type === 'bench' && liberoOnCourt && String(liberoOnCourt.playerNumber) === String(playerNumber)) {
+      const replacedNumber = type === 'bench' ? playerNumber : (type === 'official' ? (plays.plays ?? null) : null)
+      if (replacedNumber != null && liberoOnCourt && String(liberoOnCourt.playerNumber) === String(replacedNumber)) {
         // This bench player is the one replaced by the libero
         // Log the sanction first
         await logEvent('sanction', {
@@ -12449,17 +12563,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           playerType: type,
           playerNumber,
           position,
-          role
+          role,
+          ...plays
         })
 
         // Get legal substitutes for this player (based on their original position before libero replaced them)
-        const legalSubs = getAvailableSubstitutes(team, playerNumber, false)
+        const legalSubs = getAvailableSubstitutes(team, replacedNumber, false)
 
         if (legalSubs.length === 1) {
           // Auto-confirm with the single legal substitute
           deferUi(() => setSanctionSubstitutionModal({
             team,
-            expelledPlayer: playerNumber,
+            expelledPlayer: replacedNumber,
             liberoOnCourt,
             availableSubs: legalSubs,
             reason: sanctionType,
@@ -12470,7 +12585,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Show modal to select from legal substitutes
           deferUi(() => setSanctionSubstitutionModal({
             team,
-            expelledPlayer: playerNumber,
+            expelledPlayer: replacedNumber,
             liberoOnCourt,
             availableSubs: legalSubs,
             reason: sanctionType,
@@ -12479,12 +12594,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }))
         } else {
           // No legal substitutes - check for exceptional substitutes
-          const exceptionalSubs = getAvailableExceptionalSubstitutes(team, playerNumber)
+          const exceptionalSubs = getAvailableExceptionalSubstitutes(team, replacedNumber)
           if (exceptionalSubs.length === 1) {
             // Auto-confirm with single exceptional substitute
             deferUi(() => setSanctionSubstitutionModal({
               team,
-              expelledPlayer: playerNumber,
+              expelledPlayer: replacedNumber,
               liberoOnCourt,
               availableSubs: exceptionalSubs,
               reason: sanctionType,
@@ -12495,7 +12610,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             // Show modal for exceptional substitute selection
             deferUi(() => setSanctionSubstitutionModal({
               team,
-              expelledPlayer: playerNumber,
+              expelledPlayer: replacedNumber,
               liberoOnCourt,
               availableSubs: exceptionalSubs,
               reason: sanctionType,
@@ -12504,7 +12619,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             }))
           } else {
             // No substitutes at all - forfait, after confirmation
-            deferUi(() => requestAutomaticForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification', playerNumber, liberoOnCourt.position))
+            deferUi(() => requestAutomaticForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification', replacedNumber, liberoOnCourt.position))
           }
         }
 
@@ -12518,7 +12633,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         playerType: type,
         playerNumber,
         position,
-        role
+        role,
+        ...plays
       })
 
       // Check if this is a libero - if so, log libero_unable and prompt for re-designation
@@ -12560,7 +12676,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         playerType: type,
         playerNumber,
         position,
-        role
+        role,
+        ...plays
       })
 
       // If penalty, award point to the other team (but only if lineups are set)
@@ -12594,7 +12711,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
     }
-  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey, easyNewSubstituteOpen])
+  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey, easyNewSubstituteOpen, linksOfTeam, sanctionMemberOf])
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
@@ -13036,11 +13153,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
       const currentCourtCaptain = data?.match?.[captainOnCourtField]
       const isLiberoCourtCaptain = String(currentCourtCaptain) === String(playerOut)
+      const isLiberoTeamCaptain = !!(liberoPlayer?.isCaptain || liberoPlayer?.captain)
 
       // Trigger captain check if:
       // - Libero leaving is the court captain
+      // - Libero leaving is the team captain (a game captain is needed)
       // - Team captain is returning to court (need to clear game captain badge)
-      if (isLiberoCourtCaptain || isReturningCaptain) {
+      if (isLiberoCourtCaptain || isLiberoTeamCaptain || isReturningCaptain) {
         deferUi(() => setTimeout(() => {
           checkAndRequestCaptainOnCourtRef.current?.(team)
         }, 300))
@@ -13333,11 +13452,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
     const isLiberoCourtCaptain = String(currentCourtCaptain) === String(liberoOnCourt.liberoNumber)
+    const leavingLibero = teamPlayers?.find(p => String(p.number) === String(liberoOnCourt.liberoNumber))
+    const isLiberoTeamCaptain = !!(leavingLibero?.isCaptain || leavingLibero?.captain)
 
     // Trigger captain check if:
     // - Libero leaving is the court captain
+    // - Libero leaving is the team captain (a game captain is needed)
     // - Team captain is returning to court (need to clear game captain badge)
-    if (isLiberoCourtCaptain || isReturningCaptain) {
+    if (isLiberoCourtCaptain || isLiberoTeamCaptain || isReturningCaptain) {
       deferUi(() => setTimeout(() => {
         checkAndRequestCaptainOnCourtRef.current?.(teamKey)
       }, 300))
@@ -13697,7 +13819,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       ts: new Date().toISOString(),
       seq: subEventSeq
     })
-  }), [runAction, deferUi, rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, matchId, logEvent, isLiberoUnable])
+
+    // A libero who is team captain or game captain leaves the court, or the
+    // team captain (a libero) comes in: the game captain is checked as after
+    // a libero exit
+    const isCaptainNumber = (n) => !!teamPlayers?.some(p => String(p.number) === String(n) && (p.isCaptain || p.captain))
+    const currentCourtCaptain = data?.match?.[teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain']
+    if (isCaptainNumber(liberoOnCourt.liberoNumber) || isCaptainNumber(otherLibero.number) || String(currentCourtCaptain) === String(liberoOnCourt.liberoNumber)) {
+      deferUi(() => setTimeout(() => {
+        checkAndRequestCaptainOnCourtRef.current?.(teamKey)
+      }, 300))
+    }
+  }), [runAction, deferUi, rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
 
   // The key for the binding being edited in the keyboard shortcuts dialog:
   // captured only while it is edited and the dialog is open (as in Options,
@@ -14022,32 +14155,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle captain on court selection
   const runCaptainOnCourt = useConfirmAction(onConfirmFailed)
-  const handleSelectCaptainOnCourt = useCallback((playerNumber) => runCaptainOnCourt(() => runAction('captain', async () => {
+  // keep: the dialog's "Keep as game captain" switch at the tap
+  const handleSelectCaptainOnCourt = useCallback((playerNumber, keep = false) => runCaptainOnCourt(() => runAction('captain', async () => {
     if (!captainOnCourtModal || !matchId) return
 
     const { team } = captainOnCourtModal
     // Closed with the designation (deferUi, one render)
     deferUi(() => setCaptainOnCourtModal(null))
-    const courtCaptainField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-    const rememberedField = team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'
 
-    // Get previous court captain for undo
+    // The game captain in force, the one remembered for the next time the
+    // team captain leaves the court (proposed, or designated without asking
+    // while the switch is on), and the switch; the event keeps what they
+    // were, for Undo (domain/gameCaptainKeep.js chosenGameCaptain)
     const match = await db.matches.get(matchId)
-    const previousCourtCaptain = match?.[courtCaptainField] || null
-
-    // Save the selected captain on court AND remember for auto-redesignation
-    await db.matches.update(matchId, {
-      [courtCaptainField]: playerNumber,
-      [rememberedField]: playerNumber  // Remember for when captain leaves again
-    })
+    const { matchUpdate, payload } = chosenGameCaptain({ match, team, playerNumber, keep })
+    await db.matches.update(matchId, matchUpdate)
 
     // Log the event (this triggers snapshot capture and sync to Supabase/Referee)
-    await logEvent('court_captain_designation', {
-      team,
-      playerNumber,
-      previousCourtCaptain
-    })
+    await logEvent('court_captain_designation', payload)
   })), [runAction, deferUi, runCaptainOnCourt, captainOnCourtModal, matchId, logEvent])
+
+  // The switch turned on or off where nobody is to be chosen (the Game
+  // captain button while the role is held, FIVB 5.1.2): a setting of the
+  // match, no new event. The newest designation of the team says so too
+  // (payload.keep, an edit the server's copy of the event gets), so a device
+  // continuing the match from it has the switch as it is
+  // (domain/gameCaptainKeep.js keepEdit, keepFieldsFromEvents)
+  const handleKeepCaptainChange = useCallback((keep) => runAction('captainKeep', async () => {
+    if (!captainOnCourtModal || !matchId) return
+    const team = captainOnCourtModal.team
+    await db.matches.update(matchId, { [keepCourtCaptainField(team)]: keep === true })
+    const edit = keepEdit(await db.events.where('matchId').equals(matchId).toArray(), team, keep)
+    if (edit) await db.events.update(edit.id, { payload: edit.payload })
+    syncToReferee()
+  }), [runAction, captainOnCourtModal, matchId, syncToReferee])
 
   // Handle cancel (no captain selected)
   const handleCancelCaptainOnCourt = useCallback(() => {
@@ -14398,7 +14539,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           const onCourt = court.find(pl => pl.isLibero && String(pl.number) === String(p.number))
           const unable = isLiberoUnable(teamKey, p.number)
           // canReturn: injured, no re-designation in his place (owner 22.11.2026)
-          return { number: p.number, libero: p.libero, unable, canReturn: unable && canLiberoReturn(teamKey, p.number), onCourt: !!onCourt, position: onCourt?.position || null }
+          // asOfficial: on the bench as a team official (a playing coach)
+          const asOfficial = onCourt ? null : ((bench.liberos || []).find(x => String(x.number) === String(p.number))?.asOfficial || null)
+          return { number: p.number, libero: p.libero, unable, canReturn: unable && canLiberoReturn(teamKey, p.number), onCourt: !!onCourt, position: onCourt?.position || null, asOfficial }
         })
       // As the side column: a redesignation once the team has no libero left
       const designated = allLiberos.filter(p => p.libero !== 'unable')
@@ -14421,13 +14564,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         lineupOptional: lineupsOptional,
         // coach / captain still to sign before the first serve (empty: none)
         signaturesMissing: preMatchMissing?.[teamKey] || [],
+        // The Game captain button, as the tablet's (gameCaptainChip)
+        gameCaptain: !showRefereeRow || !gameCaptainChip[side]
+          ? null
+          : gameCaptainChip[side] === 'kept'
+            ? { state: 'kept', number: keptGameCaptain(data?.match, teamKey) }
+            : { state: 'needed' },
         // The libero's shirt (the desktop court's disc paint): the phone court
         // showed the libero's number in the team colour, like any player
         liberoPaint: discPaintBySide[side]?.libero || null,
         court,
         liberos,
-        benchPlayers: (bench.benchPlayers || []).map(p => ({ number: p.number })),
-        officials: (bench.benchOfficials || []).filter(o => o?.role).map(o => ({ role: o.role })),
+        // A player who is also a team official (a playing coach,
+        // domain/playerOfficials): asOfficial on the bench, onCourtAs on court
+        benchPlayers: (bench.benchPlayers || []).map(p => ({ number: p.number, asOfficial: p.asOfficial || null })),
+        officials: (bench.benchOfficials || []).filter(o => o?.role).map(o => ({ role: o.role, playsAs: o.playsAs ?? null, onCourtAs: o.onCourt ? (o.playsAs ?? null) : null })),
         blocked: {
           timeout: !!requestBlockFor(teamKey, 'timeout'),
           substitution: !!requestBlockFor(teamKey, 'substitution')
@@ -14509,6 +14660,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         timeout: (side) => handleTimeout(side),
         openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
         openSignatures: (side) => setPreMatchSignTeam(mapSideToTeamKey(side)),
+        gameCaptain: (side) => setCaptainOnCourtModal({ team: mapSideToTeamKey(side) }),
         playerClick: handlePlayerClick,
         // The player who came in with no completed rally since is offered
         // too: picking him opens the request warning (pickSubOut)
@@ -15663,18 +15815,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         // Check if player was exceptionally substituted (cannot re-enter for rest of game)
                         const isExceptionallySub = wasExceptionallySubstituted(teamKey, player.number)
 
-                        // Also check for sanction-based expulsion/disqualification (for display)
+                        // Also check for sanction-based expulsion/disqualification (for display),
+                        // also one given to him as a team official (a playing coach)
                         const hasExpulsionSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          String(e.payload?.playerNumber) === String(player.number) &&
+                          String(sanctionedPlayerNumber(e.payload)) === String(player.number) &&
                           e.payload?.type === 'expulsion' &&
                           e.setIndex === data.set.index
                         )
                         const hasDisqualificationSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          String(e.payload?.playerNumber) === String(player.number) &&
+                          String(sanctionedPlayerNumber(e.payload)) === String(player.number) &&
                           e.payload?.type === 'disqualification'
                         )
 
@@ -15749,6 +15902,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             data-bench-player={player.number}
                             data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
                             data-team={teamKey}
+                            data-as-official={player.asOfficial || undefined}
+                            title={player.asOfficial ? t('scoreboard.playerOfficials.onBenchAs', { role: officialRoleAbbr(player.asOfficial), defaultValue: 'On the bench as {{role}}' }) : undefined}
                             data-is-libero="false"
                             draggable={rallyStatus === 'idle' && (canSubBenchPlayer || isSubstitutedByLibero)}
                             onDragStart={(e) => (canSubBenchPlayer || isSubstitutedByLibero) && handleBenchDragStart(e, teamKey, player.number, false)}
@@ -15770,6 +15925,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   x: rect.right - 8,
                                   y: rect.top - 8,
                                   side: 'left',
+                                  // on the bench as a team official (a playing
+                                  // coach): substitution only, his sanctions go
+                                  // to the official's chip
+                                  asOfficial: player.asOfficial || null,
                                   canSubstitute: canSubBenchPlayer,
                                   courtPlayerToSwapWith: courtPlayerToSwapWith,
                                   neverPlayed: neverPlayed
@@ -15799,7 +15958,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               position: 'relative',
                               border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #b45309' : '1px solid var(--ov-hairline)'),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
-                              opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : 1,
+                              // on the bench as a team official (a playing coach): greyed,
+                              // still a substitute
+                              opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : player.asOfficial ? 0.55 : 1,
                               color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : undefined),
                               cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                             }}
@@ -15810,6 +15971,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               ringColour={isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)')}
                               label={t('scoreboard.phone.markCaptain', 'captain')}
                             />
+                            {player.asOfficial && (
+                              <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
+                                {officialRoleAbbr(player.asOfficial)}
+                              </span>
+                            )}
                             {isSubstitutedByLibero && (
                               <span style={{
                                 fontSize: 'calc(4.2cqw * var(--cqf, 1))',
@@ -16019,6 +16185,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               data-team={teamKey}
                               data-is-libero="true"
                               data-libero-state={mayReturn ? 'injured' : isUnable ? 'unable' : undefined}
+                              data-as-official={player.asOfficial || undefined}
                               draggable={canDragLibero}
                               onDragStart={(e) => canDragLibero && handleBenchDragStart(e, teamKey, player.number, true)}
                               onDragEnd={handleBenchDragEnd}
@@ -16037,6 +16204,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     team: teamKey,
                                     liberoNumber: player.number,
                                     liberoType: player.libero,
+                                    // on the bench as a team official (a playing coach)
+                                    asOfficial: player.asOfficial || null,
                                     element: e.currentTarget,
                                     x: rect.left + rect.width / 2,
                                     y: rect.top + rect.height / 2,
@@ -16061,7 +16230,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                                 boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
                                 cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && (!isUnable || mayReturn)) ? 'pointer' : 'default',
-                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : 1
+                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : player.asOfficial ? 0.55 : 1
                               }}
                             >
                               {/* The number; a libero-captain's circled in the libero colour */}
@@ -16075,6 +16244,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
+                              {player.asOfficial && (
+                                <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
+                                  {officialRoleAbbr(player.asOfficial)}
+                                </span>
+                              )}
                               {/* injured, may come back: the injury cross */}
                               {mayReturn && (
                                 <span style={{ color: '#ef4444', fontSize: 'calc(4.65cqw * var(--cqf, 1))', fontWeight: 700 }} title={t('scoreboard.playerMenu.liberoInjuredMayReturn', 'Injured: may play again while no new libero is re-designated in his place')}>✚</span>
@@ -16238,11 +16412,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                         const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
 
+                        // A player who is also this official (a playing coach,
+                        // domain/playerOfficials): on court as #7 the chip is
+                        // greyed, his sanctions go to #7; out in either role
+                        // (expelled this set, disqualified) the chip has the ✕
+                        const playsAs = official.playsAs ?? null
+                        const onCourtAs = official.onCourt ? playsAs : null
+                        const onCourtHint = onCourtAs !== null ? t('scoreboard.playerOfficials.onCourtAs', { number: onCourtAs, defaultValue: 'On court as #{{number}}' }) : null
+                        const personOut = playsAs !== null ? memberSentOff(data?.events, sanctionMemberOf(teamKey, { role: official.role }), data?.set?.index) : null
+
                         return (
                           <div
                             key={idx}
                             onClick={(e) => {
-                              if (rallyStatus === 'idle') {
+                              if (rallyStatus === 'idle' && onCourtAs === null) {
                                 const rect = e.currentTarget.getBoundingClientRect()
                                 setSanctionDropdown({
                                   team: teamKey,
@@ -16257,11 +16440,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             data-bench-official={official.role}
                             data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
-                            title={officialChips ? officialName(official) : undefined}
-                            aria-label={officialChips ? `${officialRoleAbbr(official.role)} ${officialName(official)}` : undefined}
+                            data-plays-as={playsAs ?? undefined}
+                            data-on-court-as={onCourtAs ?? undefined}
+                            aria-disabled={onCourtAs !== null || undefined}
+                            title={officialChips ? [officialName(official), onCourtHint].filter(Boolean).join(' · ') : (onCourtHint || undefined)}
+                            aria-label={officialChips ? [`${officialRoleAbbr(official.role)} ${officialName(official)}`, onCourtHint].filter(Boolean).join(', ') : undefined}
                             style={officialChips ? {
                               ...SB_OFFICIAL_CHIP,
-                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                              cursor: rallyStatus === 'idle' && onCourtAs === null ? 'pointer' : 'default',
+                              opacity: onCourtAs !== null ? 0.45 : 1
                             } : {
                               padding: '1.25cqw 2.5cqw',
                               minHeight: '36px',
@@ -16271,14 +16458,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.9cqw',
-                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                              cursor: rallyStatus === 'idle' && onCourtAs === null ? 'pointer' : 'default',
+                              opacity: onCourtAs !== null ? 0.45 : 1
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
                               <span style={officialChips ? { fontWeight: 600 } : { fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
                                 {officialRoleAbbr(official.role)}
                               </span>
+                              {/* the number he plays with, small beside the role */}
+                              {playsAs !== null && (
+                                <span data-plays-as-tag style={{ fontSize: '0.72em', fontWeight: 700, color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                                  #{playsAs}
+                                </span>
+                              )}
                               {!officialChips && <span>{officialName(official)}</span>}
+                              {!officialChips && onCourtHint && (
+                                <span style={{ fontSize: '0.8em', color: 'var(--ov-text-muted)' }}>{onCourtHint}</span>
+                              )}
+                              {personOut && (
+                                <span
+                                  data-person-out={personOut}
+                                  style={{ fontSize: 'calc(4.2cqw * var(--cqf, 1))', lineHeight: '1', background: 'var(--panel)', color: '#ef4444', fontWeight: 700, padding: '0.3cqw 0.9cqw', borderRadius: '0.6cqw', border: '1px solid var(--border)' }}
+                                  title={personOut === 'disqualified'
+                                    ? t('scoreboard.dialogs.titleDisqualified', 'Disqualified - cannot play rest of match')
+                                    : t('scoreboard.dialogs.titleExpelled', 'Expelled - cannot play this set')}
+                                >
+                                  ✕
+                                </span>
+                              )}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
@@ -19088,18 +19296,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         // Check if player was exceptionally substituted (cannot re-enter for rest of game)
                         const isExceptionallySub = wasExceptionallySubstituted(teamKey, player.number)
 
-                        // Also check for sanction-based expulsion/disqualification (for display)
+                        // Also check for sanction-based expulsion/disqualification (for display),
+                        // also one given to him as a team official (a playing coach)
                         const hasExpulsionSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          String(e.payload?.playerNumber) === String(player.number) &&
+                          String(sanctionedPlayerNumber(e.payload)) === String(player.number) &&
                           e.payload?.type === 'expulsion' &&
                           e.setIndex === data.set.index
                         )
                         const hasDisqualificationSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          String(e.payload?.playerNumber) === String(player.number) &&
+                          String(sanctionedPlayerNumber(e.payload)) === String(player.number) &&
                           e.payload?.type === 'disqualification'
                         )
 
@@ -19174,6 +19383,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             data-bench-player={player.number}
                             data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
                             data-team={teamKey}
+                            data-as-official={player.asOfficial || undefined}
+                            title={player.asOfficial ? t('scoreboard.playerOfficials.onBenchAs', { role: officialRoleAbbr(player.asOfficial), defaultValue: 'On the bench as {{role}}' }) : undefined}
                             data-is-libero="false"
                             draggable={rallyStatus === 'idle' && (canSubBenchPlayer || isSubstitutedByLibero)}
                             onDragStart={(e) => (canSubBenchPlayer || isSubstitutedByLibero) && handleBenchDragStart(e, teamKey, player.number, false)}
@@ -19195,6 +19406,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   x: rect.left + 8,
                                   y: rect.top - 8,
                                   side: 'right',
+                                  // on the bench as a team official (a playing
+                                  // coach): substitution only, his sanctions go
+                                  // to the official's chip
+                                  asOfficial: player.asOfficial || null,
                                   canSubstitute: canSubBenchPlayer,
                                   courtPlayerToSwapWith: courtPlayerToSwapWith,
                                   neverPlayed: neverPlayed
@@ -19224,7 +19439,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               position: 'relative',
                               border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #b45309' : '1px solid var(--ov-hairline)'),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
-                              opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : 1,
+                              // on the bench as a team official (a playing coach): greyed,
+                              // still a substitute
+                              opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : player.asOfficial ? 0.55 : 1,
                               color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : undefined),
                               cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                             }}
@@ -19235,6 +19452,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               ringColour={isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)')}
                               label={t('scoreboard.phone.markCaptain', 'captain')}
                             />
+                            {player.asOfficial && (
+                              <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
+                                {officialRoleAbbr(player.asOfficial)}
+                              </span>
+                            )}
                             {isSubstitutedByLibero && (
                               <span style={{
                                 fontSize: 'calc(4.2cqw * var(--cqf, 1))',
@@ -19445,6 +19667,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               data-team={teamKey}
                               data-is-libero="true"
                               data-libero-state={mayReturn ? 'injured' : isUnable ? 'unable' : undefined}
+                              data-as-official={player.asOfficial || undefined}
                               draggable={canDragLibero}
                               onDragStart={(e) => canDragLibero && handleBenchDragStart(e, teamKey, player.number, true)}
                               onDragEnd={handleBenchDragEnd}
@@ -19463,6 +19686,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     team: teamKey,
                                     liberoNumber: player.number,
                                     liberoType: player.libero,
+                                    // on the bench as a team official (a playing coach)
+                                    asOfficial: player.asOfficial || null,
                                     element: e.currentTarget,
                                     x: rect.left + rect.width / 2,
                                     y: rect.top + rect.height / 2,
@@ -19484,7 +19709,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                                 boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
                                 cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && (!isUnable || mayReturn)) ? 'pointer' : 'default',
-                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : 1
+                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : player.asOfficial ? 0.55 : 1
                               }}
                             >
                               {/* The number; a libero-captain's circled in the libero colour */}
@@ -19498,6 +19723,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
+                              {player.asOfficial && (
+                                <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
+                                  {officialRoleAbbr(player.asOfficial)}
+                                </span>
+                              )}
                               {/* injured, may come back: the injury cross */}
                               {mayReturn && (
                                 <span style={{ color: '#ef4444', fontSize: 'calc(4.65cqw * var(--cqf, 1))', fontWeight: 700 }} title={t('scoreboard.playerMenu.liberoInjuredMayReturn', 'Injured: may play again while no new libero is re-designated in his place')}>✚</span>
@@ -19661,11 +19891,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                         const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
 
+                        // A player who is also this official (a playing coach,
+                        // domain/playerOfficials): on court as #7 the chip is
+                        // greyed, his sanctions go to #7; out in either role
+                        // (expelled this set, disqualified) the chip has the ✕
+                        const playsAs = official.playsAs ?? null
+                        const onCourtAs = official.onCourt ? playsAs : null
+                        const onCourtHint = onCourtAs !== null ? t('scoreboard.playerOfficials.onCourtAs', { number: onCourtAs, defaultValue: 'On court as #{{number}}' }) : null
+                        const personOut = playsAs !== null ? memberSentOff(data?.events, sanctionMemberOf(teamKey, { role: official.role }), data?.set?.index) : null
+
                         return (
                           <div
                             key={idx}
                             onClick={(e) => {
-                              if (rallyStatus === 'idle') {
+                              if (rallyStatus === 'idle' && onCourtAs === null) {
                                 const rect = e.currentTarget.getBoundingClientRect()
                                 setSanctionDropdown({
                                   team: teamKey,
@@ -19680,11 +19919,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             data-bench-official={official.role}
                             data-tap-hint={rallyStatus === 'idle' ? '' : undefined}
-                            title={officialChips ? officialName(official) : undefined}
-                            aria-label={officialChips ? `${officialRoleAbbr(official.role)} ${officialName(official)}` : undefined}
+                            data-plays-as={playsAs ?? undefined}
+                            data-on-court-as={onCourtAs ?? undefined}
+                            aria-disabled={onCourtAs !== null || undefined}
+                            title={officialChips ? [officialName(official), onCourtHint].filter(Boolean).join(' · ') : (onCourtHint || undefined)}
+                            aria-label={officialChips ? [`${officialRoleAbbr(official.role)} ${officialName(official)}`, onCourtHint].filter(Boolean).join(', ') : undefined}
                             style={officialChips ? {
                               ...SB_OFFICIAL_CHIP,
-                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                              cursor: rallyStatus === 'idle' && onCourtAs === null ? 'pointer' : 'default',
+                              opacity: onCourtAs !== null ? 0.45 : 1
                             } : {
                               padding: '1.25cqw 2.5cqw',
                               minHeight: '36px',
@@ -19694,14 +19937,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.9cqw',
-                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                              cursor: rallyStatus === 'idle' && onCourtAs === null ? 'pointer' : 'default',
+                              opacity: onCourtAs !== null ? 0.45 : 1
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
                               <span style={officialChips ? { fontWeight: 600 } : { fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
                                 {officialRoleAbbr(official.role)}
                               </span>
+                              {/* the number he plays with, small beside the role */}
+                              {playsAs !== null && (
+                                <span data-plays-as-tag style={{ fontSize: '0.72em', fontWeight: 700, color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                                  #{playsAs}
+                                </span>
+                              )}
                               {!officialChips && <span>{officialName(official)}</span>}
+                              {!officialChips && onCourtHint && (
+                                <span style={{ fontSize: '0.8em', color: 'var(--ov-text-muted)' }}>{onCourtHint}</span>
+                              )}
+                              {personOut && (
+                                <span
+                                  data-person-out={personOut}
+                                  style={{ fontSize: 'calc(4.2cqw * var(--cqf, 1))', lineHeight: '1', background: 'var(--panel)', color: '#ef4444', fontWeight: 700, padding: '0.3cqw 0.9cqw', borderRadius: '0.6cqw', border: '1px solid var(--border)' }}
+                                  title={personOut === 'disqualified'
+                                    ? t('scoreboard.dialogs.titleDisqualified', 'Disqualified - cannot play rest of match')
+                                    : t('scoreboard.dialogs.titleExpelled', 'Expelled - cannot play this set')}
+                                >
+                                  ✕
+                                </span>
+                              )}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
@@ -19951,77 +20215,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Captain on Court Modal - Simplified */}
-      {captainOnCourtModal && (
-        <Modal
-          title={t('scoreboard.captainOnCourt.selectTitle', 'Game captain')}
-          open={true}
-          onClose={handleCancelCaptainOnCourt}
-          width={360}
-        >
-          <div>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '8px',
-              marginBottom: '16px'
-            }}>
-              {(() => {
-                const team = captainOnCourtModal.team
-                const teamLineupState = getTeamLineupState(team)
-                const currentLineup = teamLineupState.currentLineup || {}
-
-                // Court position order: IV III II (front row), V VI I (back row)
-                const positionOrder = ['IV', 'III', 'II', 'V', 'VI', 'I']
-
-                // The last game captain, proposed when on court
-                const remembered = data?.match?.[team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain']
-                const proposed = remembered != null && remembered !== '' && Object.values(currentLineup).some(n => String(n) === String(remembered))
-                  ? String(remembered)
-                  : null
-
-                return positionOrder.map((pos) => {
-                  const playerNumber = currentLineup[pos]
-                  if (!playerNumber) return <div key={pos} />
-                  const isProposed = proposed != null && String(playerNumber) === proposed
-                  return (
-                    <button
-                      key={pos}
-                      onClick={() => handleSelectCaptainOnCourt(playerNumber)}
-                      aria-label={isProposed ? `${playerNumber} (${t('scoreboard.captainOnCourt.last', 'Last game captain')})` : undefined}
-                      style={{
-                        padding: '12px 8px',
-                        background: isProposed ? '#eab308' : 'rgba(234, 179, 8, 0.15)',
-                        border: `2px solid ${isProposed ? '#ca8a04' : 'rgba(234, 179, 8, 0.5)'}`,
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontSize: '24px',
-                        fontWeight: 700,
-                        color: isProposed ? '#1c1917' : '#eab308',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        lineHeight: 1.1
-                      }}
-                    >
-                      {playerNumber}
-                      {isProposed && (
-                        <span style={{ fontSize: '11px', fontWeight: 600, marginTop: '2px' }}>
-                          {t('scoreboard.captainOnCourt.lastShort', 'Last')}
-                        </span>
-                      )}
-                    </button>
-                  )
-                })
-              })()}
-            </div>
-
-            <SbButton block onClick={handleCancelCaptainOnCourt}>
-              {t('common.cancel', 'Cancel')}
-            </SbButton>
-          </div>
-        </Modal>
-      )}
+      {/* Game captain dialog (FIVB 5.1.2) with "Keep as game captain":
+          choose while one is needed, else the switch only (the Game captain
+          button while it is on) */}
+      {captainOnCourtModal && (() => {
+        const team = captainOnCourtModal.team
+        const status = captainOnCourtStatus[team] || {}
+        const needed = !status.captainOnCourt && !status.courtCaptainOnCourt
+        const captain = (team === 'home' ? data?.homePlayers : data?.awayPlayers)?.find(p => p.isCaptain || p.captain)
+        return (
+          <GameCaptainDialog
+            mode={needed ? 'choose' : 'settings'}
+            lineup={getTeamLineupState(team).currentLineup || {}}
+            remembered={data?.match?.[team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'] ?? null}
+            keep={keepsGameCaptain(data?.match, team)}
+            acting={status.captainOnCourt ? null : (status.courtCaptainOnCourt ? status.courtCaptainNumber : null)}
+            captainOnCourt={status.captainOnCourt ? (captain?.number ?? null) : null}
+            onSelect={handleSelectCaptainOnCourt}
+            onKeepChange={handleKeepCaptainChange}
+            onClose={handleCancelCaptainOnCourt}
+          />
+        )
+      })()}
 
       {/* Options in Menu Modal */}
       <ScoreboardOptionsModal
@@ -20627,13 +20842,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         lfpMinimumOnCourt={lfpMinimumOnCourt}
         courtCaptain={lineupModal.team === 'home' ? data?.match?.homeCourtCaptain : data?.match?.awayCourtCaptain}
         rememberedCourtCaptain={lineupModal.team === 'home' ? data?.match?.homeRememberedCourtCaptain : data?.match?.awayRememberedCourtCaptain}
+        keptCourtCaptain={keptGameCaptain(data?.match, lineupModal.team)}
+        bestOf={data?.match?.bestOf}
         easy={data?.match?.easy === true}
         onClose={() => setLineupModal(null)}
         // One action: the line-up, its owed penalty points and the game
         // captain commit together, and the dialog closes with them on the
         // court (it closed a frame before the court filled)
         runSave={(body) => runAction('lineup', body)}
-        onSave={async (gameCaptain, onCourt = null) => {
+        onSave={async (gameCaptain, onCourt = null, { ask = false } = {}) => {
           const teamKey = lineupModal.team
           deferUi(() => setLineupModal(null))
           // Optional game captain chosen in the modal (FIVB 5.2), written the
@@ -20653,7 +20870,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Check if captain is on court after lineup is saved
           // Use timeout to allow data to update from database (increased to 300ms for reliability)
           setTimeout(() => {
-            checkAndRequestCaptainOnCourtRef.current?.(teamKey, onCourt)
+            checkAndRequestCaptainOnCourtRef.current?.(teamKey, onCourt, { ask })
           }, 300)
         }}
         onLineupSaved={() => {
@@ -20715,7 +20932,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // The sanctions this player may get now: never the same type twice,
         // never lighter than an earlier one (FIVB 21.4.2), one warning per
         // team (domain/sanctions)
-        const sanctionOptions = memberSanctionOptions(data?.events, { team, playerNumber })
+        const sanctionOptions = memberSanctionOptions(data?.events, sanctionMemberOf(team, { playerNumber }))
         const canGetWarning = sanctionOptions.warning.legal
         const canGetPenalty = sanctionOptions.penalty.legal
         const canGetExpulsion = sanctionOptions.expulsion.legal
@@ -21516,7 +21733,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     // an earlier one (FIVB 21.4.2), one warning per team
                     // (domain/sanctions)
                     const sanctionOptions = (playerNumber || sanctionDropdown.role)
-                      ? memberSanctionOptions(data?.events, { team: teamKey, playerNumber, role: sanctionDropdown.role })
+                      ? memberSanctionOptions(data?.events, sanctionMemberOf(teamKey, { playerNumber, role: sanctionDropdown.role }))
                       : null
                     const canGetWarning = sanctionOptions ? sanctionOptions.warning.legal : !teamHasFormalWarning(teamKey)
                     const canGetPenalty = sanctionOptions ? sanctionOptions.penalty.legal : true
@@ -21584,7 +21801,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
 
-        const { team, playerNumber, canSubstitute, courtPlayerToSwapWith, neverPlayed } = benchPlayerActionMenu
+        const { team, playerNumber, canSubstitute, courtPlayerToSwapWith, neverPlayed, asOfficial } = benchPlayerActionMenu
         const benchMenuPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
         const benchMenuPlayer = (benchMenuPlayers || []).find(p => String(p.number) === String(playerNumber))
         const benchMenuPlayerName = benchMenuPlayer ? [benchMenuPlayer.firstName, benchMenuPlayer.lastName].filter(Boolean).join(' ') : ''
@@ -21655,6 +21872,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', textAlign: 'center', marginBottom: '4px' }}>
                   # {playerNumber}{benchMenuPlayerName ? ` ${benchMenuPlayerName}` : ''}
                 </div>
+                {/* On the bench as a team official (a playing coach,
+                    domain/playerOfficials): he may come in as a substitute;
+                    his sanctions go to the official's chip */}
+                {asOfficial && (
+                  <div data-bench-as-official-hint style={{ fontSize: '10px', color: 'var(--muted)', textAlign: 'center', maxWidth: '180px', lineHeight: 1.3, margin: '-2px auto 2px' }}>
+                    {t('scoreboard.playerOfficials.benchMenuHint', { role: officialRoleAbbr(asOfficial), defaultValue: 'On the bench as {{role}}. Sanctions go to {{role}}.' })}
+                  </div>
+                )}
                 {/* Substitution Button - for returning players */}
                 {courtPlayerToSwapWith && (
                   <SbMenuItem
@@ -21710,11 +21935,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                 )}
                 {/* Sanction - expandable */}
-                {(() => {
+                {!asOfficial && (() => {
                   // The sanctions this bench player may get now: never the
                   // same type twice, never lighter than an earlier one (FIVB
                   // 21.4.2), one warning per team (domain/sanctions)
-                  const sanctionOptions = memberSanctionOptions(data?.events, { team, playerNumber })
+                  const sanctionOptions = memberSanctionOptions(data?.events, sanctionMemberOf(team, { playerNumber }))
                   const canGetWarning = sanctionOptions.warning.legal
                   const canGetPenalty = sanctionOptions.penalty.legal
                   const canGetExpulsion = sanctionOptions.expulsion.legal
@@ -21759,8 +21984,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                   )
                 })()}
-                {/* Injury Button */}
-                <SbMenuItem
+                {/* Injury Button (not while he is on the bench as a team official) */}
+                {!asOfficial && <SbMenuItem
                   tone="danger"
                   icon={SB_INJURY_ICON}
                   onClick={() => settleTap(runAction('benchInjury', async () => {
@@ -21799,7 +22024,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   }))}
                 >
                   {t('corrections.reasonLabel.injury')}
-                </SbMenuItem>
+                </SbMenuItem>}
               </div>
             </div>
           </>
@@ -23075,8 +23300,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
                 )}
 
-                {/* Sanction */}
-                <SbMenuItem
+                {/* Sanction (on the bench as a team official, a playing
+                    coach: it goes to the official's chip) */}
+                {!liberoBenchActionMenu.asOfficial && <SbMenuItem
                   icon={<SbCardIcon kind="pair" />}
                   onClick={() => {
                     setSanctionDropdown({
@@ -23092,7 +23318,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   }}
                 >
                   {t('scoreboard.sanction')}
-                </SbMenuItem>
+                </SbMenuItem>}
               </div>
             </div>
           </>
@@ -24557,6 +24783,17 @@ const GAME_CAPTAIN_CHIP = {
   borderRadius: '8px',
   cursor: 'pointer'
 }
+// "Keep as game captain" on: the same button, quiet (white, a pin and the
+// kept player's number), a status rather than a question
+const GAME_CAPTAIN_CHIP_KEPT = {
+  ...GAME_CAPTAIN_CHIP,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '5px',
+  background: '#ffffff',
+  color: '#92400e',
+  border: '1px solid #fcd34d'
+}
 
 // A side column fits its squares to its height (benchFit.js): --bench-fit is
 // set on it from the outside, so React never resets it.
@@ -24643,7 +24880,7 @@ function EasyNewSubstitute({ players, onCourt, available, onPick }) {
   )
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, presetGameCaptain = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, presetGameCaptain = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, keptCourtCaptain = null, bestOf = 5, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -24654,7 +24891,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   // 'Required' only shows once the scorer has tried to confirm (until Clear)
   const [confirmAttempted, setConfirmAttempted] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
-  const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }]
+  const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }] | [{ lineup }] (a copied line-up)
 
   // Determine if this team is A or B
   const isTeamA = team === teamAKey
@@ -24730,10 +24967,19 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   const captainStatus = lineupCaptainStatus({ lineup, players })
   const captainNumber = teamCaptainNumber(players)
   const askGameCaptain = !easy && captainStatus === 'offCourt' && lineup.every(v => String(v ?? '').trim() !== '')
-  const gameCaptain = askGameCaptain && gameCaptainChoices.includes(gameCaptainChoice) ? gameCaptainChoice : ''
+  // "Keep as game captain" on (domain/gameCaptainKeep.js) and the kept player
+  // among the six: he is the choice until the scorer picks another or None
+  // (None then asks with the Game captain dialog, checkAndRequestCaptainOnCourt)
+  const [gameCaptainTouched, setGameCaptainTouched] = useState(false)
+  const keptChoice = keptCourtCaptain != null && gameCaptainChoices.includes(String(Number(keptCourtCaptain))) ? String(Number(keptCourtCaptain)) : ''
+  const effectiveGameCaptainChoice = gameCaptainTouched || gameCaptainChoice !== '' ? gameCaptainChoice : keptChoice
+  const gameCaptain = askGameCaptain && gameCaptainChoices.includes(effectiveGameCaptainChoice) ? effectiveGameCaptainChoice : ''
+  const pickGameCaptain = (value) => { setGameCaptainTouched(true); setGameCaptainChoice(value) }
   const gameCaptainNote = gameCaptainChoices.length === 0
     ? t('scoreboard.lineupModal.gameCaptain.enterFirst', 'Choose once the players are entered')
-    : t('scoreboard.lineupModal.gameCaptain.fromFirstRally', { captain: captainNumber, defaultValue: 'Captain {{captain}} is not in the line-up: game captain from the first rally' })
+    : keptChoice !== '' && gameCaptain === keptChoice
+      ? t('scoreboard.lineupModal.gameCaptain.kept', { n: keptChoice, defaultValue: '#{{n}} kept as game captain, from the first rally' })
+      : t('scoreboard.lineupModal.gameCaptain.fromFirstRally', { captain: captainNumber, defaultValue: 'Captain {{captain}} is not in the line-up: game captain from the first rally' })
 
   const errorText = (code) => ({
     required: t('scoreboard.lineupModal.errors.required', 'Required'),
@@ -24822,13 +25068,36 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     if (editHistory.length === 0) return
 
     const lastEdit = editHistory[editHistory.length - 1]
-    // Restore the previous value (skip history tracking for undo)
-    handleInputChange(lastEdit.index, lastEdit.previousValue, true)
+    if (lastEdit.lineup) {
+      // a copied line-up: the six as they were before it
+      setLineup(lastEdit.lineup)
+      setSaveFailed(false)
+    } else {
+      // Restore the previous value (skip history tracking for undo)
+      handleInputChange(lastEdit.index, lastEdit.previousValue, true)
+    }
     // Remove the last entry from history
     setEditHistory(prev => prev.slice(0, -1))
   }
 
   const hasEntries = lineup.some(v => v && v.trim() !== '')
+
+  // The starting line-up of an earlier set as a pre-fill (owner 2026-11-22,
+  // domain/lineupCopy.js): "Last set's line-up", the other earlier sets
+  // beside it. Checked as typed numbers (lineupEntryErrors: a player out of
+  // the set or the match, or a libero now, is flagged); Undo last edit puts
+  // back the six it replaced
+  const earlierSets = useMemo(
+    () => (mode === 'initial' && setIndex > 1 ? earlierStartingLineups(events || [], team, setIndex) : []),
+    [mode, setIndex, events, team]
+  )
+  const copyLineupOf = (entry) => {
+    const next = LINEUP_POSITIONS.map(pos => entry.lineup[pos] ?? '')
+    if (next.every((v, i) => v === (lineup[i] ?? ''))) return
+    setEditHistory(prev => [...prev, { lineup: [...lineup] }])
+    setLineup(next)
+    setSaveFailed(false)
+  }
 
   // Clear all lineup entries (a fresh start: no 'Required' until the next Confirm)
   const handleClearLineup = () => {
@@ -24912,8 +25181,11 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       lineup, players, events, team,
       choice: gameCaptain,
       currentCourtCaptain: courtCaptain,
-      rememberedCourtCaptain
+      rememberedCourtCaptain,
+      keep: keptCourtCaptain != null
     })
+    // The kept game captain set aside with None: the dialog asks after the save
+    const declinedKept = askGameCaptain && keptChoice !== '' && gameCaptain === ''
 
     // Save lineup as an event (mark as initial lineup or manual override)
     if (matchId && setIndex) {
@@ -24988,7 +25260,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
         // Auto-close modal after successful save (skip confirmation step),
         // with what to do about the optional game captain
-        await onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null))
+        await onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null), { ask: declinedKept })
       }).catch(() => {
         // Don't auto-close - let user close manually with close button
         setSaveFailed(true)
@@ -25134,7 +25406,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   aria-pressed={gameCaptain === ''}
                   className="lineup-gcapt__choice lineup-gcapt__choice--none"
                   disabled={gameCaptainChoices.length === 0}
-                  onClick={() => setGameCaptainChoice('')}
+                  onClick={() => pickGameCaptain('')}
                 >
                   {t('scoreboard.lineupModal.gameCaptain.none', 'None')}
                 </button>
@@ -25145,7 +25417,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     aria-pressed={gameCaptain === n}
                     aria-label={t('scoreboard.lineupModal.gameCaptain.player', { number: n, defaultValue: 'Game captain: player {{number}}' })}
                     className="lineup-gcapt__choice"
-                    onClick={() => setGameCaptainChoice(gameCaptain === n ? '' : n)}
+                    onClick={() => pickGameCaptain(gameCaptain === n ? '' : n)}
                   >
                     {n}
                   </button>
@@ -25187,6 +25459,27 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     )
                   })}
                 </div>
+              </div>
+            )}
+            {/* The starting line-up of an earlier set: the last set's, then
+                the others (set 1, 2...) */}
+            {earlierSets.length > 0 && (
+              <div className="lineup-copy" role="group" aria-label={t('scoreboard.lineupModal.copy.group', 'Starting line-up of an earlier set')} data-testid="lineup-copy">
+                <SbButton className="lineup-copy__last" onClick={() => copyLineupOf(earlierSets[0])} data-copy-set={earlierSets[0].setIndex} title={t('scoreboard.lineupModal.copy.setTitle', { n: displaySetNumber(earlierSets[0].setIndex, bestOf), defaultValue: 'Starting line-up of set {{n}}' })}>
+                  <RotateCcw size={16} aria-hidden="true" />
+                  {t('scoreboard.lineupModal.copy.lastSet', "Last set's line-up")}
+                </SbButton>
+                {earlierSets.slice(1).map(entry => (
+                  <SbButton
+                    key={entry.setIndex}
+                    className="lineup-copy__set"
+                    onClick={() => copyLineupOf(entry)}
+                    data-copy-set={entry.setIndex}
+                    aria-label={t('scoreboard.lineupModal.copy.setTitle', { n: displaySetNumber(entry.setIndex, bestOf), defaultValue: 'Starting line-up of set {{n}}' })}
+                  >
+                    {t('scoreboard.lineupModal.copy.set', { n: displaySetNumber(entry.setIndex, bestOf), defaultValue: 'Set {{n}}' })}
+                  </SbButton>
+                ))}
               </div>
             )}
             {/* Available players (excluding liberos and players out of the game);

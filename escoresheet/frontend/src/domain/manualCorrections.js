@@ -51,9 +51,11 @@ import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { intervalMinutesAfter } from './setInterval'
 import { validateManualTimeout, validateManualSubstitution, classifySubstitutionRequest } from './substitutions'
 import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
+import { playerOfficialLinks, playsAsOf, rolesOfPlayer } from './playerOfficials'
 import { applyPlanToEvents, finalizePlan, isRotationLiberoExit, isRally } from './recompute'
 import { planRectificationReversal } from './rectify'
 import { referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber, renumberRemarkText } from './roster'
+import { courtCaptainsRestored } from './gameCaptainKeep'
 
 export { applyPlanToEvents }
 
@@ -545,7 +547,9 @@ function setIsFinished(events, setIndex) {
  * (resolveSanction); misconduct follows the per-member checks. During the
  * match an inconsistency blocks (as live entry does); at the match end it is
  * a warning, because what the referee decided is what is recorded.
- * target: { playerType: 'player'|'bench'|'libero'|'official', playerNumber, role }
+ * target: { playerType: 'player'|'bench'|'libero'|'official', playerNumber, role, plays }
+ *   (plays: the number a team official also plays with, a playing coach,
+ *   domain/playerOfficials; recorded with his sanction)
  */
 export function planAddSanction(events, { setIndex, team, type, target = {}, at, pointAlreadyGiven = true } = {}, ctx = {}) {
   const t = ctx.t
@@ -580,7 +584,17 @@ export function planAddSanction(events, { setIndex, team, type, target = {}, at,
     if (isPerson && !hasNumber(target.playerNumber)) return fail('chooseTarget')
     if (pt === 'official' && !target.role) return fail('chooseTarget')
     if (!isPerson && pt !== 'official') return fail('chooseTarget')
-    const v = validateMemberSanction(prior, { team, playerNumber: isPerson ? target.playerNumber : undefined, role: pt === 'official' ? target.role : undefined, type })
+    // A team official who also plays (a playing coach): the number recorded
+    // with his sanction (target.plays), else the roster's link (ctx.match's
+    // bench, ctx.players); a player with the roles he holds. One member in
+    // both roles for the checks (domain/playerOfficials)
+    const links = playerOfficialLinks(team === 'home' ? ctx.match?.bench_home : ctx.match?.bench_away, rosterOfCtx(ctx, team))
+    const linked = playsAsOf(links, target.role)
+    const plays = pt === 'official'
+      ? (hasNumber(target.plays) && target.plays !== false ? target.plays : (linked ?? undefined))
+      : undefined
+    const alsoRoles = isPerson ? rolesOfPlayer(links, target.playerNumber) : []
+    const v = validateMemberSanction(prior, { team, playerNumber: isPerson ? target.playerNumber : undefined, role: pt === 'official' ? target.role : undefined, plays, alsoRoles, type })
     if (!v.legal) {
       const f = issue(v.reason)
       if (f) return f
@@ -588,6 +602,7 @@ export function planAddSanction(events, { setIndex, team, type, target = {}, at,
     payload = { team, type, playerType: pt }
     if (isPerson) payload.playerNumber = Number(target.playerNumber)
     if (pt === 'official') payload.role = target.role
+    if (plays !== undefined) payload.plays = plays
     if (pt === 'player' || pt === 'libero') {
       const lu = lineupBefore(events, setIndex, team, ins.seq)?.payload?.lineup || {}
       const pos = POSITIONS.find(p => sameNumber(lu[p], target.playerNumber))
@@ -701,6 +716,13 @@ export function planEditEvent(events, id, values = {}, ctx = {}) {
   if (removal.error) return removal
   const without = applyPlanToEvents(events, removal)
   const v = { setIndex: setOf(ev), team: ev.payload?.team, ...values }
+  // A playing coach's sanction kept on him keeps the number it recorded
+  // (plays): the form names the role only
+  const was = ev.payload || {}
+  if (ev.type === 'sanction' && v.target?.playerType === 'official' && v.target.role === was.role &&
+    v.target.plays === undefined && hasNumber(was.plays) && was.plays !== false) {
+    v.target = { ...v.target, plays: was.plays }
+  }
   let addition
   if (ev.type === 'timeout') addition = planAddTimeout(without, v, raw)
   else if (ev.type === 'substitution') addition = planAddSubstitution(without, v, raw)
@@ -731,7 +753,7 @@ export function planMoveEvent(events, id, { setIndex, at } = {}, ctx = {}) {
   const p = ev.payload || {}
   const values = { setIndex, at }
   if (ev.type === 'substitution') Object.assign(values, { playerOut: p.playerOut, playerIn: p.playerIn, exceptional: !!p.isExceptional, reason: p.exceptionalReason || null })
-  if (ev.type === 'sanction') Object.assign(values, { type: p.type, target: { playerType: p.playerType, playerNumber: p.playerNumber, role: p.role } })
+  if (ev.type === 'sanction') Object.assign(values, { type: p.type, target: { playerType: p.playerType, playerNumber: p.playerNumber, role: p.role, plays: p.plays } })
   return planEditEvent(events, id, values, ctx)
 }
 
@@ -1146,10 +1168,16 @@ function removalSideEffects(events, removed, ctx) {
     if (line) out.remarkRemove.push(line)
   }
   for (const e of list) {
+    // the game captains a removed set end had ended (domain/gameCaptainKeep.js)
+    if (e.type === 'set_end') Object.assign(out.matchPatch, courtCaptainsRestored(e.payload?.previousCourtCaptains))
     const team = e.payload?.team
     if (team !== 'home' && team !== 'away') continue
     if ((e.type === 'lineup' || e.type === 'court_captain_designation') && Object.prototype.hasOwnProperty.call(e.payload, 'previousRememberedCourtCaptain')) {
       out.matchPatch[team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'] = e.payload.previousRememberedCourtCaptain ?? null
+    }
+    // "Keep as game captain" as before the designation that changed it (domain/gameCaptainKeep.js)
+    if (e.type === 'court_captain_designation' && Object.prototype.hasOwnProperty.call(e.payload, 'previousKeepCourtCaptain')) {
+      out.matchPatch[team === 'home' ? 'homeKeepCourtCaptain' : 'awayKeepCourtCaptain'] = e.payload.previousKeepCourtCaptain === true
     }
     if (e.type === 'court_captain_designation' && latestDesignation(events, team)?.id === e.id) {
       out.matchPatch[courtCaptainField(team)] = e.payload.previousCourtCaptain ?? null

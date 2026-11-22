@@ -244,6 +244,8 @@
     "noRefereeHistory": "Nessuno storico arbitri. Inserisci gli arbitri manualmente e verranno salvati per le prossime partite."
   },
   "matchSetup": {
+    "playsAs": "Gioca come",
+    "playsAsNone": "Non gioca",
     "roleName": "Nome del ruolo",
     "mixed": "Misto",
     "school": "Scuola",
@@ -546,6 +548,11 @@
     "teamContactEmailHint": "Riceve il referto finale per e-mail. La vedono solo i segnapunti di questa partita."
   },
   "scoreboard": {
+    "playerOfficials": {
+      "onCourtAs": "In campo come #{{number}}",
+      "onBenchAs": "In panchina come {{role}}",
+      "benchMenuHint": "In panchina come {{role}}. Le sanzioni vanno a {{role}}."
+    },
     "serveLabel": "Servizio",
     "set": "Set",
     "timeout": "Timeout",
@@ -604,7 +611,14 @@
         "none": "Nessuno",
         "player": "Capitano in gioco: giocatore {{number}}",
         "enterFirst": "Da scegliere dopo aver inserito i giocatori",
-        "fromFirstRally": "Il capitano {{captain}} non è nella formazione: capitano in gioco dal primo scambio"
+        "fromFirstRally": "Il capitano {{captain}} non è nella formazione: capitano in gioco dal primo scambio",
+        "kept": "#{{n}} tenuto come capitano in gioco, dal primo scambio"
+      },
+      "copy": {
+        "group": "Formazione iniziale di un set precedente",
+        "lastSet": "Formazione set precedente",
+        "set": "Set {{n}}",
+        "setTitle": "Formazione iniziale del set {{n}}"
       },
       "easyLiberos": "Liberi (facoltativo)",
       "easyLiberoInput": "Libero {{n}}",
@@ -901,7 +915,14 @@
       "designate": "Capitano in gioco",
       "selectTitle": "Capitano in gioco",
       "last": "Ultimo capitano in gioco",
-      "lastShort": "Ultimo"
+      "lastShort": "Ultimo",
+      "keep": "Tieni come capitano in gioco",
+      "keepHint": "Nessuna domanda finché questo giocatore è in campo",
+      "acting": "#{{n}} è capitano in gioco",
+      "captainOnCourt": "Capitano #{{n}} in campo",
+      "kept": "Tenuto: #{{n}}",
+      "keptChip": "Capitano in gioco #{{n}}",
+      "autoNotice": "{{team}}: #{{n}} capitano in gioco"
     },
     "duplicateTabTitle": "Foglio segnapunti già aperto",
     "duplicateTabMessage": "Il foglio segnapunti è già aperto in un'altra scheda o finestra del browser. Per evitare conflitti di dati, tienilo in una sola scheda: chiudi questa, oppure premi «Continua in questa scheda» per riprenderlo qui (l'altra scheda smette allora di tenerlo).",
@@ -5910,6 +5931,7 @@
       "disqualification": "Squalifica"
     },
     "target": {
+      "officialPlays": "{{role}} (#{{n}})",
       "player": "Giocatore/trice #{{n}}",
       "bench": "Giocatore/trice #{{n}} (panchina)",
       "libero": "Libero #{{n}}",
@@ -6812,7 +6834,6 @@
       "send": "Invia la formazione",
       "net": "Rete",
       "players": "Giocatori",
-      "asInSet": "Come nel set {{set}}",
       "noLiberos": "I liberi ({{numbers}}) non fanno parte della formazione.",
       "gameCaptainHint": "Il capitano {{captain}} non è nella formazione: chi è capitano in gioco in campo?"
     },

@@ -87,6 +87,9 @@ import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { askText } from '../utils/askText.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import { preload, usePreloaded } from '../utils/preload'
+import { benchPlays } from '../db/matchRepository'
+import { playsChoice, withPlays } from '../domain/playerOfficials'
+import { playsAsOptions } from './rosters/playsAs'
 
 // Kit field look inside the setup editors: compact label tone, and the legacy
 // `label { margin: 8px 0 }` rule neutralised so the label sits on its field.
@@ -396,6 +399,26 @@ function BenchRoleCell({ global = false, label = '', onLabel, testId, placeholde
         onChange={e => onLabel(e.target.value)}
       />
     </div>
+  )
+}
+
+/**
+ * "Plays as" of a bench official (domain/playerOfficials): the player he also
+ * is, found automatically by licence or name, or the scorer's own choice;
+ * "Not a player" when he is not the same person. Every player of the team
+ * is offered. `onChange` gets 'none', a number as text, or '' (automatic).
+ */
+function PlaysAsSelect({ official, players, onChange, t, testId }) {
+  const { value } = playsChoice(official, players)
+  // the label shows in the stacked (portrait) rows only, where no column
+  // head names the field (styles.css / tailwind.css .cell-plays)
+  return (
+    <label className="cell-plays">
+      <span className="plays-label">{t('matchSetup.playsAs', 'Plays as')}</span>
+      <select aria-label={t('matchSetup.playsAs', 'Plays as')} data-testid={testId} value={value} onChange={e => onChange(e.target.value)}>
+        {playsAsOptions(players, t).map(o => <option key={o.value || 'auto'} value={o.value}>{o.label}</option>)}
+      </select>
+    </label>
   )
 }
 
@@ -1722,7 +1745,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           role: member?.role || '',
           firstName: member?.firstName || member?.first_name || '',
           lastName: member?.lastName || member?.last_name || '',
-          dob: member?.dob || member?.date_of_birth || member?.dateOfBirth || ''
+          dob: member?.dob || member?.date_of_birth || member?.dateOfBirth || '',
+          // a playing coach's link to his shirt number (domain/playerOfficials)
+          ...benchPlays(member)
         })
 
         // For bench officials: only load if match has saved bench data
@@ -5356,6 +5381,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
             <div className="cell-dob">{idLabel}</div>
+            <div className="cell-plays">{t('matchSetup.playsAs', 'Plays as')}</div>
             <div></div>
           </div>
           {sortBenchByHierarchy(benchHome).map((m, i) => {
@@ -5390,6 +5416,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{idLabel}</StackLabel>
                 <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                {/* A player who is also this official (a playing coach,
+                    domain/playerOfficials): found by licence or name, or
+                    the scorer's choice */}
+                <PlaysAsSelect official={m} players={homeRoster} t={t} testId="bench-plays-home" onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = withPlays(a[originalIdx], v); return a })} />
                 <div className="cell-action gap-1">
                   {rowShield('home', 'bench', m, originalIdx)}
                   <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {
@@ -6451,6 +6481,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
             <div className="cell-dob">{idLabel}</div>
+            <div className="cell-plays">{t('matchSetup.playsAs', 'Plays as')}</div>
             <div></div>
           </div>
           {sortBenchByHierarchy(benchAway).map((m, i) => {
@@ -6485,6 +6516,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{idLabel}</StackLabel>
                 <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                {/* A player who is also this official (a playing coach,
+                    domain/playerOfficials): found by licence or name, or
+                    the scorer's choice */}
+                <PlaysAsSelect official={m} players={awayRoster} t={t} testId="bench-plays-away" onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = withPlays(a[originalIdx], v); return a })} />
                 <div className="cell-action gap-1">
                   {rowShield('away', 'bench', m, originalIdx)}
                   <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {

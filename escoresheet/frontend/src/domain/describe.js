@@ -149,6 +149,8 @@ const hasNumber = (n) => n !== undefined && n !== null && n !== '' && n !== '?'
  *   bench    -> "Player #8 (bench)"    code "(8)"  (circled on paper)
  *   libero   -> "Libero #8"            code "8"
  *   official -> "Coach" / "Assistant coach 1" / ... code "C" / "AC1" / "AC2" / "P" / "M"
+ *               a playing coach: "Coach (#7)", the number his sanction
+ *               recorded (`plays`, domain/playerOfficials); code "C" as given
  *   none     -> "Team"                 code "D" for a delay
  * `incomplete` flags a person sanction with no number (rows written by the old
  * editor) so the list can offer to complete it.
@@ -163,7 +165,16 @@ export function sanctionTarget(payload, t) {
   const official = roleTarget(p.role)
   if (pt === 'official' || pt === 'coach' || pt === 'bench_official' || (official && !hasNumber(n))) {
     const target = official || (pt === 'coach' ? ROLE_TARGETS[0] : null)
-    if (target) return { kind: target.key, label: tr(t, `corrections.target.${target.key}`, target.label), code: target.code, incomplete: false }
+    if (target) {
+      const label = tr(t, `corrections.target.${target.key}`, target.label)
+      const plays = hasNumber(p.plays) && p.plays !== false ? p.plays : null
+      return {
+        kind: target.key,
+        label: plays !== null ? tr(t, 'corrections.target.officialPlays', '{{role}} (#{{n}})', { role: label, n: plays }) : label,
+        code: target.code,
+        incomplete: false
+      }
+    }
     return { kind: 'official', label: tr(t, 'corrections.target.official', 'Team official'), code: '?', incomplete: true }
   }
   if (pt === 'bench') {

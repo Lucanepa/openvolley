@@ -245,6 +245,8 @@
     "noRefereeHistory": "No referee history yet. Enter referees manually and they will be saved for future matches."
   },
   "matchSetup": {
+    "playsAs": "Plays as",
+    "playsAsNone": "Not a player",
     "roleName": "Role name",
     "mixed": "Mixed",
     "school": "School",
@@ -547,6 +549,11 @@
     "teamContactEmailHint": "Gets the final scoresheet by email. Only this match's scorers see it."
   },
   "scoreboard": {
+    "playerOfficials": {
+      "onCourtAs": "On court as #{{number}}",
+      "onBenchAs": "On the bench as {{role}}",
+      "benchMenuHint": "On the bench as {{role}}. Sanctions go to {{role}}."
+    },
     "serveLabel": "Serve",
     "set": "Set",
     "timeout": "Timeout",
@@ -605,7 +612,14 @@
         "none": "None",
         "player": "Game captain: player {{number}}",
         "enterFirst": "Choose once the players are entered",
-        "fromFirstRally": "Captain {{captain}} is not in the line-up: game captain from the first rally"
+        "fromFirstRally": "Captain {{captain}} is not in the line-up: game captain from the first rally",
+        "kept": "#{{n}} kept as game captain, from the first rally"
+      },
+      "copy": {
+        "group": "Starting line-up of an earlier set",
+        "lastSet": "Last set's line-up",
+        "set": "Set {{n}}",
+        "setTitle": "Starting line-up of set {{n}}"
       },
       "easyLiberos": "Liberos (optional)",
       "easyLiberoInput": "Libero {{n}}",
@@ -902,7 +916,14 @@
       "designate": "Game captain",
       "selectTitle": "Game captain",
       "last": "Last game captain",
-      "lastShort": "Last"
+      "lastShort": "Last",
+      "keep": "Keep as game captain",
+      "keepHint": "Not asked again while this player is on court",
+      "acting": "#{{n}} is game captain",
+      "captainOnCourt": "Captain #{{n}} is on court",
+      "kept": "Kept: #{{n}}",
+      "keptChip": "Game captain #{{n}}",
+      "autoNotice": "{{team}}: #{{n}} game captain"
     },
     "duplicateTabTitle": "Scoresheet already open",
     "duplicateTabMessage": "This match scoresheet is already open in another tab or browser window. Score it in one tab only, to avoid data conflicts: close this tab, or press “Score in this tab” to move scoring here (the other tab then stops scoring).",
@@ -5911,6 +5932,7 @@
       "disqualification": "Disqualification"
     },
     "target": {
+      "officialPlays": "{{role}} (#{{n}})",
       "player": "Player #{{n}}",
       "bench": "Player #{{n}} (bench)",
       "libero": "Libero #{{n}}",
@@ -6813,7 +6835,6 @@
       "send": "Send line-up",
       "net": "Net",
       "players": "Players",
-      "asInSet": "As in set {{set}}",
       "noLiberos": "Liberos ({{numbers}}) are not in the line-up.",
       "gameCaptainHint": "Captain {{captain}} is not in the line-up: who is game captain on court?"
     },

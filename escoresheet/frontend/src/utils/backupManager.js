@@ -31,6 +31,7 @@ import { queueEventSync } from './eventSync'
 import { officialsToArray } from '../domain/officials'
 import { unsentOfMatch } from './deviceSelfCheck'
 import { isLocalOnly } from '../domain/matchKind'
+import { keepFieldsFromEvents } from '../domain/gameCaptainKeep'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -1970,6 +1971,10 @@ export function localMatchRowFromCloud(cloudData, { homeTeamId = null, awayTeamI
     // that event hides the setup panel, so without it set 5 was served
     // by set 1's first server
     ...set5TossFromEvents(events, coinToss.team_a || match.coin_toss_team_a),
+    // The last game captain of each team and "Keep as game captain": the
+    // server's row has neither, its designation events have both
+    // (domain/gameCaptainKeep.js)
+    ...keepFieldsFromEvents(events),
     // Match result: prefer JSONB, fallback to legacy
     setResults: results.set_results || match.set_results,
     winner: results.winner || match.winner,

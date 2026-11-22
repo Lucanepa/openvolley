@@ -243,6 +243,8 @@
     "noRefereeHistory": "Pas encore d'historique d'arbitres. Entre les arbitres manuellement et ils seront sauvegardés pour les prochains matchs."
   },
   "matchSetup": {
+    "playsAs": "Joue comme",
+    "playsAsNone": "Ne joue pas",
     "roleName": "Nom de la fonction",
     "mixed": "Mixte",
     "school": "École",
@@ -545,6 +547,11 @@
     "teamContactEmailHint": "Reçoit la feuille de match finale par e-mail. Seuls les marqueurs de ce match la voient."
   },
   "scoreboard": {
+    "playerOfficials": {
+      "onCourtAs": "Sur le terrain comme #{{number}}",
+      "onBenchAs": "Sur le banc comme {{role}}",
+      "benchMenuHint": "Sur le banc comme {{role}}. Les sanctions vont à {{role}}."
+    },
     "serveLabel": "Service",
     "set": "Set",
     "timeout": "Temps mort",
@@ -603,7 +610,14 @@
         "none": "Aucun",
         "player": "Capitaine de jeu : joueur {{number}}",
         "enterFirst": "À choisir une fois les joueurs saisis",
-        "fromFirstRally": "Le capitaine {{captain}} n’est pas dans la composition : capitaine de jeu dès le premier échange"
+        "fromFirstRally": "Le capitaine {{captain}} n’est pas dans la composition : capitaine de jeu dès le premier échange",
+        "kept": "#{{n}} gardé comme capitaine de jeu, dès le premier échange"
+      },
+      "copy": {
+        "group": "Composition de départ d’un set précédent",
+        "lastSet": "Composition du set précédent",
+        "set": "Set {{n}}",
+        "setTitle": "Composition de départ du set {{n}}"
       },
       "easyLiberos": "Libéros (facultatif)",
       "easyLiberoInput": "Libéro {{n}}",
@@ -900,7 +914,14 @@
       "designate": "Capitaine de jeu",
       "selectTitle": "Capitaine de jeu",
       "last": "Dernier capitaine en jeu",
-      "lastShort": "Dernier"
+      "lastShort": "Dernier",
+      "keep": "Garder comme capitaine de jeu",
+      "keepHint": "Plus de question tant que ce joueur est sur le terrain",
+      "acting": "#{{n}} est capitaine de jeu",
+      "captainOnCourt": "Capitaine #{{n}} sur le terrain",
+      "kept": "Gardé : #{{n}}",
+      "keptChip": "Capitaine de jeu #{{n}}",
+      "autoNotice": "{{team}} : #{{n}} capitaine de jeu"
     },
     "duplicateTabTitle": "Feuille de match déjà ouverte",
     "duplicateTabMessage": "La feuille de match est déjà ouverte dans un autre onglet ou navigateur. Pour éviter les conflits de données, tiens-la dans un seul onglet : ferme celui-ci, ou appuie sur « Continuer dans cet onglet » pour la reprendre ici (l’autre onglet cesse alors de la tenir).",
@@ -5904,6 +5925,7 @@
       "disqualification": "Disqualification"
     },
     "target": {
+      "officialPlays": "{{role}} (#{{n}})",
       "player": "Joueur/euse #{{n}}",
       "bench": "Joueur/euse #{{n}} (banc)",
       "libero": "Libéro #{{n}}",
@@ -6806,7 +6828,6 @@
       "send": "Envoyer la composition",
       "net": "Filet",
       "players": "Joueurs",
-      "asInSet": "Comme au set {{set}}",
       "noLiberos": "Les libéros ({{numbers}}) ne font pas partie de la composition.",
       "gameCaptainHint": "Le capitaine {{captain}} n’est pas dans la composition : qui est capitaine de jeu sur le terrain ?"
     },

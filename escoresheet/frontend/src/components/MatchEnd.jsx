@@ -77,6 +77,7 @@ import { showsSponsorBoxes, sponsorsOf, sponsorsPatch, withSponsorMark, SPONSOR_
 import { useSponsorsOption } from '../hooks/useSponsorsOption'
 import { matchInfoFromLocal, queueMatchUpdate } from '../db/matchRepository'
 import { useMatchTz } from '../ui/useMatchTz'
+import { courtCaptainsRestored } from '../domain/gameCaptainKeep'
 
 // volleyui recipes for this page (RESTYLE-SPEC P3b). The paper-sheet blocks
 // (ResultsTable, SanctionsTable, RemarksBox and their black frames), the
@@ -2045,6 +2046,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         .first()
 
       if (setEndEvent) {
+        // the game captains its set end had ended act again (domain/gameCaptainKeep.js)
+        const restoredCaptains = courtCaptainsRestored(setEndEvent.payload?.previousCourtCaptains)
+        if (Object.keys(restoredCaptains).length) await db.matches.update(matchId, restoredCaptains)
         console.log('[MatchEnd] Deleting set_end event:', setEndEvent.id)
         // The event history (db/eventHistory) voids the server's copy; the
         // old 'event delete' job was never handled by the sync queue.

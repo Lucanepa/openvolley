@@ -698,11 +698,11 @@ button:disabled {
   grid-template-columns: auto auto auto auto auto auto auto auto auto;
 }
 
-/* Bench officials grid: 5 columns
-   Role  |  Last Name  |  First Name  |  DOB  |  Action */
+/* Bench officials grid: 6 columns
+   Role  |  Last Name  |  First Name  |  DOB  |  Plays as  |  Action */
 .bench-grid {
   display: grid;
-  grid-template-columns: auto auto auto auto auto;
+  grid-template-columns: auto auto auto auto auto auto;
   row-gap: calc(8px * var(--scale-factor));
   width: max-content;
   margin: 0 auto;
@@ -769,8 +769,20 @@ button:disabled {
   }
 
   .bench-grid-row {
-    grid-template-columns: minmax(120px, 284px) minmax(80px, 224px) minmax(80px, 224px) minmax(128px, 224px) minmax(68px, 1fr);
+    grid-template-columns: minmax(120px, 284px) minmax(80px, 224px) minmax(80px, 224px) minmax(128px, 224px) minmax(80px, 160px) minmax(68px, 1fr);
   }
+}
+
+/* "Plays as" (a player who is also this official, a playing coach:
+   domain/playerOfficials): the select in its own column, its label only in
+   the stacked rows (tailwind.css), where no column head names it */
+.bench-grid-row > .cell-plays {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.bench-grid-row > .cell-plays > .plays-label {
+  display: none;
 }
 
 /* Inputs/selects in grid: size to content, not 100% */
@@ -1890,6 +1902,24 @@ button:disabled {
   gap: 8px;
 }
 
+/* The starting line-up of an earlier set (domain/lineupCopy.js): "Last set's
+   line-up" first, the older sets as short buttons beside it, one row
+   (wrapping only when it must) */
+.lineup-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lineup-copy button {
+  min-width: 0 !important;
+  gap: 6px;
+  white-space: nowrap;
+}
+/* (SbButton: the class is on the button, its wrapper is display: contents) */
+.lineup-copy .lineup-copy__last {
+  flex: 1 1 auto;
+}
+
 .lineup-rotate {
   display: flex;
   align-items: center;
@@ -1980,6 +2010,14 @@ button:disabled {
   }
   .lineup-modal__side {
     gap: 10px;
+  }
+  /* the earlier sets' line-ups: a lower row on a phone */
+  .lineup-copy {
+    gap: 6px;
+  }
+  .lineup-copy button {
+    height: 38px !important;
+    font-size: 13px !important;
   }
   .lineup-pool {
     padding: 8px 6px 6px;

@@ -559,7 +559,27 @@
     grid-template-columns: minmax(0, calc((100% - 148px) * 5 / 6)) minmax(0, 1fr) minmax(86px, max-content) 44px;
     grid-template-areas:
       "role role dob dob"
-      "last first first del";
+      "last first first del"
+      "plays plays plays plays";
+  }
+  /* "Plays as" (a playing coach, domain/playerOfficials): a line of its
+     own with its label, also on the one-line rows from 600 px (a column of
+     its own took 112 px from the names); the head has no cell for it */
+  .ov-form-stack .bench-grid-row > .cell-plays {
+    grid-area: plays;
+    gap: 8px;
+  }
+  .ov-form-stack .bench-grid-row > .cell-plays > .plays-label {
+    display: inline;
+    flex: none;
+    font-size: 13px;
+    color: var(--ov-text-muted);
+  }
+  .ov-form-stack .bench-grid-row > .cell-plays > select {
+    flex: 0 1 16rem;
+  }
+  .ov-form-stack .bench-grid-row.grid-header > .cell-plays {
+    display: none;
   }
   /* the head strip names the columns of the one-line rows only */
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {
@@ -703,9 +723,15 @@
       grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) minmax(136px, max-content) 120px 44px 44px 44px;
       grid-template-areas: "num last first dob lib cap lfp del";
     }
-    /* 232 px: "AC1 - Assistant coach 1" and the chevron */
+    /* 232 px: "AC1 - Assistant coach 1" and the chevron; Plays as on a
+       line under the names */
     .ov-form-stack .bench-grid-row {
       grid-template-columns: 232px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 44px;
+      grid-template-areas:
+        "role last first dob del"
+        "plays plays plays plays plays";
+    }
+    .ov-form-stack .bench-grid-row.grid-header {
       grid-template-areas: "role last first dob del";
     }
     .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {

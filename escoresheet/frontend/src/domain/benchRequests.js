@@ -227,6 +227,7 @@ export function benchSubstitutionChoices({ events = [], setIndex, team, players 
 /**
  * Who leads the team on court now: the team captain when on court, else the
  * game captain the scorer recorded last in the set (court_captain_designation).
+ * Only one of this set: the role ends with the set (FIVB 5.1.2, owner 22.11).
  */
 export function courtCaptainOf(events, setIndex, team, players) {
   const lineup = latestLineup(events, setIndex, team) || {}
@@ -235,7 +236,7 @@ export function courtCaptainOf(events, setIndex, team, players) {
   if (captain && onCourt.has(captain)) return captain
   let gc = null
   for (const e of (events || [])) {
-    if (e.type === 'court_captain_designation' && e.payload?.team === team && (e.setIndex ?? 1) <= setIndex) gc = e
+    if (e.type === 'court_captain_designation' && e.payload?.team === team && (e.setIndex ?? 1) === setIndex) gc = e
   }
   const n = str(gc?.payload?.playerNumber)
   return n && onCourt.has(n) ? n : null

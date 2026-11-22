@@ -5,9 +5,10 @@ import { Modal } from '../../ui/Modal.jsx'
 import { Button } from '../../ui/Button.jsx'
 import { cn } from '../../ui/cn.js'
 import { FOCUS_RING } from '../../ui/Button.jsx'
-import { benchLineupCheck, COURT_ORDER, lineupNumber } from '../../domain/benchRequests'
+import { benchLineupCheck, COURT_ORDER } from '../../domain/benchRequests'
 import { lineupCandidates } from '../../domain/lineupEntry'
-import { displaySetNumber, previousSetIndex } from '../../utils/matchFormat'
+import { displaySetNumber } from '../../utils/matchFormat'
+import { earlierStartingLineups } from '../../domain/lineupCopy'
 
 // The court as the coach writes the line-up sheet: front row IV III II at
 // the net, back row V VI I (I serves)
@@ -16,13 +17,6 @@ const BACK = ['V', 'VI', 'I']
 const FILL_ORDER = ['I', 'II', 'III', 'IV', 'V', 'VI']
 const str = (v) => (v === undefined || v === null ? '' : String(v))
 
-/** The team's starting line-up of an earlier set, for "As in set n". */
-function startingLineup(events, setIndex, team) {
-  const own = (events || []).filter((e) => e.type === 'lineup' && (e.setIndex ?? 1) === setIndex && e.payload?.team === team && e.payload?.lineup)
-  if (own.length === 0) return null
-  const first = own.find((e) => e.payload?.isInitial) || own.sort((a, b) => (a.seq || 0) - (b.seq || 0))[0]
-  return Object.fromEntries(COURT_ORDER.map((p) => [p, str(lineupNumber(first.payload.lineup[p]))]))
-}
 
 /**
  * The bench's line-up editor (FIVB 7.3): pick a position, then a player
@@ -33,8 +27,10 @@ function startingLineup(events, setIndex, team) {
  */
 export default function BenchLineupSheet({ setIndex, bestOf = 5, team, players = [], events = [], discStyle, lastRequest, onClose, onSend, reserveBottom = false }) {
   const { t } = useTranslation()
-  const previousIndex = previousSetIndex(setIndex, bestOf)
-  const previous = useMemo(() => (previousIndex >= 1 ? startingLineup(events, previousIndex, team) : null), [events, previousIndex, team])
+  // The starting line-up of an earlier set, as on the scorer's line-up
+  // dialog (domain/lineupCopy.js): the last set's first, the others beside it
+  const earlier = useMemo(() => earlierStartingLineups(events, team, setIndex), [events, team, setIndex])
+  const copy = (entry) => { setLineup(Object.fromEntries(COURT_ORDER.map((p) => [p, str(entry.lineup[p])]))); setSelected(null) }
   const [lineup, setLineup] = useState(() => {
     const sent = lastRequest?.request?.lineup
     if (sent) return Object.fromEntries(COURT_ORDER.map((p) => [p, str(sent[p])]))
@@ -148,10 +144,17 @@ export default function BenchLineupSheet({ setIndex, bestOf = 5, team, players =
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-bold uppercase tracking-wider text-stone-800">{t('benchRequests.lineupSheet.players', 'Players')}</span>
-          {previous && (
-            <Button variant="ghost" size="sm" icon={RotateCcw} onClick={() => { setLineup(previous); setSelected(null) }}>
-              {t('benchRequests.lineupSheet.asInSet', { set: displaySetNumber(previousIndex, bestOf), defaultValue: 'As in set {{set}}' })}
-            </Button>
+          {earlier.length > 0 && (
+            <div className="flex flex-wrap items-center justify-end gap-1" data-lineup-copy="">
+              <Button variant="ghost" size="sm" icon={RotateCcw} onClick={() => copy(earlier[0])} data-copy-set={earlier[0].setIndex} title={t('scoreboard.lineupModal.copy.setTitle', { n: displaySetNumber(earlier[0].setIndex, bestOf), defaultValue: 'Starting line-up of set {{n}}' })}>
+                {t('scoreboard.lineupModal.copy.lastSet', "Last set's line-up")}
+              </Button>
+              {earlier.slice(1).map((entry) => (
+                <Button key={entry.setIndex} variant="ghost" size="sm" onClick={() => copy(entry)} data-copy-set={entry.setIndex} aria-label={t('scoreboard.lineupModal.copy.setTitle', { n: displaySetNumber(entry.setIndex, bestOf), defaultValue: 'Starting line-up of set {{n}}' })}>
+                  {t('scoreboard.lineupModal.copy.set', { n: displaySetNumber(entry.setIndex, bestOf), defaultValue: 'Set {{n}}' })}
+                </Button>
+              ))}
+            </div>
           )}
         </div>
         <div className="flex flex-wrap gap-2" data-lineup-pool="">

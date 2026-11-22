@@ -7,6 +7,7 @@
 
 import { substitutionBarsForMatch } from './substitutions'
 import { liberoPlayState } from './liberos'
+import { sanctionedPlayerNumber } from './sanctions'
 
 export const COURT_POSITIONS = ['I', 'II', 'III', 'IV', 'V', 'VI']
 
@@ -115,6 +116,8 @@ const isInjurySub = e =>
  * injured during the match (the Rosters dialog marks both).
  *  - 'disqualified': disqualification (any set) - out for the match
  *  - 'expelled'    : expulsion in the current set - out for this set
+ *    (also one given to him as a team official: a playing coach,
+ *    sanctionedPlayerNumber)
  *  - 'exceptional' : exceptionally substituted (injury, expulsion or
  *                    disqualification with no legal substitution) - out for
  *                    the match (owner 22.11.2026); an expelled one shows
@@ -129,7 +132,7 @@ export function playerPlayStatus(events, teamKey, player, currentSetIndex) {
   if (num === '') return status
   const mine = (events || []).filter(e => e.payload?.team === teamKey)
   const sanctioned = type => mine.filter(e =>
-    e.type === 'sanction' && e.payload?.type === type && str(e.payload?.playerNumber) === num)
+    e.type === 'sanction' && e.payload?.type === type && str(sanctionedPlayerNumber(e.payload)) === num)
   const subsOut = mine.filter(e => e.type === 'substitution' && str(e.payload?.playerOut) === num)
 
   if (sanctioned('disqualification').length || subsOut.some(e => e.payload?.isDisqualified === true)) {
