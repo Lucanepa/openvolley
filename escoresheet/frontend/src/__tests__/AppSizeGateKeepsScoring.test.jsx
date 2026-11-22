@@ -68,9 +68,9 @@ describe('App: the size gate over the scoring screen', () => {
     await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
 
     fireEvent.click(document.querySelector('[data-help-id="scoreboard-timeout-left"]'))
-    await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
     await sleep(GHOST_CLICK_MS)
-    fireEvent.click(button('Confirm time-out'))
+    fireEvent.click(button('Confirm'))
     await waitFor(() => expect(button('Stop timeout')).toBeTruthy())
     const stop = button('Stop timeout')
 

@@ -93,10 +93,16 @@ describe('time-out request (owner report: "this set?" and the 1st/2nd flash)', (
   it('the dialog wording never reads the live time-out count', () => {
     const dialog = between('{timeoutModal && !timeoutModal.started && (', '</Modal>')
     expect(dialog).not.toContain('timeoutsUsed')
-    expect(dialog).toContain('timeoutModal.ordinal === 2')
-    expect(dialog).toContain('timeoutModal.consecutive')
-    expect(dialog).toContain("t('scoreboard.timeoutRequest.consecutive'")
-    expect(dialog).toContain("t('scoreboard.timeoutRequest.second'")
+    // just "TO 1 of 2" / "TO 2 of 2"; a second one in the same interruption is 2 of 2 (owner 22.11.2026)
+    expect(dialog).toContain('const n = timeoutModal.consecutive || timeoutModal.ordinal === 2 ? 2 : 1')
+    expect(dialog).toContain("t('scoreboard.timeoutRequest.count', { to: t('scoreboard.labels.to'), n })")
+  })
+
+  it('the dialog has only Confirm and Cancel (owner 22.11.2026)', () => {
+    const dialog = between('{timeoutModal && !timeoutModal.started && (', '</Modal>')
+    expect(dialog).toContain("<SbButton variant=\"positive\" onClick={confirmTimeout}>\n                {t('common.confirm')}")
+    expect(dialog).toContain("{t('common.cancel')}")
+    expect(dialog).not.toContain('confirmConsecutive')
   })
 
   it('there is one time-out dialog: the separate "already used a timeout this set" one is gone', () => {
@@ -136,12 +142,11 @@ describe('time-out request (owner report: "this set?" and the 1st/2nd flash)', (
 describe('time-out and team-sanction texts', () => {
   const LOCALES = { en, de, 'de-CH': deCH, fr, it: it_ }
   const KEYS = [
-    'timeoutRequest.title', 'timeoutRequest.first', 'timeoutRequest.second', 'timeoutRequest.consecutive',
-    'timeoutRequest.confirmConsecutive', 'timeoutRequest.notRecorded', 'confirmFailed',
+    'timeoutRequest.title', 'timeoutRequest.count', 'timeoutRequest.notRecorded', 'confirmFailed',
     'teamSanctionConfirm.thirdTimeout', 'teamSanctionConfirm.applyImproperRequest',
     'teamSanctionConfirm.applyDelayWarning', 'teamSanctionConfirm.applyDelayPenalty',
     'teamSanctionConfirm.repeatedImproperRequest', 'teamSanctionConfirm.repeatedDelay',
-    'teamSanctionConfirm.pointToOpponent', 'buttons.confirmTimeout'
+    'teamSanctionConfirm.pointToOpponent'
   ]
   const get = (o, p) => p.split('.').reduce((x, k) => x?.[k], o)
 
@@ -155,10 +160,9 @@ describe('time-out and team-sanction texts', () => {
     }
   })
 
-  it('the consecutive wording is about the interruption, not the set', () => {
-    expect(en.scoreboard.timeoutRequest.consecutive).toMatch(/interruption/)
-    expect(en.scoreboard.timeoutRequest.consecutive).not.toMatch(/this set/)
-    expect(en.scoreboard.timeoutRequest.second).toMatch(/1 of 2 already used/)
+  it('the request is just "TO n of 2", no sentence (owner 22.11.2026)', () => {
+    expect(en.scoreboard.timeoutRequest.count).toBe('{{to}} {{n}} of 2')
+    expect(fr.scoreboard.timeoutRequest.count).toBe('{{to}} {{n}} sur 2')
   })
 
   it('no machine-translated "network timeout" words in the time-out texts', () => {

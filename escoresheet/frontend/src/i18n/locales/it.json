@@ -650,7 +650,6 @@
       "pointTeam": "Punto {{team}}",
       "toLeft": "TO sinistra",
       "toRight": "TO destra",
-      "confirmTimeout": "Conferma timeout",
       "substitute": "Sostituisci",
       "undo": "Annulla",
       "replay": "Ripeti scambio",
@@ -969,10 +968,7 @@
     "storageLow": "La memoria di questo dispositivo è quasi piena: restano {{mb}} MB per OpenVolley. Libera spazio ora (elimina vecchi download o altri file): quando è piena, non si può registrare più nulla.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
-      "first": "Timeout 1 di 2 in questo set per {{team}}.",
-      "second": "Secondo timeout di questo set per {{team}} (1 di 2 già usato).",
-      "consecutive": "{{team}} ha già chiesto un timeout in questa interruzione (nessuno scambio da allora). Registrare il secondo timeout?",
-      "confirmConsecutive": "Sì, secondo timeout",
+      "count": "{{to}} {{n}} di 2",
       "notRecorded": "Il timeout non è stato registrato. Riprova."
     },
     "requestBlock": {
@@ -1051,14 +1047,6 @@
         "text": "#{{number}} non può entrare per #{{out}}: {{why}}. Richiedere una sostituzione irregolare è un ritardo; la richiesta viene respinta.",
         "rule": "FIVB 15.10.4 · 16.1.3"
       }
-    },
-    "lateRequest": {
-      "heading": "Interrotto per una richiesta tardiva?",
-      "replay": "Ripetere per una richiesta tardiva di {{team}}: sanzione per ritardo",
-      "penalty": "Richiesta tardiva di {{team}}: penalità per ritardo, senza ripetere",
-      "recordsWarning": "Registrato: avvertimento per ritardo. Lo scambio viene ripetuto; nessun timeout né sostituzione finché non è concluso.",
-      "recordsPenalty": "Registrato: penalità per ritardo – punto e servizio a {{opponent}}.",
-      "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
     },
     "decisionTakeBack": {
       "title": "Annullato prima",
@@ -1747,6 +1735,8 @@
     "startServerToConnect": "Avviare il server live per consentire alle applicazioni di arbitro, panchina e livescore di connettersi.",
     "showNamesOnCourt": "Mostra i nomi sul campo",
     "showNamesOnCourtInfo": "Visualizzare i cognomi dei giocatori sotto i cerchi di posizione del campo",
+    "showTapHints": "Mostra il dito sui pulsanti",
+    "showTapHintsInfo": "Un piccolo dito su ogni pulsante che puoi toccare ora. Disattivalo se lo schermo ti sembra troppo pieno.",
     "autoDownloadAtSetEnd": "Download automatico dei dati alla fine del set",
     "autoDownloadAtSetEndInfo": "Quando la fine di un set non può essere inviata al cloud (offline, invio fallito o messa da parte perché un altro dispositivo tiene la partita), scarica la partita in un file di backup; con una connessione lenta, solo se dopo 30 s non è ancora stata inviata. Con questo file, «Ripristina partita» recupera la partita.",
     "configureKeys": "Configurazione delle chiavi",
@@ -3247,7 +3237,7 @@
       "q_fixSanction": "Ho registrato la sanzione sbagliata: come la correggo?",
       "a_fixSanction": "Se è l'ultima azione, tocca «Annulla». Altrimenti apri Partita › Correzioni: nella scheda «Sanzioni» modificala o rimuovila, oppure tocca «Aggiungi sanzione». Il registro delle correzioni mostra la modifica all'arbitro.",
       "q_lateRequest": "Lo scambio è stato interrotto per una richiesta tardiva: come lo registro?",
-      "a_lateRequest": "Durante lo scambio, tocca «Ripeti scambio». In «Interrotto per una richiesta tardiva?» scegli la squadra: registra un avvertimento per ritardo e lo scambio si ripete, senza timeout né sostituzioni finché non è completato. Se quella squadra ha già un avvertimento per ritardo, la scelta è una penalità per ritardo senza ripetizione: punto e servizio all'avversario."
+      "a_lateRequest": "Durante lo scambio, tocca «Ripeti scambio»: registra solo la ripetizione. Poi dai la sanzione per ritardo con il pulsante «Avvertimento per ritardo» della squadra (o «Penalità per ritardo» se ha già un avvertimento)."
     },
     "setEnd": {
       "q_interval": "Come funziona l'intervallo tra i set?",

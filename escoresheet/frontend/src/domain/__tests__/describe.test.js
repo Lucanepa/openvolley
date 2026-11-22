@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  describeEventText,
   sanctionLabel, sanctionTarget, formatScore, teamLetter, teamLabel, describeEvent,
   scoreBeforeEvent, humanize, remarkText, describeLegacyChange, SANCTION_TYPES, tr, setTimesText
 } from '../describe'
@@ -217,3 +218,20 @@ describe('describeLegacyChange', () => {
     expect(tr((k, o) => o.defaultValue, 'corrections.score', '{{first}} {{a}}:{{b}} {{second}}', { first: 'B', a: 0, b: 0, second: 'A' })).toBe('B 0:0 A')
   })
 })
+
+describe('ctx.noSet (the scoring screen\'s last action, owner 22.11.2026)', () => {
+  it('leaves the set out of the short line, keeps team and score', () => {
+    const events = [
+      { type: 'set_start', setIndex: 1, seq: 1, payload: {} },
+      { type: 'point', setIndex: 1, seq: 2, payload: { team: 'home' } },
+      { type: 'point', setIndex: 1, seq: 3, payload: { team: 'away' } }
+    ]
+    const ctx = { short: true, match: {}, homeTeam: { name: 'Home VC' }, awayTeam: { name: 'Away VC' } }
+    const withSet = describeEventText(events[2], events, ctx)
+    const without = describeEventText(events[2], events, { ...ctx, noSet: true })
+    expect(withSet).toContain('Set 1')
+    expect(without).not.toContain('Set')
+    expect(without).toBe(withSet.replace(' · Set 1', ''))
+  })
+})
+

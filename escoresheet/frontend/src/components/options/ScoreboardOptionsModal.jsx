@@ -30,6 +30,7 @@ import { reloadWithReason } from '../../diagnostics/reload'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
 import { useToolMode } from '../../utils/toolMode'
+import { readShowTapHints, setShowTapHints } from '../../utils/tapHints'
 
 // Opened over the scoreboard: no brand-red fills here (RESTYLE-SPEC R4).
 // Selection and "on" are slate-900, the non-destructive confirm emerald.
@@ -262,6 +263,7 @@ export default function ScoreboardOptionsModal({
   const [sponsorsOption, setSponsorsOption] = useSponsorsOption()
   const { showAlert } = useAlert()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
+  const [showTapHints, setShowTapHintsState] = useState(readShowTapHints) // the fingers on the buttons (utils/tapHints)
   const [fontSelectorOpen, setFontSelectorOpen] = useState(false)
   const [showCloudBackups, setShowCloudBackups] = useState(false)
   const [cloudBackups, setCloudBackups] = useState([])
@@ -635,6 +637,20 @@ export default function ScoreboardOptionsModal({
             <ToggleSwitch
               value={displayOptions?.showNamesOnCourt}
               onToggle={() => displayOptions?.setShowNamesOnCourt?.(!displayOptions?.showNamesOnCourt)}
+            />
+          </Row>
+          <Row style={{ marginBottom: '12px' }}>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.showTapHints')}</div>
+              <InfoDot title={t('options.showTapHintsInfo')} />
+            </div>
+            <ToggleSwitch
+              value={showTapHints}
+              onToggle={() => {
+                const next = !showTapHints
+                setShowTapHintsState(next)
+                setShowTapHints(next)
+              }}
             />
           </Row>
           <Row style={{ marginBottom: '12px' }}>

@@ -143,7 +143,7 @@ describe('Scoreboard: keyboard shortcuts under the Set end dialog', () => {
     expect((await events()).length).toBe(before)
     expect((await ofType('point')).length).toBe(47)
     expect((await db.sets.toArray())[0]).toMatchObject({ homePoints: 25, awayPoints: 22, finished: false })
-    expect(button('Confirm time-out')).toBeFalsy()
+    expect(document.querySelector('[data-testid="timeout-request-text"]')).toBeNull() // no time-out dialog
     expect(setEndDialog()).toBeTruthy()
   }, 60000)
 })

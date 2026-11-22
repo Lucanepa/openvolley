@@ -30,6 +30,11 @@ describe('Scoreboard "Replay rally" confirmation', () => {
     expect(keys).toMatch(/if \(replayConfirm\) \{\s*e\.preventDefault\(\)\s*confirmReplay\(\)/)
   })
 
+  it('the last action names a replay ("Rally replayed", owner 22.11.2026); a rally start stays hidden', () => {
+    expect(sb).not.toContain("e.type === 'rally_start' || e.type === 'replay') continue")
+    expect(sb.match(/if \(e\.type === 'rally_start'\) continue/g)).toHaveLength(2)
+  })
+
   it('the modal uses translated texts', () => {
     const modal = between('{replayConfirm && (', '</Modal>')
     expect(modal).toContain("t('scoreboard.modals.confirmReplay')")

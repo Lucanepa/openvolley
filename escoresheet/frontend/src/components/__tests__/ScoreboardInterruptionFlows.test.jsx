@@ -115,7 +115,7 @@ const mount = (matchId) => render(<ScaleProvider><AlertProvider><LoggingProvider
 
 
 describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', () => {
-  it('row 10: a late request by B stopped the rally: replay + delay warning, requests closed until the rally is completed', async () => {
+  it('row 10: Replay rally is just a replay: no late-request / sanction options (owner 22.11.2026)', async () => {
     setViewport(390, 844)
     const matchId = await setUpMatch()
     mount(matchId)
@@ -127,63 +127,15 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
     await waitFor(() => expect(view.getByTestId('phone-action-replay').disabled).toBe(false))
     await settle()
     fireEvent.click(view.getByTestId('phone-action-replay'))
-    // the Replay dialog: the plain replay, and one late-request option per team
-    const lateB = await waitFor(() => screen.getByTestId('late-request-away'))
-    expect(screen.getByTestId('late-request-home')).toBeTruthy()
-    expect(lateB.textContent).toContain('Replay because of a late request by B (Away VC): delay sanction')
-    expect(lateB.textContent).toContain('Recorded: delay warning.')
+    await waitFor(() => expect(button('Replay rally')).toBeTruthy())
+    expect(screen.queryByTestId('late-request-options')).toBeNull()
+    expect(screen.queryByTestId('late-request-home')).toBeNull()
+    expect(screen.queryByTestId('late-request-away')).toBeNull()
     await settle()
-    fireEvent.click(lateB)
-    await waitFor(async () => expect((await ofType('sanction')).length).toBe(1))
-    const all = await events()
-    const replay = all.filter(e => e.type === 'replay')
-    expect(replay).toHaveLength(1)
-    const sanction = (await ofType('sanction'))[0]
-    expect(sanction.payload).toMatchObject({ team: 'away', type: 'delay_warning' })
-    expect(sanction.payload).not.toHaveProperty('reason')
-    expect(sanction.seq).toBeGreaterThan(replay[0].seq)
-    // no point was given
+    fireEvent.click(button('Replay rally'))
+    await waitFor(async () => expect((await ofType('replay')).length).toBe(1))
+    expect(await ofType('sanction')).toHaveLength(0)
     expect(await ofType('point')).toHaveLength(2)
-    // requests closed for both teams (row 7), with the reason under them
-    await waitFor(() => expect(view.getByTestId('phone-timeout-left').disabled).toBe(true))
-    expect(view.getByTestId('phone-timeout-right').disabled).toBe(true)
-    expect(view.getByTestId('phone-sub-right').disabled).toBe(true)
-    expect(view.getByTestId('phone-request-block').textContent).toMatch(/^Replay pending/)
-  }, 60000)
-
-  it('row 10: B already has a delay warning: its late request is a delay penalty, no replay, point and service to A', async () => {
-    setViewport(390, 844)
-    const matchId = await setUpMatch()
-    // B's delay warning, earlier in the set (before both points)
-    await db.events.add({ matchId, setIndex: 1, type: 'sanction', payload: { team: 'away', type: 'delay_warning' }, seq: 5.5, ts: new Date(Date.now() - 25 * 60 * 1000).toISOString() })
-    await db.matches.update(matchId, { sanctions: { delayWarningAway: true } })
-    mount(matchId)
-    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
-    const view = within(phone())
-    await waitFor(() => expect(view.getByRole('button', { name: 'Start rally' })).toBeTruthy())
-    await settle()
-    fireEvent.click(view.getByRole('button', { name: 'Start rally' }))
-    await waitFor(() => expect(view.getByTestId('phone-action-replay').disabled).toBe(false))
-    await settle()
-    fireEvent.click(view.getByTestId('phone-action-replay'))
-    const lateB = await waitFor(() => screen.getByTestId('late-request-away'))
-    expect(lateB.textContent).toContain('Late request by B (Away VC): delay penalty, no replay')
-    expect(lateB.textContent).toContain('Recorded: delay penalty – point and service to A (Home VC).')
-    // A has no delay yet: a warning and the replay
-    expect(screen.getByTestId('late-request-home').textContent).toContain('Replay because of a late request by A (Home VC)')
-    await settle()
-    fireEvent.click(lateB)
-    await waitFor(async () => expect((await ofType('point')).length).toBe(3))
-    expect(await ofType('replay')).toHaveLength(0)
-    const penalty = (await ofType('sanction')).at(-1)
-    expect(penalty.payload).toMatchObject({ team: 'away', type: 'delay_penalty' })
-    expect(penalty.payload).not.toHaveProperty('reason')
-    const point = (await ofType('point')).at(-1)
-    expect(point.payload).toMatchObject({ team: 'home', penaltySeq: penalty.seq })
-    await waitFor(() => expect(view.getByTestId('phone-score-left').textContent).toBe('2'))
-    // the penalty point is the completed rally: requests are open
-    await waitFor(() => expect(view.getByTestId('phone-timeout-right').disabled).toBe(false))
-    expect(view.queryByTestId('phone-request-block')).toBeNull()
   }, 60000)
 
   it('row 11: the improper request asks no reason and keeps none', async () => {
@@ -234,9 +186,9 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
 
     // ---- time-out A ----
     fireEvent.click(view.getByTestId('phone-timeout-left'))
-    await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
     await settle()
-    fireEvent.click(button('Confirm time-out'))
+    fireEvent.click(button('Confirm'))
     await waitFor(async () => expect((await ofType('timeout')).length).toBe(1))
     await waitFor(() => expect(view.getByRole('button', { name: 'Stop timeout' })).toBeTruthy())
     // while the time-out runs there is no decision change (the tablet hides it)

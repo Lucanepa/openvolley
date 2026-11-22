@@ -84,9 +84,9 @@ describe('Scoreboard: its countdowns with the device clock set back', () => {
     await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
 
     fireEvent.click(document.querySelector('[data-help-id="scoreboard-timeout-left"]'))
-    await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
     await wait(GHOST_CLICK_MS)
-    fireEvent.click(button('Confirm time-out'))
+    fireEvent.click(button('Confirm'))
     await waitFor(() => expect(timeoutCountdown()).toBe(30))
 
     // the device clock is set back one hour (an NTP or manual correction)

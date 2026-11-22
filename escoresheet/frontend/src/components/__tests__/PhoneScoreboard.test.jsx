@@ -138,7 +138,7 @@ describe('Scoreboard: the phone layout', () => {
     // the last actions: the newest point first, the teams as their letters
     // (a team name pushed the rest of the line out, 2026-10-20)
     // each line: its time (HH:MM), then the action
-    expect(view.getByTestId('phone-recent').firstChild.textContent).toMatch(/^\d\d:\d\dPoint B · Set 1 · A 1:1 B$/)
+    expect(view.getByTestId('phone-recent').firstChild.textContent).toMatch(/^\d\d:\d\dPoint B · A 1:1 B$/) // no set (owner 22.11.2026)
     expect(within(view.getByTestId('phone-recent').firstChild).getByTestId('phone-recent-time').textContent).toMatch(/^\d\d:\d\d$/)
     expect(view.getByTestId('phone-recent').textContent).not.toMatch(/Away VC|Home VC/)
     await settle()
@@ -165,9 +165,9 @@ describe('Scoreboard: the phone layout', () => {
 
     // ---- time-out A: the screen's own request dialog, then its countdown ----
     fireEvent.click(view.getByTestId('phone-timeout-left'))
-    await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
     await settle()
-    fireEvent.click(button('Confirm time-out'))
+    fireEvent.click(button('Confirm'))
     await waitFor(async () => expect((await ofType('timeout')).length).toBe(1))
     expect((await ofType('timeout'))[0].payload.team).toBe('home')
     await waitFor(() => expect(view.getByTestId('phone-countdown')).toBeTruthy())
@@ -374,9 +374,9 @@ describe('Scoreboard: the phone layout', () => {
       await settle()
       // a running time-out (the screen's own state)
       fireEvent.click(view.getByTestId('phone-timeout-left'))
-      await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
+      await waitFor(() => expect(button('Confirm')).toBeTruthy())
       await settle()
-      fireEvent.click(button('Confirm time-out'))
+      fireEvent.click(button('Confirm'))
       await waitFor(() => expect(view.getByTestId('phone-countdown')).toBeTruthy())
       const scoreboardRoot = document.querySelector('.match-record')
 

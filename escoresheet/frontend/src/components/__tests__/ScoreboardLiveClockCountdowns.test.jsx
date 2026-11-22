@@ -176,10 +176,10 @@ const scoreTimeOut = () => onScorer(async () => {
   renderScoreboard(matchId)
   await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
   fireEvent.click(document.querySelector('[data-help-id="scoreboard-timeout-left"]'))
-  await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
+  await waitFor(() => expect(button('Confirm')).toBeTruthy())
   await wait(GHOST_CLICK_MS)
   const pressed = Date.now()
-  fireEvent.click(button('Confirm time-out'))
+  fireEvent.click(button('Confirm'))
   await waitFor(() => expect(liveStates('timeout').length).toBeGreaterThan(0), { timeout: 10000 })
   return { row: liveStates('timeout').at(-1), pressed }
 })
