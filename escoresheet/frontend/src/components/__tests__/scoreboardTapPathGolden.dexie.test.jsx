@@ -276,8 +276,18 @@ const mount = (matchId) => render(<ScaleProvider><AlertProvider><LoggingProvider
 const INK = 'data:image/png;base64,AAAA'
 const HOME_LINEUP = { I: '1', II: '2', III: '3', IV: '4', V: '5', VI: '6' }
 const AWAY_LINEUP = { I: '11', II: '12', III: '13', IV: '14', V: '15', VI: '16' }
-// The action's writes have landed and its effects (live state, relay) ran
-const quiet = () => wait(1500)
+// The action's writes have landed and its effects (live state, relay) ran:
+// at least 1.5 s, then until nothing more was sent for 0.6 s (a loaded
+// machine runs the effects later; at most about 10 s)
+const quiet = async () => {
+  await wait(1500)
+  const sent = () => relaySent.filter(m => m?.type !== 'ping').length + upserts.length
+  for (let i = 0, last = sent(); i < 14; i++) {
+    await wait(600)
+    if (sent() === last) return
+    last = sent()
+  }
+}
 // Only what the case's own taps send (not the mount's first sync)
 const startRecording = () => {
   upserts.length = 0
