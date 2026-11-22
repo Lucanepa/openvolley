@@ -3474,15 +3474,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // pressing Enter at the whistle and A a moment later lost the point.
   const checkRallyTap = useRallyTapGuard(rallyStatus)
 
+  // The events of one set, for rallyStatusOf, isFirstRallyOf and
+  // startingLineupsIn: they skip every row whose setIndex !== setIndex
+  // (domain/rally), so the set's rows ([matchId+setIndex], in primary-key
+  // order as the matchId index gives them: ties in seq break the same way)
+  // answer as the whole match does, at a fraction of the read late in a
+  // match. A set index that is no number (none: rows without a setIndex
+  // count there, which that index does not hold) reads the whole match.
+  const readSetEvents = useCallback((setIndex) => (
+    typeof setIndex === 'number' && Number.isFinite(setIndex)
+      ? db.events.where('[matchId+setIndex]').equals([matchId, setIndex]).toArray()
+      : db.events.where('matchId').equals(matchId).toArray()
+  ), [matchId])
+
   // The rally of the set being played, read from the database (inside an
   // action: its transaction). A tap is checked against it, not against the
   // screen, which on a slow tablet can be seconds behind
   const readRallyStatus = useCallback(async () => {
     const set = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
     if (!set) return 'idle'
-    const events = await db.events.where('matchId').equals(matchId).toArray()
-    return rallyStatusOf(events, set.index)
-  }, [matchId])
+    return rallyStatusOf(await readSetEvents(set.index), set.index)
+  }, [matchId, readSetEvents])
 
   substitutionGuardRef.current = {
     events: data?.events,
