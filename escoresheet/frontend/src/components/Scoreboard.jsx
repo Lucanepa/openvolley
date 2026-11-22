@@ -16644,8 +16644,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div style={{
                 gridColumn: 2,
                 gridRow: 1,
-                // each number centred in its own column, the colon in the
-                // middle whatever the digits (owner, 15.11: 11 : 5 looked off)
+                // the colon in the middle whatever the digits (owner, 15.11:
+                // 11 : 5 looked off), each number right next to it, like a
+                // scoreboard (owner 22.11.2026: a single digit centred in its
+                // column left a wider gap to the colon than 12)
                 display: 'grid',
                 gridTemplateColumns: '1.3em auto 1.3em',
                 alignItems: 'center',
@@ -16655,7 +16657,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 pointerEvents: 'none'
               }}>
                 {/* Left Score */}
-                <span style={{
+                <span data-testid="score-left" style={{
+                  justifySelf: 'end',
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
                   fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
@@ -16676,7 +16679,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}>:</span>
 
                 {/* Right Score */}
-                <span style={{
+                <span data-testid="score-right" style={{
+                  justifySelf: 'start',
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
                   fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
