@@ -20,16 +20,20 @@
  * and the court switches, like the scores.
  */
 export const SCORE_ROW = {
-  /** score digits, vmin (line height 1: the row's height) */
-  scoreVmin: 15,
-  colonVmin: 11,
+  /**
+   * score digits, vmin (line height 1: the row's height). 3 % smaller than
+   * the 15 / 11 (20 / 14 upright) they were (owner, 22.11.2026: "scorer on
+   * ref tablet can be 3% smaller"); the serve block follows the height.
+   */
+  scoreVmin: 14.55,
+  colonVmin: 10.67,
   /**
    * upright (`large`): the row has the height to spare (the court below is
    * limited by the screen's width), so the score and the serve block are a
    * third bigger (owner, 15.11, phone: "the numbers can then be bigger")
    */
-  largeScoreVmin: 20,
-  largeColonVmin: 14
+  largeScoreVmin: 19.4,
+  largeColonVmin: 13.58
 }
 
 export const SERVE_BLOCK = {
