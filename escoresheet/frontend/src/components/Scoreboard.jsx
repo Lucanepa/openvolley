@@ -14466,18 +14466,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
 
-      const scoresheetData = {
-        match,
-        homeTeam: data?.homeTeam,
-        awayTeam: data?.awayTeam,
-        homePlayers: data?.homePlayers || [],
-        awayPlayers: data?.awayPlayers || [],
-        sets: data?.sets || [],
-        events: data?.events || [],
-        sanctions: []
-      }
-
-      sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+      // the page reads the match from this device's database (?matchId=)
       const opened = openAppWindow(`/scoresheet/?matchId=${match.id}${action ? `&action=${action}` : ''}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
 
       if (!opened.ok) {

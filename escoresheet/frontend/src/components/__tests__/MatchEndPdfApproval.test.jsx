@@ -545,3 +545,43 @@ describe('MatchEnd: the match end in the cloud live state', () => {
     expect(liveEnd.calls).toHaveLength(0)
   })
 })
+
+// Perf pass 22.11.2026: every open of the scoresheet (and the approval)
+// stringified the whole match into sessionStorage, which the page, reading
+// ?matchId= from this device's database, never used.
+describe('MatchEnd: the scoresheet window reads the match from this device', () => {
+  const copies = () => setItem.mock.calls.filter(([key]) => key === 'scoresheetData')
+  let setItem
+  beforeEach(() => {
+    sessionStorage.clear()
+    setItem = vi.spyOn(Storage.prototype, 'setItem')
+  })
+  afterEach(() => setItem.mockRestore())
+
+  it('the approval opens it by match id, with no copy of the match', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    expect(opened[0].url).toMatch(/^\/scoresheet\/\?matchId=1&action=getBlob&pdfReq=/)
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    expect(copies()).toHaveLength(0)
+    expect(sessionStorage.getItem('scoresheetData')).toBeNull()
+  })
+
+  it('the preview and the missing PDF open it by match id, with no copy of the match', async () => {
+    seed({ approved: true, approvedAt: '2026-10-08T10:00:00Z', scoresheetPdfMissing: true, gameNumber: 4242 })
+    render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.closeMatch)
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en.matchEnd.scoresheet) }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(en.matchEnd.preview) }))
+    await waitFor(() => expect(opened).toHaveLength(1))
+    expect(opened[0].url).toBe('/scoresheet/?matchId=1')
+    fireEvent.click(await findButton(en.matchEnd.pdfMissing.create))
+    await waitFor(() => expect(opened).toHaveLength(2))
+    expect(opened[1].url).toMatch(/^\/scoresheet\/\?matchId=1&action=getBlob&pdfReq=/)
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await waitFor(() => expect(store.tables.matches.get(1).scoresheetPdfMissing).toBe(false))
+    expect(copies()).toHaveLength(0)
+    expect(sessionStorage.getItem('scoresheetData')).toBeNull()
+  })
+})

@@ -1290,17 +1290,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
   const handleShowScoresheet = (action = 'preview') => {
     cLogger.logHandler('handleShowScoresheet', { action })
-    // Prepare scoresheet data
-    const scoresheetData = {
-      match,
-      homeTeam,
-      awayTeam,
-      homePlayers,
-      awayPlayers,
-      sets,
-      events
-    }
-    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+    // the page reads the match from this device's database (?matchId=)
     const url = action === 'preview' ? `/scoresheet/?matchId=${matchId}` : `/scoresheet/?matchId=${matchId}&action=${action}`
     const opened = openAppWindow(url, { features: 'width=1600,height=1200', title: t('header.scoresheet') })
     if (!opened.ok) showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
@@ -1431,10 +1421,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     cLogger.logHandler('handleCreateMissingPdf', { matchId })
     setCreatingPdf(true)
     try {
-      const current = (await db.matches.get(matchId)) || match
-      const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
-      const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
-      sessionStorage.setItem('scoresheetData', JSON.stringify({ match: current, homeTeam, awayTeam, homePlayers, awayPlayers, sets: allSets, events: allEvents }))
       setDownloadProgress({ pdfOnly: true, json: true, pdf: false })
       const { pdfResult } = await requestPdf({ canSkip: false, purpose: 'missing' })
       setDownloadProgress(null)
@@ -1587,20 +1573,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // Mark JSON as ready
       setDownloadProgress(prev => ({ ...prev, json: true }))
 
-      // Generate PDF via scoresheet window with postMessage
-      const scoresheetData = {
-        match: approvedMatch,
-        homeTeam,
-        awayTeam,
-        homePlayers,
-        awayPlayers,
-        sets,
-        events
-      }
-      sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-
       // Open the scoresheet with the getBlob action and wait for its PDF
-      // (requestPdf). Approve without PDF: the JSON, the approval and the ZIP
+      // (requestPdf): the page reads the match from this device's database
+      // (?matchId=), which holds the account approvals as checked above. Approve without PDF: the JSON, the approval and the ZIP
       // go ahead, and the approved view makes the PDF again (pdfMissing).
       // Cancel: nothing is approved.
       const { pdfResult, choice: pdfChoice, reason: pdfFailReason } = await requestPdf()

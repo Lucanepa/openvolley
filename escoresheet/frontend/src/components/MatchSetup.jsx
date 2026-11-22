@@ -3023,37 +3023,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       return
     }
 
-    // Get teams
-    const homeTeamData = matchData.homeTeamId ? await db.teams.get(matchData.homeTeamId) : null
-    const awayTeamData = matchData.awayTeamId ? await db.teams.get(matchData.awayTeamId) : null
-
-    // Get players
-    const homePlayersData = matchData.homeTeamId
-      ? await db.players.where('teamId').equals(matchData.homeTeamId).toArray()
-      : []
-    const awayPlayersData = matchData.awayTeamId
-      ? await db.players.where('teamId').equals(matchData.awayTeamId).toArray()
-      : []
-
-    // Get sets and events
-    const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
-    const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
-
-    const scoresheetData = {
-      match: matchData,
-      homeTeam: homeTeamData,
-      awayTeam: awayTeamData,
-      homePlayers: homePlayersData,
-      awayPlayers: awayPlayersData,
-      sets: allSets,
-      events: allEvents,
-      sanctions: []
-    }
-
-    // Store data in sessionStorage to pass to new window
-    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-
-    // Open scoresheet in new window with matchId parameter for reliable data loading
+    // Open scoresheet in new window: the page reads the match from this
+    // device's database (?matchId=)
     const opened = openAppWindow(`/scoresheet/?matchId=${matchId}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
 
     if (!opened.ok) {

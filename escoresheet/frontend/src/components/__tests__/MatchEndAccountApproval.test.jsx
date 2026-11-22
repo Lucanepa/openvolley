@@ -504,14 +504,18 @@ describe('MatchEnd: approve with an account', () => {
     const job = [...store.tables.sync_queue.values()].find(j => j.payload?.status === 'approved')
     expect(job.payload.approval.accounts).toEqual({ ref1: null, ref2: null, scorer: null })
     // ... and so does the final JSON for the cloud (the storage scoresheet
-    // view prints it) and the PDF window's data: no record for that slot
+    // view prints it): no record for that slot
     const finalUpload = () => [...store.tables.sync_queue.values()].find(j => typeof j.payload?.path === 'string' && /_final\.json$/.test(j.payload.path))
     await waitFor(() => expect(finalUpload()).toBeTruthy())
     const upload = finalUpload()
     const finalJson = JSON.parse(await upload.payload.file.text())
     expect(finalJson.match.accountApprovals ?? null).toBeNull()
     expect(JSON.stringify(finalJson)).not.toContain('6F1C2A9B')
-    expect(JSON.parse(sessionStorage.getItem('scoresheetData')).match.accountApprovals ?? null).toBeNull()
+    // The PDF window prints the match from this device's database
+    // (?matchId=): the row checked above, no copy in sessionStorage
+    // (perf pass 22.11.2026: the copy was stringified at every open, never read)
+    expect(window.open.mock.calls.some(([url]) => /\/scoresheet\/\?matchId=1&action=getBlob&/.test(String(url)))).toBe(true)
+    expect(sessionStorage.getItem('scoresheetData')).toBeNull()
   })
 
   it('signed out at "Confirm and approve": the prompt names the missing session, not the connection', async () => {
