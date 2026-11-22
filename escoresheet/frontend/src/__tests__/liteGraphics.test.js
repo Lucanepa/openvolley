@@ -1,7 +1,7 @@
 // Lite graphics (utils/liteGraphics): ov-lite on <html> only in the Android
 // app, while LITE_GRAPHICS_ON_ANDROID is on (on since the owner said yes,
 // 22.11.2026). Then dialog scrims lose their backdrop blur (tailwind.css) and
-// the line-up privacy cover is a near-opaque panel (Scoreboard.jsx). The
+// the line-up privacy cover is an opaque panel (Scoreboard.jsx). The
 // switch is injected here, so both of its values are covered.
 import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -30,7 +30,7 @@ describe('ov-lite: only the Android app, only when switched on', () => {
     nativeApp(true)
     expect(applyLiteGraphics({ android: isAndroidApp({ userAgent: ANDROID_UA }) })).toBe(true)
     expect(liteGraphicsOn()).toBe(true)
-    expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.92)' })
+    expect(privacyCoverFill()).toEqual({ background: 'rgb(15, 23, 42)' })
   })
 
   it('switched off: not even the Android app', () => {
@@ -87,12 +87,15 @@ describe('the line-up privacy cover', () => {
     expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
   })
 
-  it('ov-lite: no blur, and at least 90 % opaque so the other team cannot read the line-up', () => {
+  // At 92 % without the blur the numbers stayed readable at close range
+  // (the Android emulator, 22.11.2026): the panel is opaque, so nothing of
+  // the line-up shows through, not even under the see-through buttons.
+  it('ov-lite: no blur, and opaque so the other team cannot read the line-up', () => {
     document.documentElement.classList.add(LITE_GRAPHICS_CLASS)
     const fill = privacyCoverFill()
     expect(fill.backdropFilter).toBeUndefined()
-    const alpha = Number(fill.background.match(/rgba\([^)]*,\s*([\d.]+)\)/)[1])
-    expect(alpha).toBeGreaterThanOrEqual(0.9)
+    expect(fill.background).toMatch(/^rgb\(\d+, \d+, \d+\)$/)
+    expect(fill).toEqual({ background: 'rgb(15, 23, 42)' })
   })
 
   it('both tablet covers on the scoring screen take it', () => {

@@ -1,7 +1,7 @@
 // Lite graphics for the Android app: <html> carries ov-lite, and then
 //  - dialog scrims dim without their backdrop blur (tailwind.css, at the end);
-//  - the line-up privacy cover on the court is a near-opaque panel instead of
-//    a blurred one (privacyCoverFill, Scoreboard.jsx).
+//  - the line-up privacy cover on the court is an opaque panel instead of a
+//    blurred one (privacyCoverFill, Scoreboard.jsx).
 // The hall tablet (Galaxy Tab A7 Lite, PowerVR GE8320) runs a full-screen
 // two-pass blur for every frame anything under a dialog changes, at least once
 // a second for the toolbar clock. On in the Android app since the owner said
@@ -59,11 +59,14 @@ export function liteGraphicsOn(doc = typeof document !== 'undefined' ? document 
 
 /**
  * The fill of the cover over a team's line-up on the court until the other
- * team has entered its own: frosted glass, or under ov-lite a dark panel at
- * 92 % (at least 90 %: the other team must not read the line-up through it).
+ * team has entered its own: frosted glass, or under ov-lite an opaque dark
+ * panel. Without the blur nothing may show through: at 92 % the shirt numbers,
+ * the position labels and the captain's mark stayed sharp enough to read at
+ * close range (the Android emulator, 22.11.2026), most of all under the two
+ * see-through buttons on the cover.
  */
 export function privacyCoverFill(doc) {
   return liteGraphicsOn(doc)
-    ? { background: 'rgba(15, 23, 42, 0.92)' }
+    ? { background: 'rgb(15, 23, 42)' }
     : { background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' }
 }
