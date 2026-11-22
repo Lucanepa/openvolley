@@ -3179,6 +3179,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       })
   }, [data, ensureActiveSet, matchId])
 
+  // The 10 s heartbeat's re-read re-ran the effect above while the match had
+  // no unfinished set: the only retry when its first try was skipped (a set
+  // being created by confirmSetEndTime, or one already running), else the
+  // screen stayed on 'Loading...'. The heartbeat is rare now: the same
+  // guarded call every 10 s for as long as there is no set.
+  const awaitsActiveSet = !!(matchId && data && !data.set)
+  useEffect(() => {
+    if (!awaitsActiveSet) return undefined
+    const timer = setInterval(() => {
+      if (ensuringSetRef.current || setCreationInProgressRef.current) return
+      ensuringSetRef.current = true
+      ensureActiveSet()
+        .catch(err => {
+          // Silently handle error, but ensure lock is released
+          setCreationInProgressRef.current = false
+        })
+        .finally(() => {
+          ensuringSetRef.current = false
+        })
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [awaitsActiveSet, ensureActiveSet])
+
   // Sync remarks text when modal opens
   useEffect(() => {
     if (showRemarks) {
