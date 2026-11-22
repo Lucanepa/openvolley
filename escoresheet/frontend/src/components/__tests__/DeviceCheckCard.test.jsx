@@ -6,7 +6,8 @@ import { I18nextProvider } from 'react-i18next'
 import i18n from '../../i18n'
 import DeviceCheckCard, { joinList } from '../DeviceCheckCard'
 import LookOptions from '../options/LookOptions'
-import { CHECK_KEY, CHECK_VERSION, RECOMMENDED, getDeviceCheck, resetDeviceCheckForTests, setDeviceCheck } from '../../utils/deviceCheck'
+import { CHECK_KEY, CHECK_VERSION, RECOMMENDED, checkDeviceNow, deviceCheckRunning, getDeviceCheck, resetDeviceCheckForTests, setDeviceCheck } from '../../utils/deviceCheck'
+import { clearOpenMatch, noteOpenMatch } from '../../utils/deviceSelfCheck'
 import { LOOK_KEYS, NO_MOTION_ATTR, getLook, resetLookForTests, setLook } from '../../utils/lookSettings'
 import { LITE_GRAPHICS_CLASS, liteGraphicsOn } from '../../utils/liteGraphics'
 
@@ -26,6 +27,7 @@ beforeEach(async () => {
   resetDeviceCheckForTests()
 })
 afterEach(() => {
+  clearOpenMatch()
   root().classList.remove(LITE_GRAPHICS_CLASS)
   root().removeAttribute(NO_MOTION_ATTR)
   localStorage.clear()
@@ -179,6 +181,52 @@ describe('LookOptions: Options › Effects and speed', () => {
     await screen.findByText(/^Checked on \d{2}\.\d{2}\.\d{4}: this device is /, {}, { timeout: 10000 })
     expect(JSON.parse(localStorage.getItem(CHECK_KEY)).v).toBe(CHECK_VERSION)
     await waitFor(() => expect(screen.getByTestId('device-check-run').disabled).toBe(false))
+  })
+
+  it('a match opened while the check started here runs (Match Setup noted open): it stops, nothing is kept', async () => {
+    render(withI18n(<LookOptions kit={KIT} canCheck />))
+    act(() => { fireEvent.click(screen.getByTestId('device-check-run')) })
+    expect(deviceCheckRunning()).toBe(true)
+    noteOpenMatch({ id: 7, view: 'matchSetup' })
+    await waitFor(() => expect(deviceCheckRunning()).toBe(false), { timeout: 10000 })
+    expect(getDeviceCheck()).toBe(null)
+    expect(localStorage.getItem(CHECK_KEY)).toBe(null)
+    expect(screen.getByTestId('device-check-result').textContent).toBe('Not checked yet.')
+    expect(screen.getByTestId('device-check-run').disabled).toBe(false)
+  })
+
+  it('Options closed while the check started there runs: it stops, nothing is kept', async () => {
+    const { unmount } = render(withI18n(<LookOptions kit={KIT} canCheck />))
+    act(() => { fireEvent.click(screen.getByTestId('device-check-run')) })
+    unmount()
+    await waitFor(() => expect(deviceCheckRunning()).toBe(false), { timeout: 10000 })
+    expect(getDeviceCheck()).toBe(null)
+  })
+
+  it('the check no longer offered (a match being opened): it stops, nothing is kept', async () => {
+    const { rerender } = render(withI18n(<LookOptions kit={KIT} canCheck />))
+    act(() => { fireEvent.click(screen.getByTestId('device-check-run')) })
+    rerender(withI18n(<LookOptions kit={KIT} canCheck={false} />))
+    await waitFor(() => expect(deviceCheckRunning()).toBe(false), { timeout: 10000 })
+    expect(getDeviceCheck()).toBe(null)
+  })
+
+  it('opened while the automatic check runs: Checking..., and the button comes back when that check stops', async () => {
+    let finish
+    let auto
+    act(() => { auto = checkDeviceNow({ run: () => new Promise((resolve) => { finish = resolve }) }) })
+    render(withI18n(<LookOptions kit={KIT} canCheck />))
+    expect(screen.getByTestId('device-check-run').textContent).toBe('Checking…')
+    expect(screen.getByTestId('device-check-run').disabled).toBe(true)
+    // Options open: the automatic check stops at its next step and keeps nothing
+    await act(async () => {
+      await Promise.resolve()
+      finish(null)
+      await auto
+    })
+    expect(screen.getByTestId('device-check-run').textContent).toBe('Check this device')
+    expect(screen.getByTestId('device-check-run').disabled).toBe(false)
+    expect(screen.getByTestId('device-check-result').textContent).toBe('Not checked yet.')
   })
 
   it('on the scoring screen (canCheck false): no check, where to find it', () => {

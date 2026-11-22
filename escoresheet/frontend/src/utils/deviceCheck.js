@@ -560,12 +560,16 @@ let running = null
 /**
  * Checks this device now and keeps the result (Options › Check this device,
  * and the automatic check). A check already running is the one returned.
+ * keepGoing() is asked before every step (false: it stops and keeps
+ * nothing); without one, a hidden page stops it. Its start and its end tell
+ * useDeviceCheckRunning.
  * @returns {Promise<object|null>} null: stopped
  */
-export function checkDeviceNow({ keepGoing = () => true, win = typeof window !== 'undefined' ? window : undefined, run = runDeviceCheck, onResult = null } = {}) {
+export function checkDeviceNow({ keepGoing, win = typeof window !== 'undefined' ? window : undefined, run = runDeviceCheck, onResult = null } = {}) {
   if (running) return running
+  const goOn = typeof keepGoing === 'function' ? keepGoing : () => !win?.document?.hidden
   running = Promise.resolve()
-    .then(() => run({ win, keepGoing }))
+    .then(() => run({ win, keepGoing: goOn }))
     .then((result) => {
       if (!result) return null
       ranHere = true
@@ -574,12 +578,25 @@ export function checkDeviceNow({ keepGoing = () => true, win = typeof window !==
       return kept
     })
     .catch(() => null)
-    .finally(() => { running = null })
+    .finally(() => {
+      running = null
+      notify()
+    })
+  notify()
   return running
 }
 
 /** Whether a check runs on this page now. */
 export const deviceCheckRunning = () => !!running
+
+/**
+ * Whether a check runs on this page now; renders again when one starts or
+ * ends (Options' Check this device: "Checking..." also while the automatic
+ * check runs, and back when it stops).
+ */
+export function useDeviceCheckRunning() {
+  return useSyncExternalStore(subscribe, deviceCheckRunning, () => false)
+}
 
 /**
  * Whether Home is quiet enough for the automatic check and its card (App.jsx):

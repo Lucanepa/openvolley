@@ -5,9 +5,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, act } from '@testing-library/react'
 import {
   AUTO_CHECK_DELAY_MS, CHECK_BUDGET_MS, CHECK_KEY, CHECK_VERSION, PROBE_STILL, RECOMMENDED, TIER_LIMITS, WORK_EVENTS, WORK_REPEAT, WORK_RUNS, WORK_SPLIT, WORK_STEPS,
-  answerDeviceCheck, appPlatformOf, cardChanges, changesFor, checkDeviceNow, checkDue, classify, getDeviceCheck, homeQuietForCheck,
+  answerDeviceCheck, appPlatformOf, cardChanges, changesFor, checkDeviceNow, checkDue, classify, deviceCheckRunning, getDeviceCheck, homeQuietForCheck,
   measureLayout, measureWork, median, readCheck, readHints, recommend, recommendationOf, resetDeviceCheckForTests, runDeviceCheck,
-  saveCheck, setDeviceCheck, syntheticMatch, useAutoDeviceCheck, useDeviceCheck
+  saveCheck, setDeviceCheck, syntheticMatch, useAutoDeviceCheck, useDeviceCheck, useDeviceCheckRunning
 } from '../deviceCheck'
 
 const noPause = () => Promise.resolve()
@@ -330,6 +330,39 @@ describe('checkDeviceNow', () => {
     await checkDeviceNow({ run: async () => { throw new Error('boom') } })
     await checkDeviceNow({ run: async () => null })
     expect(getDeviceCheck()).toBe(null)
+  })
+
+  it('without a keepGoing of its own, a hidden page stops it', async () => {
+    const win = { document: { hidden: false } }
+    const run = async ({ keepGoing }) => {
+      win.document.hidden = true
+      return keepGoing() ? result() : null
+    }
+    expect(await checkDeviceNow({ win, run })).toBe(null)
+    expect(getDeviceCheck()).toBe(null)
+  })
+
+  it('its start and its end tell useDeviceCheckRunning (Options: Checking..., also for the automatic check)', async () => {
+    let finish
+    const run = () => new Promise((resolve) => { finish = resolve })
+    let seen = null
+    function Running() {
+      seen = useDeviceCheckRunning()
+      return null
+    }
+    render(<Running />)
+    expect(seen).toBe(false)
+    let p
+    act(() => { p = checkDeviceNow({ run }) })
+    expect(seen).toBe(true)
+    expect(deviceCheckRunning()).toBe(true)
+    await act(async () => {
+      await Promise.resolve()
+      finish(null)
+      await p
+    })
+    expect(seen).toBe(false)
+    expect(deviceCheckRunning()).toBe(false)
   })
 })
 

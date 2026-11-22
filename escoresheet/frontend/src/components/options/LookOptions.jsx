@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Gauge, Loader2 } from 'lucide-react'
 import { cn, dayLabel, FOCUS_RING } from '../../ui'
 import { setLook, useLook } from '../../utils/lookSettings'
-import { changesFor, checkDeviceNow, deviceCheckRunning, useDeviceCheck } from '../../utils/deviceCheck'
+import { changesFor, checkDeviceNow, useDeviceCheck, useDeviceCheckRunning } from '../../utils/deviceCheck'
+import { readOpenMatch } from '../../utils/deviceSelfCheck'
 import { logState } from '../../utils/comprehensiveLogger'
 import DeviceCheckCard from '../DeviceCheckCard'
 
@@ -27,16 +28,25 @@ export default function LookOptions({ kit, canCheck = false }) {
   const { t } = useTranslation()
   const look = useLook()
   const result = useDeviceCheck()
-  const [checking, setChecking] = useState(deviceCheckRunning)
+  // "Checking...": any check of this page, also the automatic one (it stops
+  // when Options opens, and the button comes back then)
+  const checking = useDeviceCheckRunning()
+  // The check started here stops at its next step, keeping nothing, as the
+  // automatic one does: Options closed (this unmounts), the check no longer
+  // offered (a match being opened), the page hidden, or a match screen noted
+  // open (deviceSelfCheck noteOpenMatch: Match Setup, the scoring screen)
+  const mounted = useRef(false)
+  const offered = useRef(canCheck)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+  useEffect(() => { offered.current = canCheck }, [canCheck])
   const runCheck = async () => {
     if (checking) return
-    setChecking(true)
-    try {
-      const r = await checkDeviceNow()
-      if (r) logState('DeviceCheck', 'result', { tier: r.tier, score: r.score, workMs: r.workMs, layoutMs: r.layoutMs, from: 'options' })
-    } finally {
-      setChecking(false)
-    }
+    const keepGoing = () => mounted.current && offered.current && !document.hidden && readOpenMatch() == null
+    const r = await checkDeviceNow({ keepGoing })
+    if (r) logState('DeviceCheck', 'result', { tier: r.tier, score: r.score, workMs: r.workMs, layoutMs: r.layoutMs, from: 'options' })
   }
   const resultText = result
     ? t('options.look.checkedOn', { date: dayLabel(result.at, { year: true }), verdict: t(`options.look.verdict.${result.tier}`) })
