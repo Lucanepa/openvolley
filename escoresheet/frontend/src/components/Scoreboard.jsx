@@ -73,7 +73,8 @@ import { breakSecondsAfter, hasLongIntervalAfterSet2, isLongInterval, retimedBre
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getToolMode } from '../utils/toolMode'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from '../domain/rules'
-import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction, memberSanctionOptions } from '../domain/sanctions'
+import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction, memberSanctionOptions, sanctionedPlayerNumber, memberSentOff } from '../domain/sanctions'
+import { playerOfficialLinks, officialChipState, benchNumberState, sanctionMember, sanctionPlays, renumberPlays } from '../domain/playerOfficials'
 import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
@@ -4518,7 +4519,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Get bench players, liberos, and bench officials for each team
   const leftTeamBench = useMemo(() => {
-    if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [] }
+    if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [], links: [] }
     const teamKey = leftIsHome ? 'home' : 'away'
     const players = leftIsHome ? data.homePlayers : data.awayPlayers
     const benchOfficials = leftIsHome ? (data.match?.bench_home || []) : (data.match?.bench_away || [])
@@ -4559,15 +4560,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       })
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
 
+    // A player who is also a bench official (a playing coach,
+    // domain/playerOfficials): on court (or replaced by the libero) his
+    // official's chip is greyed, on the bench his number (asOfficial)
+    const links = playerOfficialLinks(benchOfficials, players)
+    const where = { onCourt: playersOnCourt, replacedByLibero: Object.keys(playerLiberoMap) }
+    const asOfficialOf = (p) => (links.length ? benchNumberState(links, p.number, where).asOfficial : null)
+
     return {
-      benchPlayers,
-      liberos,
-      benchOfficials
+      benchPlayers: benchPlayers.map(p => ({ ...p, asOfficial: asOfficialOf(p) })),
+      liberos: liberos.map(p => ({ ...p, asOfficial: asOfficialOf(p) })),
+      benchOfficials: links.length ? benchOfficials.map(o => ({ ...o, ...officialChipState(links, o?.role, where) })) : benchOfficials,
+      links
     }
   }, [data, leftIsHome, getTeamLineupState, teamAKey, data?.events])
 
   const rightTeamBench = useMemo(() => {
-    if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [] }
+    if (!data) return { benchPlayers: [], liberos: [], benchOfficials: [], links: [] }
     const teamKey = leftIsHome ? 'away' : 'home'
     const players = leftIsHome ? data.awayPlayers : data.homePlayers
     const benchOfficials = leftIsHome ? (data.match?.bench_away || []) : (data.match?.bench_home || [])
@@ -4608,10 +4617,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       })
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
 
+    // A player who is also a bench official (a playing coach,
+    // domain/playerOfficials): on court (or replaced by the libero) his
+    // official's chip is greyed, on the bench his number (asOfficial)
+    const links = playerOfficialLinks(benchOfficials, players)
+    const where = { onCourt: playersOnCourt, replacedByLibero: Object.keys(playerLiberoMap) }
+    const asOfficialOf = (p) => (links.length ? benchNumberState(links, p.number, where).asOfficial : null)
+
     return {
-      benchPlayers,
-      liberos,
-      benchOfficials
+      benchPlayers: benchPlayers.map(p => ({ ...p, asOfficial: asOfficialOf(p) })),
+      liberos: liberos.map(p => ({ ...p, asOfficial: asOfficialOf(p) })),
+      benchOfficials: links.length ? benchOfficials.map(o => ({ ...o, ...officialChipState(links, o?.role, where) })) : benchOfficials,
+      links
     }
   }, [data, leftIsHome, getTeamLineupState, teamAKey, data?.events])
 
@@ -5001,6 +5018,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             remarkLines.push(`- ${f === 'dob' ? `Bench official ${orig.role || edit.role} ${valueName} changed (${teamLabel})` : desc}`)
           }
         }
+        // A player who is also this official (a playing coach,
+        // domain/playerOfficials): "plays as #7", not a player, or automatic
+        const playsText = (v) => (v === false ? 'not a player' : (v === undefined || v === null || v === '') ? 'automatic' : `#${v}`)
+        if (playsText(orig.plays) !== playsText(edit.plays)) {
+          const desc = `Bench official ${orig.role || edit.role} plays as: ${playsText(orig.plays)} → ${playsText(edit.plays)} (${teamLabel})`
+          changes.push({ category: 'benchOfficial', field: 'plays', before: playsText(orig.plays), after: playsText(edit.plays), description: desc })
+          remarkLines.push(`- ${desc}`)
+        }
       }
     }
 
@@ -5108,11 +5133,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
-    // Persist bench officials
+    // Persist bench officials; an official who plays as a renumbered player
+    // plays as his new number (domain/playerOfficials)
     const benchField = teamKey === 'home' ? 'bench_home' : 'bench_away'
+    const benchToSave = renumberPlays(editedBench, renumbers || [])
     const freshMatch = await db.matches.get(matchId)
     await db.matches.update(matchId, {
-      [benchField]: editedBench,
+      [benchField]: benchToSave,
       remarks: appendRemark(freshMatch?.remarks || '', remarkBlock)
     })
 
@@ -5144,7 +5171,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // captain, numbers, the officials): the tablets' cloud fallback and a
     // hand-over read them from there. The bench stayed on this device: the
     // server kept the pre-match bench for good
-    await queueTeamRoster(matchId, teamKey, { [benchField]: toCloudBench(editedBench) })
+    await queueTeamRoster(matchId, teamKey, { [benchField]: toCloudBench(benchToSave) })
     notifyScoresheetUpdate('roster_reopen')
     syncToReferee()
     syncLiveStateToSupabase('manual_roster', null, null)
@@ -6484,7 +6511,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           .pop()?.payload?.lineup
         const sentOff = Object.values(lineup || {}).map(v => (v && typeof v === 'object' ? v.number : v)).find(n => n != null && data.events.some(e =>
           e.type === 'sanction' && e.payload?.team === team &&
-          String(e.payload?.playerNumber) === String(n) &&
+          String(sanctionedPlayerNumber(e.payload)) === String(n) &&
           (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === data.set.index))))
         if (sentOff != null) {
           deferUi(() => showAlert(t('scoreboard.sentOffOnCourt', { number: sentOff }), 'warning'))
@@ -9772,11 +9799,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!data?.events || !data?.set) return false
 
     // Check if player is disqualified - disqualified players cannot re-enter
-    // (numbers as strings: a sanction from the court disc carries a string)
+    // (numbers as strings: a sanction from the court disc carries a string;
+    // also one given to him as a team official, a playing coach)
     const playerSanctions = data.events.filter(e =>
       e.type === 'sanction' &&
       e.payload?.team === teamKey &&
-      String(e.payload?.playerNumber) === String(playerNumber) &&
+      String(sanctionedPlayerNumber(e.payload)) === String(playerNumber) &&
       e.payload?.type === 'disqualification'
     )
     if (playerSanctions.length > 0) return false // Disqualified, cannot re-enter
@@ -9798,7 +9826,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const expulsionSanctions = data.events.filter(e =>
       e.type === 'sanction' &&
       e.payload?.team === teamKey &&
-      String(e.payload?.playerNumber) === String(playerNumber) &&
+      String(sanctionedPlayerNumber(e.payload)) === String(playerNumber) &&
       e.payload?.type === 'expulsion' &&
       (e.setIndex || 1) === data.set.index
     )
@@ -12180,6 +12208,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return teamSanctions.length > 0
   }, [data?.events])
 
+  // The team's players who are also bench officials (a playing coach,
+  // domain/playerOfficials), and the member a sanction checks: one person
+  // in both roles (the player with his roles, the official with his number)
+  const linksOfTeam = useCallback((teamKey) => playerOfficialLinks(
+    teamKey === 'home' ? data?.match?.bench_home : data?.match?.bench_away,
+    (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
+  ), [data?.match?.bench_home, data?.match?.bench_away, data?.homePlayers, data?.awayPlayers])
+  const sanctionMemberOf = useCallback((teamKey, member) => sanctionMember(linksOfTeam(teamKey), { team: teamKey, ...member }), [linksOfTeam])
+
   // Get sanctions for a player or official
   const getPlayerSanctions = useCallback((teamKey, playerNumber, role = null) => {
     if (!data?.events) return []
@@ -12215,12 +12252,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!sanctionConfirmModal || !data?.set) return
 
     const { team, type, playerNumber, position, role, sanctionType } = sanctionConfirmModal
+    // A team official who also plays (a playing coach): his sanction records
+    // the number (plays), so it counts for #7 too (domain/playerOfficials)
+    const plays = sanctionPlays(linksOfTeam(team), { type, playerNumber, role })
 
     // Validate the sanction for this member: a player or a team official (by
     // role), the domain rule recompute and the manual corrections use too
-    // (validateMemberSanction)
+    // (validateMemberSanction); a playing coach is one member in both roles
     if (playerNumber || role) {
-      const check = validateMemberSanction(data.events, { team, playerNumber, role, type: sanctionType })
+      const check = validateMemberSanction(data.events, { ...sanctionMemberOf(team, { playerNumber, role }), type: sanctionType })
       const who = playerNumber ? t('scoreboard.dialogs.playerNumber', { defaultValue: 'Player {{number}}', number: playerNumber }) : role
 
       // Prevent giving the same sanction type again
@@ -12264,7 +12304,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         playerType: type,
         playerNumber,
         position,
-        role
+        role,
+        ...plays
       })
 
       // Check if this is a libero on court - if so, handle specially
@@ -12461,7 +12502,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           playerType: type,
           playerNumber,
           position,
-          role
+          role,
+          ...plays
         })
 
         // Get legal substitutes for this player (based on their original position before libero replaced them)
@@ -12530,7 +12572,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         playerType: type,
         playerNumber,
         position,
-        role
+        role,
+        ...plays
       })
 
       // Check if this is a libero - if so, log libero_unable and prompt for re-designation
@@ -12572,7 +12615,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         playerType: type,
         playerNumber,
         position,
-        role
+        role,
+        ...plays
       })
 
       // If penalty, award point to the other team (but only if lineups are set)
@@ -12606,7 +12650,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
     }
-  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey, easyNewSubstituteOpen])
+  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey, easyNewSubstituteOpen, linksOfTeam, sanctionMemberOf])
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
@@ -14410,7 +14454,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           const onCourt = court.find(pl => pl.isLibero && String(pl.number) === String(p.number))
           const unable = isLiberoUnable(teamKey, p.number)
           // canReturn: injured, no re-designation in his place (owner 22.11.2026)
-          return { number: p.number, libero: p.libero, unable, canReturn: unable && canLiberoReturn(teamKey, p.number), onCourt: !!onCourt, position: onCourt?.position || null }
+          // asOfficial: on the bench as a team official (a playing coach)
+          const asOfficial = onCourt ? null : ((bench.liberos || []).find(x => String(x.number) === String(p.number))?.asOfficial || null)
+          return { number: p.number, libero: p.libero, unable, canReturn: unable && canLiberoReturn(teamKey, p.number), onCourt: !!onCourt, position: onCourt?.position || null, asOfficial }
         })
       // As the side column: a redesignation once the team has no libero left
       const designated = allLiberos.filter(p => p.libero !== 'unable')
@@ -14438,8 +14484,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         liberoPaint: discPaintBySide[side]?.libero || null,
         court,
         liberos,
-        benchPlayers: (bench.benchPlayers || []).map(p => ({ number: p.number })),
-        officials: (bench.benchOfficials || []).filter(o => o?.role).map(o => ({ role: o.role })),
+        // A player who is also a team official (a playing coach,
+        // domain/playerOfficials): asOfficial on the bench, onCourtAs on court
+        benchPlayers: (bench.benchPlayers || []).map(p => ({ number: p.number, asOfficial: p.asOfficial || null })),
+        officials: (bench.benchOfficials || []).filter(o => o?.role).map(o => ({ role: o.role, playsAs: o.playsAs ?? null, onCourtAs: o.onCourt ? (o.playsAs ?? null) : null })),
         blocked: {
           timeout: !!requestBlockFor(teamKey, 'timeout'),
           substitution: !!requestBlockFor(teamKey, 'substitution')
@@ -15665,18 +15713,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         // Check if player was exceptionally substituted (cannot re-enter for rest of game)
                         const isExceptionallySub = wasExceptionallySubstituted(teamKey, player.number)
 
-                        // Also check for sanction-based expulsion/disqualification (for display)
+                        // Also check for sanction-based expulsion/disqualification (for display),
+                        // also one given to him as a team official (a playing coach)
                         const hasExpulsionSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          String(e.payload?.playerNumber) === String(player.number) &&
+                          String(sanctionedPlayerNumber(e.payload)) === String(player.number) &&
                           e.payload?.type === 'expulsion' &&
                           e.setIndex === data.set.index
                         )
                         const hasDisqualificationSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          String(e.payload?.playerNumber) === String(player.number) &&
+                          String(sanctionedPlayerNumber(e.payload)) === String(player.number) &&
                           e.payload?.type === 'disqualification'
                         )
 
@@ -15750,6 +15799,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             key={`${teamKey}-bench-${player.id || player.number}`}
                             data-bench-player={player.number}
                             data-team={teamKey}
+                            data-as-official={player.asOfficial || undefined}
+                            title={player.asOfficial ? t('scoreboard.playerOfficials.onBenchAs', { role: officialRoleAbbr(player.asOfficial), defaultValue: 'On the bench as {{role}}' }) : undefined}
                             data-is-libero="false"
                             draggable={rallyStatus === 'idle' && (canSubBenchPlayer || isSubstitutedByLibero)}
                             onDragStart={(e) => (canSubBenchPlayer || isSubstitutedByLibero) && handleBenchDragStart(e, teamKey, player.number, false)}
@@ -15771,6 +15822,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   x: rect.right - 8,
                                   y: rect.top - 8,
                                   side: 'left',
+                                  // on the bench as a team official (a playing
+                                  // coach): substitution only, his sanctions go
+                                  // to the official's chip
+                                  asOfficial: player.asOfficial || null,
                                   canSubstitute: canSubBenchPlayer,
                                   courtPlayerToSwapWith: courtPlayerToSwapWith,
                                   neverPlayed: neverPlayed
@@ -15800,7 +15855,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               position: 'relative',
                               border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #b45309' : '1px solid var(--ov-hairline)'),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
-                              opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : 1,
+                              // on the bench as a team official (a playing coach): greyed,
+                              // still a substitute
+                              opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : player.asOfficial ? 0.55 : 1,
                               color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : undefined),
                               cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                             }}
@@ -15811,6 +15868,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               ringColour={isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)')}
                               label={t('scoreboard.phone.markCaptain', 'captain')}
                             />
+                            {player.asOfficial && (
+                              <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
+                                {officialRoleAbbr(player.asOfficial)}
+                              </span>
+                            )}
                             {isSubstitutedByLibero && (
                               <span style={{
                                 fontSize: 'calc(4.2cqw * var(--cqf, 1))',
@@ -16019,6 +16081,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               data-team={teamKey}
                               data-is-libero="true"
                               data-libero-state={mayReturn ? 'injured' : isUnable ? 'unable' : undefined}
+                              data-as-official={player.asOfficial || undefined}
                               draggable={canDragLibero}
                               onDragStart={(e) => canDragLibero && handleBenchDragStart(e, teamKey, player.number, true)}
                               onDragEnd={handleBenchDragEnd}
@@ -16037,6 +16100,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     team: teamKey,
                                     liberoNumber: player.number,
                                     liberoType: player.libero,
+                                    // on the bench as a team official (a playing coach)
+                                    asOfficial: player.asOfficial || null,
                                     element: e.currentTarget,
                                     x: rect.left + rect.width / 2,
                                     y: rect.top + rect.height / 2,
@@ -16061,7 +16126,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                                 boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
                                 cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && (!isUnable || mayReturn)) ? 'pointer' : 'default',
-                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : 1
+                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : player.asOfficial ? 0.55 : 1
                               }}
                             >
                               {/* The number; a libero-captain's circled in the libero colour */}
@@ -16075,6 +16140,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
+                              {player.asOfficial && (
+                                <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
+                                  {officialRoleAbbr(player.asOfficial)}
+                                </span>
+                              )}
                               {/* injured, may come back: the injury cross */}
                               {mayReturn && (
                                 <span style={{ color: '#ef4444', fontSize: 'calc(4.65cqw * var(--cqf, 1))', fontWeight: 700 }} title={t('scoreboard.playerMenu.liberoInjuredMayReturn', 'Injured: may play again while no new libero is re-designated in his place')}>✚</span>
@@ -16238,11 +16308,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                         const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
 
+                        // A player who is also this official (a playing coach,
+                        // domain/playerOfficials): on court as #7 the chip is
+                        // greyed, his sanctions go to #7; out in either role
+                        // (expelled this set, disqualified) the chip has the ✕
+                        const playsAs = official.playsAs ?? null
+                        const onCourtAs = official.onCourt ? playsAs : null
+                        const onCourtHint = onCourtAs !== null ? t('scoreboard.playerOfficials.onCourtAs', { number: onCourtAs, defaultValue: 'On court as #{{number}}' }) : null
+                        const personOut = playsAs !== null ? memberSentOff(data?.events, sanctionMemberOf(teamKey, { role: official.role }), data?.set?.index) : null
+
                         return (
                           <div
                             key={idx}
                             onClick={(e) => {
-                              if (rallyStatus === 'idle') {
+                              if (rallyStatus === 'idle' && onCourtAs === null) {
                                 const rect = e.currentTarget.getBoundingClientRect()
                                 setSanctionDropdown({
                                   team: teamKey,
@@ -16256,11 +16335,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             data-bench-official={official.role}
-                            title={officialChips ? officialName(official) : undefined}
-                            aria-label={officialChips ? `${officialRoleAbbr(official.role)} ${officialName(official)}` : undefined}
+                            data-plays-as={playsAs ?? undefined}
+                            data-on-court-as={onCourtAs ?? undefined}
+                            aria-disabled={onCourtAs !== null || undefined}
+                            title={officialChips ? [officialName(official), onCourtHint].filter(Boolean).join(' · ') : (onCourtHint || undefined)}
+                            aria-label={officialChips ? [`${officialRoleAbbr(official.role)} ${officialName(official)}`, onCourtHint].filter(Boolean).join(', ') : undefined}
                             style={officialChips ? {
                               ...SB_OFFICIAL_CHIP,
-                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                              cursor: rallyStatus === 'idle' && onCourtAs === null ? 'pointer' : 'default',
+                              opacity: onCourtAs !== null ? 0.45 : 1
                             } : {
                               padding: '1.25cqw 2.5cqw',
                               minHeight: '36px',
@@ -16270,14 +16353,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.9cqw',
-                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                              cursor: rallyStatus === 'idle' && onCourtAs === null ? 'pointer' : 'default',
+                              opacity: onCourtAs !== null ? 0.45 : 1
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
                               <span style={officialChips ? { fontWeight: 600 } : { fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
                                 {officialRoleAbbr(official.role)}
                               </span>
+                              {/* the number he plays with, small beside the role */}
+                              {playsAs !== null && (
+                                <span data-plays-as-tag style={{ fontSize: '0.72em', fontWeight: 700, color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                                  #{playsAs}
+                                </span>
+                              )}
                               {!officialChips && <span>{officialName(official)}</span>}
+                              {!officialChips && onCourtHint && (
+                                <span style={{ fontSize: '0.8em', color: 'var(--ov-text-muted)' }}>{onCourtHint}</span>
+                              )}
+                              {personOut && (
+                                <span
+                                  data-person-out={personOut}
+                                  style={{ fontSize: 'calc(4.2cqw * var(--cqf, 1))', lineHeight: '1', background: 'var(--panel)', color: '#ef4444', fontWeight: 700, padding: '0.3cqw 0.9cqw', borderRadius: '0.6cqw', border: '1px solid var(--border)' }}
+                                  title={personOut === 'disqualified'
+                                    ? t('scoreboard.dialogs.titleDisqualified', 'Disqualified - cannot play rest of match')
+                                    : t('scoreboard.dialogs.titleExpelled', 'Expelled - cannot play this set')}
+                                >
+                                  ✕
+                                </span>
+                              )}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
@@ -19077,18 +19181,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         // Check if player was exceptionally substituted (cannot re-enter for rest of game)
                         const isExceptionallySub = wasExceptionallySubstituted(teamKey, player.number)
 
-                        // Also check for sanction-based expulsion/disqualification (for display)
+                        // Also check for sanction-based expulsion/disqualification (for display),
+                        // also one given to him as a team official (a playing coach)
                         const hasExpulsionSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          String(e.payload?.playerNumber) === String(player.number) &&
+                          String(sanctionedPlayerNumber(e.payload)) === String(player.number) &&
                           e.payload?.type === 'expulsion' &&
                           e.setIndex === data.set.index
                         )
                         const hasDisqualificationSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          String(e.payload?.playerNumber) === String(player.number) &&
+                          String(sanctionedPlayerNumber(e.payload)) === String(player.number) &&
                           e.payload?.type === 'disqualification'
                         )
 
@@ -19162,6 +19267,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             key={`${teamKey}-bench-${player.id || player.number}`}
                             data-bench-player={player.number}
                             data-team={teamKey}
+                            data-as-official={player.asOfficial || undefined}
+                            title={player.asOfficial ? t('scoreboard.playerOfficials.onBenchAs', { role: officialRoleAbbr(player.asOfficial), defaultValue: 'On the bench as {{role}}' }) : undefined}
                             data-is-libero="false"
                             draggable={rallyStatus === 'idle' && (canSubBenchPlayer || isSubstitutedByLibero)}
                             onDragStart={(e) => (canSubBenchPlayer || isSubstitutedByLibero) && handleBenchDragStart(e, teamKey, player.number, false)}
@@ -19183,6 +19290,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   x: rect.left + 8,
                                   y: rect.top - 8,
                                   side: 'right',
+                                  // on the bench as a team official (a playing
+                                  // coach): substitution only, his sanctions go
+                                  // to the official's chip
+                                  asOfficial: player.asOfficial || null,
                                   canSubstitute: canSubBenchPlayer,
                                   courtPlayerToSwapWith: courtPlayerToSwapWith,
                                   neverPlayed: neverPlayed
@@ -19212,7 +19323,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               position: 'relative',
                               border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #b45309' : '1px solid var(--ov-hairline)'),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
-                              opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : 1,
+                              // on the bench as a team official (a playing coach): greyed,
+                              // still a substitute
+                              opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : player.asOfficial ? 0.55 : 1,
                               color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : undefined),
                               cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                             }}
@@ -19223,6 +19336,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               ringColour={isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)')}
                               label={t('scoreboard.phone.markCaptain', 'captain')}
                             />
+                            {player.asOfficial && (
+                              <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
+                                {officialRoleAbbr(player.asOfficial)}
+                              </span>
+                            )}
                             {isSubstitutedByLibero && (
                               <span style={{
                                 fontSize: 'calc(4.2cqw * var(--cqf, 1))',
@@ -19432,6 +19550,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               data-team={teamKey}
                               data-is-libero="true"
                               data-libero-state={mayReturn ? 'injured' : isUnable ? 'unable' : undefined}
+                              data-as-official={player.asOfficial || undefined}
                               draggable={canDragLibero}
                               onDragStart={(e) => canDragLibero && handleBenchDragStart(e, teamKey, player.number, true)}
                               onDragEnd={handleBenchDragEnd}
@@ -19450,6 +19569,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     team: teamKey,
                                     liberoNumber: player.number,
                                     liberoType: player.libero,
+                                    // on the bench as a team official (a playing coach)
+                                    asOfficial: player.asOfficial || null,
                                     element: e.currentTarget,
                                     x: rect.left + rect.width / 2,
                                     y: rect.top + rect.height / 2,
@@ -19471,7 +19592,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                                 boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
                                 cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && (!isUnable || mayReturn)) ? 'pointer' : 'default',
-                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : 1
+                                opacity: isDraggingLibero ? 0.5 : (isUnable && !mayReturn) ? 0.6 : player.asOfficial ? 0.55 : 1
                               }}
                             >
                               {/* The number; a libero-captain's circled in the libero colour */}
@@ -19485,6 +19606,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
+                              {player.asOfficial && (
+                                <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
+                                  {officialRoleAbbr(player.asOfficial)}
+                                </span>
+                              )}
                               {/* injured, may come back: the injury cross */}
                               {mayReturn && (
                                 <span style={{ color: '#ef4444', fontSize: 'calc(4.65cqw * var(--cqf, 1))', fontWeight: 700 }} title={t('scoreboard.playerMenu.liberoInjuredMayReturn', 'Injured: may play again while no new libero is re-designated in his place')}>✚</span>
@@ -19648,11 +19774,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                         const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
 
+                        // A player who is also this official (a playing coach,
+                        // domain/playerOfficials): on court as #7 the chip is
+                        // greyed, his sanctions go to #7; out in either role
+                        // (expelled this set, disqualified) the chip has the ✕
+                        const playsAs = official.playsAs ?? null
+                        const onCourtAs = official.onCourt ? playsAs : null
+                        const onCourtHint = onCourtAs !== null ? t('scoreboard.playerOfficials.onCourtAs', { number: onCourtAs, defaultValue: 'On court as #{{number}}' }) : null
+                        const personOut = playsAs !== null ? memberSentOff(data?.events, sanctionMemberOf(teamKey, { role: official.role }), data?.set?.index) : null
+
                         return (
                           <div
                             key={idx}
                             onClick={(e) => {
-                              if (rallyStatus === 'idle') {
+                              if (rallyStatus === 'idle' && onCourtAs === null) {
                                 const rect = e.currentTarget.getBoundingClientRect()
                                 setSanctionDropdown({
                                   team: teamKey,
@@ -19666,11 +19801,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             data-bench-official={official.role}
-                            title={officialChips ? officialName(official) : undefined}
-                            aria-label={officialChips ? `${officialRoleAbbr(official.role)} ${officialName(official)}` : undefined}
+                            data-plays-as={playsAs ?? undefined}
+                            data-on-court-as={onCourtAs ?? undefined}
+                            aria-disabled={onCourtAs !== null || undefined}
+                            title={officialChips ? [officialName(official), onCourtHint].filter(Boolean).join(' · ') : (onCourtHint || undefined)}
+                            aria-label={officialChips ? [`${officialRoleAbbr(official.role)} ${officialName(official)}`, onCourtHint].filter(Boolean).join(', ') : undefined}
                             style={officialChips ? {
                               ...SB_OFFICIAL_CHIP,
-                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                              cursor: rallyStatus === 'idle' && onCourtAs === null ? 'pointer' : 'default',
+                              opacity: onCourtAs !== null ? 0.45 : 1
                             } : {
                               padding: '1.25cqw 2.5cqw',
                               minHeight: '36px',
@@ -19680,14 +19819,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.9cqw',
-                              cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
+                              cursor: rallyStatus === 'idle' && onCourtAs === null ? 'pointer' : 'default',
+                              opacity: onCourtAs !== null ? 0.45 : 1
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
                               <span style={officialChips ? { fontWeight: 600 } : { fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
                                 {officialRoleAbbr(official.role)}
                               </span>
+                              {/* the number he plays with, small beside the role */}
+                              {playsAs !== null && (
+                                <span data-plays-as-tag style={{ fontSize: '0.72em', fontWeight: 700, color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                                  #{playsAs}
+                                </span>
+                              )}
                               {!officialChips && <span>{officialName(official)}</span>}
+                              {!officialChips && onCourtHint && (
+                                <span style={{ fontSize: '0.8em', color: 'var(--ov-text-muted)' }}>{onCourtHint}</span>
+                              )}
+                              {personOut && (
+                                <span
+                                  data-person-out={personOut}
+                                  style={{ fontSize: 'calc(4.2cqw * var(--cqf, 1))', lineHeight: '1', background: 'var(--panel)', color: '#ef4444', fontWeight: 700, padding: '0.3cqw 0.9cqw', borderRadius: '0.6cqw', border: '1px solid var(--border)' }}
+                                  title={personOut === 'disqualified'
+                                    ? t('scoreboard.dialogs.titleDisqualified', 'Disqualified - cannot play rest of match')
+                                    : t('scoreboard.dialogs.titleExpelled', 'Expelled - cannot play this set')}
+                                >
+                                  ✕
+                                </span>
+                              )}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
@@ -20707,7 +20867,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // The sanctions this player may get now: never the same type twice,
         // never lighter than an earlier one (FIVB 21.4.2), one warning per
         // team (domain/sanctions)
-        const sanctionOptions = memberSanctionOptions(data?.events, { team, playerNumber })
+        const sanctionOptions = memberSanctionOptions(data?.events, sanctionMemberOf(team, { playerNumber }))
         const canGetWarning = sanctionOptions.warning.legal
         const canGetPenalty = sanctionOptions.penalty.legal
         const canGetExpulsion = sanctionOptions.expulsion.legal
@@ -21508,7 +21668,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     // an earlier one (FIVB 21.4.2), one warning per team
                     // (domain/sanctions)
                     const sanctionOptions = (playerNumber || sanctionDropdown.role)
-                      ? memberSanctionOptions(data?.events, { team: teamKey, playerNumber, role: sanctionDropdown.role })
+                      ? memberSanctionOptions(data?.events, sanctionMemberOf(teamKey, { playerNumber, role: sanctionDropdown.role }))
                       : null
                     const canGetWarning = sanctionOptions ? sanctionOptions.warning.legal : !teamHasFormalWarning(teamKey)
                     const canGetPenalty = sanctionOptions ? sanctionOptions.penalty.legal : true
@@ -21576,7 +21736,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
 
-        const { team, playerNumber, canSubstitute, courtPlayerToSwapWith, neverPlayed } = benchPlayerActionMenu
+        const { team, playerNumber, canSubstitute, courtPlayerToSwapWith, neverPlayed, asOfficial } = benchPlayerActionMenu
         const benchMenuPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
         const benchMenuPlayer = (benchMenuPlayers || []).find(p => String(p.number) === String(playerNumber))
         const benchMenuPlayerName = benchMenuPlayer ? [benchMenuPlayer.firstName, benchMenuPlayer.lastName].filter(Boolean).join(' ') : ''
@@ -21647,6 +21807,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', textAlign: 'center', marginBottom: '4px' }}>
                   # {playerNumber}{benchMenuPlayerName ? ` ${benchMenuPlayerName}` : ''}
                 </div>
+                {/* On the bench as a team official (a playing coach,
+                    domain/playerOfficials): he may come in as a substitute;
+                    his sanctions go to the official's chip */}
+                {asOfficial && (
+                  <div data-bench-as-official-hint style={{ fontSize: '10px', color: 'var(--muted)', textAlign: 'center', maxWidth: '180px', lineHeight: 1.3, margin: '-2px auto 2px' }}>
+                    {t('scoreboard.playerOfficials.benchMenuHint', { role: officialRoleAbbr(asOfficial), defaultValue: 'On the bench as {{role}}. Sanctions go to {{role}}.' })}
+                  </div>
+                )}
                 {/* Substitution Button - for returning players */}
                 {courtPlayerToSwapWith && (
                   <SbMenuItem
@@ -21702,11 +21870,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                 )}
                 {/* Sanction - expandable */}
-                {(() => {
+                {!asOfficial && (() => {
                   // The sanctions this bench player may get now: never the
                   // same type twice, never lighter than an earlier one (FIVB
                   // 21.4.2), one warning per team (domain/sanctions)
-                  const sanctionOptions = memberSanctionOptions(data?.events, { team, playerNumber })
+                  const sanctionOptions = memberSanctionOptions(data?.events, sanctionMemberOf(team, { playerNumber }))
                   const canGetWarning = sanctionOptions.warning.legal
                   const canGetPenalty = sanctionOptions.penalty.legal
                   const canGetExpulsion = sanctionOptions.expulsion.legal
@@ -21751,8 +21919,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                   )
                 })()}
-                {/* Injury Button */}
-                <SbMenuItem
+                {/* Injury Button (not while he is on the bench as a team official) */}
+                {!asOfficial && <SbMenuItem
                   tone="danger"
                   icon={SB_INJURY_ICON}
                   onClick={() => settleTap(runAction('benchInjury', async () => {
@@ -21791,7 +21959,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   }))}
                 >
                   {t('corrections.reasonLabel.injury')}
-                </SbMenuItem>
+                </SbMenuItem>}
               </div>
             </div>
           </>
@@ -23067,8 +23235,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
                 )}
 
-                {/* Sanction */}
-                <SbMenuItem
+                {/* Sanction (on the bench as a team official, a playing
+                    coach: it goes to the official's chip) */}
+                {!liberoBenchActionMenu.asOfficial && <SbMenuItem
                   icon={<SbCardIcon kind="pair" />}
                   onClick={() => {
                     setSanctionDropdown({
@@ -23084,7 +23253,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   }}
                 >
                   {t('scoreboard.sanction')}
-                </SbMenuItem>
+                </SbMenuItem>}
               </div>
             </div>
           </>

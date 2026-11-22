@@ -56,10 +56,14 @@ import PhonePairDock from '../phonePair/PhonePairDock.jsx'
  *   court: [{ position, number, isLibero, isCaptain, replaced }] (isCaptain:
  *   the team captain or the acting game captain; replaced: the player a
  *   substitute or the libero came in for),
- *   liberos: [{ number, libero, unable, canReturn, onCourt, position }]
+ *   liberos: [{ number, libero, unable, canReturn, onCourt, position, asOfficial }]
  *   (canReturn: injured, no re-designation in his place: his menu brings
  *   him back), benchPlayers:
- *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
+ *   [{ number, asOfficial }], officials: [{ role, playsAs, onCourtAs }]
+ *   (a player who is also a team official, a playing coach,
+ *   domain/playerOfficials: asOfficial, his role while he is on the bench,
+ *   greys his number in the sanction picker; onCourtAs, his number while he
+ *   is on court, greys the official), improperRequestDone, delayWarned,
  *   blocked ({ timeout, substitution }: closed by a replay pending or the
  *   set interval, domain/interruptionRequests.js),
  *   easy, formalWarned, needsRedesignation, signaturesMissing (the coach /
@@ -828,15 +832,49 @@ function SanctionColumn({ team, ink, title, actions, onDone }) {
           <Chip key={`c-${pl.number}`} onClick={person({ type: 'player', playerNumber: pl.number, position: pl.position })}>{pl.number}</Chip>
         ))}
         {liberos.map(l => (
-          <Chip key={`l-${l.number}`} tone="soft" onClick={person(l.onCourt ? { type: 'player', playerNumber: l.number, position: l.position } : { type: 'libero', playerNumber: l.number })}>{l.number}</Chip>
+          <Chip key={`l-${l.number}`} tone="soft" disabled={!!l.asOfficial} testId={`phone-sanction-libero-${team.side}-${l.number}`} onClick={person(l.onCourt ? { type: 'player', playerNumber: l.number, position: l.position } : { type: 'libero', playerNumber: l.number })}>{l.number}</Chip>
         ))}
+        {/* a player on the bench as a team official (a playing coach): his
+            sanction goes to the official */}
         {(team.benchPlayers || []).map(pl => (
-          <Chip key={`b-${pl.number}`} tone="soft" onClick={person({ type: 'bench', playerNumber: pl.number })}>{pl.number}</Chip>
+          <Chip key={`b-${pl.number}`} tone="soft" disabled={!!pl.asOfficial} testId={`phone-sanction-bench-${team.side}-${pl.number}`} onClick={person({ type: 'bench', playerNumber: pl.number })}>{pl.number}</Chip>
         ))}
+        {/* an official on court as a player (a playing coach): to his number */}
         {(team.officials || []).map(o => (
-          <Chip key={`o-${o.role}`} tone="soft" label={o.role} onClick={person({ type: 'official', role: o.role })}>{officialRoleShort(o.role)}</Chip>
+          <Chip key={`o-${o.role}`} tone="soft" label={o.role} disabled={hasValue(o.onCourtAs)} testId={`phone-sanction-official-${team.side}-${officialRoleShort(o.role)}`} onClick={person({ type: 'official', role: o.role })}>
+            {/* the number he plays with under the role (beside it, "AC2 #1" was cut in a third of a phone) */}
+            {hasValue(o.playsAs) ? (
+              <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.05 }}>
+                <span>{officialRoleShort(o.role)}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ov-text-muted)' }}>#{o.playsAs}</span>
+              </span>
+            ) : officialRoleShort(o.role)}
+          </Chip>
         ))}
       </div>
+      <PersonRoleNotes team={team} />
+    </div>
+  )
+}
+
+/**
+ * Under the sanction picker: where each player who is also a team official
+ * (a playing coach) is, so the greyed chip says why ("C · On court as #7",
+ * "#7 · On the bench as C").
+ */
+function PersonRoleNotes({ team }) {
+  const { t } = useTranslation()
+  const lines = []
+  for (const o of team.officials || []) {
+    if (hasValue(o.onCourtAs)) lines.push({ key: `o-${o.role}`, text: `${officialRoleShort(o.role)} · ${t('scoreboard.playerOfficials.onCourtAs', { number: o.onCourtAs, defaultValue: 'On court as #{{number}}' })}` })
+  }
+  for (const p of [...(team.benchPlayers || []), ...(team.liberos || [])]) {
+    if (p.asOfficial) lines.push({ key: `b-${p.number}`, text: `#${p.number} · ${t('scoreboard.playerOfficials.onBenchAs', { role: officialRoleShort(p.asOfficial), defaultValue: 'On the bench as {{role}}' })}` })
+  }
+  if (!lines.length) return null
+  return (
+    <div data-testid={`phone-person-roles-${team.side}`} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {lines.map(l => <p key={l.key} style={{ ...sheetNote, fontSize: 12, margin: 0 }}>{l.text}</p>)}
     </div>
   )
 }

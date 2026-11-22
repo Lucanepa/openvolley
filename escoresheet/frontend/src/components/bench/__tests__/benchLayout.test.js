@@ -82,4 +82,17 @@ describe('teamSanctionsForDisplay', () => {
   it('no events: none', () => {
     expect(teamSanctionsForDisplay(undefined, 'home')).toEqual([])
   })
+
+  // A playing coach (domain/playerOfficials): each sanction where it was
+  // given, once; the coach's records his number (plays) and stays the coach's
+  it('a playing coach: #7 and C each once, where given', () => {
+    const events = [
+      s({ team: 'home', type: 'warning', playerType: 'player', playerNumber: 7 }, { id: 1, seq: 1 }),
+      s({ team: 'home', type: 'penalty', playerType: 'official', role: 'Coach', plays: 7 }, { id: 2, seq: 2 })
+    ]
+    expect(teamSanctionsForDisplay(events, 'home').map(x => [x.type, x.number ?? x.role, x.sanctionType])).toEqual([
+      ['player', 7, 'warning'],
+      ['team', 'Coach', 'penalty']
+    ])
+  })
 })
