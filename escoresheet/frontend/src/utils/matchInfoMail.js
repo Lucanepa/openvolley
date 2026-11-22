@@ -3,9 +3,10 @@
  * address (never to an address typed in the app):
  *
  * - POST /api/match/send-info: the match information, no PIN.
- * - POST /api/match/send-pin: the game PIN (the PIN notice before the coin
- *   toss). The server keeps the game PIN hashed, so the app sends the PIN it
- *   shows and the server mails it only when it matches the stored one.
+ * - POST /api/match/send-pin: the game PIN (the PIN notice right after
+ *   Create match). The server keeps the game PIN hashed, so the app sends
+ *   the PIN it shows and the server mails it only when it matches the
+ *   stored one.
  *
  * The server builds each mail from the stored match, so for a match just
  * created it answers 404 until the sync has uploaded the insert: a 404 is
@@ -40,11 +41,12 @@ export async function sendMatchInfoMail({ url, headers, externalId, delaysMs = [
 }
 
 /**
- * The game PIN to the account's own address. Shorter retries than the info
- * mail: the scorer waits on the button.
+ * The game PIN to the account's own address. The notice opens right after
+ * Create match, so the insert may still be on its way: shorter retries than
+ * the info mail (about 20 s in all), the scorer waits on the button.
  * Resolves to the server's JSON plus `status` (0: no answer, `network` true).
  */
-export async function sendMatchPinMail({ url, headers, externalId, gamePin, delaysMs = [3000, 8000], fetchImpl = fetch, sleep = realSleep }) {
+export async function sendMatchPinMail({ url, headers, externalId, gamePin, delaysMs = [3000, 6000, 12000], fetchImpl = fetch, sleep = realSleep }) {
   const { status, data } = await postWithRetry({ url, headers, body: { externalId, gamePin: String(gamePin ?? '') }, delaysMs, fetchImpl, sleep })
   return { ...data, status }
 }

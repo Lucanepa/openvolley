@@ -943,8 +943,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [showRoster, setShowRoster] = useState({ home: false, away: false })
   const [colorPickerModal, setColorPickerModal] = useState(null) // { team: 'home'|'away', position: { x, y } } | null
   const [noticeModal, setNoticeModal] = useState(null) // { message: string, type?: 'success' | 'error' } | null
-  // The game PIN notice before the coin toss (utils/pinNotice, MatchPinNotice)
-  const [pinNoticeOpen, setPinNoticeOpen] = useState(false)
+  // The game PIN notice right after Create match (utils/pinNotice,
+  // MatchPinNotice): the match row as stored then (its new game PIN), or null
+  const [pinNoticeMatch, setPinNoticeMatch] = useState(null)
   const [testRosterConfirm, setTestRosterConfirm] = useState(null) // 'home' | 'away' | null
   // Saved teams (competition manager): picker / save dialog per side, the
   // suggestions for a schedule game, and the official-game claim of another
@@ -2776,6 +2777,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       setMatchInfoConfirmed(true)
       setCurrentView('main')
+
+      // The game PIN notice, right after Create match: a new official match
+      // with a game PIN, once per match on this device (utils/pinNotice). The
+      // row as stored now carries the PIN made above; a Save of an existing
+      // match never shows it
+      if (isCreating) {
+        const created = await db.matches.get(matchId)
+        if (needsPinNotice(created)) setPinNoticeMatch(created)
+      }
 
       // Match info email (non-blocking): the server mails the signed-in
       // scorer's own confirmed address, built from the stored match, no PIN
@@ -7150,25 +7160,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // All 4 cards must be complete before proceeding to coin toss
   const canProceedToCoinToss = matchInfoConfirmed && officialsConfigured && homeConfigured && awayConfigured
 
-  // Coin toss: a new official match shows its game PIN first, once
-  // (utils/pinNotice needsPinNotice, the match as stored now); OK or × on the
-  // notice marks it shown on this device and goes on to the coin toss
-  const proceedToCoinToss = async () => {
-    const stored = matchId ? await db.matches.get(matchId) : null
-    if (needsPinNotice(stored)) {
-      setPinNoticeOpen(true)
-      return
-    }
-    onOpenCoinToss()
-  }
+  // The game PIN notice (opened by Create match): OK or × marks it shown on
+  // this device, so it never comes again for this match
   const closePinNotice = async () => {
-    setPinNoticeOpen(false)
+    const id = pinNoticeMatch?.id ?? matchId
+    setPinNoticeMatch(null)
     try {
-      await db.matches.update(matchId, { pinNoticeShownAt: new Date().toISOString() })
+      await db.matches.update(id, { pinNoticeShownAt: new Date().toISOString() })
     } catch (err) {
       console.warn('[MatchSetup] Could not note the PIN notice as shown:', err)
     }
-    onOpenCoinToss()
   }
   // The signed-in scorer's own address for "Send to my email": only once it is
   // confirmed (the server mails only a confirmed address)
@@ -8048,12 +8049,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     return
                   }
 
-                  // Go to coin toss (after the game PIN notice of a new official match)
-                  await proceedToCoinToss()
+                  // Go to coin toss
+                  onOpenCoinToss()
                 } else {
                   // Match has data already - just go to coin toss (don't create new match)
                   // The match already exists with data, so just navigate
-                  await proceedToCoinToss()
+                  onOpenCoinToss()
                 }
               }
             }}>{t('matchSetup.coinToss')}</Button>
@@ -8523,12 +8524,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         idMode={idMode}
       />
       <MatchPinNotice
-        open={pinNoticeOpen}
-        match={match}
+        open={!!pinNoticeMatch}
+        match={pinNoticeMatch}
         homeName={home}
         awayName={away}
         accountEmail={pinNoticeAccountEmail}
-        prefillEmail={scorerEmailOf(match) || user?.email || ''}
+        prefillEmail={scorerEmailOf(pinNoticeMatch) || user?.email || ''}
         onClose={closePinNotice}
       />
     </MatchSetupMainView>

@@ -1,10 +1,12 @@
 /**
- * The game PIN notice in Match setup (utils/pinNotice, MatchPinNotice): the
- * Coin toss button of a new official match shows the game PIN first, once;
- * OK goes on to the coin toss and notes it on the match row, so the next
- * Coin toss (or a reload) goes straight there. A test match has no game PIN
- * on the server and goes straight on. Harness: MatchSetupAfterCoinToss.test.jsx
- * (in-memory Dexie stand-in). Made-up names.
+ * The game PIN notice in Match setup (utils/pinNotice, MatchPinNotice), owner
+ * 22.11.2026: right after Create match of a new official match, once per
+ * match on this device. OK notes it on the match row (pinNoticeShownAt, never
+ * synced): Coin toss later goes straight on, and a match created and then
+ * resumed straight at the coin toss (App.jsx) had its notice at creation. A
+ * test match, and a Save of a match already created, never show it.
+ * Harness: MatchSetupAfterCoinToss.test.jsx (in-memory Dexie stand-in).
+ * Made-up names.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
@@ -175,43 +177,87 @@ async function clickCoinToss () {
   fireEvent.click(coinToss)
 }
 
-describe('the game PIN notice before the coin toss', () => {
-  it('an official match: Coin toss shows the PIN first, OK goes on and notes it', async () => {
-    storeMatch()
+// A match not created yet: Create match on the main view opens the info
+// page, its Create match creates it
+async function createMatch () {
+  fireEvent.click(await screen.findByRole('button', { name: 'matchSetup.createMatch' }))
+  const create = await screen.findByRole('button', { name: 'matchSetup.createMatch' })
+  await waitFor(() => expect(create).not.toBeDisabled())
+  fireEvent.click(create)
+}
+
+const NEW = { matchInfoConfirmedAt: null, connectionPinsQueuedAt: null }
+
+describe('the game PIN notice right after Create match', () => {
+  it('a new official match: shown right after Create match, OK notes it, Coin toss then goes straight on', async () => {
+    storeMatch(NEW)
     const onOpenCoinToss = vi.fn()
     render(<Setup matchId={1} onOpenCoinToss={onOpenCoinToss} />)
-    await screen.findAllByText('Alpha VC')
-    await clickCoinToss()
+    await createMatch()
     expect(await screen.findByTestId('pin-notice')).toBeInTheDocument()
+    expect(store.tables.matches.get(1).matchInfoConfirmedAt).toEqual(expect.any(String))
     expect(screen.getByTestId('pin-notice-pin')).toHaveTextContent('654321')
     expect(screen.getByText('Please write the PIN down somewhere: it is needed to recover the match and/or to reopen it.')).toBeInTheDocument()
     // the teams as Match setup shows them
     expect(screen.getByTestId('pin-notice').textContent).toContain('Alpha VC – Beta VC')
-    // the coin toss waits for OK
-    expect(onOpenCoinToss).not.toHaveBeenCalled()
     fireEvent.click(screen.getByTestId('pin-notice-ok'))
-    await waitFor(() => expect(onOpenCoinToss).toHaveBeenCalledTimes(1))
-    expect(screen.queryByTestId('pin-notice')).toBeNull()
-    expect(store.tables.matches.get(1).pinNoticeShownAt).toEqual(expect.any(String))
+    await waitFor(() => expect(screen.queryByTestId('pin-notice')).toBeNull())
+    // noted at creation: a match resumed straight at the coin toss (App.jsx
+    // skips Match setup) already had its notice
+    await waitFor(() => expect(store.tables.matches.get(1).pinNoticeShownAt).toEqual(expect.any(String)))
+    expect(onOpenCoinToss).not.toHaveBeenCalled()
     // nothing of it goes to the server
     expect(queued().some((j) => JSON.stringify(j.payload || {}).includes('pinNotice'))).toBe(false)
-  })
-
-  it('once per match: the next Coin toss (another visit, a reload) goes straight on', async () => {
-    storeMatch({ pinNoticeShownAt: '2026-11-21T17:00:00.000Z' })
-    const onOpenCoinToss = vi.fn()
-    render(<Setup matchId={1} onOpenCoinToss={onOpenCoinToss} />)
-    await screen.findAllByText('Alpha VC')
+    // not again on Coin toss
     await clickCoinToss()
     await waitFor(() => expect(onOpenCoinToss).toHaveBeenCalledTimes(1))
     expect(screen.queryByTestId('pin-notice')).toBeNull()
   })
 
-  it('a test match (no game PIN on the server) goes straight on', async () => {
-    storeMatch({ test: true, gamePin: null, seed_key: null })
+  it('the game PIN Create match makes is the one shown', async () => {
+    storeMatch({ ...NEW, gamePin: undefined })
+    render(<Setup matchId={1} onOpenCoinToss={() => {}} />)
+    await createMatch()
+    const pin = await screen.findByTestId('pin-notice-pin')
+    const stored = store.tables.matches.get(1).gamePin
+    expect(stored).toMatch(/^\d{6}$/)
+    expect(pin).toHaveTextContent(stored)
+    const insert = queued().find((j) => j.resource === 'match' && j.action === 'insert')
+    expect(insert.payload.game_pin).toBe(stored)
+  })
+
+  it('once per match: a match whose notice was shown on this device does not show it again', async () => {
+    storeMatch({ ...NEW, pinNoticeShownAt: '2026-11-21T17:00:00.000Z' })
+    render(<Setup matchId={1} onOpenCoinToss={() => {}} />)
+    await createMatch()
+    await waitFor(() => expect(store.tables.matches.get(1).matchInfoConfirmedAt).toEqual(expect.any(String)))
+    await sleep(300)
+    expect(screen.queryByTestId('pin-notice')).toBeNull()
+  })
+
+  it('a test match never shows it, neither at Create match nor at Coin toss', async () => {
+    storeMatch({ ...NEW, test: true, gamePin: null, seed_key: null })
     const onOpenCoinToss = vi.fn()
     render(<Setup matchId={1} onOpenCoinToss={onOpenCoinToss} />)
-    await screen.findAllByText('Alpha VC')
+    await createMatch()
+    await waitFor(() => expect(store.tables.matches.get(1).matchInfoConfirmedAt).toEqual(expect.any(String)))
+    await sleep(300)
+    expect(screen.queryByTestId('pin-notice')).toBeNull()
+    await clickCoinToss()
+    await waitFor(() => expect(onOpenCoinToss).toHaveBeenCalledTimes(1))
+    expect(screen.queryByTestId('pin-notice')).toBeNull()
+  })
+
+  it('a match already created: neither a Save of its info nor Coin toss shows it', async () => {
+    storeMatch()
+    const onOpenCoinToss = vi.fn()
+    render(<Setup matchId={1} onOpenCoinToss={onOpenCoinToss} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'common.edit' }))
+    fireEvent.change(await screen.findByLabelText('matchSetup.hall'), { target: { value: 'Halle B' } })
+    fireEvent.click(screen.getByRole('button', { name: 'matchSetup.save' }))
+    await waitFor(() => expect(store.tables.matches.get(1).hall).toBe('Halle B'))
+    await sleep(300)
+    expect(screen.queryByTestId('pin-notice')).toBeNull()
     await clickCoinToss()
     await waitFor(() => expect(onOpenCoinToss).toHaveBeenCalledTimes(1))
     expect(screen.queryByTestId('pin-notice')).toBeNull()
@@ -220,11 +266,9 @@ describe('the game PIN notice before the coin toss', () => {
   it('signed in and confirmed: "Send to my email" posts the match and the PIN to send-pin, prefilled field for the mail app', async () => {
     auth.user = { id: 'u-1', email: 'sina@example.ch', email_confirmed_at: '2026-11-01T00:00:00Z' }
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({ status: 200, json: async () => ({ success: true }) }))
-    storeMatch()
-    const onOpenCoinToss = vi.fn()
-    render(<Setup matchId={1} onOpenCoinToss={onOpenCoinToss} />)
-    await screen.findAllByText('Alpha VC')
-    await clickCoinToss()
+    storeMatch(NEW)
+    render(<Setup matchId={1} onOpenCoinToss={() => {}} />)
+    await createMatch()
     await screen.findByTestId('pin-notice')
     // no scorer official address in this match: the account's
     expect(screen.getByTestId('pin-notice-email')).toHaveValue('sina@example.ch')
@@ -234,19 +278,16 @@ describe('the game PIN notice before the coin toss', () => {
     expect(JSON.parse(init.body)).toEqual({ externalId: 'match_1_setup', gamePin: '654321' })
     expect(init.headers.Authorization).toBe('Bearer tok')
     expect(await screen.findByText(/^Sent to /)).toBeInTheDocument()
-    // still waiting for OK
-    expect(onOpenCoinToss).not.toHaveBeenCalled()
   })
 
-  it('an unconfirmed account gets no server button (the server mails only a confirmed address)', async () => {
+  it('an unconfirmed account gets no server button (the server mails only a confirmed address); its address is prefilled for the mail app', async () => {
     auth.user = { id: 'u-1', email: 'sina@example.ch', email_confirmed_at: null }
-    storeMatch({ officials: [{ role: '1st referee', firstName: 'Rita', lastName: 'Ref', country: 'CHE', dob: '01.01.1990' }, { role: 'scorer', firstName: 'Sina', lastName: 'Scorer', country: 'CHE', dob: '02.02.2000', email: 'sina.scorer@example.ch' }] })
+    storeMatch(NEW)
     render(<Setup matchId={1} onOpenCoinToss={() => {}} />)
-    await screen.findAllByText('Alpha VC')
-    await clickCoinToss()
+    await createMatch()
     await screen.findByTestId('pin-notice')
     expect(screen.queryByTestId('pin-notice-send-account')).toBeNull()
-    // the scorer official's address first
-    expect(screen.getByTestId('pin-notice-email')).toHaveValue('sina.scorer@example.ch')
+    // Match setup has no address field for the scorer official: the account's
+    expect(screen.getByTestId('pin-notice-email')).toHaveValue('sina@example.ch')
   })
 })

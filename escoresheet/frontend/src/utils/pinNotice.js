@@ -1,6 +1,7 @@
 /**
- * The game PIN notice (components/MatchPinNotice.jsx): once a new official
- * match is set up, before its coin toss, the scorer sees the game PIN large,
+ * The game PIN notice (components/MatchPinNotice.jsx): right after Create
+ * match in Match setup (owner 22.11.2026), before the coin toss, the scorer
+ * of a new official match sees the game PIN large,
  * with "Please write the PIN down somewhere", and can send it by email:
  *
  * - signed in: the SERVER mails it to the account's own confirmed address
@@ -22,9 +23,10 @@ const PAST_SETUP = ['live', 'ended', 'final', 'approved']
 export const gamePinOf = (match) => String(match?.gamePin ?? '').trim()
 
 /**
- * Does the coin toss of this match wait for the PIN notice? An official match
- * (not test, Global, guest or easy: those have no game PIN on the server)
- * with a game PIN, before its coin toss, that has not shown it yet.
+ * Does this match (as stored right after Create match) show the PIN notice?
+ * An official match (not test, Global, guest or easy: those have no game PIN
+ * on the server) with a game PIN, before its coin toss, that has not shown it
+ * on this device yet.
  */
 export function needsPinNotice (match) {
   if (!match || isLocalOnly(match) || match.easy === true) return false

@@ -33,8 +33,8 @@ const ERROR_FALLBACK = {
 }
 
 /**
- * The game PIN notice: once a new official match is set up, before its coin
- * toss (MatchSetup's Coin toss button, utils/pinNotice needsPinNotice). The
+ * The game PIN notice: right after Create match in Match setup, for a new
+ * official match (MatchSetup confirmMatchInfo, utils/pinNotice needsPinNotice). The
  * PIN large, the owner's sentence, and two ways to email it:
  *
  * - `accountEmail` (signed in, confirmed): "Send to my email (address)" asks
