@@ -89,7 +89,7 @@ const GET_ROUTES = [
 ]
 const POST_ROUTES = [
   '/api/match/validate-pin', '/api/match/validate-connection-pin', '/api/match/restore-by-pin', '/api/match/restore',
-  '/api/match/claim', '/api/match/known', '/api/match/official-check', '/api/match/send-info', '/api/match/scorer',
+  '/api/match/claim', '/api/match/known', '/api/match/official-check', '/api/match/send-info', '/api/match/send-pin', '/api/match/scorer',
   '/api/match/upload-roster', '/api/match/event-revisions', '/api/db', '/api/db/rpc', '/api/activity', '/api/contact',
   '/api/account/join', '/api/account/redeem-invite', '/api/account/invite-preview',
   '/api/auth/sign-up', '/api/auth/sign-in', '/api/auth/reset-password', '/api/auth/resend-confirmation',
