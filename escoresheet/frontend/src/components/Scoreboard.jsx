@@ -16824,12 +16824,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     background: 'rgba(0, 0, 0, 0.85)',
                                     border: '1px solid rgba(255, 255, 255, 0.3)',
                                     borderRadius: '3px',
-                                    padding: '0.3cqh 1cqh',
-                                    fontSize: 'calc(2.5cqh * var(--cqf, 1))',
+                                    padding: '0.2cqh 0.8cqh',
+                                    fontSize: 'calc(2.1cqh * var(--cqf, 1))',
                                     fontWeight: 600,
                                     color: '#fff',
                                     whiteSpace: 'nowrap',
-                                    minWidth: '18cqh',
+                                    minWidth: '15cqh',
                                     zIndex: 10,
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.3px',
@@ -16840,13 +16840,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     gap: '2px'
                                   }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                    <span style={{ fontSize: 'calc(2cqh * var(--cqf, 1))', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    <span style={{ fontSize: 'calc(1.7cqh * var(--cqf, 1))', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                     {expandedPlayerName === `${teamKey}-${player.number}`
                                       ? `#${player.number}`
                                       : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
                                   </div>
                                   {expandedPlayerName === `${teamKey}-${player.number}` && (
-                                    <div style={{ fontSize: 'calc(2.2cqh * var(--cqf, 1))', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ fontSize: 'calc(1.9cqh * var(--cqf, 1))', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                       <div>{player.firstName}</div>
                                       <div>{player.lastName}</div>
                                     </div>
@@ -17092,12 +17092,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     background: 'rgba(0, 0, 0, 0.85)',
                                     border: '1px solid rgba(255, 255, 255, 0.3)',
                                     borderRadius: '3px',
-                                    padding: '0.3cqh 1cqh',
-                                    fontSize: 'calc(2.5cqh * var(--cqf, 1))',
+                                    padding: '0.2cqh 0.8cqh',
+                                    fontSize: 'calc(2.1cqh * var(--cqf, 1))',
                                     fontWeight: 600,
                                     color: '#fff',
                                     whiteSpace: 'nowrap',
-                                    minWidth: '18cqh',
+                                    minWidth: '15cqh',
                                     zIndex: 10,
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.3px',
@@ -17108,13 +17108,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     gap: '2px'
                                   }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                    <span style={{ fontSize: 'calc(2cqh * var(--cqf, 1))', opacity: 0.7, transform: expandedPlayerName === `${leftTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    <span style={{ fontSize: 'calc(1.7cqh * var(--cqf, 1))', opacity: 0.7, transform: expandedPlayerName === `${leftTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                     {expandedPlayerName === `${leftTeamKey}-${player.number}`
                                       ? `#${player.number}`
                                       : getCourtPlayerDisplayName(leftTeamKey, player.number, player.firstName, player.lastName)}
                                   </div>
                                   {expandedPlayerName === `${leftTeamKey}-${player.number}` && (
-                                    <div style={{ fontSize: 'calc(2.2cqh * var(--cqf, 1))', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ fontSize: 'calc(1.9cqh * var(--cqf, 1))', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                       <div>{player.firstName}</div>
                                       <div>{player.lastName}</div>
                                     </div>
@@ -17436,12 +17436,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     background: 'rgba(0, 0, 0, 0.85)',
                                     border: '1px solid rgba(255, 255, 255, 0.3)',
                                     borderRadius: '3px',
-                                    padding: '0.3cqh 1cqh',
-                                    fontSize: 'calc(2.5cqh * var(--cqf, 1))',
+                                    padding: '0.2cqh 0.8cqh',
+                                    fontSize: 'calc(2.1cqh * var(--cqf, 1))',
                                     fontWeight: 600,
                                     color: '#fff',
                                     whiteSpace: 'nowrap',
-                                    minWidth: '18cqh',
+                                    minWidth: '15cqh',
                                     zIndex: 10,
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.3px',
@@ -17452,13 +17452,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     gap: '2px'
                                   }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                    <span style={{ fontSize: 'calc(2cqh * var(--cqf, 1))', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    <span style={{ fontSize: 'calc(1.7cqh * var(--cqf, 1))', opacity: 0.7, transform: expandedPlayerName === `${teamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                     {expandedPlayerName === `${teamKey}-${player.number}`
                                       ? `#${player.number}`
                                       : getCourtPlayerDisplayName(teamKey, player.number, player.firstName, player.lastName)}
                                   </div>
                                   {expandedPlayerName === `${teamKey}-${player.number}` && (
-                                    <div style={{ fontSize: 'calc(2.2cqh * var(--cqf, 1))', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ fontSize: 'calc(1.9cqh * var(--cqf, 1))', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                       <div>{player.firstName}</div>
                                       <div>{player.lastName}</div>
                                     </div>
@@ -17731,12 +17731,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     background: 'rgba(0, 0, 0, 0.85)',
                                     border: '1px solid rgba(255, 255, 255, 0.3)',
                                     borderRadius: '3px',
-                                    padding: '0.3cqh 1cqh',
-                                    fontSize: 'calc(2.5cqh * var(--cqf, 1))',
+                                    padding: '0.2cqh 0.8cqh',
+                                    fontSize: 'calc(2.1cqh * var(--cqf, 1))',
                                     fontWeight: 600,
                                     color: '#fff',
                                     whiteSpace: 'nowrap',
-                                    minWidth: '18cqh',
+                                    minWidth: '15cqh',
                                     zIndex: 10,
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.3px',
@@ -17747,13 +17747,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     gap: '2px'
                                   }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                    <span style={{ fontSize: 'calc(2cqh * var(--cqf, 1))', opacity: 0.7, transform: expandedPlayerName === `${rightTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                    <span style={{ fontSize: 'calc(1.7cqh * var(--cqf, 1))', opacity: 0.7, transform: expandedPlayerName === `${rightTeamKey}-${player.number}` ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                     {expandedPlayerName === `${rightTeamKey}-${player.number}`
                                       ? `#${player.number}`
                                       : getCourtPlayerDisplayName(rightTeamKey, player.number, player.firstName, player.lastName)}
                                   </div>
                                   {expandedPlayerName === `${rightTeamKey}-${player.number}` && (
-                                    <div style={{ fontSize: 'calc(2.2cqh * var(--cqf, 1))', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ fontSize: 'calc(1.9cqh * var(--cqf, 1))', opacity: 0.9, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '0.5cqh', marginTop: '0.3cqh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                       <div>{player.firstName}</div>
                                       <div>{player.lastName}</div>
                                     </div>

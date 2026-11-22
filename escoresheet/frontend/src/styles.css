@@ -2712,7 +2712,8 @@ button:disabled {
   font-weight: 700;
   color: var(--accent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  z-index: 10;
+  /* above the court name label (z-index 10), so a long surname never hides L / C / LC */
+  z-index: 11;
 }
 
 .rally-controls {
