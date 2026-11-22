@@ -3648,9 +3648,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // pending; time-outs also in the set interval, where one would count in
   // the next set: R15, R18.1), or null (domain/interruptionRequests.js)
   const intervalRunning = isBetweenSets && betweenSetsCountdown !== null
-  const requestBlockFor = (teamKey, kind) => (
-    data?.set ? requestBlockReason(data.events, data.set.index, teamKey, kind, { intervalRunning }) : null
-  )
+  // Once per change of the log, the set or the interval: the TO counters
+  // and the block lines asked it about 16 times a render, each a few scans
+  // and a sort of the set's events (same function, same arguments)
+  const requestBlocks = useMemo(() => {
+    if (!data?.set) return null
+    const of = (teamKey, kind) => requestBlockReason(data.events, data.set.index, teamKey, kind, { intervalRunning })
+    return {
+      home: { timeout: of('home', 'timeout'), substitution: of('home', 'substitution') },
+      away: { timeout: of('away', 'timeout'), substitution: of('away', 'substitution') }
+    }
+  }, [data?.events, data?.set, intervalRunning])
+  const requestBlockFor = (teamKey, kind) => {
+    const cached = requestBlocks?.[teamKey]
+    if (cached && kind in cached) return cached[kind]
+    return data?.set ? requestBlockReason(data.events, data.set.index, teamKey, kind, { intervalRunning }) : null
+  }
   const timeoutBlocked = (side) => !!requestBlockFor(mapSideToTeamKey(side), 'timeout')
   // The one line under a team's TO / SUB counters while they are closed
   const requestBlockLine = (side) => {
