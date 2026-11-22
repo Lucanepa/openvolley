@@ -2370,8 +2370,6 @@
     },
     "delayWarningShort": "A R",
     "delayPenaltyShort": "P R",
-    "switchToStandard": "Passer à la vue standard",
-    "switchToReception": "Passer à la formation de réception",
     "scoresheet": {
       "open": "Feuille de match",
       "close": "Fermer",
@@ -2405,10 +2403,6 @@
       "formalWarning": "Avertissement formel"
     },
     "iosFullscreenTip": "Astuce : pour un vrai plein écran sur iOS, touche Partager → Sur l'écran d'accueil, puis ouvre l'app depuis là.",
-    "selectSetter": "Choisis le passeur",
-    "noLineup": "Aucune position de base disponible",
-    "exitAdvanced": "Quitter le mode avancé",
-    "advanced": "Avancé",
     "scorerAttention": "Le marqueur a besoin de toi",
     "acknowledge": "Compris"
   },

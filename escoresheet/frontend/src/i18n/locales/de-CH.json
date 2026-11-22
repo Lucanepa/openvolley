@@ -2371,8 +2371,6 @@
     },
     "delayWarningShort": "V W",
     "delayPenaltyShort": "V S",
-    "switchToStandard": "Zur Standardaasicht wächsle",
-    "switchToReception": "Zur Annahmeformation wächsle",
     "scoresheet": {
       "open": "Matchblatt",
       "close": "Schliesse",
@@ -2406,10 +2404,6 @@
       "formalWarning": "Formelli Warnig"
     },
     "iosFullscreenTip": "Tipp: Für richtigs Vollbild uf iOS tipp uf Teile → Zum Home-Bildschirm und tue d App vo dört uf.",
-    "selectSetter": "Zuespieler wähle",
-    "noLineup": "Kei Ufstellig verfüegbar",
-    "exitAdvanced": "Erwiiteret beände",
-    "advanced": "Erwiiteret",
     "scorerAttention": "De Schriiber bruucht di",
     "acknowledge": "Verstande"
   },

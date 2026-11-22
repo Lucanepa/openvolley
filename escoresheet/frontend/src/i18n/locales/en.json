@@ -2372,8 +2372,6 @@
     },
     "delayWarningShort": "D W",
     "delayPenaltyShort": "D P",
-    "switchToStandard": "Switch to standard view",
-    "switchToReception": "Switch to reception formation",
     "scoresheet": {
       "open": "Scoresheet",
       "close": "Close",
@@ -2407,10 +2405,6 @@
       "formalWarning": "Formal warning"
     },
     "iosFullscreenTip": "Tip: For true fullscreen on iOS, tap Share → Add to Home Screen, then open from there.",
-    "selectSetter": "Select setter",
-    "noLineup": "No line-up available",
-    "exitAdvanced": "Exit advanced",
-    "advanced": "Advanced",
     "scorerAttention": "Scorer needs attention",
     "acknowledge": "Acknowledge"
   },

@@ -2371,8 +2371,6 @@
     },
     "delayWarningShort": "A R",
     "delayPenaltyShort": "P R",
-    "switchToStandard": "Passa alla vista standard",
-    "switchToReception": "Passa alla formazione di ricezione",
     "scoresheet": {
       "open": "Referto",
       "close": "Chiudi",
@@ -2406,10 +2404,6 @@
       "formalWarning": "Avvertimento formale"
     },
     "iosFullscreenTip": "Suggerimento: per il vero schermo intero su iOS, tocca Condividi → Aggiungi alla schermata Home, poi apri l'app da lì.",
-    "selectSetter": "Scegli il palleggiatore",
-    "noLineup": "Nessuna formazione disponibile",
-    "exitAdvanced": "Esci da avanzato",
-    "advanced": "Avanzato",
     "scorerAttention": "Il segnapunti ha bisogno di te",
     "acknowledge": "Ricevuto"
   },
