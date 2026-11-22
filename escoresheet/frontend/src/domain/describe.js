@@ -291,6 +291,7 @@ const TEAM_AFTER_TITLE = ['timeout', 'substitution', 'lineup']
  * `ctx.short`: the scoring screen's one-line form. Teams are their letter
  * ("Point B · Set 1 · A 5:11 B", "Time-out B · Set 1 · B 3:5 A",
  * "Libero #7 in for #1 · B · Set 1 · B 0:0 A"), never the team name.
+ * `ctx.noSet`: leave the set out ("Point B · A 5:11 B"; the scoring screen).
  * @returns {null | {
  *   kind: string, title: string, detail: string, score: string,
  *   scoreValue: {home:number, away:number}|null, team: object|null,
@@ -474,7 +475,9 @@ export function describeEvent(event, events, ctx = {}) {
   // "Penalty — Player #8 (bench) · VC Seehafen (A) · Set 1 · A 8:24 B · +1 point to Volley Talberg";
   // "Substitution · VC Seehafen (A) · #12 in for #7 · Set 2 · A 14:11 B"
   const detailLast = event.type === 'sanction'
-  const parts = detailLast ? [teamText, setLabel, score, detail] : [teamText, detail, setLabel, score]
+  // ctx.noSet: the scoring screen's last action, where the set shows already
+  const setPart = ctx.noSet === true ? '' : setLabel
+  const parts = detailLast ? [teamText, setPart, score, detail] : [teamText, detail, setPart, score]
   const meta = parts.filter(Boolean).join(' · ')
   const text = [title, meta].filter(Boolean).join(' · ')
   return { kind: event.type, title, detail, score, scoreValue, team, teamText, setIndex, setLabel, code, exceptional, incomplete, meta, text }

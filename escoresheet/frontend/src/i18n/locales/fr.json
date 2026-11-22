@@ -649,7 +649,6 @@
       "pointTeam": "Point {{team}}",
       "toLeft": "TM gauche",
       "toRight": "TM droite",
-      "confirmTimeout": "Confirmer temps mort",
       "substitute": "Remplacer",
       "undo": "Annuler",
       "replay": "Rejouer l'échange",
@@ -968,10 +967,7 @@
     "storageLow": "Le stockage de cet appareil est presque plein : il reste {{mb}} Mo pour OpenVolley. Libère de l'espace maintenant (supprime d'anciens téléchargements ou d'autres fichiers) : une fois plein, plus rien ne pourra être enregistré.",
     "timeoutRequest": {
       "title": "Temps mort — {{team}}",
-      "first": "Temps mort 1 sur 2 de ce set pour {{team}}.",
-      "second": "Deuxième temps mort de ce set pour {{team}} (1 sur 2 déjà utilisé).",
-      "consecutive": "{{team}} a déjà pris un temps mort pendant cette interruption (aucun échange depuis). Enregistrer son deuxième temps mort ?",
-      "confirmConsecutive": "Oui, deuxième temps mort",
+      "count": "{{to}} {{n}} sur 2",
       "notRecorded": "Le temps mort n'a pas été enregistré. Réessaie."
     },
     "requestBlock": {
@@ -1050,14 +1046,6 @@
         "text": "#{{number}} ne peut pas entrer pour #{{out}} : {{why}}. Demander un remplacement illégal est un retard ; la demande est refusée.",
         "rule": "FIVB 15.10.4 · 16.1.3"
       }
-    },
-    "lateRequest": {
-      "heading": "Interrompu par une demande tardive ?",
-      "replay": "Rejouer à cause d’une demande tardive de {{team}} : sanction pour retard",
-      "penalty": "Demande tardive de {{team}} : pénalité pour retard, sans rejouer",
-      "recordsWarning": "Enregistré : avertissement pour retard. L’échange est rejoué ; ni temps mort ni remplacement avant qu’il soit terminé.",
-      "recordsPenalty": "Enregistré : pénalité pour retard – point et service pour {{opponent}}.",
-      "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
     },
     "decisionTakeBack": {
       "title": "Annulé d’abord",
@@ -1745,6 +1733,8 @@
     "startServerToConnect": "Démarrer le serveur live pour permettre aux applications d'arbitrage, de banc de touche et de livescore de se connecter.",
     "showNamesOnCourt": "Afficher les noms sur la cour",
     "showNamesOnCourtInfo": "Afficher les noms de famille des joueurs sous les cercles de position du terrain",
+    "showTapHints": "Afficher le doigt sur les boutons",
+    "showTapHintsInfo": "Un petit doigt sur chaque bouton que tu peux toucher maintenant. Désactive-le si l'écran te paraît trop chargé.",
     "autoDownloadAtSetEnd": "Téléchargement automatique des données à la fin du set",
     "autoDownloadAtSetEndInfo": "Lorsqu'une fin de set ne peut pas être envoyée dans le nuage (hors ligne, échec, ou mise de côté parce qu'un autre appareil tient le match), télécharger le match dans un fichier de sauvegarde ; avec une connexion lente, seulement si elle n'est toujours pas envoyée après 30 s. Avec ce fichier, « Restaurer le match » récupère le match.",
     "configureKeys": "Configuration des clés",
@@ -3241,7 +3231,7 @@
       "q_fixSanction": "J'ai saisi la mauvaise sanction : comment la corriger ?",
       "a_fixSanction": "Si c'est la dernière action, appuie sur « Annuler ». Sinon, ouvre Match › Corrections : dans la carte « Sanctions », modifie-la ou supprime-la, ou appuie sur « Ajouter une sanction ». Le journal des corrections montre la modification à l'arbitre.",
       "q_lateRequest": "L'échange a été interrompu à cause d'une demande tardive : comment l'enregistrer ?",
-      "a_lateRequest": "Pendant l'échange, appuie sur « Rejouer l'échange ». Sous « Interrompu par une demande tardive ? », choisis l'équipe : cela enregistre un avertissement pour retard et l'échange est rejoué, sans temps mort ni remplacement avant qu'il soit terminé. Si cette équipe a déjà un avertissement pour retard, le choix est une pénalité pour retard sans rejouer : point et service à l'adversaire."
+      "a_lateRequest": "Pendant l'échange, appuie sur « Rejouer l'échange » : cela enregistre seulement l'échange rejoué. Donne ensuite la sanction pour retard avec le bouton « Avertissement pour retard » de l'équipe (ou « Pénalité pour retard » si elle a déjà un avertissement)."
     },
     "setEnd": {
       "q_interval": "Comment fonctionne la pause entre les sets ?",

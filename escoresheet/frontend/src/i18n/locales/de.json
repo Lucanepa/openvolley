@@ -643,7 +643,6 @@
       "pointTeam": "Punkt {{team}}",
       "toLeft": "TO links",
       "toRight": "TO rechts",
-      "confirmTimeout": "Timeout bestätigen",
       "substitute": "Auswechseln",
       "undo": "Rückgängig",
       "replay": "Ballwechsel wiederholen",
@@ -962,10 +961,7 @@
     "storageLow": "Der Speicher dieses Geräts ist fast voll: noch {{mb}} MB für OpenVolley. Jetzt Platz freigeben (alte Downloads oder andere Dateien löschen): Ist er voll, kann nichts mehr erfasst werden.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
-      "first": "Timeout 1 von 2 in diesem Satz für {{team}}.",
-      "second": "Zweites Timeout dieses Satzes für {{team}} (1 von 2 bereits genommen).",
-      "consecutive": "{{team}} hat in dieser Unterbrechung bereits ein Timeout genommen (seither kein Ballwechsel). Jetzt das zweite Timeout erfassen?",
-      "confirmConsecutive": "Ja, zweites Timeout",
+      "count": "{{to}} {{n}} von 2",
       "notRecorded": "Das Timeout wurde nicht erfasst. Bitte erneut versuchen."
     },
     "requestBlock": {
@@ -1044,14 +1040,6 @@
         "text": "#{{number}} kann nicht für #{{out}} kommen: {{why}}. Eine unerlaubte Auswechslung zu beantragen ist eine Verzögerung; das Gesuch wird abgelehnt.",
         "rule": "FIVB 15.10.4 · 16.1.3"
       }
-    },
-    "lateRequest": {
-      "heading": "Wegen eines verspäteten Antrags unterbrochen?",
-      "replay": "Wiederholung wegen eines verspäteten Antrags von {{team}}: Verzögerungssanktion",
-      "penalty": "Verspäteter Antrag von {{team}}: Verzögerungsstrafe, keine Wiederholung",
-      "recordsWarning": "Erfasst: Verzögerungswarnung. Der Ballwechsel wird wiederholt; bis er abgeschlossen ist, kein Timeout und keine Auswechslung.",
-      "recordsPenalty": "Erfasst: Verzögerungsstrafe – Punkt und Aufschlag für {{opponent}}.",
-      "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
     },
     "decisionTakeBack": {
       "title": "Wird zuerst zurückgenommen",
@@ -1769,6 +1757,8 @@
     "matchOptions": "Spieloptionen",
     "showNamesOnCourt": "Namen auf dem Feld anzeigen",
     "showNamesOnCourtInfo": "Nachnamen der Spielenden unter den Positionskreisen auf dem Feld anzeigen",
+    "showTapHints": "Tipp-Hinweise anzeigen",
+    "showTapHintsInfo": "Ein kleiner Zeigefinger auf jedem Knopf, den du gerade antippen kannst. Schalte ihn aus, wenn dir der Bildschirm zu voll ist.",
     "configureKeys": "Tasten konfigurieren",
     "autoDownloadAtSetEnd": "Daten am Satzende automatisch herunterladen",
     "autoDownloadAtSetEndInfo": "Wenn ein Satzende nicht in die Cloud gesendet werden kann (offline, fehlgeschlagen oder beiseitegelegt, weil ein anderes Gerät das Spiel führt), das Spiel als Sicherungsdatei herunterladen; bei langsamer Verbindung nur, wenn es nach 30 s noch nicht gesendet ist. Mit dieser Datei holt «Spiel wiederherstellen» das Spiel zurück.",
@@ -2979,7 +2969,7 @@
       "q_fixSanction": "Ich habe die falsche Sanktion erfasst: Wie korrigiere ich sie?",
       "a_fixSanction": "Ist es die letzte Aktion, tippe auf «Rückgängig». Sonst öffne Spiel › Korrekturen: In der Karte «Sanktionen» bearbeitest oder entfernst du sie, oder du tippst auf «Sanktion hinzufügen». Das Korrekturprotokoll zeigt die Änderung dem Schiedsrichter.",
       "q_lateRequest": "Der Ballwechsel wurde wegen eines verspäteten Antrags unterbrochen: Wie erfasse ich das?",
-      "a_lateRequest": "Tippe während des Ballwechsels auf «Ballwechsel wiederholen». Wähle unter «Wegen eines verspäteten Antrags unterbrochen?» das Team: Das erfasst eine Verzögerungswarnung, und der Ballwechsel wird wiederholt, ohne Timeout oder Wechsel, bis er gespielt ist. Hat dieses Team schon eine Verzögerungswarnung, ist die Wahl eine Verzögerungsstrafe ohne Wiederholung: Punkt und Aufschlag für den Gegner."
+      "a_lateRequest": "Tippe während des Ballwechsels auf «Ballwechsel wiederholen»: Das erfasst nur die Wiederholung. Gib danach die Verzögerungssanktion mit dem Knopf «Verzögerungswarnung» des Teams (oder «Verzögerungsstrafe», wenn es schon eine Warnung hat)."
     },
     "setEnd": {
       "q_interval": "Wie funktioniert die Pause zwischen den Sätzen?",

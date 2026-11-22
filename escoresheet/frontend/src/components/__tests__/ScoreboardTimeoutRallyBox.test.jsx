@@ -78,8 +78,8 @@ describe('Scoreboard: the time-out countdown in the rally box', () => {
     expect(rally.contains(button('Start rally'))).toBe(true)
 
     fireEvent.click(document.querySelector('[data-help-id="scoreboard-timeout-left"]'))
-    await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
-    fireEvent.click(button('Confirm time-out'))
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
+    fireEvent.click(button('Confirm'))
     await waitFor(() => expect(button('Stop timeout')).toBeTruthy())
 
     const box = document.querySelector('.rally-controls')

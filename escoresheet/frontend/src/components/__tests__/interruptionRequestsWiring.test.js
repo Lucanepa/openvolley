@@ -36,28 +36,23 @@ const handler = (name) => {
   return sb.slice(a, a + end)
 }
 
-describe('row 10: a late request stopped the rally (the in-play Replay dialog)', () => {
-  it('confirmReplay records the replay and the team\'s next delay sanction in one action', () => {
+describe('the in-play Replay dialog is just a replay (owner 22.11.2026)', () => {
+  it('confirmReplay records only the replay, never a sanction', () => {
     const body = handler('confirmReplay')
-    expect(body).toMatch(/useCallback\(\(lateRequestTeam\) => runAction\('replay', async \(\) => \{/)
-    // still only while the rally is in play, and the plain replay is unchanged
+    expect(body).toMatch(/useCallback\(\(\) => runAction\('replay', async \(\) => \{/)
     expect(body).toContain("if (rallyStatus !== 'in_play') return")
-    expect(body).toContain("lateRequestOutcome(data?.events, lateRequestTeam)")
-    // a delay penalty decides the rally: no replay then
-    expect(body).toContain("if (!late || late.replay) await logEvent('replay')")
-    expect(body).toContain('await recordTeamSanction({ side: mapTeamKeyToSide(lateRequestTeam), team: lateRequestTeam, type: late.sanction })')
-    // the replay before the sanction: the replay keeps requests closed (row 7)
-    expect(body.indexOf("await logEvent('replay')")).toBeLessThan(body.indexOf('await recordTeamSanction('))
+    expect(body).toContain("await logEvent('replay')")
+    expect(body).not.toContain('recordTeamSanction')
+    expect(body).not.toContain('lateRequestOutcome')
   })
 
-  it('the Replay dialog offers one late-request option per team, A first, saying what it records', () => {
+  it('the Replay dialog has only Replay rally and Cancel: no late-request / sanction options', () => {
     const modal = between('{replayConfirm && (', '{replayRallyConfirm && (() => {')
     expect(modal).toContain('onClick={confirmReplay}')
-    expect(modal).toContain('[teamAKey, teamBKey].map(key => {')
-    expect(modal).toContain('const late = lateRequestOutcome(data?.events, key)')
-    expect(modal).toContain('onClick={() => confirmReplay(key)}')
-    expect(modal).toContain("t(late.replay ? 'scoreboard.lateRequest.replay' : 'scoreboard.lateRequest.penalty', { team: labelOf(key) })")
-    expect(modal).toContain('card={late.sanction}')
+    expect(modal).toContain('onClick={cancelReplay}')
+    expect(modal).not.toContain('late-request')
+    expect(modal).not.toContain('lateRequestOutcome')
+    expect(modal).not.toContain('RequestOptionRow')
   })
 
   it('the phone\'s Replay opens the same dialog', () => {
@@ -155,8 +150,6 @@ describe('row 19: decision change after a substitution or time-out', () => {
 describe('the texts, in all five languages', () => {
   const LOCALES = { en, de, 'de-CH': deCH, fr, it: it_ }
   const KEYS = [
-    'scoreboard.lateRequest.heading', 'scoreboard.lateRequest.replay', 'scoreboard.lateRequest.penalty',
-    'scoreboard.lateRequest.recordsWarning', 'scoreboard.lateRequest.recordsPenalty', 'scoreboard.lateRequest.rule',
     'scoreboard.decisionTakeBack.title', 'scoreboard.decisionTakeBack.timeout', 'scoreboard.decisionTakeBack.substitution',
     'scoreboard.decisionTakeBack.textSubstitution', 'scoreboard.decisionTakeBack.textTimeout',
     'scoreboard.decisionTakeBack.textBoth', 'scoreboard.decisionTakeBack.rule'
@@ -164,8 +157,6 @@ describe('the texts, in all five languages', () => {
   const get = (o, p) => p.split('.').reduce((x, k) => x?.[k], o)
   it.each(Object.entries(LOCALES))('%s has every key', (_, locale) => {
     for (const key of KEYS) expect(typeof get(locale, key), key).toBe('string')
-    expect(get(locale, 'scoreboard.lateRequest.replay')).toContain('{{team}}')
-    expect(get(locale, 'scoreboard.lateRequest.recordsPenalty')).toContain('{{opponent}}')
     expect(get(locale, 'scoreboard.decisionTakeBack.substitution')).toMatch(/\{\{in\}\}[\s\S]*\{\{out\}\}/)
     // the substitution's sentence names no time-out, the time-out's no substitution
     expect(get(locale, 'scoreboard.decisionTakeBack.textSubstitution')).not.toBe(get(locale, 'scoreboard.decisionTakeBack.textBoth'))

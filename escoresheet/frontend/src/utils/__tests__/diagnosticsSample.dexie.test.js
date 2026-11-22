@@ -182,7 +182,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     debugLogger.log('TIMEOUT', { team: 'home' })
     await settle()
     step(30)
-    tap(button('Confirm time-out'), 'Scoreboard')
+    tap(button('Confirm'), 'Scoreboard')
     for (const team of ['home', 'home', 'away', 'home']) await point(team)
     step(8)
     tap(button('Substitution'), 'Scoreboard')

@@ -651,7 +651,6 @@
       "pointTeam": "Point {{team}}",
       "toLeft": "TO left",
       "toRight": "TO right",
-      "confirmTimeout": "Confirm time-out",
       "substitute": "Substitute",
       "undo": "Undo",
       "replay": "Replay rally",
@@ -970,10 +969,7 @@
     "storageLow": "This device's storage is almost full: {{mb}} MB left for OpenVolley. Free up space now (delete old downloads or other files): once it is full, nothing more can be recorded.",
     "timeoutRequest": {
       "title": "Time-out — {{team}}",
-      "first": "Time-out 1 of 2 in this set for {{team}}.",
-      "second": "Second time-out of this set for {{team}} (1 of 2 already used).",
-      "consecutive": "{{team}} already took a time-out in this interruption (no rally since). Record their second time-out now?",
-      "confirmConsecutive": "Yes, second time-out",
+      "count": "{{to}} {{n}} of 2",
       "notRecorded": "The time-out was not recorded. Try again."
     },
     "requestBlock": {
@@ -1052,14 +1048,6 @@
         "text": "#{{number}} cannot come in for #{{out}}: {{why}}. Requesting an illegal substitution is a delay; the request is rejected.",
         "rule": "FIVB 15.10.4 · 16.1.3"
       }
-    },
-    "lateRequest": {
-      "heading": "Stopped because of a late request?",
-      "replay": "Replay because of a late request by {{team}}: delay sanction",
-      "penalty": "Late request by {{team}}: delay penalty, no replay",
-      "recordsWarning": "Recorded: delay warning. The rally is replayed; no time-out or substitution until it is completed.",
-      "recordsPenalty": "Recorded: delay penalty – point and service to {{opponent}}.",
-      "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
     },
     "decisionTakeBack": {
       "title": "Taken back first",
@@ -1748,6 +1736,8 @@
     "startServerToConnect": "Start the live server to allow referee, bench, and livescore apps to connect.",
     "showNamesOnCourt": "Show names on court",
     "showNamesOnCourtInfo": "Display player last names below the court position circles",
+    "showTapHints": "Show tap hints",
+    "showTapHintsInfo": "A small pointing finger on every button you can tap right now. Turn it off if the screen feels cramped.",
     "autoDownloadAtSetEnd": "Auto-download data at set end",
     "autoDownloadAtSetEndInfo": "When a set end cannot be sent to the cloud (offline, failed, or set aside because another device scores the match), download the match as a backup file; on a slow connection, only if it is still not sent after 30 s. “Restore match” brings the match back from that file.",
     "configureKeys": "Configure keys",
@@ -3248,7 +3238,7 @@
       "q_fixSanction": "I recorded the wrong sanction: how do I fix it?",
       "a_fixSanction": "If it is the last action, tap “Undo”. Otherwise open Match › Corrections: in the “Sanctions” card, edit or remove it, or tap “Add sanction”. The correction log shows the change to the referee.",
       "q_lateRequest": "The rally was stopped because of a late request: how do I record it?",
-      "a_lateRequest": "During the rally, tap “Replay rally”. Under “Stopped because of a late request?” choose the team: it records a delay warning and the rally is replayed, with no time-out or substitution until it is completed. If that team already has a delay warning, the choice is a delay penalty without a replay: point and service to the opponent."
+      "a_lateRequest": "During the rally, tap “Replay rally”: it records only the replay. Then give the delay sanction with that team's “Delay warning” button (or “Delay penalty” if it already has a warning)."
     },
     "setEnd": {
       "q_interval": "How does the interval between sets work?",

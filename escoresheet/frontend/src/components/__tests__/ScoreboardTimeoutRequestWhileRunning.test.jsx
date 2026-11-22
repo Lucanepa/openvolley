@@ -71,8 +71,8 @@ async function seed() {
 
 async function startTimeout(side) {
   fireEvent.click(document.querySelector(`[data-help-id="scoreboard-timeout-${side}"]`))
-  await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
-  fireEvent.click(button('Confirm time-out'))
+  await waitFor(() => expect(button('Confirm')).toBeTruthy())
+  fireEvent.click(button('Confirm'))
   await waitFor(() => expect(button('Stop timeout')).toBeTruthy())
   await ghost()
 }

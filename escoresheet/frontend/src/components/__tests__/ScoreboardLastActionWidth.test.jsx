@@ -69,7 +69,7 @@ describe('Scoreboard: the last action line', () => {
     const line = () => [...document.querySelectorAll('.rally-controls div[title]')].find(e => e.textContent.startsWith('Last action:'))
     await waitFor(() => expect(line()).toBeTruthy())
     // the team is its letter (2026-10-20: a long name pushed the rest out)
-    expect(line().textContent).toMatch(/^Last action: Point A · Set 1 · A 1:0 B/)
+    expect(line().textContent).toMatch(/^Last action: Point A · A 1:0 B/) // no set (owner 22.11.2026)
     expect(line().textContent).not.toContain('Musterdorf-Zürich')
     expect(line().style.whiteSpace).toBe('nowrap')
     expect(line().style.textOverflow).toBe('ellipsis')
