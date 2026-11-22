@@ -199,4 +199,99 @@ describe('useRelayTablets', () => {
     expect(h.fetchRelayConnections).toHaveBeenCalledTimes(2)
     expect(result.current.referee).toBe(0)
   })
+
+  // perf pass 22.11.2026: every answer is a new object, and its holder (the
+  // header's tablet chip) rendered again every 10 s for the same tablets
+  it('the same tablets again set no state; a new list, no answer or an answer again do', async () => {
+    h.fetchRelayConnections.mockClear()
+    const referee = { clients: [{ role: 'referee', matchId: SEED, proved: true }] }
+    let renders = 0
+    h.fetchRelayConnections.mockResolvedValue(null)
+    const { result } = renderHook(() => { renders++; return useRelayTablets(SEED, {}, { intervalMs: 1000 }) })
+    await act(flush)
+    expect(result.current.reachable).toBe(false)
+    const quiet = renders
+    // null again: nothing
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await act(flush)
+    expect(renders).toBe(quiet)
+
+    // null to a list
+    h.fetchRelayConnections.mockResolvedValue(referee)
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await act(flush)
+    expect(result.current.reachable).toBe(true)
+    expect(result.current.referee).toBe(1)
+    const shown = result.current
+    const afterList = renders
+
+    // the same tablets, a new object (and other fields that nobody reads): nothing
+    h.fetchRelayConnections.mockResolvedValue({ ...referee, clients: [{ ...referee.clients[0] }], totalClients: 9 })
+    await act(async () => { vi.advanceTimersByTime(3000) })
+    await act(flush)
+    expect(h.fetchRelayConnections).toHaveBeenCalledTimes(6)
+    expect(renders).toBe(afterList)
+    expect(result.current).toBe(shown)
+
+    // another list: shown
+    h.fetchRelayConnections.mockResolvedValue({ clients: [...referee.clients, { role: 'bench', team: 'home', matchId: SEED, proved: true }] })
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await act(flush)
+    expect(result.current.benchHome).toBe(1)
+
+    // an empty list is an answer, not none
+    h.fetchRelayConnections.mockResolvedValue({ clients: [] })
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await act(flush)
+    expect(result.current.reachable).toBe(true)
+    expect(result.current.referee).toBe(0)
+
+    // the list to no answer (relay unreachable)
+    h.fetchRelayConnections.mockResolvedValue(null)
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await act(flush)
+    expect(result.current.reachable).toBe(false)
+    expect(result.current.connections).toBeNull()
+  })
+
+  it('paused (the in-app view open): no poll, what was seen stays; asked again at once on resume', async () => {
+    h.fetchRelayConnections.mockClear()
+    h.fetchRelayConnections.mockResolvedValue({ clients: [{ role: 'referee', matchId: SEED, proved: true }] })
+    const { result, rerender } = renderHook(({ paused }) => useRelayTablets(SEED, {}, { intervalMs: 1000, paused }), { initialProps: { paused: false } })
+    await act(flush)
+    expect(result.current.referee).toBe(1)
+    expect(h.fetchRelayConnections).toHaveBeenCalledTimes(1)
+
+    rerender({ paused: true })
+    await act(async () => { vi.advanceTimersByTime(10000) })
+    await act(flush)
+    expect(h.fetchRelayConnections).toHaveBeenCalledTimes(1)
+    // kept, not "not connected" (disabled would say so)
+    expect(result.current.referee).toBe(1)
+    expect(result.current.reachable).toBe(true)
+
+    h.fetchRelayConnections.mockResolvedValue({ clients: [] })
+    rerender({ paused: false })
+    await act(flush)
+    expect(h.fetchRelayConnections).toHaveBeenCalledTimes(2)
+    expect(result.current.referee).toBe(0)
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    expect(h.fetchRelayConnections).toHaveBeenCalledTimes(3)
+  })
+
+  it('disabled while paused: no tablets', async () => {
+    h.fetchRelayConnections.mockClear()
+    h.fetchRelayConnections.mockResolvedValue({ clients: [{ role: 'referee', matchId: SEED, proved: true }] })
+    const { result, rerender } = renderHook(({ enabled, paused }) => useRelayTablets(SEED, {}, { enabled, intervalMs: 1000, paused }), { initialProps: { enabled: true, paused: false } })
+    await act(flush)
+    expect(result.current.referee).toBe(1)
+    rerender({ enabled: false, paused: true })
+    await act(flush)
+    expect(result.current.referee).toBe(0)
+    expect(result.current.connections).toBeNull()
+    // enabled again: the same tablets are shown again
+    rerender({ enabled: true, paused: false })
+    await act(flush)
+    expect(result.current.referee).toBe(1)
+  })
 })

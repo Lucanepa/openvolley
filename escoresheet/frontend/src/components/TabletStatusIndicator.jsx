@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { getTabletStatusSummary, formatAge } from '../utils/connectionHealth'
 import { applyRelayTablets, relayMatchKey } from '../utils/serverDataSync'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
+import { useInAppViewOpen } from '../hooks/useInAppViewOpen'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../ui/cn.js'
 import { MenuPopover } from '../ui/MenuPopover.jsx'
@@ -26,7 +27,10 @@ export default function TabletStatusIndicator({ match, compact = false }) {
   // Heartbeats alone never reached the scorer device: the relay's subscriber
   // list for this match (by seed key) says which tablets are actually there.
   const anyEnabled = !!(match?.refereeConnectionEnabled || match?.homeTeamConnectionEnabled || match?.awayTeamConnectionEnabled)
-  const relayTablets = useRelayTablets(relayMatchKey(match), match, { enabled: anyEnabled })
+  // Not asked while the Android in-app view covers the screen (nobody sees
+  // the chip); asked again at once when it closes
+  const covered = useInAppViewOpen()
+  const relayTablets = useRelayTablets(relayMatchKey(match), match, { enabled: anyEnabled, paused: covered })
   const summary = applyRelayTablets(getTabletStatusSummary(match), relayTablets)
 
   // Kit status tones: emerald all connected, amber some missing, stone none.

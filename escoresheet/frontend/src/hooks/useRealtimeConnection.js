@@ -609,22 +609,36 @@ export function useRealtimeConnection({
  * Which tablets the relay sees watching a match (scorer side): polls
  * /api/server/connections on the app's backend. The old status read heartbeat
  * fields nothing on the scorer device writes, so it always said "disconnected".
+ * A poll with the same tablets as the last one sets no state (each answer is
+ * a new object, and its holder rendered again every 10 s for nothing).
+ * `paused` (the Android in-app view covers the screen) only stops the poll:
+ * what was seen stays, and the relay is asked again at once on resume.
  * @param {string|null} matchKey - relay room key (seed_key)
  * @param {object|null} match - scorer's match (connection flags)
  * @returns {{ connections: object|null, referee: number, benchHome: number, benchAway: number, watchers: number, reachable: boolean }}
  */
-export function useRelayTablets(matchKey, match, { enabled = true, intervalMs = 10000 } = {}) {
+export function useRelayTablets(matchKey, match, { enabled = true, intervalMs = 10000, paused = false } = {}) {
   const [connections, setConnections] = useState(null)
+  // What the callers read of `connections`: whether there is an answer, and
+  // its clients (summarizeRelayTablets, the Connect dialog's roleStatus)
+  const shownRef = useRef(null)
+  const show = useCallback((result) => {
+    const seen = result ? JSON.stringify(result.clients ?? null) : null
+    if (seen === shownRef.current) return
+    shownRef.current = seen
+    setConnections(result)
+  }, [])
 
   useEffect(() => {
     if (!enabled || !matchKey) {
-      setConnections(null)
+      show(null)
       return
     }
+    if (paused) return
     let cancelled = false
     const load = async () => {
       const result = await fetchRelayConnections(matchKey)
-      if (!cancelled) setConnections(result)
+      if (!cancelled) show(result)
     }
     load()
     const timer = setInterval(load, intervalMs)
@@ -632,7 +646,7 @@ export function useRelayTablets(matchKey, match, { enabled = true, intervalMs = 
       cancelled = true
       clearInterval(timer)
     }
-  }, [matchKey, enabled, intervalMs])
+  }, [matchKey, enabled, intervalMs, paused, show])
 
   const homeEnabled = match?.homeTeamConnectionEnabled === true
   const awayEnabled = match?.awayTeamConnectionEnabled === true
