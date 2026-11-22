@@ -50,7 +50,10 @@ export async function savePdfThroughApp(blob, filename, win = window) {
 /** Messages to the window that asked for the PDF (MatchEnd's approval). */
 export const MSG_PDF_BLOB = 'pdfBlob'
 export const MSG_PDF_BLOB_FAILED = 'pdfBlobFailed'
-/** The heartbeat while the PDF is made (scoresheetPdfRequest.js): { step }. */
+/**
+ * The heartbeat while the PDF is made (scoresheetPdfRequest.js): { step },
+ * and once at each step of the capture { step, ms } (the time it took).
+ */
 export const MSG_PDF_PROGRESS = 'pdfProgress'
 /**
  * The approval's request id in this page's URL (`pdfReq`, scoresheetPdfRequest.js).
@@ -67,12 +70,14 @@ function withRequestId(message, win) {
   return req ? { ...message, req } : message
 }
 
-/** Tells the opener the PDF is still being made. */
+/** Tells the opener the PDF is still being made (`ms`: the time a step took, numbers only). */
 export function reportPdfProgress(progress = {}, win = window) {
   const opener = getOpenerWindow(win)
   if (!opener) return false
   try {
-    opener.postMessage(withRequestId({ type: MSG_PDF_PROGRESS, step: progress.step ?? null }, win), win.location.origin)
+    const message = { type: MSG_PDF_PROGRESS, step: progress.step ?? null }
+    if (Number.isFinite(progress.ms)) message.ms = Math.round(progress.ms)
+    opener.postMessage(withRequestId(message, win), win.location.origin)
     return true
   } catch {
     return false

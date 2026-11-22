@@ -275,6 +275,47 @@ describe('Save PDF', () => {
     expect(clicked).toHaveLength(0)
   })
 
+  // Perf pass 22.11.2026: the tablet's 43 s approval PDF was one number; the
+  // page's heartbeat runs on the thread the capture holds (in-app view)
+  it('getBlob for the approval: each step of the capture tells the opener the time it took, numbers only', async () => {
+    const posted: any[] = []
+    const opener = { closed: false, postMessage: (m: any) => posted.push(m) }
+    const own = Object.getOwnPropertyDescriptor(window, 'opener')
+    Object.defineProperty(window, 'opener', { configurable: true, value: opener })
+    const close = vi.spyOn(window, 'close').mockImplementation(() => {})
+    try {
+      render(<App matchData={fixture()} autoAction="getBlob" dataReady />)
+      await waitFor(() => expect(posted.some(m => m.type === 'pdfBlob')).toBe(true), { timeout: 4000 })
+      const steps = posted.filter(m => m.type === 'pdfProgress' && 'ms' in m)
+      expect(steps.map(m => m.step)).toEqual(['capture', 'styles', 'canvas', 'jpeg', 'pdf'])
+      for (const m of steps) {
+        expect(Object.keys(m).sort()).toEqual(['ms', 'step', 'type'])
+        expect(Number.isInteger(m.ms) && m.ms >= 0).toBe(true)
+      }
+      // ... before the PDF, which comes last
+      expect(posted.findIndex(m => m.type === 'pdfBlob')).toBeGreaterThan(posted.indexOf(steps[4]))
+    } finally {
+      close.mockRestore()
+      if (own) Object.defineProperty(window, 'opener', own)
+      else delete (window as any).opener
+    }
+  })
+
+  it('getBlob for the manager (onBlob, the PDF stays on its page) reports no steps to anyone', async () => {
+    const posted: any[] = []
+    const own = Object.getOwnPropertyDescriptor(window, 'opener')
+    Object.defineProperty(window, 'opener', { configurable: true, value: { closed: false, postMessage: (m: any) => posted.push(m) } })
+    try {
+      const got: any[] = []
+      render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+      await waitFor(() => expect(got).toHaveLength(1))
+      expect(posted.filter(m => m.type === 'pdfProgress')).toEqual([])
+    } finally {
+      if (own) Object.defineProperty(window, 'opener', own)
+      else delete (window as any).opener
+    }
+  })
+
   it('Chromium (Brave, the manager\'s Rebuild PDF) copies only the styles the sheet uses, in one capture: the copy of every property took ~10 s', async () => {
     const htmlToImage: any = await import('html-to-image')
     htmlToImage.toCanvas.mockClear()

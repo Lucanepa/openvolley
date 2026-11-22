@@ -494,6 +494,27 @@ describe('MatchEnd: the approval PDF in the activity log', () => {
     expect(typeof log[3].ms).toBe('number')
   })
 
+  // Perf pass 22.11.2026: the tablet's 43 s was one number
+  it('the PDF that came, and where its time went (the page\'s own steps, numbers only)', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    const req = reqOf(opened[0])
+    await postFromSheet({ type: 'pdfProgress', step: 'loading', req })
+    await postFromSheet({ type: 'pdfProgress', step: 'capture', ms: 3100, req })
+    await postFromSheet({ type: 'pdfProgress', step: 'styles', ms: 2000, req })
+    // the heartbeat: no time, its step already heard
+    await postFromSheet({ type: 'pdfProgress', step: 'capture', req })
+    await postFromSheet({ type: 'pdfProgress', step: 'canvas', ms: 26100, req })
+    await postFromSheet({ type: 'pdfProgress', step: 'jpeg', ms: 900, req })
+    await postFromSheet({ type: 'pdfProgress', step: 'pdf', ms: 1200, req })
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf', req })
+    await findButton(en.matchEnd.closeMatch)
+    const log = pdfLog()
+    expect(log.map(e => e.step)).toEqual(['requested', 'received', 'timing'])
+    expect(log[2]).toMatchObject({ level: 'info', purpose: 'approval', attempt: 1, matchId: 1, ms: log[1].ms })
+    expect(log[2].reason).toMatch(/^load=\d+ capture=\d+ page=3100 styles=2000 canvas=26100 jpeg=900 pdf=1200 events=0 dpr=1 zoom=1$/)
+  })
+
   it('Approve without PDF is an error entry with the reason', async () => {
     render(<MatchEnd matchId={1} />)
     await approve()

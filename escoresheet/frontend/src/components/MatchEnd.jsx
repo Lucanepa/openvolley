@@ -44,7 +44,7 @@ import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { prefersShare, shareFile } from '../utils/shareFile'
 import { waitForScoresheetPdf, PDF_FAIL, PDF_REQUEST_PARAM } from '../utils/scoresheetPdfRequest'
-import { logScoresheetPdf } from '../utils/scoresheetPdfLog'
+import { logScoresheetPdf, measuredTextZoom, pdfTimingText } from '../utils/scoresheetPdfLog'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal, matchForfeitOf, restoredSetWrites, resultIssues } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
@@ -1380,21 +1380,38 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // Approve without PDF (canSkip: the approval only) or Cancel.
   // OpenBeach video 2026-10-08: closing the window hung the approval.
   // Resolves to { pdfResult, choice: 'pdf' | 'skip' | 'cancel', reason }.
-  // Each attempt and its outcome go to the activity log (scoresheet.pdf).
+  // Each attempt and its outcome go to the activity log (scoresheet.pdf),
+  // and with the PDF where its time went on this device ('timing': the
+  // page's load and each capture step; the tablet's 43 s, 2026-11-22, was
+  // one number).
   const requestPdf = async ({ canSkip = true, purpose = 'approval' } = {}) => {
     for (let attempt = 1; ; attempt += 1) {
       const abort = new AbortController()
       exportAbortRef.current = abort
       const startedAt = Date.now()
+      // each step of the page, when first heard here and the time it took there
+      const heard = {}
+      const onProgress = ({ step, ms }) => {
+        if (step && !heard[step]) heard[step] = { at: Date.now() - startedAt, ms }
+      }
       logScoresheetPdf('requested', { purpose, attempt }, { matchId })
       try {
         const pdfResult = await waitForScoresheetPdf(
           // pdfReq: the page's answers name this attempt (a window of an
           // earlier one, closed by Cancel or a stall, is ignored)
           (req) => openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob&${PDF_REQUEST_PARAM}=${encodeURIComponent(req)}`, { features: 'width=1600,height=1200', title: t('header.scoresheet') }),
-          { signal: abort.signal }
+          { signal: abort.signal, onProgress }
         )
-        logScoresheetPdf('received', { purpose, attempt, bytes: pdfResult?.blob?.size, ms: Date.now() - startedAt }, { matchId })
+        const totalMs = Date.now() - startedAt
+        logScoresheetPdf('received', { purpose, attempt, bytes: pdfResult?.blob?.size, ms: totalMs }, { matchId })
+        if (Object.keys(heard).length) {
+          logScoresheetPdf('timing', {
+            purpose,
+            attempt,
+            reason: pdfTimingText(heard, totalMs, { events: events?.length, dpr: window.devicePixelRatio, zoom: measuredTextZoom() }),
+            ms: totalMs
+          }, { matchId })
+        }
         setDownloadProgress(prev => (prev ? { ...prev, pdf: true } : prev))
         return { pdfResult, choice: 'pdf', reason: null }
       } catch (pdfError) {

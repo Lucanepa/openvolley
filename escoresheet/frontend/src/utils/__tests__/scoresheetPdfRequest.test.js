@@ -105,6 +105,19 @@ describe('waitForScoresheetPdf', () => {
 })
 
 describe('the Android in-app view reports when it is closed', () => {
+  // Perf pass 22.11.2026: the tablet's 43 s was one number; each step of the
+  // capture now tells the approval the time it took
+  it('hands each step and the time it took to onProgress (the heartbeat has no time)', async () => {
+    const progress = vi.fn()
+    const p = waitForScoresheetPdf(() => ({ ok: true, window: { closed: false } }), { onProgress: progress })
+    post({ type: MSG_PDF_PROGRESS, step: 'loading' })
+    post({ type: MSG_PDF_PROGRESS, step: 'styles', ms: 2012 })
+    post({ type: MSG_PDF_PROGRESS, step: 'canvas', ms: 'slow' })
+    post({ type: MSG_PDF_BLOB, arrayBuffer: new ArrayBuffer(4), filename: 'a.pdf' })
+    await p
+    expect(progress.mock.calls.map(c => c[0])).toEqual([{ step: 'loading' }, { step: 'styles', ms: 2012 }, { step: 'canvas' }])
+  })
+
   it('isClosed() turns true once the view is gone (its iframe window keeps closed = false)', () => {
     const r = openAppWindow('/scoresheet/?matchId=7&action=getBlob', { platform: 'capacitor' })
     expect(r.isClosed()).toBe(false)
@@ -132,6 +145,16 @@ describe('the scoresheet window side', () => {
     const w = fakeWin()
     expect(reportPdfProgress({ step: 'capture' }, w)).toBe(true)
     expect(w.opener.postMessage).toHaveBeenCalledWith({ type: MSG_PDF_PROGRESS, step: 'capture' }, 'http://x')
+  })
+
+  it('reports a step with the time it took (whole ms), and no time that is not a number', () => {
+    const w = fakeWin()
+    reportPdfProgress({ step: 'canvas', ms: 26104.6 }, w)
+    reportPdfProgress({ step: 'jpeg', ms: NaN }, w)
+    expect(w.opener.postMessage.mock.calls.map(c => c[0])).toEqual([
+      { type: MSG_PDF_PROGRESS, step: 'canvas', ms: 26105 },
+      { type: MSG_PDF_PROGRESS, step: 'jpeg' }
+    ])
   })
 
   it('closing the window while busy tells the opener once, and not when idle', () => {

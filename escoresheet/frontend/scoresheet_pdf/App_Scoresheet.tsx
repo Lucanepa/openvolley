@@ -342,6 +342,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const wasShowingLCS = showLCS;
     // the desktop app's quit question says a PDF is still being saved here
     setPdfBusy(true);
+    // the approval's log: this page's own time until now (load, read, render)
+    reportStep('capture', performance.now());
 
     // the view is gone (Rebuild PDF cancelled or timed out): stop here
     const stillShown = () => { if (!mountedRef.current) throw new CaptureAbandoned(); };
@@ -397,6 +399,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         includeStyleProperties: styleListFor(props),
         ...(fontCss ? { fontEmbedCSS: fontCss } : {}),
       });
+      // Each step's time from here on, for the approval's log (reportStep)
+      let lapAt = performance.now();
+      const lap = (step: string) => {
+        const now = performance.now();
+        reportStep(step, now - lapAt);
+        lapAt = now;
+      };
       // Every engine copies only the properties the sheet uses (utils/pdfCapture.ts):
       // the full copy was a ~100 MB SVG that took ~10 s in Chromium (Brave) and
       // that WebKit cannot load at all. WebKit (the Linux and macOS desktop apps,
@@ -410,11 +419,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         const showPictures = hideImages(pictures);
         let c: HTMLCanvasElement;
         try {
-          c = await capture(usedStyleProperties(sheet!));
+          const props = usedStyleProperties(sheet!);
+          lap('styles');
+          c = await capture(props);
         } finally {
           showPictures();
         }
         drawImagesOnto(c, sheet!, pictures);
+        lap('canvas');
         return c;
       };
       let canvas: HTMLCanvasElement;
@@ -425,9 +437,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           canvas = await leanWithPictures();
         } else {
           try {
-            canvas = await capture(usedStyleProperties(sheet!));
+            const props = usedStyleProperties(sheet!);
+            lap('styles');
+            canvas = await capture(props);
+            lap('canvas');
           } catch (err) {
             console.warn('[Scoresheet] Capture failed, retrying with the pictures drawn afterwards:', err);
+            lap('retry');
             stillShown();
             canvas = await leanWithPictures();
           }
@@ -440,6 +456,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       assertCanvas(canvas);
 
       const imgData = canvas.toDataURL('image/jpeg', 0.85);
+      lap('jpeg');
       assertJpegDataUrl(imgData);
 
       // A3 landscape (420 x 297 mm); the 410 x 287 mm sheet placed at its true size,
@@ -477,6 +494,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
       stillShown();
       const bytes = pdf.output('arraybuffer');
+      lap('pdf');
       assertValidPdf(bytes);
       const pdfBlob = new Blob([bytes], { type: 'application/pdf' });
 
@@ -545,6 +563,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   onBlobRef.current = onBlob;
   // true while the approval (getBlob) still waits for this window's PDF
   const approvalBusyRef = useRef(autoAction === 'getBlob');
+  // The approval's log (MatchEnd: 'timing'): one message at each step of the
+  // capture with the time it took here, numbers only. The beat below runs on
+  // the thread the capture holds, so on the Android in-app view it is heard
+  // late. Never throws: a step of the capture never fails for it.
+  const reportStep = (step: string, ms: number) => {
+    try {
+      if (autoAction !== 'getBlob' || onBlobRef.current || !approvalBusyRef.current) return;
+      reportPdfProgress({ step, ms });
+    } catch { /* the log only */ }
+  };
   useEffect(() => {
     if (!autoAction || autoAction === 'preview' || !dataReady || autoActionDone.current) return;
     autoActionDone.current = true;
