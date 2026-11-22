@@ -6463,12 +6463,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.warn('[Scoreboard] Start rally on a match that is over: ignored')
       return
     }
-    if (await readRallyStatus() === 'in_play') {
+    // The sets and the set's events, read once for the in-play check, the
+    // set won and the first-rally gates below (nothing is written before the
+    // rally_start). The events of the set being played only (readSetEvents):
+    // those checks look at no other row; none for the set, the whole match
+    const playedSet = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
+    const setIndexNow = playedSet?.index ?? data?.set?.index
+    const eventsNow = await readSetEvents(setIndexNow)
+    // (as readRallyStatus: no set, no rally in play)
+    if (playedSet && rallyStatusOf(eventsNow, playedSet.index) === 'in_play') {
       console.warn('[Scoreboard] Start rally with a rally in play (the screen was behind): ignored')
       return
     }
     // Nor in a set its score has won (its Set end dialog is open)
-    const playedSet = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
     if (playedSet && getSetResult(playedSet.homePoints, playedSet.awayPoints, playedSet.index, { targets: setTargetsRef.current }).isSetWon) {
       console.warn('[Scoreboard] Start rally in a set its score has already won: ignored')
       return
@@ -6506,9 +6513,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     // If this is the first rally, show set start time confirmation. Read
-    // from the database, as the gates below: the screen can be behind
-    const eventsNow = await db.events.where('matchId').equals(matchId).toArray()
-    const setIndexNow = playedSet?.index ?? data?.set?.index
+    // from the database (above), as the gates below: the screen can be behind
     if (isFirstRallyOf(eventsNow, setIndexNow)) {
       // Both starting line-ups first (an Easy match excepted). Start set is
       // disabled without them, but Enter (keyboard scoring) came here
@@ -6577,7 +6582,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       clearTimeout(recentSubFlashTimeoutRef.current)
     }
     deferUi(() => setRecentlySubstitutedPlayers([]))
-  }), [logEvent, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus, showAlert, t])
+  }), [logEvent, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readSetEvents, showAlert, t])
 
   // A tap on the rally buttons (Start rally, Point A | Point B), on every
   // layout, with its click event: none that is the end of the tap before it

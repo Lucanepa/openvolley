@@ -379,8 +379,9 @@ describe('the tap path, recorded', () => {
     await set1At1to0(matchId)
     mount(matchId)
     const rally = await startRally()
-    // readRallyStatus (the set's rows only), the first-rally check
-    expectReads('rallyStart', rally, { match: 1, set: 1 })
+    // one read of the set's rows for the in-play and the first-rally checks
+    // (was 2 of the whole match)
+    expectReads('rallyStart', rally, { match: 0, set: 1 })
     await expectGolden('rallyStart')
     const reads = await point('A', 2)
     // the point's one read (its tap check and the serve before it; was 2),
@@ -478,8 +479,9 @@ describe('the tap path, recorded', () => {
     fireEvent.keyDown(window, { key: 'Enter' })
     await waitFor(() => expect(document.body.textContent).toMatch(/Enter both starting line-ups first/), { timeout: 5000 })
     await quiet()
-    // the rally status read (the set's rows), the first-rally / line-up read
-    expectReads('firstRallyGate', eventReadsSince(from), { match: 1, set: 1 })
+    // one read of the set's rows: the rally status, the first rally, the
+    // line-ups (was 2 of the whole match)
+    expectReads('firstRallyGate', eventReadsSince(from), { match: 0, set: 1 })
     await expectGolden('firstRallyGate')
 
     // away's line-up in (as the line-up dialog writes it): Start set asks the
@@ -492,7 +494,7 @@ describe('the tap path, recorded', () => {
     from = startRecording()
     fireEvent.click(button('Start set'))
     await waitFor(() => expect(document.body.textContent).toMatch(/Set 2 start time/), { timeout: 8000 })
-    expectReads('firstRallyStartSet', eventReadsSince(from), { match: 1, set: 1 })
+    expectReads('firstRallyStartSet', eventReadsSince(from), { match: 0, set: 1 })
     await settle()
     fireEvent.click(findButton(/^Confirm$/))
     await waitFor(async () => expect((await ofType('rally_start')).filter(e => e.setIndex === 2)).toHaveLength(1), { timeout: 8000 })
