@@ -16757,7 +16757,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: '12px',
                             cursor: 'pointer',
                             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                            animation: 'lineupFlash 1.5s ease-in-out infinite'
+                            // still under the line-up dialog, which covers it: a
+                            // flash there redraws the dialog's blurred backdrop
+                            animation: lineupModal ? 'none' : 'lineupFlash 1.5s ease-in-out infinite'
                           }}
                         >
                           <span>{t('scoreboard.lineup', 'Line-up')}</span>
@@ -16790,7 +16792,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: '12px',
                             cursor: 'pointer',
                             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                            animation: 'lineupFlash 1.5s ease-in-out infinite'
+                            animation: lineupModal ? 'none' : 'lineupFlash 1.5s ease-in-out infinite'
                           }}
                         >
                           <span>{t('scoreboard.lineup', 'Line-up')}</span>

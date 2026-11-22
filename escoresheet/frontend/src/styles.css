@@ -2078,17 +2078,77 @@ button:disabled {
   }
 }
 
+/* The Line-up buttons on the court before a set (Scoreboard.jsx): the button
+   fades to 0.7 and back while its green glow widens from 20 to 30 px. Only
+   opacity is animated, so the flash runs on the compositor; a box-shadow in
+   the keyframes made the main thread restyle, paint and raster the large
+   button 60 times a second through the whole line-up entry. The two glows
+   are layers of their own that cross-fade (::before the narrow one, ::after
+   the wide one). They take the button's own animation (inline, none while
+   the line-up dialog is open over it), so the three run in step and stop
+   together; stopped, the button has no glow (as in eink before). */
+.lineup-button::before,
+.lineup-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  animation: inherit;
+}
+
+.lineup-button::before {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+  animation-name: lineupGlowNarrow;
+}
+
+.lineup-button::after {
+  box-shadow: 0 0 30px rgba(34, 197, 94, 0.8);
+  animation-name: lineupGlowWide;
+}
+
 @keyframes lineupFlash {
 
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(34, 197, 94, 0.5);
   }
 
   50% {
     opacity: 0.7;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 30px rgba(34, 197, 94, 0.8);
+  }
+}
+
+@keyframes lineupGlowNarrow {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes lineupGlowWide {
+
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Reduced motion (Android's Remove animations): the Line-up buttons stand
+   still. Their animation is inline, which only !important beats. */
+@media (prefers-reduced-motion: reduce) {
+  .lineup-button {
+    animation: none !important;
   }
 }
 
