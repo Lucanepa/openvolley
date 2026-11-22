@@ -10,10 +10,11 @@
 // App render: no memo, no state of its own).
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
-import { waitFor, cleanup, act, fireEvent } from '@testing-library/react'
+import { waitFor, cleanup, act, fireEvent, screen } from '@testing-library/react'
 import { offline, online, mountApp, sleep, button } from './appMount'
 import { db } from '../db/db'
 import { preloadScoreboard } from '../components/Scoreboard'
+import { getConfirmSnapshot, settleConfirm } from '../ui/uiStore'
 import { seedMatch, reloadInto } from './selfCheckFixtures'
 
 const seen = vi.hoisted(() => ({ scoreboard: [], app: 0 }))
@@ -36,6 +37,8 @@ beforeAll(offline)
 afterAll(online)
 beforeEach(async () => {
   cleanup()
+  // a dialog a failed test left open
+  for (let open = getConfirmSnapshot(); open; open = getConfirmSnapshot()) settleConfirm(open.id, false)
   await Promise.all(db.tables.map(table => table.clear()))
   sessionStorage.clear()
   seen.scoreboard.length = 0
@@ -133,4 +136,87 @@ describe('App renders stop at the scoring screen', () => {
     await waitFor(() => expect(stubShown()).toBe(true))
     expect(preloadScoreboard).toHaveBeenCalledTimes(1)
   })
+
+  // Save waits for the scoreboard's read too (above): until the scoring screen
+  // is back, the editor still shows the saved changes. A second tap of Save
+  // logged them twice and queued a second match update (review P2-R1); a tap
+  // of Close asked to discard changes already saved.
+  it('Save from the scoreboard: saved once, the editor locked until the scoring screen is back', async () => {
+    const matchId = await openScoringScreen({ hall: 'North Hall' })
+    const first = seen.scoreboard[0]
+    await act(async () => { first.onOpenMatchInfo() })
+    let hall
+    await waitFor(() => {
+      hall = screen.getByRole('textbox', { name: 'Hall' })
+      expect(hall.value).toBe('North Hall')
+    }, { timeout: 5000 })
+    fireEvent.change(hall, { target: { value: 'South Hall' } })
+    await waitFor(() => expect(button('Save changes (1)')).toBeTruthy())
+    const matchJobs = async () => (await db.sync_queue.toArray()).filter(j => j.resource === 'match')
+    const jobsBefore = (await matchJobs()).length
+
+    let readDone
+    vi.mocked(preloadScoreboard).mockClear()
+    vi.mocked(preloadScoreboard).mockImplementationOnce(() => new Promise(resolve => { readDone = resolve }))
+    const save = button('Save changes (1)')
+    fireEvent.click(save)
+    await waitFor(() => expect(preloadScoreboard).toHaveBeenCalledWith(matchId))
+    await sleep(200)
+    expect(stubShown()).toBe(false)
+    expect((await db.matches.get(matchId)).manualChanges).toHaveLength(1)
+    // the read is under way: Save stays "Saving...", a second tap and Close do nothing
+    expect(save.disabled).toBe(true)
+    expect(button('Save changes (1)')).toBeUndefined()
+    fireEvent.click(save)
+    fireEvent.click(button('Close'))
+    await sleep(300)
+    expect(getConfirmSnapshot()).toBeNull()
+    expect((await db.matches.get(matchId)).manualChanges).toHaveLength(1)
+
+    await act(async () => { readDone() })
+    await waitFor(() => expect(stubShown()).toBe(true))
+    await sleep(200)
+    expect(preloadScoreboard).toHaveBeenCalledTimes(1)
+    const after = await db.matches.get(matchId)
+    expect(after.hall).toBe('South Hall')
+    expect(after.manualChanges).toHaveLength(1)
+    expect((await matchJobs()).length - jobsBefore).toBe(1)
+    expect(getConfirmSnapshot()).toBeNull()
+  }, 30000)
+
+  it('Close and Discard from the scoreboard: nothing is saved while the scoring screen comes back', async () => {
+    const matchId = await openScoringScreen({ hall: 'North Hall' })
+    const first = seen.scoreboard[0]
+    await act(async () => { first.onOpenMatchInfo() })
+    let hall
+    await waitFor(() => {
+      hall = screen.getByRole('textbox', { name: 'Hall' })
+      expect(hall.value).toBe('North Hall')
+    }, { timeout: 5000 })
+    fireEvent.change(hall, { target: { value: 'South Hall' } })
+    await waitFor(() => expect(button('Save changes (1)')).toBeTruthy())
+    const save = button('Save changes (1)')
+
+    let readDone
+    vi.mocked(preloadScoreboard).mockClear()
+    vi.mocked(preloadScoreboard).mockImplementationOnce(() => new Promise(resolve => { readDone = resolve }))
+    fireEvent.click(button('Close'))
+    await waitFor(() => expect(getConfirmSnapshot()?.title).toBe('Discard unsaved changes?'))
+    await act(async () => { settleConfirm(getConfirmSnapshot().id, true) })
+    await waitFor(() => expect(preloadScoreboard).toHaveBeenCalledWith(matchId))
+    // the read is under way: the discarded changes cannot be saved
+    await waitFor(() => expect(save.disabled).toBe(true))
+    fireEvent.click(save)
+    await sleep(300)
+    expect(stubShown()).toBe(false)
+
+    await act(async () => { readDone() })
+    await waitFor(() => expect(stubShown()).toBe(true))
+    await sleep(200)
+    const after = await db.matches.get(matchId)
+    expect(after.hall).toBe('North Hall')
+    expect(after.manualChanges ?? []).toHaveLength(0)
+    expect((await db.sync_queue.toArray()).filter(j => j.resource === 'match')).toHaveLength(0)
+    expect(preloadScoreboard).toHaveBeenCalledTimes(1)
+  }, 30000)
 })
