@@ -1,0 +1,419 @@
+<div>
+  <div class="match-record">
+    <div>
+      <div class="match-toolbar shadow-card">
+        <div>
+          <span class="toolbar-clock">
+            "21/11/2026 19:30:00"
+          <button aria-expanded="true" aria-label="Hide toolbar" class="relative inline-flex items-center justify-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-200/70 hover:text-stone-600 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1" data-testid="toolbar-toggle" title="Hide toolbar" type="button">
+            "▲"
+        <div>
+          <div>
+            <span>
+              "VC Beispielstadt"
+            <div>
+              "B"
+        <div data-help-id="scoreboard-set-display">
+          <span>
+            "0"
+          <div>
+            <span>
+              "SET"
+            <span>
+              "2"
+          <span>
+            "1"
+        <div>
+          <div>
+            <div>
+              "A"
+            <span>
+              "VBC Musterau"
+        <div class="toolbar-actions">
+          <span data-phone-pair-dock="" data-variant="toolbar">
+          <div>
+            <button aria-expanded="false" aria-haspopup="menu" class="relative inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-700 font-semibold tracking-normal shadow-sm hover:bg-stone-50 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1" title="Scoresheet" type="button">
+              <svg aria-hidden="true" class="lucide lucide-file-text" fill="none" focusable="false" height="1em" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z">
+                <path d="M14 2v5a1 1 0 0 0 1 1h5">
+                <path d="M10 9H8">
+                <path d="M16 13H8">
+                <path d="M16 17H8">
+              <span>
+                "▼"
+          <div>
+            <button aria-expanded="false" aria-haspopup="menu" class="relative inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-700 font-semibold tracking-normal shadow-sm hover:bg-stone-50 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1" title="Match" type="button">
+              "Match"
+              <span>
+                "▼"
+    <div class="match-content">
+      <aside class="team-controls shadow-card" data-side="left">
+        <div class="team-info">
+          <div>
+            <span>
+              "B"
+            <span>
+              "-"
+            <span>
+              "BSP"
+        <div>
+          <div class="to-sub-counter" data-help-id="scoreboard-timeout-left">
+            <div class="to-sub-label">
+              "TO"
+            <div class="to-sub-value">
+              "0"
+          <div class="to-sub-counter">
+            <div class="to-sub-label">
+              "SUB"
+            <div class="to-sub-value">
+              "0"
+        <div data-testid="request-block-left">
+          "Set interval: no time-out (it would count in the next set)."
+        <div>
+          <button class="tap-hint tap-hint-sm">
+            "Improper request"
+          <button class="tap-hint tap-hint-sm">
+            "Delay warning"
+        <div>
+        <div>
+          <div data-help-id="scoreboard-bench-left">
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Bench"
+            <div class="bench-fit">
+              <div>
+                <div data-bench-player="1" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "1"
+                <div data-bench-player="2" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span title="captain">
+                    "2"
+                    <span aria-label="captain" data-testid="bench-captain-ring" role="img">
+                <div data-bench-player="3" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "3"
+                <div data-bench-player="4" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "4"
+                <div data-bench-player="5" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "5"
+                <div data-bench-player="6" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "6"
+                <div data-bench-player="7" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "7"
+                <div data-bench-player="8" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "8"
+                <div data-bench-player="9" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "9"
+                <div data-bench-player="10" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "10"
+                <div data-bench-player="11" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "11"
+                <div data-bench-player="12" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "12"
+          <div>
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Liberos"
+            <div class="bench-fit">
+              <div>
+                <div>
+                  <div data-bench-player="14" data-is-libero="true" data-tap-hint="" data-team="away" draggable="true">
+                    <span>
+                      "14"
+                    <span>
+                      "L1"
+          <div>
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Bench officials"
+            <div class="bench-fit">
+              <div data-testid="bench-officials-left">
+                <div aria-label="C Trainer Cleo" data-bench-official="Coach" data-tap-hint="" title="Trainer Cleo">
+                  <div>
+                    <span>
+                      "C"
+      <section class="court-wrapper">
+        <div>
+          <div class="serve-side">
+            <div class="serve-side__grid" data-side="left">
+              <div class="serve-side__indicator">
+                <img alt="Serving team" src="/src/ball_fallback.png">
+          <div>
+            <span data-testid="score-left">
+              "0"
+            <span>
+              ":"
+            <span data-testid="score-right">
+              "0"
+          <div class="serve-side">
+            <div class="serve-side__grid" data-side="right">
+              <div class="serve-side__indicator">
+                <img alt="Serving team" src="/src/ball_fallback.png">
+        <div class="court-slot">
+          <div class="court">
+            <div class="court-attack-line court-attack-left">
+            <div class="court-attack-line court-attack-right">
+            <button class="lineup-button lineup-button-left">
+              <span>
+                "Line-up"
+              <span>
+                "B"
+                "-"
+                "BSP"
+            <button class="lineup-button lineup-button-right">
+              <span>
+                "Line-up"
+              <span>
+                "A"
+                "-"
+                "MUS"
+            <div class="court-side court-side-left" data-help-id="scoreboard-court-left">
+              <div class="court-team court-team-left">
+                <div class="court-row court-row-front">
+                  <div class="court-player" data-court-position="IV" data-player-number="" data-team="away" draggable="false">
+                    <span class="court-player-position">
+                      "IV"
+                  <div class="court-player" data-court-position="III" data-player-number="" data-team="away" draggable="false">
+                    <span class="court-player-position">
+                      "III"
+                  <div class="court-player" data-court-position="II" data-player-number="" data-team="away" draggable="false">
+                    <span class="court-player-position">
+                      "II"
+                <div class="court-row court-row-back">
+                  <div class="court-player" data-court-position="V" data-player-number="" data-team="away">
+                    <span class="court-player-position">
+                      "V"
+                  <div class="court-player" data-court-position="VI" data-player-number="" data-team="away">
+                    <span class="court-player-position">
+                      "VI"
+                  <div class="court-player" data-court-position="I" data-player-number="" data-team="away">
+                    <img alt="Volleyball" src="/src/ball_fallback.png">
+                    <span class="court-player-position">
+                      "I"
+            <div class="court-net">
+            <div class="court-side court-side-right" data-help-id="scoreboard-court-right">
+              <div class="court-team court-team-right">
+                <div class="court-row court-row-front">
+                  <div class="court-player" data-court-position="II" data-player-number="" data-team="home" draggable="false">
+                    <span class="court-player-position">
+                      "II"
+                  <div class="court-player" data-court-position="III" data-player-number="" data-team="home" draggable="false">
+                    <span class="court-player-position">
+                      "III"
+                  <div class="court-player" data-court-position="IV" data-player-number="" data-team="home" draggable="false">
+                    <span class="court-player-position">
+                      "IV"
+                <div class="court-row court-row-back">
+                  <div class="court-player" data-court-position="I" data-player-number="" data-team="home">
+                    <span class="court-player-position">
+                      "I"
+                  <div class="court-player" data-court-position="VI" data-player-number="" data-team="home">
+                    <span class="court-player-position">
+                      "VI"
+                  <div class="court-player" data-court-position="V" data-player-number="" data-team="home">
+                    <span class="court-player-position">
+                      "V"
+        <div>
+        <div>
+          <div class="set-summary-col">
+            <div class="set-summary-card" data-set-summary="left">
+              <h4>
+                <span>
+                  "B"
+              <div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        "Set"
+                      <th>
+                        "P"
+                      <th>
+                        "W"
+                      <th>
+                        "S"
+                      <th>
+                        "T"
+                  <tbody>
+                    <tr>
+                      <td>
+                        "I"
+                      <td>
+                        "18"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                      <td>
+                        "1"
+                    <tr>
+                      <td>
+                        "II"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+          <div class="rally-controls">
+            <div>
+              "2:30"
+            <div>
+              <div>
+            <button class="secondary">
+              "End set interval"
+          <div class="set-summary-col">
+            <div class="set-summary-card" data-set-summary="right">
+              <h4>
+                <span>
+                  "A"
+              <div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        "Set"
+                      <th>
+                        "P"
+                      <th>
+                        "W"
+                      <th>
+                        "S"
+                      <th>
+                        "T"
+                  <tbody>
+                    <tr>
+                      <td>
+                        "I"
+                      <td>
+                        "25"
+                      <td>
+                        "1"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                    <tr>
+                      <td>
+                        "II"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+      <aside class="team-controls shadow-card" data-side="right">
+        <div class="team-info">
+          <div>
+            <span>
+              "A"
+            <span>
+              "-"
+            <span>
+              "MUS"
+        <div>
+          <div class="to-sub-counter" data-help-id="scoreboard-timeout-right">
+            <div class="to-sub-label">
+              "TO"
+            <div class="to-sub-value">
+              "0"
+          <div class="to-sub-counter">
+            <div class="to-sub-label">
+              "SUB"
+            <div class="to-sub-value">
+              "0"
+        <div data-testid="request-block-right">
+          "Set interval: no time-out (it would count in the next set)."
+        <div>
+          <button class="tap-hint tap-hint-sm">
+            "Improper request"
+          <button class="tap-hint tap-hint-sm">
+            "Delay warning"
+        <div>
+        <div>
+          <div data-help-id="scoreboard-bench-right">
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Bench"
+            <div class="bench-fit">
+              <div>
+                <div data-bench-player="1" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span title="captain">
+                    "1"
+                    <span aria-label="captain" data-testid="bench-captain-ring" role="img">
+                <div data-bench-player="2" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "2"
+                <div data-bench-player="3" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "3"
+                <div data-bench-player="4" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "4"
+                <div data-bench-player="5" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "5"
+                <div data-bench-player="6" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "6"
+                <div data-bench-player="7" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "7"
+                <div data-bench-player="8" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "8"
+                <div data-bench-player="9" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "9"
+                <div data-bench-player="10" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "10"
+                <div data-bench-player="14" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "14"
+          <div>
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Liberos"
+            <div class="bench-fit">
+              <div>
+                <div>
+                  <div data-bench-player="11" data-is-libero="true" data-tap-hint="" data-team="home" draggable="true">
+                    <span>
+                      "11"
+                    <span>
+                      "L2"
+                <div>
+                  <div data-bench-player="12" data-is-libero="true" data-tap-hint="" data-team="home" draggable="true">
+                    <span>
+                      "12"
+                    <span>
+                      "L1"
+          <div>
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Bench officials"
+            <div class="bench-fit">
+              <div data-testid="bench-officials-right">
+                <div aria-label="C Coach Cora" data-bench-official="Coach" data-tap-hint="" title="Coach Cora">
+                  <div>
+                    <span>
+                      "C"
+                <div aria-label="AC1 Assist Ada" data-bench-official="Assistant Coach 1" data-tap-hint="" title="Assist Ada">
+                  <div>
+                    <span>
+                      "AC1"
+<video loop="" muted="" playsinline="" src="data:video/mp4;base64,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">

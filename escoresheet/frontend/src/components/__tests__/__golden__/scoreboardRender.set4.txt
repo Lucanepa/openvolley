@@ -1,0 +1,504 @@
+<div>
+  <div class="match-record">
+    <div>
+      <div class="match-toolbar shadow-card">
+        <div>
+          <span class="toolbar-clock">
+            "21/11/2026 19:30:00"
+          <button aria-expanded="true" aria-label="Hide toolbar" class="relative inline-flex items-center justify-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-200/70 hover:text-stone-600 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1" data-testid="toolbar-toggle" title="Hide toolbar" type="button">
+            "▲"
+        <div>
+          <div>
+            <span>
+              "VC Beispielstadt"
+            <div>
+              "B"
+        <div data-help-id="scoreboard-set-display">
+          <span>
+            "1"
+          <div>
+            <span>
+              "SET"
+            <span>
+              "4"
+          <span>
+            "2"
+        <div>
+          <div>
+            <div>
+              "A"
+            <span>
+              "VBC Musterau"
+        <div class="toolbar-actions">
+          <span data-phone-pair-dock="" data-variant="toolbar">
+          <div>
+            <button aria-expanded="false" aria-haspopup="menu" class="relative inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-700 font-semibold tracking-normal shadow-sm hover:bg-stone-50 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1" title="Scoresheet" type="button">
+              <svg aria-hidden="true" class="lucide lucide-file-text" fill="none" focusable="false" height="1em" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z">
+                <path d="M14 2v5a1 1 0 0 0 1 1h5">
+                <path d="M10 9H8">
+                <path d="M16 13H8">
+                <path d="M16 17H8">
+              <span>
+                "▼"
+          <div>
+            <button aria-expanded="false" aria-haspopup="menu" class="relative inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-700 font-semibold tracking-normal shadow-sm hover:bg-stone-50 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1" title="Match" type="button">
+              "Match"
+              <span>
+                "▼"
+    <div class="match-content">
+      <aside class="team-controls shadow-card" data-side="left">
+        <div class="team-info">
+          <div>
+            <span>
+              "B"
+            <span>
+              "-"
+            <span>
+              "BSP"
+        <div>
+          <div class="to-sub-counter" data-help-id="scoreboard-timeout-left">
+            <svg aria-hidden="true" class="lucide lucide-pointer" data-tap-hint-icon="" data-testid="timeout-tap-hint-left" fill="none" height="24" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22 14a8 8 0 0 1-8 8">
+              <path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2">
+              <path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1">
+              <path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10">
+              <path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15">
+            <div class="to-sub-label">
+              "TO"
+            <div class="to-sub-value">
+              "1"
+          <div class="to-sub-counter" data-tap-hint="">
+            <div class="to-sub-label">
+              "SUB"
+            <div class="to-sub-value">
+              "1"
+        <div>
+          <button class="tap-hint tap-hint-sm">
+            "Improper request"
+          <button class="tap-hint tap-hint-sm">
+            "Delay warning"
+        <div>
+          <div>
+            <span aria-hidden="true" class="sanction-card yellow">
+            <span>
+              "Formal warning"
+        <div>
+          <div data-help-id="scoreboard-bench-left">
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Bench"
+            <div class="bench-fit">
+              <div>
+                <div data-bench-player="4" data-is-libero="false" data-tap-hint="" data-team="away" draggable="false">
+                  <span>
+                    "4"
+                  <span title="Exceptionally substituted - cannot play rest of match">
+                    "✕"
+                <div data-bench-player="5" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "5"
+                  <span>
+                    "L1"
+                <div data-bench-player="8" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "8"
+                <div data-bench-player="9" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "9"
+                  <span>
+                    <div class="sanction-card red">
+                <div data-bench-player="10" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "10"
+                <div data-bench-player="11" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "11"
+                <div data-bench-player="12" data-is-libero="false" data-tap-hint="" data-team="away" draggable="true">
+                  <span>
+                    "12"
+          <div>
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Bench officials"
+            <div class="bench-fit">
+              <div data-testid="bench-officials-left">
+                <div aria-label="C Trainer Cleo" data-bench-official="Coach" data-tap-hint="" title="Trainer Cleo">
+                  <div>
+                    <span>
+                      "C"
+      <section class="court-wrapper">
+        <div>
+          <div class="serve-side">
+            <div class="serve-side__grid" data-side="left">
+              <div class="serve-side__indicator">
+                <div data-serve-area="left">
+                  <div data-serve-indicator="left">
+                    <div>
+                      "Serve"
+                    <div data-serve-number-box="left">
+                      <span>
+                        "1"
+          <div>
+            <span data-testid="score-left">
+              "12"
+            <span>
+              ":"
+            <span data-testid="score-right">
+              "14"
+          <div class="serve-side">
+            <div class="serve-side__grid" data-side="right">
+              <div class="serve-side__indicator">
+                <div data-serve-area="right">
+                  <div data-serve-indicator="right">
+                    <div>
+                      "Serve"
+                    <div data-serve-number-box="right">
+                      <span>
+                        "1"
+        <div class="court-slot">
+          <div class="court">
+            <div class="court-attack-line court-attack-left">
+            <div class="court-attack-line court-attack-right">
+            <div class="court-side court-side-left" data-help-id="scoreboard-court-left">
+              <div class="court-team court-team-left">
+                <div class="court-row court-row-front">
+                  <div class="court-player" data-court-position="IV" data-player-number="7" data-team="away" draggable="true">
+                    <span>
+                      "4"
+                    <span class="court-player-position">
+                      "IV"
+                    "7"
+                  <div class="court-player" data-court-position="III" data-player-number="3" data-team="away" draggable="true">
+                    <span class="court-player-position">
+                      "III"
+                    "3"
+                  <div class="court-player" data-court-position="II" data-player-number="2" data-team="away" draggable="true">
+                    <span class="court-player-position">
+                      "II"
+                    <span class="court-player-captain">
+                      "C"
+                    "2"
+                    <div>
+                      <div>
+                        <div class="sanction-card yellow">
+                <div class="court-row court-row-back">
+                  <div class="court-player" data-court-position="V" data-player-number="14" data-team="away" draggable="true">
+                    <span>
+                      "5"
+                    <span class="court-player-position">
+                      "V"
+                    <span class="court-player-captain">
+                      "L"
+                    "14"
+                  <div class="court-player" data-court-position="VI" data-player-number="6" data-team="away" draggable="true">
+                    <span class="court-player-position">
+                      "VI"
+                    "6"
+                  <div class="court-player" data-court-position="I" data-player-number="1" data-team="away" draggable="true">
+                    <span class="court-player-position">
+                      "I"
+                    "1"
+            <div class="court-net">
+            <div class="court-side court-side-right" data-help-id="scoreboard-court-right">
+              <div class="court-team court-team-right">
+                <div class="court-row court-row-front">
+                  <div class="court-player" data-court-position="II" data-player-number="8" data-team="home" draggable="true">
+                    <span>
+                      "2"
+                    <span class="court-player-position">
+                      "II"
+                    "8"
+                  <div class="court-player" data-court-position="III" data-player-number="10" data-team="home" draggable="true">
+                    <span>
+                      "3"
+                    <span class="court-player-position">
+                      "III"
+                    "10"
+                  <div class="court-player" data-court-position="IV" data-player-number="4" data-team="home" draggable="true">
+                    <span class="court-player-position">
+                      "IV"
+                    "4"
+                    <div>
+                      <div>
+                        <div class="sanction-card yellow">
+                <div class="court-row court-row-back">
+                  <div class="court-player" data-court-position="I" data-player-number="1" data-team="home" draggable="true">
+                    <img alt="Volleyball" src="/src/ball_fallback.png">
+                    <span class="court-player-position">
+                      "I"
+                    <span class="court-player-captain">
+                      "C"
+                    "1"
+                  <div class="court-player" data-court-position="VI" data-player-number="12" data-team="home" draggable="true">
+                    <span>
+                      "6"
+                    <span class="court-player-position">
+                      "VI"
+                    <span class="court-player-captain">
+                      <span>
+                        "L1"
+                    "12"
+                  <div class="court-player" data-court-position="V" data-player-number="5" data-team="home" draggable="true">
+                    <span class="court-player-position">
+                      "V"
+                    "5"
+        <div>
+        <div>
+          <div class="set-summary-col">
+            <div class="set-summary-card" data-set-summary="left">
+              <h4>
+                <span>
+                  "B"
+              <div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        "Set"
+                      <th>
+                        "P"
+                      <th>
+                        "W"
+                      <th>
+                        "S"
+                      <th>
+                        "T"
+                  <tbody>
+                    <tr>
+                      <td>
+                        "I"
+                      <td>
+                        "20"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                      <td>
+                        "1"
+                    <tr>
+                      <td>
+                        "II"
+                      <td>
+                        "25"
+                      <td>
+                        "1"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                    <tr>
+                      <td>
+                        "III"
+                      <td>
+                        "23"
+                      <td>
+                        "0"
+                      <td>
+                        "1"
+                      <td>
+                        "0"
+                    <tr>
+                      <td>
+                        "IV"
+                      <td>
+                        "12"
+                      <td>
+                        "0"
+                      <td>
+                        "1"
+                      <td>
+                        "1"
+          <div class="rally-controls">
+            <div class="rally-stack">
+              <div class="rally-stack-layer">
+                <button class="secondary start-rally-button tap-hint" data-help-id="scoreboard-start-rally">
+                  "Start rally"
+                <div class="rally-secondary-row">
+                  <button class="tap-hint">
+                    "Decision change"
+                  <button class="danger tap-hint" data-help-id="scoreboard-undo">
+                    "Undo"
+                <div>
+                  <div title="Point A · A 14:12 B">
+                    <span class="summary-label">
+                      "Last action:"
+                    <span class="summary-value">
+                      "Point A · A 14:12 B"
+                      <span>
+                        "(seq:"
+                        "107"
+                        ")"
+          <div class="set-summary-col">
+            <div class="set-summary-card" data-set-summary="right">
+              <h4>
+                <span>
+                  "A"
+              <div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        "Set"
+                      <th>
+                        "P"
+                      <th>
+                        "W"
+                      <th>
+                        "S"
+                      <th>
+                        "T"
+                  <tbody>
+                    <tr>
+                      <td>
+                        "I"
+                      <td>
+                        "25"
+                      <td>
+                        "1"
+                      <td>
+                        "1"
+                      <td>
+                        "0"
+                    <tr>
+                      <td>
+                        "II"
+                      <td>
+                        "22"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                      <td>
+                        "2"
+                    <tr>
+                      <td>
+                        "III"
+                      <td>
+                        "25"
+                      <td>
+                        "1"
+                      <td>
+                        "0"
+                      <td>
+                        "0"
+                    <tr>
+                      <td>
+                        "IV"
+                      <td>
+                        "14"
+                      <td>
+                        "0"
+                      <td>
+                        "4"
+                      <td>
+                        "1"
+      <aside class="team-controls shadow-card" data-side="right">
+        <div class="team-info">
+          <div>
+            <span>
+              "A"
+            <span>
+              "-"
+            <span>
+              "MUS"
+        <div>
+          <div class="to-sub-counter" data-help-id="scoreboard-timeout-right">
+            <svg aria-hidden="true" class="lucide lucide-pointer" data-tap-hint-icon="" data-testid="timeout-tap-hint-right" fill="none" height="24" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22 14a8 8 0 0 1-8 8">
+              <path d="M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2">
+              <path d="M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1">
+              <path d="M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10">
+              <path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15">
+            <div class="to-sub-label">
+              "TO"
+            <div class="to-sub-value">
+              "1"
+          <div class="to-sub-counter" data-tap-hint="">
+            <div class="to-sub-label">
+              "SUB"
+            <div class="to-sub-value">
+              "4"
+        <div>
+          <button class="tap-hint tap-hint-sm">
+            "Improper request"
+          <button class="tap-hint tap-hint-sm">
+            "Delay warning"
+        <div>
+          <div>
+            <span aria-hidden="true" class="sanction-card yellow">
+            <span>
+              "Formal warning"
+        <div>
+          <div data-help-id="scoreboard-bench-right">
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Bench"
+            <div class="bench-fit">
+              <div>
+                <div data-bench-player="2" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "2"
+                  <span>
+                    <span>
+                      "↑"
+                    <span>
+                      "↓"
+                    <span>
+                      "8"
+                <div data-bench-player="3" data-is-libero="false" data-tap-hint="" data-team="home" draggable="false">
+                  <span>
+                    "3"
+                  <span title="Expelled - cannot play this set">
+                    "✕"
+                  <span>
+                    <div>
+                      <div class="sanction-card yellow">
+                      <div class="sanction-card red">
+                <div data-bench-player="6" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "6"
+                  <span>
+                    "L1"
+                <div data-bench-player="7" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "7"
+                <div data-bench-player="9" data-is-libero="false" data-tap-hint="" data-team="home" draggable="false">
+                  <span>
+                    "9"
+                  <span>
+                    "✕"
+                <div data-bench-player="14" data-is-libero="false" data-tap-hint="" data-team="home" draggable="true">
+                  <span>
+                    "14"
+          <div>
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Liberos"
+            <div class="bench-fit">
+              <div>
+                <div>
+                  <div data-bench-player="11" data-is-libero="true" data-libero-state="injured" data-tap-hint="" data-team="home" draggable="false">
+                    <span>
+                      "11"
+                    <span>
+                      "L2"
+                    <span title="Injured: may play again as long as no new libero is re-designated in his place">
+                      "✚"
+          <div>
+            <h4 class="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800">
+              <span>
+                "Bench officials"
+            <div class="bench-fit">
+              <div data-testid="bench-officials-right">
+                <div aria-label="C Coach Cora" data-bench-official="Coach" data-tap-hint="" title="Coach Cora">
+                  <div>
+                    <span>
+                      "C"
+                    <span>
+                      <div class="sanction-card yellow">
+                <div aria-label="AC1 Assist Ada" data-bench-official="Assistant Coach 1" data-tap-hint="" title="Assist Ada">
+                  <div>
+                    <span>
+                      "AC1"
+<video loop="" muted="" playsinline="" src="data:video/mp4;base64,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">

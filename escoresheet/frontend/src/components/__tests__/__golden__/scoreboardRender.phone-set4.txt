@@ -1,0 +1,165 @@
+<div>
+  <div class="match-record phone-layout centre-dialogs">
+    <div class="ov-kit phone-scoreboard" data-testid="phone-scoreboard">
+      <header>
+        <span data-phone-pair-dock="" data-variant="phone">
+        <div>
+          <span data-testid="phone-header-sets">
+            "Set 4 · sets 2 : 1"
+          <span data-testid="phone-header-teams">
+            "VBC Musterau"
+            "–"
+            "VC Beispielstadt"
+        <button aria-label="Undo" title="Undo" type="button">
+          <svg aria-hidden="true" class="lucide lucide-undo-2" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg">
+            <path d="M9 14 4 9l5-5">
+            <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11">
+        <button aria-label="Menu" title="Menu" type="button">
+          <svg aria-hidden="true" class="lucide lucide-menu" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 5h16">
+            <path d="M4 12h16">
+            <path d="M4 19h16">
+      <section aria-label="Score">
+        <div>
+          <div>
+            <span>
+              "B · BSP"
+            <span aria-hidden="true">
+              <span>
+                "SERVE"
+            <span>
+              "Sets won: 1"
+          <span data-testid="phone-score-left">
+            "12"
+        <div>
+          <span data-testid="phone-score-right">
+            "14"
+          <div>
+            <span>
+              "A · MUS"
+            <span aria-hidden="false" aria-label="Serve #1" data-testid="phone-serve-pill">
+              <span>
+                "SERVE"
+              <span data-testid="phone-server-number">
+                "#"
+                "1"
+            <span>
+              "Sets won: 2"
+      <section aria-label="Court">
+        <div class="phone-court">
+          <div data-testid="phone-court-left">
+            <button aria-label="Player 14, team B, libero, in for 5" data-court-cell="V" type="button">
+              <span data-testid="phone-libero-left">
+                "14"
+                <span aria-hidden="true" data-testid="phone-mark-libero">
+                  "L"
+                <span aria-hidden="true" data-testid="phone-mark-replaced">
+                  "5"
+            <button aria-label="Player 7, team B, in for 4" data-court-cell="IV" type="button">
+              <span>
+                "7"
+                <span aria-hidden="true" data-testid="phone-mark-replaced">
+                  "4"
+            <button aria-label="Player 6, team B" data-court-cell="VI" type="button">
+              <span>
+                "6"
+            <button aria-label="Player 3, team B" data-court-cell="III" type="button">
+              <span>
+                "3"
+            <button aria-label="Player 1, team B" data-court-cell="I" type="button">
+              <span>
+                "1"
+            <button aria-label="Player 2, team B, captain" data-court-cell="II" type="button">
+              <span>
+                "2"
+                <span aria-hidden="true" data-testid="phone-mark-captain">
+          <div data-testid="phone-court-right">
+            <button aria-label="Player 8, team A, in for 2" data-court-cell="II" type="button">
+              <span>
+                "8"
+                <span aria-hidden="true" data-testid="phone-mark-replaced">
+                  "2"
+            <button aria-label="Player 1, team A, captain" data-court-cell="I" type="button">
+              <span>
+                "1"
+                <span aria-hidden="true" data-testid="phone-mark-captain">
+                <span aria-label="SERVE" data-testid="phone-serve-ball">
+            <button aria-label="Player 10, team A, in for 3" data-court-cell="III" type="button">
+              <span>
+                "10"
+                <span aria-hidden="true" data-testid="phone-mark-replaced">
+                  "3"
+            <button aria-label="Player 12, team A, libero, in for 6" data-court-cell="VI" type="button">
+              <span data-testid="phone-libero-right">
+                "12"
+                <span aria-hidden="true" data-testid="phone-mark-libero">
+                  "L"
+                <span aria-hidden="true" data-testid="phone-mark-replaced">
+                  "6"
+            <button aria-label="Player 4, team A" data-court-cell="IV" type="button">
+              <span>
+                "4"
+            <button aria-label="Player 5, team A" data-court-cell="V" type="button">
+              <span>
+                "5"
+      <section aria-label="Last actions" data-testid="phone-recent">
+        <span title="19:18 Point A · A 14:12 B">
+          <span data-testid="phone-recent-time">
+            "19:18"
+          <span>
+            "Point A · A 14:12 B"
+        <span title="19:18 Substitution A · #8 in for #2 · A 13:12 B">
+          <span data-testid="phone-recent-time">
+            "19:18"
+          <span>
+            "Substitution A · #8 in for #2 · A 13:12 B"
+        <span title="19:18 Point B · A 13:12 B">
+          <span data-testid="phone-recent-time">
+            "19:18"
+          <span>
+            "Point B · A 13:12 B"
+      <section aria-label="Team actions">
+        <div>
+          <button data-testid="phone-timeout-left" type="button">
+            <span>
+              "Time-out"
+            <span>
+              "1"
+          <button data-testid="phone-sub-left" type="button">
+            <span>
+              "SUB"
+            <span>
+              "1"
+        <div>
+          <button data-testid="phone-timeout-right" type="button">
+            <span>
+              "Time-out"
+            <span>
+              "1"
+          <button data-testid="phone-sub-right" type="button">
+            <span>
+              "SUB"
+            <span>
+              "4"
+      <section aria-label="Point buttons">
+        <div aria-hidden="true" class="phone-square">
+        <div aria-hidden="true" class="phone-square">
+        <div data-testid="phone-centre">
+          <button data-help-id="scoreboard-start-rally" type="button">
+            "Start rally"
+      <section aria-label="More actions">
+        <button data-testid="phone-action-libero" type="button">
+          "Libero"
+        <button data-testid="phone-action-sanction" type="button">
+          "Sanction"
+        <button data-testid="phone-action-replay" disabled="" type="button">
+          "Replay"
+        <button data-testid="phone-action-decision" type="button">
+          "Decision change"
+        <button data-testid="phone-action-rosters" type="button">
+          "Rosters"
+        <button data-testid="phone-action-scoresheet" type="button">
+          "Score­sheet"
+        <button data-testid="phone-action-remarks" type="button">
+          "Remarks"
+<video loop="" muted="" playsinline="" src="data:video/mp4;base64,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">
