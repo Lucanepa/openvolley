@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.24 · Aggiornata al 20 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.25 · Aggiornata al 22 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -636,6 +636,18 @@ PIN) all'indirizzo e-mail confermato del proprio account; l'app lo fa quando
 crea una partita. Non si può inserire nessun altro indirizzo. Per l'invio
 viene utilizzato il servizio Resend (USA) (sezione 15).
 
+**Invio del PIN della partita per e-mail:** subito dopo la creazione di una
+nuova partita ufficiale, l'app mostra una volta il suo PIN della partita. Un
+segnapunti che ha effettuato l'accesso può allora farsi inviare il PIN della
+partita all'indirizzo e-mail confermato del proprio account, con numero della
+partita, squadre, lega, data e ora. Non si invia nulla senza la sua
+richiesta, non si può inserire nessun altro indirizzo e il server invia il
+PIN solo se corrisponde a quello registrato per la partita. Il suo registro
+non contiene né il PIN né l'indirizzo. Per l'invio viene utilizzato il
+servizio Resend (USA) (sezione 15). L'app può anche aprire l'app e-mail del
+dispositivo con il PIN, per qualsiasi indirizzo; quel messaggio lo invia l'app
+e-mail e non passa dal mio server.
+
 ## 8. Visualizzazioni pubbliche: livescore, tabelloni LED, dati pubblici
 
 Senza account e senza PIN sono visibili:
@@ -977,7 +989,7 @@ l'esercizio. Essi trattano i dati per mio conto.
 | Infomaniak Network SA | Hosting del server: banca dati, file, sistema di ticket e pagina di download | Svizzera |
 | Cloudflare, Inc. | Distribuzione dei siti, DNS, connessione sicura al server | USA (rete mondiale) |
 | Migadu | Invio di e-mail (noreply@) e casella postale (support@) | Svizzera / Europa |
-| Resend, Inc. | Invio delle info della partita per e-mail (solo questa funzione, se attivata) | USA |
+| Resend, Inc. | Invio delle info della partita e del PIN della partita per e-mail (solo queste funzioni, se attivate) | USA |
 
 **Importante riguardo a Cloudflare:** la connessione cifrata del tuo
 dispositivo termina presso Cloudflare; da lì prosegue cifrata fino al mio

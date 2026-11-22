@@ -56,6 +56,7 @@ import { pairPageFile } from './lib/pairPage.js'
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIVE_MATCH_SQL, matchMailDateTime, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
+import { pinFromBody, pinMailText } from './lib/matchPinMail.js'
 // What the relay keeps of an anonymous socket's bundles and live states
 import { admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, relayRoomIsLocal, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
@@ -1627,7 +1628,8 @@ const rateLimitMaps = {
   clubApi: new Map(),   // /api/club/v1/*, per token
   clubApiIp: new Map(), // /api/club/v1/*, per IP
   publicApiStream: new Map(), // /api/public/v1/matches/:id/stream (new streams)
-  email: new Map(),     // /api/match/send-info, per IP
+  email: new Map(),     // /api/match/send-info, per IP and per user id
+  pinEmail: new Map(),  // /api/match/send-pin, per IP and per user id
   ical: new Map(),      // /api/official-matches, per IP
   db: new Map(),        // /api/db reads, per IP
   dbWrite: new Map(),   // /api/db writes, per user id
@@ -1654,6 +1656,64 @@ const rateLimitMaps = {
 // whole map, and never grows the heap without bound (the backend runs with
 // 256 MB; a key with its window takes about 170 bytes).
 const RATE_LIMIT_MAX_KEYS = 10000
+
+/**
+ * The steps every mail to the caller's own address takes before its own
+ * checks (POST /api/match/send-info and /send-pin), in this order: per address
+ * (`category`, EMAIL_RATE_LIMIT_MAX), the database mode, a session
+ * (layer.auth.requireUser), the Resend key, per account (the same category),
+ * then the JSON body. Answers the request itself and returns null on any
+ * refusal; else { layer, user, body }.
+ */
+async function ownMailRequest(req, res, category) {
+  if (isRateLimited(addressKey(req), EMAIL_RATE_LIMIT_MAX, category)) {
+    req.resume()
+    sendJson(res, 429, { success: false, error: 'Too many requests' }, { 'Retry-After': '60' })
+    return null
+  }
+  if (!DB_MODE) {
+    req.resume()
+    sendJson(res, 503, { success: false, error: 'Email not configured on server' })
+    return null
+  }
+  const layer = await getDataLayer()
+  const user = await layer.auth.requireUser(req, res)
+  if (!user) return null
+  if (!process.env.RESEND_API_KEY) {
+    req.resume()
+    sendJson(res, 503, { success: false, error: 'Email not configured on server' })
+    return null
+  }
+  if (isRateLimited(user.id, EMAIL_RATE_LIMIT_MAX, category)) {
+    req.resume()
+    sendJson(res, 429, { success: false, error: 'Too many requests' }, { 'Retry-After': '60' })
+    return null
+  }
+  let body
+  try {
+    body = await readJsonBody(req)
+  } catch {
+    sendJson(res, 400, { success: false, error: 'Invalid request' })
+    return null
+  }
+  return { layer, user, body }
+}
+
+/** A match row the account ($2) created or edits (alias m). */
+const OWN_MATCH_SQL = '(m.created_by = $2::uuid OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2::uuid))'
+
+/** May the account score a match of any sport? */
+async function canScoreSomeSport(layer, userId) {
+  const a = await layer.access.get(userId)
+  return MATCH_SPORTS.some((sport) => accessForSport(a, sport).canScore === true)
+}
+
+/** The account's own address when it is valid and confirmed, else null. */
+async function ownConfirmedAddress(layer, userId) {
+  const { rows: [u] } = await layer.db.pool.query('SELECT email FROM auth.users WHERE id = $1', [userId])
+  const confirmed = await layer.accounts.confirmationOf(layer.db.pool, userId)
+  return u?.email && isValidEmail(u.email) && confirmed && !confirmed.unconfirmed ? u.email : null
+}
 
 /**
  * The rate-limit key of a request's address. On the cloud the address bucket
@@ -3451,44 +3511,17 @@ function handleHttpRequest(req, res) {
   // stored match the account created or edits. It used to mail any typed
   // address a text from the request, the game PIN included.
   if (url.pathname === '/api/match/send-info' && req.method === 'POST') {
-    if (isRateLimited(addressKey(req), EMAIL_RATE_LIMIT_MAX, 'email')) {
-      sendJson(res, 429, { success: false, error: 'Too many requests' }, { 'Retry-After': '60' })
-      return
-    }
     ;(async () => {
       try {
-        if (!DB_MODE) {
-          req.resume()
-          sendJson(res, 503, { success: false, error: 'Email not configured on server' })
-          return
-        }
-        const layer = await getDataLayer()
-        const user = await layer.auth.requireUser(req, res)
-        if (!user) return
-        if (!process.env.RESEND_API_KEY) {
-          req.resume()
-          sendJson(res, 503, { success: false, error: 'Email not configured on server' })
-          return
-        }
-        if (isRateLimited(user.id, EMAIL_RATE_LIMIT_MAX, 'email')) {
-          req.resume()
-          sendJson(res, 429, { success: false, error: 'Too many requests' }, { 'Retry-After': '60' })
-          return
-        }
-        let body
-        try {
-          body = await readJsonBody(req)
-        } catch {
-          sendJson(res, 400, { success: false, error: 'Invalid request' })
-          return
-        }
+        const ok = await ownMailRequest(req, res, 'email')
+        if (!ok) return
+        const { layer, user, body } = ok
         const ext = typeof body?.externalId === 'string' ? body.externalId.trim() : ''
         if (!ext || ext.length > 200) {
           sendJson(res, 400, { success: false, error: 'Invalid request: externalId is required' })
           return
         }
-        const a = await layer.access.get(user.id)
-        if (!MATCH_SPORTS.some((sport) => accessForSport(a, sport).canScore === true)) {
+        if (!(await canScoreSomeSport(layer, user.id))) {
           sendJson(res, 403, { success: false, error: 'Only scorers can send match information' })
           return
         }
@@ -3497,15 +3530,14 @@ function handleHttpRequest(req, res) {
                   m.match_info->>'hall' AS hall, m.match_info->>'city' AS city, m.match_info->>'league' AS league
              FROM public.matches m
             WHERE m.external_id = $1
-              AND (m.created_by = $2::uuid OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2::uuid))
+              AND ${OWN_MATCH_SQL}
             LIMIT 1`, [ext, user.id])
         if (!m) {
           sendJson(res, 404, { success: false, error: 'Match not found' })
           return
         }
-        const { rows: [u] } = await layer.db.pool.query('SELECT email FROM auth.users WHERE id = $1', [user.id])
-        const confirmed = await layer.accounts.confirmationOf(layer.db.pool, user.id)
-        if (!u?.email || !isValidEmail(u.email) || !confirmed || confirmed.unconfirmed) {
+        const to = await ownConfirmedAddress(layer, user.id)
+        if (!to) {
           sendJson(res, 409, { success: false, code: 'OV_EMAIL_UNCONFIRMED', error: 'Confirm your email address first' })
           return
         }
@@ -3539,10 +3571,68 @@ League: ${text(m.league)}
 ---
 Generated by eScoresheet
 `.trim()
-        await sendViaResend(u.email, `Game ${gameN} eScoresheet`, emailBody)
+        await sendViaResend(to, `Game ${gameN} eScoresheet`, emailBody)
         sendJson(res, 200, { success: true, message: 'Match info sent to your account email' })
       } catch (err) {
         console.error('[Match Email] Error:', err?.message)
+        if (!res.headersSent) sendJson(res, 500, { success: false, error: 'Failed to send email' })
+      }
+    })()
+    return
+  }
+
+  // POST /api/match/send-pin { externalId, gamePin }: the game PIN to the
+  // signed-in scorer's own confirmed address (the PIN notice before the coin
+  // toss, "Send to my email"). The same guards as send-info: a session, a
+  // scorer, a match the account created or edits, EMAIL_RATE_LIMIT_MAX per
+  // address and per account (their own counters), Resend only. No address is
+  // read from the request. The server keeps the game PIN hashed
+  // (lib/pinHash.js): the app sends the PIN it shows, and it is mailed only
+  // when it matches the stored one (lib/matchPinMail.js). Logs carry neither
+  // the PIN nor the address.
+  if (url.pathname === '/api/match/send-pin' && req.method === 'POST') {
+    ;(async () => {
+      try {
+        const ok = await ownMailRequest(req, res, 'pinEmail')
+        if (!ok) return
+        const { layer, user, body } = ok
+        const ext = typeof body?.externalId === 'string' ? body.externalId.trim() : ''
+        const pin = pinFromBody(body?.gamePin)
+        if (!ext || ext.length > 200 || !pin) {
+          sendJson(res, 400, { success: false, error: 'Invalid request: externalId and gamePin are required' })
+          return
+        }
+        if (!(await canScoreSomeSport(layer, user.id))) {
+          sendJson(res, 403, { success: false, error: 'Only scorers can send the game PIN' })
+          return
+        }
+        const { rows: [m] } = await layer.db.pool.query(
+          `SELECT m.game_n, m.home_team, m.away_team, m.scheduled_at, m.game_pin,
+                  m.match_info->>'league' AS league
+             FROM public.matches m
+            WHERE m.external_id = $1
+              AND ${OWN_MATCH_SQL}
+            LIMIT 1`, [ext, user.id])
+        if (!m) {
+          sendJson(res, 404, { success: false, error: 'Match not found' })
+          return
+        }
+        // never an unchecked PIN: none stored, or another one, sends nothing
+        if (m.game_pin == null || String(m.game_pin).trim() === '' || !layer.pins.matches('game', pin, m.game_pin)) {
+          sendJson(res, 409, { success: false, code: 'OV_PIN_MISMATCH', error: 'This is not the game PIN of the match' })
+          return
+        }
+        const to = await ownConfirmedAddress(layer, user.id)
+        if (!to) {
+          sendJson(res, 409, { success: false, code: 'OV_EMAIL_UNCONFIRMED', error: 'Confirm your email address first' })
+          return
+        }
+        const { subject, text } = pinMailText(m, pin, matchMailDateTime(m.scheduled_at))
+        await sendViaResend(to, subject, text)
+        sendJson(res, 200, { success: true, message: 'Game PIN sent to your account email' })
+      } catch (err) {
+        // value-free (lib/opsLog.js): a provider message can name the address
+        console.error(`[Match PIN Email] send failed req=${req.ovRequestId || '-'} reason=${err?.name === 'AbortError' ? 'timeout' : 'error'}`)
         if (!res.headersSent) sendJson(res, 500, { success: false, error: 'Failed to send email' })
       }
     })()

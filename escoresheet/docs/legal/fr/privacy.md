@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.24 · État au 20 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.25 · État au 22 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -675,6 +675,18 @@ compte ; l'application le fait à la création d'un match. Aucune autre adresse
 ne peut être saisie. Le service Resend (États-Unis) est utilisé pour l'envoi
 (section 15).
 
+**Envoi du NIP du match par e-mail :** juste après la création d'un nouveau
+match officiel, l'application affiche une fois son NIP du match. Un marqueur
+connecté peut alors se faire envoyer le NIP de ce match à l'adresse e-mail
+confirmée de son propre compte, avec le numéro du match, les équipes, la
+ligue, la date et l'heure. Rien n'est envoyé sans sa demande, aucune autre
+adresse ne peut être saisie, et le serveur n'envoie le NIP que s'il
+correspond à celui enregistré pour ce match. Son journal ne contient ni le NIP
+ni l'adresse. Le service Resend (États-Unis) est utilisé pour l'envoi
+(section 15). L'application peut aussi ouvrir l'application e-mail de
+l'appareil avec le NIP, pour n'importe quelle adresse ; ce message est envoyé
+par l'application e-mail et ne passe pas par mon serveur.
+
 ## 8. Affichages publics : livescore, panneaux LED, données publiques
 
 Sans compte et sans NIP, sont visibles :
@@ -1032,7 +1044,7 @@ besoin pour l'exploitation. Ils traitent les données sur mandat.
 | Infomaniak Network SA | Hébergement du serveur : base de données, fichiers, helpdesk et page de téléchargement | Suisse |
 | Cloudflare, Inc. | Diffusion des sites, DNS, connexion sécurisée au serveur | États-Unis (réseau mondial) |
 | Migadu | Envoi d'e-mails (noreply@) et boîte aux lettres (support@) | Suisse / Europe |
-| Resend, Inc. | Envoi des infos du match par e-mail (seulement cette fonction, si activée) | États-Unis |
+| Resend, Inc. | Envoi des infos du match et du NIP du match par e-mail (seulement ces fonctions, si activées) | États-Unis |
 
 **Important concernant Cloudflare :** la connexion chiffrée de ton appareil
 se termine chez Cloudflare ; de là, elle se poursuit chiffrée jusqu'à mon

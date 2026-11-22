@@ -28,6 +28,8 @@ const ballImage = ballFallback
 import { parseRosterPdf, rosterPdfErrorText } from '../utils/parseRosterPdf'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { sendMatchInfoMail } from '../utils/matchInfoMail'
+import MatchPinNotice from './MatchPinNotice'
+import { needsPinNotice, scorerEmailOf } from '../utils/pinNotice'
 import { exportMatchData, officialsFromCloud } from '../utils/backupManager'
 import { clearSetupDraft, dropStaleSetupDrafts, readSetupDraft, writeSetupDraft } from '../db/setupDrafts'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
@@ -941,6 +943,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [showRoster, setShowRoster] = useState({ home: false, away: false })
   const [colorPickerModal, setColorPickerModal] = useState(null) // { team: 'home'|'away', position: { x, y } } | null
   const [noticeModal, setNoticeModal] = useState(null) // { message: string, type?: 'success' | 'error' } | null
+  // The game PIN notice right after Create match (utils/pinNotice,
+  // MatchPinNotice): the match row as stored then (its new game PIN), or null
+  const [pinNoticeMatch, setPinNoticeMatch] = useState(null)
   const [testRosterConfirm, setTestRosterConfirm] = useState(null) // 'home' | 'away' | null
   // Saved teams (competition manager): picker / save dialog per side, the
   // suggestions for a schedule game, and the official-game claim of another
@@ -2772,6 +2777,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       setMatchInfoConfirmed(true)
       setCurrentView('main')
+
+      // The game PIN notice, right after Create match: a new official match
+      // with a game PIN, once per match on this device (utils/pinNotice). The
+      // row as stored now carries the PIN made above; a Save of an existing
+      // match never shows it
+      if (isCreating) {
+        const created = await db.matches.get(matchId)
+        if (needsPinNotice(created)) setPinNoticeMatch(created)
+      }
 
       // Match info email (non-blocking): the server mails the signed-in
       // scorer's own confirmed address, built from the stored match, no PIN
@@ -7146,6 +7160,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // All 4 cards must be complete before proceeding to coin toss
   const canProceedToCoinToss = matchInfoConfirmed && officialsConfigured && homeConfigured && awayConfigured
 
+  // The game PIN notice (opened by Create match): OK or × marks it shown on
+  // this device, so it never comes again for this match
+  const closePinNotice = async () => {
+    const id = pinNoticeMatch?.id ?? matchId
+    setPinNoticeMatch(null)
+    try {
+      await db.matches.update(id, { pinNoticeShownAt: new Date().toISOString() })
+    } catch (err) {
+      console.warn('[MatchSetup] Could not note the PIN notice as shown:', err)
+    }
+  }
+  // The signed-in scorer's own address for "Send to my email": only once it is
+  // confirmed (the server mails only a confirmed address)
+  const pinNoticeAccountEmail = user?.email && user?.email_confirmed_at ? user.email : null
+
   // Returns missing items for the "Proceed to Coin Toss" button (for WarningIndicator)
   const getCoinTossMissingItems = () => {
     const missing = []
@@ -8493,6 +8522,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         homeName={home}
         awayName={away}
         idMode={idMode}
+      />
+      <MatchPinNotice
+        open={!!pinNoticeMatch}
+        match={pinNoticeMatch}
+        homeName={home}
+        awayName={away}
+        accountEmail={pinNoticeAccountEmail}
+        prefillEmail={scorerEmailOf(pinNoticeMatch) || user?.email || ''}
+        onClose={closePinNotice}
       />
     </MatchSetupMainView>
   )

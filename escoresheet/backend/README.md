@@ -892,7 +892,7 @@ answers at the same backend URL. Optional, to decouple the two: first ship a
 backend-only change to the current production backend that adds `X-OV-Proto`
 to `Access-Control-Allow-Headers`.
 
-Match-info email (`/api/match/send-info`) requires `RESEND_API_KEY`. The support form (`/api/contact`) needs the SMTP settings of the account emails ("Account emails" above), nothing else.
+Match-info and game PIN email (`/api/match/send-info`, `/api/match/send-pin`) require `RESEND_API_KEY`. The support form (`/api/contact`) needs the SMTP settings of the account emails ("Account emails" above), nothing else.
 
 ## Self-hosted storage (`lib/storage.js`)
 
@@ -1273,6 +1273,10 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 ### `POST /api/match/send-info`
 
 A signed-in scorer's `{ externalId }`: the game number, teams, date and venue of a match the account created or edits (built from the stored match, no PIN) to the account's own confirmed address. Needs `RESEND_API_KEY` (503 without it); 409 `OV_EMAIL_UNCONFIRMED` for an unconfirmed address, 404 for a match the account does not edit.
+
+### `POST /api/match/send-pin`
+
+A signed-in scorer's `{ externalId, gamePin }` (the PIN notice before the coin toss, "Send to my email"): the game PIN of a match the account created or edits, with its game number, teams, league, date and time from the stored match, to the account's own confirmed address only (an address in the request is never read; `lib/matchPinMail.js`). The game PIN is stored hashed (`lib/pinHash.js`), so the app sends the PIN it shows and the mail goes out only when it matches the stored one: 409 `OV_PIN_MISMATCH` (also when the match has no stored PIN), 400 for a missing or malformed PIN (4 to 12 digits). Otherwise as send-info: Resend only (503 without `RESEND_API_KEY` or without a database), `EMAIL_RATE_LIMIT_MAX` (3 a minute) per address and per account in counters of its own, 403 for an account that cannot score, 404 for a match the account does not edit (or not uploaded yet), 409 `OV_EMAIL_UNCONFIRMED`. The log line of a failed send carries the request id only, never the PIN or the address.
 
 ### `POST /api/errors` and the Errors tab (`lib/errorTracker.js`, `lib/errorAlerts.js`, `db/050`)
 
