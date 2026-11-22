@@ -99,6 +99,15 @@ export async function scorerClaimOf(database, matchId) {
 async function scorerClaimRecord(database, matchId) {
   if (matchId == null || !database?.matches) return null
   try {
+    // Once made, the claim is kept: a plain read finds it. Every relay sync
+    // (one per scorer action) used to open a readwrite transaction on
+    // matches for it, which waits for the reads of matches before it and
+    // holds back the ones after it (the screen's, the app's). Only the first
+    // claim is written there, checked again inside it.
+    const kept = await database.matches.get(matchId)
+    if (typeof kept?.scorerClaim === 'string' && kept.scorerClaim) {
+      return { claim: kept.scorerClaim, supersedes: olderClaims(kept.supersededClaims) }
+    }
     return await database.transaction('rw', database.matches, async () => {
       const row = await database.matches.get(matchId)
       if (!row) return null

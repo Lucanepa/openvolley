@@ -6,7 +6,8 @@
 //  - the sets,
 //  - the sync_queue jobs (in write order, ids and ts left out),
 //  - the live-state rows written to the cloud (apiFrom mocked) and
-//  - the messages sent on the relay socket (a recording socket, no network),
+//  - the messages sent on the relay socket (a recording socket, no network;
+//    compared kind by kind, see relayByKind),
 // with times, uuids and epoch numbers replaced by placeholders. The dump is
 // compared with __golden__/scoreboardTapPath.json, recorded on the code from
 // before that pass (1fa05852a). OV_TAP_GOLDEN_WRITE=1 records it again.
@@ -227,8 +228,22 @@ function expectReads(name, got, want) {
   expect(got, name).toEqual(want)
 }
 
+// The relay messages of each kind, in the order sent. After an action two
+// effects send on the relay socket, the bundle sync (sync-match-data) and
+// the live-state push, and they race by design: the tablets order them by
+// the push's _seq against the bundle's _syncedSeq (serverDataSync
+// isLiveStateNewerThanBundle: "pushes and syncs race"), and both numbers are
+// in the dump. Which of the two leaves first follows how long each takes to
+// read IndexedDB; the bundle's claim read stopped taking a write
+// transaction (matchHandover scorerClaimRecord), so the bundle now usually
+// leaves first. Each kind keeps its own order and content.
+const relayByKind = (relay) => {
+  const kinds = [...new Set(relay.map(m => m?.type))].sort()
+  return Object.fromEntries(kinds.map(kind => [kind, relay.filter(m => m?.type === kind)]))
+}
+
 // The case's dump against the recorded one (both the values and their
-// JSON text: the same keys in the same order)
+// JSON text: the same keys in the same order; the relay per kind)
 async function expectGolden(name) {
   const got = await dump()
   // OV_TAP_RECEIVED=<file>: what this run dumped, to compare by hand
@@ -242,8 +257,12 @@ async function expectGolden(name) {
     return
   }
   expect(golden[name], `no golden dump "${name}" (OV_TAP_GOLDEN_WRITE=1 records it)`).toBeTruthy()
-  expect(got).toEqual(golden[name])
-  expect(JSON.stringify(got)).toBe(JSON.stringify(golden[name]))
+  const { relay, ...rest } = got
+  const { relay: goldenRelay, ...goldenRest } = golden[name]
+  expect(rest).toEqual(goldenRest)
+  expect(JSON.stringify(rest)).toBe(JSON.stringify(goldenRest))
+  expect(relayByKind(relay)).toEqual(relayByKind(goldenRelay))
+  expect(JSON.stringify(relayByKind(relay))).toBe(JSON.stringify(relayByKind(goldenRelay)))
 }
 
 // ---- driving the screen ----
