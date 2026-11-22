@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   transformGame, prepareRows, isExcludedLeague, resolveWindow, zonedTimeToUtc, zonedYmd,
   parseVmDateTime, formatZurichDateTime, addDaysYmd, isYmd, nextRunAt, buildSearchBody,
-  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf, GAME_COLUMNS, refereeLicenceOf
+  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf, GAME_COLUMNS, refereeLicenceOf, germanText
 } from '../lib/vmSync.js'
 import { makeGame } from './helpers/fakeVolleyManager.js'
 
@@ -301,5 +301,61 @@ describe('nextRunAt (06:00 Europe/Zurich)', () => {
     assert.equal(nextRunAt(new Date('2026-10-05T04:00:00Z')).toISOString(), '2026-10-06T04:00:00.000Z')
     assert.equal(nextRunAt(new Date('2026-10-24T12:00:00Z')).toISOString(), '2026-10-25T05:00:00.000Z', 'CET after the switch')
     assert.equal(nextRunAt(new Date('2026-03-28T12:00:00Z')).toISOString(), '2026-03-29T04:00:00.000Z', 'CEST after the switch')
+  })
+})
+
+describe('transformGame: German names whatever the account language', () => {
+  // VM's shape: `name` in the logged-in account's language, all three under translations
+  const team = (de, other) => ({
+    name: other,
+    translations: { de: { name: de }, fr: { name: other }, it: { name: other } }
+  })
+
+  it('keeps the German team names when the account answers in Italian', () => {
+    const g = makeGame(406001)
+    g.game.encounter = {
+      teamHome: team('VBC Musterdorf HU23-1', 'VBC Musterdorf KS (nuovo)'),
+      teamAway: team('VC Beispielstadt HU23-1', 'VC Beispielstadt 1')
+    }
+    const r = t(g)
+    assert.equal(r.team_home, 'VBC Musterdorf HU23-1')
+    assert.equal(r.team_away, 'VC Beispielstadt HU23-1')
+  })
+
+  it('falls back to the plain name when the German text is empty or missing', () => {
+    const g = makeGame(406002)
+    g.game.encounter = {
+      teamHome: { name: 'VBC Musterdorf H1', translations: { de: { name: '  ' }, it: { name: 'x' } } },
+      teamAway: { name: 'VC Beispielstadt H2', translations: { fr: { name: 'y' } } }
+    }
+    const r = t(g)
+    assert.equal(r.team_home, 'VBC Musterdorf H1')
+    assert.equal(r.team_away, 'VC Beispielstadt H2')
+  })
+
+  it('reads the German league category, short name, phase and hall too', () => {
+    const g = makeGame(406003)
+    const lc = g.game.group.phase.league.leagueCategory
+    lc.name = 'Coppa di Zurigo'
+    lc.shortName = 'CZ'
+    lc.translations = { de: { name: 'Züri Cup', shortName: 'ZC' }, it: { name: 'Coppa di Zurigo', shortName: 'CZ' } }
+    g.game.group.phase.name = 'Qualificazione'
+    g.game.group.phase.translations = { de: { name: 'Qualifikation' } }
+    g.game.hall.name = 'Palestra Musterdorf'
+    g.game.hall.translations = { de: { name: 'Halle Musterdorf' } }
+    const r = t(g)
+    assert.equal(r.league_category, 'Züri Cup')
+    assert.equal(r.match_type, 'cup', 'the cup check reads the German name')
+    assert.equal(r.league, 'ZC B')
+    assert.equal(r.phase_name, 'Qualifikation')
+    assert.equal(r.hall, 'Halle Musterdorf')
+  })
+
+  it('germanText copes with junk', () => {
+    assert.equal(germanText(null), null)
+    assert.equal(germanText('x'), null)
+    assert.equal(germanText({}), null)
+    assert.equal(germanText({ name: 'A', translations: { de: { name: 7 } } }), 'A')
+    assert.equal(germanText({ shortName: 'S', translations: { de: { shortName: 'K' } } }, 'shortName'), 'K')
   })
 })

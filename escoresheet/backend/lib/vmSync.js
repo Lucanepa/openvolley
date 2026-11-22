@@ -808,6 +808,22 @@ function deepGet(obj, ...keys) {
 }
 
 /**
+ * The German text of a translatable VolleyManager field. VM answers `name` in
+ * the language of the account that logged in (a club may give its team
+ * another name in French and Italian: "VBC Musterdorf HU23-1" can be "VBC
+ * Musterdorf 1" in it/fr), and sends all three under `translations`.
+ * The sync always keeps the German one, which club_teams and saved teams
+ * match on, whatever language the shared account is set to; an empty or
+ * missing German text falls back to the plain field.
+ */
+export function germanText(entity, key = 'name') {
+  if (!entity || typeof entity !== 'object') return null
+  const de = deepGet(entity, 'translations', 'de', key)
+  if (typeof de === 'string' && de.trim() !== '') return de
+  return entity[key] ?? null
+}
+
+/**
  * A referee's licence number (db/051) of VolleyManager's person: its
  * `associationId`, the Swiss Volley number (SV-Nr.), else `externalId`, which
  * holds the same number (svrz_rc's games sync reads the same field of the same
@@ -878,11 +894,11 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
   const ref1 = extractRefereeInfo(item, 'activeRefereeConvocationFirstHeadReferee')
   const ref2 = extractRefereeInfo(item, 'activeRefereeConvocationSecondHeadReferee')
 
-  const leagueName = String(leagueCat.name ?? '')
+  const leagueName = String(germanText(leagueCat) ?? '')
   const nameLower = leagueName.toLowerCase()
   const genderCode = league.gender ?? ''
   const juniorFlag = typeof leagueCat.isJuniorLeagueCategory === 'boolean' ? leagueCat.isJuniorLeagueCategory : null
-  const shortText = String(leagueCat.shortName ?? '')
+  const shortText = String(germanText(leagueCat, 'shortName') ?? '')
 
   const isCup = nameLower.includes('cup') || nameLower.includes('pokal')
   const matchGender = genderCode === 'm' ? 'men' : genderCode === 'f' ? 'women' : ''
@@ -890,7 +906,7 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
   const matchLevel = isJunior ? 'junior' : 'senior'
 
   // League text (e.g. "3L B", "1L D"); group display "Gruppe B" or "#27051 | D"
-  const leagueShort = leagueCat.shortName ?? leagueName
+  const leagueShort = germanText(leagueCat, 'shortName') ?? leagueName
   const groupDisplay = grp.displayName ?? ''
   const gruppeMatch = String(groupDisplay).match(/Gruppe\s+([A-Z0-9]+)/) || String(groupDisplay).match(/\|\s*([A-Z0-9]+)\s*$/)
   const leagueText = gruppeMatch ? `${leagueShort} ${gruppeMatch[1]}` : leagueShort
@@ -916,17 +932,17 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
     time: gameTime,
     datetime: rawDt,
     city: str(addr.city),
-    hall: str(hall.name),
+    hall: str(germanText(hall)),
     match_type: isCup ? 'cup' : 'championship',
     championship_type: ((nameLower.includes('1l') || nameLower.includes('1. liga')) && matchLevel === 'senior') ? 'national' : 'regional',
     gender: matchGender,
     match_level: matchLevel,
     league: str(leagueText),
-    league_category: str(leagueCat.name),
+    league_category: str(germanText(leagueCat)),
     junior_category: juniorFlag,
     match_format: matchFormat,
-    team_home: str(home.name),
-    team_away: str(away.name),
+    team_home: str(germanText(home)),
+    team_away: str(germanText(away)),
     referee_1: str(ref1.name ?? item.activeFirstHeadRefereeName),
     referee_1_first_name: str(ref1.firstName),
     referee_1_last_name: str(ref1.lastName),
@@ -939,7 +955,7 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
     hall_address: str(addr.combinedAddress),
     hall_postal_code: str(addr.postalCode),
     group_display: str(groupDisplay),
-    phase_name: str(phase.name),
+    phase_name: str(germanText(phase)),
     linesman_1: str(item.activeFirstLinesmanRefereeName),
     linesman_2: str(item.activeSecondLinesmanRefereeName),
     is_supervised: !!item.isSupervised,
