@@ -4,7 +4,10 @@
 //    "On court as #3"); a substitution brings him back on court as the player;
 //  - while he is on the bench, his number on the bench row is greyed: its
 //    menu offers the substitution only, his sanctions go to the official's
-//    chip;
+//    chip; also while the libero is in his place (owner 2026-11-22: "coach
+//    is not on court, so it is a coach not a player"), and the libero out
+//    makes him the player again; sent off as the coach then, #7 is
+//    substituted for the libero's return (FIVB Casebook);
 //  - the sanctions count for the person: a penalty as #7, then the coach gets
 //    no penalty, his expulsion records #7 (plays) and keeps #7 off the court;
 //  - the scorer's choice ("Plays as", plays: number / false) beats the
@@ -90,7 +93,8 @@ const sanctionYes = () => [...document.querySelectorAll('[role="dialog"] button'
 const ROSTER = [
   [1, 'Luca', 'Keller', '100211'], [2, 'Jonas', 'Hofmann', '100396'], [3, 'Noah', 'Schmid', '100433'],
   [4, 'Felix', 'Graf', '100470'], [5, 'David', 'Brunner', '100507'], [6, 'Ben', 'Wenger', '100581'],
-  [7, 'Erik', 'Fischer', '100544'], [8, 'Lukas', 'Bachmann', '100618'], [9, 'Alex', 'Baumann', '100655']
+  [7, 'Erik', 'Fischer', '100544'], [8, 'Lukas', 'Bachmann', '100618'], [9, 'Alex', 'Baumann', '100655'],
+  [12, 'Mauro', 'Huber', '100729']
 ]
 const COACH = { role: 'Coach', firstName: 'Erik', lastName: 'Fischer', dob: '100544' }
 
@@ -102,7 +106,7 @@ async function setUp({ bench = [COACH], roster = ROSTER, before = () => {} } = {
   const rows = []
   for (const teamId of [home, away]) {
     for (const [n, firstName, lastName, dob] of roster) {
-      rows.push({ teamId, number: n, name: `${lastName} ${firstName}`, firstName, lastName: teamId === home ? lastName : `${lastName}-A`, dob: teamId === home ? dob : `9${dob}`, ...(n === 1 ? { isCaptain: true } : {}) })
+      rows.push({ teamId, number: n, name: `${lastName} ${firstName}`, firstName, lastName: teamId === home ? lastName : `${lastName}-A`, dob: teamId === home ? dob : `9${dob}`, ...(n === 1 ? { isCaptain: true } : {}), ...(n === 12 ? { libero: 'libero1' } : {}) })
     }
   }
   await db.players.bulkAdd(rows)
@@ -122,6 +126,12 @@ async function setUp({ bench = [COACH], roster = ROSTER, before = () => {} } = {
     },
     event(type, payload) {
       ev.push({ matchId, setIndex: 1, type, payload, seq: seq++, ts: t })
+    },
+    liberoIn(position, playerOut, libero = 12, team = 'home') {
+      const at = seq++
+      ev.push({ matchId, setIndex: 1, type: 'libero_entry', payload: { team, position, playerOut, liberoIn: libero, liberoType: 'libero1' }, seq: at, ts: t })
+      lineups[team] = { ...lineups[team], [position]: String(libero) }
+      ev.push({ matchId, setIndex: 1, type: 'lineup', payload: { team, lineup: lineups[team], liberoSubstitution: { position, liberoNumber: libero, playerNumber: playerOut, liberoType: 'libero1' } }, seq: at + 0.1, ts: t })
     },
     sub(position, playerOut, playerIn, team = 'home') {
       const at = seq++
@@ -232,6 +242,59 @@ describe('a playing coach on the bench: his number is greyed', () => {
     expect(benchPlayer(7).getAttribute('data-as-official')).toBeNull()
     expect(official('Assistant Coach 1').getAttribute('data-plays-as')).toBe('8')
     expect(benchPlayer(8).getAttribute('data-as-official')).toBe('Assistant Coach 1')
+  }, 60000)
+})
+
+describe('the libero in his place: he is off court, the coach (owner 2026-11-22)', () => {
+  // the coach is #5 (same licence), in position V: the libero replaces him
+  const COACH5 = { role: 'Coach', firstName: 'David', lastName: 'Brunner', dob: '100507' }
+
+  it('C is active and #5 greyed with "C"; the libero out makes him the player again', async () => {
+    const matchId = await setUp({ bench: [COACH5], before: (add) => { add.liberoIn('V', 5); add.rally() } })
+    await openScreen(matchId)
+    await waitFor(() => expect(court(12)).toBeTruthy())
+    expect(official('Coach').getAttribute('data-plays-as')).toBe('5')
+    expect(official('Coach').getAttribute('data-on-court-as')).toBeNull()
+    expect(official('Coach').getAttribute('aria-disabled')).toBeNull()
+    expect(benchPlayer(5).getAttribute('data-as-official')).toBe('Coach')
+    expect(benchPlayer(5).querySelector('[data-as-official-tag]').textContent.trim()).toBe('C')
+    // his number's menu: no sanction, no injury
+    fireEvent.click(benchPlayer(5))
+    await waitFor(() => expect(benchMenu()).toBeTruthy(), { timeout: 3000 })
+    expect([...benchMenu().querySelectorAll('button')].some(b => /^Sanction/.test(b.textContent.trim()))).toBe(false)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(benchMenu()).toBeFalsy())
+    await settle()
+
+    // libero out: #5 back on court, the coach's chip greys
+    fireEvent.click(court(12))
+    await waitFor(() => expect(document.querySelector('[data-player-action-menu]')).toBeTruthy(), { timeout: 3000 })
+    const menuButton = (re) => [...document.querySelector('[data-player-action-menu]').querySelectorAll('button')].find(b => re.test(b.textContent.trim()) && !b.disabled)
+    if (!menuButton(/^Libero out$/)) fireEvent.click(menuButton(/^Libero/))
+    await waitFor(() => expect(menuButton(/^Libero out$/)).toBeTruthy(), { timeout: 3000 })
+    fireEvent.click(menuButton(/^Libero out$/))
+    await settle()
+    const yes = sanctionYes()
+    if (yes) fireEvent.click(yes)
+    await waitFor(async () => expect(await ofType('libero_exit')).toHaveLength(1), { timeout: 5000 })
+    await waitFor(() => expect(court(5)).toBeTruthy())
+    await waitFor(() => expect(official('Coach').getAttribute('data-on-court-as')).toBe('5'))
+    expect(benchPlayer(5)).toBeFalsy()
+  }, 60000)
+
+  it('the coach expelled while the libero is in his place: #5 is substituted, the libero stays', async () => {
+    const matchId = await setUp({ bench: [COACH5], before: (add) => { add.liberoIn('V', 5); add.rally() } })
+    await openScreen(matchId)
+    fireEvent.click(official('Coach'))
+    await waitFor(() => expect(sanctionMenu()).toBeTruthy(), { timeout: 3000 })
+    fireEvent.click([...sanctionMenu().querySelectorAll('button')].find(b => /^Expulsion/.test(b.textContent.trim())))
+    await settle()
+    fireEvent.click(sanctionYes())
+    await waitFor(async () => expect(await ofType('sanction')).toHaveLength(1), { timeout: 5000 })
+    expect((await ofType('sanction'))[0].payload).toMatchObject({ type: 'expulsion', playerType: 'official', role: 'Coach', plays: 5 })
+    // the substitution the Casebook asks for: #5 out, the libero stays on court
+    await waitFor(() => expect([...document.querySelectorAll('[role="dialog"]')].some(d => /#5/.test(d.textContent) && /expelled/i.test(d.textContent))).toBe(true), { timeout: 5000 })
+    expect([...document.querySelectorAll('[role="dialog"]')].some(d => /Libero.*#12.*remains on court/i.test(d.textContent))).toBe(true)
   }, 60000)
 })
 

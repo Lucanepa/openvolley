@@ -16,13 +16,13 @@
  *   - false     not the same person, whatever the names say
  *
  * WHERE HE IS decides the role:
- *   - on court (in the current line-up, or replaced by the libero, who gives
- *     the place back to him): the player. The official's chip is greyed;
- *     sanctions, injuries and substitutions go to #7.
- *   - anywhere else (the bench, before the line-up of a set): the official.
- *     His number on the bench is greyed and his sanctions go to the
- *     official's chip; he may still come in as a substitute, and is the
- *     player again.
+ *   - on court (in the current line-up): the player. The official's chip is
+ *     greyed; sanctions, injuries and substitutions go to #7.
+ *   - anywhere else (the bench, before the line-up of a set, and while the
+ *     libero is in his place: owner 2026-11-22, "coach is not on court, so
+ *     it is a coach not a player"): the official. His number on the bench is
+ *     greyed and his sanctions go to the official's chip; he may still come
+ *     in as a substitute (or back for the libero), and is the player again.
  *
  * ONE PERSON FOR THE SANCTIONS: a sanction of a linked official records the
  * number too (`plays` on the sanction, sanctionPlays), so the escalation
@@ -102,14 +102,13 @@ export function rolesOfPlayer(links, number) {
 }
 
 /**
- * Is the player on court for the role rule: in the current line-up, or
- * replaced by the libero (he comes back with the rotation).
+ * Is the player on court for the role rule: in the current line-up. A player
+ * the libero replaces is not (the libero's number is in the line-up): he is
+ * the official until he comes back (owner 2026-11-22).
  * @param {Iterable} onCourt the numbers in the current line-up
- * @param {Iterable} [replacedByLibero] the numbers the libero replaces now
  */
-export function playsOnCourt(number, onCourt = [], replacedByLibero = []) {
+export function playsOnCourt(number, onCourt = []) {
   for (const n of onCourt || []) if (same(n, number)) return true
-  for (const n of replacedByLibero || []) if (same(n, number)) return true
   return false
 }
 
@@ -118,20 +117,20 @@ export function playsOnCourt(number, onCourt = [], replacedByLibero = []) {
  * on court as the player.
  * @returns {{ playsAs: number|string|null, onCourt: boolean }}
  */
-export function officialChipState(links, role, { onCourt = [], replacedByLibero = [] } = {}) {
+export function officialChipState(links, role, { onCourt = [] } = {}) {
   const playsAs = playsAsOf(links, role)
-  return { playsAs, onCourt: playsAs !== null && playsOnCourt(playsAs, onCourt, replacedByLibero) }
+  return { playsAs, onCourt: playsAs !== null && playsOnCourt(playsAs, onCourt) }
 }
 
 /**
  * The player's number on the scorer's bench row: greyed while the person is
- * there as an official (asOfficial: his first role), which a player replaced
- * by the libero is not.
+ * off court, there as an official (asOfficial: his first role), also while
+ * the libero is in his place.
  * @returns {{ roles: string[], asOfficial: string|null }}
  */
-export function benchNumberState(links, number, { onCourt = [], replacedByLibero = [] } = {}) {
+export function benchNumberState(links, number, { onCourt = [] } = {}) {
   const roles = rolesOfPlayer(links, number)
-  const asOfficial = roles.length > 0 && !playsOnCourt(number, onCourt, replacedByLibero) ? roles[0] : null
+  const asOfficial = roles.length > 0 && !playsOnCourt(number, onCourt) ? roles[0] : null
   return { roles, asOfficial }
 }
 

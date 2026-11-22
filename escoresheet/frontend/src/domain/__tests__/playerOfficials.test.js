@@ -96,9 +96,12 @@ describe('where he is decides the role (greyed chips)', () => {
     // an official who does not play is never greyed
     expect(officialChipState(links, 'Medic', { onCourt: [7] })).toEqual({ playsAs: null, onCourt: false })
   })
-  it('replaced by the libero he is still the player', () => {
-    expect(officialChipState(links, 'Coach', { onCourt: [1, 2, 3, 4, 5, 12], replacedByLibero: ['7'] }).onCourt).toBe(true)
-    expect(benchNumberState(links, 7, { onCourt: [1, 2, 3, 4, 5, 12], replacedByLibero: [7] })).toEqual({ roles: ['Coach'], asOfficial: null })
+  // owner 2026-11-22: "coach is not on court, so it is a coach not a player"
+  it('replaced by the libero he is off court: the official acts, his number is greyed', () => {
+    expect(officialChipState(links, 'Coach', { onCourt: [1, 2, 3, 4, 5, 12] }).onCourt).toBe(false)
+    expect(benchNumberState(links, 7, { onCourt: [1, 2, 3, 4, 5, 12] })).toEqual({ roles: ['Coach'], asOfficial: 'Coach' })
+    // back for the libero: the player again
+    expect(officialChipState(links, 'Coach', { onCourt: [1, 2, 3, 4, 5, 7] }).onCourt).toBe(true)
   })
   it('on the bench (or before the line-up): his number is greyed, the official acts', () => {
     expect(benchNumberState(links, 7, { onCourt: [1, 2, 3, 4, 5, 6] })).toEqual({ roles: ['Coach'], asOfficial: 'Coach' })

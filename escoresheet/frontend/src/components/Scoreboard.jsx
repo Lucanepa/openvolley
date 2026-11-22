@@ -4561,10 +4561,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
 
     // A player who is also a bench official (a playing coach,
-    // domain/playerOfficials): on court (or replaced by the libero) his
-    // official's chip is greyed, on the bench his number (asOfficial)
+    // domain/playerOfficials): on court his official's chip is greyed, off
+    // court (the bench, the libero in his place) his number (asOfficial)
     const links = playerOfficialLinks(benchOfficials, players)
-    const where = { onCourt: playersOnCourt, replacedByLibero: Object.keys(playerLiberoMap) }
+    const where = { onCourt: playersOnCourt }
     const asOfficialOf = (p) => (links.length ? benchNumberState(links, p.number, where).asOfficial : null)
 
     return {
@@ -4618,10 +4618,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
 
     // A player who is also a bench official (a playing coach,
-    // domain/playerOfficials): on court (or replaced by the libero) his
-    // official's chip is greyed, on the bench his number (asOfficial)
+    // domain/playerOfficials): on court his official's chip is greyed, off
+    // court (the bench, the libero in his place) his number (asOfficial)
     const links = playerOfficialLinks(benchOfficials, players)
-    const where = { onCourt: playersOnCourt, replacedByLibero: Object.keys(playerLiberoMap) }
+    const where = { onCourt: playersOnCourt }
     const asOfficialOf = (p) => (links.length ? benchNumberState(links, p.number, where).asOfficial : null)
 
     return {
@@ -12491,9 +12491,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     } else if (sanctionType === 'expulsion' || sanctionType === 'disqualification') {
       // Check if this bench player is currently being replaced by a libero on court
-      // Per FIVB Casebook: libero stays on court, substitute the bench player
+      // Per FIVB Casebook: libero stays on court, substitute the bench player.
+      // Also a team official who plays as that player (a playing coach: off
+      // court while the libero is in his place, so his sanction goes to the
+      // official, domain/playerOfficials): sent off as the coach, #7 may not
+      // come back for the libero and is substituted the same way
       const liberoOnCourt = getLiberoOnCourt(team)
-      if (type === 'bench' && liberoOnCourt && String(liberoOnCourt.playerNumber) === String(playerNumber)) {
+      const replacedNumber = type === 'bench' ? playerNumber : (type === 'official' ? (plays.plays ?? null) : null)
+      if (replacedNumber != null && liberoOnCourt && String(liberoOnCourt.playerNumber) === String(replacedNumber)) {
         // This bench player is the one replaced by the libero
         // Log the sanction first
         await logEvent('sanction', {
@@ -12507,13 +12512,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         })
 
         // Get legal substitutes for this player (based on their original position before libero replaced them)
-        const legalSubs = getAvailableSubstitutes(team, playerNumber, false)
+        const legalSubs = getAvailableSubstitutes(team, replacedNumber, false)
 
         if (legalSubs.length === 1) {
           // Auto-confirm with the single legal substitute
           deferUi(() => setSanctionSubstitutionModal({
             team,
-            expelledPlayer: playerNumber,
+            expelledPlayer: replacedNumber,
             liberoOnCourt,
             availableSubs: legalSubs,
             reason: sanctionType,
@@ -12524,7 +12529,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Show modal to select from legal substitutes
           deferUi(() => setSanctionSubstitutionModal({
             team,
-            expelledPlayer: playerNumber,
+            expelledPlayer: replacedNumber,
             liberoOnCourt,
             availableSubs: legalSubs,
             reason: sanctionType,
@@ -12533,12 +12538,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }))
         } else {
           // No legal substitutes - check for exceptional substitutes
-          const exceptionalSubs = getAvailableExceptionalSubstitutes(team, playerNumber)
+          const exceptionalSubs = getAvailableExceptionalSubstitutes(team, replacedNumber)
           if (exceptionalSubs.length === 1) {
             // Auto-confirm with single exceptional substitute
             deferUi(() => setSanctionSubstitutionModal({
               team,
-              expelledPlayer: playerNumber,
+              expelledPlayer: replacedNumber,
               liberoOnCourt,
               availableSubs: exceptionalSubs,
               reason: sanctionType,
@@ -12549,7 +12554,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             // Show modal for exceptional substitute selection
             deferUi(() => setSanctionSubstitutionModal({
               team,
-              expelledPlayer: playerNumber,
+              expelledPlayer: replacedNumber,
               liberoOnCourt,
               availableSubs: exceptionalSubs,
               reason: sanctionType,
@@ -12558,7 +12563,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             }))
           } else {
             // No substitutes at all - forfait, after confirmation
-            deferUi(() => requestAutomaticForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification', playerNumber, liberoOnCourt.position))
+            deferUi(() => requestAutomaticForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification', replacedNumber, liberoOnCourt.position))
           }
         }
 
