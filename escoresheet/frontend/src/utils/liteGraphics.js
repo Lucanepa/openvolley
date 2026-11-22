@@ -2,7 +2,9 @@
 // Blur behind dialogs is off (utils/lookSettings), and then
 //  - dialog scrims dim without their backdrop blur (tailwind.css, at the end);
 //  - the line-up privacy cover on the court is an opaque panel instead of a
-//    blurred one (privacyCoverFill, Scoreboard.jsx).
+//    blurred one (privacyCoverFill: Scoreboard.jsx, the phone court's
+//    LineupSetOverlay, the referee view);
+//  - full-screen notices over the scoring screen dim without their blur.
 // The hall tablet (Galaxy Tab A7 Lite, PowerVR GE8320) runs a full-screen
 // two-pass blur for every frame anything under a dialog changes, at least once
 // a second for the toolbar clock. Off by default in the Android app since the
@@ -60,16 +62,20 @@ export function liteGraphicsOn(doc = typeof document !== 'undefined' ? document 
   return !!doc?.documentElement?.classList.contains(LITE_GRAPHICS_CLASS)
 }
 
+/** The scorer's court cover with the blur on (Scoreboard.jsx, tablet court). */
+export const PRIVACY_COVER_FROSTED = Object.freeze({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
+
 /**
  * The fill of the cover over a team's line-up on the court until the other
- * team has entered its own: frosted glass, or under ov-lite an opaque dark
- * panel. Without the blur nothing may show through: at 92 % the shirt numbers,
- * the position labels and the captain's mark stayed sharp enough to read at
- * close range (the Android emulator, 22.11.2026), most of all under the two
- * see-through buttons on the cover.
+ * team has entered its own: frosted glass (`frosted`: the scorer's tablet
+ * court by default; the phone court and the referee view pass their own), or
+ * under ov-lite an opaque dark panel. Without the blur nothing may show
+ * through: at 92 % the shirt numbers, the position labels and the captain's
+ * mark stayed sharp enough to read at close range (the Android emulator,
+ * 22.11.2026), most of all under the two see-through buttons on the cover.
  */
-export function privacyCoverFill(doc) {
+export function privacyCoverFill(doc, frosted = PRIVACY_COVER_FROSTED) {
   return liteGraphicsOn(doc)
     ? { background: 'rgb(15, 23, 42)' }
-    : { background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' }
+    : { ...frosted }
 }

@@ -5,7 +5,7 @@
 //   blur          the backdrop blur behind dialogs, and the frosted line-up
 //                 cover on the court. Off: <html class="ov-lite">
 //                 (utils/liteGraphics: dialog scrims only dim, the cover is a
-//                 near-opaque panel).
+//                 opaque panel).
 //   motion        animations: the flashing Line-up and Missing signature
 //                 buttons, the recently substituted player, sliding menus and
 //                 bars, transitions. Off: <html data-no-motion> (tailwind.css,
@@ -22,6 +22,10 @@
 // Applied at once, without a reload, in this page and in the app's other
 // tabs (the storage event). Storage blocked: the choice still applies to this
 // page.
+// The referee, bench and livescore pages (their own entries) take only the
+// switches the scorer set on this device (initLook({ storedOnly: true })):
+// a switch never set keeps the look those pages always had there, blur and
+// animations on, also in the Android app.
 import { useSyncExternalStore } from 'react'
 import { LITE_GRAPHICS_CLASS, LITE_GRAPHICS_ON_ANDROID, applyLiteGraphics, inAndroidApp, isAndroidApp } from './liteGraphics'
 
@@ -69,9 +73,17 @@ export function readStoredSwitch(name, storage = localStore()) {
   }
 }
 
+/**
+ * What a switch never set shows on the referee, bench and livescore pages
+ * (initLook storedOnly): blur and animations on, as there always.
+ */
+export function storedOnlyDefaults({ androidApp = isAndroidApp() } = {}) {
+  return { ...lookDefaults({ androidApp }), blur: true, motion: true }
+}
+
 /** The four switches as they are on this device. */
-export function readLook({ storage = localStore(), androidApp = isAndroidApp() } = {}) {
-  const look = lookDefaults({ androidApp })
+export function readLook({ storage = localStore(), androidApp = isAndroidApp(), defaults = null } = {}) {
+  const look = { ...(defaults || lookDefaults({ androidApp })) }
   for (const name of LOOK_SWITCHES) {
     const v = readStoredSwitch(name, storage)
     if (v !== null) look[name] = v
@@ -92,6 +104,8 @@ const listeners = new Set()
 let snapshot = null
 // The switches set on this page: they hold while storage is blocked
 let setHere = {}
+// The referee, bench and livescore pages: only the stored switches (initLook)
+let storedOnly = false
 
 function notify() {
   for (const fn of listeners) {
@@ -103,7 +117,7 @@ function notify() {
 export function getLook() {
   if (!snapshot) {
     const storage = localStore()
-    const look = readLook({ storage })
+    const look = readLook({ storage, defaults: storedOnly ? storedOnlyDefaults() : null })
     for (const name of LOOK_SWITCHES) {
       if (name in setHere && readStoredSwitch(name, storage) === null) look[name] = setHere[name]
     }
@@ -138,6 +152,7 @@ export function setLook(changes, { doc = globalThis.document } = {}) {
 export function resetLookForTests() {
   setHere = {}
   snapshot = null
+  storedOnly = false
 }
 
 function subscribe(fn) {
@@ -155,9 +170,12 @@ export function useLook() {
 let started = false
 /**
  * At start (main.jsx): the stored look on <html>, and a change made in
- * another tab of the app applied here too.
+ * another tab of the app applied here too. storedOnly (referee-main,
+ * bench-main, livescore-main): only the switches the scorer set on this
+ * device; one never set keeps those pages' look (storedOnlyDefaults).
  */
-export function initLook({ win = typeof window !== 'undefined' ? window : undefined } = {}) {
+export function initLook({ win = typeof window !== 'undefined' ? window : undefined, storedOnly: onlyStored = false } = {}) {
+  storedOnly = !!onlyStored
   snapshot = null
   applyLook(getLook(), win?.document)
   if (started || !win?.addEventListener) return

@@ -18,6 +18,7 @@ import { captureScorerReturn } from './utils/scorerReturn'
 import { db } from './db/db'
 import { installPopupDiagnostics } from './diagnostics'
 import { initTheme } from './utils/theme'
+import { initLook } from './utils/lookSettings'
 import { installErrorTrail } from './utils/diagnosticsInfo'
 
 // Not the scoretable: this page never saves a match backup (utils/appEntry)
@@ -42,6 +43,10 @@ stripCacheBustParam()
 installErrorTrail()
 
 initTheme()
+// The look switches the scorer set on this device (Options › Effects and
+// speed, utils/lookSettings): blur and animations off apply here too; a
+// switch never set keeps this page's look (blur and animations on)
+initLook({ storedOnly: true })
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary name="referee">

@@ -175,7 +175,7 @@ describe('the line-up cover follows the blur switch', () => {
     setLook({ blur: true })
     expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
     setLook({ blur: false })
-    expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.92)' })
+    expect(privacyCoverFill()).toEqual({ background: 'rgb(15, 23, 42)' })
   })
 
   it('the scoring screen renders again on a change (useLook)', () => {
@@ -192,6 +192,55 @@ describe('main.jsx', () => {
     expect(main).toMatch(/^initLook\(\)$/m)
     expect(main.indexOf('\ninitLook()')).toBeLessThan(main.indexOf('createRoot('))
     expect(main).not.toMatch(/applyLiteGraphics/)
+  })
+})
+
+describe('the referee, bench and livescore pages: only the switches the scorer set', () => {
+  for (const entry of ['referee-main.jsx', 'bench-main.jsx', 'livescore-main.jsx']) {
+    it(`${entry} applies them at start, before the first render`, () => {
+      const main = readFileSync(resolve(__dirname, '../..', entry), 'utf8')
+      expect(main).toMatch(/^import \{ initLook \} from '\.\/utils\/lookSettings'$/m)
+      expect(main).toMatch(/^initLook\(\{ storedOnly: true \}\)$/m)
+      expect(main.indexOf('\ninitLook({ storedOnly: true })')).toBeLessThan(main.indexOf('createRoot('))
+    })
+  }
+
+  it('never set: the look those pages always had, blur and animations on, also in the Android app', () => {
+    runOn('android')
+    initLook({ storedOnly: true })
+    expect(getLook()).toMatchObject({ blur: true, motion: true })
+    expect(liteGraphicsOn()).toBe(false)
+    expect(root().hasAttribute(NO_MOTION_ATTR)).toBe(false)
+  })
+
+  it('set by the scorer (Apply, or a switch in Options): blur and animations off here too', () => {
+    runOn('android')
+    localStorage.setItem(LOOK_KEYS.blur, 'false')
+    localStorage.setItem(LOOK_KEYS.motion, 'false')
+    initLook({ storedOnly: true })
+    expect(getLook()).toMatchObject({ blur: false, motion: false })
+    expect(liteGraphicsOn()).toBe(true)
+    expect(root().hasAttribute(NO_MOTION_ATTR)).toBe(true)
+  })
+
+  it('the scorer\'s page keeps its own defaults (the Android app: no blur)', () => {
+    runOn('android')
+    initLook()
+    expect(getLook().blur).toBe(false)
+    expect(liteGraphicsOn()).toBe(true)
+  })
+
+  it('the referee view\'s line-up covers follow the blur switch: frosted 16 px, or the near-opaque panel', () => {
+    const referee = readFileSync(resolve(__dirname, '../../components/Referee.jsx'), 'utf8')
+    expect(referee).toMatch(/^ {2}useLook\(\)$/m)
+    expect(referee.match(/\.\.\.privacyCoverFill\(undefined, REFEREE_COVER_FROSTED\)/g)).toHaveLength(2)
+    expect(referee).not.toMatch(/backdropFilter: 'blur\(16px\)',\n/)
+    const frosted = { background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }
+    runOn('web')
+    setLook({ blur: true })
+    expect(privacyCoverFill(undefined, frosted)).toEqual(frosted)
+    setLook({ blur: false })
+    expect(privacyCoverFill(undefined, frosted)).toEqual({ background: 'rgb(15, 23, 42)' })
   })
 })
 
