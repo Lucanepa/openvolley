@@ -20,11 +20,12 @@ export function joinList(items, lang) {
  * "This device is on the slow side. For smoother scoring we recommend: no blur
  * behind dialogs, no animations, ..." with Apply and Keep as is.
  *
- * On Home (App.jsx, under the self-check notice): only while the last result
- * recommends a switch that differs from this device's and was not answered
- * yet; Apply sets exactly the listed switches, Keep as is keeps the look; both
- * answer the result and the card goes. Not over the first-start dialogs (App
- * does not pass it then).
+ * On Home (App.jsx, HomePage's slot under the last row, out of the flow so
+ * nothing moves): only while the last result recommends a switch that
+ * differs from this device's and was not answered yet; Apply sets exactly the
+ * listed switches, Keep as is keeps the look; both answer the result and the
+ * card goes. Not over the first-start dialogs or Home's match set-up dialogs
+ * (App does not pass it then).
  *
  * In Options (inOptions, under the switches): shown whenever the result
  * recommends a change, also when it was answered on Home, with Apply only and
