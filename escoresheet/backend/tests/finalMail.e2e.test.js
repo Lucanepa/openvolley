@@ -42,6 +42,32 @@ const PDF = Buffer.from('%PDF-1.4\n% final scoresheet\n1 0 obj << >> endobj\ntra
 const PDF_V2 = Buffer.from('%PDF-1.4\n% corrected scoresheet, the second approval\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n')
 
 describe('final mail (unit)', () => {
+  // owner 2026-11-22: a match of the technical-remarks model lists them in the mail's text
+  it('the technical remarks: the correction log and the technical event lines, oldest first, Zurich time; none for an older match', () => {
+    const { technicalRemarkLines, MAX_TECHNICAL_LINES } = finalMail
+    const manualChanges = [
+      { ts: '2026-11-22T13:10:00Z', category: 'correction', text: 'Point removed: A 3:2' },
+      { ts: '2026-11-22T12:00:00Z', category: 'player', description: 'Removed player #7 Muster (Team V)' },
+      { category: 'Set', description: 'Reopened set 1' },
+      { ts: '2026-11-22T12:30:00Z', category: 'match', description: 'dob: 01.02.2003 → 02.02.2003' }
+    ]
+    const eventLines = [{ ts: '2026-11-22T12:05:00Z', line: 'Set 1, 13:05, A 3:2, #4 injured   (bench)' }]
+    assert.deepEqual(technicalRemarkLines({ remarksModel: '2', manualChanges, eventLines }), [
+      '13:00 Removed player #7 Muster (Team V)',
+      '13:05 Set 1, 13:05, A 3:2, #4 injured (bench)',
+      // a date-of-birth correction keeps the change, not the dates (lib/publicColumns.js redactRemarkDobs)
+      '13:30 date of birth changed',
+      '14:10 Point removed: A 3:2',
+      'Reopened set 1'
+    ])
+    assert.deepEqual(technicalRemarkLines({ remarksModel: null, manualChanges, eventLines }), [])
+    assert.deepEqual(technicalRemarkLines({}), [])
+    const many = Array.from({ length: 50 }, (_, i) => ({ ts: new Date(Date.UTC(2026, 10, 22, 12, i)).toISOString(), text: `Change ${i}` }))
+    const lines = technicalRemarkLines({ remarksModel: 2, manualChanges: many })
+    assert.equal(lines.length, MAX_TECHNICAL_LINES + 1)
+    assert.equal(lines.at(-1), `… (+${50 - MAX_TECHNICAL_LINES})`)
+  })
+
   it('recipients: distinct valid addresses, lower-case, at most twelve', () => {
     assert.deepEqual(recipientList(['A@x.ch', 'a@x.ch ', 'nope', null, 'b@y.ch']), ['a@x.ch', 'b@y.ch'])
     assert.equal(recipientList(Array.from({ length: 20 }, (_, i) => `p${i}@x.ch`)).length, 12)
@@ -192,6 +218,35 @@ describe('final mail sweep: one state machine per close (database, fake mailer a
     const done = await outcomeOf(id)
     assert.deepEqual({ outcome: done.outcome, recipients: done.recipients, held: done.held }, { outcome: 'sent', recipients: 4, held: 0 })
     assert.ok(audits.some((a) => a.action === 'match.final_mail' && a.matchId === id && a.details.recipients === 4))
+  })
+
+  // owner 2026-11-22: a match of the technical-remarks model lists them in the
+  // mail (the correction log and the live events' technical lines, not a
+  // voided one, not a sheet line); an older match lists none
+  it('the technical remarks of the match go in the mail\'s text; an older match has none', async () => {
+    const id = await closed({ gameN: 950030 })
+    const older = await closed({ gameN: 950031 })
+    await replica(async () => {
+      for (const [m, model] of [[id, 2], [older, null]]) {
+        await sql.query('UPDATE public.matches SET match_info = $2, manual_changes = $3 WHERE id = $1', [m,
+          JSON.stringify(model ? { league: 'H1', remarks_model: model } : { league: 'H1' }),
+          JSON.stringify([{ ts: '2026-11-22T13:10:00Z', category: 'technical', action: 'technicalRemark', text: 'Ball pump broken' }])])
+        await sql.query(`INSERT INTO public.events (external_id, match_id, set_index, type, seq, ts, payload, voided_at) VALUES
+          ($2 || ':e:1', $1, 1, 'bench_injury', 4, '2026-11-22T13:05:00Z', $3, NULL),
+          ($2 || ':e:2', $1, 1, 'bench_injury', 5, '2026-11-22T13:06:00Z', $4, now()),
+          ($2 || ':e:3', $1, 1, 'substitution', 6, '2026-11-22T13:07:00Z', $5, NULL)`, [m, `tr_${m}`,
+          JSON.stringify({ team: 'home', playerNumber: 4, autoRemark: 'Set 1, 14:05, A 3:2, #4 injured (bench)', remarkTo: 'technical' }),
+          JSON.stringify({ team: 'home', playerNumber: 5, autoRemark: 'Set 1, 14:06, A 3:2, #5 injured (bench)', remarkTo: 'technical' }),
+          JSON.stringify({ team: 'home', playerOut: 3, playerIn: 9, isExceptional: true, autoRemark: 'Set 1, 14:07, A 3:2, #3 exceptionally substituted by #9' })])
+      }
+    })
+    storePdf(id)
+    storePdf(older)
+    await fm.sweep()
+    const [mail] = of(950030)
+    assert.ok(mail, 'mailed')
+    assert.deepEqual(mail.vars.technical, [{ line: '14:05 Set 1, 14:05, A 3:2, #4 injured (bench)' }, { line: '14:10 Ball pump broken' }])
+    assert.deepEqual(of(950031)[0].vars.technical, [])
   })
 
   it('sends that keep failing are tried again with a pause, then recorded as failed (not sent)', async () => {

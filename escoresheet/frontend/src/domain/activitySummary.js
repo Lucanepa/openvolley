@@ -33,7 +33,9 @@ export const ACTIVITY_KINDS = Object.freeze({
   'match.status': { cat: 'match', keys: ['from', 'to'] },
   'match.close': { cat: 'match', keys: ['from', 'to'] },
   'match.coin_toss': { cat: 'match', keys: ['keys', 'confirmed'] },
-  'match.manual_change': { cat: 'correction', keys: ['category', 'field', 'before', 'after'] },
+  // action: a technical remark's kind (category 'technical': technicalRemark,
+  // signaturesCleared, resigned; frontend domain/technicalRemarks.js), never its text
+  'match.manual_change': { cat: 'correction', keys: ['category', 'field', 'before', 'after', 'action'] },
   'match.signature': { cat: 'match', keys: ['role', 'signed'] },
   'match.approval': { cat: 'match', keys: ['role', 'method', 'approved'] },
   'match.remarks': { cat: 'match', keys: ['length'] },
@@ -336,7 +338,7 @@ export function matchUpdateEntries(mods, row) {
       // New items only (the array grows; a rewrite of old ones is not an entry)
       for (const c of next.slice(prev.length)) {
         if (!c || typeof c !== 'object') continue
-        out.push({ kind, data: { category: c.category ?? null, field: c.field ?? null, before: c.before ?? null, after: c.after ?? null } })
+        out.push({ kind, data: { category: c.category ?? null, field: c.field ?? null, before: c.before ?? null, after: c.after ?? null, ...(c.category === 'technical' && typeof c.action === 'string' ? { action: c.action } : {}) } })
       }
     } else if (build) {
       out.push({ kind, data: build(top, before, after, row) })
@@ -394,7 +396,9 @@ export function activityLine(entry) {
     case 'match.status':
     case 'match.close':
     case 'sync.state': return `${d.from ?? '–'} → ${d.to ?? '–'}`
-    case 'match.manual_change': return `${d.category || ''} ${d.field || ''}: ${d.before ?? ''} → ${d.after ?? ''}`.trim()
+    case 'match.manual_change': return d.category === 'technical'
+      ? `technical remark${d.action ? ` (${d.action})` : ''}`
+      : `${d.category || ''} ${d.field || ''}: ${d.before ?? ''} → ${d.after ?? ''}`.trim()
     case 'match.signature': return `${d.role} ${d.signed ? 'signed' : 'cleared'}`
     case 'match.approval': return `${d.role} ${d.approved ? `approved (${d.method})` : 'approval removed'}`
     case 'match.remarks': return `${d.length} characters`

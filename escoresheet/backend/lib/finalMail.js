@@ -72,6 +72,16 @@
  * Addresses are never logged or stored (match_final_mails counts them;
  * `delivered` holds hashes of round, match, close and address while a round
  * is open); the audit entry (match.final_mail) names how many went out.
+ *
+ * Technical remarks (owner 2026-11-22; frontend domain/technicalRemarks.js):
+ * a match of that remarks model (match_info.remarks_model >= 2) keeps them
+ * off its scoresheet, so the mail's text lists them (technicalRemarkLines):
+ * every entry of its correction log (manual_changes, the sentence the app
+ * wrote) and every event line written as one (payload.remarkTo 'technical',
+ * payload.autoRemark; an injury substitution with a legal substitute, a
+ * bench injury, in the rules' words), oldest first, with the time in Zurich.
+ * Plain text, the dates of a date-of-birth correction taken out, at most
+ * MAX_TECHNICAL_LINES. An older match prints them on its sheet: none listed.
  */
 
 import { createHash } from 'node:crypto'
@@ -80,6 +90,7 @@ import { ADMIN_ROLES } from './access.js'
 import { MAIL_BUDGET_OF, pickLang } from './mailer.js'
 import { connectClient } from './pgClient.js'
 import { EMAIL_RE } from './emailAddress.js'
+import { redactRemarkDobs } from './publicColumns.js'
 
 export const DELAY_MS = 2 * 60 * 1000
 // No PDF of the approval this long after the close: mailed without it
@@ -101,6 +112,13 @@ const retryMs = (attempts) => Math.min(60, 2 ** attempts) * MINUTE_MS
 // A close the sweep has not looked at yet: closed within this
 const LOOKBACK_MS = DAY_MS
 const MAX_RECIPIENTS = 12
+// Technical remarks in a final mail: at most this many lines (and one "+n"
+// line) of at most this many characters (the mail's list takes 40 lines of
+// 200 characters, lib/mailer.js cleanVar)
+export const MAX_TECHNICAL_LINES = 39
+const MAX_TECHNICAL_CHARS = 190
+// The remarks model whose technical remarks stay off the scoresheet (frontend domain/technicalRemarks.js REMARKS_MODEL)
+const TECHNICAL_REMARKS_MODEL = 2
 const BATCH = 20
 const MAX_PER_SWEEP = 200
 export const TEST_PDF_MAX_BYTES = 5 * 1024 * 1024
@@ -122,6 +140,7 @@ const ACTIVE_SQL = `coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz <= no
 const CLOSE_COLUMNS = `m.id, m.external_id, m.game_n, m.closed_at, m.closed_at::text AS closed_at_exact, m.closed_by, m.scheduled_at, m.updated_at, m.created_at,
               m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name, m.match_info->>'league' AS league,
               m.officials, to_jsonb(m) ->> 'final_score' AS final_score,
+              m.manual_changes, m.match_info->>'remarks_model' AS remarks_model,
               f.outcome, coalesce(f.attempts, 0) AS attempts, coalesce(f.delivered, '{}') AS delivered, f.recipients AS mailed,
               EXISTS (SELECT 1 FROM public.match_final_mails p WHERE p.match_id = m.id AND p.closed_at < m.closed_at AND p.recipients > 0) AS corrected,
               (SELECT max(a.at) FROM public.audit_log a WHERE a.action = 'match.reopen' AND a.match_id = m.id AND a.at <= m.closed_at) AS reopened_at`
@@ -144,6 +163,48 @@ export function zurichDate (v) {
   const d = v instanceof Date ? v : new Date(v)
   if (!v || Number.isNaN(d.getTime())) return ''
   return new Intl.DateTimeFormat('de-CH', { timeZone: 'Europe/Zurich', day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
+}
+
+/** HH:MM in Zurich of a date-like value; '' when there is none. */
+function zurichClock (v) {
+  const d = v instanceof Date ? v : new Date(v)
+  if (!v || Number.isNaN(d.getTime())) return ''
+  return new Intl.DateTimeFormat('de-CH', { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
+}
+
+/**
+ * The technical remarks a final mail lists (see the header): [] for a match
+ * of an older remarks model. `manualChanges`: the match's manual_changes;
+ * `eventLines`: [{ ts, line }] of its live events written as technical remarks.
+ * Pure; never throws.
+ */
+export function technicalRemarkLines ({ remarksModel, manualChanges, eventLines } = {}) {
+  if (!(Number(remarksModel) >= TECHNICAL_REMARKS_MODEL)) return []
+  const items = []
+  let order = 0
+  const push = (ts, raw) => {
+    if (typeof raw !== 'string') return
+    const text = redactRemarkDobs(raw).replace(/\s+/g, ' ').trim().slice(0, MAX_TECHNICAL_CHARS)
+    if (!text) return
+    const ms = Date.parse(ts)
+    items.push({ ms: Number.isFinite(ms) ? ms : null, ts, text, order: order++ })
+  }
+  for (const c of Array.isArray(manualChanges) ? manualChanges : []) {
+    if (!c || typeof c !== 'object') continue
+    push(c.ts, typeof c.text === 'string' && c.text.trim() ? c.text : c.description)
+  }
+  for (const e of Array.isArray(eventLines) ? eventLines : []) push(e?.ts, e?.line)
+  items.sort((a, b) => {
+    if (a.ms !== null && b.ms !== null && a.ms !== b.ms) return a.ms - b.ms
+    if ((a.ms === null) !== (b.ms === null)) return a.ms === null ? 1 : -1
+    return a.order - b.order
+  })
+  const lines = items.map((x) => {
+    const clock = zurichClock(x.ts)
+    return clock ? `${clock} ${x.text}` : x.text
+  })
+  if (lines.length <= MAX_TECHNICAL_LINES) return lines
+  return [...lines.slice(0, MAX_TECHNICAL_LINES), `… (+${lines.length - MAX_TECHNICAL_LINES})`]
 }
 
 /** The distinct, valid addresses of `list`, at most MAX_RECIPIENTS. */
@@ -349,6 +410,21 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     return { sent, failed, held: false }
   }
 
+  /** A close's technical remarks (technicalRemarkLines); [] when they cannot be read (the mail goes without them). */
+  async function technicalOf (m) {
+    if (!(Number(m.remarks_model) >= TECHNICAL_REMARKS_MODEL)) return []
+    try {
+      const { rows } = await pool.query(
+        `SELECT e.ts, e.payload->>'autoRemark' AS line FROM public.events e
+          WHERE e.match_id = $1 AND e.voided_at IS NULL AND e.payload->>'remarkTo' = 'technical'
+          ORDER BY e.set_index, e.seq LIMIT 500`, [m.id])
+      return technicalRemarkLines({ remarksModel: m.remarks_model, manualChanges: m.manual_changes, eventLines: rows })
+    } catch (err) {
+      log.warn?.(`[final-mail] match ${m.id}: its technical remarks could not be read: ${err?.code || ''} ${String(err?.message || err).slice(0, 120)}`)
+      return technicalRemarkLines({ remarksModel: m.remarks_model, manualChanges: m.manual_changes, eventLines: [] })
+    }
+  }
+
   /** The closing scorer and the admins: the result mail went without the PDF. One try; never fails the sweep. */
   async function tellNoPdf (m, vars, ctx) {
     try {
@@ -402,7 +478,9 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
       date: zurichDate(m.scheduled_at || m.closed_at),
       result: m.final_score || '',
       corrected: m.corrected === true,
-      pdf: !!pdf
+      pdf: !!pdf,
+      // a list of one-line texts (lib/mailer.js cleanVar)
+      technical: (await technicalOf(m)).map((line) => ({ line }))
     }
     // Each address gets the mail with the PDF once ('pdf'); while there is
     // none, the mail without it once ('nopdf'), and then the PDF on its own

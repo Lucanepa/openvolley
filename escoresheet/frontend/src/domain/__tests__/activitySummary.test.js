@@ -96,6 +96,12 @@ describe('match row entries', () => {
     const row = { manualChanges: [{ category: 'a', field: 'f', before: 1, after: 2 }] }
     const mods = { manualChanges: [...row.manualChanges, { category: 'roster', field: 'number', before: '7', after: '8' }, { category: 'set', field: 'score', before: '25:20', after: '25:21' }] }
     expect(matchUpdateEntries(mods, row).map(e => e.data.field)).toEqual(['number', 'score'])
+    // a technical remark (owner 22.11.2026): its kind, never its text
+    const tech = matchUpdateEntries({ manualChanges: [{ ts: 't', category: 'technical', action: 'technicalRemark', text: 'Ball pump broken, #4 hurt' }] }, {})
+    expect(tech).toEqual([{ kind: 'match.manual_change', data: { category: 'technical', field: null, before: null, after: null, action: 'technicalRemark' } }])
+    expect(sanitizeActivityData('match.manual_change', tech[0].data)).toEqual({ category: 'technical', field: null, before: null, after: null, action: 'technicalRemark' })
+    expect(sanitizeActivityData('match.manual_change', { category: 'technical', action: 'resigned', text: 'secret' })).toEqual({ category: 'technical', action: 'resigned' })
+    expect(activityLine({ kind: 'match.manual_change', data: tech[0].data })).toContain('technical remark (technicalRemark)')
     const ct = matchUpdateEntries({ coinTossTeamA: 'home', coinTossServeA: true, coinTossConfirmed: true }, {})
     expect(ct).toEqual([{ kind: 'match.coin_toss', data: { keys: ['coinTossTeamA', 'coinTossServeA', 'coinTossConfirmed'], confirmed: true } }])
   })
