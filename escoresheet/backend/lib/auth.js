@@ -1943,8 +1943,10 @@ export function createAuth(options = {}) {
         user = await findUserByEmail(email)
         // The bcrypt gate is fair between clients, and a source that signed in
         // to this account before (and did not fail since) goes first: a flood
-        // of made-up sign-ins cannot turn its owner away (SEC-03)
-        passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, known && !failedLately, email))
+        // of made-up sign-ins cannot turn its owner away (SEC-03). Known also
+        // when the ceiling check found it in db/057 just now (after a restart)
+        const prio = (known || knownSource(email, source)) && !failedLately
+        passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, prio, email))
       } catch (err) {
         // the password was not checked (auth_busy, the database): the try goes back
         await returnClaim(ceilingLock?.claim)
