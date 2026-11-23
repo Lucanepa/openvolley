@@ -4688,7 +4688,6 @@
       "squad": "Kader {{season}}",
       "squadHint": "Alle, die diese Saison spielen dürfen, mit Nummern und Lizenznummern. Schreiber können dieses Team auch in der Spieleinrichtung laden.",
       "games": "Spiele",
-      "gamesHint": "Stelle den Kader jedes Spiels zusammen: Hake an, wer spielt. Du kannst ihn bis zum Spielbeginn ändern.",
       "noGames": "Ab heute keine Spiele dieses Teams im Spielplan.",
       "gameNotFound": "Spiel #{{number}} ist ab heute nicht im Spielplan dieses Teams.",
       "vs": "gegen",
