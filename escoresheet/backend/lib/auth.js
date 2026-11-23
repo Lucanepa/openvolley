@@ -91,6 +91,7 @@ import { authLink, describeMailError, disabledMailer, inboxKey, mailApp, maskEma
 import { cleanTransports, createPasskeyCeremonies, passkeyConfig, passkeyDeviceLabel, PasskeyError, PASSKEYS_PER_USER_MAX } from './passkeys.js'
 import { connectClient } from './pgClient.js'
 import { EMAIL_RE } from './emailAddress.js'
+import { accessFromRoles } from './access.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -796,13 +797,18 @@ export function createAuth(options = {}) {
     return null
   }
 
-  /** The shortest new password one account may set: longer for an admin. */
+  /**
+   * The shortest new password one account may set: longer for an admin, the
+   * super admin included (lib/access.js accessFromRoles isAdmin, audit 2611
+   * SEC-36). Existing passwords keep working: sign-in checks no length.
+   */
   async function minPasswordFor(userId, client = pool) {
     if (!T.profiles || !userId) return cfg.minPasswordLength
     try {
       const { rows } = await client.query(
-        `SELECT 1 FROM ${T.profiles} p WHERE p.${quoteIdent(cfg.profileUserIdColumn)} = $1 AND 'admin' = ANY (p.roles)`, [userId])
-      return rows.length ? Math.max(cfg.minPasswordLength, cfg.adminMinPasswordLength || 0) : cfg.minPasswordLength
+        `SELECT p.roles FROM ${T.profiles} p WHERE p.${quoteIdent(cfg.profileUserIdColumn)} = $1`, [userId])
+      const admin = rows.some((r) => accessFromRoles(r.roles).isAdmin)
+      return admin ? Math.max(cfg.minPasswordLength, cfg.adminMinPasswordLength || 0) : cfg.minPasswordLength
     } catch (err) {
       if (err.code === '42P01' || err.code === '42703') return cfg.minPasswordLength // no profiles table / roles column
       throw err
