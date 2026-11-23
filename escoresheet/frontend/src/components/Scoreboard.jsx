@@ -13973,6 +13973,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!liberoUnableModal || !data?.set) return
 
     const { team, liberoNumber, liberoType, reason = 'declared', isOnCourt } = liberoUnableModal
+    // A libero on court is never declared unable (Swiss exam Q11): only an
+    // injury or illness takes him off here, at once. The court menu offers
+    // no declaration; this keeps any other way in from writing one.
+    if (reason === 'declared' && (isOnCourt || String(getLiberoOnCourt(team)?.liberoNumber) === String(liberoNumber))) {
+      deferUi(() => setLiberoUnableModal(null))
+      return
+    }
 
     try {
       // If libero is on court, force them out first
@@ -21626,7 +21633,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.playerMenu.exchangeLibero')}
                         </SbMenuItem>
                       )}
-                      {/* Unable to play - expandable (not while the rally is in play) */}
+                      {/* Unable to play - expandable (not while the rally is in play).
+                          Injury / illness only: a libero on court cannot be
+                          declared unable (Swiss exam Q11); the coach replaces
+                          him first, then declares him from the bench menu. */}
                       {!playerActionMenu.liberoOnly && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <SbMenuItem tone="danger" expanded={courtLiberoUnableExpanded} onClick={() => setCourtLiberoUnableExpanded(!courtLiberoUnableExpanded)}>
@@ -21634,26 +21644,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </SbMenuItem>
                         {courtLiberoUnableExpanded && (
                           <div className={SB_MENU_SUB}>
-                            <SbMenuItem
-                              tone="declared"
-                              icon={<SpeechIcon size={16} />}
-                              onClick={() => {
-                                setPlayerActionMenu(null)
-                                setCourtSubExpanded(false)
-                                setCourtLiberoExpanded(false)
-                                setCourtSanctionExpanded(false)
-                                setCourtLiberoUnableExpanded(false)
-                                setLiberoUnableModal({
-                                  team,
-                                  liberoNumber: liberoOnCourt.liberoNumber,
-                                  liberoType: liberoOnCourt.liberoType,
-                                  reason: 'declared',
-                                  isOnCourt: true
-                                })
-                              }}
-                            >
-                              {t('scoreboard.playerMenu.declaredUnable')}
-                            </SbMenuItem>
                             <SbMenuItem
                               tone="danger"
                               icon={SB_INJURY_ICON}
