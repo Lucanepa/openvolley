@@ -137,7 +137,8 @@ const openInfo = async () => {
 
 describe('Match setup: championship type typed by hand before the select', () => {
   it('"Regional" shows as regional and is saved lowercase', async () => {
-    globalMatch({ global: false, globalKey: undefined, game_n: 4711, bestOf: 5, championshipType: 'Regional' })
+    // a Swiss match: Save needs the scorer's licence (or date of birth)
+    globalMatch({ global: false, globalKey: undefined, game_n: 4711, bestOf: 5, championshipType: 'Regional', officials: [{ role: 'scorer', firstName: 'Sara', lastName: 'Schreiber', country: 'CHE', dob: '123456' }] })
     render(<Setup matchId={1} />)
     await openInfo()
     const select = await screen.findByLabelText('matchSetup.championshipType')

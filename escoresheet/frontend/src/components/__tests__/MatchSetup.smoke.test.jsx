@@ -201,7 +201,10 @@ describe('MatchSetup smoke render', () => {
       id: 1, status: 'setup', seed_key: 'match_1_ref', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
       homeTeamId: 11, awayTeamId: 12, homeName: 'Home V', awayName: 'Away V', homeShortName: 'HOM', awayShortName: 'AWA',
       scheduledAt: '2026-10-29T18:00:00.000Z', game_n: 991407, league: '3L', hall: 'Halle A', city: 'Zürich',
-      officials: [{ role: '1st referee', firstName: 'Rita', lastName: 'Ref', country: 'CHE', dob: '01.01.1990' }], ...PINS
+      officials: [
+        { role: '1st referee', firstName: 'Rita', lastName: 'Ref', country: 'CHE', dob: '01.01.1990' },
+        { role: 'scorer', firstName: 'Sara', lastName: 'Schreiber', country: 'CHE', dob: '123456' } // Save needs the scorer's licence
+      ], ...PINS
     }]])
     store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
     render(<Setup matchId={1} />)
@@ -216,8 +219,9 @@ describe('MatchSetup smoke render', () => {
   // A Swiss match carries the licence beside each name, or a date of birth
   // typed with its dots (owner 2026-11-19): one field per official, a text
   // field (the iPad's numeric keypad has no "."), the licence kept as typed,
-  // the date tidied; the scorer's value lifts the coin-toss note
-  it('a Swiss official\'s value is a licence or a date of birth; the scorer\'s lifts the coin-toss note', async () => {
+  // the date tidied; the scorer's value lifts the note and unblocks Save /
+  // Create match (owner 23.11.2026: mandatory, blocking)
+  it('a Swiss official\'s value is a licence or a date of birth; without the scorer\'s, Save / Create match stays disabled', async () => {
     store.tables.matches = new Map([[1, {
       id: 1, status: 'setup', seed_key: 'match_1_lic', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
       homeTeamId: 11, awayTeamId: 12, homeName: 'Home V', awayName: 'Away V', homeShortName: 'HOM', awayShortName: 'AWA',
@@ -236,8 +240,11 @@ describe('MatchSetup smoke render', () => {
     expect(scorer).toHaveAttribute('inputMode', 'text')
     expect(scorer).toHaveValue('') // the 01.01.1900 placeholder shows empty
     expect(screen.getByText('matchSetup.dobRequiredForCoinToss')).toBeTruthy()
+    // mandatory: no Save / Create match without it (owner 23.11.2026)
+    expect(screen.getByRole('button', { name: 'matchSetup.save' })).toBeDisabled()
     fireEvent.change(scorer, { target: { value: '123456' } })
     await waitFor(() => expect(screen.queryByText('matchSetup.dobRequiredForCoinToss')).toBeNull())
+    expect(screen.getByRole('button', { name: 'matchSetup.save' })).not.toBeDisabled()
     const ref1 = screen.getByTestId('ref1-id')
     fireEvent.change(ref1, { target: { value: '14.3.2008' } })
     fireEvent.blur(ref1)
@@ -274,7 +281,8 @@ describe('MatchSetup smoke render', () => {
     store.tables.matches = new Map([[1, {
       id: 1, status: 'setup', test: true, matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
       homeTeamId: 11, awayTeamId: 12, homeName: 'Home V', awayName: 'Away V', homeShortName: 'HOM', awayShortName: 'AWA',
-      scheduledAt: '2026-10-29T18:00:00.000Z', game_n: 991406, league: '3L', hall: 'Halle A', city: 'Zürich', ...PINS
+      scheduledAt: '2026-10-29T18:00:00.000Z', game_n: 991406, league: '3L', hall: 'Halle A', city: 'Zürich',
+      officials: [{ role: 'scorer', firstName: 'Sara', lastName: 'Schreiber', country: 'CHE', dob: '123456' }], ...PINS // Save needs the scorer's licence
     }]])
     store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
     render(<Setup matchId={1} />)

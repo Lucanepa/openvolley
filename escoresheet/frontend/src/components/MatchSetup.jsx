@@ -761,6 +761,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!hall?.trim()) missing.push(t('matchSetup.hall') || 'Hall')
     if (bestOf !== 3 && bestOf !== 5) missing.push(t('matchSetup.matchFormat'))
     if (requireEmail && !notificationEmail?.trim()) missing.push(t('matchSetup.notificationEmail') || 'Email')
+    if (scorerDobMissing) missing.push(t('matchSetup.scorerDobForCoinToss'))
 
     if (missing.length === 0) return ''
     return `${t('matchSetup.required') || 'Required'}: ${missing.join(', ')}`
@@ -1210,6 +1211,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // The scorer's date of birth is a Swiss coin-toss rule: not asked in a Global
   // match; a licence number does instead (owner 2026-11-15)
   const scorerDobMissing = match?.global !== true && !scorerIdentified(scorerDob, scorerLicence)
+  // Create match / Save waits for it too (owner 23.11.2026: the scorer's
+  // licence or date of birth is mandatory and blocks creating the match,
+  // not only the coin toss)
+  const canCreateMatch = canConfirmMatchInfo && !scorerDobMissing
   // The referee directory ("Database" on the referee cards) is for the
   // official match of an account that may score: the server refuses it to
   // anyone else (backend/server.js REFEREE_DIRECTORY), and a test, easy or
@@ -4787,7 +4792,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             size="xl"
             className="disabled:cursor-not-allowed"
             onClick={(e) => {
-              if (!canConfirmMatchInfo) {
+              if (!canCreateMatch) {
                 e.preventDefault()
                 const tooltip = getMissingFieldsTooltip()
                 if (tooltip) {
@@ -4797,13 +4802,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 confirmMatchInfo()
               }
             }}
-            disabled={!canConfirmMatchInfo || confirmingMatchInfo}
+            disabled={!canCreateMatch || confirmingMatchInfo}
             aria-busy={confirmingMatchInfo || undefined}
-            title={!canConfirmMatchInfo ? getMissingFieldsTooltip() : ''}
+            title={!canCreateMatch ? getMissingFieldsTooltip() : ''}
           >
             {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
             </Button>
-          {!canConfirmMatchInfo && (
+          {!canCreateMatch && (
             <WarningIndicator id="confirmMatchInfo" missingItems={[...getMissingFieldsList(), ...(scorerDobMissing ? [t('matchSetup.scorerDobForCoinToss')] : [])]} position="above" />
           )}
         </div>
@@ -7514,12 +7519,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           data-help-id="setup-match-info-card"
           className={cn(
             'rounded-xl border bg-stone-50/60 p-4 sm:p-5',
-            matchInfoConfirmed ? 'border-stone-200/70' : canConfirmMatchInfo ? 'border-2 border-sky-300' : 'border-2 border-amber-300'
+            matchInfoConfirmed ? 'border-stone-200/70' : canCreateMatch ? 'border-2 border-sky-300' : 'border-2 border-amber-300'
           )}
         >
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
+              <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canCreateMatch} />
               <h3 className="m-0 text-base font-semibold text-stone-900">{t('matchSetup.matchInfo')}</h3>
             </div>
             {/* one sync chip for the card, on its own row on a phone; the
