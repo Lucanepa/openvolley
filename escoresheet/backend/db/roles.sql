@@ -50,7 +50,8 @@
 --                       auth.app_memberships SELECT, INSERT, DELETE
 --                                          (db/012, lib/accounts.js; skipped
 --                                          when absent)
---                       auth.sign_in_failures SELECT, INSERT, UPDATE, DELETE
+--                       auth.sign_in_failures, auth.sign_in_sources
+--                                          SELECT, INSERT, UPDATE, DELETE
 --                                          (db/057, the account-wide sign-in
 --                                          ceiling; skipped when absent)
 --               ov_meta USAGE, and SELECT on schema_migrations (the
@@ -293,6 +294,8 @@ SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.passkeys TO ov_app'
 -- like app_tokens: without the table the ceiling counts in memory only.
 SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.sign_in_failures TO ov_app'
  WHERE to_regclass('auth.sign_in_failures') IS NOT NULL \gexec
+SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.sign_in_sources TO ov_app'
+ WHERE to_regclass('auth.sign_in_sources') IS NOT NULL \gexec
 
 -- ov_meta: the migration record (scripts/migrate.mjs). The backend reads it
 -- to tell whether the database is behind its image (lib/schemaVersion.js);

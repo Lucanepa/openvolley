@@ -8,6 +8,14 @@
  * together get one try per (growing) interval, the account is mailed and the
  * admins told once per window, and a restart forgets nothing.
  *
+ * Review of the fix (I-2): the owner's known sources lived in memory only, so
+ * after a restart (a deploy) the owner waited with the guessers; and a try
+ * taken by a sign-in the bcrypt gate then turned away (auth_busy) was lost.
+ * Now the known sources are in auth.sign_in_sources too (keyed HMAC, no
+ * address, no IP), the try goes back when the password was not checked, and
+ * accountCeiling.slots 'lane' (one try per client lane, for the owner to
+ * choose) is there next to the shared try.
+ *
  * Needs PG_TEST_URL (tests/helpers/pgTestDb.js).
  */
 import { describe, it, before, after } from 'node:test'
@@ -17,8 +25,9 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { createHash } from 'node:crypto'
 import pg from 'pg'
+import bcryptjs from 'bcryptjs'
 import { SKIP_PG, SCHEMA_SQL, PG_TEST_URL, createTestDatabase, applyRolesSql, dropRoles, readonlyRoleOf } from './helpers/pgTestDb.js'
-import { createAuth } from '../lib/auth.js'
+import { createAuth, ipBucketKey } from '../lib/auth.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SESSIONS_SQL = readFileSync(join(here, '..', 'db', '002_app_sessions.sql'), 'utf8')
@@ -31,6 +40,9 @@ function memoryMailer() {
   return { enabled: true, reason: null, managerUrl: 'https://manager.example.test', mails, async send(kind, m) { mails.push({ kind, ...m }); return { sent: true } }, close() {} }
 }
 const keyOf = (email) => createHash('sha256').update(`ov-sign-in-failures:${email}`, 'utf8').digest()
+const SECRET = 'test-pin-secret-'.padEnd(48, 'x')
+const bcryptjsHash = (pw, c) => bcryptjs.hash(pw, c)
+const bcryptjsCompare = (pw, h) => bcryptjs.compare(pw, h)
 
 describe('the account-wide sign-in ceiling in the database (db/057, SEC-13)', { skip: SKIP_PG }, () => {
   let tdb, pool
@@ -84,10 +96,14 @@ describe('the account-wide sign-in ceiling in the database (db/057, SEC-13)', { 
 
   it('migration 057 is idempotent and keeps rows on a re-run', async () => {
     await pool.query(`INSERT INTO auth.sign_in_failures (email_key, failures) VALUES ($1, 3) ON CONFLICT DO NOTHING`, [keyOf('mig057@example.ch')])
+    await pool.query(`INSERT INTO auth.sign_in_sources (email_key, source_key) VALUES ($1, $1) ON CONFLICT DO NOTHING`, [keyOf('mig057@example.ch')])
     await pool.query(M057)
     await pool.query(M057)
     assert.equal((await rowOf('mig057@example.ch')).failures, 3)
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM auth.sign_in_sources WHERE email_key = $1', [keyOf('mig057@example.ch')])).rows[0].n, 1)
     await assert.rejects(pool.query(`INSERT INTO auth.sign_in_failures (email_key) VALUES ('\\x00')`), /sign_in_failures_email_key_check/)
+    await assert.rejects(pool.query(`INSERT INTO auth.sign_in_sources (email_key, source_key) VALUES ($1, '\\x00')`, [keyOf('mig057@example.ch')]), /sign_in_sources_source_key_check/)
+    await pool.query('DELETE FROM auth.sign_in_sources')
   })
 
   it('rotating sources stop at the ceiling; the owner\'s known source still gets in; one alert; a restart forgets nothing', async () => {
@@ -131,6 +147,81 @@ describe('the account-wide sign-in ceiling in the database (db/057, SEC-13)', { 
     assert.equal(alerts.length, 1, 'one alert per window')
     assert.equal(mailer.mails.filter((m) => m.kind === 'sign_in_attempts').length, 1)
     assert.equal((await rowOf('referee@example.ch')).failures, 22)
+  })
+
+  const sourcesOf = async (email) => (await pool.query('SELECT source_key, last_ok_at FROM auth.sign_in_sources WHERE email_key = $1', [keyOf(email)])).rows
+
+  it('a restart keeps the owner\'s known sources (auth.sign_in_sources): the right password from home still gets in', async () => {
+    await addUser('restart@example.ch')
+    let auth = makeAuth({ signInSourceSecret: SECRET })
+    const home = '198.51.100.7'
+    assert.equal((await signIn(auth, 'restart@example.ch', PW, home)).status, 200, 'the owner signs in at home')
+    const rows = await sourcesOf('restart@example.ch')
+    assert.equal(rows.length, 1, 'the source is written')
+    const plain = createHash('sha256').update(`restart@example.ch\u0000${ipBucketKey(home)}`, 'utf8').digest()
+    assert.notDeepEqual(rows[0].source_key, plain, 'a keyed HMAC, not a hash anyone can recompute')
+    assert.equal(rows[0].source_key.length, 32)
+    // the review's restart.mjs: 20 wrong guesses from 4 addresses, then one request takes the try
+    for (let i = 0; i < 4; i++) for (let k = 0; k < 5; k++) await signIn(auth, 'restart@example.ch', `x${i}${k}`, `203.0.113.${i + 1}`)
+    assert.equal((await signIn(auth, 'restart@example.ch', 'guess', '203.0.113.99')).status, 400, 'the attacker takes the try')
+    assert.equal((await signIn(auth, 'restart@example.ch', PW, home)).status, 200)
+    auth = makeAuth({ signInSourceSecret: SECRET }) // a deploy
+    assert.equal((await signIn(auth, 'restart@example.ch', PW, '203.0.113.100')).status, 429, 'a new source still waits')
+    assert.equal((await signIn(auth, 'restart@example.ch', PW, home)).status, 200, 'the owner at home gets in after the restart')
+    // without the secret nothing is written (and nothing read)
+    await addUser('nosecret@example.ch')
+    assert.equal((await signIn(makeAuth(), 'nosecret@example.ch', PW, home)).status, 200)
+    assert.deepEqual(await sourcesOf('nosecret@example.ch'), [])
+  })
+
+  it('known sources: at most 20 per address, gone with the account and after 60 days', async () => {
+    const id = await addUser('many@example.ch')
+    const auth = makeAuth({ signInSourceSecret: SECRET })
+    for (let i = 0; i < 23; i++) assert.equal((await signIn(auth, 'many@example.ch', PW, `198.51.100.${i + 10}`)).status, 200)
+    assert.equal((await sourcesOf('many@example.ch')).length, 20)
+    await pool.query(`UPDATE auth.sign_in_sources SET last_ok_at = now() - interval '61 days' WHERE email_key = $1 AND source_key = (SELECT source_key FROM auth.sign_in_sources WHERE email_key = $1 ORDER BY source_key LIMIT 1)`, [keyOf('many@example.ch')])
+    await auth.sweepExpiredSessions()
+    assert.equal((await sourcesOf('many@example.ch')).length, 19, 'the sweep removes a source not seen for 60 days')
+    await auth.eraseAccount(id)
+    assert.deepEqual(await sourcesOf('many@example.ch'), [], 'deleting the account deletes them')
+  })
+
+  it('a try taken by a sign-in the bcrypt gate turns away (auth_busy) goes back', async () => {
+    await addUser('busy@example.ch')
+    await addUser('other@example.ch')
+    let hold
+    const held = new Promise((r) => { hold = r })
+    let blockNext = false
+    const bcrypt = {
+      hash: (pw, c) => bcryptjsHash(pw, c),
+      compare: async (pw, h) => { if (blockNext) { blockNext = false; await held } return bcryptjsCompare(pw, h) }
+    }
+    const auth = makeAuth({ bcrypt, bcryptMaxConcurrent: 1, bcryptMaxQueue: 0 })
+    await pool.query(`INSERT INTO auth.sign_in_failures (email_key, window_start, failures) VALUES ($1, now(), 25)`, [keyOf('busy@example.ch')])
+    blockNext = true
+    const blocker = signIn(auth, 'other@example.ch', PW, '198.51.100.200') // holds the one slot
+    await new Promise((r) => setTimeout(r, 20))
+    const busy = await signIn(auth, 'busy@example.ch', PW, '203.0.113.50')
+    assert.equal(busy.status, 503, JSON.stringify(busy.body))
+    assert.equal(busy.body.error.code, 'auth_busy')
+    assert.equal((await rowOf('busy@example.ch')).next_try_at, null, 'the try is free again')
+    hold()
+    assert.equal((await blocker).status, 200)
+    assert.equal((await signIn(auth, 'busy@example.ch', PW, '203.0.113.50')).status, 200, 'the retry has the try')
+  })
+
+  it('slots "lane": past the ceiling each client lane gets its own try (an attacker holds only its own)', async () => {
+    await addUser('lanes@example.ch')
+    const auth = makeAuth({ accountCeiling: { ...CEILING, slots: 'lane' } })
+    // 20 wrong guesses from 4 /64s of the attacker's /48
+    assert.deepEqual(await guess(auth, 'lanes@example.ch', 0xb0b0, 4, 5), { '400:invalid_credentials': 20 })
+    assert.equal((await signIn(auth, 'lanes@example.ch', 'guess', src(0xb0b0, 9))).status, 400, 'the attacker\'s lane has one try')
+    const again = await signIn(auth, 'lanes@example.ch', 'guess', src(0xb0b0, 10))
+    assert.equal(again.status, 429, 'then waits, from any /64 of its /48')
+    assert.ok(Number(again.headers['Retry-After']) > 0)
+    assert.equal((await signIn(auth, 'lanes@example.ch', PW, '2001:db8:c0c0:1::5')).status, 200, 'the owner on another network has a try of its own')
+    assert.equal((await signIn(auth, 'lanes@example.ch', 'guess', '198.51.100.250')).status, 400, 'one per IPv4 address too')
+    assert.equal((await signIn(auth, 'lanes@example.ch', 'guess', '198.51.100.250')).status, 429)
   })
 
   it('the interval grows with each further ceiling of failures, up to maxIntervalMs', async () => {
@@ -210,11 +301,14 @@ describe('the account-wide sign-in ceiling in the database (db/057, SEC-13)', { 
       appPool.on('error', () => {})
       await addUser('approle@example.ch')
       const logged = []
-      const auth = createAuth({ pool: appPool, logger: { log() {}, warn: (m) => logged.push(m), error: (m) => logged.push(m) }, bcryptCost: 4, accountCeiling: CEILING, limits: { signInGlobal: false } })
+      const auth = createAuth({ pool: appPool, logger: { log() {}, warn: (m) => logged.push(m), error: (m) => logged.push(m) }, bcryptCost: 4, accountCeiling: CEILING, limits: { signInGlobal: false }, signInSourceSecret: SECRET })
+      assert.equal((await signIn(auth, 'approle@example.ch', PW, src(0xa2a2, 1))).status, 200)
+      assert.equal((await sourcesOf('approle@example.ch')).length, 1, 'the app role writes its known source')
       for (let i = 0; i < 20; i++) await signIn(auth, 'approle@example.ch', `typo-${i}`, src(0xa0a0, i))
       assert.equal((await signIn(auth, 'approle@example.ch', 'typo', src(0xa1a1, 1))).status, 400)
       assert.equal((await signIn(auth, 'approle@example.ch', PW, src(0xa1a1, 2))).status, 429)
       assert.equal((await rowOf('approle@example.ch')).failures, 21)
+      assert.equal((await signIn(createAuth({ pool: appPool, logger: silent, bcryptCost: 4, accountCeiling: CEILING, limits: { signInGlobal: false }, signInSourceSecret: SECRET }), 'approle@example.ch', PW, src(0xa2a2, 1))).status, 200, 'after a restart, as the app role')
       await auth.setPassword('approle@example.ch', 'approle-password-2')
       assert.equal(await rowOf('approle@example.ch'), undefined)
       assert.deepEqual(logged.filter((m) => /db\/057/.test(m)), [], 'no grant missing')

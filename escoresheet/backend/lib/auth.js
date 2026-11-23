@@ -95,7 +95,7 @@
  * survives a restart (db/057, DEFAULTS.accountCeiling, audit 2611 SEC-13).
  */
 
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createHmac, hkdfSync, randomBytes, randomUUID } from 'node:crypto'
 import { isIPv4, isIPv6 } from 'node:net'
 import bcryptjs from 'bcryptjs'
 import { authLink, describeMailError, disabledMailer, inboxKey, mailApp, maskEmail, MAIL_BRANDS, pickLang } from './mailer.js'
@@ -330,8 +330,20 @@ const DEFAULTS = Object.freeze({
   // newSourceIntervalMs, doubling with each further maxFailures failures, at
   // most maxIntervalMs (429 account_locked meanwhile). The account is mailed
   // and the admins told (options.onSignInAttack) once per window.
-  accountCeiling: { maxFailures: 100, windowMs: 24 * 60 * 60 * 1000, newSourceIntervalMs: 60 * 1000, maxIntervalMs: 60 * 60 * 1000 },
+  // slots: 'account' = all new sources of the address share that one try
+  // (a botnet guesses no faster than one source; the owner on a new network
+  // waits with the guessers); 'lane' = one try per client lane (ipLaneKey:
+  // an IPv6 /48, an IPv4 address) and interval, so the owner's network keeps
+  // its own while a botnet guesses once per lane (review I-2: the owner
+  // decides; 'account' until then).
+  accountCeiling: { maxFailures: 100, windowMs: 24 * 60 * 60 * 1000, newSourceIntervalMs: 60 * 1000, maxIntervalMs: 60 * 60 * 1000, slots: 'account' },
   signInFailuresTable: 'auth.sign_in_failures',
+  // db/057: the sources that signed in to an address, so the way past the
+  // ceiling for the owner's own survives a restart (review I-2). Written
+  // only with signInSourceSecret (server.js: OV_PIN_SECRET, at least 32
+  // characters): the rows are HMACs keyed with a key derived from it.
+  signInSourcesTable: 'auth.sign_in_sources',
+  signInSourceSecret: null,
   // db/025: what an account asked for at sign-up (confirmEmailLink clears it
   // when the confirmer is not shown to be the one who signed up)
   accountRequestsTable: 'public.account_requests'
@@ -339,8 +351,11 @@ const DEFAULTS = Object.freeze({
 const FAILED_SOURCE_MS = 15 * 60 * 1000
 const KNOWN_SOURCE_MS = 60 * DAY * 1000
 const KNOWN_SOURCES_MAX = 50_000
+const KNOWN_SOURCES_PER_ADDRESS = 20
 // createFairGate: how many lanes it remembers the last start of (idle ones too)
 const SERVED_LANES_MAX = 10_000
+// accountCeiling.slots 'lane': how many address and lane slots are kept
+const LANE_SLOTS_MAX = 100_000
 
 const TOKEN_BYTES = 32
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/ // base64url of 32 bytes, no padding
@@ -1000,6 +1015,7 @@ export function createAuth(options = {}) {
     passkeys: cfg.passkeysTable ? qualify(cfg.passkeysTable) : null,
     memberships: cfg.membershipsTable ? qualify(cfg.membershipsTable) : null,
     failures: cfg.signInFailuresTable ? qualify(cfg.signInFailuresTable) : null,
+    sources: cfg.signInSourcesTable ? qualify(cfg.signInSourcesTable) : null,
     requests: cfg.accountRequestsTable ? qualify(cfg.accountRequestsTable) : null
   }
 
@@ -1039,20 +1055,83 @@ export function createAuth(options = {}) {
     accountLockout?.reset(email)
     newSourceLockout?.resetPrefix(`${email}|`)
     limits.signInEmail?.resetPrefix?.(`${email}|`)
+    for (const k of laneSlots.keys()) if (k.startsWith(`${email}|`)) laneSlots.delete(k)
   }
-  function rememberSource(email, bucket) {
+  /** -> the time this source was remembered before, or undefined. */
+  function rememberSource(email, bucket, at = Date.now()) {
     let m = knownSources.get(email)
     if (m) knownSources.delete(email) // re-inserted: most recent last
     else m = new Map()
-    m.set(bucket, Date.now())
-    if (m.size > 20) m.delete(m.keys().next().value)
+    const before = m.get(bucket)
+    m.delete(bucket)
+    m.set(bucket, at)
+    if (m.size > KNOWN_SOURCES_PER_ADDRESS) m.delete(m.keys().next().value)
     knownSources.set(email, m)
     while (knownSources.size > KNOWN_SOURCES_MAX) knownSources.delete(knownSources.keys().next().value)
+    return before
   }
   function knownSource(email, bucket) {
     const t = knownSources.get(email)?.get(bucket)
     return t != null && Date.now() - t < KNOWN_SOURCE_MS
   }
+  // db/057 auth.sign_in_sources: the known sources in the database too, so a
+  // restart (a deploy) does not lock the owner out with the guessers past
+  // the ceiling (review I-2). Keyed HMAC of the address and the source.
+  const sourceSecret = typeof cfg.signInSourceSecret === 'string' && cfg.signInSourceSecret.length >= 32 ? cfg.signInSourceSecret : null
+  const sourceMacKey = sourceSecret
+    ? Buffer.from(hkdfSync('sha256', Buffer.from(sourceSecret, 'utf8'), Buffer.alloc(0), Buffer.from('ov-sign-in-source-v1', 'utf8'), 32))
+    : null
+  const sourceKey = (email, bucket) => createHmac('sha256', sourceMacKey).update(`${email}\u0000${bucket}`, 'utf8').digest()
+  let sourcesCheckedAt = 0
+  async function sourcesAvailable(client = pool) {
+    if (!sourceMacKey || !T.sources) return false
+    if (catalog.has(cfg.signInSourcesTable)) return true
+    // absent (db/057 not run yet): looked up again at most once a minute
+    if (Date.now() - sourcesCheckedAt < 60 * 1000) return false
+    sourcesCheckedAt = Date.now()
+    return (await columnsOf(cfg.signInSourcesTable, client)).size > 0
+  }
+  /** A sign-in succeeded from `bucket`: remembered, and written at most once a day per source. */
+  async function noteKnownSource(email, bucket) {
+    const before = rememberSource(email, bucket)
+    if (before != null && Date.now() - before < DAY * 1000) return
+    try {
+      if (!(await sourcesAvailable())) return
+      const ek = failureKey(email)
+      const { rows } = await pool.query(
+        `INSERT INTO ${T.sources} AS s (email_key, source_key, last_ok_at) VALUES ($1, $2, now())
+         ON CONFLICT (email_key, source_key) DO UPDATE SET last_ok_at = now()
+         RETURNING (xmax = 0) AS inserted`,
+        [ek, sourceKey(email, bucket)])
+      if (rows[0]?.inserted) {
+        await pool.query(
+          `DELETE FROM ${T.sources} WHERE email_key = $1 AND source_key IN (
+             SELECT source_key FROM ${T.sources} WHERE email_key = $1 ORDER BY last_ok_at DESC OFFSET $2)`,
+          [ek, KNOWN_SOURCES_PER_ADDRESS])
+      }
+    } catch (err) {
+      failuresTrouble('remember source', err)
+    }
+  }
+  /** Past the ceiling: did `bucket` sign in to `email` before (memory, else the database)? */
+  async function knownSourceStored(email, bucket) {
+    if (knownSource(email, bucket)) return true
+    try {
+      if (!(await sourcesAvailable())) return false
+      const { rows } = await pool.query(
+        `SELECT extract(epoch FROM last_ok_at) * 1000 AS at FROM ${T.sources}
+          WHERE email_key = $1 AND source_key = $2 AND last_ok_at > now() - make_interval(secs => $3)`,
+        [failureKey(email), sourceKey(email, bucket), KNOWN_SOURCE_MS / 1000])
+      if (!rows[0]) return false
+      rememberSource(email, bucket, Number(rows[0].at))
+      return true
+    } catch (err) {
+      failuresTrouble('known source', err)
+      return false
+    }
+  }
+  // accountCeiling.slots 'lane': `${email}|${lane}` -> when that lane may try again
+  const laneSlots = new Map()
 
   // --- catalog (lazy, cached only once a table is found) --------------------
   const catalog = new Map()
@@ -1346,18 +1425,31 @@ export function createAuth(options = {}) {
     return rowCount
   }
 
-  /** db/057: an address's failures go once their window is over (with the hourly session sweep). */
+  /**
+   * db/057: an address's failures go once their window is over, its known
+   * sources after KNOWN_SOURCE_MS without a sign-in (with the hourly session
+   * sweep). -> the failure rows removed.
+   */
   async function sweepSignInFailures() {
+    let removed = 0
     try {
-      if (!(await failuresAvailable())) return 0
-      const { rowCount } = await pool.query(
-        `DELETE FROM ${T.failures} WHERE window_start <= now() - make_interval(secs => $1)`,
-        [cfg.accountCeiling.windowMs / 1000])
-      return rowCount
+      if (await failuresAvailable()) {
+        const { rowCount } = await pool.query(
+          `DELETE FROM ${T.failures} WHERE window_start <= now() - make_interval(secs => $1)`,
+          [cfg.accountCeiling.windowMs / 1000])
+        removed = rowCount
+      }
     } catch (err) {
       failuresTrouble('sweep', err)
-      return 0
     }
+    try {
+      if (await sourcesAvailable()) {
+        await pool.query(`DELETE FROM ${T.sources} WHERE last_ok_at <= now() - make_interval(secs => $1)`, [KNOWN_SOURCE_MS / 1000])
+      }
+    } catch (err) {
+      failuresTrouble('sweep sources', err)
+    }
+    return removed
   }
 
   async function withTransaction(fn) {
@@ -1511,15 +1603,20 @@ export function createAuth(options = {}) {
   }
 
   /**
-   * Before the password check: null to go on, or { retryAfterSec } when the
-   * address is past its ceiling and no try is free for a new source now. A
-   * source that signed in to the account before (`known`) always goes on.
+   * Before the password check: null to go on, { claim } to go on with the
+   * try it took (returnClaim gives it back when the check does not run), or
+   * { retryAfterSec } when the address is past its ceiling and no try is
+   * free for this source now. A source that signed in to the account before
+   * (`known`, in memory or in db/057 auth.sign_in_sources) always goes on.
+   * slots 'account': all other sources share one try per interval; 'lane':
+   * one per client lane (`lane`, ipLaneKey) and interval.
    */
-  async function ceilingCheck(email, known) {
+  async function ceilingCheck(email, known, { bucket, lane } = {}) {
     const c = cfg.accountCeiling
     try {
       if (!(await failuresAvailable())) return null
       const key = failureKey(email)
+      const perLane = c.slots === 'lane'
       const { rows } = await pool.query(
         `SELECT failures, greatest(0, ceil(extract(epoch FROM next_try_at - now())))::int AS wait
            FROM ${T.failures}
@@ -1527,19 +1624,50 @@ export function createAuth(options = {}) {
         [key, c.windowMs / 1000])
       const r = rows[0]
       if (!r || r.failures < c.maxFailures || known) return null
-      if (r.wait > 0) return { retryAfterSec: r.wait }
+      if (bucket != null && await knownSourceStored(email, bucket)) return null
       const steps = Math.min(20, Math.floor((r.failures - c.maxFailures) / c.maxFailures))
       const intervalSec = Math.max(1, Math.ceil(Math.min(c.maxIntervalMs, c.newSourceIntervalMs * 2 ** steps) / 1000))
+      if (perLane) {
+        const slot = `${email}|${lane}`
+        const t = Date.now()
+        const until = laneSlots.get(slot)
+        if (until != null && until > t) return { retryAfterSec: Math.max(1, Math.ceil((until - t) / 1000)) }
+        laneSlots.delete(slot) // re-inserted: most recent last
+        laneSlots.set(slot, t + intervalSec * 1000)
+        while (laneSlots.size > LANE_SLOTS_MAX) laneSlots.delete(laneSlots.keys().next().value)
+        return { claim: { lane: slot, until: t + intervalSec * 1000 } }
+      }
+      if (r.wait > 0) return { retryAfterSec: r.wait }
       // one new source takes the try; the others wait for the next one
       const claim = await pool.query(
         `UPDATE ${T.failures} SET next_try_at = now() + make_interval(secs => $2)
           WHERE email_key = $1 AND (next_try_at IS NULL OR next_try_at <= now())
-          RETURNING 1`,
+          RETURNING next_try_at::text AS at`,
         [key, intervalSec])
-      return claim.rows.length ? null : { retryAfterSec: intervalSec }
+      return claim.rows.length ? { claim: { key, at: claim.rows[0].at } } : { retryAfterSec: intervalSec }
     } catch (err) {
       failuresTrouble('check', err)
       return null
+    }
+  }
+
+  /**
+   * The try a sign-in took past the ceiling, given back because its password
+   * was never checked (the bcrypt gate answered auth_busy, the database
+   * failed): the next request may have it (review I-2). Best effort.
+   */
+  async function returnClaim(claim) {
+    if (!claim) return
+    if (claim.lane) {
+      if (laneSlots.get(claim.lane) === claim.until) laneSlots.delete(claim.lane)
+      return
+    }
+    try {
+      await pool.query(
+        `UPDATE ${T.failures} SET next_try_at = NULL WHERE email_key = $1 AND next_try_at = $2::timestamptz`,
+        [claim.key, claim.at])
+    } catch (err) {
+      failuresTrouble('return a try', err)
     }
   }
 
@@ -1583,6 +1711,18 @@ export function createAuth(options = {}) {
       await pool.query(`DELETE FROM ${T.failures} WHERE email_key = $1`, [failureKey(normalizeEmail(email))])
     } catch (err) {
       failuresTrouble('reset', err)
+    }
+  }
+  /** The account is gone: its known sources too (memory and db/057). Best effort. */
+  async function forgetSources(email) {
+    if (!email) return
+    knownSources.delete(email)
+    for (const k of laneSlots.keys()) if (k.startsWith(`${email}|`)) laneSlots.delete(k)
+    try {
+      if (!sourceMacKey || !T.sources || !(await columnsOf(cfg.signInSourcesTable)).size) return
+      await pool.query(`DELETE FROM ${T.sources} WHERE email_key = $1`, [failureKey(email)])
+    } catch (err) {
+      failuresTrouble('forget sources', err)
     }
   }
   /** clearLocks and the database counter: every lock of the address goes. */
@@ -1787,20 +1927,27 @@ export function createAuth(options = {}) {
       // db/057: past the address's ceiling only a source that signed in to it
       // before goes on as usual (SEC-13)
       const known = knownSource(email, source)
-      const ceilingLock = await ceilingCheck(email, known)
-      if (ceilingLock) return locked(ceilingLock.retryAfterSec)
+      const ceilingLock = await ceilingCheck(email, known, { bucket: source, lane: laneKey(ctx.ip) })
+      if (ceilingLock?.retryAfterSec) return locked(ceilingLock.retryAfterSec)
 
-      const cols = await usersColumns()
-      const user = await findUserByEmail(email)
-      // The bcrypt gate is fair between clients, and a source that signed in
-      // to this account before (and did not fail since) goes first: a flood
-      // of made-up sign-ins cannot turn its owner away (SEC-03)
-      const passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, known && !failedLately, email))
+      let cols, user, passwordOk
+      try {
+        cols = await usersColumns()
+        user = await findUserByEmail(email)
+        // The bcrypt gate is fair between clients, and a source that signed in
+        // to this account before (and did not fail since) goes first: a flood
+        // of made-up sign-ins cannot turn its owner away (SEC-03)
+        passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, known && !failedLately, email))
+      } catch (err) {
+        // the password was not checked (auth_busy, the database): the try goes back
+        await returnClaim(ceilingLock?.claim)
+        throw err
+      }
       if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) return await failed()
       const session = await createSession(user.id, user.encrypted_password)
       if (!session) return await failed() // password changed or account deleted while we were checking
       lockout.succeed(key)
-      rememberSource(email, source)
+      await noteKnownSource(email, source)
       return await finishSignIn(user, cols, session)
     } finally {
       attempt.release?.()
@@ -2162,7 +2309,10 @@ export function createAuth(options = {}) {
       const { rows } = await client.query(`DELETE FROM ${T.users} WHERE id = $1 RETURNING email`, [userId])
       return rows.length ? (rows[0].email ?? '') : null
     })
-    if (email) await clearAllLocks(normalizeEmail(email))
+    if (email) {
+      await clearAllLocks(normalizeEmail(email))
+      await forgetSources(normalizeEmail(email))
+    }
     // Second pass: an upload that passed its session check before the
     // sessions were revoked may have landed in between. Best effort.
     if (typeof cfg.onAccountDeleted === 'function') {
@@ -2844,6 +2994,7 @@ export function createAuth(options = {}) {
     for (const [k, at] of failedSources) if (t - at >= FAILED_SOURCE_MS) failedSources.delete(k)
     ceremonies.sweep()
     for (const [k, until] of freshSessions) if (until <= t) freshSessions.delete(k)
+    for (const [k, until] of laneSlots) if (until <= t) laneSlots.delete(k)
   }
 
   return {

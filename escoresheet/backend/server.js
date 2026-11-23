@@ -709,6 +709,10 @@ function getDataLayer() {
       onSignInAttack: ({ userId, failures, windowHours }) => captureServerError(
         new Error(`auth: ${failures} failed sign-ins on one account within ${windowHours} h; new sources are slowed down`),
         { view: 'POST /api/auth/sign-in', status: 429, accountId: userId }),
+      // db/057 auth.sign_in_sources: the sources that signed in to an
+      // account, so the owner's own still pass the ceiling after a restart;
+      // HMACs keyed with a key derived from OV_PIN_SECRET (none written without it)
+      signInSourceSecret: process.env.OV_PIN_SECRET || null,
       // db/025: what a new account asks for at sign-up (nothing is granted then)
       signUpRequests: { parse: arq.parseSignUpRequests, store: (client, userId, rows) => arq.storeSignUpRequests(client, userId, rows) },
       // The account's own delete-account: the admin path's last-super-admin
