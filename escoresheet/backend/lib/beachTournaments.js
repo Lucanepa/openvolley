@@ -45,6 +45,10 @@ import { daysBetween, minutesOf, scheduleMatches, slotIssues } from './beachSche
 import { CONTROL_RE, fold, importHash, normalizeImport, planImport } from './beachImport.js'
 import { connectClient } from './pgClient.js'
 import { createAttemptLimiter } from './matchRestore.js'
+import { gzip } from 'node:zlib'
+import { promisify } from 'node:util'
+
+const gzipAsync = promisify(gzip)
 
 export const TOURNAMENT_STATUSES = Object.freeze(['draft', 'published', 'live', 'finished', 'archived'])
 export const DRAW_GENDERS = Object.freeze(['men', 'women', 'mixed'])
@@ -61,6 +65,28 @@ const LISTED_FOR_READERS = ['published', 'live', 'finished']
 // matches. Nothing capped them, and one schedule run of a tournament built
 // far beyond any real one held the shared backend for seconds.
 export const MAX_DRAWS = 40
+// The pairs of a tournament (PERM-02): nothing capped them, and the import
+// (600 rows a call) filled one with 24000 that the anonymous public page
+// serialised on every request until the shared backend ran out of memory.
+// A draw holds at most ENTRIES_PER_DRAW_MAX registered pairs (a bracket
+// takes 32, a seed goes to 128) and a tournament at most
+// TOURNAMENT_ENTRIES_MAX entries of any status (withdrawn rows stay, and the
+// editors' read and the import load them too): by hand (409 OV_DRAW_FULL /
+// OV_TOURNAMENT_ENTRIES_FULL) and by the import (row errors draw_full /
+// tournament_full). A tournament already beyond them stays readable; only
+// new pairs are refused.
+export const ENTRIES_PER_DRAW_MAX = 256
+export const TOURNAMENT_ENTRIES_MAX = 1024
+// The editors' read of a tournament answers at most this many entries
+// (entries_truncated: true beyond; only a tournament from before the caps)
+export const ENTRIES_READ_MAX = 4 * TOURNAMENT_ENTRIES_MAX
+// The anonymous public page (publicTournament): its answer is serialised and
+// gzipped once per tournament and cache period, never per request, and is
+// at most PUBLIC_MAX_BYTES (beyond: the players' names go, then the lists;
+// truncated: true). The cache holds at most PUBLIC_CACHE_MAX_BYTES.
+export const PUBLIC_MAX_BYTES = 1024 * 1024
+export const PUBLIC_CACHE_MAX_BYTES = 32 * 1024 * 1024
+const PUBLIC_CACHE_MAX_SLUGS = 500
 // Per account and minute: schedule runs and imports (dry runs too), and
 // co-manager additions
 export const HEAVY_CALLS_PER_MINUTE = 30
@@ -85,6 +111,8 @@ const STARTED = () => fail(409, 'OV_DRAW_STARTED', 'Matches of this draw have al
 // the bracket was drawn again (or reset) while the request waited for the draw: its matches have new ids
 const REPLACED = () => notFound('This match was replaced (the bracket was drawn again); reload')
 const FULL = () => fail(409, 'OV_TOURNAMENT_FULL', `A tournament has at most ${MAX_DRAWS} draws`, { max_draws: MAX_DRAWS })
+const DRAW_FULL = () => fail(409, 'OV_DRAW_FULL', `A draw has at most ${ENTRIES_PER_DRAW_MAX} registered pairs`, { max_entries: ENTRIES_PER_DRAW_MAX })
+const ENTRIES_FULL = () => fail(409, 'OV_TOURNAMENT_ENTRIES_FULL', `A tournament has at most ${TOURNAMENT_ENTRIES_MAX} entries`, { max_entries: TOURNAMENT_ENTRIES_MAX })
 const TOO_MANY = () => fail(429, 'OV_TOO_MANY_ATTEMPTS', 'Too many requests. Please wait a minute.')
 
 function validDay (s) {
@@ -207,17 +235,24 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   const heavyCalls = createAttemptLimiter({ max: HEAVY_CALLS_PER_MINUTE, windowMs: 60000, maxKeys: 10000 })
   const managerAdds = createAttemptLimiter({ max: MANAGER_ADDS_PER_MINUTE, windowMs: 60000, maxKeys: 10000 })
 
+  // the tournaments a transaction wrote (its audit entries name them): their
+  // public answers are built again once it has committed
+  const txTouched = new WeakMap()
   async function withTx (fn) {
     const client = await connectClient(pool, log)
+    const touched = new Set()
+    txTouched.set(client, touched)
     try {
       await client.query('BEGIN')
       const out = await fn(client)
       await client.query('COMMIT')
+      for (const id of touched) invalidatePublic(id)
       return out
     } catch (err) {
       try { await client.query('ROLLBACK') } catch { /* connection already gone */ }
       throw err
     } finally {
+      txTouched.delete(client)
       client.release()
     }
   }
@@ -240,7 +275,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     }
   }
   const abort = (result) => Object.assign(new Error('abort'), { __result: result })
-  const audit = (client, actorId, action, details) => accounts.audit(client, { actorId, action, details, app: 'beach' })
+  const audit = (client, actorId, action, details) => {
+    if (details?.tournament_id) txTouched.get(client)?.add(details.tournament_id)
+    return accounts.audit(client, { actorId, action, details, app: 'beach' })
+  }
 
   // ------------------------------------------------------------------ access
   const flagsOf = (access) => accessForSport(access, 'beach')
@@ -464,8 +502,9 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       const [courts, draws, entries, tmatches, managers] = await Promise.all([
         pool.query('SELECT * FROM public.beach_courts WHERE tournament_id = $1 ORDER BY number', [t.id]),
         pool.query('SELECT * FROM public.beach_draws WHERE tournament_id = $1 ORDER BY created_at, id', [t.id]),
+        // bounded (PERM-02): a tournament from before the caps may hold more
         pool.query(`SELECT e.* FROM public.beach_entries e JOIN public.beach_draws d ON d.id = e.draw_id
-                     WHERE d.tournament_id = $1 ORDER BY e.draw_id, e.seed NULLS LAST, e.created_at, e.id`, [t.id]),
+                     WHERE d.tournament_id = $1 ORDER BY e.draw_id, e.seed NULLS LAST, e.created_at, e.id LIMIT $2`, [t.id, ENTRIES_READ_MAX + 1]),
         pool.query('SELECT * FROM public.beach_tmatches WHERE tournament_id = $1 ORDER BY game_n', [t.id]),
         t.can_edit
           ? pool.query(`SELECT u.id, u.email, nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS name,
@@ -475,13 +514,15 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
                          ORDER BY (u.id = $2) DESC, u.email`, [t.id, t.created_by])
           : { rows: [] }
       ])
+      const truncated = entries.rows.length > ENTRIES_READ_MAX
       return ok({
         tournament: tournamentOut(t),
         managers: managers.rows.map((m) => ({ id: m.id, email: m.email, name: m.name ?? null, creator: m.creator === true })),
         courts: courts.rows.map((c) => ({ id: c.id, number: c.number, name: c.name ?? null, active: c.active, flex: c.flex })),
         draws: draws.rows.map(drawOut),
         // licences only for editors (section 2: "ranking with licences: editors")
-        entries: entries.rows.map((e) => (t.can_edit ? entryOut(e) : withoutLicences(entryOut(e)))),
+        entries: entries.rows.slice(0, ENTRIES_READ_MAX).map((e) => (t.can_edit ? entryOut(e) : withoutLicences(entryOut(e)))),
+        ...(truncated ? { entries_truncated: true } : {}),
         matches: tmatches.rows.map(tmatchOut)
       })
     })
@@ -735,13 +776,25 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return { out: f.out }
   }
 
+  /** The registered pairs of a draw and the entries of its tournament (the caller holds the tournament and the draw locked). */
+  async function entryCounts (client, tournamentId, drawId) {
+    const { rows: [n] } = await client.query(
+      `SELECT count(*) FILTER (WHERE e.draw_id = $2 AND e.status = 'registered')::int AS draw, count(*)::int AS total
+         FROM public.beach_entries e JOIN public.beach_draws d ON d.id = e.draw_id WHERE d.tournament_id = $1`, [tournamentId, drawId])
+    return n
+  }
+
   async function createEntry ({ user, access, id, body }) {
     const { out, error } = entryFields(body, { partial: false })
     if (error) return error
     return guarded('create-entry', () => withTx(async (client) => {
-      await requireVia(client, 'draw', id, user, access, { edit: true })
+      // the tournament row first (as generate and the import): its entries are counted
+      const t = await requireVia(client, 'draw', id, user, access, { edit: true, forUpdate: true })
       const d = await lockDraw(client, id)
       if (!['entries', 'seeded'].includes(d.status)) throw abort(fail(409, 'OV_DRAW_DRAWN', 'Reset the bracket first'))
+      const counts = await entryCounts(client, t.id, id)
+      if (counts.draw >= ENTRIES_PER_DRAW_MAX) throw abort(DRAW_FULL())
+      if (counts.total >= TOURNAMENT_ENTRIES_MAX) throw abort(ENTRIES_FULL())
       const row = { ...out }
       if (out.team_id) {
         const pair = await savedPair(client, out.team_id)
@@ -785,6 +838,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       if (out.seed != null) {
         const taken = await client.query('SELECT 1 FROM public.beach_entries WHERE draw_id = $1 AND seed = $2 AND id <> $3', [cur.draw_id, out.seed, id])
         if (taken.rows.length) throw abort(invalid('seed: already taken'))
+      }
+      // a withdrawn pair registered again counts like a new one (the draw is locked)
+      if (out.status === 'registered' && cur.status !== 'registered' && (await entryCounts(client, d.tournament_id, d.id)).draw >= ENTRIES_PER_DRAW_MAX) {
+        throw abort(DRAW_FULL())
       }
       // a pair that is no longer registered gives up its seed
       if (out.status && out.status !== 'registered' && !keys.includes('seed')) {
@@ -997,7 +1054,17 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
           ORDER BY ct.id`, [licences])
       savedPairs = rows
     }
-    return { tournament: { id: t.id, ...tournamentClock(t) }, draws, entries, courts, matches, savedPairs, maxDraws: MAX_DRAWS }
+    return {
+      tournament: { id: t.id, ...tournamentClock(t) },
+      draws,
+      entries,
+      courts,
+      matches,
+      savedPairs,
+      maxDraws: MAX_DRAWS,
+      maxEntriesPerDraw: ENTRIES_PER_DRAW_MAX,
+      maxEntries: TOURNAMENT_ENTRIES_MAX
+    }
   }
 
   /** Applies a plan of planImport() (inside the caller's transaction, the tournament locked). */
@@ -1492,18 +1559,88 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   }
 
   // ------------------------------------------------------------------ public (decision D9)
-  const publicCache = new Map() // slug -> { at, result }
+  // PERM-02: the answer is kept as its JSON bytes and their gzip (built once
+  // per tournament and cache period, PUBLIC_MAX_BYTES at most), never as the
+  // object that every request serialised again (60 parallel reads of a
+  // 7 MB page ran the shared backend out of memory). One build per address
+  // at a time: the requests that come meanwhile wait for it. A write of the
+  // tournament (withTx, after its commit) drops its entry; a build that a
+  // write overtook is answered but not kept.
+  const publicCache = new Map() // slug -> { at, tournamentId, result, bytes }
+  const publicBuilds = new Map() // slug -> the promise of the answer being built
+  let publicGen = 0
+  let publicBytes = 0
   const PUBLIC_TTL_MS = 15000
+  const dropPublic = (slug) => {
+    const e = publicCache.get(slug)
+    if (!e) return
+    publicBytes -= e.bytes
+    publicCache.delete(slug)
+  }
+  /** The public answers of this tournament, and every "not found" (an address may have become public), are built again. */
+  function invalidatePublic (tournamentId) {
+    publicGen++
+    for (const [slug, e] of publicCache) if (e.tournamentId === null || e.tournamentId === tournamentId) dropPublic(slug)
+  }
+  function keepPublic (slug, entry) {
+    dropPublic(slug)
+    // the oldest go first (a Map keeps the order of insertion)
+    for (const k of publicCache.keys()) {
+      if (publicCache.size < PUBLIC_CACHE_MAX_SLUGS && publicBytes + entry.bytes <= PUBLIC_CACHE_MAX_BYTES) break
+      dropPublic(k)
+    }
+    publicCache.set(slug, entry)
+    publicBytes += entry.bytes
+  }
+  /**
+   * The answer as the server sends it: `raw` { text, gzip } (Buffers; gzip
+   * null for a small one) and `body`, the same JSON parsed again when read
+   * (tests; server.js sends `raw`).
+   */
+  async function preparedAnswer (status, text) {
+    const bytes = Buffer.from(text)
+    const gz = bytes.length >= 1024 ? await gzipAsync(bytes, { level: 6 }).catch(() => null) : null
+    return {
+      status,
+      raw: { text: bytes, gzip: gz },
+      get body () { return JSON.parse(text) }
+    }
+  }
+  /** The public data as JSON text of at most PUBLIC_MAX_BYTES: beyond, the players' names go, then the entries and matches (truncated: true). */
+  function boundedPublicText (slug, data) {
+    const fits = (text) => Buffer.byteLength(text) <= PUBLIC_MAX_BYTES
+    const full = JSON.stringify({ data, error: null })
+    if (fits(full)) return full
+    log.warn?.(`[beach] public page ${slug}: ${Buffer.byteLength(full)} bytes, above ${PUBLIC_MAX_BYTES}; answered truncated`)
+    const slim = JSON.stringify({ data: { ...data, entries: data.entries.map((e) => ({ ...e, players: [] })), truncated: true }, error: null })
+    if (fits(slim)) return slim
+    return JSON.stringify({ data: { ...data, entries: [], matches: [], truncated: true }, error: null })
+  }
+
   /** GET /api/public/beach/t/:slug: names and countries only; public tournaments that are not drafts. */
   async function publicTournament ({ slug }) {
     const s = typeof slug === 'string' ? slug.toLowerCase() : ''
     if (!SLUG_RE.test(s) || s.length > 80) return notFound()
     const hit = publicCache.get(s)
     if (hit && now() - hit.at < PUBLIC_TTL_MS) return hit.result
+    const building = publicBuilds.get(s)
+    if (building) return building
+    const gen = publicGen
+    const build = buildPublic(s).then((out) => {
+      if (out.cacheable && gen === publicGen) keepPublic(s, { at: now(), tournamentId: out.tournamentId, result: out.result, bytes: out.bytes })
+      return out.result
+    }).finally(() => publicBuilds.delete(s))
+    publicBuilds.set(s, build)
+    return build
+  }
+
+  async function buildPublic (s) {
+    let tournamentId = null
     const result = await guarded('public', async () => {
       const { rows: [t] } = await pool.query(
         'SELECT * FROM public.beach_tournaments WHERE slug = $1 AND public AND status = ANY($2::text[])', [s, PUBLIC_STATUSES])
       if (!t) return notFound()
+      tournamentId = t.id
       const [courts, draws, entries, tmatches] = await Promise.all([
         pool.query('SELECT id, number, name, active FROM public.beach_courts WHERE tournament_id = $1 ORDER BY number', [t.id]),
         pool.query('SELECT * FROM public.beach_draws WHERE tournament_id = $1 ORDER BY created_at, id', [t.id]),
@@ -1534,11 +1671,11 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         }))
       })
     })
-    if (result.status === 200 || result.status === 404) {
-      if (publicCache.size > 500) publicCache.clear()
-      publicCache.set(s, { at: now(), result })
-    }
-    return result
+    // a database error is answered as it is and not kept
+    if (result.status !== 200 && result.status !== 404) return { result, cacheable: false }
+    const text = result.status === 200 ? boundedPublicText(s, result.body.data) : JSON.stringify(result.body)
+    const answer = await preparedAnswer(result.status, text)
+    return { result: answer, cacheable: true, tournamentId: result.status === 200 ? tournamentId : null, bytes: answer.raw.text.length + (answer.raw.gzip?.length ?? 0) }
   }
 
   // ------------------------------------------------------------------ routing

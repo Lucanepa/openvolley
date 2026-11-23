@@ -396,6 +396,15 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     for (const secret of ['LIC-1001', 'licence', users.mia.email, users.mia.id, 'created_by', 'match_id', 'claimed_by', 'referee']) {
       assert.equal(r.text.includes(secret), false, secret)
     }
+    // PERM-02: the bytes built once, gzipped for a client that takes it, the same JSON either way
+    const gz = await fetch(`${srv.base}/api/public/beach/t/zuri-open-live`, { headers: { 'accept-encoding': 'gzip' } })
+    assert.equal(gz.headers.get('content-encoding'), 'gzip')
+    assert.equal(gz.headers.get('vary'), 'Accept-Encoding')
+    assert.match(gz.headers.get('cache-control'), /public, max-age=15/)
+    assert.deepEqual(await gz.json(), r.json)
+    const plain = await fetch(`${srv.base}/api/public/beach/t/zuri-open-live`, { headers: { 'accept-encoding': 'identity' } })
+    assert.equal(plain.headers.get('content-encoding'), null)
+    assert.equal(await plain.text(), r.text)
     expectCode(await pub('Not-A-Slug'), 404)
     expectCode(await api(srv.base, '/api/public/beach/t/zuri-open-live', { method: 'POST', proto: null, body: {} }), 404)
   })
