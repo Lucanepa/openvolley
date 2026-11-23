@@ -116,6 +116,36 @@ describe('Global cloud: wrong PINs (SEC-30)', { skip: SKIP_PG }, () => {
     assert.equal((await row(key)).pin_failures, 1)
   })
 
+  it('more than 64 networks in turn (an IPv4 /24 each): once locked every one is held off, the PIN is not found; the scorer still saves (GCS-R3)', async () => {
+    const gm = createGlobalMatches({ pool, logger: silent })
+    const key = newKey()
+    const scorer = { ip: '198.51.100.30' }
+    assert.equal((await gm.save(key, PIN, { bundle: { match: { id: 1 } }, summary }, scorer)).status, 200)
+    // 100 proxies, a /24 each, in turn: before the fix the 65th pushed the
+    // first out of the copy's list, so each came back as a fresh network and
+    // every guess was compared
+    const proxy = (i) => ({ ip: `198.18.${i % 100}.7` })
+    const tally = {}
+    for (let i = 0; i < 200; i++) {
+      const s = (await gm.load(key, wrong(i), proxy(i))).status
+      tally[s] = (tally[s] || 0) + 1
+    }
+    // 10 before the lock, then one each for the networks the list still
+    // takes (64 in all), and one for the network that found it full
+    assert.deepEqual(tally, { 403: 65, 429: 135 })
+    assert.equal((await gm.load(key, PIN, proxy(200))).status, 429, 'the right PIN from a guesser: held off')
+    assert.equal((await row(key)).pin_failures, 65)
+    // the scorer's network gave the right PIN: it still saves and loads
+    assert.equal((await gm.save(key, PIN, { bundle: { match: { id: 2 } }, summary }, scorer)).status, 200)
+    assert.equal((await gm.load(key, PIN, scorer)).status, 200)
+    // a network nobody has seen is held off while the list is full and the
+    // copy locked (it cannot be told from the 101st proxy); the lock ends
+    // within a day, and then it loads
+    assert.equal((await gm.load(key, PIN, { ip: '203.0.113.31' })).status, 429)
+    await owner.query("UPDATE public.global_matches SET locked_until = now() - interval '1 second' WHERE key_hash = $1", [keyHash(key)])
+    assert.equal((await gm.load(key, PIN, { ip: '203.0.113.31' })).status, 200)
+  })
+
   it('a typo, then the right PIN: that network is not held against the copy (old 4-digit PINs keep working)', async () => {
     const gm = createGlobalMatches({ pool, logger: silent })
     const key = newKey()

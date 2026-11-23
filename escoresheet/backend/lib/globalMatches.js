@@ -38,6 +38,11 @@
  *     /24, with a wrong PIN since their last right one): 429
  *     OV_GLOBAL_PIN_LOCKED, the right PIN from any other network still works
  *     (owner 2026-11-23: lock the guessers only). Compared in constant time.
+ *     A copy remembers up to PIN_NETWORKS_PER_KEY guessing networks and never
+ *     forgets one for a newer one; once that list is full (a guesser with
+ *     more networks), every network it does not know is held off too while
+ *     the copy is locked, except the few that gave the right PIN in the last
+ *     day (the scorer's devices). PIN_MEMORY_ENTRIES networks in all.
  *   - PERM-15, the PDF a share link and the organizer list hand out: only a
  *     complete PDF (isPdfFile: header, startxref and %%EOF trailer, size),
  *     counted in stored_bytes; server.js serves it as an attachment.
@@ -107,6 +112,18 @@ export const PIN_LOCK_MAX_MS = 24 * 60 * 60_000
 export const PIN_FAILURE_FORGET_MS = 24 * 60 * 60_000
 /** The network a wrong PIN is held against while the copy is locked. */
 export const guesserNetwork = (ip) => addressPrefix(ip, 48, 24)
+/**
+ * The memory of who guessed (GCS-R3, the review of the SEC-30 fix): at most
+ * PIN_NETWORKS_PER_KEY guessing networks per copy, never pushed out by a new
+ * one (a copy whose list is full holds every network it does not know off
+ * while locked, except PIN_PROVEN_PER_KEY networks that gave the right PIN),
+ * and PIN_MEMORY_ENTRIES networks in all, the entries of unlocked copies
+ * given up first. createGlobalMatches options pinNetworksPerKey /
+ * pinMemoryEntries override them (tests).
+ */
+export const PIN_NETWORKS_PER_KEY = 64
+export const PIN_PROVEN_PER_KEY = 8
+export const PIN_MEMORY_ENTRIES = 50_000
 /** How long the n-th wrong PIN (a multiple of PIN_LOCK_AFTER) locks the copy. */
 export const pinLockMs = (n) => Math.min(PIN_LOCK_MAX_MS, PIN_LOCK_BASE_MS * 2 ** Math.max(0, Math.floor(n / PIN_LOCK_AFTER) - 1))
 // a row from before db/053 has no stored_bytes: what its columns take
@@ -245,32 +262,91 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
   }
 
   // ---- SEC-30: wrong PINs ----
-  // keyHash -> Map(network -> wrong PINs since its last right one); a day at most
+  // keyHash -> { nets: Map(network -> { n: wrong PINs since its last right
+  // one, at }), proven: Map(network -> at of its last right PIN), full: when
+  // a guesser found nets full (0: never), lockedUntil: the row's lock as last
+  // seen (ms) }. Each entry counts a day at most. In Map order, least recently
+  // used first; `entries` counts the networks held in all (GCS-R3).
   const guessers = new Map()
-  const MAX_GUESSED_KEYS = 10_000
-  const MAX_NETWORKS_PER_KEY = 64
+  const perKey = o.pinNetworksPerKey ?? PIN_NETWORKS_PER_KEY
+  const maxEntries = o.pinMemoryEntries ?? PIN_MEMORY_ENTRIES
+  let entries = 0
+  const fresh = (at) => at > 0 && ms() - at < PIN_FAILURE_FORGET_MS
+  const sizeOf = (e) => e.nets.size + e.proven.size
+  function dropKey(kh) {
+    const e = guessers.get(kh)
+    if (!e) return
+    entries -= sizeOf(e)
+    guessers.delete(kh)
+  }
+  /** Room for n more networks: the least recently used unlocked copy goes first, a locked one only when none is near. */
+  function makeRoom(n, keep) {
+    while (entries + n > maxEntries && guessers.size) {
+      let victim = null
+      let seen = 0
+      for (const [kh, e] of guessers) {
+        if (kh === keep) continue
+        victim ??= kh
+        if (!(e.lockedUntil > ms())) { victim = kh; break }
+        if (++seen >= 256) break
+      }
+      if (victim === null) return
+      dropKey(victim)
+    }
+  }
+  /** The entry of a copy (made when `create`), now the most recently used. */
+  function entryOf(kh, create) {
+    let e = guessers.get(kh)
+    if (e) {
+      guessers.delete(kh)
+      guessers.set(kh, e)
+      return e
+    }
+    if (!create) return null
+    e = { nets: new Map(), proven: new Map(), full: 0, lockedUntil: 0 }
+    guessers.set(kh, e)
+    return e
+  }
+  function forgetOld(e) {
+    for (const [net, g] of e.nets) if (!fresh(g.at)) { e.nets.delete(net); entries-- }
+    for (const [net, at] of e.proven) if (!fresh(at)) { e.proven.delete(net); entries-- }
+  }
   function guessedBy(kh, net) {
-    const e = guessers.get(kh)?.get(net)
-    if (!e) return 0
-    if (ms() - e.at >= PIN_FAILURE_FORGET_MS) { guessers.get(kh).delete(net); return 0 }
-    return e.n
+    const e = guessers.get(kh)?.nets.get(net)
+    return e && fresh(e.at) ? e.n : 0
+  }
+  /** Is the network held off while the copy is locked: it guessed, or the copy's list is full and it never gave the right PIN. */
+  function heldOff(kh, net) {
+    if (guessedBy(kh, net) > 0) return true
+    const e = guessers.get(kh)
+    return !!e && fresh(e.full) && !fresh(e.proven.get(net) ?? 0)
   }
   function noteGuess(kh, net) {
-    let nets = guessers.get(kh)
-    if (!nets) {
-      while (guessers.size >= MAX_GUESSED_KEYS) guessers.delete(guessers.keys().next().value)
-      nets = new Map()
-      guessers.set(kh, nets)
+    const e = entryOf(kh, true)
+    const g = e.nets.get(net)
+    if (g) {
+      e.nets.set(net, { n: (fresh(g.at) ? g.n : 0) + 1, at: ms() })
+      return
     }
-    const e = nets.get(net)
-    if (!e && nets.size >= MAX_NETWORKS_PER_KEY) nets.delete(nets.keys().next().value)
-    nets.set(net, { n: (e && ms() - e.at < PIN_FAILURE_FORGET_MS ? e.n : 0) + 1, at: ms() })
+    if (e.nets.size >= perKey) forgetOld(e)
+    // a full list is never shortened by a new network (an evicted guesser
+    // was a fresh one again: 65 networks in turn were never held off)
+    if (e.nets.size >= perKey) { e.full = ms(); return }
+    makeRoom(1, kh)
+    e.nets.set(net, { n: 1, at: ms() })
+    entries++
   }
-  function clearGuess(kh, net) {
-    const nets = guessers.get(kh)
-    if (!nets) return
-    nets.delete(net)
-    if (!nets.size) guessers.delete(kh)
+  /** The right PIN from net: not a guesser any more, and one of the networks let through a full list's lock. */
+  function noteRight(kh, net) {
+    const e = entryOf(kh, true)
+    if (e.nets.delete(net)) entries--
+    if (e.proven.has(net)) e.proven.delete(net)
+    else {
+      if (e.proven.size >= PIN_PROVEN_PER_KEY) { e.proven.delete(e.proven.keys().next().value); entries-- }
+      makeRoom(1, kh)
+      entries++
+    }
+    e.proven.set(net, ms())
   }
   const sameHash = (a, b) => {
     const x = Buffer.from(String(a || ''), 'hex')
@@ -282,12 +358,15 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
   async function checkPin(row, key, pin, ip) {
     const kh = keyHash(key)
     const net = guesserNetwork(ip)
-    const lockedMs = row.locked_until ? new Date(row.locked_until).getTime() - ms() : 0
-    if (lockedMs > 0 && guessedBy(kh, net) > 0) {
+    const lockedUntil = row.locked_until ? new Date(row.locked_until).getTime() : 0
+    const lockedMs = lockedUntil ? lockedUntil - ms() : 0
+    const known = guessers.get(kh)
+    if (known) known.lockedUntil = lockedUntil
+    if (lockedMs > 0 && heldOff(kh, net)) {
       return { ...fail(429, 'OV_GLOBAL_PIN_LOCKED', 'Too many wrong PINs, try again later'), retryAfter: Math.ceil(lockedMs / 1000) }
     }
     if (sameHash(row.pin_hash, pinHash(key, pin))) {
-      clearGuess(kh, net)
+      noteRight(kh, net)
       return null
     }
     noteGuess(kh, net)
@@ -301,6 +380,8 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
     if (n > 0 && n % PIN_LOCK_AFTER === 0) {
       const lockMs = pinLockMs(n)
       await q('UPDATE public.global_matches SET locked_until = greatest(coalesce(locked_until, now()), now() + make_interval(secs => $2)) WHERE id = $1', [row.id, lockMs / 1000])
+      const e = guessers.get(kh)
+      if (e) e.lockedUntil = Math.max(e.lockedUntil, ms() + lockMs)
       logger.warn?.(`[Global cloud] a copy is locked for ${Math.round(lockMs / 60_000)} min after ${n} wrong PINs (for the networks that guessed)`)
       alert('pin', 'a Global cloud copy was locked after repeated wrong PINs (someone with its backup code guesses the PIN)')
     }
@@ -363,6 +444,8 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
     )
     // no row: another device made this key with another PIN meanwhile
     if (!rows[0]) return fail(403, 'OV_GLOBAL_PIN', 'Wrong PIN')
+    // the first save set the PIN: its network gave the right one (GCS-R3)
+    if (isNew) noteRight(kh, guesserNetwork(ip))
     charged({ isNew, newBytes, oldBytes, ip })
     maybeSweep()
     return ok({ ok: true, updatedAt: iso(rows[0].updated_at), shareToken: rows[0].share_token ?? null })
@@ -440,5 +523,8 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
     sweepExpired().catch((err) => logger.warn?.('[Global cloud] sweep failed:', String(err?.code || err?.message || err).slice(0, 120)))
   }
 
-  return { save, load, setShare, del, shared, sharedPdf, organizerList, organizerPdf, sweepExpired, usage: currentUsage, budget }
+  /** What the PIN memory holds (tests): copies and networks. */
+  const pinMemory = () => ({ keys: guessers.size, entries })
+
+  return { save, load, setShare, del, shared, sharedPdf, organizerList, organizerPdf, sweepExpired, usage: currentUsage, budget, pinMemory }
 }
