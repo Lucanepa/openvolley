@@ -1462,7 +1462,7 @@ export function createAuth(options = {}) {
         if (byLink) confirmToken = await issueToken(client, id, 'confirm')
         return ins.rows[0].u
       })
-      if (!user) return alreadyRegistered(email, body, ctx, { linkPossible, meta })
+      if (!user) return await alreadyRegistered(email, body, ctx, { linkPossible, meta })
       if (confirmToken) {
         const lang = mailLang(body, ctx)
         const link = authLink(managerUrlFor(app), 'confirm', confirmToken, lang)
@@ -1486,7 +1486,7 @@ export function createAuth(options = {}) {
     } catch (err) {
       // db/025: a club or team asked for is gone (the form was loaded before)
       if (err?.signUpRequests) return fail(422, err.message, 'validation_failed')
-      if (err.code === '23505') return alreadyRegistered(email, body, ctx, { linkPossible, meta })
+      if (err.code === '23505') return await alreadyRegistered(email, body, ctx, { linkPossible, meta })
       // invalid_text_representation / datetime / invalid enum label etc. in metadata
       if (err.code === '22007' || err.code === '22008' || err.code === '22P02' || err.code === '22023') {
         return fail(422, 'Invalid profile data', 'validation_failed')
@@ -1502,7 +1502,7 @@ export function createAuth(options = {}) {
    * user_already_exists as before (the account would be confirmed at once,
    * so a uniform answer would hide nothing).
    */
-  function alreadyRegistered(email, body, ctx, { linkPossible, meta }) {
+  async function alreadyRegistered(email, body, ctx, { linkPossible, meta }) {
     if (!linkPossible) return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
     const app = requestApp(body)
     const lang = mailLang(body, ctx)
@@ -1515,9 +1515,27 @@ export function createAuth(options = {}) {
         await mailer.send('reset', { to: user.email, lang, app, link: authLink(managerUrlFor(app), 'reset', token, lang) })
       })
     }
-    const nowIso = new Date().toISOString()
-    const shadow = { id: randomUUID(), email, created_at: nowIso, updated_at: nowIso, raw_user_meta_data: meta, raw_app_meta_data: { provider: 'email', providers: ['email'] } }
-    return ok({ user: publicUser(shadow), email_confirmation: confirmBudgetFull() ? 'queued' : 'sent' })
+    // The user object a new account gets, to the byte (audit 2611 SEC-14):
+    // the row createAccount would insert, as Postgres gives it back (to_jsonb:
+    // timestamps with microseconds and the offset, metadata in jsonb's key
+    // order) and with the same app metadata (the link mark), without
+    // inserting it. Old apps read the user object, so it stays.
+    const ucols = await usersColumns()
+    const byLink = writable(ucols, 'email_confirmed_at') && writable(ucols, 'raw_app_meta_data')
+    const values = { id: randomUUID(), email }
+    if (writable(ucols, 'raw_user_meta_data')) values.raw_user_meta_data = meta
+    if (writable(ucols, 'raw_app_meta_data')) {
+      values.raw_app_meta_data = { provider: 'email', providers: ['email'] }
+      if (byLink) values.raw_app_meta_data[EMAIL_CONFIRMATION_MARK.key] = EMAIL_CONFIRMATION_MARK.value
+    }
+    if (writable(ucols, 'aud')) values.aud = 'authenticated'
+    if (writable(ucols, 'role')) values.role = 'authenticated'
+    const nowCols = [...(byLink ? [] : ['email_confirmed_at']), 'created_at', 'updated_at'].filter(c => writable(ucols, c))
+    const nowJson = nowCols.length ? ` || jsonb_build_object(${nowCols.map(c => `'${c}', now()`).join(', ')})` : ''
+    const { rows } = await pool.query(
+      `SELECT to_jsonb(r) AS u FROM jsonb_populate_record(NULL::${T.users}, $1::jsonb${nowJson}) r`,
+      [JSON.stringify(values)])
+    return ok({ user: publicUser(rows[0].u), email_confirmation: confirmBudgetFull() ? 'queued' : 'sent' })
   }
 
   // Confirmation mails the hourly budget held back: sent when the window
