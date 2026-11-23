@@ -25,12 +25,17 @@ export function toTSV(columns, rows) {
   return `${header}\n${body}`
 }
 
+// A whole cell that is a plain number ("-2.5", "+3", "1e-3"): a spreadsheet reads it as that number, never a formula
+const PLAIN_NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
+
 /** RFC 4180 CSV: quotes fields with commas, quotes or line breaks. */
 export function toCSV(columns, rows) {
   const escape = (raw) => {
     let s = raw
-    // Spreadsheet formula injection (a leading = + - @ tab CR), but not a signed number
-    if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?\d/.test(s)) s = `'${s}`
+    // Spreadsheet formula injection: a cell starting with = + - @ tab or CR
+    // is prefixed with ' unless the WHOLE cell is a plain number. "-1+HYPERLINK(…)"
+    // or "+1+cmd|…" start with a signed number and are still formulas (SEC-48).
+    if (/^[=+\-@\t\r]/.test(s) && !PLAIN_NUMBER.test(s)) s = `'${s}`
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
   const header = columns.map(escape).join(',')
