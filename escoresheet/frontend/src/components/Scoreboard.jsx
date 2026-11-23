@@ -7905,9 +7905,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return describeEventText(event, data.events || [], { t, match: data.match, homeTeam: data.homeTeam, awayTeam: data.awayTeam, short: true, noSet: true }) || getActionDescription(event)
   }, [data, t, getActionDescription])
 
-  // Show undo confirmation
-  const showUndoConfirm = useCallback(() => {
-    if (!data?.events || data.events.length === 0 || !data?.set) return
+  // Show undo confirmation. `fromDialog`: asked from the set-end or the
+  // change-of-courts dialog, which closed for it (its Decision change, when
+  // a penalty's point brought it up); the undo dialog's note says why, and
+  // cancelled, that dialog comes back (cancelUndo). Called as a click
+  // handler too: an event object is no option. True when it asked
+  const showUndoConfirm = useCallback((options) => {
+    if (!data?.events || data.events.length === 0 || !data?.set) return false
+    const fromDialog = typeof options?.fromDialog === 'string' ? options.fromDialog : null
 
     // IMPORTANT: Only consider events from the CURRENT SET
     // Undo should NEVER affect other sets - use "Reopen set" in manual changes for that
@@ -7926,7 +7931,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     if (currentSetEvents.length === 0) {
       console.log('[UNDO] No events in current set')
-      return
+      return false
     }
 
     // Find the last event by sequence number (highest seq)
@@ -8010,7 +8015,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         eventsChecked: sortedEvents.length,
         allEventsInSet: currentSetEvents.map(e => ({ id: e.id, seq: e.seq, type: e.type }))
       })
-      return
+      return false
     }
 
     // A penalty's point is undone with its penalty: the dialog names the
@@ -8038,7 +8043,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       allEventsInSet: currentSetEvents.map(e => ({ id: e.id, seq: e.seq, type: e.type }))
     })
 
-    setUndoConfirm({ event: lastUndoableEvent, description: displayDescription })
+    setUndoConfirm({ event: lastUndoableEvent, description: displayDescription, ...(fromDialog ? { fromDialog } : {}) })
+    return true
   }, [data?.events, data?.set, getActionDescription])
 
   // Check if there's anything that can be undone (mirrors showUndoConfirm logic)
@@ -8565,6 +8571,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [data?.set, data?.match, data?.homeTeam, data?.awayTeam, data?.homePlayers, data?.awayPlayers, t, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, set5IntervalAfterUndo, showAlert, syncToReferee, sendActionToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, deferUi, deferEffect, timeoutModal])
 
+  // The set-end or change-of-courts dialog a decision change or an undo was
+  // asked from (which closed for it), asked again when the set's score still
+  // calls for it: the change of courts is mandatory, and the set-end check
+  // skips a set whose dialog was closed that way (setEndModalDismissedRef).
+  // Dexie reads only; inside the caller's action, or not in one
+  const reaskDialogAfter = useCallback(async (fromDialog, teamKey = null) => {
+    if (!fromDialog || !data?.set) return
+    if (fromDialog === 'setEnd') deferUi(() => { setEndModalDismissedRef.current = null })
+    const setRow = (await db.sets.get(data.set.id)) || data.set
+    await afterPointScored({
+      set: setRow,
+      homePoints: setRow.homePoints || 0,
+      awayPoints: setRow.awayPoints || 0,
+      teamKey
+    })
+  }, [data?.set, afterPointScored, deferUi])
+
   const runUndoConfirm = useConfirmAction(onConfirmFailed)
   // One action: every write of the undo, its event history (the voids and
   // their sync jobs, reason 'undo') and the dialog closing appear together
@@ -8580,7 +8603,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // useConfirmAction and the 'undo' key, never undoing the event twice
     deferUi(() => setUndoConfirm(null))
     await undoEventTx(lastEvent)
-  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, undoEventTx, runAction, deferUi])
+    // Asked from the set-end or the change-of-courts dialog (a penalty's
+    // point brought it up): the score it leaves decides whether that dialog
+    // is due again (24:22 after the penalty's point: no set end)
+    if (undoConfirm.fromDialog) await reaskDialogAfter(undoConfirm.fromDialog)
+  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, undoEventTx, reaskDialogAfter, runAction, deferUi])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -8589,9 +8616,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // - substitution, timeout, sanction, set_end, rally_start, etc.
   // Now all handled by simply restoring the previous event's stateSnapshot.
 
-  const cancelUndo = useCallback(() => {
+  // Cancelled: nothing changed. Asked from the set-end or the
+  // change-of-courts dialog (which closed for it), that dialog comes back
+  const cancelUndo = useCallback(async () => {
+    const pending = undoConfirm
     setUndoConfirm(null)
-  }, [])
+    if (!pending?.fromDialog) return
+    try {
+      await reaskDialogAfter(pending.fromDialog, pending.event?.payload?.team)
+    } catch (error) {
+      console.error('[cancelUndo] Could not open the dialog again:', error)
+    }
+  }, [undoConfirm, reaskDialogAfter])
 
   // Handle replay rally - undo last point (go back to state before the point, no rally restart)
   // One action: the point taken back (voided in the event history: the
@@ -8681,20 +8717,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const cancelReplayRally = useCallback(async () => {
     const pending = replayRallyConfirm
     setReplayRallyConfirm(null)
-    if (!pending?.fromDialog || !data?.set) return
-    if (pending.fromDialog === 'setEnd') setEndModalDismissedRef.current = null
+    if (!pending?.fromDialog) return
     try {
-      const setRow = (await db.sets.get(data.set.id)) || data.set
-      await afterPointScored({
-        set: setRow,
-        homePoints: setRow.homePoints || 0,
-        awayPoints: setRow.awayPoints || 0,
-        teamKey: pending.event?.payload?.team
-      })
+      await reaskDialogAfter(pending.fromDialog, pending.event?.payload?.team)
     } catch (error) {
       console.error('[cancelReplayRally] Could not open the dialog again:', error)
     }
-  }, [replayRallyConfirm, data?.set, afterPointScored])
+  }, [replayRallyConfirm, reaskDialogAfter])
 
   // The decision change on a replay (owner 23.11.2026): the rally that was
   // replayed is given to `team` after all. Inside the decision change's
@@ -8754,12 +8783,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // A penalty's point is no rally to change (a dialog opened on it from a
     // stale screen): nothing is written, the sanction is taken back first
-    // with Undo (audit LOG-06)
+    // with Undo (audit LOG-06). Asked from the set-end or change-of-courts
+    // dialog, that dialog comes back (it closed for this one)
     if (replayRallyConfirm.kind !== 'replay' && isPenaltyPoint(lastEvent)) {
       deferUi(() => {
         setReplayRallyConfirm(null)
         showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
       })
+      if (replayRallyConfirm.fromDialog) await reaskDialogAfter(replayRallyConfirm.fromDialog, lastEvent.payload?.team)
       return
     }
 
@@ -9025,7 +9056,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleReplayRally()
       return // handleReplayRally closes the modal and syncs
     }
-  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx, recordContinuousReplay, replaceReplayByPoint, showAlert, t])
+  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx, recordContinuousReplay, replaceReplayByPoint, reaskDialogAfter, showAlert, t])
 
 
 
@@ -24064,10 +24095,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               : null
 
             // A penalty's point ended the set: the decision change works on
-            // a rally, the sanction is taken back first with Undo. The set
-            // end stays asked
+            // a rally, the penalty is taken back first with its point. The
+            // screen's Undo, asked from here (the dialog's Modal keeps the
+            // screen's Undo out of reach): the set-end dialog closes for it
+            // and, cancelled or with the set still won, comes back
+            // (cancelUndo, handleUndo). Nothing else to take back: it says so
+            // and stays
             if (isPenaltyPoint(pointEvent)) {
-              showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+              if (!showUndoConfirm({ fromDialog: 'setEnd' })) {
+                showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+                return
+              }
+              setEndModalDismissedRef.current = setEndTimeModal.setIndex
+              setSetEndTimeModal(null)
               return
             }
 
@@ -24298,10 +24338,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     const pointEvent = currentSetEvents.find(e => e.type === 'point')
                     // A penalty's point took the team to 8: the decision
-                    // change works on a rally, the sanction is taken back
-                    // first with Undo (the change of courts stays asked)
+                    // change works on a rally, the penalty is taken back
+                    // first with its point, the screen's Undo asked from
+                    // here (as the set-end dialog does); cancelled, or a
+                    // team still on 8, the change of courts comes back
                     if (isPenaltyPoint(pointEvent)) {
-                      showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+                      if (!showUndoConfirm({ fromDialog: 'courtSwitch' })) {
+                        showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+                        return
+                      }
+                      setCourtSwitchModal(null)
                       return
                     }
                     if (pointEvent) {
@@ -24846,6 +24892,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={400}
         >
           <div style={{ padding: '4px 0', textAlign: 'center' }}>
+            {/* asked from the set-end or change-of-courts dialog's
+                Decision change: why the penalty goes first */}
+            {undoConfirm.fromDialog && (
+              <p className="text-sm text-stone-600" style={{ marginBottom: '12px' }}>
+                {t('scoreboard.dialogs.decisionAfterSanction')}
+              </p>
+            )}
             <p style={{ marginBottom: '16px', fontSize: '16px' }}>
               {t('scoreboard.modals.undoQuestion')}
             </p>
