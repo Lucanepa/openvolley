@@ -1,5 +1,8 @@
 import { signaturesSyncJob } from '../domain/signatureEdits'
 import { appendRemark } from '../domain/remarks'
+import { technicalRemarksOn, technicalChange } from '../domain/technicalRemarks'
+import { queueMatchUpdate } from '../db/matchRepository'
+import { isLocalOnly } from '../domain/matchKind'
 
 /**
  * Save one signature to the match row the moment its pad is confirmed, then
@@ -16,13 +19,14 @@ import { appendRemark } from '../domain/remarks'
  * @param {object} [extra]  more fields written in the same update, e.g. the
  *   phone-signing source record (`signatureSources.<field>`, from main's
  *   domain/phoneSignature signatureUpdate) so it never lags the image
- * @param {{ remark?: string }} [opts]  a line appended to the remarks in the
- *   same update (a Re-sign: domain/rosterSignatures signatureReplacedRemark);
- *   the remarks hook (db/remarksSync) queues it for the cloud
+ * @param {{ remark?: string }} [opts]  a line noted in the same update (a
+ *   Re-sign: domain/rosterSignatures signatureReplacedRemark): a technical
+ *   remark (owner 22.11.2026, writeSignatures), in an older match a line of
+ *   the remarks, which the remarks hook (db/remarksSync) queues for the cloud
  */
 export async function saveMatchSignature(db, matchId, field, image, extra = null, { remark = '' } = {}) {
   if (matchId === null || matchId === undefined || !field) return false
-  return writeSignatures(db, matchId, { ...(extra || {}), [field]: image ?? null }, remark)
+  return writeSignatures(db, matchId, { ...(extra || {}), [field]: image ?? null }, remark, 'resigned')
 }
 
 /**
@@ -43,17 +47,28 @@ export async function clearMatchSignatures(db, matchId, fields, remark = '') {
     update[f] = null
     update[`signatureSources.${f}`] = null
   }
-  return writeSignatures(db, matchId, update, remark)
+  return writeSignatures(db, matchId, update, remark, 'signaturesCleared')
 }
 
-async function writeSignatures(db, matchId, update, remark) {
+/**
+ * The update with its remark: a technical remark of the match (a
+ * manualChanges entry, queued for the cloud with the same transaction),
+ * in an older match a line of the remarks (domain/technicalRemarks).
+ */
+async function writeSignatures(db, matchId, update, remark, action) {
   try {
     if (remark) {
-      // read and write the remarks in one transaction, so a remark written
-      // elsewhere in between is not lost
-      await db.transaction('rw', db.matches, async () => {
+      // read and write the remarks (or the change log) in one transaction,
+      // so a line written elsewhere in between is not lost
+      await db.transaction('rw', db.matches, db.sync_queue, async () => {
         const row = await db.matches.get(matchId)
-        await db.matches.update(matchId, { ...update, remarks: appendRemark(row?.remarks || '', remark) })
+        if (technicalRemarksOn(row)) {
+          const manualChanges = [...(row?.manualChanges || []), technicalChange({ action, text: remark, by: 'app' })]
+          await db.matches.update(matchId, { ...update, manualChanges })
+          await queueMatchUpdate(db, row?.seed_key, { manual_changes: manualChanges }, { test: isLocalOnly(row) })
+        } else {
+          await db.matches.update(matchId, { ...update, remarks: appendRemark(row?.remarks || '', remark) })
+        }
       })
     } else {
       await db.matches.update(matchId, update)

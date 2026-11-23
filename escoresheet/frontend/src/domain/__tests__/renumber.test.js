@@ -217,6 +217,41 @@ describe('remark lines follow the players they name', () => {
     expect(remarksAfter(remarks, removed).split('\n')).toEqual([redesignation])
   })
 
+  // owner 22.11.2026: a technical remark's line is in no remarks text
+  it('a technical remark\'s line follows its player in the entry, never in the remarks (renumber, edit, removal)', async () => {
+    const { planEditEntry, planRemoveEntry, planRemoveSubstitution } = await import('../manualCorrections')
+    const { remarksAfter } = await import('../../services/corrections/applyCorrectionPlan')
+    const injury = benchLine('A', 6)
+    const sub = 'Set 1, 19:06, A 6:4, #4 substituted, cannot continue playing'
+    const { events } = buildMatch({
+      sets: [{
+        points: pointsFor(10, 8),
+        finished: false,
+        extras: [
+          { at: 7, type: 'bench_injury', payload: { team: 'home', playerNumber: 6, autoRemark: injury, remarkTo: 'technical' } },
+          { at: 10, type: 'substitution', payload: { team: 'home', position: 'IV', playerOut: 4, playerIn: 7, isInjury: true, autoRemark: sub, remarkTo: 'technical' } }
+        ]
+      }]
+    })
+    // the sheet's own text holds the same words: a technical line never touches it
+    const remarks = ['Scorer note', injury, sub].join('\n')
+    const rctx = { ...ctx, match: { ...LIVE, remarks }, players: { home: HOME_PLAYERS.concat([{ id: 6, number: 6 }]), away: AWAY_PLAYERS } }
+    const renumbered = planRenumberPlayer(events, { team: 'home', playerId: 6, to: 16 }, rctx)
+    expect(renumbered.error).toBeUndefined()
+    expect(remarksAfter(remarks, renumbered)).toBe(remarks)
+    expect(applyPlanToEvents(events, renumbered).find(e => e.type === 'bench_injury').payload).toMatchObject({ playerNumber: 16, autoRemark: benchLine('A', 16), remarkTo: 'technical' })
+    const bench = events.find(e => e.type === 'bench_injury')
+    const edited = planEditEntry(events, bench.id, { playerNumber: 5 }, rctx)
+    expect(edited.error).toBeUndefined()
+    expect(remarksAfter(remarks, edited)).toBe(remarks)
+    expect(applyPlanToEvents(events, edited).find(e => e.type === 'bench_injury').payload.autoRemark).toBe(benchLine('A', 5))
+    expect(remarksAfter(remarks, planRemoveEntry(events, bench.id, rctx))).toBe(remarks)
+    const s = events.find(e => e.type === 'substitution' && e.payload.isInjury)
+    const subRemoved = planRemoveSubstitution(events, s.id, rctx)
+    expect(subRemoved.error).toBeUndefined()
+    expect(remarksAfter(remarks, subRemoved)).toBe(remarks)
+  })
+
   it('a row whose stored snapshot alone changes is not sent as a changed entry', () => {
     const { events } = matchWithFive()
     const plan = planRenumberPlayer(events, { team: 'home', playerId: 5, to: 15 }, ctx)

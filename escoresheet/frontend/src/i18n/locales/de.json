@@ -2969,7 +2969,7 @@
       "a_saveChanges": "Korrekturen werden einzeln gespeichert, wenn du sie bestätigst. Änderungen in «Teams» und «Spielinfo» speichert «Änderungen speichern» oben gemeinsam. «Schliessen» fragt nach, bevor ungespeicherte Änderungen verloren gehen.",
       "tip_saveChanges": "Speichert die Änderungen in «Teams» und «Spielinfo».",
       "q_whereCorrections": "Wo korrigiere ich einen Fehler?",
-      "a_whereCorrections": "Während des Spiels: Spiel › «Korrekturen» (auf dem Tablet oder Computer das Korrektur-Board, auf dem Handy die Liste), oder Spiel › «Zurück», wenn die Schiedsrichter einen Teil des Satzes zurücknehmen. Am Spielende: die Schaltfläche «Korrekturen». Die Liste speichert jede Korrektur, wenn du sie bestätigst, das Board, wenn du auf «Speichern» tippst. Jede Korrektur steht im Korrekturprotokoll für den Schiedsrichter.",
+      "a_whereCorrections": "Während des Spiels: Spiel › «Korrekturen» (auf dem Tablet oder Computer das Korrektur-Board, auf dem Handy die Liste), oder Spiel › «Zurück», wenn die Schiedsrichter einen Teil des Satzes zurücknehmen. Am Spielende: die Schaltfläche «Korrekturen». Die Liste speichert jede Korrektur, wenn du sie bestätigst, das Board, wenn du auf «Speichern» tippst. Jede Korrektur ist eine technische Bemerkung: aufgeführt in den Korrekturen und am Spielende, nicht auf das Matchblatt gedruckt, mit der E-Mail des fertigen Matchblatts verschickt. Eine Zeile, die die Regeln auf Papier verlangen, kommt in die Bemerkungen; bei jeder anderen Korrektur wählst du «Bemerkung auf dem Matchblatt», um sie auch dort zu notieren.",
       "q_missedPoint": "Ich habe im Satz einen Punkt vergessen?",
       "a_missedPoint": "Tippe im Korrektur-Board beim Team auf «+», in der Liste auf «Vergessenen Punkt hinzufügen». Er wird beim aktuellen Spielstand mit Rotation und Aufschlag eingetragen, wie mit der Punkt-Schaltfläche. Ging der letzte Punkt an das falsche Team, tippe auf «Letzter Punkt ging an die falsche Mannschaft».",
       "q_serveSidesLineup": "Wie korrigiere ich Aufschlag, Seiten oder Aufstellung?",
@@ -3439,6 +3439,14 @@
     "awayRosterTooMany": "Gast: höchstens {{max}} Spielende im Kader (jetzt {{count}})"
   },
   "matchEnd": {
+    "technicalRemarks": {
+      "title": "Technische Bemerkungen",
+      "hint": "Nicht auf dem Matchblatt gedruckt",
+      "add": "Technische Bemerkung hinzufügen",
+      "empty": "Keine technischen Bemerkungen.",
+      "intro": "Wird mit dem Spiel gespeichert und mit dem fertigen Matchblatt verschickt, aber nicht darauf gedruckt. Die Unterschriften bleiben.",
+      "saveFailed": "Die technische Bemerkung konnte nicht gespeichert werden."
+    },
     "globalNotStored": "Der Spielbericht konnte nicht online gespeichert werden. Er bleibt auf diesem Gerät: Lade jetzt das PDF herunter.",
     "errorClosing": "Fehler beim Abschliessen des Spiels: ",
     "noWinner": "Kein Sieger (Spiel abgebrochen)",
@@ -5970,6 +5978,15 @@
     }
   },
   "corrections": {
+    "destination": {
+      "label": "Wo wird das notiert?",
+      "technical": "Technische Bemerkung (nicht gedruckt)",
+      "sheet": "Bemerkung auf dem Matchblatt",
+      "locked": "Die Regeln verlangen das auf dem Matchblatt."
+    },
+    "technical": {
+      "hint": "Nicht auf dem Matchblatt gedruckt"
+    },
     "teamLetter": "Team {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",
     "score": "{{first}} {{a}}:{{b}} {{second}}",
@@ -6040,6 +6057,7 @@
       "disqualification": "Disqualifikation"
     },
     "remark": {
+      "manualCorrectionWhat": "{{what}} (manuelle Korrektur).",
       "exceptionalSub": "Team {{team}}, Satz {{set}}, Resultat {{score}}: Spieler/in Nr. {{out}} wird wegen {{reason}} ausserordentlich durch Spieler/in Nr. {{in}} ersetzt.",
       "liberoUnable": "Team {{team}}, Satz {{set}}, Resultat {{score}}: Libero Nr. {{n}} wird spielunfähig erklärt.",
       "liberoRedesignated": "Team {{team}}, Satz {{set}}, Resultat {{score}}: Spieler/in Nr. {{n}} wird als neue/r Libero bestimmt.",
@@ -6050,6 +6068,7 @@
       "result": "Resultat {{score}}"
     },
     "log": {
+      "technicalRemarkAdded": "Technische Bemerkung: «{{text}}»",
       "unknown": "Korrektur",
       "added": "Hinzugefügt: {{what}}",
       "removed": "Entfernt: {{what}}",
@@ -6145,6 +6164,7 @@
     "saved": "Korrektur gespeichert",
     "saveError": "Die Korrektur konnte nicht gespeichert werden: {{message}}",
     "section": {
+      "technical": "Technische Bemerkungen",
       "scoreServe": "Spielstand und Aufschlag",
       "sets": "Satzresultate",
       "lineup": "Aufstellung",
@@ -6165,6 +6185,7 @@
       "remark": "Bemerkung hinzufügen"
     },
     "empty": {
+      "technical": "Noch keine technischen Bemerkungen.",
       "timeouts": "Keine Auszeiten erfasst.",
       "substitutions": "Keine Spielerwechsel erfasst.",
       "sanctions": "Keine Sanktionen erfasst.",
@@ -6409,6 +6430,7 @@
     }
   },
   "correctionBoard": {
+    "saveHintTechnical": "Jede Änderung steht in den technischen Bemerkungen, nicht auf dem Matchblatt.",
     "title": "Korrektur-Board",
     "list": "Liste",
     "boardView": "Board",

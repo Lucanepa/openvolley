@@ -7,7 +7,9 @@ const at = (min, sec = 0) => new Date(Date.parse('2026-11-15T14:00:00Z') + (min 
 const POS = ['I', 'II', 'III', 'IV', 'V', 'VI']
 const lineupOf = (list) => Object.fromEntries(POS.map((p, i) => [p, String(list[i])]))
 
-export function fixtureRecord ({ longRemarks = false } = {}) {
+// remarksModel: the match's remarks model (match_info.remarks_model; 2: its
+// technical remarks stay off the sheet, frontend domain/technicalRemarks.js)
+export function fixtureRecord ({ longRemarks = false, remarksModel = null } = {}) {
   let seq = 0
   let id = 100
   const events = []
@@ -47,7 +49,7 @@ export function fixtureRecord ({ longRemarks = false } = {}) {
         { role: 'scorer', firstName: 'Lia', lastName: 'Scorer', country: 'CHE', dob: '1993-07-16' }
       ],
       coin_toss: { team_a: 'home', team_b: 'away', confirmed: true, first_serve: 'home' },
-      match_info: { best_of: 3, league: 'SM-Quali-U23', hall: 'Sporthalle Nord', city: 'Musterstadt', set5_left_team: 'B', set5_first_serve: 'B', tz: 'Europe/Zurich' },
+      match_info: { best_of: 3, league: 'SM-Quali-U23', hall: 'Sporthalle Nord', city: 'Musterstadt', set5_left_team: 'B', set5_first_serve: 'B', tz: 'Europe/Zurich', ...(remarksModel ? { remarks_model: remarksModel } : {}) },
       remarks,
       manual_changes: [{ afterMatch: true, action: 'setTimes', setIndex: 2, text: 'Set 2 times corrected', after: { startTime: at(40) } }],
       set_results: []

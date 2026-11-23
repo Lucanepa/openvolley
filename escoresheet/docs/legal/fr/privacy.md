@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.25 · État au 22 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.26 · État au 22 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -439,7 +439,13 @@ l'appareil ou sur un téléphone), tirage au sort, déroulement du match avec to
 remplacements et sanctions, résultats et corrections ultérieures, ainsi que
 les **remarques** (la case des remarques de la feuille de match : ce
 qu'écrit le marqueur et les lignes qu'ajoute l'application, par exemple pour
-un remplacement forcé ou un libéro qui ne peut plus jouer).
+un remplacement forcé ou un libéro qui ne peut plus jouer). Les **remarques
+techniques** sont aussi conservées avec le match : ce que l'application note
+sur la manière dont le match a été enregistré (corrections, un changement de
+la liste d'équipe après le tirage au sort, un set rouvert, des signatures
+effacées ou données à nouveau, un remplacement pour blessure avec un
+remplaçant régulier, une blessure sur le banc) et ce que le marqueur ajoute
+comme telle. Elles ne sont pas imprimées sur la feuille de match.
 
 **Numéro de licence ou date de naissance :** dans la version suisse, c'est le
 numéro de licence qui figure à côté d'un nom. Le marqueur peut y taper à la
@@ -460,7 +466,11 @@ le procès-verbal a besoin. Les remarques sont vues par ceux qui voient tout
 (tableau ci-dessous) et, pendant le match, par la tablette d'arbitre et les
 détenteurs du NIP du match, jamais par les tablettes de banc ni le public ;
 elles figurent sur la feuille de match et parviennent ainsi à ses
-destinataires (ci-dessous). Base juridique : section 20 ; conservées avec le
+destinataires (ci-dessous). Un remplacement pour blessure avec un remplaçant
+régulier et une blessure sur le banc sont en revanche des remarques
+techniques : elles ne figurent ni sur la feuille de match ni sur la tablette
+d'arbitre, restent avec le procès-verbal du match et sont listées dans
+l'e-mail de la feuille de match finale (ci-dessous). Base juridique : section 20 ; conservées avec le
 match (section 16).
 
 **Qui saisit les données :** le marqueur dans l'application, les responsables
@@ -481,7 +491,7 @@ qualification (numéro de licence), livescore.
 |---|---|
 | Le compte qui a saisi ou clôturé le match ; les administrateurs | Tout |
 | Les comptes qui ont saisi le NIP du match (par exemple une tablette qui reprend le match) | Tout, jusqu'à la clôture du match |
-| Tablette d'arbitre avec le NIP d'arbitre | Équipes, les deux listes d'équipe avec noms et numéros, score, remarques. **Pas** de dates de naissance, signatures, officiels ni validations |
+| Tablette d'arbitre avec le NIP d'arbitre | Équipes, les deux listes d'équipe avec noms et numéros, score, remarques (sans les remarques techniques). **Pas** de dates de naissance, signatures, officiels ni validations |
 | Tablette de banc avec le NIP de son équipe | La liste de sa propre équipe avec noms et numéros, les numéros de maillot de l'autre équipe, score. **Pas** de remarques, dates de naissance, signatures, officiels ni validations |
 | Tout le monde (public) | Voir section 8 |
 
@@ -526,7 +536,9 @@ nouvelle fois aux destinataires. Seuls le moment de l'envoi et le nombre
 d'adresses sont enregistrés, pas les adresses. Les matchs clôturés avant
 l'activation ne sont pas envoyés. L'adresse e-mail d'un arbitre ou d'une
 équipe est facultative, fait partie du match et n'est jamais publique ; seuls ceux qui
-peuvent lire tout le match la voient (tableau ci-dessus). L'envoi passe par
+peuvent lire tout le match la voient (tableau ci-dessus). L'e-mail liste aussi
+dans son texte les remarques techniques du match (ci-dessus) ; elles ne
+figurent pas dans le PDF. L'envoi passe par
 Migadu (section 15).
 
 **Feuille d'un match de test :** si tu valides le résultat à la fin d'un

@@ -70,6 +70,23 @@ describe('buildSheetModel', () => {
     expect(m.autoRemarks).not.toContain(' ')
   })
 
+  // owner 22.11.2026: a match with technical remarks (remarksModel 2) prints
+  // neither the changes after the match nor the rebuilt line; an older match
+  // draws exactly as before
+  it('technical remarks are not printed; an older match keeps its "Corrected after the match" lines', () => {
+    const withLog = (remarksModel: number | null) => {
+      const data = match3([15, 11])
+      ;(data.match as any).remarksModel = remarksModel
+      ;(data.match as any).manualChanges = [
+        { ts: at(1), category: 'correction', action: 'removePoint', text: 'Point removed: A 3:2', afterMatch: true },
+        { ts: at(2), category: 'technical', action: 'technicalRemark', text: 'Ball pump broken' }
+      ]
+      return buildSheetModel(data, { lfpShown: false, extraRemarks: ['Rebuilt after the match: 16.11.2026 - test'] })
+    }
+    expect(withLog(null).autoRemarks).toEqual(['Corrected after the match: Point removed: A 3:2', 'Rebuilt after the match: 16.11.2026 - test'])
+    expect(withLog(2).autoRemarks).toEqual([])
+  })
+
   it('the same data twice gives an equal model; one more point changes only the deciding set', () => {
     const a = buildSheetModel(match3([15, 11]), { lfpShown: false })
     const b = buildSheetModel(match3([15, 11]), { lfpShown: false })

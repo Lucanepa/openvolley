@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.25 · Stand: 22. November 2026
+**OpenVolley und OpenBeach** · Version 1.26 · Stand: 22. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -421,7 +421,13 @@ Wechseln und Sanktionen, Resultate und nachträgliche Korrekturen sowie die
 **Bemerkungen** (das Bemerkungsfeld des Spielberichts: was die Schreiberin
 oder der Schreiber einträgt und die Zeilen, die die App hinzufügt, zum
 Beispiel bei einem erzwungenen Wechsel oder wenn ein Libero nicht mehr spielen
-kann).
+kann). Ebenfalls mit dem Spiel gespeichert werden die **technischen
+Bemerkungen**: was die App dazu festhält, wie das Spiel erfasst wurde
+(Korrekturen, eine Änderung der Kaderliste nach der Platzwahl, ein wieder
+geöffneter Satz, gelöschte oder neu geleistete Unterschriften, ein Wechsel
+wegen einer Verletzung mit einem regulären Ersatz, eine Verletzung auf der
+Bank), und was die Schreiberin oder der Schreiber als solche hinzufügt. Sie
+werden nicht auf den Spielbericht gedruckt.
 
 **Lizenznummer oder Geburtsdatum:** In der Schweizer Version steht neben einem
 Namen die Lizenznummer. Die Schreiberin oder der Schreiber kann dort
@@ -442,7 +448,11 @@ sagen: Trag nur ein, was die Spielaufzeichnung braucht. Bemerkungen
 sehen alle, die alles sehen (Tabelle unten), und während des Spiels das
 Schiedsrichter-Tablet und wer den Spiel-PIN hat, nie die Bank-Tablets oder
 die Öffentlichkeit; sie stehen auf dem Spielbericht und erreichen so dessen
-Empfänger (unten). Rechtsgrundlage: Abschnitt 20; aufbewahrt mit dem Spiel
+Empfänger (unten). Ein Wechsel wegen einer Verletzung mit einem regulären
+Ersatz und eine Verletzung auf der Bank sind dagegen technische Bemerkungen:
+Sie stehen nicht auf dem Spielbericht und nicht auf dem Schiedsrichter-Tablet,
+bleiben bei der Spielaufzeichnung und werden in der E-Mail mit dem fertigen
+Spielbericht aufgeführt (unten). Rechtsgrundlage: Abschnitt 20; aufbewahrt mit dem Spiel
 (Abschnitt 16).
 
 **Wer die Daten eingibt:** die Schreiberin oder der Schreiber in der App,
@@ -463,7 +473,7 @@ Spielberechtigung (Lizenznummer), Livescore.
 |---|---|
 | Das Konto, das das Spiel erfasst oder abgeschlossen hat; Administratorinnen und Administratoren | Alles |
 | Konten, die den Spiel-PIN eingegeben haben (zum Beispiel ein Tablet, das das Spiel übernimmt) | Alles, bis das Spiel abgeschlossen ist |
-| Schiedsrichter-Tablet mit dem Schiedsrichter-PIN | Teams, beide Kaderlisten mit Namen und Nummern, Spielstand, Bemerkungen. **Keine** Geburtsdaten, Unterschriften, Offiziellen oder Freigaben |
+| Schiedsrichter-Tablet mit dem Schiedsrichter-PIN | Teams, beide Kaderlisten mit Namen und Nummern, Spielstand, Bemerkungen (ohne die technischen Bemerkungen). **Keine** Geburtsdaten, Unterschriften, Offiziellen oder Freigaben |
 | Bank-Tablet mit dem PIN seines Teams | Die Kaderliste des eigenen Teams mit Namen und Nummern, die Rückennummern des anderen Teams, Spielstand. **Keine** Bemerkungen, Geburtsdaten, Unterschriften, Offiziellen oder Freigaben |
 | Alle (öffentlich) | Siehe Abschnitt 8 |
 
@@ -509,7 +519,9 @@ wie viele Adressen der Spielbericht ging, nicht an welche. Spiele, die vor dem
 Einschalten abgeschlossen wurden, werden nicht versendet. Die E-Mail-Adresse
 einer Schiedsrichterin, eines Schiedsrichters oder eines Teams ist freiwillig,
 gehört zum Spiel und ist nie öffentlich; sie sieht nur, wer das ganze Spiel lesen darf
-(Tabelle oben). Der Versand läuft über Migadu (Abschnitt 15).
+(Tabelle oben). Die E-Mail führt im Text auch die technischen Bemerkungen des
+Spiels auf (oben); sie stehen nicht im PDF. Der Versand läuft über Migadu
+(Abschnitt 15).
 
 **Spielbericht eines Testspiels:** Gibst du am Ende eines Testspiels
 angemeldet das Resultat frei, sendet die App den Spielbericht als PDF an die

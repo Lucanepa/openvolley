@@ -421,12 +421,14 @@ export function RemarkForm({ ctx, events, sets, mode, liveSetIndex, match, editL
       p.log = { action: 'editRemark', setIndex: null, team: null, before: editLine, after: v, text: tr(t, 'corrections.log.remarkChanged', 'Remark changed: "{{text}}"', { text: v }) }
     } else {
       p.remarkAdd = [v]
+      // the template: the rules' remarks stay on the sheet, "Other" may be a technical remark (domain/technicalRemarks)
+      p.remarkKind = template || 'other'
       p.log = { action: 'addRemark', setIndex: setIndex || null, team: team || null, before: null, after: v, text: tr(t, 'corrections.log.remarkAdded', 'Remark added: "{{text}}"', { text: v }) }
     }
     if (mode === 'review') p.log.text += tr(t, 'corrections.log.afterMatchSuffix', ' (entered after the match)')
     return p
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, editLine, editIndex, match?.remarks, setIndex, team, mode, t])
+  }, [value, editLine, editIndex, match?.remarks, setIndex, team, mode, t, template])
 
   const needsContext = template && template !== 'missingSignature'
   return (

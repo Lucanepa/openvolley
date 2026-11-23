@@ -25,7 +25,7 @@ import { splitSet5Rounds, type ServiceRound } from './serviceRounds';
 import { isMatchOverStatus } from '../../src/domain/matchEnd.js';
 import { courtSwitchPointOf, setTargetsOf } from '../../src/domain/rules.js';
 import { sponsorsOf, withSponsorMark } from '../../src/domain/sponsors.js';
-import { generatedRemarks, correctionRemarks } from './sheetRemarks';
+import { sheetAutoRemarks } from './sheetRemarks';
 import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './matchTimes';
 import { buildSetData, eventsBySet, type SetContext } from './setModel';
 import type { MatchData } from './matchData';
@@ -263,12 +263,10 @@ export function buildSheetModel(data: MatchData, { lfpShown, extraRemarks }: She
   };
 
   // Remarks the sheet writes itself: a default / an incomplete team (field-spec 8, 11),
-  // and every change made after the match ("Corrected after the match: ...")
-  const autoRemarks = [
-    ...generatedRemarks({ sets, events, teamAKey, bestOf }),
-    ...correctionRemarks(match?.manualChanges),
-    ...(Array.isArray(extraRemarks) ? extraRemarks.filter((r) => typeof r === 'string' && r.trim()) : [])
-  ];
+  // and in an older match every change made after the match ("Corrected after
+  // the match: ...") and a rebuilt sheet's line; in a match with technical
+  // remarks those two are not printed (src/domain/technicalRemarks.js)
+  const autoRemarks = sheetAutoRemarks({ sets, events, teamAKey, bestOf, match, extraRemarks });
   // Consistency checks (field-spec 12.2): listed above the sheet, never printed
   const sheetWarnings = consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers, bestOf });
 

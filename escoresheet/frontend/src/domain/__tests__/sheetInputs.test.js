@@ -31,6 +31,15 @@ describe('domain/sheetInputs', () => {
     expect(local.tz).toBe('America/New_York')
     expect(matchInfoFromLocal({ hall: 'H' })).not.toHaveProperty('lfp_tracking')
   })
+  // owner 22.11.2026: technical remarks stay off the sheet of a match of this model
+  it('the remarks model travels in match_info (remarks_model) and back; an older match has none', () => {
+    expect(sheetInputsToMatchInfo({ remarksModel: 2 })).toEqual({ remarks_model: 2 })
+    expect(sheetInputsToMatchInfo({ remarksModel: null })).toEqual({})
+    expect(sheetInputsFromMatchInfo({ remarks_model: 2 })).toEqual({ remarksModel: 2 })
+    expect(sheetInputsFromMatchInfo({ remarks_model: 'x' })).toEqual({})
+    expect(localFromMatchInfo(matchInfoFromLocal({ hall: 'H', remarksModel: 2 })).remarksModel).toBe(2)
+    expect(localFromMatchInfo(matchInfoFromLocal({ hall: 'H' }))).not.toHaveProperty('remarksModel')
+  })
 })
 
 describe('ui/format: the match zone', () => {

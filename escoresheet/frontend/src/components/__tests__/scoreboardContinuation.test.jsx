@@ -350,7 +350,9 @@ describe('Scoreboard: what the scorer changes during the match reaches the devic
 
     expect((await playersOf(homeId)).filter(p => Number(p.number) === 12)).toHaveLength(1)
     const local = await db.matches.get(matchId)
-    expect(String(local.remarks || '').split('\n').filter(l => /Roster change after coin toss/.test(l))).toHaveLength(1)
+    // a technical remark (owner 22.11.2026): the change log once, no sheet line
+    expect(String(local.remarks || '')).not.toMatch(/Roster change after coin toss/)
+    expect((local.manualChanges || []).filter(c => /^Roster change after coin toss \(Set \d\): Added player #12/.test(c.text || ''))).toHaveLength(1)
     const updates = await queuedMatchUpdates()
     const benchUpdates = updates.filter(u => u.bench_home)
     expect(benchUpdates).toHaveLength(1)

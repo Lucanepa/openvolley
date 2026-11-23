@@ -212,6 +212,37 @@ describe('CorrectionBoard', () => {
     expect(readCorrectionView()).toBe('board')
   })
 
+  // owner 22.11.2026: the board's taps are technical remarks; ticked in the
+  // review, a step goes on the scoresheet too, with its (editable) line
+  it('a match with technical remarks: each change may go on the scoresheet too', async () => {
+    setup({ match: { ...MATCH, remarksModel: 2 } })
+    fireEvent.click(screen.getByTestId('board-plus-left'))
+    fireEvent.click(screen.getByTestId('board-minus-right'))
+    fireEvent.click(screen.getByTestId('board-save'))
+    const review = await screen.findByTestId('board-save-review')
+    expect(review.textContent).toContain('Each change is listed in the technical remarks, not printed on the scoresheet.')
+    const asks = within(review).getAllByTestId('board-save-sheet-remark')
+    expect(asks).toHaveLength(2)
+    fireEvent.click(within(asks[1]).getByRole('checkbox', { name: 'Remark on the scoresheet' }))
+    const line = within(asks[1]).getByRole('textbox')
+    expect(line.value).toMatch(/\(manual correction\)\.$/)
+    fireEvent.change(line, { target: { value: 'Team B, Set 2: a point taken back (manual correction).' } })
+    fireEvent.click(screen.getByTestId('board-save-confirm'))
+    await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
+    const plan = applied.plans[0]
+    expect(plan.remarksSet).toBe('Team B, Set 2: a point taken back (manual correction).')
+    expect(plan.logs.map(l => l.remarkTo ?? null)).toEqual([null, 'sheet'])
+    expect(plan.logs[1].sheetLine).toBe('Team B, Set 2: a point taken back (manual correction).')
+  })
+
+  it('an older match: no such choice in the review', async () => {
+    setup()
+    fireEvent.click(screen.getByTestId('board-plus-left'))
+    fireEvent.click(screen.getByTestId('board-save'))
+    const review = await screen.findByTestId('board-save-review')
+    expect(within(review).queryAllByTestId('board-save-sheet-remark')).toHaveLength(0)
+  })
+
   it('fits tablets in landscape and desktops, not phones', () => {
     expect(boardFits({ innerWidth: 1280, innerHeight: 800 })).toBe(true)
     expect(boardFits({ innerWidth: 390, innerHeight: 844 })).toBe(false)

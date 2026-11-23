@@ -46,7 +46,7 @@ import {
 import { getSetResult, scoreFromPointEvents, getFirstServeForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from './rules'
 import { rotateLineup, pointSubEventsForTeam } from './rotation'
 import { swapTeamDesignation as swapTeamDesignationPatch, regularSetIndexes } from './coinToss'
-import { actualStartLines, actualStartReason, remarkClock } from './remarks'
+import { actualStartLines, actualStartReason, remarkClock, isSheetRemark } from './remarks'
 import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { intervalMinutesAfter } from './setInterval'
 import { validateManualTimeout, validateManualSubstitution, classifySubstitutionRequest } from './substitutions'
@@ -520,7 +520,7 @@ export function planRemoveSubstitution(events, id, ctx = {}) {
   if (!ev) return fail('notFound')
   const plan = emptyPlan()
   plan.remove = entryGroupIds(events, ev)
-  if (ev.payload?.autoRemark) plan.remarkRemove = [ev.payload.autoRemark]
+  if (ev.payload?.autoRemark && isSheetRemark(ev.payload)) plan.remarkRemove = [ev.payload.autoRemark]
   return done(events, finishPlan(plan, events, ctx, 'removeSubstitution', ev), ctx)
 }
 
@@ -846,7 +846,8 @@ export function planEditEntry(events, id, values = {}, ctx = {}) {
     const text = renumberRemarkText(p.autoRemark, renamed)
     if (text !== p.autoRemark) {
       payload.autoRemark = text
-      plan.remarkReplace = [{ from: p.autoRemark, to: text }]
+      // a technical remark's line is in no remarks text
+      if (isSheetRemark(p)) plan.remarkReplace = [{ from: p.autoRemark, to: text }]
     }
   } else if (renamed.size && ev.type === 'bench_injury') {
     const [line] = benchInjuryLines(p.team, [p.playerNumber], ctx)
@@ -1160,7 +1161,7 @@ export function planGameCaptain(events, { team, number } = {}, ctx = {}) {
 function removalSideEffects(events, removed, ctx) {
   const out = { remarkRemove: [], matchPatch: {}, playerUpdates: [] }
   const list = [...removed].sort((a, b) => compareBySeq(b, a))
-  for (const e of list) if (e.payload?.autoRemark) out.remarkRemove.push(e.payload.autoRemark)
+  for (const e of list) if (e.payload?.autoRemark && isSheetRemark(e.payload)) out.remarkRemove.push(e.payload.autoRemark)
   // a bench injury written before its entry carried its remark line
   for (const e of list) {
     if (e.type !== 'bench_injury' || typeof e.payload?.autoRemark === 'string') continue
@@ -1531,7 +1532,7 @@ export function planRenumberPlayers(events, { team, renumbers = [] } = {}, ctx =
     const changes = u.payload !== byId.get(u.id)?.payload ? { payload: u.payload } : {}
     if (u.stateSnapshot) changes.stateSnapshot = u.stateSnapshot
     plan.update.push({ id: u.id, changes })
-    if (u.autoRemark) plan.remarkReplace.push(u.autoRemark)
+    if (u.autoRemark && isSheetRemark(byId.get(u.id)?.payload)) plan.remarkReplace.push(u.autoRemark)
   }
   // the remark line of a bench injury written before the entry carried it
   for (const line of benchInjuryLines(team, benchInjuriesWithoutRemark(events, team).filter(n => map.has(n)), ctx)) {

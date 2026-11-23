@@ -1,8 +1,15 @@
 // The correction log (match.manualChanges), read-only and shown to the
 // referee: one sentence per correction, newest first. Entries written before
 // the sentences existed go through describeLegacyChange (never raw JSON).
+// In a match with technical remarks (domain/technicalRemarks.js) it is the
+// list of the technical remarks: the corrections and the event lines kept
+// off the scoresheet (an injury substitution, a bench injury), as Match End
+// lists them.
+import { useMemo } from 'react'
 import { describeLegacyChange, tr } from '../../domain/describe'
+import { technicalRemarks, technicalRemarksOn } from '../../domain/technicalRemarks'
 import { timeLabel } from '../../ui/format'
+import TechnicalRemarksList from '../TechnicalRemarksList.jsx'
 import { SectionCard, EmptyLine } from './shared.jsx'
 
 function when(ts) {
@@ -11,8 +18,24 @@ function when(ts) {
   return timeLabel(ms)
 }
 
-export default function CorrectionLog({ changes, ctx }) {
+export default function CorrectionLog({ changes, ctx, events = null }) {
   const t = ctx.t
+  const technical = technicalRemarksOn(ctx.match)
+  const items = useMemo(
+    () => (technical ? technicalRemarks({ match: { manualChanges: changes }, events, t }) : []),
+    [technical, changes, events, t]
+  )
+  if (technical) {
+    return (
+      <SectionCard
+        title={tr(t, 'corrections.section.technical', 'Technical remarks')}
+        hint={tr(t, 'corrections.technical.hint', 'Not printed on the scoresheet')}
+        count={items.length}
+      >
+        <TechnicalRemarksList items={items} newestFirst emptyText={tr(t, 'corrections.empty.technical', 'No technical remarks yet.')} />
+      </SectionCard>
+    )
+  }
   const list = [...(changes || [])].reverse()
   return (
     <SectionCard

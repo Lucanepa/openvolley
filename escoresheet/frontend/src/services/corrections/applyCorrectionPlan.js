@@ -52,6 +52,7 @@ import { setExtId } from '../../utils/syncIds'
 import { withActivityContext, EVENT_HISTORY_SCOPE, rememberSeedKey } from '../../db/eventHistory'
 import { randomUuid } from '../../utils/deviceId'
 import { isLocalOnly } from '../../domain/matchKind'
+import { technicalChange } from '../../domain/technicalRemarks'
 
 /** The event history reason of every row a correction removes or edits. */
 export const CORRECTION_REASON = 'correction'
@@ -79,21 +80,25 @@ export function signedAfterMatch(match) {
 }
 
 // A remark written at the match end is how the remarks are filled in, not a
-// correction of the match, until somebody signed (signaturesCleared)
-const REMARK_ACTIONS = new Set(['addRemark', 'editRemark', 'removeRemark'])
+// correction of the match, until somebody signed (signaturesCleared); a
+// technical remark is never one (domain/technicalRemarks)
+const REMARK_ACTIONS = new Set(['addRemark', 'editRemark', 'removeRemark', 'technicalRemark'])
 
 /**
  * The correction-log entry stored in match.manualChanges. `afterMatch`: made
  * at the match end; the scoresheet and Match End print such an entry as
  * "Corrected after the match" in REMARKS (scoresheet_pdf/utils/sheetRemarks
- * correctionRemarks).
+ * correctionRemarks; in a match with technical remarks never printed, a
+ * technical remark, domain/technicalRemarks). `category` 'technical': a
+ * technical remark the scorer wrote; `remarkTo` 'sheet' + `sheetLine`: the
+ * scorer put a line about it on the scoresheet too (the ask flow).
  */
 export function logEntryFor(plan, now = new Date(), { afterMatch = false } = {}) {
   if (!plan?.log) return null
-  const { action, setIndex = null, team = null, before = null, after = null, text } = plan.log
+  const { action, setIndex = null, team = null, before = null, after = null, text, category = 'correction', remarkTo, sheetLine } = plan.log
   return {
     ts: now.toISOString(),
-    category: 'correction',
+    category,
     action,
     setIndex,
     team,
@@ -102,8 +107,38 @@ export function logEntryFor(plan, now = new Date(), { afterMatch = false } = {})
     text,
     description: text,
     by: 'scorer',
+    ...(remarkTo === 'sheet' && sheetLine ? { remarkTo, sheetLine } : {}),
     ...(afterMatch ? { afterMatch: true } : {})
   }
+}
+
+/**
+ * A technical remark the scorer adds (Match End's "Add technical remark",
+ * owner 22.11.2026): one match.manualChanges entry (category 'technical'),
+ * queued for the server with the log. It changes nothing the officials
+ * signed, so no signature or approval is cleared.
+ * @returns {Promise<object|null>} the entry, null for an empty text
+ */
+export async function writeTechnicalRemark(db, matchId, text, now = new Date()) {
+  const entry = technicalChange({ action: 'technicalRemark', text, now })
+  if (!entry.text) return null
+  await db.transaction('rw', db.matches, db.sync_queue, async () => {
+    const match = await db.matches.get(matchId)
+    if (!match) throw new Error('Match not found')
+    const manualChanges = [...(match.manualChanges || []), entry]
+    await db.matches.update(matchId, { manualChanges })
+    if (match.seed_key && !isLocalOnly(match)) {
+      await db.sync_queue.add({
+        resource: 'match',
+        action: 'update',
+        payload: { id: match.seed_key, manual_changes: manualChanges },
+        ts: now.toISOString(),
+        status: 'queued'
+      })
+    }
+  })
+  try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
+  return entry
 }
 
 /**

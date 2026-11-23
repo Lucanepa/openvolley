@@ -293,6 +293,11 @@ function signupParts(v, lang) {
   })]
 }
 
+/** A final mail's technical remarks (lib/finalMail.js technicalRemarkLines): a heading and one paragraph of lines. */
+const technicalSection = (v, heading) => (Array.isArray(v?.technical) && v.technical.length
+  ? [heading, v.technical.map((l) => `- ${l?.line ?? ''}`).join('\n')]
+  : [])
+
 const T = {
   reset: {
     en: {
@@ -583,14 +588,15 @@ const T = {
   // The final scoresheet (lib/finalMail.js), the PDF attached. vars: teams,
   // game ('' when none), date, result ('' when unknown), corrected; pdf:
   // false when it goes without the PDF (that follows), late: the PDF that
-  // was missing from it
+  // was missing from it; technical: the match's technical remarks, never
+  // printed on its sheet (lines, technicalRemarkLines), listed after the facts
   scoresheet: {
     en: (v) => ({
       subject: `${v.corrected ? 'Corrected scoresheet' : 'Scoresheet'}: ${v.teams}`,
       before: ['Hello,', v.pdf === false
         ? `this match is over and its ${v.corrected ? 'corrected ' : ''}result is final. Its scoresheet PDF has not reached the server yet: it follows in another mail as soon as it does.`
         : `the ${v.corrected ? 'corrected ' : ''}final scoresheet of this match is attached${v.late ? ': it was missing from the result mail you got' : ''}.`,
-        `Match: ${v.teams}`, ...(v.game ? [`Game: ${v.game}`] : []), `Date: ${v.date}`, ...(v.result ? [`Result: ${v.result}`] : [])],
+        `Match: ${v.teams}`, ...(v.game ? [`Game: ${v.game}`] : []), `Date: ${v.date}`, ...(v.result ? [`Result: ${v.result}`] : []), ...technicalSection(v, 'Technical remarks (not printed on the scoresheet):')],
       button: null,
       after: ['You get this mail as an official of the match or as the contact of one of its clubs. Questions about the match go to the organiser of the competition.']
     }),
@@ -599,7 +605,7 @@ const T = {
       before: ['Hallo', v.pdf === false
         ? `Dieses Spiel ist beendet, sein ${v.corrected ? 'korrigiertes ' : ''}Resultat ist definitiv. Das PDF des Matchblatts ist noch nicht auf dem Server angekommen: Es folgt in einer weiteren E-Mail, sobald es da ist.`
         : `Im Anhang findest du das ${v.corrected ? 'korrigierte ' : ''}fertige Matchblatt dieses Spiels${v.late ? ': Es fehlte in der E-Mail mit dem Resultat' : ''}.`,
-        `Spiel: ${v.teams}`, ...(v.game ? [`Spielnummer: ${v.game}`] : []), `Datum: ${v.date}`, ...(v.result ? [`Resultat: ${v.result}`] : [])],
+        `Spiel: ${v.teams}`, ...(v.game ? [`Spielnummer: ${v.game}`] : []), `Datum: ${v.date}`, ...(v.result ? [`Resultat: ${v.result}`] : []), ...technicalSection(v, 'Technische Bemerkungen (nicht auf dem Matchblatt gedruckt):')],
       button: null,
       after: ['Du erhältst diese E-Mail als Offizielle/r des Spiels oder als Kontakt eines der beiden Vereine. Fragen zum Spiel richtest du an den Veranstalter der Meisterschaft.']
     }),
@@ -608,7 +614,7 @@ const T = {
       before: ['Bonjour,', v.pdf === false
         ? `ce match est terminé et son résultat ${v.corrected ? 'corrigé ' : ''}est définitif. Le PDF de sa feuille de match n’est pas encore arrivé sur le serveur : il suivra dans un autre e-mail dès qu’il sera là.`
         : `tu trouveras en pièce jointe la feuille de match ${v.corrected ? 'corrigée ' : ''}finale de ce match${v.late ? ' : elle manquait dans l’e-mail du résultat' : ''}.`,
-        `Match : ${v.teams}`, ...(v.game ? [`Numéro : ${v.game}`] : []), `Date : ${v.date}`, ...(v.result ? [`Résultat : ${v.result}`] : [])],
+        `Match : ${v.teams}`, ...(v.game ? [`Numéro : ${v.game}`] : []), `Date : ${v.date}`, ...(v.result ? [`Résultat : ${v.result}`] : []), ...technicalSection(v, 'Remarques techniques (non imprimées sur la feuille de match) :')],
       button: null,
       after: ['Tu reçois cet e-mail en tant qu’officiel du match ou contact de l’un de ses clubs. Les questions sur le match vont à l’organisateur du championnat.']
     }),
@@ -617,7 +623,7 @@ const T = {
       before: ['Buongiorno,', v.pdf === false
         ? `questa partita è terminata e il suo risultato ${v.corrected ? 'corretto ' : ''}è definitivo. Il PDF del referto non è ancora arrivato sul server: seguirà in un’altra e-mail appena ci sarà.`
         : `in allegato trovi il referto ${v.corrected ? 'corretto ' : ''}finale di questa partita${v.late ? ': mancava nell’e-mail del risultato' : ''}.`,
-        `Partita: ${v.teams}`, ...(v.game ? [`Numero: ${v.game}`] : []), `Data: ${v.date}`, ...(v.result ? [`Risultato: ${v.result}`] : [])],
+        `Partita: ${v.teams}`, ...(v.game ? [`Numero: ${v.game}`] : []), `Data: ${v.date}`, ...(v.result ? [`Risultato: ${v.result}`] : []), ...technicalSection(v, 'Osservazioni tecniche (non stampate sul referto):')],
       button: null,
       after: ['Ricevi questa e-mail come ufficiale della partita o come contatto di una delle due società. Le domande sulla partita vanno all’organizzatore del campionato.']
     })
@@ -839,7 +845,8 @@ export function renderMail(kind, lang, { link, app, vars } = {}) {
   textParts.push(...m.after, `– ${brand.name}`, privacyLine(lang))
   const text = textParts.join('\n\n') + '\n'
 
-  const p = (s) => `<p style="margin:0 0 16px">${escapeHtml(s)}</p>`
+  // pre-line: a paragraph of several lines (a final mail's technical remarks) keeps its line breaks
+  const p = (s) => `<p style="margin:0 0 16px;white-space:pre-line">${escapeHtml(s)}</p>`
   const button = m.button
     ? `<p style="margin:24px 0"><a href="${escapeHtml(link)}" style="display:inline-block;background:#e2001a;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:8px">${escapeHtml(m.button)}</a></p>` +
       `<p style="margin:0 0 16px;font-size:13px;color:#57534e;word-break:break-all">${escapeHtml(link)}</p>`

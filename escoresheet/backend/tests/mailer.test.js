@@ -120,6 +120,15 @@ describe('mailer: links and templates', () => {
       assert.ok(reopened.text.includes('Wrong set 3 <b>') && reopened.html.includes('Wrong set 3 &lt;b&gt;'), lang)
     }
     assert.match(renderMail('scoresheet', 'en', { vars: { ...SCORESHEET_VARS, pdf: false } }).text, /has not reached the server yet/)
+    // the match's technical remarks (owner 2026-11-22): a heading and one line each, plain text in every language
+    const technical = [{ line: '19:05 Set 1, 19:05, A 3:2, #4 injured (bench)' }, { line: '20:10 Point removed <b>x</b>\nnext' }]
+    for (const [lang, heading] of [['en', 'Technical remarks (not printed on the scoresheet):'], ['de', 'Technische Bemerkungen (nicht auf dem Matchblatt gedruckt):'], ['fr', 'Remarques techniques (non imprimées sur la feuille de match) :'], ['it', 'Osservazioni tecniche (non stampate sul referto):']]) {
+      const m = renderMail('scoresheet', lang, { vars: { ...SCORESHEET_VARS, technical } })
+      assert.ok(m.text.includes(`${heading}\n\n- 19:05 Set 1, 19:05, A 3:2, #4 injured (bench)\n- 20:10 Point removed <b>x</b> next`), lang)
+      assert.ok(m.html.includes('- 20:10 Point removed &lt;b&gt;x&lt;/b&gt; next'), lang)
+      assert.equal(m.subject.includes('injured'), false)
+      assert.equal(renderMail('scoresheet', lang, { vars: SCORESHEET_VARS }).text.includes(heading), false)
+    }
     assert.match(renderMail('scoresheet', 'en', { vars: { ...SCORESHEET_VARS, late: true } }).text, /missing from the result mail/)
   })
 

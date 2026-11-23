@@ -58,7 +58,8 @@ describe('PreMatchSignDialog: a signed slot', () => {
     expect(m.remarks).toBe('')
   })
 
-  it('Re-sign replaces it and writes a remark', async () => {
+  // owner 22.11.2026: a technical remark (the change log), not a sheet line
+  it('Re-sign replaces it and writes a technical remark', async () => {
     const matchId = await openDialog()
     fireEvent.click(screen.getByTestId('pre-match-sign-captain'))
     fireEvent.click(await screen.findByTestId('signature-resign'))
@@ -74,6 +75,8 @@ describe('PreMatchSignDialog: a signed slot', () => {
     fireEvent.click(button('Save'))
     await waitFor(async () => expect((await db.matches.get(matchId)).homeCaptainSignature).toBe(NEW_INK))
     const m = await db.matches.get(matchId)
-    expect(m.remarks).toMatch(/^Captain signature of Home V replaced \(re-signed/)
+    expect(m.remarks || '').not.toMatch(/re-signed/)
+    expect(m.manualChanges.at(-1)).toMatchObject({ category: 'technical', action: 'resigned' })
+    expect(m.manualChanges.at(-1).text).toMatch(/^Captain signature of Home V replaced \(re-signed/)
   })
 })

@@ -464,6 +464,42 @@ Typical entries, worded as in SC:
 | Protest (FIVB 5.1.3.2) | The game captain's reservation, written as dictated. |
 | Free scorer remarks | Stored in `match.remarks` and printed verbatim after the generated ones. |
 
+### 8.1 Technical remarks (owner decision 2026-11-22)
+
+What the app notes about how the record was kept is a **technical remark**: never printed on the
+sheet (nor on its overflow pages), listed at the match end ("Technical remarks", "Add technical
+remark") and in Corrections (the correction log's card), kept with the match (`manual_changes` on
+the server) and listed in the text of the final scoresheet mail (`backend/lib/finalMail.js`
+`technicalRemarkLines`), never sent to the referee tablet (`lib/publicColumns.js`
+`relayBundleView`). `frontend/src/domain/technicalRemarks.js`.
+
+| On the sheet (REMARKS) | Technical remark |
+|---|---|
+| The scorer's own remarks (Remarks dialog, Match End, paired phone, Corrections "Add remark" by default) | Every correction (the correction log), including the changes after the match (no "Corrected after the match" line) |
+| Exceptional substitution (SC p.69, FIVB 15.7/15.8), also an injured player's | Injury substitution with a legal substitute ("#4 substituted, cannot continue playing") |
+| Libero unable, re-designated, able to play again (SC p.70, FIVB 19.4) | Bench injury ("#4 injured (bench)") |
+| Delayed start of the match or a set ("Actual game start", SC p.17/76) | Roster change after the coin toss (add, remove, edit a player or an official) |
+| Going back in the game (CB 2.3) | A set reopened (with its set and score) |
+| Protest, missing signature, the rule templates of "Add remark" | Signatures cleared by a roster change, a signature replaced (re-signed) |
+| Forfeit, default, incomplete team, a set past 48 points, sanctions beyond the 9 rows | A rebuilt sheet ("Rebuilt after the match", Rebuild PDF / render service) |
+
+**Where it is noted (Corrections).** A correction whose line the rules require is locked to the
+sheet ("The rules require this on the scoresheet."). Every other correction asks "Technical remark
+(not printed)" (default) or "Remark on the scoresheet" (an editable line, "Team B, Set 2: … (manual
+correction)."); the scorer's own "Other" remark defaults to the sheet and may be made technical.
+The correction board asks per change in its Save review. A roster change is never asked (owner).
+
+**Stored.** An event's line stays in `payload.autoRemark`, with `payload.remarkTo: 'technical'`;
+Undo, removals, renumbering and going back leave `match.remarks` alone for it. Match-wide lines are
+`match.manualChanges` entries (`category: 'technical'`, `action` `technicalRemark` /
+`signaturesCleared` / `resigned`, `text`). A correction put on the sheet too is logged with
+`remarkTo: 'sheet'` and its `sheetLine`.
+
+**Older matches.** Only a match created with this model (`match.remarksModel = 2`, set when the
+row is created; `match_info.remarks_model` on the server) does this. A match without it (created
+before, or restored from a backup or the server without it) writes and draws every line as before,
+"Corrected after the match" and "Rebuilt after the match" included.
+
 ---
 
 ## 9. Final result ("Endresultat/Résultat final/Risultato finale")

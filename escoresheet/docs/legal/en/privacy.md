@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.25 · As of 22 November 2026
+**OpenVolley and OpenBeach** · Version 1.26 · As of 22 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -379,7 +379,12 @@ address per team,
 match with all events, substitutions and sanctions, results and later
 corrections, and the **remarks** (the scoresheet's remarks box: what the
 scorer writes and the lines the app adds, for example for a forced
-substitution or a libero who becomes unable to play).
+substitution or a libero who becomes unable to play). The **technical
+remarks** are kept with the match too: what the app notes about how the match
+was recorded (corrections, a roster change after the coin toss, a reopened
+set, signatures cleared or signed again, a substitution because of an injury
+with a regular substitute, an injury on the bench) and what the scorer adds as
+one. They are not printed on the scoresheet.
 
 **Licence number or date of birth:** in the Swiss version the value beside a
 name is the licence number. The scorer may type a date of birth there
@@ -396,7 +401,11 @@ cannot continue playing"), never a diagnosis. Remarks the scorer types can say
 more: write only what the match record needs. Remarks are seen by those who
 see everything (table below) and, during the match, by the referee tablet and
 the holders of the game PIN, never by the bench tablets or the public; they
-are printed on the scoresheet and so reach its recipients (below). Legal basis:
+are printed on the scoresheet and so reach its recipients (below). A
+substitution because of an injury with a regular substitute and an injury on
+the bench are technical remarks instead: they are not printed on the
+scoresheet and not shown on the referee tablet; they stay with the match
+record and are listed in the final scoresheet email (below). Legal basis:
 section 20; kept with the match (section 16).
 
 **Who enters the data:** the scorer in the app, team managers on the roster
@@ -416,7 +425,7 @@ livescore.
 |---|---|
 | The account that recorded or closed the match; administrators | Everything |
 | Accounts that entered the game PIN (for example a tablet that takes over the match) | Everything, until the match is closed |
-| Referee tablet with the referee PIN | Teams, both rosters with names and numbers, score, remarks. **No** dates of birth, signatures, officials or approvals |
+| Referee tablet with the referee PIN | Teams, both rosters with names and numbers, score, remarks (not the technical remarks). **No** dates of birth, signatures, officials or approvals |
 | Bench tablet with its team's PIN | Its own team's roster with names and numbers, the other team's shirt numbers, score. **No** remarks, dates of birth, signatures, officials or approvals |
 | Everyone (public) | See section 8 |
 
@@ -457,7 +466,8 @@ once more. Only when and to how many addresses the scoresheet was sent is
 stored, not which ones. Matches closed before the feature was switched on are
 not sent. A referee's or a team's email address is optional, belongs to the match and is
 never public; only those who may read the whole match see it (table above).
-Emails are sent through Migadu (section 15).
+The email's text also lists the match's technical remarks (above); they are
+not in the PDF. Emails are sent through Migadu (section 15).
 
 **Scoresheet of a test match:** if you approve the result at the end of a
 test match while signed in, the app sends its scoresheet as a PDF to your

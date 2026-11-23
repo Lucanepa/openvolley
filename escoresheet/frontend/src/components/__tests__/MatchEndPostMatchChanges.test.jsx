@@ -409,3 +409,52 @@ describe('fe-home-options-2: corrections after the match on the sheet', () => {
     expect(queryAllButtons(en.matchEnd.approveParams)).toHaveLength(1)
   })
 })
+
+// Owner 22.11.2026: a match with technical remarks (remarksModel 2) keeps
+// them off the sheet and lists them under "Technical remarks"
+describe('technical remarks at the match end', () => {
+  const technicalLines = () => [...screen.getByTestId('matchend-technical-remarks').querySelectorAll('[data-testid="technical-remark"] span')].map(n => n.textContent)
+
+  it('the corrections after the match and the technical event lines are listed, not printed in REMARKS', async () => {
+    seed({
+      remarksModel: 2,
+      manualChanges: [
+        { ts: '2026-11-09T20:10:00Z', category: 'correction', action: 'addTimeout', text: 'Added: Time-out, Team B, set 2', afterMatch: true },
+        { ts: '2026-11-09T19:10:00Z', category: 'correction', action: 'addTimeout', text: 'Added during the match' }
+      ]
+    }, { events: [{ id: 91, setIndex: 2, seq: 3, ts: '2026-11-09T19:30:00Z', type: 'bench_injury', payload: { team: 'away', playerNumber: 9, autoRemark: 'Set 2, 20:30, B 3:2, #9 injured (bench)', remarkTo: 'technical' } }] })
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(screen.getByTestId('matchend-technical-remarks')).toBeTruthy())
+    await waitFor(() => expect(technicalLines()).toEqual([
+      'Added during the match',
+      'Set 2, 20:30, B 3:2, #9 injured (bench)',
+      'Added: Time-out, Team B, set 2'
+    ]))
+    expect(screen.queryAllByTestId('matchend-generated-remark')).toHaveLength(0)
+    expect(screen.getByTestId('matchend-technical-remarks').textContent).toContain(en.matchEnd.technicalRemarks.hint)
+  })
+
+  it('an older match has no such card and prints its lines as before', async () => {
+    seed({ manualChanges: [{ ts: '2026-11-09T20:10:00Z', category: 'correction', action: 'addTimeout', text: 'Added after', afterMatch: true }] })
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(screen.getAllByTestId('matchend-generated-remark')).toHaveLength(1))
+    expect(screen.queryByTestId('matchend-technical-remarks')).toBeNull()
+  })
+
+  it('"Add technical remark" after the signatures: logged and queued, no question, every signature and approval stays', async () => {
+    seed({ ...SIGNED, accountApprovals: { referee1: approval }, remarksModel: 2 })
+    render(<MatchEnd matchId={1} />)
+    await settle()
+    fireEvent.click(await screen.findByTestId('matchend-technical-remark-add'))
+    fireEvent.change(await screen.findByTestId('matchend-technical-remark-text'), { target: { value: '  Ball pump\nbroken in set 2 ' } })
+    fireEvent.click(screen.getByTestId('matchend-technical-remark-save'))
+    await waitFor(() => expect(row().manualChanges?.length).toBe(1))
+    expect(row().manualChanges[0]).toMatchObject({ category: 'technical', action: 'technicalRemark', text: 'Ball pump broken in set 2' })
+    expect(confirm.calls).toHaveLength(0)
+    expect(row().remarks).toBe('Protest of team B at 12:10 in set 2.')
+    for (const f of Object.keys(SIGNED)) expect(row()[f]).toBe(SIGNED[f])
+    expect(row().accountApprovals).toEqual({ referee1: approval })
+    expect(jobs().map(j => j.payload)).toEqual([{ id: SEED, manual_changes: row().manualChanges }])
+    await waitFor(() => expect(technicalLines()).toEqual(['Ball pump broken in set 2']))
+  })
+})

@@ -34,7 +34,9 @@ export const ACTIVITY_KINDS = Object.freeze({
   'match.status': { cat: 'match', keys: ['from', 'to'] },
   'match.close': { cat: 'match', keys: ['from', 'to'] },
   'match.coin_toss': { cat: 'match', keys: ['keys', 'confirmed'] },
-  'match.manual_change': { cat: 'correction', keys: ['category', 'field', 'before', 'after'] },
+  // action: a technical remark's kind (category 'technical': technicalRemark,
+  // signaturesCleared, resigned; frontend domain/technicalRemarks.js), never its text
+  'match.manual_change': { cat: 'correction', keys: ['category', 'field', 'before', 'after', 'action'] },
   'match.signature': { cat: 'match', keys: ['role', 'signed'] },
   'match.approval': { cat: 'match', keys: ['role', 'method', 'approved'] },
   'match.remarks': { cat: 'match', keys: ['length'] },

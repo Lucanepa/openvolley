@@ -203,6 +203,24 @@ describe('an injured libero no re-designation replaced may play again (owner 22.
     await wait(300)
     expect(liberoMenu()).toBeFalsy()
   }, 60000)
+
+  // owner 22.11.2026: "Once declared or becoming unable and re-designated: can't continue playing"
+  it('declared unable once, a later "able to play again" (a correction, an older record) does not bring him back', async () => {
+    const matchId = await setUp({
+      set: 2,
+      before: (add) => {
+        add.event('libero_unable', { ...injured12, reason: 'declared' })
+        add.event('libero_recovered', { team: 'home', liberoNumber: 12, liberoType: 'libero1' })
+      }
+    })
+    await openScreen(matchId)
+    await waitFor(() => expect(benchLibero(12)?.getAttribute('data-libero-state')).toBe('unable'))
+    fireEvent.click(benchLibero(12))
+    await wait(300)
+    expect(liberoMenu()).toBeFalsy()
+    expect(button('Able to play again')).toBeFalsy()
+    expect(await liberoChipsFor5()).toEqual(['11 (L2)'])
+  }, 60000)
 })
 
 describe('an injured libero a re-designation replaced is out for the match (owner 22.11.2026)', () => {

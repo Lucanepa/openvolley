@@ -1896,6 +1896,14 @@
     "diagnosticsExportFailed": "The diagnostics could not be exported."
   },
   "matchEnd": {
+    "technicalRemarks": {
+      "title": "Technical remarks",
+      "hint": "Not printed on the scoresheet",
+      "add": "Add technical remark",
+      "empty": "No technical remarks.",
+      "intro": "Kept with the match and sent with the final scoresheet, not printed on it. The signatures stay.",
+      "saveFailed": "The technical remark could not be saved."
+    },
     "globalNotStored": "The scoresheet could not be saved online. It stays on this device: download the PDF now.",
     "title": "Match complete",
     "winner": "Winner",
@@ -3238,7 +3246,7 @@
       "a_saveChanges": "Corrections are saved one by one when you confirm them. Changes in “Teams” and “Match info” are saved together with “Save changes” at the top. “Close” asks before it drops unsaved changes.",
       "tip_saveChanges": "Saves the changes in “Teams” and “Match info”.",
       "q_whereCorrections": "Where do I correct a mistake?",
-      "a_whereCorrections": "During the match: Match › “Corrections” (the correction board on a tablet or a computer, the list on a phone), or Match › “Go back” when the referees take back part of the set. At the match end: the “Corrections” button. The list saves each correction when you confirm it, the board when you tap “Save”. Every correction is listed in the correction log for the referee.",
+      "a_whereCorrections": "During the match: Match › “Corrections” (the correction board on a tablet or a computer, the list on a phone), or Match › “Go back” when the referees take back part of the set. At the match end: the “Corrections” button. The list saves each correction when you confirm it, the board when you tap “Save”. Every correction is a technical remark: listed in Corrections and at the match end, not printed on the scoresheet, sent with the final scoresheet e-mail. A line the rules want on paper goes in the remarks; for any other correction choose “Remark on the scoresheet” to note it there too.",
       "q_missedPoint": "I forgot a point during the set?",
       "a_missedPoint": "On the correction board, tap “+” for the team; in the list, “Add a missed point”. It is added at the current score with its rotation and service, as the point button does. If the last point went to the wrong team, tap “Last point went to the wrong team”.",
       "q_serveSidesLineup": "How do I fix the serve, the sides or the line-up?",
@@ -5988,6 +5996,15 @@
     }
   },
   "corrections": {
+    "destination": {
+      "label": "Where is this noted?",
+      "technical": "Technical remark (not printed)",
+      "sheet": "Remark on the scoresheet",
+      "locked": "The rules require this on the scoresheet."
+    },
+    "technical": {
+      "hint": "Not printed on the scoresheet"
+    },
     "teamLetter": "Team {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",
     "score": "{{first}} {{a}}:{{b}} {{second}}",
@@ -6058,6 +6075,7 @@
       "disqualification": "disqualification"
     },
     "remark": {
+      "manualCorrectionWhat": "{{what}} (manual correction).",
       "exceptionalSub": "Team {{team}}, Set {{set}}, Result {{score}}: player no. {{out}} is exceptionally substituted by player no. {{in}} due to {{reason}}.",
       "liberoUnable": "Team {{team}}, Set {{set}}, Result {{score}}: Libero no. {{n}} is declared unable to play.",
       "liberoRedesignated": "Team {{team}}, Set {{set}}, Result {{score}}: player no. {{n}} is designated as new Libero.",
@@ -6068,6 +6086,7 @@
       "result": "Result {{score}}"
     },
     "log": {
+      "technicalRemarkAdded": "Technical remark: \"{{text}}\"",
       "unknown": "Correction",
       "added": "Added: {{what}}",
       "removed": "Removed: {{what}}",
@@ -6163,6 +6182,7 @@
     "saved": "Correction saved",
     "saveError": "The correction could not be saved: {{message}}",
     "section": {
+      "technical": "Technical remarks",
       "scoreServe": "Score and serve",
       "sets": "Set results",
       "lineup": "Line-up",
@@ -6183,6 +6203,7 @@
       "remark": "Add remark"
     },
     "empty": {
+      "technical": "No technical remarks yet.",
       "timeouts": "No time-outs recorded.",
       "substitutions": "No substitutions recorded.",
       "sanctions": "No sanctions recorded.",
@@ -6427,6 +6448,7 @@
     }
   },
   "correctionBoard": {
+    "saveHintTechnical": "Each change is listed in the technical remarks, not printed on the scoresheet.",
     "title": "Correction board",
     "list": "List",
     "boardView": "Board",

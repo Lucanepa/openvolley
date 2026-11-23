@@ -434,6 +434,22 @@ describe('relayBundleView', () => {
     assert.equal(JSON.stringify(e), before)
   })
 
+  // owner 2026-11-22: a technical remark's line is not for the referee tablet
+  it('the referee gets no technical remark line; the scorer\'s devices keep it, the bench gets none', () => {
+    const e = entry()
+    const line = 'Set 1, 14:03, A 3:1, #8 substituted, cannot continue playing'
+    e.events = [...e.events,
+      { id: 90, matchId: 7, setIndex: 1, seq: 90, type: 'substitution', payload: { team: 'home', playerOut: 8, playerIn: 4, isInjury: true, autoRemark: line, remarkTo: 'technical' } },
+      { id: 91, matchId: 7, setIndex: 1, seq: 91, type: 'substitution', payload: { team: 'home', playerOut: 3, playerIn: 5, isExceptional: true, autoRemark: 'Set 1, 14:04, A 3:1, #3 exceptionally substituted by #5' } }]
+    const referee = relayBundleView(e, 'referee').events
+    assert.equal(referee.find((x) => x.id === 90).payload.autoRemark, undefined)
+    assert.equal(referee.find((x) => x.id === 90).payload.isInjury, true)
+    assert.equal(referee.find((x) => x.id === 91).payload.autoRemark, 'Set 1, 14:04, A 3:1, #3 exceptionally substituted by #5')
+    assert.equal(relayBundleView(e, 'scorer').events.find((x) => x.id === 90).payload.autoRemark, line)
+    assert.equal(relayBundleView(e, 'home').events.find((x) => x.id === 90)?.payload?.autoRemark, undefined)
+    assert.equal(e.events.find((x) => x.id === 90).payload.autoRemark, line)
+  })
+
   it('an unknown view gets the bench of neither team: numbers only', () => {
     const out = relayBundleView(entry(), 'livescore')
     assert.deepEqual(out.homePlayers, [{ number: 7 }])

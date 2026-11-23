@@ -67,7 +67,10 @@ describe('Coin toss roster dialog: a signature for an edited roster', () => {
     fireEvent.click(dialogButton(/^Cancel$/))
     await waitFor(() => expect(rosterDialog()).toBeFalsy())
     await waitFor(async () => expect((await db.matches.get(matchId)).homeCoachSignature).toBeNull())
-    expect((await db.matches.get(matchId)).remarks).toMatch(/Roster of Home changed after signing.*Coach signature removed/)
+    // a technical remark (owner 22.11.2026), not a sheet line
+    const m = await db.matches.get(matchId)
+    expect(m.remarks || '').not.toMatch(/changed after signing/)
+    expect(m.manualChanges.at(-1).text).toMatch(/Roster of Home changed after signing.*Coach signature removed/)
   }, 60000)
 
   it('goes on Close after editing back to the opening roster', async () => {

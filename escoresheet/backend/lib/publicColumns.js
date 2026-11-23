@@ -863,6 +863,10 @@ function mapEventRemarks(e, fn) {
 
 const officialEvent = (e) => mapEventRemarks(e, redactRemarkDobs)
 const benchEvent = (e) => mapEventRemarks(e, () => undefined)
+// A technical remark's line (payload.remarkTo 'technical', owner 2026-11-22;
+// frontend domain/technicalRemarks.js) is not for the referee tablet: kept
+// off the scoresheet, it goes to the scorer's own devices only
+const isTechnicalLine = (e) => e?.payload?.remarkTo === 'technical' && has(e.payload, 'autoRemark')
 
 // Once per stored bundle, not per bundle sent: a room's remarks and events go
 // out with every bundle, to every socket. Keyed by the stored match and
@@ -878,6 +882,11 @@ function storedOnce(fn) {
 }
 const officialRemarksOf = storedOnce((match) => redactRemarkDobs(match.remarks))
 const officialEventsOf = storedOnce((events) => (Array.isArray(events) ? events.map(officialEvent) : []))
+// the officials' events without the technical lines (the same array when there are none)
+const refereeEventsOf = storedOnce((events) => {
+  const official = officialEventsOf(events)
+  return official.some(isTechnicalLine) ? official.map((e) => (isTechnicalLine(e) ? benchEvent(e) : e)) : official
+})
 
 /**
  * The sets in which one team's first line-up is covered (only that team's
@@ -1020,9 +1029,11 @@ export function relayBundleView(entry, view) {
     homePlayers: relayPeople(entry?.homePlayers, numbersOf('home')),
     awayPlayers: relayPeople(entry?.awayPlayers, numbersOf('away')),
     sets: entry?.sets || [],
-    events: official
-      ? officialEventsOf(entry?.events)
-      : benchEvents(entry?.events, team, covered)
+    events: view === 'referee'
+      ? refereeEventsOf(entry?.events)
+      : official
+        ? officialEventsOf(entry?.events)
+        : benchEvents(entry?.events, team, covered)
   }
   if (entry?.liveState !== undefined) out.liveState = relayLiveStateView(entry.liveState, view, entry?.match)
   return out

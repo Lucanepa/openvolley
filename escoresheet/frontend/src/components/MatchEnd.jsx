@@ -26,7 +26,7 @@ import { uploadGlobalFinal } from '../utils/globalCloud'
 import { publishMatchEndLiveState } from '../utils/matchEndLiveState'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import { displaySetNumber, getScoreBeforeEvent, isDefaultSet, consistencyWarnings } from '../../scoresheet_pdf/utils/scoresheetModel'
-import { generatedRemarks, correctionRemarks } from '../../scoresheet_pdf/utils/sheetRemarks'
+import { sheetAutoRemarks } from '../../scoresheet_pdf/utils/sheetRemarks'
 import { SANCTION_ROWS } from '../../scoresheet_pdf/components/FooterSection'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
@@ -52,7 +52,9 @@ import {
   optionalSignatureSlots, approvalIdsBeingUndone
 } from '../domain/accountApproval'
 import { issueText } from '../domain/recompute'
-import { signedAfterMatch, writeSignedSheetChange } from '../services/corrections/applyCorrectionPlan'
+import { signedAfterMatch, writeSignedSheetChange, writeTechnicalRemark } from '../services/corrections/applyCorrectionPlan'
+import { technicalRemarks, technicalRemarksOn, oneLine } from '../domain/technicalRemarks'
+import TechnicalRemarksList from './TechnicalRemarksList.jsx'
 import { APPROVAL_RESOURCE } from '../utils/syncIds'
 import { signatureEditLocked, signaturesPayload, signaturesSyncJob } from '../domain/signatureEdits'
 import { MAX_REMARKS_SIGNATURES, REMARKS_NAME_MAX, REMARKS_ROLE_MAX, remarksSignatureCaption, remarksSignaturesOf, withRemarksSignature, withoutRemarksSignature } from '../domain/remarksSignatures'
@@ -448,6 +450,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const [zoomedSection, setZoomedSection] = useState(null) // 'results' | 'sanctions' | null
   const [showRemarksModal, setShowRemarksModal] = useState(false)
   const [remarksText, setRemarksText] = useState('')
+  // "Add technical remark" (owner 22.11.2026): null while closed, else the text
+  const [technicalText, setTechnicalText] = useState(null)
+  const [technicalBusy, setTechnicalBusy] = useState(false)
   const remarksTextareaRef = useRef(null)
   // The approval's PDF: Cancel during the wait, and the scorer's choice when
   // no PDF came (Retry / Approve without PDF / Cancel)
@@ -799,7 +804,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const sanctionsInBox = processedSanctions.slice(0, SANCTION_ROWS)
   const overflowSanctions = processedSanctions.slice(SANCTION_ROWS)
   // ... with every change made after the match, as the PDF prints them
-  const autoRemarks = [...generatedRemarks({ sets, events, teamAKey, bestOf: match?.bestOf }), ...correctionRemarks(match?.manualChanges)]
+  // (in a match with technical remarks, those are listed below instead: never printed)
+  const autoRemarks = sheetAutoRemarks({ sets, events, teamAKey, bestOf: match?.bestOf, match })
+  const technicalOn = technicalRemarksOn(match)
+  const technicalList = technicalOn ? technicalRemarks({ match, events, t }) : []
 
   // A result no set or match ends with (a correction can leave a finished set
   // at 24:19): an official match is not approved with it. The sheet's own
@@ -1233,6 +1241,23 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
     setShowRemarksModal(false)
     setRemarksText('')
+  }
+
+  // A technical remark: the change log only; nothing signed changes, so no
+  // signature or approval is cleared (writeTechnicalRemark)
+  const handleSaveTechnicalRemark = async () => {
+    const text = oneLine(technicalText)
+    if (!text || technicalBusy) return
+    setTechnicalBusy(true)
+    try {
+      await writeTechnicalRemark(db, matchId, text)
+      setTechnicalText(null)
+    } catch (err) {
+      console.error('[MatchEnd] Could not save the technical remark:', err?.message)
+      toast.error(t('matchEnd.technicalRemarks.saveFailed', 'The technical remark could not be saved.'))
+    } finally {
+      setTechnicalBusy(false)
+    }
   }
 
   const handleRemoveRemarksSignature = async (index) => {
@@ -2272,6 +2297,32 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         )}
       </div>
 
+      {/* Technical remarks (owner 22.11.2026): kept with the match, never printed */}
+      {technicalOn && (
+        <div className="card" style={{ marginBottom: '16px' }} data-testid="matchend-technical-remarks">
+          <div className={`ov-kit ${SECTION_HEAD}`}>
+            <div className="min-w-0">
+              <h3 className={SECTION_TITLE}>{t('matchEnd.technicalRemarks.title', 'Technical remarks')}</h3>
+              <p className="m-0 text-xs text-stone-500">{t('matchEnd.technicalRemarks.hint', 'Not printed on the scoresheet')}</p>
+            </div>
+            {!finalActions && (
+              <Button
+                variant="secondary"
+                size="md"
+                className="relative font-medium after:absolute after:-inset-1 after:content-[''] stack:h-11 stack:px-4"
+                data-testid="matchend-technical-remark-add"
+                onClick={() => setTechnicalText('')}
+              >
+                {t('matchEnd.technicalRemarks.add', 'Add technical remark')}
+              </Button>
+            )}
+          </div>
+          <div className="ov-kit">
+            <TechnicalRemarksList items={technicalList} emptyText={t('matchEnd.technicalRemarks.empty', 'No technical remarks.')} />
+          </div>
+        </div>
+      )}
+
       {/* Other Signatures - At the bottom */}
       {!isApproved && captainsDone && match?.easy !== true && (
         <div className="card" style={{ marginBottom: '16px' }}>
@@ -2694,6 +2745,37 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         // no "Sign on phone": the phone page and the server know the sheet's own boxes only
         phone={null}
       />
+
+      {/* Add technical remark */}
+      {technicalText !== null && (
+        <Modal
+          title={t('matchEnd.technicalRemarks.add', 'Add technical remark')}
+          open={true}
+          onClose={() => { if (!technicalBusy) setTechnicalText(null) }}
+          width={560}
+        >
+          <div className="ov-kit space-y-3" style={{ padding: '8px 0 0' }}>
+            <p className="m-0 text-sm text-stone-600">{t('matchEnd.technicalRemarks.intro', 'Kept with the match and sent with the final scoresheet, not printed on it. The signatures stay.')}</p>
+            <Textarea
+              rows={4}
+              prose
+              aria-label={t('matchEnd.technicalRemarks.title', 'Technical remarks')}
+              data-testid="matchend-technical-remark-text"
+              value={technicalText}
+              onChange={e => setTechnicalText(e.target.value)}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="xl" className="font-medium" disabled={technicalBusy} onClick={() => setTechnicalText(null)}>
+                {t('common.cancel', 'Cancel')}
+              </Button>
+              <Button variant="positive" size="xl" loading={technicalBusy} disabled={!oneLine(technicalText)} data-testid="matchend-technical-remark-save" onClick={handleSaveTechnicalRemark}>
+                {t('common.save', 'Save')}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Remarks Modal */}
       {showRemarksModal && (

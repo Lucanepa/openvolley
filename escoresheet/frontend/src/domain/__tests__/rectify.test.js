@@ -281,6 +281,23 @@ describe('rectify: everything editable before play resumes', () => {
     expect(planRemoveEntry(after, cp.id, ctxFor()).error).toBe('corrections.error.cancelledPoint')
   })
 
+  // owner 22.11.2026: an injury substitution's line is a technical remark, in no remarks text
+  it('a substitution with a technical remark taken back (and restored) leaves the remarks text alone', () => {
+    const line = 'Set 2, 20:01, A 1:1, #4 substituted, cannot continue playing'
+    const { events } = liveMatch('HA' + 'HHAHAH', [{ at: 2, type: 'substitution', payload: { team: 'home', playerOut: 4, playerIn: 7, isInjury: true, autoRemark: line, remarkTo: 'technical' } }])
+    const sub = events.find(e => e.type === 'substitution')
+    const p = plan(events, { ...base(events), edits: { takeBack: [sub.id] } })
+    expect(p.error).toBeUndefined()
+    expect(p.remarkRemove).toEqual([])
+    expect(p.remarkAdd).toHaveLength(1) // the going back's own line (CB 2.3), on the sheet
+    const after = withIds(applyPlanToEvents(events, p))
+    const back = planRemoveEntry(after, after.find(e => e.type === 'rectification').id, ctxFor())
+    expect(back.error).toBeUndefined()
+    expect(back.remarkAdd).toEqual([])
+    expect(back.remarkRemove).toEqual([p.remarkAdd[0]])
+    expect(applyPlanToEvents(after, back).find(e => e.type === 'substitution').payload).toMatchObject({ autoRemark: line, remarkTo: 'technical' })
+  })
+
   it('describes the head and a cancelled point in the words of the sheet', () => {
     const { events } = subMatch()
     const after = applyPlanToEvents(events, plan(events, base(events)))

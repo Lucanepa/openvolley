@@ -160,6 +160,22 @@ describe('liberoPlayState (FIVB 19.4.2; owner 22.11.2026)', () => {
     expect(state([{ ...unable(5, 12, undefined) }]).mayReturn).toBe(false)
   })
 
+  // owner 22.11.2026: "Once declared or becoming unable and re-designated: can't continue playing"
+  it('declared unable once: out for the match, also after a libero_recovered (a correction, an older record)', () => {
+    expect(state([unable(5, 12, 'declared'), back(9, 12, 2)])).toEqual({ unable: true, mayReturn: false, replaced: false })
+    // injured, back, then declared: out
+    expect(state([unable(5, 12, 'injury'), back(6, 12), unable(7, 12, 'declared'), back(9, 12, 2)])).toEqual({ unable: true, mayReturn: false, replaced: false })
+    // an injury entry edited to a declaration after his return: out
+    expect(state([unable(5, 12, 'declared'), back(6, 12)], { setIndex: 4 }).unable).toBe(true)
+    // only an injury (not declared, no re-designation) lets him come back
+    expect(state([unable(5, 12, 'injury'), back(6, 12)]).unable).toBe(false)
+    expect(state([unable(5, 12, 'injury'), back(6, 12), unable(7, 12, 'injury')]).mayReturn).toBe(true)
+  })
+
+  it('injured and re-designated: out for the match, also after a libero_recovered', () => {
+    expect(state([unable(5, 12, 'injury'), redesignation(6, 12, 9), back(9, 12, 2)])).toEqual({ unable: true, mayReturn: false, replaced: true })
+  })
+
   it('disqualified: out for the match; expelled: in that set only (21.3.2-21.3.3)', () => {
     expect(state([sanction(5, 12, 'disqualification', 1), unable(6, 12, 'disqualification', 1)])).toMatchObject({ unable: true, mayReturn: false })
     expect(state([sanction(5, 12, 'expulsion', 2), unable(6, 12, 'expulsion', 2)])).toMatchObject({ unable: true, mayReturn: false })
