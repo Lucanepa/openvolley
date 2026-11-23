@@ -308,6 +308,19 @@ export const teamApi = {
   addClubPeople(teamId, people) {
     return apiRequest('POST', `/api/team/${enc(teamId)}/club-people`, { people })
   },
+  /**
+   * db/058 (PERM-04): another club's closed official match's roster of the
+   * team, waiting for a yes -> { team, suggestions: [{ id, game_number,
+   * kickoff, team_home, team_away, latest, changed, counts, club_new,
+   * players, staff }] }
+   */
+  rosterSuggestions(teamId) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}/roster-suggestions`)
+  },
+  /** 'confirm' | 'reject' -> { suggestion: { id, status }, result? } */
+  decideRosterSuggestion(teamId, id, decision) {
+    return apiRequest('POST', `/api/team/${enc(teamId)}/roster-suggestions/${enc(id)}`, { decision })
+  },
   /** db/025: the team manager requests of the team (the shape of clubApi.requests) */
   requests(teamId) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/requests`)
