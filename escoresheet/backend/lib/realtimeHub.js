@@ -337,16 +337,27 @@ function sameColumns(known, row) {
  * @property {(table: string, row: object) => object} [project]  Applied after redact:
  *           returns the row live subscribers may see (lib/publicColumns.js projectLiveRow).
  *           Default: the redacted row.
- * @property {{ project: (table: string, row: object) => object, grants: (channel: object, table: string, row: object, socketChannels: Map<string, object>) => boolean }} [privateRows]
+ * @property {{ project: (table: string, row: object) => object, grants: (channel: object, table: string, row: object, socketChannels: Map<string, object>, socket: { ip: string, bucket: string, viewer: boolean }) => boolean }} [privateRows]
  *           A channel may get more of a row than `project` gives: `grants(channel, table,
- *           row, socketChannels)` (row: as `project` gave it; socketChannels: every channel
- *           of the channel's socket) is asked on every publish, and a granted row
+ *           row, socketChannels, socket)` (row: as `project` gave it; socketChannels: every
+ *           channel of the channel's socket; socket: its address, bucket and whether it
+ *           opened as a viewer) is asked on every publish, and a granted row
  *           goes to that channel's socket in `project` of privateRows (applied after redact
  *           too). server.js: a live state's private columns to the channel of its match's
  *           token (audit 2611 PERM-03). Default: none.
- * @property {(msg: object) => object|null} [grantChannel]  Called with a subscribe-db
- *           message: what the channel carries for privateRows.grants (`channel.grant`),
- *           e.g. a verified match token. Default: none.
+ * @property {(msg: object, socket: { ip: string, bucket: string, viewer: boolean }) => object|null} [grantChannel]
+ *           Called with a subscribe-db message and its socket: what the channel carries for
+ *           privateRows.grants (`channel.grant`), e.g. a verified match token. Default: none.
+ * @property {(socket: { ip: string, bucket: string, viewer: boolean, channels: Map<string, object> }) => string|null} [socketProof]
+ *           What a socket proved, as a key (server.js: the match of a match token on one of
+ *           its channels, or an address bucket that proved a match recently), else null.
+ *           Asked when it connects and on each subscribe-db until it proved something. A
+ *           socket that proved something (at most maxProvedPerKey per key) may use the slots
+ *           kept for match devices (maxTotal - maxUnproved) and is never pushed out to make
+ *           room (audit 2611 SEC-08). Default: none (no socket proves anything, and every
+ *           socket may use every slot).
+ * @property {number} [maxProvedPerKey=16]  Sockets one proof key (socketProof) keeps slots for:
+ *           a match token copied to every socket of a network proves 16 of them, not all.
  * @property {string[]} [tables]            Subscribable tables.
  * @property {string[] | ((table: string, column: string) => boolean)} [filterColumns]
  *           Allowed filter columns, or a predicate (e.g. backed by the pgQuery catalog
@@ -362,12 +373,25 @@ function sameColumns(known, row) {
  * @property {Object<string, number>} [maxPerNet]  Live sockets per network of each kind of
  *           netsOf: one IPv6 customer holds a /56 or a /48, and per /64 alone 30 of
  *           them filled maxTotal (audit 2611 SEC-08).
- * @property {number} [maxTotal=3000]      Live sockets in total. At it, the oldest socket
- *           that holds no channel makes room for a new one; the new one is refused only
- *           when every socket holds a channel.
+ * @property {Object<string, number>} [maxUnprovedPerNet]  Of those, sockets that proved nothing
+ *           and do not open as a viewer, per network of each kind. Default half of maxPerNet
+ *           (only with socketProof): a match device proves its match, a livescore page is a
+ *           viewer, the rest is nobody's.
+ * @property {number} [maxTotal=3000]      Live sockets in total.
  * @property {number} [maxViewers]         Of those, sockets that open as a livescore viewer
  *           (`?purpose=live&client=viewer`). Default 80 % of maxTotal: the rest stays
  *           for the referee and bench tablets, however many people watch.
+ * @property {number} [maxUnproved]        Of all, sockets that proved nothing (socketProof),
+ *           viewers included. Default maxViewers with socketProof, else maxTotal: the rest is
+ *           kept for the sockets that proved a match. At any of these caps a socket that
+ *           proved nothing makes room: one that held no channel for idleEvictMs first, else
+ *           the newest of the network (netsOf: the widest; else the bucket) holding the
+ *           most such sockets. A newcomer of that network itself is refused (1013): a
+ *           network's flood never pushes out another network's sockets, and a lone socket
+ *           of a hall never pays for it.
+ * @property {number} [idleEvictMs]        A socket without a channel for this long makes room
+ *           first (default min(2000, channelGraceMs / 5)): it would be closed soon anyway; a
+ *           newer one may still be subscribing.
  * @property {number} [channelGraceMs=10000]  A socket that holds no channel for this long
  *           (from its connection, or since its last channel went) is closed (1008); 0 never.
  *           relayRealtime subscribes at once and closes its socket 5 s after its last
@@ -418,6 +442,8 @@ export function createRealtimeHub(options = {}) {
     project = null,
     privateRows = null,
     grantChannel = null,
+    socketProof = null,
+    maxProvedPerKey = 16,
     tables = DEFAULT_TABLES,
     filterColumns = DEFAULT_FILTER_COLUMNS,
     allowUnfiltered = false,
@@ -425,9 +451,12 @@ export function createRealtimeHub(options = {}) {
     bucketOf = (ip) => ip,
     netsOf = null,
     maxPerNet = {},
+    maxUnprovedPerNet = null,
     maxTotal = 3000,
     maxViewers = Math.floor(maxTotal * 0.8),
+    maxUnproved = socketProof ? maxViewers : maxTotal,
     channelGraceMs = 10000,
+    idleEvictMs = Math.min(2000, Math.max(0, Math.floor((channelGraceMs > 0 ? channelGraceMs : 10000) / 5))),
     summaryIntervalMs = 1000,
     summaryProject = null,
     reorderWindowMs = 60000,
@@ -477,7 +506,16 @@ export function createRealtimeHub(options = {}) {
   const ipCounts = new Map()
   /** `${kind}\0${key}` (netsOf) -> live sockets */
   const netCounts = new Map()
+  /** `${kind}\0${key}` -> live sockets that proved nothing and are no viewer (maxUnprovedPerNet) */
+  const netUnprovedTablets = new Map()
+  // unproved tablets per network: half a network's share, with socketProof
+  const unprovedNetCap = maxUnprovedPerNet || (socketProof
+    ? Object.fromEntries(Object.entries(maxPerNet || {}).map(([kind, n]) => [kind, Math.max(1, Math.floor(n / 2))]))
+    : {})
+  /** proof key (socketProof) -> sockets it proved */
+  const provedByKey = new Map()
   let viewerCount = 0
+  let unprovedCount = 0
   let graceTimer = null
   /**
    * Channels by the filter of a sub: `${table}\0${column}\0${value}` (and
@@ -494,7 +532,7 @@ export function createRealtimeHub(options = {}) {
   const summaryGroups = new Map()
   const summaryColumnsOf = new Map()
   let summaryTimer = null
-  const counters = { published: 0, delivered: 0, rejected: 0, terminatedSlow: 0, staleDropped: 0, duplicateDropped: 0, summaryFrames: 0, evicted: 0, closedNoChannel: 0 }
+  const counters = { published: 0, delivered: 0, rejected: 0, terminatedSlow: 0, staleDropped: 0, duplicateDropped: 0, summaryFrames: 0, evicted: 0, closedNoChannel: 0, refusedAtCap: 0 }
   /** `${table}\0${key}` -> newest published order ({ ts, session, seq, epoch, rseq }) */
   const newest = new Map()
   /**
@@ -662,6 +700,11 @@ export function createRealtimeHub(options = {}) {
     state.channels.clear()
     sockets.delete(ws)
     if (state.viewer) viewerCount--
+    if (state.proved) countDown(provedByKey, state.proofKey)
+    else {
+      unprovedCount--
+      if (!state.viewer) for (const net of state.nets) countDown(netUnprovedTablets, net)
+    }
     const n = (ipCounts.get(state.bucket) || 1) - 1
     if (n <= 0) ipCounts.delete(state.bucket)
     else ipCounts.set(state.bucket, n)
@@ -676,10 +719,66 @@ export function createRealtimeHub(options = {}) {
     }
   }
 
-  /** The oldest socket that holds no channel (it makes room at maxTotal), or null. */
-  function oldestWithoutChannel() {
-    for (const [ws, state] of sockets) if (state.channels.size === 0) return ws
-    return null
+  function countDown(map, key) {
+    const m = (map.get(key) || 1) - 1
+    if (m <= 0) map.delete(key)
+    else map.set(key, m)
+  }
+
+  /** What the socket a state describes shows of itself to socketProof / privateRows / grantChannel. */
+  const socketView = (state) => ({ ip: state.ip, bucket: state.bucket, viewer: state.viewer, channels: state.channels })
+
+  /**
+   * Ask socketProof what the socket proved; mark it proved when its key has
+   * room (maxProvedPerKey). A socket that proved something stays so.
+   */
+  function proveSocket(state) {
+    if (!socketProof || state.proved) return
+    let key = null
+    try { key = socketProof(socketView(state)) } catch { key = null }
+    if (typeof key !== 'string' || !key || (provedByKey.get(key) || 0) >= maxProvedPerKey) return
+    state.proved = true
+    state.proofKey = key
+    provedByKey.set(key, (provedByKey.get(key) || 0) + 1)
+    if (sockets.has(state.ws)) {
+      unprovedCount--
+      if (!state.viewer) for (const net of state.nets) countDown(netUnprovedTablets, net)
+    }
+  }
+
+  /**
+   * Make room for `newcomer` (a state not admitted yet) among the sockets
+   * that proved nothing and `inPool` takes: the oldest that held no channel
+   * for idleEvictMs, else the newest of the network holding the most such
+   * sockets. False (the newcomer is refused) when there is none, or when the
+   * newcomer's own network would then hold the most (a network's flood never
+   * pushes out another network's sockets).
+   */
+  function makeRoom(newcomer, inPool) {
+    const now = Date.now()
+    const groups = new Map() // network -> { n, newest }
+    let idle = null
+    for (const [ws, state] of sockets) {
+      if (state.proved || !inPool(state)) continue
+      if (!idle && state.channels.size === 0 && state.noChannelSince != null && now - state.noChannelSince >= idleEvictMs) idle = ws
+      let g = groups.get(state.group)
+      if (!g) groups.set(state.group, (g = { n: 0, newest: null }))
+      g.n++
+      g.newest = ws // sockets keeps arrival order
+    }
+    let victim = idle
+    if (!victim) {
+      let most = null
+      for (const g of groups.values()) if (!most || g.n > most.n) most = g
+      if (!most) return false
+      const own = newcomer.proved ? 0 : (groups.get(newcomer.group)?.n || 0) + 1
+      if (own >= most.n) return false
+      victim = most.newest
+    }
+    counters.evicted++
+    try { victim.close(1013, 'Live connection limit reached') } catch { /* gone */ }
+    dropSocket(victim)
+    return true
   }
 
   /** Close the sockets that held no channel for channelGraceMs. */
@@ -752,11 +851,13 @@ export function createRealtimeHub(options = {}) {
     // summary: the livescore list, which shows scores only and needs no frame per state
     const channel = { id, ws, subs, tables: new Set(subs.map(s => s.table)), summary: msg.summary === true, grant: null }
     if (grantChannel) {
-      try { channel.grant = grantChannel(msg) || null } catch { channel.grant = null }
+      try { channel.grant = grantChannel(msg, socketView(state)) || null } catch { channel.grant = null }
     }
     state.channels.set(id, channel)
     state.noChannelSince = null
     indexChannel(channel)
+    // a match token on the channel, or the address that proved a match since it connected
+    proveSocket(state)
     send(ws, { type: 'subscribe-db-ack', id })
   }
 
@@ -795,10 +896,6 @@ export function createRealtimeHub(options = {}) {
     const viewer = isViewerRequest(req)
     let nets = []
     try { nets = (netsOf ? netsOf(ip) || [] : []).map(([kind, key]) => [kind, `${kind}\0${key}`]) } catch { nets = [] }
-    if (viewer && viewerCount >= maxViewers) {
-      ws.close(1013, 'Live connection limit reached')
-      return false
-    }
     if ((ipCounts.get(bucket) || 0) >= maxPerIp) {
       ws.close(1008, 'Too many live connections from this IP')
       return false
@@ -810,22 +907,41 @@ export function createRealtimeHub(options = {}) {
         return false
       }
     }
-    // At the total cap a socket that holds no channel makes room (it would
-    // be closed after channelGraceMs anyway): idle sockets filled every slot
-    if (sockets.size >= maxTotal) {
-      const idle = oldestWithoutChannel()
-      if (!idle) {
+    // the widest network (netsOf), else the bucket: who makes room at a cap
+    const group = nets.length > 0 ? nets[nets.length - 1][1] : `bucket\0${bucket}`
+    const state = { ws, ip, bucket, viewer, group, nets: nets.map(([, net]) => net), channels: new Map(), noChannelSince: Date.now(), window: Date.now(), count: 0, proved: false, proofKey: null }
+    proveSocket(state)
+    if (!state.proved && !viewer) {
+      for (const [kind, net] of nets) {
+        const max = unprovedNetCap?.[kind]
+        if (max > 0 && (netUnprovedTablets.get(net) || 0) >= max) {
+          ws.close(1008, 'Too many live connections from this network')
+          return false
+        }
+      }
+    }
+    // The caps that make room (makeRoom): viewers, sockets that proved
+    // nothing (the rest is kept for match devices), all sockets. Idle
+    // sockets, then one network's sockets, held every slot (audit 2611 SEC-08).
+    const caps = []
+    if (viewer) caps.push([() => viewerCount >= maxViewers, (st) => st.viewer])
+    if (!state.proved) caps.push([() => unprovedCount >= maxUnproved, () => true])
+    caps.push([() => sockets.size >= maxTotal, () => true])
+    for (const [full, inPool] of caps) {
+      if (full() && !makeRoom(state, inPool)) {
+        counters.refusedAtCap++
+        if (state.proved) countDown(provedByKey, state.proofKey) // never admitted: its key's place is free
         ws.close(1013, 'Live connection limit reached')
         return false
       }
-      counters.evicted++
-      try { idle.close(1013, 'Live connection limit reached') } catch { /* gone */ }
-      dropSocket(idle)
     }
 
-    const state = { ip, bucket, viewer, nets: nets.map(([, net]) => net), channels: new Map(), noChannelSince: Date.now(), window: Date.now(), count: 0 }
     sockets.set(ws, state)
     if (viewer) viewerCount++
+    if (!state.proved) {
+      unprovedCount++
+      if (!viewer) for (const net of state.nets) netUnprovedTablets.set(net, (netUnprovedTablets.get(net) || 0) + 1)
+    }
     ipCounts.set(bucket, (ipCounts.get(bucket) || 0) + 1)
     for (const net of state.nets) netCounts.set(net, (netCounts.get(net) || 0) + 1)
     heartbeat.track(ws)
@@ -1097,7 +1213,8 @@ export function createRealtimeHub(options = {}) {
         if (over) e.coalesced = Math.max(e.coalesced, matched.length)
         // the socket proved this row for one of its channels: it gets it whole, once
         if (privateRows && !e.granted) {
-          try { e.granted = privateRows.grants(channel, table, p.row, sockets.get(ws)?.channels || new Map()) === true } catch { e.granted = false }
+          const st = sockets.get(ws)
+          try { e.granted = !!st && privateRows.grants(channel, table, p.row, st.channels, socketView(st)) === true } catch { e.granted = false }
         }
       }
     }
@@ -1179,6 +1296,10 @@ export function createRealtimeHub(options = {}) {
     return {
       sockets: sockets.size,
       viewers: viewerCount,
+      unproved: unprovedCount,
+      proved: sockets.size - unprovedCount,
+      // the places proof keys hold (maxProvedPerKey): one per proved socket
+      provedPlaces: [...provedByKey.values()].reduce((a, b) => a + b, 0),
       ips: ipCounts.size,
       nets: netCounts.size,
       channels,

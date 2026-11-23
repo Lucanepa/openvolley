@@ -59,6 +59,8 @@ import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './li
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIVE_MATCH_SQL, matchMailDateTime, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 import { pinFromBody, pinMailText } from './lib/matchPinMail.js'
 import { mailErrorReason } from './lib/mailer.js'
+// What an address bucket proved recently (a match token / PIN check), for the live hub
+import { createAddressProofs } from './lib/addressProofs.js'
 // What the relay keeps of an anonymous socket's bundles and live states
 import { admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, relayRoomIsLocal, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
@@ -844,9 +846,12 @@ function routeLabel(req) {
 // the public columns (no rosters, dates of birth, signatures, officials,
 // connection data, event payloads), see lib/publicColumns.js.
 const LIVE_PER_NET = Object.freeze({ v6net56: 200, v6net48: 400, v4net24: 400 })
+// live sockets in total (the hub's default 3000; the e2e tests lower it)
+const LIVE_MAX_CONNECTIONS = Number(process.env.OV_LIVE_MAX_CONNECTIONS) > 0 ? Math.floor(Number(process.env.OV_LIVE_MAX_CONNECTIONS)) : 3000
 const realtimeHub = DB_MODE
   ? createRealtimeHub({
     redact: redactSecrets,
+    maxTotal: LIVE_MAX_CONNECTIONS,
     project: projectLiveRow,
     summaryProject: projectLiveSummaryRow,
     // one subscriber holds a whole IPv6 /64, as for the role sockets
@@ -858,8 +863,13 @@ const realtimeHub = DB_MODE
     netsOf: (ip) => roleNetsOf(ip, ipBucketKey(ip)),
     maxPerNet: LIVE_PER_NET,
     // a live state's private columns only to a channel that may have them (liveRowGranted)
-    privateRows: { project: projectLiveGrantedRow, grants: (channel, table, row, socketChannels) => liveRowGranted(channel, table, row, socketChannels) },
-    grantChannel: (msg) => liveChannelGrant(msg),
+    privateRows: { project: projectLiveGrantedRow, grants: (channel, table, row, socketChannels, socket) => liveRowGranted(channel, table, row, socketChannels, socket) },
+    grantChannel: (msg, socket) => liveChannelGrant(msg, socket),
+    // the slots kept for match devices (20 %): a socket with a match token on
+    // a channel, or one (no viewer) whose address proved a match recently
+    // (review of the SEC-08 fix: any subscribe-db was a channel, and sockets
+    // without client=viewer took the tablets' share)
+    socketProof: (socket) => liveSocketProof(socket),
     getClientIp: (req) => getClientIp(req)
   })
   : null
@@ -876,11 +886,22 @@ const realtimeHub = DB_MODE
 //     row must still grant it (stillGrantsRow: the role's connection on, its
 //     PIN unchanged; the row read again at most every LIVE_GRANT_RECHECK_MS);
 //   - unless OV_LIVE_PRIVATE=token: a channel without a token that follows
-//     ONE match by its match_id, the only match the socket follows so (the
-//     referee's scorer alarm and the referee / bench live-state fallback of
-//     the apps in the halls, OpenVolley 26.11.x and 3.x, send no token). A
-//     channel by sport_type, or a socket that follows several matches so,
-//     gets the public columns only.
+//     ONE match by its match_id, the only match the socket follows so, on a
+//     socket that did not open as a livescore viewer (client=viewer), from an
+//     address bucket that proved that match in the last 12 h (addressProofs:
+//     a PIN check of validate-connection-pin, an X-OV-Match-Token read on
+//     /api/db, a PIN or token the relay accepted on a role socket), and only
+//     while that proof still grants the match row as its token would. The
+//     apps in the halls (OpenVolley 26.11.x and 3.x) send no token on their
+//     live sockets: their referee's scorer alarm and the referee / bench
+//     live-state fallback check the PIN from the same device first. A
+//     scraper's socket per match, or a public livescore page, proves no
+//     match (review of the PERM-03 fix: one anonymous socket per match got
+//     every match's line-ups). A channel whose token no longer grants (its
+//     connection switched off, its PIN changed) is judged by this rule, and
+//     the address's proof is checked against the same row: it ends with it
+//     (it used to grant without any proof). A channel by sport_type, or a
+//     socket that follows several matches so, gets the public columns only.
 const LIVE_PRIVATE_NEEDS_TOKEN = process.env.OV_LIVE_PRIVATE === 'token'
 const LIVE_GRANT_RECHECK_MS = 30 * 1000
 // a subscribe reads the row again when it is older than this (subscribe-db
@@ -889,14 +910,42 @@ const LIVE_GRANT_SUBSCRIBE_RECHECK_MS = 2 * 1000
 const LIVE_GRANT_ROWS_MAX = 2000
 const liveGrantRows = new Map() // matches.id -> { at, row: { id, connections } | null, pins }
 const liveGrantPending = new Set()
+// What each address bucket proved (match token payloads), see lib/addressProofs.js
+const addressProofs = createAddressProofs()
 
-/** A subscribe-db's match token, verified: { token, payload, matchUuid } or null. */
-function liveChannelGrant(msg) {
+/** `ipKey` proved the match of a verified token payload (u = matches.id) just now (cloud only). */
+function noteAddressProof(ipKey, payload) {
+  if (!DB_MODE || !payload || typeof payload.u !== 'string') return
+  addressProofs.note(ipKey, payload)
+}
+
+/** Read the match row of `matchUuid` again when it is older than `maxAgeMs`. */
+function freshenLiveGrantRow(matchUuid, maxAgeMs) {
+  const known = liveGrantRows.get(matchUuid)
+  if (!known || Date.now() - known.at > maxAgeMs) refreshLiveGrantRow(matchUuid)
+  return known
+}
+
+/**
+ * A subscribe-db's match token, verified: { token, payload, matchUuid } or
+ * null. A token-less channel that follows a match its socket's address
+ * proved has that match's row read (only then: an anonymous subscribe of any
+ * id reads nothing).
+ */
+function liveChannelGrant(msg, socket = null) {
   const token = typeof msg?.token === 'string' && msg.token.length <= 2048 ? msg.token : null
-  const payload = token ? matchTokens.verify(token) : null
+  if (!token) {
+    if (!LIVE_PRIVATE_NEEDS_TOKEN && socket && !socket.viewer && Array.isArray(msg?.subs)) {
+      for (const sub of msg.subs.slice(0, 10)) {
+        const id = sub?.table === 'match_live_state' && sub.column === 'match_id' && sub.value != null ? String(sub.value) : null
+        if (id && addressProofs.proofOf(socket.bucket, id)) freshenLiveGrantRow(id, LIVE_GRANT_SUBSCRIBE_RECHECK_MS)
+      }
+    }
+    return null
+  }
+  const payload = matchTokens.verify(token)
   if (!payload || typeof payload.u !== 'string' || !payload.u || !isTokenRole(payload.r)) return null
-  const known = liveGrantRows.get(payload.u)
-  if (!known || Date.now() - known.at > LIVE_GRANT_SUBSCRIBE_RECHECK_MS) refreshLiveGrantRow(payload.u)
+  freshenLiveGrantRow(payload.u, LIVE_GRANT_SUBSCRIBE_RECHECK_MS)
   return { token, payload, matchUuid: payload.u }
 }
 
@@ -926,12 +975,16 @@ function refreshLiveGrantRow(matchUuid) {
   })()
 }
 
-/** Does the channel's match token still grant its match (as on /api/db, stillGrantsRow)? */
+/** Does a token payload still grant its match row (as on /api/db, stillGrantsRow)? */
+function livePayloadStillGrants(payload, matchUuid) {
+  const known = freshenLiveGrantRow(matchUuid, LIVE_GRANT_RECHECK_MS)
+  return !!known?.row && matchTokens.stillGrantsRow(payload, known.row, known.pins)
+}
+
+/** Does the channel's match token still grant its match? */
 function liveTokenStillGrants(grant) {
   if (!matchTokens.verify(grant.token)) return false
-  const known = liveGrantRows.get(grant.matchUuid)
-  if (!known || Date.now() - known.at > LIVE_GRANT_RECHECK_MS) refreshLiveGrantRow(grant.matchUuid)
-  return !!known?.row && matchTokens.stillGrantsRow(grant.payload, known.row, known.pins)
+  return livePayloadStillGrants(grant.payload, grant.matchUuid)
 }
 
 /** The match_ids the socket's channels follow match_live_state by (any other filter: '*'). */
@@ -944,15 +997,29 @@ function liveStateMatchesOf(channels) {
 }
 
 /** May this channel get the private columns of this live-state row (see above)? */
-function liveRowGranted(channel, table, row, socketChannels) {
+function liveRowGranted(channel, table, row, socketChannels, socket = null) {
   if (table !== 'match_live_state' || row?.match_id == null) return false
   const id = String(row.match_id)
   if (channel.grant && channel.grant.matchUuid === id && liveTokenStillGrants(channel.grant)) return true
-  if (LIVE_PRIVATE_NEEDS_TOKEN) return false
+  if (LIVE_PRIVATE_NEEDS_TOKEN || !socket || socket.viewer) return false
   const own = liveStateMatchesOf(new Map([['c', channel]]))
   if (own.size !== 1 || !own.has(id)) return false
   const all = liveStateMatchesOf(socketChannels)
-  return all.size === 1 && all.has(id)
+  if (all.size !== 1 || !all.has(id)) return false
+  const proof = addressProofs.proofOf(socket.bucket, id)
+  return !!proof && livePayloadStillGrants(proof, id)
+}
+
+/**
+ * What a live socket proved, for the slots the hub keeps for match devices
+ * (realtimeHub socketProof): the match of a match token on one of its
+ * channels; else, for a socket that is no livescore viewer, its address
+ * bucket when that proved a match recently (addressProofs). Null: nothing.
+ */
+function liveSocketProof(socket) {
+  for (const ch of socket.channels.values()) if (ch.grant?.matchUuid) return `token:${ch.grant.matchUuid}`
+  if (!socket.viewer && addressProofs.provedAny(socket.bucket)) return `address:${socket.bucket}`
+  return null
 }
 let publicStreams = null // lib/publicApi.js createLiveStreams, on first stream
 // open public streams per address (default 100 in lib/publicApi.js; the e2e test lowers it)
@@ -4438,6 +4505,8 @@ Generated by eScoresheet
         const token = matchRow.external_id && isTokenRole(type)
           ? matchTokens.issue({ matchKey: matchRow.external_id, role: type, matchUuid: matchRow.id, pin: pinStr, storedPin: storedKey ? storedPins[storedKey] : null })
           : null
+        // this address proved the match (the live hub's token-less rule, liveRowGranted)
+        if (token) noteAddressProof(ipKey, matchTokens.verify(token))
         if (isBeach) {
           // openbeach's names: teams are team1 / team2 (matches.team1_data / team2_data)
           sendJson(res, 200, {
@@ -5504,6 +5573,8 @@ Generated by eScoresheet
         // database rows; a relay room's token grants the relay copy only.
         const verified = anonView || readOwner ? matchTokens.verify(req.headers['x-ov-match-token']) : null
         const granted = verified?.u ? verified : null
+        // this address holds the match's token (the live hub's token-less rule, liveRowGranted)
+        if (granted) noteAddressProof(ipBucketKey(getClientIp(req)), granted)
         const grantedPins = granted?.s ? await connectionPinsOf(layer, granted.u) : null
         // grantedRole: a bench token gets the other team's people as shirt
         // numbers, as on the relay (publicColumns relayBundleView)
@@ -7681,6 +7752,7 @@ function registerRelayAccess(clientInfo, matchId, message) {
   if (token && tokenGrantsRelay(token, matchId, entry?.match)) {
     // The PIN alongside is compared only if the token stops granting
     remember({ token, pin, verified: false })
+    noteRelayAccessProof(clientInfo, matchId, entry, { token })
     return
   }
   if (!pin) {
@@ -7698,9 +7770,29 @@ function registerRelayAccess(clientInfo, matchId, message) {
       return
     }
     remember({ pin, verified: true })
+    noteRelayAccessProof(clientInfo, matchId, entry, { pin })
   } else {
     remember({ pin, verified: false })
   }
+}
+
+/**
+ * A role socket's PIN or token the relay accepted for a room the database
+ * proved (cloud): its address proved the match rows the room is bound to
+ * (entry.dbRows), for the live hub's token-less rule (liveRowGranted). The
+ * game PIN (the scorer's devices) names no live-state role.
+ */
+function noteRelayAccessProof(clientInfo, matchId, entry, { token = null, pin = null }) {
+  if (!isDbProvedRoom(entry) || !entry?.match) return
+  const payload = token ? matchTokens.verify(token) : null
+  if (payload?.u) {
+    noteAddressProof(clientInfo.ipKey, payload)
+    return
+  }
+  const role = payload ? payload.r : pinTypeOf(entry.match, pin, { sport: entry.sportType })
+  const bound = entry.dbRows
+  if (!isTokenRole(role) || !bound || bound.pin !== gamePinOf(entry.match)) return
+  for (const id of bound.ids) noteAddressProof(clientInfo.ipKey, { u: id, r: role, m: String(matchId) })
 }
 
 /** May this socket get the match's bundle and actions (not just the summary)? */
@@ -7723,6 +7815,7 @@ function hasRelayAccess(clientInfo, matchId, entry) {
     if (r === 'ok') {
       a.verified = true
       a.token = null
+      noteRelayAccessProof(clientInfo, matchId, entry, { pin: a.pin })
       return true
     }
     clientInfo.matchAccess.delete(matchId)

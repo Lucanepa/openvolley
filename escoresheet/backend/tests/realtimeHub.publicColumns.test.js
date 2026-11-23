@@ -10,8 +10,13 @@
  *     on every publish (unit part: the hub's mechanism)
  *   - server.js: the channel of a match token of that match; and, for the
  *     apps in the halls that send no token (OpenVolley 26.11.x, 3.x), a
- *     channel that follows that one match by its match_id, the only match
- *     its socket follows so, unless OV_LIVE_PRIVATE=token (end to end)
+ *     channel (also one whose token stopped granting) that follows that
+ *     one match by its match_id, the only match its socket follows so, on a
+ *     socket that is no livescore viewer, from an address that proved that
+ *     match (its PIN check) and while that proof still grants it, unless
+ *     OV_LIVE_PRIVATE=token (end to end). Review of the PERM-03 fix: one
+ *     anonymous socket per match, and every public livescore page with a
+ *     game on screen, got the private columns.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -200,14 +205,31 @@ describe('server.js: who gets a live state\'s private columns (end to end)', { s
       await srv?.stop()
     })
 
-    it('sport_type=indoor gets the public columns only; one match by match_id or with its token gets them whole', async () => {
-      const open = async (ip) => { const c = await liveSocket(srv, ip); sockets.push(c); return c }
+    it('sport_type=indoor gets the public columns only; one match by match_id from the address that proved it, or with its token, gets them whole', async () => {
+      const open = async (ip, query = '') => {
+        const c = query ? await openSocket(`${srv.wsUrl}/?purpose=live${query}`, { headers: { 'cf-connecting-ip': ip } }) : await liveSocket(srv, ip)
+        sockets.push(c)
+        return c
+      }
       const wide = await open('203.0.113.77')
       await subscribe(wide, 'all-indoor', [{ table: 'match_live_state', event: '*', column: 'sport_type', value: 'indoor' }])
-      // the referee page of an installed app: one match, by its match_id, two channels
+      // the referee page of an installed app: its PIN check, then one match, by its match_id, two channels
+      const check = await api(srv.base, '/api/match/validate-connection-pin', { proto: null, headers: { 'cf-connecting-ip': '203.0.113.78' }, body: { pin: PINS.referee, type: 'referee', matchExternalId: ext } })
+      assert.equal(check.status, 200, check.text)
       const referee = await open('203.0.113.78')
       await subscribe(referee, 'referee-alarm', byMatch(matchUuid))
       await subscribe(referee, 'refetch', [...byMatch(matchUuid), { table: 'sets', event: '*', column: 'match_id', value: matchUuid }])
+      // a scraper: one socket per match, by its match_id, from an address that proved nothing
+      const perMatch = await open('203.0.113.83')
+      await subscribe(perMatch, 'one', byMatch(matchUuid))
+      // a public livescore page with the game on screen (client=viewer), even from the referee's address
+      const viewer = await open('203.0.113.78', '&client=viewer')
+      await subscribe(viewer, 'game', byMatch(matchUuid))
+      // the referee's address follows ANOTHER match: that match proved nothing
+      const otherMatch = await open('203.0.113.78')
+      await subscribe(otherMatch, 'one', byMatch(otherUuid))
+      // a forged token on one match proves nothing: from an address that proved nothing, nothing
+      const forgedOne = await open('203.0.113.84')
       // a socket that follows two matches so: neither whole
       const scraper = await open('203.0.113.79')
       await subscribe(scraper, 'a', byMatch(matchUuid))
@@ -215,6 +237,7 @@ describe('server.js: who gets a live state\'s private columns (end to end)', { s
       // a bench of a newer app: its match token on a socket that follows two matches
       const pin = await api(srv.base, '/api/match/validate-connection-pin', { proto: null, headers: { 'cf-connecting-ip': '203.0.113.80' }, body: { pin: PINS.bench_home, type: 'bench_home', matchExternalId: ext } })
       assert.equal(pin.status, 200, pin.text)
+      await subWith(forgedOne, 'f', byMatch(matchUuid), pin.json.token.slice(0, -2) + 'AA')
       const bench = await open('203.0.113.81')
       await subWith(bench, 'mine', byMatch(matchUuid), pin.json.token)
       await subscribe(bench, 'other', byMatch(otherUuid))
@@ -225,36 +248,53 @@ describe('server.js: who gets a live state\'s private columns (end to end)', { s
       await sleep(300) // the token's match row is read once (liveChannelGrant)
 
       const n = await pushLiveState(srv, matchUuid)
-      const frames = { wide: await frameOf(wide, n), referee: await frameOf(referee, n), scraper: await frameOf(scraper, n), bench: await frameOf(bench, n), forged: await frameOf(forged, n) }
+      const frames = { wide: await frameOf(wide, n), referee: await frameOf(referee, n), scraper: await frameOf(scraper, n), bench: await frameOf(bench, n), forged: await frameOf(forged, n), perMatch: await frameOf(perMatch, n), viewer: await frameOf(viewer, n), forgedOne: await frameOf(forgedOne, n) }
       assert.deepEqual(privateKeysOf(frames.wide.new), [], 'sport_type=indoor')
       assert.equal(frames.wide.new.points_a, n)
-      assert.deepEqual(privateKeysOf(frames.referee.new).sort(), Object.keys(PRIVATE).sort(), 'one match by match_id (the apps in the halls)')
+      assert.deepEqual(privateKeysOf(frames.referee.new).sort(), Object.keys(PRIVATE).sort(), 'one match by match_id from the address that proved it (the apps in the halls)')
+      assert.deepEqual(privateKeysOf(frames.perMatch.new), [], 'one match by match_id from an address that proved nothing')
+      assert.deepEqual(privateKeysOf(frames.viewer.new), [], 'a livescore viewer')
+      assert.deepEqual(privateKeysOf(frames.forgedOne.new), [], 'a forged token on one match')
       assert.deepEqual(privateKeysOf(frames.scraper.new), [], 'a socket that follows two matches')
       assert.deepEqual(privateKeysOf(frames.bench.new).sort(), Object.keys(PRIVATE).sort(), 'the match token')
       assert.deepEqual(privateKeysOf(frames.forged.new), [], 'a forged token')
-      // the token grants its own match only
+      // the token grants its own match only; the address proves its own match only
       const m = await pushLiveState(srv, otherUuid)
       assert.deepEqual(privateKeysOf((await frameOf(bench, m)).new), [])
+      assert.deepEqual(privateKeysOf((await frameOf(otherMatch, m)).new), [], 'the other match from the referee\'s address')
     })
 
-    it('a token whose bench connection was switched off grants nothing (the row read again)', async () => {
+    it('a token whose bench connection was switched off grants nothing, nor does its address (the row read again)', async () => {
       const pin = await api(srv.base, '/api/match/validate-connection-pin', { proto: null, headers: { 'cf-connecting-ip': '203.0.113.90' }, body: { pin: PINS.bench_away, type: 'bench_away', matchExternalId: ext } })
       assert.equal(pin.status, 200, pin.text)
       const bench = await liveSocket(srv, '203.0.113.91')
       sockets.push(bench)
       await subWith(bench, 'mine', byMatch(matchUuid), pin.json.token)
       await subscribe(bench, 'other', byMatch(otherUuid))
+      // an installed app's bench: one match, no token, from the address of its PIN check
+      const old = await liveSocket(srv, '203.0.113.90')
+      sockets.push(old)
+      await subscribe(old, 'mine', byMatch(matchUuid))
+      // a newer app's bench on one match whose token stops granting: no fallback to its address
+      const oneToken = await liveSocket(srv, '203.0.113.90')
+      sockets.push(oneToken)
+      await subWith(oneToken, 'mine', byMatch(matchUuid), pin.json.token)
       await sleep(300)
       const n = await pushLiveState(srv, matchUuid)
       assert.equal((await frameOf(bench, n)).new.lineup_a.I.number, 7)
+      assert.equal((await frameOf(old, n)).new.lineup_a.I.number, 7, 'the address that proved the match')
+      assert.equal((await frameOf(oneToken, n)).new.lineup_a.I.number, 7)
       await sql.query("UPDATE matches SET connections = jsonb_set(connections::jsonb, '{away_bench_enabled}', 'false') WHERE id = $1", [matchUuid])
       try {
         // a new subscribe reads the row again (once it is 2 s old)
         await sleep(2100)
         await subWith(bench, 'mine', byMatch(matchUuid), pin.json.token)
+        await subscribe(old, 'mine', byMatch(matchUuid))
         await sleep(300)
         const k = await pushLiveState(srv, matchUuid)
         assert.deepEqual(privateKeysOf((await frameOf(bench, k)).new), [])
+        assert.deepEqual(privateKeysOf((await frameOf(old, k)).new), [], 'the address\'s proof ends with the connection')
+        assert.deepEqual(privateKeysOf((await frameOf(oneToken, k)).new), [], 'a token that stopped granting, on one match')
       } finally {
         await sql.query("UPDATE matches SET connections = jsonb_set(connections::jsonb, '{away_bench_enabled}', 'true') WHERE id = $1", [matchUuid])
       }
