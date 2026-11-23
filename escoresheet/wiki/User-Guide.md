@@ -61,7 +61,7 @@ Tap **Start rally** before each serve, then the point button of the team that wo
 ### 6. During play
 
 - **Time-outs**: tap the team's TO box, then **Confirm time-out** (30 seconds).
-- **Substitutions**: tap the player on court, then **Substitution** and the player who comes in.
+- **Substitutions**: tap the player on court, then **Substitution** and the player who comes in. Or tap the team's **Substitution** box under the score: tap who comes in, then who goes out; add more pairs the same way, then **Confirm** (only the players who may be substituted are shown).
 - **Liberos**: tap a back-row player, then **Libero**.
 - **Sanctions**: tap the player (or the team's Improper request / Delay warning), then the sanction.
 - **Bench requests**: a card shows when a bench tablet asks for a time-out or a substitution; grant it or decline it.

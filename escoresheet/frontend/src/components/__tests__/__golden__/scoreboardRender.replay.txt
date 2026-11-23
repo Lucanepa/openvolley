@@ -64,7 +64,7 @@
               "0"
             <div class="to-sub-label">
               "Time-out"
-          <div class="to-sub-counter">
+          <div class="to-sub-counter" data-tap-hint="" data-testid="sub-box-left">
             <div class="to-sub-value">
               "0"
             <div class="to-sub-label">
@@ -323,7 +323,7 @@
               "0"
             <div class="to-sub-label">
               "Time-out"
-          <div class="to-sub-counter">
+          <div class="to-sub-counter" data-tap-hint="" data-testid="sub-box-right">
             <div class="to-sub-value">
               "0"
             <div class="to-sub-label">

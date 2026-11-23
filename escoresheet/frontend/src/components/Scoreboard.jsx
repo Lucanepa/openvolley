@@ -121,6 +121,8 @@ import { isNativeApp } from '../utils/backendConfig'
 import { liteGraphicsOn, privacyCoverFill } from '../utils/liteGraphics'
 import { useLook } from '../utils/lookSettings'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
+import SubstitutionDialog from './scoreboard/SubstitutionPicker.jsx'
+import SubstitutionList from './scoreboard/SubstitutionList.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, officialsAsRoles, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { setSummaryFit } from './scoreboard/setSummaryFit'
 import { BENCH_FIT_BOX, BENCH_FIT_GRID, watchBenchFit } from './scoreboard/benchFit'
@@ -920,6 +922,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [leftDelaysDropdownOpen, setLeftDelaysDropdownOpen] = useState(false) // Narrow mode dropdown for left team delays/sanctions buttons
   const [rightDelaysDropdownOpen, setRightDelaysDropdownOpen] = useState(false) // Narrow mode dropdown for right team delays/sanctions buttons
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
+  // The SUB box's substitution dialog (components/scoreboard/SubstitutionPicker): { side: 'left'|'right' } | null
+  const [subDialog, setSubDialog] = useState(null)
+  // Its confirmed pairs, recorded one after the other through the one
+  // substitution path (setSubstitutionConfirm -> confirmSubstitution), see
+  // the queue below: { team, pairs, next, asked, captainCheck, done } | null
+  const subQueueRef = useRef(null)
+  const [subQueueTick, setSubQueueTick] = useState(0)
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
   // { event: Event, description: string, selectedOption: 'swap'|'replay'|'record_replay' } | null;
@@ -4166,6 +4175,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Check if manage captain on court is enabled
     if (!localManageCaptainOnCourt) return
 
+    // The SUB box's pairs are still being recorded: asked once all of them
+    // are (the court the dialog leaves, not one between two of its pairs)
+    const subQueue = subQueueRef.current
+    if (subQueue && subQueue.team === teamKey) {
+      subQueue.captainCheck = true
+      return
+    }
+
     const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
     const playersOnCourt = onCourt || getTeamLineupState(teamKey).playersOnCourt || []
 
@@ -4489,6 +4506,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // team plays the set with no rotation (the serve still follows the points),
   // no substitutions and no libero; it can still enter one later.
   const lineupsOptional = data?.match?.easy === true
+
+  // The SUB box (owner 23.11.2026): the substitution dialog between rallies
+  // (while a time-out runs and in the set interval too) once the team's
+  // line-up is in and shown. Otherwise (a rally in play) it opens the list of
+  // the substitutions made, as before, when there are any.
+  const subBoxOpensDialog = (side) => rallyStatus === 'idle' && !!data?.set &&
+    !!(side === 'left' ? leftTeamLineupSet : rightTeamLineupSet) && !sideCovered(side)
+  // ... and it closes, nothing recorded, when that no longer holds (another
+  // set, the line-up taken back)
+  const subDialogStillOpen = !subDialog || subBoxOpensDialog(subDialog.side)
+  useEffect(() => {
+    if (!subDialogStillOpen) setSubDialog(null)
+  }, [subDialogStillOpen])
 
   // Track which lineups we've already validated (to prevent infinite modal loops)
   const validatedLineupRef = useRef({ home: null, away: null })
@@ -12228,6 +12258,99 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   })), [runAction, deferUi, runSubstitutionConfirm, substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee, isLiberoUnable, getStateSnapshot, t])
 
+  // ---- The SUB box dialog's pairs (owner 23.11.2026) ----
+  // Its Confirm records each pair through the path every substitution takes:
+  // setSubstitutionConfirm (the request checks, FIVB 15.2, 15.6, 15.11,
+  // 16.1.3) and confirmSubstitution (the write, Undo, the referee, the game
+  // captain), one after the other, each once the data shows the one before
+  // (its line-up row: the next is written on it). Their confirmation dialog
+  // is not shown (`viaDialog`: the dialog's Confirm was it). A pair the
+  // checks stop opens the request warning as anywhere else: "Continue
+  // anyway" records it and the queue goes on; anything else there (Cancel, an
+  // improper request, a delay) ends it, the pairs after it not recorded.
+  // Back to back, the pairs are one request (domain/interruptionRequests).
+  const SUB_QUEUE_WAIT_MS = 1500
+  const subPairWritten = (events, setIndex, team, pair, afterSeq) => {
+    const sub = (events || []).find(e => e.type === 'substitution' && e.payload?.team === team && (e.setIndex ?? 1) === setIndex &&
+      (e.seq || 0) > afterSeq && String(e.payload?.playerOut) === String(pair.out) && String(e.payload?.playerIn) === String(pair.in))
+    if (!sub) return false
+    return (events || []).some(e => e.type === 'lineup' && e.payload?.team === team && Math.abs((e.seq || 0) - ((sub.seq || 0) + 0.1)) < 1e-6)
+  }
+  const finishSubQueue = useCallback(() => {
+    const queue = subQueueRef.current
+    if (!queue || queue.done) return
+    queue.done = true
+    // The game-captain check held while the pairs were recorded runs now, once:
+    // after the last pair's own (300 ms after its write) has been held too
+    setTimeout(() => {
+      if (subQueueRef.current === queue) subQueueRef.current = null
+      if (queue.captainCheck) checkAndRequestCaptainOnCourtRef.current?.(queue.team)
+    }, 400)
+  }, [])
+  const startSubQueue = useCallback((team, pairs) => {
+    if (!pairs?.length || subQueueRef.current) return
+    subQueueRef.current = { team, pairs, next: 0, asked: null, captainCheck: false, done: false }
+    setSubQueueTick(n => n + 1)
+  }, [])
+  useEffect(() => {
+    const queue = subQueueRef.current
+    if (!queue || queue.done) return
+    if (!data?.set) { finishSubQueue(); return }
+    const asked = queue.asked
+    if (asked) {
+      if (subPairWritten(data.events, data.set.index, queue.team, asked.pair, asked.afterSeq)) {
+        queue.asked = null
+      } else if (substitutionConfirm || requestWarning) {
+        // its confirm is writing, or the scorer answers the request warning
+        asked.openAt = Date.now()
+        return
+      } else {
+        // nothing open and nothing written: refused, or the write is not on
+        // screen yet; given up after a moment
+        if (Date.now() - (asked.openAt || asked.at) > SUB_QUEUE_WAIT_MS) { finishSubQueue(); return }
+        const timer = setTimeout(() => setSubQueueTick(n => n + 1), 250)
+        return () => clearTimeout(timer)
+      }
+    }
+    if (queue.next >= queue.pairs.length) { finishSubQueue(); return }
+    if (substitutionConfirm || requestWarning) return
+    // A moment later: the previous write's action key is free then
+    const timer = setTimeout(() => {
+      if (subQueueRef.current !== queue || queue.done || queue.asked) return
+      const pair = queue.pairs[queue.next++]
+      const events = substitutionGuardRef.current?.events || []
+      const afterSeq = events.reduce((m, e) => Math.max(m, e.seq || 0), 0)
+      queue.asked = { pair, afterSeq, at: Date.now(), openAt: 0 }
+      setSubstitutionConfirm({ team: queue.team, position: pair.position, playerOut: pair.out, playerIn: pair.in, viaDialog: true })
+      setSubQueueTick(n => n + 1)
+    }, 50)
+    return () => clearTimeout(timer)
+  }, [subQueueTick, data?.events, data?.set, substitutionConfirm, requestWarning, setSubstitutionConfirm, finishSubQueue]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A queued pair that passed the checks is written at once (no dialog)
+  const autoConfirmedRef = useRef(null)
+  const latestSubConfirmRef = useRef(null)
+  latestSubConfirmRef.current = { value: substitutionConfirm, confirm: confirmSubstitution }
+  const subRetryRef = useRef(null)
+  useEffect(() => () => clearInterval(subRetryRef.current), [])
+  useEffect(() => {
+    if (!substitutionConfirm?.viaDialog || autoConfirmedRef.current === substitutionConfirm) return
+    autoConfirmedRef.current = substitutionConfirm
+    const request = substitutionConfirm
+    confirmSubstitution()
+    // Refused while the previous write still held its action key: once
+    // more, as long as this request is open and not written
+    let tries = 0
+    clearInterval(subRetryRef.current)
+    subRetryRef.current = setInterval(() => {
+      const latest = latestSubConfirmRef.current
+      const guard = substitutionGuardRef.current
+      const pair = { out: request.playerOut, in: request.playerIn }
+      const written = guard?.events && subPairWritten(guard.events, guard.setIndex, request.team, pair, subQueueRef.current?.asked?.afterSeq ?? Infinity)
+      if (latest?.value !== request || written || ++tries > 8) { clearInterval(subRetryRef.current); return }
+      latest.confirm()
+    }, 300)
+  }, [substitutionConfirm, confirmSubstitution]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Common modal position - all modals use the same position
   // For left side teams, menu opens to the right
   // For right side teams, menu opens to the left
@@ -12325,16 +12448,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setPlayerActionMenu(null)
   }, [playerActionMenu, getCommonModalPosition])
 
-  // Open injury - same logic as expulsion/disqualification
-  const openInjuryFromMenu = useCallback(async () => {
-    if (!playerActionMenu || !data?.set) return
-    const { team, position, playerNumber, element, side } = playerActionMenu
+  // Injury of a court player - same logic as expulsion/disqualification: the
+  // court menu's "Injury", and the SUB box dialog's "Injury / exceptional"
+  // (the player tapped there). `element` / x / y: where the substitute list opens
+  const openInjuryFor = useCallback(({ team, position, playerNumber, element, x, y, side }) => {
+    if (!data?.set) return
 
     // First, check if a legal substitution is possible (not exceptional)
     const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
     if (legalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerNumber)) {
       // Legal substitution is possible - show substitution dropdown
-      const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y, side)
+      const pos = getCommonModalPosition(element, x, y, side)
       setSubstitutionDropdown({
         team,
         position,
@@ -12345,13 +12469,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         side: pos.side,
         isInjury: true
       })
-      setPlayerActionMenu(null)
     } else {
       // No legal substitution possible - check for exceptional substitution
       const exceptionalSubstitutes = getAvailableExceptionalSubstitutes(team, playerNumber)
       if (exceptionalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerNumber, true)) {
         // Show modal to choose between exceptional substitution or forfait
-        setPlayerActionMenu(null)
         setExceptionalSubstitutionModal({
           team,
           position,
@@ -12360,11 +12482,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         })
       } else {
         // No exceptional substitution possible - forfait, after confirmation
-        setPlayerActionMenu(null)
         requestAutomaticForfait(team, 'injury', playerNumber, position)
       }
     }
-  }, [playerActionMenu, data?.set, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, requestAutomaticForfait, getCommonModalPosition, easyNewSubstituteOpen])
+  }, [data?.set, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, requestAutomaticForfait, getCommonModalPosition, easyNewSubstituteOpen])
+
+  // Open injury - same logic as expulsion/disqualification
+  const openInjuryFromMenu = useCallback(async () => {
+    if (!playerActionMenu || !data?.set) return
+    const { team, position, playerNumber, element, side } = playerActionMenu
+    setPlayerActionMenu(null)
+    openInjuryFor({ team, position, playerNumber, element, x: playerActionMenu.x, y: playerActionMenu.y, side })
+  }, [playerActionMenu, data?.set, openInjuryFor])
 
   const cancelSubstitution = useCallback(() => {
     setSubstitutionDropdown(null)
@@ -15826,13 +15955,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginTop: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.timeoutFull')}</div>
               </div>
               <div
+                data-testid="sub-box-left"
                 onClick={() => {
+                  // Between rallies: the substitution dialog (subBoxOpensDialog);
+                  // in a rally: the list of those made, as before
+                  if (subBoxOpensDialog('left')) {
+                    setSubDialog({ side: 'left' })
+                    return
+                  }
                   const subs = getSubstitutionDetails('left')
                   if (subs.length > 0) {
                     setToSubDetailsModal({ type: 'substitution', side: 'left' })
                   }
                 }}
-                data-tap-hint={getSubstitutionDetails('left').length > 0 ? '' : undefined}
+                data-tap-hint={subBoxOpensDialog('left') || getSubstitutionDetails('left').length > 0 ? '' : undefined}
                 className="to-sub-counter"
                 style={{
                   flex: 1,
@@ -15849,7 +15985,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : getSubstitutionsUsed('left') >= 5
                       ? '1px solid rgba(234, 179, 8, 0.4)'
                       : '1px solid var(--border)',
-                  cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
+                  cursor: subBoxOpensDialog('left') || getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
                 }}
               >
                 <div className="to-sub-value" style={{
@@ -19304,13 +19440,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginTop: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.timeoutFull')}</div>
               </div>
               <div
+                data-testid="sub-box-right"
                 onClick={() => {
+                  // Between rallies: the substitution dialog (subBoxOpensDialog);
+                  // in a rally: the list of those made, as before
+                  if (subBoxOpensDialog('right')) {
+                    setSubDialog({ side: 'right' })
+                    return
+                  }
                   const subs = getSubstitutionDetails('right')
                   if (subs.length > 0) {
                     setToSubDetailsModal({ type: 'substitution', side: 'right' })
                   }
                 }}
-                data-tap-hint={getSubstitutionDetails('right').length > 0 ? '' : undefined}
+                data-tap-hint={subBoxOpensDialog('right') || getSubstitutionDetails('right').length > 0 ? '' : undefined}
                 className="to-sub-counter"
                 style={{
                   flex: 1,
@@ -19327,7 +19470,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : getSubstitutionsUsed('right') >= 5
                       ? '1px solid rgba(234, 179, 8, 0.4)'
                       : '1px solid var(--border)',
-                  cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
+                  cursor: subBoxOpensDialog('right') || getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
                 }}
               >
                 <div className="to-sub-value" style={{
@@ -22740,7 +22883,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         )
       })()}
 
-      {substitutionConfirm && (() => {
+      {/* not for the SUB box dialog's pairs: its Confirm was the confirmation */}
+      {substitutionConfirm && !substitutionConfirm.viaDialog && (() => {
         const teamData = substitutionConfirm.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (substitutionConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = substitutionConfirm.team === teamAKey ? 'A' : 'B'
@@ -23965,6 +24109,83 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setToSubDetailsModal(null)}
         />
       )}
+
+      {/* The SUB box's substitution dialog (owner 23.11.2026): who comes in,
+          then who goes out, several pairs, one Confirm. What may be chosen
+          is the court menu's own list for each player on court
+          (getAvailableSubstitutes); Confirm records the pairs through the
+          substitution path (the queue above), Cancel nothing. */}
+      {subDialog && data?.set && (() => {
+        const side = subDialog.side
+        const teamKey = mapSideToTeamKey(side)
+        const team = side === 'left' ? leftTeam : rightTeam
+        const bench = side === 'left' ? leftTeamBench : rightTeamBench
+        const court = (team.playersOnCourt || []).map(pl => ({
+          position: pl.position,
+          number: pl.isPlaceholder ? '' : String(pl.number),
+          isLibero: !!pl.isLibero,
+          isCaptain: !pl.isPlaceholder && !!(pl.isCaptain || pl.isCourtCaptain)
+        }))
+        const made = getSubstitutionsUsed(side)
+        // a replay pending: no regular substitution, the injury one stays
+        const blockReason = requestBlockFor(teamKey, 'substitution')
+        const legalIns = {}
+        if (!blockReason) {
+          for (const c of court) {
+            if (c.number === '' || c.isLibero) continue
+            legalIns[c.number] = getAvailableSubstitutes(teamKey, c.number).map(p => String(p.number))
+          }
+        }
+        // a starter substituted out (and not back yet): his substitute's number, as the bench chip shows it
+        const history = getSubstitutionHistory(teamKey)
+        const benchList = (bench.benchPlayers || [])
+          .filter(p => !p.libero && p.number !== undefined && p.number !== null && p.number !== '')
+          .map(p => {
+            const out = [...history].reverse().find(s => String(s.payload?.playerOut) === String(p.number))
+            const back = out && history.some(s => String(s.payload?.playerIn) === String(p.number) && compareBySeq(s, out) > 0)
+            return { number: String(p.number), isCaptain: !!(p.isCaptain || p.captain), cameOutFor: out && !back ? out.payload?.playerIn ?? null : null }
+          })
+          .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
+        const close = () => setSubDialog(null)
+        return (
+          <SubstitutionDialog
+            teamLabel={side === 'left' ? teamALabel : teamBLabel}
+            teamName={team.name}
+            teamColor={team.color}
+            side={side}
+            court={court}
+            bench={benchList}
+            legalIns={legalIns}
+            made={made}
+            max={MAX_SUBSTITUTIONS_PER_SET}
+            blockReason={blockReason}
+            madeList={getSubstitutionDetails(side)}
+            captainNumbers={court.filter(c => c.isCaptain).map(c => c.number)}
+            liberoPaint={getPlayerCircleColors(side, true)}
+            onCancel={close}
+            onConfirm={(pairs) => {
+              close()
+              startSubQueue(teamKey, pairs)
+            }}
+            onInjury={({ position, number }) => {
+              close()
+              // as the court menu's "Injury" on that player
+              const element = document.querySelector(`.court-player[data-team="${teamKey}"][data-player-number="${number}"]`)
+              const rect = element?.getBoundingClientRect?.()
+              const offset = rect ? (side === 'right' ? -(rect.width / 2 + 30) : rect.width / 2 + 30) : 0
+              openInjuryFor({
+                team: teamKey,
+                position,
+                playerNumber: number,
+                element,
+                x: rect ? rect.left + rect.width / 2 + offset : undefined,
+                y: rect ? rect.top + rect.height / 2 : undefined,
+                side
+              })
+            }}
+          />
+        )
+      })()}
 
       {requestWarning && (() => {
         // The request warning (domain/interruptionRequests.js): its first
@@ -26035,50 +26256,8 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
           </div>
         ) : (
           <div>
-            {substitutionDetails && substitutionDetails.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {substitutionDetails.map((detail, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      padding: '12px',
-                      background: 'var(--panel-2)',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <div style={{ fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {t('scoreboard.dialogs.substitutionN', { defaultValue: 'Substitution {{n}}', n: detail.index })}
-                        {detail.exceptional && (
-                          <span data-sub-exceptional="" style={{ fontSize: '12px', fontWeight: 700, padding: '2px 8px', borderRadius: '6px', background: '#fef3c7', color: '#78350f', border: '1px solid #fcd34d' }}>
-                            {t('corrections.chip.exceptional', 'Exceptional')}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
-                        {detail.score}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '16px', fontSize: '14px', color: 'var(--muted)' }}>
-                      <div>
-                        <span style={{ fontWeight: 600 }}>{t('scoreboard.dialogs.positionLabel', 'Position:')}</span> {detail.position}
-                      </div>
-                      <div>
-                        <span style={{ fontWeight: 600 }}>{t('scoreboard.dialogs.outLabel', 'Out:')}</span> {detail.playerOut}
-                      </div>
-                      <div>
-                        <span style={{ fontWeight: 600 }}>{t('scoreboard.dialogs.inLabel', 'In:')}</span> {detail.playerIn}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '20px' }}>
-                {t('scoreboard.dialogs.noSubstitutionsYet', 'No substitutions taken yet')}
-              </div>
-            )}
+            {/* the SUB box dialog's "Made" view shows the same list */}
+            <SubstitutionList details={substitutionDetails} />
           </div>
         )}
       </div>

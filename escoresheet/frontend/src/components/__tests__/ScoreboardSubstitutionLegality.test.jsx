@@ -494,7 +494,11 @@ describe('the SUB box counts exceptional substitutions (owner 22.11.2026)', () =
     expect(subBox().querySelector('.to-sub-value').style.color).toBe('rgb(239, 68, 68)')
 
     await settle()
+    // between rallies the box opens the substitution dialog (owner
+    // 23.11.2026): at 6 of 6 its note, the list in its "Made" view
     fireEvent.click(subBox())
+    await waitFor(() => expect(document.querySelector('[data-testid="sub-dialog-full-note"]')).toBeTruthy(), { timeout: 3000 })
+    fireEvent.click(button('Made (7)'))
     const list = await waitFor(() => {
       const d = [...document.querySelectorAll('[role="dialog"]')].find(x => /Substitution 7/.test(x.textContent))
       expect(d).toBeTruthy()
