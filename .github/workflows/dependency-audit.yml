@@ -1,8 +1,9 @@
 name: Dependency audit
 
 # Published advisories in what ships: npm audit of the production
-# dependencies of the backend and the frontend (high and critical fail the
-# job), and cargo audit of the desktop app's Cargo.lock (a vulnerability fails
+# dependencies of the backend, the frontend and the render service (the
+# Chromium that prints the official PDF; high and critical fail the job), and
+# cargo audit of the desktop app's Cargo.lock (a vulnerability fails
 # it; unmaintained and yanked crates, e.g. Tauri's GTK 3 bindings on Linux,
 # are listed as warnings). On every pull request, and weekly, so an advisory published
 # for an unchanged lock file shows up too. Dependabot (.github/dependabot.yml)
@@ -24,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dir: [escoresheet/backend, escoresheet/frontend]
+        dir: [escoresheet/backend, escoresheet/frontend, escoresheet/render]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
