@@ -15,7 +15,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTestDatabase, SKIP_PG } from './helpers/pgTestDb.js'
-import { redactPerson, registerPerson, redactValue, matcherOf, nameTextRe, personDigest, parseArgs, dateOf, dropGlobalCopies, globalStoreDirOf, REDACTED } from '../scripts/redact-person.mjs'
+import { redactPerson, registerPerson, redactValue, matcherOf, nameTextRe, personDigest, parseArgs, dateOf, dropGlobalCopies, globalStoreDirOf, globalStoreDirsByHash, REDACTED } from '../scripts/redact-person.mjs'
 import { redactedPeopleKey, nameHash, licenceHash } from '../lib/redactedPeople.js'
 import { createApprovals } from '../lib/approvals.js'
 import { createScoresheets } from '../lib/scoresheets.js'
@@ -467,6 +467,69 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
       assert.equal(JSON.stringify(line).includes(other), false)
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('by name, without the backup code: the Global store\'s scoresheet PDFs of a cloud copy the person is in go too (found by the copy\'s key hash); the encrypted backup and other matches stay', async () => {
+    const hit = 'NordwindStoreCode_0123456789'
+    const miss = 'NordwindStoreCode_9876543210'
+    const bare = 'NordwindStoreCode_abcdefghij' // a store folder without a cloud copy
+    const bundleOf = (last) => ({ players: [{ number: 3, firstName: 'Nora', lastName: last, dob: '2012-01-02' }] })
+    for (const [k, last] of [[hit, 'Nordwind'], [miss, 'Other']]) {
+      await owner.query(
+        `INSERT INTO public.global_matches (key_hash, pin_hash, summary, bundle, pdf) VALUES ($1, repeat('c', 64), '{}'::jsonb, $2::jsonb, $3)`,
+        [keyHash(k), JSON.stringify(bundleOf(last)), Buffer.from(`%PDF-1.4\n% Nora ${last}\n%%EOF\n`)])
+    }
+    // redactPerson names the copies it redacted by their key hash (the database has no backup code)
+    await owner.query('BEGIN')
+    try {
+      const r = await redactPerson(owner, { who: { first: 'Nora', last: 'Nordwind' } })
+      assert.deepEqual(r.globalKeyHashes, [keyHash(hit)])
+    } finally {
+      await owner.query('ROLLBACK')
+    }
+
+    const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'redact-person.mjs')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-redact-'))
+    const register = path.join(dir, 'register.jsonl')
+    const storeOf = (k) => path.join(dir, 'global', k.slice(0, 2), k)
+    for (const k of [hit, miss, bare]) {
+      fs.mkdirSync(storeOf(k), { recursive: true })
+      fs.writeFileSync(path.join(storeOf(k), 'backup.json'), '{"format":"openvolley-encrypted-backup"}')
+      fs.writeFileSync(path.join(storeOf(k), 'scoresheet.pdf'), '%PDF-1.4 Nora Nordwind')
+      fs.writeFileSync(path.join(storeOf(k), 'scoresheet-final.pdf'), '%PDF-1.4 Nora Nordwind 02.01.2012')
+    }
+    assert.deepEqual((await globalStoreDirsByHash(dir, [keyHash(hit), 'not-a-hash'])).map((x) => x.dir), [storeOf(hit)])
+    const files = (k) => fs.readdirSync(storeOf(k)).sort()
+    const env = { ...process.env, OV_MIGRATE_DATABASE_URL: tdb.url, STORAGE_ROOT: dir, OV_PIN_SECRET: PIN_SECRET }
+    const run = (...args) => execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8' })
+    try {
+      const dry = run('--first', 'Nora', '--last', 'Nordwind', '--drop-files')
+      assert.match(dry, /Dry run/)
+      assert.match(dry, /Global store: 2 scoresheet PDF\(s\) of 1 Global match\(es\) the person is in stay/)
+      assert.deepEqual(files(hit), ['backup.json', 'scoresheet-final.pdf', 'scoresheet.pdf'], 'a dry run removes nothing')
+
+      const out = run('--first', 'Nora', '--last', 'Nordwind', '--drop-files', '--apply', '--register', register)
+      assert.match(out, /Global store: 2 scoresheet PDF\(s\) of 1 Global match\(es\) removed/)
+      assert.equal(/Nordwind|NordwindStoreCode/.test(out), false, 'the output names nobody and shows no backup code')
+      assert.deepEqual(files(hit), ['backup.json'], 'the PDFs print the name: gone; the encrypted backup stays')
+      assert.deepEqual(files(miss), ['backup.json', 'scoresheet-final.pdf', 'scoresheet.pdf'], 'another person\'s match')
+      assert.deepEqual(files(bare), ['backup.json', 'scoresheet-final.pdf', 'scoresheet.pdf'])
+      const { rows: [g] } = await owner.query('SELECT bundle, pdf FROM public.global_matches WHERE key_hash = $1', [keyHash(hit)])
+      assert.equal(g.pdf, null)
+      assert.equal(g.bundle.players[0].lastName, REDACTED)
+
+      // a register line of --global-key (its hash only) after a restore: the store's folder found by the hash goes too
+      fs.appendFileSync(register, JSON.stringify({ at: new Date().toISOString(), mode: 'global', matches: [], global: [keyHash(bare)] }) + '\n')
+      assert.match(run('--reapply', register), /The Global store's files of 1 backup code\(s\) stay/)
+      assert.equal(fs.existsSync(storeOf(bare)), true)
+      run('--reapply', register, '--drop-files', '--apply')
+      assert.equal(fs.existsSync(storeOf(bare)), false, 'the --global-key request again: the whole folder')
+      assert.deepEqual(files(miss), ['backup.json', 'scoresheet-final.pdf', 'scoresheet.pdf'])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+      await owner.query('DELETE FROM public.global_matches')
+      await owner.query('DELETE FROM public.redacted_people')
     }
   })
 })

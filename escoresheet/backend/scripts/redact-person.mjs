@@ -26,7 +26,8 @@
  *            referee and scorer), match_live_state, svrz_games,
  *            global_matches (the Global tool's readable cloud copy, db/046:
  *            its summary and bundle; a hit also drops its PDF, which prints
- *            the name)
+ *            the name, and the Global store's scoresheet PDFs of that match:
+ *            see Global)
  *            Free text (remarks, manual changes, referee_1 ...) loses the full
  *            name ("First Last", "Last First", "Last, First").
  *   approvals match_approvals (db/011): the approving account's name
@@ -42,7 +43,19 @@
  *            with --drop-files --apply also the Global store's files of the
  *            key ({STORAGE_ROOT}/global/..: the encrypted backup and the PDFs).
  *            Without --first/--last only that is done. The register keeps the
- *            key's hash (never the key) for --reapply.
+ *            key's hash (never the key) for --reapply, which finds the store's
+ *            folder by that hash (the folder is named by the key).
+ *            By name, without the code: a cloud copy the person is in is
+ *            redacted (above), and its key hash leads to the store's folder
+ *            too: its scoresheet PDFs (scoresheet, scoresheet-final: plain
+ *            PDFs that print the name and, in the Global tool, the date of
+ *            birth; POST /api/global/load serves them to whoever has the code)
+ *            are listed, and removed with --drop-files --apply. The store's
+ *            backup stays: it is encrypted (as the per-account backups below)
+ *            and is the match's restore; --global-key CODE deletes it. A Global
+ *            match without a cloud copy has no row to find it by: its store
+ *            is reached by its code only. Neither the codes nor the paths
+ *            (which hold them) are printed.
  *   lists    (the row is deleted): club_licences, competition_players,
  *            competition_staff, referee_database
  *   files    the scoresheet PDFs and their JSON files of the matches touched
@@ -96,7 +109,8 @@ import { appendFileSync, readFileSync } from 'node:fs'
 import { createStorage, storageOptionsFromEnv } from '../lib/storage.js'
 import { isEntry, normLicence, normName, personEntries, redactedPeopleKey, registerEntries } from '../lib/redactedPeople.js'
 import { isGlobalKey, keyHash } from '../lib/globalMatches.js'
-import { rm } from 'node:fs/promises'
+import { KINDS as GLOBAL_KINDS } from '../lib/globalStore.js'
+import { readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 
 export const REDACTED = '[redacted]'
@@ -125,7 +139,8 @@ const MATCH_COLUMN = { matches: 'id', match_closures: 'match_id', events: 'match
  * token are no person's data.
  */
 const TABLE_OPTS = {
-  global_matches: { omit: ['pdf', 'key_hash', 'pin_hash', 'share_token', 'organizer_hash'], onHit: { pdf: null } }
+  // keyHash: the column a hit row is reported by (globalKeyHashes): it leads to the Global store's folder
+  global_matches: { omit: ['pdf', 'key_hash', 'pin_hash', 'share_token', 'organizer_hash'], onHit: { pdf: null }, keyHash: 'key_hash' }
 }
 
 /** The name normalisation (lib/redactedPeople.js keys the register with the same one). */
@@ -274,7 +289,9 @@ function likeOf (s) {
  * Run one request in `client`'s open transaction. `who`: { first, last }
  * or a register line ({ digest, nameDigest, withDob }).
  * Returns { tables: { name: rows }, matches: [ids], hits, licences: [the
- * licence numbers erased] } (the licences for registerPerson; never printed).
+ * licence numbers erased], globalKeyHashes: [the key hashes of the Global
+ * cloud copies redacted] } (the licences for registerPerson, the key hashes
+ * for the Global store's PDFs: globalStoreDirsByHash; neither printed).
  */
 export async function redactPerson (client, { who, matches = [] } = {}) {
   await client.query("SELECT set_config('ov.allow_closed', 'on', true), set_config('ov.admin', 'on', true)")
@@ -288,6 +305,7 @@ export async function redactPerson (client, { who, matches = [] } = {}) {
   const tables = {}
   const touchedMatches = new Set()
   const licences = new Set()
+  const globalKeyHashes = new Set()
   let hits = 0
   for (const table of [...RECORD_TABLES, ...LIST_TABLES]) {
     const { rows: [reg] } = await client.query('SELECT to_regclass($1)::oid AS oid', [`public.${table}`])
@@ -320,7 +338,7 @@ export async function redactPerson (client, { who, matches = [] } = {}) {
     const isList = LIST_TABLES.includes(table)
     const apply = async (ctid) => {
       const { rows: [locked] } = await client.query(
-        `SELECT ${rowSql} AS row_ FROM public.${table} t WHERE t.ctid = $1::tid FOR UPDATE`, [ctid])
+        `SELECT ${rowSql} AS row_${opts.keyHash ? `, t.${opts.keyHash}::text AS key_hash_` : ''} FROM public.${table} t WHERE t.ctid = $1::tid FOR UPDATE`, [ctid])
       if (!locked) return false // changed by another session since the read: the next pass finds it
       const before = locked.row_
       const { value: redacted, hits: h } = redactValue(before, { match, textRe: isList ? null : textRe, licences })
@@ -328,6 +346,7 @@ export async function redactPerson (client, { who, matches = [] } = {}) {
       const after = opts.onHit ? { ...redacted, ...opts.onHit } : redacted
       hits += h
       n++
+      if (locked.key_hash_) globalKeyHashes.add(locked.key_hash_)
       const mid = table === 'matches' ? before.id : before.match_id
       if (mid) touchedMatches.add(String(mid))
       if (isList) {
@@ -375,7 +394,7 @@ export async function redactPerson (client, { who, matches = [] } = {}) {
     hits += approvals.length
     for (const a of approvals) touchedMatches.add(a.match_id)
   }
-  return { tables, matches: [...touchedMatches], hits, licences: [...licences] }
+  return { tables, matches: [...touchedMatches], hits, licences: [...licences], globalKeyHashes: [...globalKeyHashes] }
 }
 
 /** The (first, last) readings of a name kept as one text ("Last First", lib/approvals.js; or "First Last"). */
@@ -520,6 +539,39 @@ export function globalStoreDirOf (root, k) {
   return isGlobalKey(k) && root ? path.join(root, 'global', k.slice(0, 2), k) : null
 }
 
+/**
+ * The Global store's folders whose backup code hashes (keyHash) to one of
+ * `hashes`: the folder is named by the code, the database and the register
+ * keep its hash only, so every folder name is hashed. Returns [{ hash, dir }].
+ */
+export async function globalStoreDirsByHash (root, hashes = []) {
+  const want = new Set(hashes.filter((h) => KEY_HASH_RE.test(String(h))))
+  if (!root || !want.size) return []
+  const base = path.join(root, 'global')
+  const out = []
+  for (const a of (await readdir(base).catch(() => [])).sort()) {
+    for (const k of (await readdir(path.join(base, a)).catch(() => [])).sort()) {
+      if (!isGlobalKey(k) || k.slice(0, 2) !== a) continue
+      const hash = keyHash(k)
+      if (want.has(hash)) out.push({ hash, dir: path.join(base, a, k) })
+    }
+  }
+  return out
+}
+
+/** The store's scoresheet PDFs (lib/globalStore.js KINDS: scoresheet, scoresheet-final) */
+export const GLOBAL_STORE_PDFS = Object.entries(GLOBAL_KINDS).filter(([, s]) => s.ext === 'pdf').map(([kind, s]) => `${kind}.${s.ext}`)
+
+/** The scoresheet PDFs present in these store folders: paths. */
+export async function globalStorePdfsOf (dirs) {
+  const out = []
+  for (const d of dirs) {
+    const names = new Set(await readdir(d).catch(() => []))
+    for (const f of GLOBAL_STORE_PDFS) if (names.has(f)) out.push(path.join(d, f))
+  }
+  return out
+}
+
 async function main () {
   const o = parseArgs(process.argv.slice(2))
   if (o.error) { console.error(`${o.error}\n${USAGE}`); return 2 }
@@ -555,8 +607,13 @@ async function main () {
     await client.query('BEGIN')
     const report = []
     const matchIds = new Set()
+    // the Global store: whole folders of a register line's --global-key copies (their hashes),
+    // the scoresheet PDFs of the cloud copies a request by name redacted
+    const storeWhole = new Set()
+    const storePdfs = new Set()
     let unregistered = 0
     for (const req of requests) {
+      if (o.reapply && Array.isArray(req.global)) req.global.forEach((h) => storeWhole.add(h))
       // the Global cloud copies named by backup code (--global-key; a register line: their hashes)
       const globalCopies = await dropGlobalCopies(client, Array.isArray(req.global) ? req.global : [])
       if (req.mode === 'global') {
@@ -569,6 +626,7 @@ async function main () {
       const who = req.who || { digest: req.digest, nameDigest: req.nameDigest, withDob: req.withDob }
       const r = await redactPerson(client, { who, matches: req.matches || [] })
       r.matches.forEach((m) => matchIds.add(m))
+      r.globalKeyHashes.forEach((h) => storePdfs.add(h))
       const digest = req.digest || personDigest(who)
       // the schedule sync's register (db/052): the name and the licences erased, or a line's entries again
       const reg = req.who
@@ -614,7 +672,20 @@ async function main () {
     }
     // the Global store's files of the backup codes (the encrypted backup and the PDFs, lib/globalStore.js)
     const storeRoot = process.env.STORAGE_ROOT || process.env.STORAGE_DIR || '/data/storage'
-    const storeDirs = o.globalKeys.map((k) => globalStoreDirOf(storeRoot, k)).filter(Boolean)
+    const storeDirs = [...new Set(o.globalKeys.map((k) => globalStoreDirOf(storeRoot, k)).filter(Boolean))]
+    // a register line keeps the codes' hashes and a cloud copy found by name its key hash: the folders by hash
+    const byHash = await globalStoreDirsByHash(storeRoot, [...storeWhole, ...storePdfs])
+    for (const { hash, dir } of byHash) if (storeWhole.has(hash) && !storeDirs.includes(dir)) storeDirs.push(dir)
+    const pdfs = await globalStorePdfsOf(byHash.filter(({ dir }) => !storeDirs.includes(dir)).map(({ dir }) => dir))
+    if (pdfs.length) {
+      const of = `of ${new Set(pdfs.map((p) => path.dirname(p))).size} Global match(es)`
+      if (o.dropFiles && o.apply) {
+        for (const p of pdfs) await rm(p, { force: true })
+        console.log(`Global store: ${pdfs.length} scoresheet PDF(s) ${of} removed (the encrypted backup stays; --global-key CODE deletes it).`)
+      } else {
+        console.log(`Global store: ${pdfs.length} scoresheet PDF(s) ${of} the person is in stay (--drop-files --apply removes them).`)
+      }
+    }
     if (storeDirs.length) {
       if (o.dropFiles && o.apply) {
         for (const d of storeDirs) await rm(d, { recursive: true, force: true })

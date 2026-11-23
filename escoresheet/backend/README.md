@@ -882,10 +882,14 @@ since the audit of 26.11 (PERM-05) also the approving account's name in
 `match_approvals` (`[redacted]`, slot, time and hash kept; a superuser owner
 role, the table being append-only), the tournament's referee and scorer
 (`beach_tmatches`) and the Global tool's readable cloud copies
-(`global_matches`: redacted, their PDF dropped). `--global-key <backup code>`
+(`global_matches`: redacted, their PDF dropped; the copy's key hash also
+leads to the Global store's folder, whose plain scoresheet PDFs, `scoresheet`
+and `scoresheet-final`, are listed and with `--drop-files --apply` removed,
+while the encrypted backup stays). `--global-key <backup code>`
 deletes a Global match's cloud copy by its code (alone, or with a name), and
 with `--drop-files --apply` the Global store's files of that code; the
-register keeps the code's hash only.
+register keeps the code's hash only, and `--reapply` finds the store's folder
+by it. A Global match without a cloud copy is reached by its code only.
 A request without `--match` also registers the person for the schedule sync
 (`db/052`, `public.redacted_people`): the daily VolleyManager sync rewrites
 every game from yesterday to 14 days ahead and would otherwise write an erased
