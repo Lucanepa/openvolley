@@ -2,7 +2,8 @@
 
 Status: **plan A built** (branch `feat/roster-photo-import`), text recognition on the device.
 **Plan B planned, not built**: our own OCR server, only "if we start having big issues" with A
-(owner, 2026-11-23). Privacy policy 1.28 (draft for the owner's review) names the photo import.
+(owner, 2026-11-23). Privacy policy 1.28 names the photo import, with the Android camera file (owner OK 23.11 for the
+wording; to be copied to openvolley_home with the release).
 
 ## 1. What the owner asked (2026-11-23)
 
@@ -14,6 +15,7 @@ Status: **plan A built** (branch `feat/roster-photo-import`), text recognition o
 - "if they already put numbers and/or L/C then fill it for this game" (numbers, captain and liberos
   written on the list count for this game; blanks still come from the saved team, as for a PDF).
 - "captain can be either C or K, libero L. if a number is circled, then it means captain".
+- "coaches can write next (left) or between name and licence, kinda everywhere".
 - "can a screenshot be used also?": yes ("Choose a picture" takes any image, a screenshot too).
 - Bundle the recognition in the Android and desktop apps; the web loads it on first use.
 
@@ -88,21 +90,28 @@ Before that, per row:
 
 - reading slips: specks and rule scraps out, O/I/S… read as digits inside numbers and dates, a
   lost dot in a date put back, a tick glued to a mark ("“L") split off;
-- marks written in (owner): a number before the SV number (the nearest; "1" "1" joined; I/J/O…
-  read as digits there only), or after the date but right of the printed table (its tick column
-  reads as "4"); C or K the captain, L a libero (read small or twice: "c", "Cc"); a **circled
-  number** the captain: "(7)" as read, a ring round the number's box (`ringScore`), or, when the
-  recognition skipped the circled number (it often does), a ring left of the SV number
-  (`ringInRegion`: a hollow ring 1.3 to 5 lines across with ink inside it), whose inside is then read
-  again alone as digits;
+- marks written in, **anywhere on the row** (owner): a number before the SV number (the nearest;
+  "1" "1" joined; I/J/O… read as digits there only), else anywhere between the SV number and the
+  date (taken out of the row, or it would break the names; not a piece of a split date), else after
+  the date but right of the printed table (its tick column reads as "4"); C or K the captain, L a
+  libero, before the SV number, right after it, as a bare capital between the names, or after the
+  date (read small or twice: "c", "Cc"); a mark or number on a name's wrapped second line counts
+  for that row; a **circled number** the captain: "(7)" as read, a ring round the number's box
+  (`ringScore`), or, when the recognition skipped the circled number (it often does), a ring
+  anywhere on the row up to the date, centred on it (`ringInRegion`: a hollow ring 1.3 to 5 lines
+  across with ink inside it), whose inside is then read again alone as digits;
+- a row is never lost: signs that are no name (a circle read as "@)") are dropped; a name the
+  photo lost gets a stand-in in its column, emptied after (the confirm screen shows the gap, a
+  missing last name red); a misread SV number or date keeps the row (red / dropped date);
 - the X under the LAS / LFP header marks LFP (the header a mark stands under, not the PDF's narrow
   tolerance); a name's second line joins the name it stands under; "1." / "2." before an official's
   label is that assistant whatever became of the label's words.
 
 Each field gets the lowest confidence of its words; handwritten marks never more than 0.7, so they
 are always shown amber. `withSavedTeamNames` then gives a player whose SV number the side's saved
-team has the saved spelling (sure), and a player known by name whose number was not read the saved
-number.
+team has the saved spelling (sure), and a player whose SV number is no one's there but whose name
+is (one person only) the saved number: amber when the read one looked right ("10031", a digit
+lost).
 
 ### 3.4 The screen (`src/components/rosterPhoto/`)
 
@@ -136,7 +145,7 @@ in the interaction log).
 `importedRoster.test.js` (structure, shape, fields, the one apply path, PDF parity),
 `ocrRoster.test.js` (four recorded readings of made-up lists: VolleyManager's layout as a skewed
 photo and as a phone screenshot, a ruled table in German and Italian; marks, circles, LFP, wrapped
-names), `scan.test.js` (homography, corners, light, rules, rings), `ocr.test.js` (files from the
+names; and the marks spread over the row), `scan.test.js` (homography, corners, light, rules, rings), `ocr.test.js` (files from the
 app, load error, timeout, empty, cancel), `savedTeamNames.test.js`, `RosterPhotoImport.test.jsx`
 (nothing applied before "Use", red blocks, edits applied, remove, error and retry). The fixtures and
 their sources: `src/utils/rosterPhoto/__tests__/fixtures/`.
