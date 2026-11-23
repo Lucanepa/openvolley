@@ -265,9 +265,14 @@ export function heaviestMemberSanction(events, member) {
  *    disqualification; an expulsion or disqualification needs no earlier
  *    sanction, 21.4.3);
  *  - a (formal) warning cannot be given once the team has been warned —
- *    only one warning per team per match (FIVB 21.1 / 21.3.1).
+ *    only one warning per team per match (FIVB 21.1 / 21.3.1): the next
+ *    minor misconduct of any member is a penalty, which the menus offer.
  * Delays and improper requests are team sanctions and are not checked here
  * (resolveSanction does).
+ * Live entry BLOCKS what this refuses (owner decision 12, 23.11.2026: the
+ * blocks stay, and follow the FIVB scale exactly; the table of cases is
+ * domain/__tests__/sanctions.scale.test.js). The corrections record what the
+ * referee decided and only warn (manualCorrections, recompute).
  * @param {Array} priorEvents events BEFORE the sanction (any set of the match)
  * @param {{team:'home'|'away', playerNumber?:any, role?:string, plays?:any, alsoRoles?:string[], type:string}} sanction
  * @returns {{legal:boolean, reason?:'sameSanctionTwice'|'lighterSanction'|'teamAlreadyWarned', heaviest?:string}}

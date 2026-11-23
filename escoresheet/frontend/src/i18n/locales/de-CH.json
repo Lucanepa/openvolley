@@ -1233,7 +1233,7 @@
       "playerNumber": "Spieler {{number}}",
       "sameSanctionTwice": "{{who}} hät die Sanktion scho ({{sanction}}). Es Teammitglied cha di glich Sanktion nöd zwöimal übercho.",
       "lighterSanction": "{{who}} hät scho e schwereri Sanktion ({{sanction}}). Jedi witeri Sanktion vomene Teammitglied mues schwerer si.",
-      "teamAlreadyWarned": "Kei Warnig möglich: S Team hät scho e Warnig übercho.",
+      "teamAlreadyWarned": "Kei Warnig möglich: S Team hät scho e Warnig übercho (eini pro Team und Match). S nächscht liechte Fählverhalte isch e Straaf.",
       "decisionAfterSanction": "Nachem letschte Ballwächsel isch e Sanktion oder en Straafpunkt iitreit worde. D Entscheidsänderig betrifft dä Ballwächsel: Mach zerscht d Sanktion rückgängig (e Straaf gaht mit ihrem Punkt).",
       "undoSanctionFirst": "Zerscht d Sanktion rückgängig mache",
       "penaltyRecordedPointLater": "Straaf erfasst. Punkt wird nach de Ufstellig vo beide Teams vergäh.",

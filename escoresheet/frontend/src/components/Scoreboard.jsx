@@ -12718,14 +12718,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Special rule for warning: can only be given if team hasn't been warned (player can have other sanctions)
       if (check.reason === 'teamAlreadyWarned') {
-        deferUi(() => showAlert(t('scoreboard.dialogs.teamAlreadyWarned', 'Warning cannot be given because the team has already been warned.'), 'warning'))
+        deferUi(() => showAlert(t('scoreboard.dialogs.teamAlreadyWarned', 'Warning cannot be given because the team has already been warned (one per team per match): the next minor misconduct is a penalty.'), 'warning'))
         deferUi(() => setSanctionConfirmModal(null))
         return
       }
     }
     // Easy match, a sanction for the team: one formal warning per team too
     if (type === 'team' && sanctionType === 'warning' && teamHasFormalWarning(team)) {
-      deferUi(() => showAlert(t('scoreboard.dialogs.teamAlreadyWarned', 'Warning cannot be given because the team has already been warned.'), 'warning'))
+      deferUi(() => showAlert(t('scoreboard.dialogs.teamAlreadyWarned', 'Warning cannot be given because the team has already been warned (one per team per match): the next minor misconduct is a penalty.'), 'warning'))
       deferUi(() => setSanctionConfirmModal(null))
       return
     }
