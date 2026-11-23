@@ -18,7 +18,7 @@ import { cn } from './ui/cn.js'
 import { Button } from './ui/Button.jsx'
 import { Card } from './ui/Card.jsx'
 import IdField from './components/IdField'
-import { idModeOf, importedIdValue, ID_LABEL_FALLBACK } from './domain/idMode'
+import { idModeOf, idPlaceholderOf, importedIdValue, ID_LABEL_FALLBACK } from './domain/idMode'
 import { Field, FormError } from './ui/Field.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
 import { RowList } from './ui/Row.jsx'
@@ -92,6 +92,7 @@ export default function UploadRosterApp() {
   // date of birth) in a Swiss match; a Global match's own choice
   const idMode = idModeOf(match)
   const idLabel = idMode === 'dob' ? t('rosterSetup.dob', 'DOB') : t(`idMode.label.${idMode}`, ID_LABEL_FALLBACK[idMode])
+  const idPlaceholder = idPlaceholderOf(t, idMode)
   const [homeTeam, setHomeTeam] = useState(null)
   const [awayTeam, setAwayTeam] = useState(null)
   const [validationError, setValidationError] = useState('')
@@ -1310,6 +1311,7 @@ export default function UploadRosterApp() {
                           value={player.dob ? formatDateToISO(player.dob) : ''}
                           onChange={(v) => handlePlayerChange(index, 'dob', v ? formatDateToDDMMYYYY(v) : '')}
                           aria-label={idLabel}
+                          placeholder={idPlaceholder}
                         />
                         <Select
                           value={player.libero}
@@ -1409,6 +1411,7 @@ export default function UploadRosterApp() {
                           value={official.dob ? formatDateToISO(official.dob) : ''}
                           onChange={(v) => handleBenchChange(index, 'dob', v ? formatDateToDDMMYYYY(v) : '')}
                           aria-label={idLabel}
+                          placeholder={idPlaceholder}
                         />
                         <Button variant="danger-outline" size="sm" block onClick={() => handleDeleteBench(index)}>
                           {t('common.delete')}

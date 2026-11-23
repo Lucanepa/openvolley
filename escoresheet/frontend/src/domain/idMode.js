@@ -126,3 +126,17 @@ export function importedIdValue(person, mode) {
 export function idLabelOf(t, mode, dobLabel) {
   return mode === 'dob' ? dobLabel : t(`idMode.label.${mode}`, ID_LABEL_FALLBACK[mode] || ID_LABEL_FALLBACK.licence)
 }
+
+/**
+ * The placeholder of an ID field without a visible label: a roster or bench
+ * row and the add-player row (their portrait rows hide the labels, the empty
+ * box said nothing). A Swiss match: "Licence/DoB" (the licence, or the date
+ * of birth of a player without one); Global: the mode's label; none for
+ * birthdates (the date field shows its own format).
+ * @param {(key: string, fallback?: string) => string} t
+ */
+export function idPlaceholderOf(t, mode) {
+  if (mode === 'dob') return undefined
+  if (mode === 'licence') return t('idMode.placeholder.licence', 'Licence/DoB')
+  return idLabelOf(t, mode)
+}

@@ -6,7 +6,7 @@ import { Button } from '../../ui/Button.jsx'
 import { Input } from '../../ui/Input.jsx'
 import { Select } from '../../ui/Select.jsx'
 import IdField from '../IdField'
-import { idLabelOf } from '../../domain/idMode'
+import { idLabelOf, idPlaceholderOf } from '../../domain/idMode'
 import { SectionHeader } from '../../ui/SectionHeader.jsx'
 import { cn } from '../../ui/cn.js'
 import { playsChoice, withPlays } from '../../domain/playerOfficials'
@@ -130,6 +130,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
   const firstNameLabel = t('scoreboard.reopenRoster.firstName', 'First name')
   const lastNameLabel = t('scoreboard.reopenRoster.lastName', 'Last name')
   const dobLabel = idLabelOf(t, idMode, t('matchSetup.dateOfBirth', 'Date of birth'))
+  const idPlaceholder = idPlaceholderOf(t, idMode)
   const playsAsLabel = t('matchSetup.playsAs', 'Plays as')
 
   return (
@@ -200,6 +201,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   onRawChange={(v) => updatePlayer(idx, 'dob', v)}
                   size="md"
                   aria-label={dobLabel}
+                  placeholder={idPlaceholder}
                   value={toISODate(player.dob)}
                   onChange={(v) => updatePlayer(idx, 'dob', v)}
                   wrapperClassName="dob-cell [grid-area:dob]"
@@ -296,6 +298,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   onRawChange={(v) => updateBench(idx, 'dob', v)}
                   size="md"
                   aria-label={dobLabel}
+                  placeholder={idPlaceholder}
                   value={toISODate(staff.dob)}
                   onChange={(v) => updateBench(idx, 'dob', v)}
                   wrapperClassName="dob-cell [grid-area:dob]"

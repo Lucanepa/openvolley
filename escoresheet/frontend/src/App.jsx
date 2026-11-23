@@ -2952,7 +2952,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    ensureSeedTestTeams().catch(error => {
+    // on start a seed team a match plays with keeps its players, also none
+    ensureSeedTestTeams({ refillInUse: false }).catch(error => {
       console.error('Failed to ensure seeded test teams:', error)
     })
     ensureSeedTestOfficials().catch(error => {
@@ -2960,10 +2961,14 @@ export default function App() {
     })
   }, [])
 
-  async function ensureSeedTestTeams() {
+  // refillInUse: false (App's start) leaves a seed team that a match plays
+  // with as it is when it has no players: the test match's roster emptied by
+  // the scorer came back as the test roster on the next start. A new test
+  // match (createTestMatchData) refills it.
+  async function ensureSeedTestTeams({ refillInUse = true } = {}) {
     const seededTeams = []
 
-    await db.transaction('rw', db.teams, db.players, db.sync_queue, async () => {
+    await db.transaction('rw', db.teams, db.players, db.matches, db.sync_queue, async () => {
       for (const definition of TEST_TEAM_SEED_DATA) {
         let team = await db.teams.filter(t => t.seedKey === definition.seedKey).first()
         const isTestSeed = definition.seedKey?.startsWith('test-')
@@ -3018,7 +3023,9 @@ export default function App() {
             team = { ...team, ...patch }
           }
           const playerCount = await db.players.where('teamId').equals(team.id).count()
-          if (playerCount === 0) {
+          const inUse = !refillInUse && playerCount === 0 &&
+            (await db.matches.where('homeTeamId').equals(team.id).count()) + (await db.matches.where('awayTeamId').equals(team.id).count()) > 0
+          if (playerCount === 0 && !inUse) {
             const timestamp = new Date().toISOString()
             const playersToCreate = definition.players.map(player => ({
               teamId: team.id,
@@ -4061,6 +4068,8 @@ export default function App() {
                   matchId={matchId}
                   onStart={continueMatch}
                   onReturn={returnToMatch}
+                  // Back: where the header menu's Home goes (openMatchSetup)
+                  onHome={openMatchSetup}
                   onOpenOptions={() => setHomeOptionsModal(true)}
                   onOpenCoinToss={() => {
                     setShowMatchSetup(false)
