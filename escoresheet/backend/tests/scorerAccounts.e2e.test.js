@@ -419,7 +419,11 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.equal(beachBundle.status, 200, beachBundle.text)
     assert.equal(beachBundle.json.data.sport, 'beach')
     assert.ok(beachBundle.json.data.competitions.every((x) => x.sport === 'beach'))
-    assert.ok(!('dob' in beachBundle.json.data.teams.find((x) => x.id === bt.json.data.team.id).players[0]), 'no date of birth (db/048)')
+    // owner decision 5 (PERM-09): a beach scorer reads the pairs of its own tournaments only (none here);
+    // the beach competition managers read every pair
+    assert.equal(beachBundle.json.data.teams.some((x) => x.id === bt.json.data.team.id), false)
+    const beachCmBundle = await call(beachCm, 'GET', '/api/saved-teams?sport=beach')
+    assert.ok(!('dob' in beachCmBundle.json.data.teams.find((x) => x.id === bt.json.data.team.id).players[0]), 'no date of birth (db/048)')
     // a 2.1.0 client (no ?sport=) never sees a beach row
     const plain = await call(users.anna, 'GET', '/api/saved-teams')
     assert.equal(plain.json.data.competitions.some((x) => x.sport === 'beach' || x.id === bc.json.data.competition.id), false)

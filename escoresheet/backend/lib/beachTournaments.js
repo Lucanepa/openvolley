@@ -1788,6 +1788,35 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return { result: answer, cacheable: true, tournamentId: result.status === 200 ? tournamentId : null, bytes: answer.raw.text.length + (answer.raw.gzip?.length ?? 0) }
   }
 
+  // ------------------------------------------------------------------ matches a manager manages (PERM-09)
+  /**
+   * Owner decision 5 (PERM-09): a beach competition manager reopens only a
+   * beach match it manages: one of a tournament it edits (created or
+   * co-manages; the scored match linked by db/014, beach_tmatches.match_id or
+   * matches.tournament_match_id), or one it recorded or edits itself. The
+   * global admin reopens every match (lib/manageApi.js asks this for the
+   * other accounts only). { sport, manages } of the match, null when there
+   * is no such match, or { error } (503). Never throws.
+   */
+  async function managesMatch ({ userId, matchId } = {}) {
+    if (!isUuid(matchId) || !isUuid(userId)) return null
+    try {
+      const { rows: [m] } = await pool.query(
+        `SELECT to_jsonb(m) ->> 'sport_type' AS sport,
+                (m.created_by = $2
+                 OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2)
+                 OR EXISTS (SELECT 1 FROM public.beach_tmatches tm JOIN public.beach_tournaments t ON t.id = tm.tournament_id
+                             WHERE (tm.match_id = m.id OR tm.id = m.tournament_match_id)
+                               AND (t.created_by = $2 OR EXISTS (SELECT 1 FROM public.beach_tournament_managers bm
+                                                                  WHERE bm.tournament_id = t.id AND bm.user_id = $2)))) AS manages
+           FROM public.matches m WHERE m.id = $1`, [matchId, userId])
+      return m ? { sport: m.sport === 'beach' ? 'beach' : 'indoor', manages: m.manages === true } : null
+    } catch (err) {
+      log.error?.(`[beach] manages-match failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return { error: unavailable() }
+    }
+  }
+
   // ------------------------------------------------------------------ routing
   const ID = '([0-9a-fA-F-]{36})'
   const routes = [
@@ -1842,6 +1871,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   return {
     route,
     publicTournament,
+    managesMatch,
     listInvites,
     addManager,
     answerInvite,
