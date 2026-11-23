@@ -497,8 +497,8 @@ dans la préparation du match remplit les noms, numéros de maillot et numéros
 de licence ; ses dates de naissance ne sont pas reprises. Elle peut être
 importée depuis son PDF ou depuis une photo : la photo est lue sur l'appareil
 (reconnaissance de texte dans l'application), n'est envoyée nulle part et
-n'est pas conservée ; les lignes lues sont montrées au marqueur ou à la
-marqueuse, qui les corrige avant que quoi que ce soit ne soit repris.
+n'est pas conservée ; les lignes lues sont montrées au marqueur, qui les
+corrige avant que quoi que ce soit ne soit repris.
 
 **But :** une feuille de match électronique pour les matchs officiels :
 saisie pendant le match, procès-verbal officiel du match, contrôle de la
