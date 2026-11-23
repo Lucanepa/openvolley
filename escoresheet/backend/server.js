@@ -3202,8 +3202,9 @@ function relayStats() {
     activeRooms: rooms.size,
     // what the transport refused since the start (transportRefusals)
     transport: { ...transportRefusals },
-    // new sockets told "relay busy" (heap above OV_ADMIT_HEAP_PCT) since the start
-    admission: { refused: admissionRefused, heapPct: ADMIT_HEAP_PCT, maxConnections: MAX_CONNECTIONS }
+    // new sockets told "relay busy" (heap above OV_ADMIT_HEAP_PCT) since the start;
+    // sockets that proved nothing pushed out at a cap, or closed as idle under load
+    admission: { refused: admissionRefused, heapPct: ADMIT_HEAP_PCT, maxConnections: MAX_CONNECTIONS, evicted: roleEvictions, idleClosed: roleIdleClosed }
   }
 }
 
@@ -6564,12 +6565,108 @@ server.on('upgrade', (req, socket, head) => {
 // Browsers, the desktop apps and the LedBox bridge answer pings on their own.
 const roleHeartbeat = realtimeHub ? realtimeHub.heartbeat : createHeartbeat({ intervalMs: 30000 })
 
-wss.on('connection', (ws, req) => {
-  // Enforce global connection cap
-  if (connections.size >= MAX_CONNECTIONS) {
-    ws.close(1013, 'Server connection limit reached')
-    return
+// --- Admission of role sockets (audit 2611 SEC-04) ---------------------------
+// An idle socket needs no PIN, room or message, and ws answers the heartbeat
+// pings by itself: ten address buckets (one IPv6 /56, or ten IPv4 addresses)
+// held all MAX_CONNECTIONS slots, and every later scorer, referee and bench
+// socket was refused with 1013. Now:
+//   - a socket that proved something (a claim, a claim being checked, an
+//     accepted PIN or match token, a scoreboard code) is never pushed out;
+//   - at a cap (all sockets, one address bucket, or on the cloud one wider
+//     network) the oldest socket that proved nothing makes room, one in no
+//     room first: a proved socket is refused only when every socket under
+//     that cap proved something;
+//   - on the cloud, sockets that proved nothing count per IPv6 /56 and /48
+//     and per IPv4 /24 too (ROLE_NET_CAPS), as many as one address may hold
+//     per /56 and twice that per /48 and /24;
+//   - while the relay holds more than half its slots, a socket that has been
+//     in no room and proved nothing for ROLE_IDLE_MS is closed (a scorer
+//     with a match not on the relay yet, a test match, keeps its socket
+//     when the relay is not under load).
+const ROLE_NET_CAPS = Object.freeze({ v6net56: MAX_CONNECTIONS_PER_IP, v6net48: 2 * MAX_CONNECTIONS_PER_IP, v4net24: 2 * MAX_CONNECTIONS_PER_IP })
+const ROLE_IDLE_MS = Number(process.env.OV_ROLE_IDLE_MS) > 0 ? Math.floor(Number(process.env.OV_ROLE_IDLE_MS)) : 60 * 1000
+const ROLE_IDLE_LOAD = 0.5
+let roleEvictions = 0
+let roleIdleClosed = 0
+
+/** The wider networks of an address bucket that ROLE_NET_CAPS count (cloud), as [kind, key]. */
+function roleNetsOf(ip, ipKey) {
+  if (!IS_CLOUD || isLoopbackIp(ip)) return []
+  const v6 = /^([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4})::\/64$/.exec(ipKey)
+  if (v6) {
+    const net48 = `${v6[1]}:${v6[2]}:${v6[3]}`
+    return [['v6net56', `${net48}:${(parseInt(v6[4], 16) & 0xff00).toString(16)}::/56`], ['v6net48', `${net48}::/48`]]
   }
+  const v4 = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/.exec(ipKey)
+  return v4 ? [['v4net24', `${v4[1]}.0/24`]] : []
+}
+
+/** Did this socket prove anything: a claim (or one being checked), an accepted PIN or token, a scoreboard code? */
+function socketProved(c) {
+  if (c.ownedMatches.size > 0 || c.claimCheck || c.codeRooms.size > 0) return true
+  for (const a of c.matchAccess.values()) if (a.verified === true || a.token) return true
+  return false
+}
+
+/** The socket that makes room at a cap: the oldest that proved nothing, one in no room first; null when all proved something. */
+function evictableSocket(candidates) {
+  let unproved = null
+  for (const c of candidates) { // connections keeps arrival order: oldest first
+    if (c.gone || socketProved(c)) continue
+    if (c.rooms.size === 0) return c
+    if (!unproved) unproved = c
+  }
+  return unproved
+}
+
+/** Close a socket that proved nothing to make room; it leaves the relay's books at once. */
+function evictSocket(c, reason) {
+  roleEvictions++
+  relaySummary.count('pushed out (proved nothing, at a cap)')
+  try { c.ws.close(1013, reason) } catch { /* already gone */ }
+  handleClientDisconnect(c)
+}
+
+/**
+ * Make room for one more socket under each cap it falls under; false when
+ * a cap is full of sockets that all proved something (the new one is refused).
+ */
+function admitRoleSocket(ip, ipKey, nets) {
+  if (connections.size >= MAX_CONNECTIONS) {
+    const victim = evictableSocket(connections.values())
+    if (!victim) return { code: 1013, reason: 'Server connection limit reached' }
+    evictSocket(victim, 'Server connection limit reached')
+  }
+  // a LAN relay counts per address: every tablet of a venue LAN shares one IPv6 /64
+  const sameAddress = [...connections.values()].filter((c) => (IS_CLOUD ? c.ipKey === ipKey : c.ip === ip))
+  if (sameAddress.length >= MAX_CONNECTIONS_PER_IP) {
+    const victim = evictableSocket(sameAddress)
+    if (!victim) return { code: 1008, reason: 'Too many connections from this IP' }
+    evictSocket(victim, 'Too many connections from this IP')
+  }
+  for (const [kind, key] of nets) {
+    const inNet = [...connections.values()].filter((c) => c.roleNets?.[kind] === key && !socketProved(c))
+    if (inNet.length >= ROLE_NET_CAPS[kind]) evictSocket(evictableSocket(inNet), 'Too many connections from this network')
+  }
+  return null
+}
+
+// Sockets in no room that proved nothing, closed after ROLE_IDLE_MS while the
+// relay is under load (above ROLE_IDLE_LOAD of MAX_CONNECTIONS)
+const roleIdleSweep = setInterval(() => {
+  if (connections.size <= MAX_CONNECTIONS * ROLE_IDLE_LOAD) return
+  const now = Date.now()
+  const idle = [...connections.values()].filter((c) => !c.gone && c.rooms.size === 0 && now - c.openedAt >= ROLE_IDLE_MS && !socketProved(c))
+  for (const c of idle) {
+    roleIdleClosed++
+    relaySummary.count('closed (idle, under load)')
+    try { c.ws.close(1013, 'Idle connection closed, retry shortly') } catch { /* gone */ }
+    handleClientDisconnect(c)
+  }
+}, Math.max(1000, Math.min(30000, Math.floor(ROLE_IDLE_MS / 2))))
+roleIdleSweep.unref?.()
+
+wss.on('connection', (ws, req) => {
   if (heapPressure() * 100 >= ADMIT_HEAP_PCT) {
     admissionRefused++
     relaySummary.count('refused (relay busy)')
@@ -6583,15 +6680,13 @@ wss.on('connection', (ws, req) => {
   // address bucket: IPv4 as is, IPv6 by /64 (one subscriber holds a whole /64,
   // so a per-address key would be no limit at all).
   const ipKey = ipBucketKey(ip)
+  const nets = roleNetsOf(ip, ipKey)
 
-  // Enforce per-IP connection cap (a LAN relay counts per address: every
-  // tablet of a venue LAN shares one IPv6 /64)
-  let connectionsFromIp = 0
-  for (const c of connections.values()) {
-    if (IS_CLOUD ? c.ipKey === ipKey : c.ip === ip) connectionsFromIp++
-  }
-  if (connectionsFromIp >= MAX_CONNECTIONS_PER_IP) {
-    ws.close(1008, 'Too many connections from this IP')
+  // The caps: all sockets, per address bucket, per wider network (cloud)
+  const refusal = admitRoleSocket(ip, ipKey, nets)
+  if (refusal) {
+    relaySummary.count('refused (connection caps)')
+    ws.close(refusal.code, refusal.reason)
     return
   }
 
@@ -6632,6 +6727,11 @@ wss.on('connection', (ws, req) => {
     frames: {},
     // { matchId, moved } while a claim's database check runs (verifyRelayClaim)
     claimCheck: null,
+    // The wider networks ROLE_NET_CAPS count this socket in (cloud), by kind
+    roleNets: Object.fromEntries(nets),
+    openedAt: Date.now(),
+    // Left the relay's books (closed, or pushed out at a cap: handleClientDisconnect)
+    gone: false,
     connectedAt: new Date().toISOString()
   }
 
@@ -6651,6 +6751,8 @@ wss.on('connection', (ws, req) => {
   }))
 
   ws.on('message', (data) => {
+    // pushed out at a cap or closed as idle: its close is under way
+    if (clientInfo.gone) return
     // Per-client WebSocket rate limiting; a scoreboard's bench answers (a
     // socket that owns a match) on their own budget, dropped (not closed)
     // when over it; any other socket keeps the normal limit
@@ -7705,8 +7807,10 @@ function handleAction(clientInfo, message) {
   else relaySummary.count('actions broadcast')
 }
 
-// Handle client disconnect
+// Handle client disconnect (once: a socket pushed out at a cap left the books before its close event)
 function handleClientDisconnect(clientInfo) {
+  if (clientInfo.gone) return
+  clientInfo.gone = true
   // Matches no other connected socket owns become claimable after a grace period
   for (const matchId of clientInfo.ownedMatches) {
     const entry = activeMatches.get(matchId)
