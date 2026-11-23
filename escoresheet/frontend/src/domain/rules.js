@@ -168,6 +168,24 @@ export function servingTeamFromLog(events, setIndex, match = {}) {
   return last.type === 'rectification' ? last.payload.serve : last.payload.team
 }
 
+/**
+ * Which team served the rally a point ended: servingTeamFromLog over the log
+ * before the point (rows of a lower base seq, so not the rows the point wrote
+ * itself, N.x). The decision change uses it to know who rotated: after a
+ * going back the serve is the rectification's and a point set by hand passes
+ * none, so the previous point's team is not always the server (FIVB 7.6.1).
+ * @param {Array} events the match's events
+ * @param {object} point the point event
+ * @param {number} [setIndex] the point's set
+ * @param {object} [match]
+ * @returns {string} 'home' | 'away'
+ */
+export function serveBeforePoint(events, point, setIndex = point?.setIndex ?? 1, match = {}) {
+  const base = Math.floor(point?.seq || 0)
+  const before = (events || []).filter(e => e && e !== point && Math.floor(e.seq || 0) < base)
+  return servingTeamFromLog(before, setIndex, match || {})
+}
+
 export function scoreFromPointEvents(events, setIndex) {
   let homePoints = 0
   let awayPoints = 0

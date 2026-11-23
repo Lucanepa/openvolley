@@ -19,7 +19,7 @@
  *  - record_replay:           continuous play, the rally played since the
  *                             replay was replayed too: nothing changes.
  */
-import { servingTeamFromLog } from './rules'
+import { servingTeamFromLog, serveBeforePoint } from './rules'
 import { isBookkeepingEvent } from './rally'
 
 const otherTeam = (team) => (team === 'home' ? 'away' : 'home')
@@ -37,10 +37,9 @@ export function decisionChangeOutcomes({ events, point, score, match = null }) {
   const setIndex = point?.setIndex ?? 1
   const home = Number(score?.home) || 0
   const away = Number(score?.away) || 0
-  const base = Math.floor(point?.seq || 0)
-  // the log before the point and the rows it wrote (N.x)
-  const before = (events || []).filter(e => e && e !== point && Math.floor(e.seq || 0) < base)
-  const serveBefore = servingTeamFromLog(before, setIndex, match || {})
+  // who served the rally: the log before the point and the rows it wrote
+  // (N.x), as the decision change itself reads it (rules serveBeforePoint)
+  const serveBefore = serveBeforePoint(events, point, setIndex, match || {})
   const serveNow = servingTeamFromLog(events, setIndex, match || {})
   const minus = (n) => Math.max(0, n - 1)
   return {

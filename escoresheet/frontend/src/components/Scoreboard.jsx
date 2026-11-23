@@ -105,7 +105,7 @@ import HistoryModal from './history/HistoryModal.jsx'
 import CorrectionBoard, { readCorrectionView, saveCorrectionView, boardFits } from './corrections/CorrectionBoard.jsx'
 import RectifyPanel from './rectify/RectifyPanel.jsx'
 import { planRectificationReversal, rectifyErrorText } from '../domain/rectify'
-import { servingTeamFromLog } from '../domain/rules'
+import { servingTeamFromLog, serveBeforePoint } from '../domain/rules'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal, restoredSetWrites, matchForfeitOf } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { missingPreMatchSignatures, beforeFirstServe } from '../domain/preMatchSignatures'
@@ -8906,31 +8906,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const deletedSubEventIds = new Set(oldTeamPointSubEvents.map(e => e.id))
         const createdSubEventIds = []
 
-        // Determine who had serve BEFORE the original point was awarded
-        // This is needed to know if the new team should rotate (if they were receiving)
-        const pointEventsBefore = events
-          .filter(e => e.type === 'point' && e.setIndex === data.set.index && (e.seq || 0) < lastEventSeq)
-          .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-
-        // Calculate first serve for current set
-        const setIndex = data.set.index
-        const set1FirstServe = data?.match?.firstServe || 'home'
-        let currentSetFirstServe
-        if (setIndex === 5 && data.match?.set5FirstServe) {
-          const teamAKey = data.match.coinTossTeamA || 'home'
-          const teamBKey = data.match.coinTossTeamB || 'away'
-          currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
-        } else {
-          currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
-        }
-
-        let serveBeforePoint = currentSetFirstServe
-        if (pointEventsBefore.length > 0) {
-          serveBeforePoint = pointEventsBefore[0].payload?.team || serveBeforePoint
-        }
+        // Who served the rally (the app's serve rule, domain/rules
+        // serveBeforePoint): the new team rotates if it was receiving. Not the
+        // previous point's team: after a going back the serve is the
+        // rectification's and a point set by hand passes none (audit LOG-03)
+        const serveBefore = serveBeforePoint(events, lastEvent, data.set.index, data?.match)
 
         // If the new team was receiving (didn't have serve), they need to rotate now
-        const newTeamHadServe = serveBeforePoint === newTeam
+        const newTeamHadServe = serveBefore === newTeam
         if (!newTeamHadServe) {
           // Query the new team's current lineup (latest by seq, as the engine orders)
           const newTeamLineupEvents = events
@@ -9038,7 +9021,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 console.log('[handleDecisionChange] Applied rotation to new team:', {
                   newTeam,
-                  serveBeforePoint,
+                  serveBeforePoint: serveBefore,
                   rotatedLineup,
                   liberoSubstitution: rotatedLiberoSubstitution
                 })
