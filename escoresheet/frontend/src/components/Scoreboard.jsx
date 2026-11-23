@@ -10187,12 +10187,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const isLiberoUnable = useCallback((teamKey, liberoNumber) => liberoStateOf(teamKey, liberoNumber).unable, [liberoStateOf])
 
-  // An injured libero no re-designation replaced: the scorer may bring him back
+  // An injured libero the scorer may bring back: no re-designation replaced
+  // him and, for an original libero, his team re-designated nobody (Q84)
   const canLiberoReturn = useCallback((teamKey, liberoNumber) => liberoStateOf(teamKey, liberoNumber).mayReturn, [liberoStateOf])
 
   // The unable libero a re-designation replaces (and puts out for the match):
-  // one who may not come back anyway before an injured one who may, else the
-  // latest to become unable (domain/liberos liberoToReplaceByRedesignation)
+  // the latest to become unable among those not replaced, whose
+  // unavailability triggered it (owner 23.11.2026, Swiss exam Q84;
+  // domain/liberos liberoToReplaceByRedesignation)
   const redesignationTargetOf = useCallback((teamKey) => {
     const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
     return liberoToReplaceByRedesignation(teamPlayers, data?.events, teamKey, { setIndex: data?.set?.index ?? null })
@@ -11581,11 +11583,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const checkLiberoRedesignation = useCallback((teamKey, liberoNumber, liberoType, reason = 'declared') => {
     if (!data?.set) return
 
-    // Check if already re-designated
+    // Check if already re-designated (a number from a court disc is a string)
     const alreadyRedesignated = data?.events?.some(e =>
       e.type === 'libero_redesignation' &&
       e.payload?.team === teamKey &&
-      e.payload?.unableLiberoNumber === liberoNumber
+      String(e.payload?.unableLiberoNumber) === String(liberoNumber)
     )
     if (alreadyRedesignated) return
 
@@ -11619,17 +11621,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Show re-designation modal. The libero it replaces is out for the
-    // match: one who may not come back anyway before an injured one who may
-    // (owner 22.11.2026; redesignationTargetOf)
-    const target = redesignationTargetOf(teamKey)
+    // Show re-designation modal. It replaces the libero whose unavailability
+    // triggered it, the one who just became unable, out for the match (owner
+    // 23.11.2026, FIVB 19.4.2, Swiss exam Q84: L1 disqualified, then L2
+    // injured: L2), never an earlier one already out
     setLiberoRedesignationModal({
       team: teamKey,
-      unableLiberoNumber: target?.number ?? liberoNumber,
-      unableLiberoType: target?.libero ?? liberoType,
+      unableLiberoNumber: liberoNumber,
+      unableLiberoType: liberoType ?? teamPlayers.find(p => String(p.number) === String(liberoNumber))?.libero,
       reason: reason
     })
-  }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation, redesignationTargetOf])
+  }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation])
 
   // Handle forfait (FIVB 6.4, 7.3.1, 15.8; domain/matchEnd, tested).
   //  scope 'set'   - the team is INCOMPLETE for the SET (injured / expelled

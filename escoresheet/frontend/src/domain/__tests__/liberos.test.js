@@ -209,9 +209,16 @@ describe('liberoToReplaceByRedesignation: the libero a re-designation puts out f
     expect(target([unable(5, 12, 'injury')])).toBe(12)
   })
 
-  it('one who may not come back anyway (declared) before an injured one who may, whatever the order', () => {
-    expect(target([unable(5, 11, 'declared'), unable(6, 12, 'injury')])).toBe(11)
+  // Owner decision 23.11.2026 (FIVB 19.4.2, Swiss exam Q84): the libero whose
+  // unavailability triggered the re-designation, the latest to become unable,
+  // whatever the reason. (Until then one who could not come back anyway was
+  // replaced before an injured one: 11 in the first case.)
+  it('the latest to become unable, whatever the reason: declared then injured replaces the injured one', () => {
+    expect(target([unable(5, 11, 'declared'), unable(6, 12, 'injury')])).toBe(12)
     expect(target([unable(5, 12, 'injury'), unable(6, 11, 'declared')])).toBe(11)
+    const disqualified = { seq: 4, setIndex: 1, type: 'sanction', payload: { team: 'home', type: 'disqualification', playerType: 'libero', playerNumber: 11 } }
+    expect(target([disqualified, unable(6, 12, 'injury')])).toBe(12)
+    expect(target([unable(3, 12, 'injury'), disqualified])).toBe(11)
   })
 
   it('both injured, or both declared: the latest to become unable', () => {
@@ -234,3 +241,4 @@ describe('playersForLiberoRedesignation: no way back for a libero a re-designati
     expect(list).toEqual([8, 9])
   })
 })
+

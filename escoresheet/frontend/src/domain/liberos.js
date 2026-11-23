@@ -69,15 +69,22 @@ export function liberoReplacedByRedesignation(events, teamKey, liberoNumber, { p
 
 /**
  * Whether a libero may play now, and whether an unable one may come back
- * (FIVB 19.4.2; owner decision 22.11.2026). He is unable when
+ * (FIVB 19.4.2; owner decisions 22.11.2026 and 23.11.2026). He is unable when
  *  - a re-designation replaced him: out for the match (replaced);
  *  - disqualified (any set) or expelled in this set (21.3.2-21.3.3);
  *  - declared unable, injured or ill, disqualified, or expelled in this set
  *    (libero_unable) since his latest return (libero_recovered);
  *  - substituted because of an injury since then (older data).
- * mayReturn: unable only because of an injury or illness, and not replaced
- * by a re-designation. As long as no re-designation replaced him, the
- * injured libero may play again; the scorer records it (libero_recovered).
+ * mayReturn: unable only because of an injury or illness, not replaced by a
+ * re-designation and, for one of the team's original liberos, no
+ * re-designation of his team yet. As long as his team re-designated nobody,
+ * the injured libero may play again; the scorer records it
+ * (libero_recovered). Once the team re-designated a libero, no original
+ * libero of it comes back, also by a libero_recovered written after that
+ * (FIVB 19.4.2, Swiss exam Q84: L1 disqualified, L2 injured, L3
+ * re-designated: L2 recovered does not play next to L3; owner 23.11.2026).
+ * A re-designated libero injured later may come back as long as no further
+ * re-designation replaced him.
  * A libero declared unable (by the coach or the game captain) is out for the
  * rest of the match, whatever comes after it, a libero_recovered too (owner
  * 22.11.2026: "Once declared or becoming unable and re-designated: can't
@@ -103,9 +110,15 @@ export function liberoPlayState(events, teamKey, liberoNumber, { setIndex = null
   // given to him as a team official (a playing coach)
   const sentOff = mine.some(e => e.type === 'sanction' && same(sanctionedPlayerNumber(e.payload), liberoNumber) &&
     (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && thisSet(e))))
+  // An original libero (none of the team's re-designations named him) once
+  // his team re-designated a libero: no way back (Q84). Only a return
+  // recorded before the first re-designation counts.
+  const redesignations = mine.filter(e => e.type === 'libero_redesignation')
+  const lockedOut = redesignations.length > 0 && !redesignations.some(e => same(e.payload?.newLiberoNumber, liberoNumber))
+  const firstRedesignationSeq = redesignations.reduce((min, e) => Math.min(min, seqOf(e)), Infinity)
   // what happened since he last came back
   const back = mine
-    .filter(e => e.type === LIBERO_RECOVERED && same(e.payload?.liberoNumber, liberoNumber))
+    .filter(e => e.type === LIBERO_RECOVERED && same(e.payload?.liberoNumber, liberoNumber) && !(lockedOut && seqOf(e) > firstRedesignationSeq))
     .reduce((max, e) => Math.max(max, seqOf(e)), -Infinity)
   const reasons = []
   for (const e of mine) {
@@ -119,16 +132,23 @@ export function liberoPlayState(events, teamKey, liberoNumber, { setIndex = null
     }
   }
   const unable = sentOff || reasons.length > 0
-  return { unable, mayReturn: unable && !sentOff && reasons.every(r => r === 'injury'), replaced: false }
+  return { unable, mayReturn: unable && !sentOff && !lockedOut && reasons.every(r => r === 'injury'), replaced: false }
 }
+
+// The events that made a libero unable (FIVB 19.4.2.1-19.4.2.2): his
+// libero_unable, an expulsion or a disqualification of him, an injury
+// substitution of him (older data)
+const unableEventsOf = (events, teamKey, number) => (events || []).filter(e => e?.payload?.team === teamKey && (
+  (e.type === 'libero_unable' && same(e.payload?.liberoNumber, number)) ||
+  (e.type === 'sanction' && same(sanctionedPlayerNumber(e.payload), number) && (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification')) ||
+  (e.type === 'substitution' && same(e.payload?.playerOut, number) && e.payload?.isInjury === true)))
 
 /**
  * The unable libero a re-designation replaces when the team has none left
- * (FIVB 19.4.2.4): of the liberos unable now and not replaced before, one
- * who may not come back anyway (declared unable, disqualified, expelled)
- * before an injured one who may (owner 22.11.2026: the libero a
- * re-designation replaces is out for the match), else the one who became
- * unable last.
+ * (FIVB 19.4.2.3-19.4.2.4, Swiss exam Q84; owner decision 23.11.2026): the
+ * one whose unavailability triggered it, i.e. of the liberos unable now and
+ * not replaced before, the one who became unable last, whatever the reason
+ * (L1 disqualified, then L2 injured: the re-designation replaces L2).
  * @param {Array} players the team's roster
  * @param {Array} events all events of the match
  * @param {'home'|'away'} teamKey
@@ -136,22 +156,18 @@ export function liberoPlayState(events, teamKey, liberoNumber, { setIndex = null
  * @returns {object|null} his roster entry
  */
 export function liberoToReplaceByRedesignation(players, events, teamKey, { setIndex = null } = {}) {
-  const lastUnableSeq = (number) => (events || [])
-    .filter(e => e?.payload?.team === teamKey && (
-      (e.type === 'libero_unable' && same(e.payload?.liberoNumber, number)) ||
-      (e.type === 'sanction' && same(sanctionedPlayerNumber(e.payload), number) && (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification'))))
+  const lastUnableSeq = (number) => unableEventsOf(events, teamKey, number)
     .reduce((max, e) => Math.max(max, seqOf(e)), -Infinity)
   const candidates = (players || [])
     .filter(p => p?.libero && p.libero !== '' && p.libero !== 'unable')
-    .map(p => ({ p, state: liberoPlayState(events, teamKey, p.number, { setIndex, player: p }) }))
-    .filter(({ state }) => state.unable && !state.replaced)
+    .filter(p => {
+      const state = liberoPlayState(events, teamKey, p.number, { setIndex, player: p })
+      return state.unable && !state.replaced
+    })
+    .map(p => ({ p, seq: lastUnableSeq(p.number) }))
   if (candidates.length === 0) return null
-  const rank = ({ p, state }) => [state.mayReturn ? 1 : 0, -lastUnableSeq(p.number)]
-  candidates.sort((a, b) => {
-    const [ra, sa] = rank(a)
-    const [rb, sb] = rank(b)
-    return ra - rb || sa - sb
-  })
+  // the latest first; ties (no event known) keep the roster order (stable sort)
+  candidates.sort((a, b) => (a.seq === b.seq ? 0 : b.seq - a.seq))
   return candidates[0].p
 }
 
