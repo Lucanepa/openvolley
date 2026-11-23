@@ -21,7 +21,13 @@
  * run is a preview: it runs whole and is rolled back, and the answer says
  * what it did (the rows of the last statement, or its row count). With
  * `commit: true` it runs again and commits. ov_app has no DDL rights: schema
- * changes stay migrations.
+ * changes stay migrations. ov_app reads every column, so write mode keeps
+ * the secret columns (game PINs, token and code hashes) out itself: a
+ * statement naming one is refused (checkWriteScope), so is one that reaches
+ * one without its name (a whole row, an expression over SELECT *'s columns,
+ * renamed columns: checkPlanSecrets on its EXPLAIN plan, before anything
+ * runs), and the answer never carries one (SELECT *, RETURNING *: left out,
+ * named in hidden_columns).
  *
  * Both modes: one transaction, statement_timeout 15 s, every statement
  * checked before anything runs (checkStatementPolicy: nothing that leaves
@@ -484,15 +490,37 @@ export function checkStatementPolicy(stmt) {
 }
 
 
+const SECRET_HINT = 'A game PIN is read or reset in Closed matches; token and code hashes are never needed by hand.'
+const WHOLE_ROW_HINT = 'Name the columns you need (SELECT * is fine: its secret columns are left out of the answer).'
+// Words after `)` that never start a column alias list (`count(*) FILTER (`, `OVER (`, `(a, b) IN (`, `VALUES (`, ...)
+const NOT_AN_ALIAS = new Set(['filter', 'over', 'within', 'in', 'and', 'or', 'not', 'values', 'exists', 'any', 'all', 'some',
+  'then', 'else', 'when', 'like', 'ilike', 'similar', 'is', 'between', 'on', 'using', 'select', 'from', 'where', 'group',
+  'order', 'having', 'limit', 'offset', 'union', 'except', 'intersect', 'window', 'returning', 'set', 'into', 'join',
+  'lateral', 'case', 'end', 'array', 'row', 'distinct', 'overlaps', 'escape', 'collate', 'at', 'with', 'by', 'cross',
+  'inner', 'left', 'right', 'full', 'natural', 'outer', 'do', 'conflict', 'update', 'delete', 'insert', 'merge', 'matched',
+  'tablesample', 'repeatable', 'ordinality', 'for', 'of', 'nulls', 'asc', 'desc', 'fetch', 'first', 'next', 'only', 'ties'])
+// Types written with a size after AS: CAST(x AS numeric(4,2)) is no alias list
+const SIZED_TYPES = new Set(['numeric', 'decimal', 'dec', 'varchar', 'char', 'character', 'bpchar', 'bit', 'varbit', 'timestamp',
+  'timestamptz', 'time', 'timetz', 'interval', 'float', 'nchar', 'national'])
+
 /**
  * Write mode runs as the backend role, which may read the sign-in data
  * (auth.users, sessions, passkeys) and the secret columns: refused here, so
  * write mode reaches no more than read mode plus the writes themselves.
- * Pure; exported for the unit test.
+ * `secretRelations` (the names of the tables and views that have a secret
+ * column; sqlWorkspace's run passes them): a statement naming one may not
+ * give columns new names (`matches AS m(a, b, c)`, `(…) AS s(a, b)`,
+ * `WITH t(a, b) AS (…)`), which would carry a secret column under another
+ * name past the checks (SEC-40). Pure; exported for the unit test.
+ * @param {string} stmt
+ * @param {{ secretRelations?: Set<string> }} [opts]
  * @returns {null | { code: string, message: string, hint: string }}
  */
-export function checkWriteScope (stmt) {
+export function checkWriteScope (stmt, { secretRelations = null } = {}) {
   const sig = lexSql(stmt).filter((t) => t.type !== 'ws' && t.type !== 'comment')
+  const isOther = (k, text) => sig[k]?.type === 'other' && sig[k].text === text
+  const isWord = (k, ...words) => sig[k]?.type === 'word' && words.includes(sig[k].text.toLowerCase())
+  let mentionsSecret = false
   for (let k = 0; k < sig.length; k++) {
     const name = tokenName(sig[k])
     if (name === null) continue
@@ -501,12 +529,132 @@ export function checkWriteScope (stmt) {
         'Accounts are changed in Accounts (names, addresses, roles, deactivation, deletion).')
     }
     if (SECRET_COLUMN_RE.test(name)) {
-      return refusal('secret_column_not_allowed', `"${name}" is a secret column: not reachable from the SQL workspace`,
-        'A game PIN is read or reset in Closed matches; token and code hashes are never needed by hand.')
+      return refusal('secret_column_not_allowed', `"${name}" is a secret column: not reachable from the SQL workspace`, SECRET_HINT)
+    }
+    if (secretRelations?.has(name) && !isOther(k + 1, '.')) mentionsSecret = true
+  }
+  if (!mentionsSecret) return null
+  const renamed = () => refusal('column_alias_not_allowed',
+    'Column alias lists are not allowed in write mode on a statement that reads a table with secret columns',
+    'Rename columns in the select list instead (SELECT a AS b).')
+  for (let k = 0; k < sig.length; k++) {
+    const name = tokenName(sig[k])
+    // matches [AS] m (a, b, …): the table's own columns under new names (INSERT INTO t AS x (cols) is the insert's column list)
+    if (name !== null && secretRelations.has(name) && !isOther(k + 1, '.') && !isWord(k - 1, 'into') &&
+        !(isOther(k - 1, '.') && !isWord(k - 2, 'public'))) {
+      let j = k + 1
+      if (isWord(j, 'as')) j++
+      if ((sig[j]?.type === 'word' || sig[j]?.type === 'qident') && !NOT_AN_ALIAS.has(tokenName(sig[j])) && isOther(j + 1, '(')) return renamed()
+    }
+    if (isOther(k, ')')) {
+      // WITH t (a, b) AS [NOT] [MATERIALIZED] (…): a common table expression's columns renamed
+      let j = k + 1
+      if (isWord(j, 'as')) {
+        let m = j + 1
+        if (isWord(m, 'not')) m++
+        if (isWord(m, 'materialized')) m++
+        if (isOther(m, '(')) return renamed()
+      }
+      // (…) [AS] s (a, b): a subquery's or function's columns renamed
+      const as = isWord(j, 'as')
+      if (as) j++
+      const alias = sig[j] ? tokenName(sig[j]) : null
+      if (alias !== null && (as ? !SIZED_TYPES.has(alias) : !NOT_AN_ALIAS.has(alias)) && isOther(j + 1, '(')) return renamed()
     }
   }
   return null
 }
+
+// ── Write mode: the plan's view of secret columns (SEC-40) ───────────────────
+// A name-based check cannot see a secret column reached without its name: a
+// whole row (SELECT m, row_to_json(m), m::text, ROW(m.*)) or an expression
+// over SELECT *'s columns. EXPLAIN (VERBOSE) names every column a plan reads
+// or computes with, so each write-mode statement is planned first (nothing
+// runs) and refused when a secret column is used anywhere but as a plain
+// output column, which the answer then leaves out.
+
+const PLAN_NAME_KEYS = new Set(['Node Type', 'Parent Relationship', 'Relation Name', 'Schema', 'Alias', 'Index Name', 'Strategy',
+  'Partial Mode', 'Join Type', 'Scan Direction', 'Operation', 'Sort Method', 'Sort Space Type', 'Subplan Name', 'CTE Name',
+  'Conflict Resolution', 'Conflict Arbiter Indexes', 'Command', 'Function Name', 'Trigger Name', 'Constraint Name',
+  'Custom Plan Provider', 'Setop', 'Remote SQL', 'Tuplestore Name', 'Async Capable'])
+// where a plain column is only passed on or ordered by (never computed with)
+const PLAN_PASS_KEYS = new Set(['Output', 'Sort Key', 'Presorted Key', 'Group Key'])
+const PART = '(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)'
+const PLAN_IDENT_RE = new RegExp(`${PART}(?:\\.(?:${PART}|\\*))*`, 'g')
+const PLAN_BARE_RE = new RegExp(`^${PART}(?:\\.${PART})*(?:\\s+(?:ASC|DESC))?(?:\\s+NULLS\\s+(?:FIRST|LAST))?$`)
+const unquote = (p) => (p.startsWith('"') ? p.slice(1, -1).replace(/""/g, '"') : p.toLowerCase())
+
+/**
+ * The plan of one statement (EXPLAIN (VERBOSE, FORMAT JSON)) against the
+ * secret columns. `secretRelations`: "schema.name" of every table or view
+ * with a secret column. Refuses: a whole row (alias.*) of such a table, or of
+ * a subquery / CTE / function when the plan reads such a table; a secret
+ * column inside an expression, a condition or a key; and, in a statement
+ * that writes, a secret column passed on into the write. Pure; exported for
+ * the unit test.
+ * @returns {null | { code: string, message: string, hint: string }}
+ */
+export function checkPlanSecrets (explained, { secretRelations = new Set() } = {}) {
+  const roots = (Array.isArray(explained) ? explained : [explained]).map((x) => x?.Plan || x).filter(Boolean)
+  const aliases = new Map() // alias -> secret?
+  let writes = false
+  let readsSecret = false
+  const visit = (node, fn, modify = false) => {
+    if (!node || typeof node !== 'object') return
+    const isModify = node['Node Type'] === 'ModifyTable'
+    fn(node, isModify || modify)
+    for (const child of node.Plans || []) visit(child, fn, false)
+  }
+  for (const r of roots) {
+    visit(r, (node) => {
+      if (node['Node Type'] === 'ModifyTable') writes = true
+      if (typeof node['Relation Name'] === 'string') {
+        const secret = secretRelations.has(`${node.Schema || 'public'}.${node['Relation Name']}`)
+        if (secret) readsSecret = true
+        if (typeof node.Alias === 'string') aliases.set(node.Alias.toLowerCase(), secret || aliases.get(node.Alias.toLowerCase()) === true)
+      }
+    })
+  }
+  let found = null
+  const check = (text, key, inModify) => {
+    const s = String(text).replace(/'(?:[^']|'')*'/g, "''")
+    const bare = PLAN_PASS_KEYS.has(key) && PLAN_BARE_RE.test(s.trim())
+    PLAN_IDENT_RE.lastIndex = 0
+    let m
+    while (!found && (m = PLAN_IDENT_RE.exec(s))) {
+      const after = s.slice(m.index + m[0].length).trimStart()
+      const before = s.slice(0, m.index).trimEnd()
+      if (after.startsWith('(') || before.endsWith('::')) continue // a function or a type
+      const parts = m[0].match(new RegExp(`${PART}|\\*`, 'g'))
+      const last = parts.at(-1)
+      if (last === '*') {
+        const alias = unquote(parts.at(-2) || '')
+        const known = aliases.has(alias)
+        if ((known && aliases.get(alias)) || (!known && readsSecret)) {
+          found = refusal('whole_row_not_allowed', `A whole row (${alias}.*) of a table with secret columns is not allowed in write mode`, WHOLE_ROW_HINT)
+        }
+        continue
+      }
+      if (SECRET_COLUMN_RE.test(unquote(last)) && !(bare && (!writes || inModify))) {
+        found = refusal('secret_column_not_allowed', `The secret column "${unquote(last)}" may not be used in write mode, also not without its name`, SECRET_HINT)
+      }
+    }
+  }
+  for (const r of roots) {
+    visit(r, (node, inModify) => {
+      for (const [key, v] of Object.entries(node)) {
+        if (found || key === 'Plans' || PLAN_NAME_KEYS.has(key)) continue
+        if (typeof v === 'string') check(v, key, inModify)
+        else if (Array.isArray(v)) for (const x of v) if (typeof x === 'string') check(x, key, inModify)
+      }
+    })
+  }
+  return found
+}
+
+/** The leading keywords EXPLAIN takes. */
+const EXPLAINABLE = new Set(['SELECT', 'WITH', 'VALUES', 'TABLE', 'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'DECLARE'])
+const SECRET_COLUMN_SQL_RE = SECRET_COLUMN_RE.source
 
 // ── The runner ──────────────────────────────────────────────────────────────
 
@@ -709,7 +857,39 @@ export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', l
 
     const lastIdx = statements.length - 1
     let out = { columns: [], rows: [], row_count: 0, truncated: false }
-    const runAll = async (client) => {
+    const refuse = (i, r) => Object.assign(new Error('refused'), { __result: fail(400, r.code, r.message, { hint: r.hint, statement_index: i }) })
+    /**
+     * Write mode, before anything runs: the tables with secret columns, then
+     * each statement's renamed columns (checkWriteScope) and its plan
+     * (checkPlanSecrets). EXPLAIN runs nothing. Returns what the answer
+     * leaves out: the secret columns by table oid and column number.
+     */
+    const guardSecrets = async (client) => {
+      const { rows: cols } = await client.query(
+        `SELECT n.nspname, c.relname, c.oid::bigint AS oid, a.attnum::int AS attnum
+           FROM pg_attribute a
+           JOIN pg_class c ON c.oid = a.attrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f') AND a.attnum > 0 AND NOT a.attisdropped AND a.attname ~ $1
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_toast%'`, [SECRET_COLUMN_SQL_RE])
+      const secretRelations = new Set(cols.map((r) => `${r.nspname}.${r.relname}`))
+      const secretNames = new Set(cols.map((r) => String(r.relname).toLowerCase()))
+      for (let i = 0; i < statements.length; i++) {
+        const renamed = checkWriteScope(statements[i], { secretRelations: secretNames })
+        if (renamed) throw refuse(i, renamed)
+        if (!EXPLAINABLE.has(leadingKeyword(statements[i]))) continue
+        let plan
+        try {
+          plan = (await client.query(`EXPLAIN (VERBOSE, FORMAT JSON) ${statements[i]}`)).rows[0]?.['QUERY PLAN']
+        } catch (pgErr) {
+          throw Object.assign(new Error('statement'), { __result: statementError(pgErr, i, true) })
+        }
+        const used = checkPlanSecrets(plan, { secretRelations })
+        if (used) throw refuse(i, used)
+      }
+      return new Set(cols.map((r) => `${r.oid}/${r.attnum}`))
+    }
+    const runAll = async (client, secretColumns = null) => {
       for (let i = 0; i < statements.length; i++) {
         let stmt = statements[i]
         if (i === lastIdx && shouldAutoLimit(stmt)) stmt = `${stmt}\nLIMIT ${DEFAULT_ROW_CAP + 1}`
@@ -724,10 +904,20 @@ export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', l
           const r = Array.isArray(res) ? res[res.length - 1] : res
           const fields = r?.fields || []
           if (fields.length) {
-            const names = fields.map((f) => f.name)
+            // write mode: a secret column never comes back, however it was
+            // selected (SELECT *, t.*, RETURNING *, a CTE's column): by its
+            // name or by the table column it comes from (SEC-40)
+            const secret = (f) => SECRET_COLUMN_RE.test(String(f.name).toLowerCase()) ||
+              (secretColumns != null && f.tableID > 0 && secretColumns.has(`${f.tableID}/${f.columnID}`))
+            const shown = writeMode ? fields.filter((f) => !secret(f)) : fields
+            const hidden = writeMode ? fields.filter(secret).map((f) => f.name) : []
             const all = r.rows || []
+            const names = shown.map((f) => f.name)
             const rows = all.slice(0, DEFAULT_ROW_CAP).map((row) => names.map((n) => row[n] ?? null))
-            out = { columns: names, rows, row_count: all.length > DEFAULT_ROW_CAP ? DEFAULT_ROW_CAP : all.length, truncated: all.length > DEFAULT_ROW_CAP }
+            out = {
+              columns: names, rows, row_count: all.length > DEFAULT_ROW_CAP ? DEFAULT_ROW_CAP : all.length, truncated: all.length > DEFAULT_ROW_CAP,
+              ...(hidden.length ? { hidden_columns: hidden } : {})
+            }
           } else {
             out = { columns: ['command', 'rowCount'], rows: [[r?.command ?? 'OK', r?.rowCount ?? 0]], row_count: 1, truncated: false, affected: r?.rowCount ?? 0 }
           }
@@ -758,7 +948,8 @@ export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', l
           await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`)
           await client.query('SET LOCAL search_path = public, pg_catalog')
           await client.query("SELECT set_config('ov.user_id', $1, true), set_config('ov.admin', 'on', true)", [actorId])
-          await runAll(client)
+          const secretColumns = await guardSecrets(client)
+          await runAll(client, secretColumns)
           if (commit) {
             await audit(client, auditEntry(out))
             await client.query('COMMIT')
