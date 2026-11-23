@@ -877,7 +877,15 @@ correct, so `--match` narrows a namesake's records), `--drop-files` to remove th
 (made again from the corrected record), `--actor <admin uuid>` for the audit
 entry, `--register FILE` (kept outside the database, next to the backups'
 keys) and, after a restore from a backup older than a request,
-`--reapply FILE`. See the script's header for what it reaches and what not.
+`--reapply FILE`. See the script's header for what it reaches and what not:
+since the audit of 26.11 (PERM-05) also the approving account's name in
+`match_approvals` (`[redacted]`, slot, time and hash kept; a superuser owner
+role, the table being append-only), the tournament's referee and scorer
+(`beach_tmatches`) and the Global tool's readable cloud copies
+(`global_matches`: redacted, their PDF dropped). `--global-key <backup code>`
+deletes a Global match's cloud copy by its code (alone, or with a name), and
+with `--drop-files --apply` the Global store's files of that code; the
+register keeps the code's hash only.
 A request without `--match` also registers the person for the schedule sync
 (`db/052`, `public.redacted_people`): the daily VolleyManager sync rewrites
 every game from yesterday to 14 days ahead and would otherwise write an erased

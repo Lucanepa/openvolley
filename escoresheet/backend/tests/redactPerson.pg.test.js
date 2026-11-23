@@ -15,8 +15,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTestDatabase, SKIP_PG } from './helpers/pgTestDb.js'
-import { redactPerson, registerPerson, redactValue, matcherOf, nameTextRe, personDigest, parseArgs, dateOf, REDACTED } from '../scripts/redact-person.mjs'
+import { redactPerson, registerPerson, redactValue, matcherOf, nameTextRe, personDigest, parseArgs, dateOf, dropGlobalCopies, globalStoreDirOf, REDACTED } from '../scripts/redact-person.mjs'
 import { redactedPeopleKey, nameHash, licenceHash } from '../lib/redactedPeople.js'
+import { createApprovals } from '../lib/approvals.js'
+import { createScoresheets } from '../lib/scoresheets.js'
+import { keyHash } from '../lib/globalMatches.js'
 
 // the register's key in these tests (db/052); never a real secret
 const PIN_SECRET = 'k'.repeat(40)
@@ -78,6 +81,14 @@ describe('redact-person: the walk', () => {
     assert.match(parseArgs(['--first', 'A', '--last', 'B', '--dob', '2011-02-01']).error, /--dob: gone with db\/048/)
     assert.match(parseArgs(['--first', 'A', '--last', 'B', '--set-dob', '2011-02-01']).error, /--set-dob: gone with db\/048/)
     assert.deepEqual(parseArgs(['--first', 'A', '--last', 'B', '--match', 'm1', '--apply']).matches, ['m1'])
+    // --global-key (PERM-05): a Global match's backup code, with a name or alone
+    const code = 'AbCdEfGhIjKlMnOpQrStUv'
+    assert.deepEqual(parseArgs(['--first', 'A', '--last', 'B', '--global-key', code]).globalKeys, [code])
+    assert.equal(parseArgs(['--global-key', code, '--apply']).globalOnly, true)
+    assert.match(parseArgs(['--global-key', 'short']).error, /--global-key/)
+    assert.match(parseArgs(['--global-key', code, '--match', 'm1']).error, /--first/)
+    assert.equal(globalStoreDirOf('/data/storage', code), `/data/storage/global/Ab/${code}`)
+    assert.equal(globalStoreDirOf('/data/storage', '../../etc'), null)
   })
 })
 
@@ -329,6 +340,133 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
     } finally {
       await owner.query('ROLLBACK').catch(() => {})
       await other.end()
+    }
+  })
+
+  // PERM-05 (audit 26.11): the approval's name, the tournament's referee and
+  // the Global cloud copies were left, while the run said "Applied"; a rebuild
+  // printed the erased referee's name again ("Approved electronically · <name>")
+  const approvalMatch = async (ext) => {
+    const { rows: [m] } = await owner.query(
+      `INSERT INTO public.matches (external_id, game_n, status, test, home_team, away_team, officials)
+       VALUES ($1, $2, 'ended', false, '{"name":"Home"}', '{"name":"Away"}', $3::json) RETURNING id`,
+      [ext, ++gameN, JSON.stringify([{ role: '1st referee', firstName: 'Rita', lastName: 'Referee' }])])
+    await owner.query('INSERT INTO public.sets (match_id, index, home_points, away_points, finished) VALUES ($1, 1, 25, 20, true)', [m.id])
+    for (const [slot, name] of [['referee1', 'Referee Rita'], ['scorer', 'Other Ada']]) {
+      await owner.query(
+        `INSERT INTO public.match_approvals (match_id, slot, display_name, match_status, result_key, result_hash)
+         VALUES ($1, $2, $3, 'ended', 'ov-result-v1|1:25:20', decode(repeat('ab', 32), 'hex'))`, [m.id, slot, name])
+    }
+    await owner.query("UPDATE public.matches SET status = 'final' WHERE id = $1", [m.id])
+    return m.id
+  }
+
+  it('the approving account\'s name: "[redacted]" in match_approvals (slot, time, hash kept), so neither the sheet nor GET /api/approvals carries it', async () => {
+    const id = await approvalMatch('rp-appr-1')
+    const before = (await owner.query('SELECT id, slot, approved_at, result_key, encode(result_hash, \'hex\') AS hash FROM public.match_approvals WHERE match_id = $1 ORDER BY slot', [id])).rows
+    await owner.query("UPDATE public.match_sheet_changes SET changed_at = now() - interval '1 day' WHERE match_id = $1", [id])
+    const r = await tx(() => redactPerson(owner, { who: { first: 'Rita', last: 'Referee' } }))
+    assert.equal(r.tables.match_approvals, 1)
+    assert.ok(r.matches.includes(id))
+    const after = (await owner.query('SELECT id, slot, approved_at, result_key, encode(result_hash, \'hex\') AS hash, display_name FROM public.match_approvals WHERE match_id = $1 ORDER BY slot', [id])).rows
+    assert.deepEqual(after.map(({ display_name: _, ...x }) => x), before, 'the slot, the time and the hash stay')
+    assert.deepEqual(after.map((x) => [x.slot, x.display_name]), [['referee1', REDACTED], ['scorer', 'Other Ada']])
+    const { rows: [m] } = await owner.query('SELECT closed_at, officials FROM public.matches WHERE id = $1', [id])
+    assert.ok(m.closed_at, 'still closed')
+    assert.equal(m.officials[0].lastName, REDACTED)
+    // the sheet is out of date: the PDF is made anew (db/045, set by hand as its trigger was off)
+    const { rows: [c] } = await owner.query('SELECT changed_at > now() - interval \'1 minute\' AS fresh FROM public.match_sheet_changes WHERE match_id = $1', [id])
+    assert.equal(c?.fresh, true)
+
+    // GET /api/approvals and the render record (Rebuild PDF, rebuild-vector) read the approvals from here
+    const approvals = createApprovals({ pool: owner, secret: PIN_SECRET, logger: { warn () {}, error () {} } })
+    const listed = await approvals.listForMatch({ callerId: '00000000-0000-4000-8000-000000000001', access: { isAdmin: true }, externalId: 'rp-appr-1' })
+    assert.equal(listed.status, 200, JSON.stringify(listed.body))
+    assert.deepEqual(listed.body.data.approvals.map((a) => [a.slot, a.name]), [['referee1', REDACTED], ['scorer', 'Other Ada']])
+    let printed = null
+    const sheets = createScoresheets({
+      pool: owner,
+      storage: {},
+      accounts: { audit: async () => {} },
+      readMatch: async (mid) => ({ match: (await owner.query('SELECT * FROM public.matches WHERE id = $1', [mid])).rows[0], sets: [], events: [] }),
+      readApprovals: (mid) => approvals.recordsForMatch(mid),
+      vector: { enabled: true, render: async ({ record }) => { printed = record; return { ok: false, status: 503, code: 'OV_RENDER_BUSY' } } },
+      logger: { warn () {}, error () {}, log () {} }
+    })
+    await sheets.rebuildVector({ actorId: null, matchId: id, reason: 'name erased' })
+    assert.ok(printed, 'the record went to the render service')
+    assert.deepEqual(printed.approvals.map((a) => a.name).sort(), ['Other Ada', REDACTED].sort())
+    assert.equal(JSON.stringify(printed).includes('Rita'), false, 'the erased name is nowhere in what the sheet is drawn from')
+  })
+
+  it('a register line (digest only) finds the approval\'s name too ("Last First" read every way)', async () => {
+    const id = await approvalMatch('rp-appr-2')
+    const line = { mode: 'erase', digest: personDigest({ first: 'Rita', last: 'Referee' }), nameDigest: personDigest({ first: 'Rita', last: 'Referee' }), withDob: false }
+    const r = await tx(() => redactPerson(owner, { who: line }))
+    assert.ok(r.tables.match_approvals >= 1)
+    const { rows } = await owner.query("SELECT display_name FROM public.match_approvals WHERE match_id = $1 AND slot = 'referee1'", [id])
+    assert.equal(rows[0].display_name, REDACTED)
+  })
+
+  it('the tournament\'s referee (beach_tmatches.referee) is erased', async () => {
+    const { rows: [t] } = await owner.query("INSERT INTO public.beach_tournaments (slug, title, starts_on, ends_on) VALUES ('beach-ref', 'Beach Ref', '2026-06-01', '2026-06-02') RETURNING id")
+    const { rows: [d] } = await owner.query("INSERT INTO public.beach_draws (tournament_id, gender, category) VALUES ($1, 'women', 'A') RETURNING id", [t.id])
+    await owner.query(`INSERT INTO public.beach_tmatches (tournament_id, draw_id, game_n, code, phase, round, position, wave, source1, source2, referee, scorer)
+      VALUES ($1, $2, 1, 'W1', 'winners', 1, 1, 1, 'seed:1', 'seed:2', 'Mia Example', 'Lea Other')`, [t.id, d.id])
+    const r = await tx(() => redactPerson(owner, { who: { first: 'Mia', last: 'Example' } }))
+    assert.equal(r.tables.beach_tmatches, 1)
+    const { rows: [m] } = await owner.query('SELECT referee, scorer FROM public.beach_tmatches WHERE draw_id = $1', [d.id])
+    assert.deepEqual(m, { referee: REDACTED, scorer: 'Lea Other' })
+  })
+
+  it('the Global cloud copies (db/046): the person redacted in the bundle and its PDF gone; --global-key deletes a copy by its backup code', async () => {
+    const code = 'GlobalBackupCode_0123456789'
+    const other = 'GlobalBackupCode_9876543210'
+    const bundle = { match: { homeTeam: 'U13 Musterdorf' }, players: [{ number: 7, firstName: 'Gina', lastName: 'Globus', dob: '2013-04-05' }, { number: 8, firstName: 'Lea', lastName: 'Other' }], remarks: 'Gina Globus injured' }
+    for (const k of [code, other]) {
+      await owner.query(
+        `INSERT INTO public.global_matches (key_hash, pin_hash, summary, bundle, pdf) VALUES ($1, repeat('c', 64), $2::jsonb, $3::jsonb, $4)`,
+        [keyHash(k), JSON.stringify({ home: { name: 'U13 Musterdorf' }, away: { name: 'U13 Beispiel' } }), JSON.stringify(bundle), Buffer.from('%PDF-1.4\n% Gina Globus 05.04.2013\n%%EOF\n')])
+    }
+    const r = await tx(() => redactPerson(owner, { who: { first: 'Gina', last: 'Globus' } }))
+    assert.equal(r.tables.global_matches, 2)
+    const rows = (await owner.query('SELECT key_hash, bundle, pdf FROM public.global_matches ORDER BY key_hash')).rows
+    for (const g of rows) {
+      assert.equal(g.pdf, null, 'the PDF prints the name: gone')
+      assert.deepEqual(g.bundle.players[0], { number: 7, firstName: REDACTED, lastName: REDACTED, dob: null })
+      assert.equal(g.bundle.players[1].lastName, 'Other')
+      assert.equal(g.bundle.remarks, `${REDACTED} injured`)
+    }
+    assert.deepEqual(rows.map((g) => g.key_hash).sort(), [keyHash(code), keyHash(other)].sort(), 'the copies stay, found by their keys')
+
+    // a parent with the backup code (privacy policy section 17): that copy goes
+    assert.equal(await tx(() => dropGlobalCopies(owner, [keyHash(code), 'not-a-hash'])), 1)
+    assert.deepEqual((await owner.query('SELECT key_hash FROM public.global_matches')).rows.map((g) => g.key_hash), [keyHash(other)])
+
+    // the command with --global-key alone: deleted, audited and registered without the code
+    const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'redact-person.mjs')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-redact-'))
+    const register = path.join(dir, 'register.jsonl')
+    const storeDir = path.join(dir, 'global', other.slice(0, 2), other)
+    fs.mkdirSync(storeDir, { recursive: true })
+    fs.writeFileSync(path.join(storeDir, 'scoresheet.pdf'), '%PDF-1.4 Gina Globus')
+    try {
+      const run = (...args) => execFileSync(process.execPath, [script, '--global-key', other, ...args],
+        { env: { ...process.env, OV_MIGRATE_DATABASE_URL: tdb.url, STORAGE_ROOT: dir }, encoding: 'utf8' })
+      assert.match(run(), /Dry run/)
+      assert.equal((await owner.query('SELECT count(*)::int AS n FROM public.global_matches')).rows[0].n, 1)
+      const out = run('--apply', '--drop-files', '--register', register)
+      assert.match(out, /global: 1 Global cloud copy deleted/)
+      assert.equal(out.includes(other), false, 'the output never shows the code')
+      assert.equal((await owner.query('SELECT count(*)::int AS n FROM public.global_matches')).rows[0].n, 0)
+      assert.equal(fs.existsSync(storeDir), false, 'the Global store\'s files of the code are gone')
+      const { rows: [a] } = await owner.query("SELECT details FROM public.audit_log WHERE action = 'person.redact' AND details->>'mode' = 'global' ORDER BY id DESC LIMIT 1")
+      assert.equal(a.details.global_copies, 1)
+      const [line] = fs.readFileSync(register, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+      assert.deepEqual(line.global, [keyHash(other)])
+      assert.equal(JSON.stringify(line).includes(other), false)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
     }
   })
 })
