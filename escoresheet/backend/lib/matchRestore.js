@@ -81,6 +81,19 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { projectAnonDbRows } from './publicColumns.js'
 
+/**
+ * The matches columns only the server writes, never a client: the creator
+ * (pgQuery's ownership guard), the closing stamps (db/007's triggers), the
+ * exemption and release of an admin's release-game (db/040), the database's
+ * created_at (part of the official-game key when scheduled_at is empty, so a
+ * client must not pick the season through it) and the link to a beach
+ * tournament match (db/014). /api/db strips them (server.js WRITE_DENYLIST)
+ * and so does a restore (serverOnlyColumns): one list, so the two cannot
+ * drift apart again (audit 2611 PERM-10: a restore wrote released_at and
+ * created_at, which /api/db refused, and un-released a released duplicate).
+ */
+export const MATCH_SERVER_ONLY_COLUMNS = Object.freeze(['created_by', 'closed_at', 'closed_by', 'first_closed_at', 'official_game_exempt', 'released_at', 'created_at', 'tournament_match_id'])
+
 export const RESTORE_DEFAULTS = Object.freeze({
   matchTable: 'matches',
   matchKey: 'external_id',
@@ -100,8 +113,8 @@ export const RESTORE_DEFAULTS = Object.freeze({
   // Keys older clients still send, renamed when the table has the new column but not the old one.
   // backupManager.js builds the restore-in-place live state with `status`.
   legacyAliases: { match_live_state: { status: 'match_status' } },
-  // Columns only the server writes (db/005, db/007): dropped from a backup's match row.
-  serverOnlyColumns: ['created_by', 'closed_at', 'closed_by', 'first_closed_at', 'official_game_exempt', 'tournament_match_id'],
+  // Columns only the server writes (MATCH_SERVER_ONLY_COLUMNS): dropped from a backup's match row.
+  serverOnlyColumns: MATCH_SERVER_ONLY_COLUMNS,
   // An event's void and revision count are the server's (db/015: event
   // revisions only; the insert trigger gives a restored event the void its
   // match's revisions recorded), never a backup's.

@@ -40,7 +40,7 @@ import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTo
 import { normalizeBenchRequest, normalizeBenchResponse, createBenchRequestStore, createWindowLimiter, currentSetOfBundle, benchView, refereeInfo } from './lib/benchRequests.js'
 // Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
 import { ipBucketKey, createConcurrencyGate, bearerFromHeaders } from './lib/auth.js'
-import { createAttemptLimiter, createPinFailureBudget, pinScope, PIN_MATCH_FAILURE_MAX, PIN_SEARCH_FAILURE_MAX } from './lib/matchRestore.js'
+import { createAttemptLimiter, createPinFailureBudget, pinScope, PIN_MATCH_FAILURE_MAX, PIN_SEARCH_FAILURE_MAX, MATCH_SERVER_ONLY_COLUMNS, RESTORE_DEFAULTS } from './lib/matchRestore.js'
 import { accessForSport } from './lib/access.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
 import { renderLandingPage, landingMatchRow, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
@@ -840,11 +840,10 @@ function publishChanges(changes) {
 const OWNER_SCOPED_TABLES = new Set(['profiles', 'user_matches'])
 
 // Columns a client may never write (privilege / identity fields).
-// matches.created_by is set by pgQuery's ownership guard (the session's user);
-// closed_at / closed_by by db/007's trigger; official_game_exempt and
-// released_at (db/040) by an admin's release-game; created_at by the database
-// default (it is part of the official-game key when scheduled_at is empty, so
-// a client must not pick the season through it).
+// matches: lib/matchRestore.js MATCH_SERVER_ONLY_COLUMNS (created_by by
+// pgQuery's ownership guard, closed_at / closed_by by db/007's trigger,
+// official_game_exempt and released_at by an admin's release-game, created_at
+// by the database default), the same list a restore drops (PERM-10).
 const WRITE_DENYLIST = {
   // dob: no date of birth is kept (db/048, owner 2026-11-19); an older app's
   // profile save still sends one. license_number (db/048) is the owner's
@@ -853,7 +852,7 @@ const WRITE_DENYLIST = {
   referee_database: ['dob'],
   user_matches: ['user_id', 'id'],
   // tournament_match_id (db/014): the link to a beach tournament match is the server's
-  matches: ['created_by', 'closed_at', 'closed_by', 'first_closed_at', 'official_game_exempt', 'released_at', 'created_at', 'tournament_match_id'],
+  matches: MATCH_SERVER_ONLY_COLUMNS,
   // db/015: an event is voided / edited only through POST /api/match/event-revisions
   // (which keeps the revision); /api/db can never void or unvoid one
   events: ['voided_at', 'voided_by', 'void_reason', 'rev']
