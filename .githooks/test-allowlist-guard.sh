@@ -116,6 +116,38 @@ g commit -q -m "inline allow"
 rc=0; "$TMP/trusted/.githooks/ci-leak-scan.sh" "$base" "$(g rev-parse HEAD)" >/dev/null 2>&1 || rc=$?
 [[ "$rc" == 1 ]] && pass "an inline gitleaks:allow comment does not exempt the data" || fail "inline gitleaks:allow: want exit 1, got $rc"
 
+# The guard judges what the branch itself edits (from its merge-base with the
+# base branch), not how the base branch moved on since: a branch made before
+# an allowlist change on main passes, before and after merging main; one that
+# also edits an allowlist itself still fails. (Last: main moves on here.)
+g switch -q -c before-main-allow main
+echo "clean work" > "$repo/work.txt"
+g add work.txt
+g commit -q -m "clean work"
+old=$(g rev-parse HEAD)
+g switch -q main
+cat >> "$repo/.gitleaks.toml" <<'EOF'
+
+[[allowlists]]
+description = "reviewed false positive, merged on main"
+paths = ['''docs/sample\.json''']
+EOF
+g commit -q -am "main: an allowlist entry"
+main2=$(g rev-parse HEAD)
+expect_guard 0 "a branch made before an allowlist change on main" "$main2" "$old"
+g switch -q before-main-allow
+g merge -q --no-edit main
+expect_guard 0 "that branch after merging main" "$main2" "$(g rev-parse HEAD)"
+g switch -q -c before-main-own-allow "$old"
+cat >> "$repo/.gitleaks.toml" <<'EOF'
+
+[[allowlists]]
+description = "the branch's own entry"
+paths = ['''export\.json''']
+EOF
+g commit -q -am "own allowlist"
+expect_guard 1 "a branch made before it that adds an allowlist itself" "$main2" "$(g rev-parse HEAD)"
+
 if (( fails > 0 )); then
   echo "$fails case(s) failed"; exit 1
 fi
