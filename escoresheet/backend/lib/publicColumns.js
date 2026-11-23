@@ -306,11 +306,17 @@ export const MATCH_ROSTER_COLUMNS = Object.freeze(['players_home', 'players_away
  * state keeps its private columns (LIVE_STATE_PRIVATE_COLUMNS) only on the row
  * of `grantedMatchUuid` (the match token's matches.id: the referee/bench
  * fallback of getMatchData).
+ *
+ * `grantedRole` (the token's role, payload.r): the granted row's rosters as
+ * the relay gives that role (relayBundleView): the referee both teams whole,
+ * a bench (bench_home / bench_away, beach bench_team1 / bench_team2) its own
+ * team whole and the other team's players as shirt numbers, its officials as
+ * their role (numberOnly). Left out (undefined): the rosters whole.
  * @param {string} table
  * @param {object|object[]|null} rows
- * @param {{ grantedExternalId?: string|null, grantedMatchUuid?: string|null, grantRow?: (row: object) => boolean }} [opts]
+ * @param {{ grantedExternalId?: string|null, grantedMatchUuid?: string|null, grantRow?: (row: object) => boolean, grantedRole?: string|null }} [opts]
  */
-export function projectAnonDbRows(table, rows, { grantedExternalId = null, grantedMatchUuid = null, grantRow = null } = {}) {
+export function projectAnonDbRows(table, rows, { grantedExternalId = null, grantedMatchUuid = null, grantRow = null, grantedRole } = {}) {
   if (table === 'match_live_state' && grantedMatchUuid) {
     const one = (row) => (row != null && typeof row === 'object' && row.match_id === grantedMatchUuid
       ? projectRow(MATCH_LIVE_STATE_GRANTED_COLUMNS, table, row)
@@ -319,13 +325,31 @@ export function projectAnonDbRows(table, rows, { grantedExternalId = null, grant
   }
   const projected = projectRows(ANON_DB_COLUMNS, table, rows)
   if (table !== 'matches') return projected
+  const view = grantedRole === undefined ? 'referee' : relayViewOf(grantedRole)
   const strip = (row) => {
     if (row == null || typeof row !== 'object') return row
-    if (grantedExternalId && row.external_id === grantedExternalId && (!grantRow || grantRow(row))) return row
+    if (grantedExternalId && row.external_id === grantedExternalId && (!grantRow || grantRow(row))) return grantedRosters(row, view)
     for (const c of MATCH_ROSTER_COLUMNS) delete row[c]
     return row
   }
   return Array.isArray(projected) ? projected.map(strip) : strip(projected)
+}
+
+/**
+ * The roster columns of a granted matches row (projected, so ours to change)
+ * for `view` (relayViewOf of the token's role): as relayMatchView, the other
+ * team's people of a bench as shirt numbers (officials: role), of any view
+ * but the referee's and the scorer's both teams so.
+ */
+function grantedRosters(row, view) {
+  if (view === 'referee' || view === 'scorer') return row
+  for (const side of ['home', 'away']) {
+    if (side === view) continue
+    for (const c of TEAM_ROSTER_FIELDS[side]) {
+      if (MATCH_ROSTER_COLUMNS.includes(c) && Array.isArray(row[c])) row[c] = row[c].map(numberOnly)
+    }
+  }
+  return row
 }
 
 /** Column pgQuery adds to a select with opts.readOwner. */
