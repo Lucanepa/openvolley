@@ -1,8 +1,10 @@
 /**
  * globalQuota — what one network may add a day to the Global tool's anonymous
  * stores (lib/globalStore.js files, lib/globalMatches.js cloud copies): new
- * keys and bytes per IPv6 /64 and per /56 (an IPv4 address counts as both),
- * so one caller cannot take a whole store (audit 2026-11-23 SEC-01, SEC-17).
+ * keys and bytes per IPv6 /64, /56 and /48 (an IPv4 address counts as the
+ * first two, its /24 as the third), so one caller cannot take a whole store
+ * (audit 2026-11-23 SEC-01, SEC-17, GCS-R4); and createSharedBudget, the
+ * write budget everyone shares, a network a share of it (GCS-R1).
  *
  * In memory only: the privacy policy keeps IP addresses in memory, never
  * stored (a restart starts every budget over). Fixed windows of windowMs per

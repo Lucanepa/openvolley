@@ -5,7 +5,7 @@
 -- match records, was full (SEC-01); and a leaked backup code's PIN (4 to 8
 -- digits) could be guessed without a limit (SEC-30). lib/globalMatches.js now
 --   * keeps the whole table under a ceiling (bytes and rows, counted from
---     stored_bytes) and each network (IPv6 /64 and /56) under a daily budget
+--     stored_bytes) and each network (IPv6 /64, /56, /48) under a daily budget
 --     (in memory: the privacy policy keeps IP addresses out of the database),
 --     answering 507 / 429 beyond them;
 --   * counts wrong PINs per copy (pin_failures, pin_failed_at; the count
