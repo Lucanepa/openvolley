@@ -883,6 +883,9 @@ const realtimeHub = DB_MODE
 //     gets the public columns only.
 const LIVE_PRIVATE_NEEDS_TOKEN = process.env.OV_LIVE_PRIVATE === 'token'
 const LIVE_GRANT_RECHECK_MS = 30 * 1000
+// a subscribe reads the row again when it is older than this (subscribe-db
+// is a cheap message: no database read per message)
+const LIVE_GRANT_SUBSCRIBE_RECHECK_MS = 2 * 1000
 const LIVE_GRANT_ROWS_MAX = 2000
 const liveGrantRows = new Map() // matches.id -> { at, row: { id, connections } | null, pins }
 const liveGrantPending = new Set()
@@ -892,7 +895,8 @@ function liveChannelGrant(msg) {
   const token = typeof msg?.token === 'string' && msg.token.length <= 2048 ? msg.token : null
   const payload = token ? matchTokens.verify(token) : null
   if (!payload || typeof payload.u !== 'string' || !payload.u || !isTokenRole(payload.r)) return null
-  refreshLiveGrantRow(payload.u)
+  const known = liveGrantRows.get(payload.u)
+  if (!known || Date.now() - known.at > LIVE_GRANT_SUBSCRIBE_RECHECK_MS) refreshLiveGrantRow(payload.u)
   return { token, payload, matchUuid: payload.u }
 }
 

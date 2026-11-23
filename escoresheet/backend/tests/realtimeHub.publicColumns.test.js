@@ -249,7 +249,8 @@ describe('server.js: who gets a live state\'s private columns (end to end)', { s
       assert.equal((await frameOf(bench, n)).new.lineup_a.I.number, 7)
       await sql.query("UPDATE matches SET connections = jsonb_set(connections::jsonb, '{away_bench_enabled}', 'false') WHERE id = $1", [matchUuid])
       try {
-        // a new subscribe reads the row again at once
+        // a new subscribe reads the row again (once it is 2 s old)
+        await sleep(2100)
         await subWith(bench, 'mine', byMatch(matchUuid), pin.json.token)
         await sleep(300)
         const k = await pushLiveState(srv, matchUuid)
