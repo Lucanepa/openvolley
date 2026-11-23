@@ -67,10 +67,42 @@ export function liberoReplacedByRedesignation(events, teamKey, liberoNumber, { p
   return (events || []).some(e => e?.type === 'libero_redesignation' && e.payload?.team === teamKey && same(e.payload?.unableLiberoNumber, liberoNumber))
 }
 
+// The team's libero events that name this number as one of its liberos
+const namesLibero = (e, n) => (
+  ((e.type === 'libero_unable' || e.type === LIBERO_RECOVERED) && same(e.payload?.liberoNumber, n)) ||
+  (e.type === 'libero_entry' && same(e.payload?.liberoIn, n)) ||
+  (e.type === 'libero_exchange' && (same(e.payload?.liberoIn, n) || same(e.payload?.liberoOut, n))) ||
+  (e.type === 'libero_exit' && same(e.payload?.liberoOut, n)) ||
+  (e.type === 'lineup' && same(e.payload?.liberoSubstitution?.liberoNumber, n)))
+
+/**
+ * True for an original libero of a team that re-designated a libero (none of
+ * its re-designations named him the new libero): he is out for the rest of
+ * the match, whatever comes after (FIVB 19.4.2, Swiss exam Q84; owner
+ * decision 23.11.2026: "after a re-designation, no original libero of that
+ * team may return"). Known by his roster row (a libero mark other than
+ * 'redesignated'), else, with no row, by the team's libero events naming him.
+ * A player who is no libero is never locked out.
+ * @param {Array} mine the team's events
+ * @param {number|string} liberoNumber
+ * @param {object|null} player his roster row
+ */
+function lockedOutOriginal(mine, liberoNumber, player) {
+  const redesignations = mine.filter(e => e.type === 'libero_redesignation')
+  if (redesignations.length === 0 || redesignations.some(e => same(e.payload?.newLiberoNumber, liberoNumber))) return false
+  if (player) return Boolean(player.libero) && player.libero !== 'redesignated'
+  return mine.some(e => namesLibero(e, liberoNumber))
+}
+
 /**
  * Whether a libero may play now, and whether an unable one may come back
  * (FIVB 19.4.2; owner decisions 22.11.2026 and 23.11.2026). He is unable when
  *  - a re-designation replaced him: out for the match (replaced);
+ *  - he is one of the team's original liberos and his team re-designated a
+ *    libero: out for the match too, also when he was unable only for a set
+ *    (expelled) or recovers later (Q84; lockedOutOriginal). The app offers a
+ *    re-designation only once every libero of the team is unable, so this
+ *    ends no play the rules allow;
  *  - disqualified (any set) or expelled in this set (21.3.2-21.3.3);
  *  - declared unable, injured or ill, disqualified, or expelled in this set
  *    (libero_unable) since his latest return (libero_recovered);
@@ -102,6 +134,10 @@ export function liberoPlayState(events, teamKey, liberoNumber, { setIndex = null
   if (liberoReplacedByRedesignation(mine, teamKey, liberoNumber, { player })) {
     return { unable: true, mayReturn: false, replaced: true }
   }
+  // an original libero after his team's re-designation: out for the match
+  if (lockedOutOriginal(mine, liberoNumber, player)) {
+    return { unable: true, mayReturn: false, replaced: false }
+  }
   // declared unable once: out for the match (an older libero_unable without a reason is a declaration)
   if (mine.some(e => e.type === 'libero_unable' && same(e.payload?.liberoNumber, liberoNumber) && (e.payload?.reason || 'declared') === 'declared')) {
     return { unable: true, mayReturn: false, replaced: false }
@@ -110,9 +146,10 @@ export function liberoPlayState(events, teamKey, liberoNumber, { setIndex = null
   // given to him as a team official (a playing coach)
   const sentOff = mine.some(e => e.type === 'sanction' && same(sanctionedPlayerNumber(e.payload), liberoNumber) &&
     (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && thisSet(e))))
-  // An original libero (none of the team's re-designations named him) once
-  // his team re-designated a libero: no way back (Q84). Only a return
-  // recorded before the first re-designation counts.
+  // Any other number the team's re-designations did not name once it
+  // re-designated a libero (a roster row without a libero mark next to libero
+  // events, older data): no way back either (Q84). Only a return recorded
+  // before the first re-designation counts.
   const redesignations = mine.filter(e => e.type === 'libero_redesignation')
   const lockedOut = redesignations.length > 0 && !redesignations.some(e => same(e.payload?.newLiberoNumber, liberoNumber))
   const firstRedesignationSeq = redesignations.reduce((min, e) => Math.min(min, seqOf(e)), Infinity)
@@ -149,6 +186,10 @@ const unableEventsOf = (events, teamKey, number) => (events || []).filter(e => e
  * one whose unavailability triggered it, i.e. of the liberos unable now and
  * not replaced before, the one who became unable last, whatever the reason
  * (L1 disqualified, then L2 injured: the re-designation replaces L2).
+ * An original libero out since an earlier re-designation (lockedOutOriginal)
+ * comes last: he became unable then, and a sanction of him on the bench
+ * afterwards triggers nothing (L1 expelled, L2 injured, L3 re-designated, L3
+ * injured, L1 disqualified on the bench: a further re-designation replaces L3).
  * @param {Array} players the team's roster
  * @param {Array} events all events of the match
  * @param {'home'|'away'} teamKey
@@ -156,18 +197,20 @@ const unableEventsOf = (events, teamKey, number) => (events || []).filter(e => e
  * @returns {object|null} his roster entry
  */
 export function liberoToReplaceByRedesignation(players, events, teamKey, { setIndex = null } = {}) {
-  const lastUnableSeq = (number) => unableEventsOf(events, teamKey, number)
+  const mine = (events || []).filter(e => e && e.payload?.team === teamKey)
+  const lastUnableSeq = (number) => unableEventsOf(mine, teamKey, number)
     .reduce((max, e) => Math.max(max, seqOf(e)), -Infinity)
   const candidates = (players || [])
     .filter(p => p?.libero && p.libero !== '' && p.libero !== 'unable')
     .filter(p => {
-      const state = liberoPlayState(events, teamKey, p.number, { setIndex, player: p })
+      const state = liberoPlayState(mine, teamKey, p.number, { setIndex, player: p })
       return state.unable && !state.replaced
     })
-    .map(p => ({ p, seq: lastUnableSeq(p.number) }))
+    .map(p => ({ p, seq: lastUnableSeq(p.number), lockedOut: lockedOutOriginal(mine, p.number, p) }))
   if (candidates.length === 0) return null
-  // the latest first; ties (no event known) keep the roster order (stable sort)
-  candidates.sort((a, b) => (a.seq === b.seq ? 0 : b.seq - a.seq))
+  // locked-out originals last, then the latest first; ties (no event known)
+  // keep the roster order (stable sort)
+  candidates.sort((a, b) => (a.lockedOut !== b.lockedOut ? (a.lockedOut ? 1 : -1) : a.seq === b.seq ? 0 : b.seq - a.seq))
   return candidates[0].p
 }
 

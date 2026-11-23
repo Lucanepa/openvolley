@@ -67,6 +67,47 @@ describe('Q84: L1 disqualified, L2 injured, L3 re-designated', () => {
     expect(acting(players, events, 2)).toEqual([7])
   })
 
+  it('L1 expelled in set 2, L2 injured, L3 re-designated: in set 3 only L3 acts (the expulsion is over, L1 still out)', () => {
+    // An expulsion bars the libero for its set only (FIVB 21.3.2); after the
+    // re-designation he stays out like every original libero (owner 23.11.2026)
+    const events = [
+      { id: 1, seq: 10, setIndex: 2, type: 'sanction', payload: { team: 'home', type: 'expulsion', playerType: 'libero', playerNumber: 11 } },
+      { id: 2, seq: 11, setIndex: 2, type: 'libero_unable', payload: { team: 'home', liberoNumber: 11, liberoType: 'libero1', reason: 'expulsion' } },
+      { id: 3, seq: 20, setIndex: 2, type: 'libero_unable', payload: { team: 'home', liberoNumber: 12, liberoType: 'libero2', reason: 'injury' } }
+    ]
+    expect(liberoToReplaceByRedesignation(roster(), events, 'home', { setIndex: 2 }).number).toBe(12)
+    const players = redesignate(events, roster(), { seq: 21, setIndex: 2, unable: 12, next: 7, reason: 'injury' })
+    expect(acting(players, events, 2)).toEqual([7])
+    const l1 = players.find(p => p.number === 11)
+    expect(liberoPlayState(events, 'home', 11, { setIndex: 3, player: l1 })).toEqual({ unable: true, mayReturn: false, replaced: false })
+    expect(acting(players, events, 3)).toEqual([7])
+    // the same when the caller knows no roster row (his libero events tell)
+    expect(liberoPlayState(events, 'home', 11, { setIndex: 3 })).toEqual({ unable: true, mayReturn: false, replaced: false })
+  })
+
+  it('L3 injured in set 3 after it: a further re-designation replaces L3, not L1 (sanctioned later on the bench)', () => {
+    const events = [
+      { id: 1, seq: 10, setIndex: 2, type: 'sanction', payload: { team: 'home', type: 'expulsion', playerType: 'libero', playerNumber: 11 } },
+      { id: 2, seq: 11, setIndex: 2, type: 'libero_unable', payload: { team: 'home', liberoNumber: 11, liberoType: 'libero1', reason: 'expulsion' } },
+      { id: 3, seq: 20, setIndex: 2, type: 'libero_unable', payload: { team: 'home', liberoNumber: 12, liberoType: 'libero2', reason: 'injury' } }
+    ]
+    const players = redesignate(events, roster(), { seq: 21, setIndex: 2, unable: 12, next: 7, reason: 'injury' })
+    events.push({ id: 4, seq: 30, setIndex: 3, type: 'libero_unable', payload: { team: 'home', liberoNumber: 7, liberoType: 'redesignated', reason: 'injury' } })
+    // L1, out since the re-designation, is disqualified on the bench before the coach re-designates
+    events.push({ id: 5, seq: 31, setIndex: 3, type: 'sanction', payload: { team: 'home', type: 'disqualification', playerType: 'libero', playerNumber: 11 } })
+    expect(acting(players, events, 3)).toEqual([])
+    expect(liberoToReplaceByRedesignation(players, events, 'home', { setIndex: 3 }).number).toBe(7)
+  })
+
+  it('a player who is no libero stays able after the re-designation', () => {
+    const events = start()
+    const players = redesignate(events, roster(), { seq: 21, unable: 12, next: 7, reason: 'injury' })
+    for (const n of [3, 8]) {
+      expect(liberoPlayState(events, 'home', n, { setIndex: 2, player: players.find(p => p.number === n) })).toEqual({ unable: false, mayReturn: false, replaced: false })
+      expect(liberoPlayState(events, 'home', n, { setIndex: 2 })).toEqual({ unable: false, mayReturn: false, replaced: false })
+    }
+  })
+
   it('L1 declared unable, L2 injured: the re-designation replaces L2 too', () => {
     const events = [
       { id: 1, seq: 10, setIndex: 1, type: 'libero_unable', payload: { team: 'home', liberoNumber: 11, liberoType: 'libero1', reason: 'declared' } },

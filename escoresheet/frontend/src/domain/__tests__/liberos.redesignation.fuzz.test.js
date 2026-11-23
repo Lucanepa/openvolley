@@ -1,6 +1,7 @@
 // Property test of the libero re-designation rule (FIVB 19.4.2, Swiss exam
 // Q84; owner decision 23.11.2026, audit LOG-04): random sequences of a team's
-// liberos becoming unable (injured, declared, disqualified), coming back
+// liberos becoming unable (injured, declared, expelled for the set,
+// disqualified) over set changes, coming back
 // (only when the app allows it, as the scorer's "Able to play again") and
 // being re-designated (only when the team has no libero left, the target the
 // app picks). Whatever the sequence:
@@ -52,8 +53,9 @@ function run(seed) {
     if (x < 0.1) { set = Math.min(5, set + 1); continue }
     if (x < 0.45 && act.length) {
       const n = pick(r, act)
-      const kind = pick(r, ['injury', 'injury', 'declared', 'disqualification'])
-      if (kind === 'disqualification') ev('sanction', { type: 'disqualification', playerType: 'libero', playerNumber: n })
+      const kind = pick(r, ['injury', 'injury', 'declared', 'expulsion', 'expulsion', 'disqualification'])
+      // what the scorer's sanction writes for a libero: the sanction, then his libero_unable
+      if (kind === 'disqualification' || kind === 'expulsion') ev('sanction', { type: kind, playerType: 'libero', playerNumber: n })
       ev('libero_unable', { liberoNumber: n, reason: kind })
       lastUnableAt.set(n, seq - 1)
     } else if (x < 0.65) {
