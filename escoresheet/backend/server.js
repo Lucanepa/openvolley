@@ -6972,7 +6972,11 @@ function enterRoom(clientInfo, matchId) {
 /**
  * The first accepted sync of a match created its room: the sockets that
  * subscribed to it before (waiting in their rooms) are let in, each with the
- * snapshot a join gets (the bundle only with an accepted PIN or token).
+ * snapshot a join gets: the bundle of the view its PIN or token proved
+ * (relayViewOfClient), the summary without one. The view, never an access
+ * level: matchDataMessage takes any truthy view as a proved one, so 'summary'
+ * gave a PIN-less socket access 'full' with the bundle of the bench of
+ * neither team, and a referee that waited that bundle instead of its own.
  */
 function admitWaiting(matchId) {
   const room = rooms.get(matchId)
@@ -6981,8 +6985,7 @@ function admitWaiting(matchId) {
   for (const c of connections.values()) {
     if (!c.rooms.has(matchId) || room.clients.has(c.id) || c.ws.readyState !== 1) continue
     room.clients.add(c.id)
-    const access = hasRelayAccess(c, matchId, entry) ? 'full' : 'summary'
-    sendToClient(c, matchDataMessage('match-full-data', matchId, entry, undefined, access))
+    sendToClient(c, matchDataMessage('match-full-data', matchId, entry, undefined, relayViewOfClient(c, matchId, entry)))
     sendBenchRequestsOnJoin(c, matchId)
   }
 }
