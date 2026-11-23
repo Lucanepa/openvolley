@@ -345,6 +345,32 @@ const fail = (status, error) => ({ status, body: { error } , headers: { 'Cache-C
 const MISSING = new Set(['42P01', '42703'])
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/**
+ * The names a club's matches carry as home / away (what list({ teams }) and
+ * involves() match): its teams' names and, LOG-24 (audit 26.11), the names
+ * the schedule sync renamed them from (club_teams.former_names, db/059), so
+ * the matches stored before a rename stay the club's. A former name another
+ * club's team has today is that club's, not this one's. `teamId`: one team
+ * only. On a database without db/059 the teams' names alone (as before).
+ */
+export async function clubTeamNames(db, clubId, teamId = null) {
+  const where = `ct.club_id = $1${teamId ? ' AND ct.id = $2' : ''}`
+  const args = teamId ? [clubId, teamId] : [clubId]
+  try {
+    const { rows } = await db.query(
+      `SELECT ct.team_name AS name FROM public.club_teams ct WHERE ${where}
+       UNION
+       SELECT f.name FROM public.club_teams ct CROSS JOIN LATERAL unnest(ct.former_names) AS f(name)
+        WHERE ${where}
+          AND NOT EXISTS (SELECT 1 FROM public.club_teams o WHERE lower(btrim(o.team_name)) = lower(btrim(f.name)))`, args)
+    return rows.map((r) => r.name)
+  } catch (err) {
+    if (err?.code !== '42703') throw err
+    const { rows } = await db.query(`SELECT ct.team_name AS name FROM public.club_teams ct WHERE ${where}`, args)
+    return rows.map((r) => r.name)
+  }
+}
+
 export function createPublicApi({ pool, logger = console } = {}) {
   const statsCache = new Map() // `${id}|${updated_at}` -> body
   async function guarded(what, fn) {
@@ -380,11 +406,12 @@ export function createPublicApi({ pool, logger = console } = {}) {
         args.push(list.flatMap((x) => (x === 'finished' ? FINISHED_DB : [x])))
         statusSql = ` AND m.status = ANY($${args.length})`
       }
-      // one club's matches: its team names (the club API) or a club id (the public ?club=)
+      // one club's matches: its team names (the club API) or a club id (the
+      // public ?club=), former names included (clubTeamNames, LOG-24)
       let names = Array.isArray(teams) ? teams : null
       if (!names && club) {
         if (!UUID_RE.test(club)) return fail(400, 'bad club id')
-        names = (await pool.query('SELECT team_name FROM public.club_teams WHERE club_id = $1', [club])).rows.map((r) => r.team_name)
+        names = await clubTeamNames(pool, club)
       }
       let clubSql = ''
       if (names) {

@@ -1077,6 +1077,18 @@ SQL browser's views (the `...hash` rule), and it is not on the `/api/db` allowli
 the service runs (no retention). A new, empty table: safe for the old backend, which never reads
 it; `deploy.sh` runs it before the switch like every migration, and the new backend's schema check
 expects it.
+
+**`db/059`: a club team's former names (audit LOG-24).** The schedule holds Romandie and Ticino
+team names in their region's language; each sync renames a club team still under its German name
+to the region's (`lib/vmSync.js` `followTeamRenames`), so the club rule, the final mail and the
+take-over of a held game match the schedule again. The team keeps the old name in
+`club_teams.former_names` (text[], oldest first, at most 10): the matches its scorers stored before
+carry it, and the club API's `/matches` and the public `?club=` list pick a club's matches by its
+team names and these (`lib/publicApi.js` `clubTeamNames`; a former name another club's team has
+today is that club's). Each rename is one audit row (`club.update`, no account, `details.by`
+`'vm-sync'`, `renamed: { from, to }`). A new column with a constant default: safe for the old
+backend; without it the sync renames nothing and the lists read `team_name` alone.
+
 Rosters sent ahead with a signature before db/048 lose it once, at their next send (the roster
 hash no longer has the `dob` key). Tests: `tests/migration048.pg.test.js`,
 `tests/scrubSheetBirthdates.pg.test.js`.

@@ -46,7 +46,7 @@ revoked or expired) that address gets 429 for the rest of the minute, whatever t
 | `GET` / `PUT /teams/:team/squad` | teams:write | The team's saved team (`{ players, staff }`) |
 | `GET /licences` | licences:write | The club's licence lists and people |
 | `PUT /licences/players` `scorers` `coaches` | licences:write | `{ people: [{ sv_number, last_name, first_name, gender }] }` replaces that list (a `dob` an older client still sends is accepted and dropped) |
-| `GET /matches?from&to&status&limit` | read | The club's matches (home or away), as the public API shows them |
+| `GET /matches?from&to&status&limit` | read | The club's matches (home or away), as the public API shows them: a match is the club's when its home or away team carries one of the club's team names, or a name the schedule sync renamed one from (a Romandie or Ticino team's German name; older matches keep it) |
 | `GET /matches/:id`, `/live`, `/stats` | read | One of the club's matches |
 
 **Games are read-only.** Official games come from the VolleyManager schedule; a club cannot create or

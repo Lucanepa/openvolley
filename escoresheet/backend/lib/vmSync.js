@@ -923,6 +923,15 @@ export function teamNameRenames(items) {
  * competitions not archived (and as the svrz name of one without it whose
  * name is the German one), and in the schedule's older rows. Idempotent.
  * A table that does not exist is left out. { clubTeams, savedTeams, games }
+ *
+ * LOG-24 R1: a club team keeps the name it is renamed from in former_names
+ * (db/059, oldest first, at most 10): the matches its scorers stored before
+ * carry that name, and the club API and the public ?club= list pick a club's
+ * matches by name (lib/publicApi.js clubTeamNames). Each renamed club team
+ * is one audit row in the same statement (club.update, no actor account,
+ * details { club_id, team_id, renamed: { from, to }, by: 'vm-sync' }). On a
+ * database without db/059 nothing is renamed (as before this fix): a club
+ * team is never renamed without keeping its former name.
  */
 export async function followTeamRenames(client, renames) {
   const out = { clubTeams: 0, savedTeams: 0, games: 0 }
@@ -937,9 +946,29 @@ export async function followTeamRenames(client, renames) {
       if (!['42P01', '42703'].includes(err?.code)) throw err
     }
   }
-  await run('clubTeams', `UPDATE public.club_teams ct SET team_name = x.shown FROM ${X}
-     WHERE lower(btrim(ct.team_name)) = x.de
-       AND NOT EXISTS (SELECT 1 FROM public.club_teams o WHERE lower(btrim(o.team_name)) = lower(x.shown))`)
+  try {
+    const { rows: [r] } = await client.query(`WITH old AS (
+         SELECT ct.id, ct.team_name AS was, x.shown FROM public.club_teams ct JOIN ${X} ON lower(btrim(ct.team_name)) = x.de
+          WHERE NOT EXISTS (SELECT 1 FROM public.club_teams o WHERE lower(btrim(o.team_name)) = lower(x.shown))),
+       renamed AS (
+         UPDATE public.club_teams ct
+            SET team_name = old.shown,
+                former_names = CASE WHEN old.was = ANY(ct.former_names) THEN ct.former_names
+                                    ELSE (ct.former_names || old.was)[greatest(1, cardinality(ct.former_names) - 8):] END
+           FROM old WHERE ct.id = old.id
+         RETURNING ct.id, ct.club_id, old.was, ct.team_name),
+       logged AS (
+         INSERT INTO public.audit_log (actor_id, action, details)
+         SELECT NULL, 'club.update', jsonb_build_object('club_id', club_id, 'team_id', id,
+                  'renamed', jsonb_build_object('from', was, 'to', team_name), 'by', 'vm-sync')
+           FROM renamed)
+       SELECT count(*)::int AS n FROM renamed`, params)
+    out.clubTeams += r?.n ?? 0
+  } catch (err) {
+    // no former_names (db/059 not run): rename nothing, the schedule's older rows included
+    if (err?.code === '42703') return out
+    if (err?.code !== '42P01') throw err
+  }
   const indoorOpen = 't.competition_id IN (SELECT c.id FROM public.competitions c WHERE c.sport = \'indoor\' AND NOT c.archived)'
   await run('savedTeams', `UPDATE public.competition_teams t SET svrz_team_name = x.shown FROM ${X}
      WHERE lower(btrim(t.svrz_team_name)) = x.de AND ${indoorOpen}`)

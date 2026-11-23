@@ -37,6 +37,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { LICENCE_LISTS } from './licences.js'
 import { accessFromRoles } from './access.js'
+import { clubTeamNames } from './publicApi.js'
 
 export const SCOPES = Object.freeze(['read', 'rosters:write', 'teams:write', 'licences:write'])
 export const WRITE_SCOPES = Object.freeze(['rosters:write', 'teams:write', 'licences:write'])
@@ -208,12 +209,9 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
   const MATCH = '([A-Za-z0-9_.:-]{1,200})'
   const q = (query, k) => { const v = query?.get?.(k); return v == null ? undefined : v }
 
-  // the club's team names (what matches carry as home / away)
-  async function teamNames (clubId, teamId = null) {
-    const { rows } = await pool.query(
-      `SELECT team_name FROM public.club_teams WHERE club_id = $1 ${teamId ? 'AND id = $2' : ''}`, teamId ? [clubId, teamId] : [clubId])
-    return rows.map((r) => r.team_name)
-  }
+  // the club's team names (what matches carry as home / away), with the names
+  // the schedule sync renamed them from (LOG-24: older matches keep those)
+  const teamNames = (clubId, teamId = null) => clubTeamNames(pool, clubId, teamId)
 
   // [method, regex, scope, handler(match, ctx), personal?]; ctx = { p: principal, query, body }
   // personal: the answer has names / licence numbers (read with that data's write scope, audited)
