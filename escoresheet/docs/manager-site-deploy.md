@@ -278,7 +278,10 @@ The desktop, Android and release builds are production builds.
    compose project, Postgres database, storage folder and secrets (`.env` from
    `deploy/env.example`), never a copy of production data with real people in
    it. Its `PUBLIC_ORIGINS` lists the dev sites and the previews
-   (`https://dev-app.openvolley.app,...,https://dev.openvolley-app.pages.dev,...`).
+   (`https://dev-app.openvolley.app,...,https://dev.openvolley-app.pages.dev,...`),
+   and its `.env` sets `OV_ALLOW_DEV_ORIGINS=1`: without it a cloud backend
+   drops every `dev-*.openvolley.app` and `*.pages.dev` entry at the start
+   (`backend/lib/cors.js` withoutDevOrigins, SEC-60).
    Mail off (no SMTP) or a test sender, and `MANAGER_URL` =
    `https://dev.openvolley-manager.pages.dev`, so its mails never link to
    production.
@@ -295,11 +298,13 @@ The desktop, Android and release builds are production builds.
    dev deployment of each project so it picks the variable up.
 4. **Production `.env`.** Remove every `https://dev-*.openvolley.app` and
    `https://*.pages.dev` origin from `PUBLIC_ORIGINS` on the production host
-   and restart the backend (`docker compose up -d ov-backend` re-reads `.env`);
-   the `content-security-policy` header of `https://backend.openvolley.app`
-   then no longer names them. The production backend still trusts
-   `https://dev-*.openvolley.app` through its `*.openvolley.app` rule
-   (`backend/lib/cors.js`): closing that is a backend change, not an `.env` one.
+   and restart the backend (`docker compose up -d ov-backend` re-reads `.env`).
+   A backend with SEC-60 already ignores them (and logs
+   `PUBLIC_ORIGINS: N dev-branch origin(s) NOT trusted` at every start until
+   they are gone): the `content-security-policy` header of
+   `https://backend.openvolley.app` names none of them, and a dev site gets no
+   CORS answer. There is no `*.openvolley.app` wildcard any more
+   (`backend/lib/cors.js`); never set `OV_ALLOW_DEV_ORIGINS` on production.
 
 ## Check after the change
 

@@ -44,7 +44,7 @@ import { createAttemptLimiter, createPinFailureBudget, pinScope, PIN_MATCH_FAILU
 import { accessForSport } from './lib/access.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
 import { renderLandingPage, landingMatchRow, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
-import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
+import { createOriginPolicy, parsePublicOrigins, withoutDevOrigins } from './lib/cors.js'
 import { pageContentSecurityPolicy } from './lib/pageCsp.js'
 import { LIVESCORE_JS, embedPage } from './lib/publicEmbed.js'
 import { createLiveStreams, listParams, MATCH_ID_RE as PUBLIC_MATCH_ID_RE } from './lib/publicApi.js'
@@ -116,8 +116,21 @@ if (DB_MODE && !TRUST_PROXY) {
   console.warn('⚠️  [Config] TRUST_PROXY=cloudflare without TRUST_PROXY_FROM: cf-connecting-ip is trusted from ANY peer. ' +
     'The origin port must be reachable only through the tunnel/proxy.')
 }
-// Extra trusted browser origins (comma list), on top of *.openvolley.app.
-const PUBLIC_ORIGINS = parsePublicOrigins(process.env.PUBLIC_ORIGINS)
+// Extra trusted browser origins (comma list), on top of the sites of
+// lib/cors.js. On the cloud without its dev-branch sites (SEC-60): dev builds
+// use the test backend (OV_ALLOW_DEV_ORIGINS=1 there). Dropped with a loud
+// line, never a stop: production's .env may still list them.
+const PUBLIC_ORIGINS = (() => {
+  const { kept, dropped } = withoutDevOrigins(parsePublicOrigins(process.env.PUBLIC_ORIGINS), {
+    isCloud: IS_CLOUD,
+    allowDev: process.env.OV_ALLOW_DEV_ORIGINS === '1'
+  })
+  if (dropped.length) {
+    console.error(`⚠️  [Config] PUBLIC_ORIGINS: ${dropped.length} dev-branch origin(s) NOT trusted on this cloud backend: ${dropped.join(', ')}. ` +
+      'Remove them from .env (dev builds use the test backend; a test backend sets OV_ALLOW_DEV_ORIGINS=1).')
+  }
+  return kept
+})()
 // Object storage root (bind mount with a .ovdata sentinel). STORAGE_DIR is the
 // older name used by lib/storage.js and its README; STORAGE_ROOT wins.
 const STORAGE_ROOT = process.env.STORAGE_ROOT || process.env.STORAGE_DIR || '/data/storage'

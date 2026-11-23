@@ -203,6 +203,9 @@ services:
       STORAGE_ROOT: /data/storage
       STATUS_DIR: /var/lib/openvolley-status
       PUBLIC_ORIGINS: ${PUBLIC_ORIGINS:?set PUBLIC_ORIGINS in .env}
+      # 1 on the test backend only: it trusts the dev sites in PUBLIC_ORIGINS,
+      # which production drops (SEC-60, env.example)
+      OV_ALLOW_DEV_ORIGINS: ${OV_ALLOW_DEV_ORIGINS:-}
       TRUST_PROXY: cloudflare
       # cf-connecting-ip only from the tunnel (its fixed address on ov-edge):
       # the other containers on ov-edge cannot set their own client address
