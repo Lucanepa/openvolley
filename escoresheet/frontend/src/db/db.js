@@ -396,6 +396,15 @@ db.version(23).stores({
   scoreboard_codes: 'matchId, relayKey'
 })
 
+// Version 24: the final uploads of a Global match that the server refused for
+// now (utils/globalPending.js; 2611 review, SR-4): { id, path, body,
+// notBefore, attempts, createdAt }, sent again once the server's Retry-After
+// has passed, for at most 7 days. A new table, no upgrade function: nothing
+// to migrate.
+db.version(24).stores({
+  global_pending: 'id, notBefore'
+})
+
 // Undo / delete / edit history of events, from Dexie hooks (see db/eventHistory.js)
 installEventHistoryHooks(db)
 

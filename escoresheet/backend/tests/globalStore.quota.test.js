@@ -14,6 +14,8 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { createGlobalStore, DEFAULTS } from '../lib/globalStore.js'
+import { QUOTA_DEFAULTS } from '../lib/globalMatches.js'
+import { createNetworkBudget } from '../lib/globalQuota.js'
 import { bootServer } from './helpers/e2eServer.js'
 
 const silent = { error() {}, warn() {}, log() {} }
@@ -36,7 +38,53 @@ describe('a network\'s share of the Global store', () => {
   it('defaults: 200 keys and 1 GiB a day per /64, 500 keys and 2 GiB per /56, 1000 keys and 2 GiB per /48 (an IPv4 /24)', () => {
     assert.deepEqual(DEFAULTS.perNetwork.map((l) => [l.name, l.max.keys, l.max.bytes]), [['/64', 200, 1024 * MiB], ['/56', 500, 2048 * MiB], ['/48', 1000, 2048 * MiB]])
     assert.deepEqual(DEFAULTS.perNetwork.map((l) => l.v4Bits), [32, 32, 24])
+    // an IPv4 address (a hall behind its NAT) gets its /24's share (SR-4)
+    assert.deepEqual(DEFAULTS.perNetwork.map((l) => l.v4Max ? [l.v4Max.keys, l.v4Max.bytes] : null), [[1000, 2048 * MiB], [1000, 2048 * MiB], null])
     assert.equal(DEFAULTS.evictShare, 0.1)
+  })
+
+  // 2611 review, SR-4: a one-day Global tournament of 10 courts x 9 matches
+  // behind the hall's single IPv4 address got 429 from about match 100 on
+  // (and, in the cloud copy, from about match 50): the IPv6 /64 tier's
+  // numbers applied to the whole hall. Its final uploads were never retried.
+  it('a tournament day of 100 matches behind one IPv4 address fits both stores\' defaults; an IPv6 /64 keeps its smaller share', () => {
+    const hallIp = '198.51.100.20'
+    const store = createNetworkBudget({ limits: DEFAULTS.perNetwork })
+    const cloud = createNetworkBudget({ limits: QUOTA_DEFAULTS.perNetwork })
+    for (let m = 0; m < 100; m++) {
+      // the store: the final backup and the PDFs of a match, about 10 MB
+      assert.equal(store.over(hallIp, { keys: 1, bytes: 10 * MiB }), null, `store, match ${m + 1}`)
+      store.charge(hallIp, { keys: 1, bytes: 10 * MiB })
+      // the cloud copy: 2-3 MB a match with its PDF
+      assert.equal(cloud.over(hallIp, { keys: 1, bytes: 3 * MiB }), null, `cloud copy, match ${m + 1}`)
+      cloud.charge(hallIp, { keys: 1, bytes: 3 * MiB })
+    }
+    // the same from one IPv6 /64 stops at its share, as before
+    const v6 = '2001:db8:77:1::5'
+    let refused = null
+    for (let m = 0; m < 100 && !refused; m++) {
+      refused = cloud.over(v6, { keys: 1, bytes: 3 * MiB })
+      if (!refused) cloud.charge(v6, { keys: 1, bytes: 3 * MiB })
+    }
+    assert.equal(refused?.limit, '/64')
+    assert.ok(refused.retryMs > 0 && refused.retryMs <= 24 * 3600 * 1000, 'says when that network\'s day ends')
+    // an IPv4-mapped IPv6 address is an IPv4 caller too
+    assert.equal(cloud.over('::ffff:192.0.2.21', { keys: 1, bytes: 300 * MiB }), null)
+    assert.equal(cloud.over('2001:db8:79:1::5', { keys: 1, bytes: 300 * MiB })?.limit, '/64')
+  })
+
+  it('a network\'s spent day answers 429 with the time until it ends (Retry-After)', async () => {
+    let t = Date.parse('2026-11-23T10:00:00Z')
+    const s = createGlobalStore({ root, logger: silent, statfs: plenty, minFreeBytes: 0, reserveBytes: 0, now: () => t,
+      perNetwork: [{ name: '/64', v6Bits: 64, max: { keys: 1 }, v4Max: { keys: 2 } }] })
+    assert.equal((await savePdf(s, key(), 1000, '203.0.113.60')).status, 200)
+    assert.equal((await savePdf(s, key(), 1000, '203.0.113.60')).status, 200, 'an IPv4 address: v4Max')
+    t += 3600 * 1000
+    const r = await savePdf(s, key(), 1000, '203.0.113.60')
+    assert.equal(r.status, 429)
+    assert.equal(r.retryAfter, 23 * 3600)
+    assert.equal((await savePdf(s, key(), 1000, '2001:db8:78:1::5')).status, 200)
+    assert.equal((await savePdf(s, key(), 1000, '2001:db8:78:1::6')).status, 429, 'an IPv6 /64: max')
   })
 
   it('fresh keys from one address stop at its daily share (429 OV_GLOBAL_QUOTA); another network saves; the next day it is back', async () => {
@@ -192,7 +240,9 @@ describe('POST /api/global/save passes the caller\'s address (server.js --local)
     const over = await save('2001:db8:5:9::1')
     assert.equal(over.status, 429)
     assert.equal((await over.json()).error.code, 'OV_GLOBAL_QUOTA')
-    assert.equal(over.headers.get('retry-after'), '3600')
+    // when the /56's day ends (it began with this test's first save), not a flat hour (SR-4)
+    const retry = Number(over.headers.get('retry-after'))
+    assert.ok(retry > 23 * 3600 && retry <= 24 * 3600, `Retry-After ${retry}`)
     assert.equal((await save('2001:db8:6::1')).status, 200)
   })
 })

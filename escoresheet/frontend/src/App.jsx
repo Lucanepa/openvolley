@@ -104,6 +104,7 @@ import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import ToolModeChooser from './components/ToolModeChooser'
 import { newGlobalKey, loadGlobal, isGlobalKey, markGlobalMatch, globalRestoreData, upgradeGlobalMatches } from './utils/globalCloud'
+import { startGlobalPendingRetry } from './utils/globalPending'
 import { useToolMode, getToolMode, setToolMode, toolModeLocked, impliedToolMode } from './utils/toolMode'
 import { Button, cn, FormError, Input, ScreenLoading } from './ui'
 import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isNativeApp, isStaticHost } from './utils/backendConfig'
@@ -1350,6 +1351,11 @@ export default function App() {
   // A Global match made before 2026-11-17 was test-flagged: a real match now
   // (utils/globalCloud upgradeGlobalMatches), once at start-up
   useEffect(() => { upgradeGlobalMatches(db).catch(() => {}) }, [])
+
+  // The final uploads of a Global match the server refused for now (a hall's
+  // daily share spent, a busy server): sent again after its Retry-After
+  // (utils/globalPending, 2611 review SR-4)
+  useEffect(() => startGlobalPendingRetry(), [])
 
   // Match End's live-state repair (utils/matchEndLiveState, fbf159bf) at
   // start-up, for every official match this device holds as ended. An app

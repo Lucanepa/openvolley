@@ -78,10 +78,12 @@ export const DEFAULTS = Object.freeze({
   retentionDays: 180,
   sweepEveryMs: 60 * 60 * 1000,
   // per network and day (SEC-17): a tournament day of 60 matches behind one
-  // address adds about 600 MB (the final backup and PDFs of each)
+  // address adds about 600 MB (the final backup and PDFs of each). One IPv4
+  // address is a whole sports hall behind its NAT: it gets its /24's share
+  // (v4Max; 2611 review, SR-4: 1 GiB was about 100 matches)
   perNetwork: Object.freeze([
-    Object.freeze({ name: '/64', v6Bits: 64, v4Bits: 32, max: Object.freeze({ keys: 200, bytes: 1024 * MiB }) }),
-    Object.freeze({ name: '/56', v6Bits: 56, v4Bits: 32, max: Object.freeze({ keys: 500, bytes: 2048 * MiB }) }),
+    Object.freeze({ name: '/64', v6Bits: 64, v4Bits: 32, max: Object.freeze({ keys: 200, bytes: 1024 * MiB }), v4Max: Object.freeze({ keys: 1000, bytes: 2048 * MiB }) }),
+    Object.freeze({ name: '/56', v6Bits: 56, v4Bits: 32, max: Object.freeze({ keys: 500, bytes: 2048 * MiB }), v4Max: Object.freeze({ keys: 1000, bytes: 2048 * MiB }) }),
     // an IPv6 /48 (a tunnel broker's has 256 /56s) and an IPv4 /24 (GCS-R4)
     Object.freeze({ name: '/48', v6Bits: 48, v4Bits: 24, max: Object.freeze({ keys: 1000, bytes: 2048 * MiB }) })
   ]),
@@ -309,7 +311,8 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
     const over = budget.over(ip, { keys: existing ? 0 : 1, bytes: adds })
     if (over) {
       logger.warn?.(`[Global] refusing a write: a network's daily ${over.what} budget (${over.limit}) is spent`)
-      return fail(429, 'OV_GLOBAL_QUOTA', 'Too much stored from this network today, try again later')
+      // when that network's day ends (the app keeps a refused final upload until then)
+      return { ...fail(429, 'OV_GLOBAL_QUOTA', 'Too much stored from this network today, try again later'), retryAfter: Math.ceil(over.retryMs / 1000) }
     }
     // the store's totals on every write: a key that grows counts as a new one
     // does; a full store makes room (evictFor) rather than refusing everyone

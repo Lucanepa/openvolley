@@ -44,6 +44,8 @@ describe('the ceilings from the environment', () => {
     assert.throws(() => cloudLimitsFromEnv({ OV_GLOBAL_CLOUD_WRITE_MB_DAY: '0' }), /OV_GLOBAL_CLOUD_WRITE_MB_DAY/)
     // the network tiers: an IPv6 /48 and an IPv4 /24 too (GCS-R4)
     assert.deepEqual(QUOTA_DEFAULTS.perNetwork.map((l) => [l.name, l.v6Bits, l.v4Bits]), [['/64', 64, 32], ['/56', 56, 32], ['/48', 48, 24]])
+    // an IPv4 address (a hall behind its NAT) gets its /24's share (SR-4)
+    assert.deepEqual(QUOTA_DEFAULTS.perNetwork.map((l) => l.v4Max ? [l.v4Max.keys, l.v4Max.bytes] : null), [[1000, 512 * MiB], [1000, 512 * MiB], null])
   })
 })
 
@@ -71,6 +73,8 @@ describe('Global cloud: the ceiling and the network budgets (SEC-01)', { skip: S
     assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429, 429, 429, 429, 429, 429, 429])
     const r = await gm.save(newKey(), '1234', { bundle: bundleOf(4 * KiB), summary }, attacker)
     assert.equal(r.body.error.code, 'OV_GLOBAL_QUOTA')
+    // when the network's day ends, for the app's retry of a refused final copy (SR-4)
+    assert.ok(r.retryAfter > 23 * 3600 && r.retryAfter <= 24 * 3600, `retryAfter ${r.retryAfter}`)
     assert.equal(await count(pool), 5, 'no row for a refused save')
     // a hall elsewhere: its own budget
     assert.equal((await gm.save(newKey(), '1234', { bundle: bundleOf(4 * KiB), summary }, { ip: '198.51.100.7' })).status, 200)

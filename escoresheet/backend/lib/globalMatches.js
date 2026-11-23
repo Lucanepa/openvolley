@@ -110,10 +110,13 @@ export const QUOTA_DEFAULTS = Object.freeze({
   evictShare: 0.1,
   evictPerSave: 50,
   // per network and day: keys = new copies, bytes = what they add to the
-  // table, headroom = what they grow while the table is above its ceiling
+  // table, headroom = what they grow while the table is above its ceiling.
+  // One IPv4 address is a whole sports hall behind its NAT: it gets its /24's
+  // share (v4Max), not an IPv6 /64's (2611 review, SR-4: 128 MiB was 50 to 85
+  // matches of a tournament day, at 2-3 MB a match with its PDF)
   perNetwork: Object.freeze([
-    Object.freeze({ name: '/64', v6Bits: 64, v4Bits: 32, max: Object.freeze({ keys: 200, bytes: 128 * MiB }) }),
-    Object.freeze({ name: '/56', v6Bits: 56, v4Bits: 32, max: Object.freeze({ keys: 500, bytes: 256 * MiB }) }),
+    Object.freeze({ name: '/64', v6Bits: 64, v4Bits: 32, max: Object.freeze({ keys: 200, bytes: 128 * MiB }), v4Max: Object.freeze({ keys: 1000, bytes: 512 * MiB }) }),
+    Object.freeze({ name: '/56', v6Bits: 56, v4Bits: 32, max: Object.freeze({ keys: 500, bytes: 256 * MiB }), v4Max: Object.freeze({ keys: 1000, bytes: 512 * MiB }) }),
     Object.freeze({ name: '/48', v6Bits: 48, v4Bits: 24, max: Object.freeze({ keys: 1000, bytes: 512 * MiB, headroom: 32 * MiB }) })
   ]),
   // the WAL waiting for the next backup run (walGuard, server.js): beyond
@@ -426,7 +429,8 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
     }
     if (over) {
       logger.warn?.(`[Global cloud] refusing a save: a network's daily ${over.what} budget (${over.limit}) is spent`)
-      return fail(429, 'OV_GLOBAL_QUOTA', 'Too much saved from this network today, try again later')
+      // when that network's day ends (the app keeps a refused final copy until then)
+      return { ...fail(429, 'OV_GLOBAL_QUOTA', 'Too much saved from this network today, try again later'), retryAfter: Math.ceil(over.retryMs / 1000) }
     }
     if (isNew && (u.bytes + newBytes > o.maxTotalBytes || u.rows + 1 > o.maxRows)) {
       const after = await evictFor(u, newBytes, creatorNetwork(ip))

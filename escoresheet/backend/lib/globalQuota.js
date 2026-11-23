@@ -88,14 +88,22 @@ export function addressPrefix(ip, v6Bits = 64, v4Bits = 32) {
 }
 
 /**
- * Per-network daily budgets. limits: [{ name, v6Bits, v4Bits = 32, max: { <counter>: n } }]
- * (a counter without a positive max is not limited). over(ip, amounts) says
- * which limit the amounts would pass (null: none); charge(ip, amounts) counts
- * them. No ip (a caller that knows none): never over, nothing counted.
+ * Per-network daily budgets. limits: [{ name, v6Bits, v4Bits = 32, max: { <counter>: n }, v4Max? }]
+ * (a counter without a positive max is not limited). `v4Max`, when given,
+ * replaces `max` for an IPv4 caller (an IPv4-mapped IPv6 one too): one IPv4
+ * address is a whole venue behind its NAT, so the IPv6 /64 and /56 limits
+ * would cap a sports hall's tournament day (2611 review, SR-4: about 50 to
+ * 85 matches). over(ip, amounts) says which limit the amounts would pass
+ * (null: none; { limit, what, retryMs }: retryMs until that network's window
+ * ends); charge(ip, amounts) counts them. No ip (a caller that knows none):
+ * never over, nothing counted.
  */
 export function createNetworkBudget({ limits = [], windowMs = DAY_MS, maxEntries = 50_000, now = Date.now } = {}) {
   const entries = new Map() // `${name}\n${prefix}` -> { start, counts: {} }
   const idOf = (l, ip) => `${l.name}\n${addressPrefix(ip, l.v6Bits ?? 64, l.v4Bits ?? 32)}`
+  // an IPv4 caller: its prefix has no ':' (addressPrefix maps IPv4-mapped IPv6 to IPv4)
+  const isV4 = (ip) => { const p = addressPrefix(ip, 128, 32); return !p.includes(':') && isIPv4(p) }
+  const maxOf = (l, ip) => (l.v4Max && isV4(ip) ? l.v4Max : l.max)
 
   function live(id, t) {
     const e = entries.get(id)
@@ -109,10 +117,11 @@ export function createNetworkBudget({ limits = [], windowMs = DAY_MS, maxEntries
     const t = now()
     for (const l of limits) {
       const e = live(idOf(l, ip), t)
+      const lmax = maxOf(l, ip)
       for (const [what, n] of Object.entries(amounts)) {
-        const max = Number(l.max?.[what])
+        const max = Number(lmax?.[what])
         if (!(n > 0) || !(max > 0)) continue
-        if ((e?.counts[what] ?? 0) + n > max) return { limit: l.name, what }
+        if ((e?.counts[what] ?? 0) + n > max) return { limit: l.name, what, retryMs: e ? Math.max(1000, e.start + windowMs - t) : windowMs }
       }
     }
     return null
