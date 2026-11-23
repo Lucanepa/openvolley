@@ -31,7 +31,9 @@ describe('MatchSetup', () => {
 
   it('confirmMatchInfo runs once at a time, and the button is disabled meanwhile', () => {
     expect(ms).toMatch(/if \(confirmingMatchInfoRef\.current\) return/)
-    expect(ms).toContain('disabled={!canConfirmMatchInfo || confirmingMatchInfo}')
+    // canCreateMatch = the match info AND the scorer's licence / date of birth (owner 23.11.2026)
+    expect(ms).toContain('disabled={!canCreateMatch || confirmingMatchInfo}')
+    expect(ms).toContain('const canCreateMatch = canConfirmMatchInfo && !scorerDobMissing')
   })
 
   it('the official check before creating waits at most OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS', () => {
