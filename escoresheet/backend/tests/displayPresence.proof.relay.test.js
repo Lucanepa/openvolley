@@ -4,8 +4,11 @@
  * the room: by the room's scoreboard code, or a PIN or match token of the
  * match. Room keys are public on the cloud (/api/match/list, the public API):
  * any socket naming itself a display set the scorer's "Scoreboard settings"
- * to a LAN page of its choice (audit 2611 SEC-45). A venue relay keeps the
- * LAN rule (tests/displayPresence.relay.test.js, the shared contract).
+ * to a LAN page of its choice (audit 2611 SEC-45). A display behind the same
+ * public address as the room's scorer counts too: Point Hub on "OpenVolley
+ * online" follows the hall's cloud match with no PIN or code (review of the
+ * SEC-45 fix). A venue relay keeps the LAN rule
+ * (tests/displayPresence.relay.test.js, the shared contract).
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -24,8 +27,8 @@ describe('display presence: the cloud relay asks the display to prove the room',
     await srv?.stop()
   })
   let ipSeq = 10
-  const open = async () => {
-    const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': `203.0.113.${ipSeq++}` } })
+  const open = async (ip = `203.0.113.${ipSeq++}`) => {
+    const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': ip } })
     sockets.push(c)
     return c
   }
@@ -85,6 +88,25 @@ describe('display presence: the cloud relay asks the display to prove the room',
     board.send({ type: 'subscribe-match', matchId: room, device: 'display', settingsUrl: BOARD_URL, pin: PINS.homeTeamPin })
     await scorer.waitFor(() => displaysOf(scorer, room).length >= 3, 5000, 'display back')
     assert.deepEqual(displaysOf(scorer, room).at(-1), [true, BOARD_URL])
+  })
+
+  it('a display behind the scorer\'s public address counts without code or PIN (Point Hub following the hall\'s cloud match)', async () => {
+    const room = `proof-hall-${Date.now().toString(36)}`
+    const hallIp = '198.51.100.140'
+    const scorer = await open(hallIp)
+    sync(scorer, room)
+    await scorer.waitFor((m) => m.type === 'display-presence' && m.matchId === room, 5000, 'first display-presence')
+    // Point Hub's auto-follow: subscribe-match {matchId, device, settingsUrl}, nothing else
+    const board = await open(hallIp)
+    board.send({ type: 'subscribe-match', matchId: room, device: 'display', settingsUrl: BOARD_URL })
+    await scorer.waitFor(() => displaysOf(scorer, room).length >= 2, 5000, 'display-presence')
+    assert.deepEqual(displaysOf(scorer, room), [[false, null], [true, BOARD_URL]])
+    // the same message from another address still counts nothing (its page goes nowhere)
+    const fake = await open('198.51.100.141')
+    fake.send({ type: 'subscribe-match', matchId: room, device: 'display', settingsUrl: ROUTER_URL })
+    await quiet(fake, scorer)
+    assert.deepEqual(displaysOf(scorer, room).at(-1), [true, BOARD_URL])
+    assert.ok(!scorer.raw.some((t) => t.includes('192.168.1.1')), 'the page reached the scorer')
   })
 
   it('a display that follows by the room\'s scoreboard code counts, with its page', async () => {

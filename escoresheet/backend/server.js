@@ -33,7 +33,7 @@ import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // statically. It is only *instantiated* in DATABASE_URL mode.
 import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch, jsonTooDeep } from './lib/realtimeHub.js'
 // What anonymous readers (live sockets, /api/db without a session) may see.
-import { projectLiveRow, projectLiveGrantedRow, projectLiveSummaryRow, hasAnonPolicy, anonSelectCheck, relayBundleView, relayMatchView, relayLiveStateView, publicLiveState, coveredLiveLineupTeam, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, withoutDobColumns, dobColumnFilter, DOB_COLUMNS, OFFICIALS_ONLY_COLUMNS, withoutColumns, columnFilterOf } from './lib/publicColumns.js'
+import { projectLiveRow, projectLiveGrantedRow, projectLiveSummaryRow, hasAnonPolicy, anonSelectCheck, relayBundleView, relayMatchView, relayLiveStateView, publicLiveState, coveredLiveLineupTeam, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, isPublicIp, projectAnonDbRows, projectNonOwnerRows, withoutDobColumns, dobColumnFilter, DOB_COLUMNS, OFFICIALS_ONLY_COLUMNS, withoutColumns, columnFilterOf } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
 import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, isConnectionPinMatch, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
 // Bench requests (line-up, time-out, substitution) from a bench tablet to the scorer
@@ -7391,12 +7391,19 @@ function updateScorerPresence(matchId) {
 //
 // The cloud relay counts a display (and passes its page on) only for a room
 // it proved: it follows the room by its scoreboard code, or proved a PIN or
-// match token of the match (displayProvedRoom). Room keys are public there
-// (/api/match/list, the public API): any socket naming itself a display set
-// the scorer's "Scoreboard settings" to a LAN page of its choice (audit 2611
-// SEC-45). A venue relay keeps the rule of every LAN relay (lanRelayCore,
-// relay.rs): any display in the room counts. The scorer's app shows the
-// page's host and asks before it opens it, on every relay.
+// match token of the match (displayProvedRoom), or it is behind the same
+// public address as the room's scorer (displayAtScorersVenue: the hall's
+// NAT). Room keys are public there (/api/match/list, the public API): any
+// socket naming itself a display set the scorer's "Scoreboard settings" to a
+// LAN page of its choice (audit 2611 SEC-45). Point Hub with "OpenVolley
+// online" follows the hall's cloud match by itself with no PIN or code
+// (followCloudScorer: the match /api/match/list lists to the hall, by the
+// same address rule), as the boards in the halls do today: the address rule
+// keeps their "Scoreboard settings" row (review of the SEC-45 fix). A venue
+// relay keeps the rule of every LAN relay (lanRelayCore, relay.rs): any
+// display in the room counts. The scorer's app shows the page's host and
+// asks before it opens it, on every relay (the guard against a phone on the
+// hall's Wi-Fi).
 let displaySeq = 0
 const DISPLAY_NEEDS_PROOF = IS_CLOUD
 
@@ -7415,19 +7422,29 @@ function noteDisplay(clientInfo, rawUrl) {
  */
 function displayProvedRoom(clientInfo, matchId, entry = activeMatches.get(matchId)) {
   if (clientInfo.codeRooms.has(matchId) || clientInfo.ownedMatches.has(matchId)) return true
-  const a = clientInfo.matchAccess.get(matchId)
-  if (!a || !entry?.match) return false
-  if (a.token && tokenGrantsRelay(a.token, matchId, entry.match)) return true
-  return a.verified === true && !!a.pin && pinGrantsAccess(entry.match, a.pin)
+  return accessProvedRoom(clientInfo, matchId, entry)
 }
 
-/** The room's display state: its open display sockets (in it or waiting for it; on the cloud, that proved it). */
+/**
+ * Is this display behind the same public address (bucket) as a scoring
+ * socket of the room (`scorerKeys`: their ipKeys)? The rule of
+ * /api/match/list (cloudListsMatch): the venue's own boards behind its NAT.
+ */
+function displayAtScorersVenue(clientInfo, scorerKeys) {
+  return isPublicIp(clientInfo.ip) && scorerKeys.has(clientInfo.ipKey)
+}
+
+/** The room's display state: its open display sockets (in it or waiting for it; on the cloud, that proved it or share its scorer's address). */
 function displayStateIn(matchId) {
   const displays = []
   const entry = activeMatches.get(matchId)
+  let scorerKeys = null
   for (const c of connections.values()) {
     if (!c.display || c.device !== DISPLAY_DEVICE || c.ws.readyState !== 1 || !c.rooms.has(matchId)) continue
-    if (DISPLAY_NEEDS_PROOF && !displayProvedRoom(c, matchId, entry)) continue
+    if (DISPLAY_NEEDS_PROOF && !displayProvedRoom(c, matchId, entry)) {
+      if (!scorerKeys) scorerKeys = new Set(ownersOf(matchId).map((o) => o.ipKey))
+      if (!displayAtScorersVenue(c, scorerKeys)) continue
+    }
     displays.push(c.display)
   }
   return displayStateOf(displays)
