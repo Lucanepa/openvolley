@@ -15,7 +15,11 @@
 --      b. else the creator of its oldest team, if it holds the role.
 --    The NOTICEs count them, and the beach competitions left without an
 --    owner; those stay open to every beach competition manager (as before)
---    unless the owner decides they are the admins' only.
+--    unless the owner decides they are the admins' only. A second NOTICE
+--    counts the beach competitions whose owner is not a beach competition
+--    manager (an admin created it, or its creator no longer holds the role):
+--    from this migration on only the admins change those, so the lead sees
+--    how many change hands before the deploy.
 -- 2. public.beach_tournament_invites: a co-manager is invited by address and
 --    becomes one only when that beach competition manager accepts
 --    (lib/beachTournaments.js). Before, the address was looked up at once and
@@ -64,6 +68,8 @@ DECLARE
   from_teams int := 0;
   without    int := 0;
   total      int := 0;
+  by_admin   int := 0;
+  by_other   int := 0;
 BEGIN
   -- a. the latest saved-teams entry of the audit log naming the competition
   WITH beach_cm AS (
@@ -101,6 +107,20 @@ BEGIN
     FROM public.competitions WHERE sport = 'beach';
   RAISE NOTICE 'db/055: % beach competition(s); owner from the audit log: %, from the first team: %, still without an owner: %',
     total, from_audit, from_teams, without;
+
+  -- owned, but not by a beach competition manager: only the admins change them
+  SELECT count(*) FILTER (WHERE adm.is_admin), count(*) FILTER (WHERE NOT adm.is_admin)
+    INTO by_admin, by_other
+    FROM public.competitions c
+   CROSS JOIN LATERAL (
+     SELECT EXISTS (SELECT 1 FROM public.profiles p, unnest(coalesce(p.roles, '{}'::text[])) r(role)
+                     WHERE p.user_id = c.created_by AND lower(trim(r.role)) IN ('admin', 'super_admin')) AS is_admin
+   ) adm
+   WHERE c.sport = 'beach' AND c.created_by IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.profiles p, unnest(coalesce(p.roles, '{}'::text[])) r(role)
+                      WHERE p.user_id = c.created_by AND lower(trim(r.role)) = 'beach:competition_manager');
+  RAISE NOTICE 'db/055: % beach competition(s) owned by an account without beach:competition_manager (an admin: %, another account: %); only the admins change them',
+    by_admin + by_other, by_admin, by_other;
 END $$;
 
 -- 2. co-manager invitations ------------------------------------------------------

@@ -6,7 +6,9 @@
  * latest saved-teams entry naming it, by an account that still holds
  * beach:competition_manager), else from its oldest team's creator with the
  * role; an indoor competition, an owned one and one without such an account
- * stay as they are; the NOTICE counts them. The co-manager invitations table
+ * stay as they are; the NOTICE counts them, and a second NOTICE the beach
+ * competitions owned by an account without the role (an admin's, or a
+ * creator who lost it), which only the admins change. The co-manager invitations table
  * (lower-case address, one per tournament and address, gone with the
  * tournament) and the claimed-by index. A second run changes nothing.
  * Made-up accounts only.
@@ -84,6 +86,12 @@ describe('db/055 (beach competition owners, co-manager invitations)', { skip: SK
     await audit(uid(1), 'saved_teams.roster', indoor, '2026-06-01T10:00:00Z')
     const other = await comp(6, 'beach', null) // another competition's entries do not count
     await audit(uid(1), 'saved_teams.roster', fromAudit, '2026-04-01T10:00:00Z')
+    // owned, but not by a beach competition manager (R2): an admin's, and one
+    // whose creator no longer holds the role; only the admins change them, the
+    // second NOTICE counts them
+    const byAdmin = await comp(7, 'beach', uid(4))
+    const roleLost = await comp(8, 'beach', uid(3))
+    await audit(uid(1), 'saved_teams.roster', byAdmin, '2026-06-01T10:00:00Z')
 
     notices.length = 0
     await raw.query(FILE_055)
@@ -93,7 +101,10 @@ describe('db/055 (beach competition owners, co-manager invitations)', { skip: SK
     assert.equal(await owner(owned), uid(1))
     assert.equal(await owner(indoor), null)
     assert.equal(await owner(other), null)
-    assert.ok(notices.some((m) => m === 'db/055: 5 beach competition(s); owner from the audit log: 1, from the first team: 1, still without an owner: 2'), notices.join('\n'))
+    assert.equal(await owner(byAdmin), uid(4), 'an owned competition keeps its owner')
+    assert.equal(await owner(roleLost), uid(3))
+    assert.ok(notices.some((m) => m === 'db/055: 7 beach competition(s); owner from the audit log: 1, from the first team: 1, still without an owner: 2'), notices.join('\n'))
+    assert.ok(notices.some((m) => m === 'db/055: 2 beach competition(s) owned by an account without beach:competition_manager (an admin: 1, another account: 1); only the admins change them'), notices.join('\n'))
 
     // the foreign key: SET NULL with the account
     const fk = await one(`SELECT confdeltype FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
@@ -105,7 +116,8 @@ describe('db/055 (beach competition owners, co-manager invitations)', { skip: SK
     await raw.query(FILE_055)
     assert.equal(await owner(fromAudit), uid(2))
     assert.equal(await owner(none), null)
-    assert.ok(notices.some((m) => m === 'db/055: 5 beach competition(s); owner from the audit log: 0, from the first team: 0, still without an owner: 2'), notices.join('\n'))
+    assert.ok(notices.some((m) => m === 'db/055: 7 beach competition(s); owner from the audit log: 0, from the first team: 0, still without an owner: 2'), notices.join('\n'))
+    assert.ok(notices.some((m) => m === 'db/055: 2 beach competition(s) owned by an account without beach:competition_manager (an admin: 1, another account: 1); only the admins change them'), notices.join('\n'))
   })
 
   it('the invitations table: lower-case addresses, one per tournament and address, gone with the tournament', async () => {
