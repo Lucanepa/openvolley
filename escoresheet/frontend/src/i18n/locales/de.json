@@ -501,6 +501,9 @@
       "reviewSetCaptainLibero": "Kapitän- und Libero-Bezeichnungen festlegen"
     },
     "coinToss": "Auslosung",
+    "numberNeeded": "Trikotnummer für die Auslosung nötig",
+    "numbersMissingNote_one": "{{count}} Spieler hat noch keine Trikotnummer: gespeichert, aber die Auslosung wartet, bis jeder eine hat.",
+    "numbersMissingNote_other": "{{count}} Spieler haben noch keine Trikotnummer: gespeichert, aber die Auslosung wartet, bis jeder eine hat.",
     "chooseTeamColor": "Farbe für Team {{team}} wählen",
     "chooseTeamColour": "Wähle {{team}} Teamfarbe",
     "customColour": "Eigene Farbe",
@@ -3485,6 +3488,8 @@
     "awayTwoLiberosRequired": "Gast: 2 Liberos nötig bei mehr als 12 Spielern",
     "homeTwoLiberosRequired": "Heim: 2 Liberos nötig bei mehr als 12 Spielern",
     "homeRosterTooMany": "Heim: höchstens {{max}} Spielende im Kader (jetzt {{count}})",
+    "playersWithoutNumber_one": "{{team}}: {{count}} Spieler ohne Trikotnummer",
+    "playersWithoutNumber_other": "{{team}}: {{count}} Spieler ohne Trikotnummer",
     "awayRosterTooMany": "Gast: höchstens {{max}} Spielende im Kader (jetzt {{count}})"
   },
   "matchEnd": {

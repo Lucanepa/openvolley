@@ -7,7 +7,8 @@
  *    (the whole object queued);
  *  - the libero select changes the editor only: Back discards it, Confirm
  *    writes it;
- *  - Confirm refuses a named player without a shirt number;
+ *  - Confirm saves a named player without a shirt number (the coin toss
+ *    waits for the number; owner 23.11.2026);
  *  - a sent-ahead roster used in the editor is stored and marked used only by
  *    the editor's Save; Back loses nothing;
  *  - Back after a pad signature given for an edited roster clears it, as the
@@ -251,17 +252,22 @@ describe('Match Setup roster editor: dates of birth on 1 January', () => {
 })
 
 describe('Match Setup roster editor: Confirm', () => {
-  it('refuses a named player without a shirt number', async () => {
+  it('saves a named player without a shirt number: stored and sent with number null (the coin toss waits for it)', async () => {
     storeMatch()
     render(<Setup matchId={1} />)
     await openEditor(0, 5)
     addPlayer({ last: 'Foxtrot', first: 'F' })
     await waitFor(() => expect(editorRows()).toHaveLength(6))
     confirm()
-    await screen.findByText(/matchSetup.validation.fixIssues/)
-    await sleep(50)
-    expect(queued().filter((j) => j.payload?.players_home)).toHaveLength(0)
-    expect(teamPlayers(11)).toHaveLength(5)
+    const job = await waitFor(() => {
+      const j = queued().find((x) => x.payload?.players_home)
+      expect(j).toBeTruthy()
+      return j
+    })
+    expect(screen.queryByText(/matchSetup.validation.fixIssues/)).toBeNull()
+    expect(job.payload.players_home.find((p) => p.last_name === 'Foxtrot')).toMatchObject({ number: null, first_name: 'F' })
+    expect(teamPlayers(11)).toHaveLength(6)
+    expect(teamPlayers(11).find((p) => p.lastName === 'Foxtrot').number).toBe(null)
   })
 
   it('sends no partial signatures object: the other team\'s signatures stay', async () => {

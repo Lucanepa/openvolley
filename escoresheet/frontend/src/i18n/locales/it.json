@@ -508,6 +508,9 @@
       "reviewSetCaptainLibero": "Imposta le designazioni capitano e libero"
     },
     "coinToss": "Sorteggio",
+    "numberNeeded": "Numero di maglia necessario per il sorteggio",
+    "numbersMissingNote_one": "{{count}} giocatore non ha ancora un numero di maglia: è salvato, ma il sorteggio aspetta finché ognuno ne ha uno.",
+    "numbersMissingNote_other": "{{count}} giocatori non hanno ancora un numero di maglia: sono salvati, ma il sorteggio aspetta finché ognuno ne ha uno.",
     "chooseTeamColor": "Scegli colore squadra {{team}}",
     "chooseTeamColour": "Scegliere {{team}} colore della squadra",
     "customColour": "Colore personalizzato",
@@ -3761,6 +3764,8 @@
     "awayTwoLiberosRequired": "Ospite: 2 liberi richiesti per più di 12 giocatori",
     "homeTwoLiberosRequired": "Casa: 2 liberi richiesti per più di 12 giocatori",
     "homeRosterTooMany": "Casa: al massimo {{max}} giocatori nella rosa (ora {{count}})",
+    "playersWithoutNumber_one": "{{team}}: {{count}} giocatore senza numero di maglia",
+    "playersWithoutNumber_other": "{{team}}: {{count}} giocatori senza numero di maglia",
     "awayRosterTooMany": "Ospite: al massimo {{max}} giocatori nella rosa (ora {{count}})"
   },
   "tabletStatus": {

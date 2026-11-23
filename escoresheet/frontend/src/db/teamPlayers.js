@@ -7,24 +7,37 @@ import { isSeedTestTeam, withoutSeedTestRoster } from '../domain/testRoster'
 
 const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
 
+const hasNumber = (p) => p?.number !== null && p?.number !== undefined && p?.number !== ''
+const sameNumber = (a, b) => hasNumber(a) && hasNumber(b) && Number(a.number) === Number(b.number)
+
 /**
- * The stored players as a roster editor's Confirm leaves them: a player of
- * the same shirt number is updated, a new number added, the rest removed.
- * An emptied roster removes them all (kept, they came back as the team's
- * roster wherever the stored players are read, while the editor showed 0).
- * Rows without a number are skipped (the editor refuses a named one).
+ * The stored players as a roster editor's Confirm leaves them: a roster
+ * entry is the stored row of its id (an older row without one in the form:
+ * the row of its shirt number), updated; a new one is added; the rows left
+ * out are removed. A player without a shirt number is stored too (number
+ * null): the coin toss waits for the numbers, the roster never loses them
+ * (owner 23.11.2026: an uploaded roster without numbers was gone after
+ * Confirm). An emptied roster removes every row. Rows without a name and a
+ * number are skipped.
  * @param {number} teamId
- * @param {object[]} roster MatchSetup roster entries
+ * @param {object[]} roster MatchSetup roster entries ({ id?, number, lastName, ... })
+ * @returns {Promise<Array<number|null>>} the stored id of each entry (null: skipped)
  */
 export async function writeTeamPlayers(teamId, roster = []) {
-  if (teamId === null || teamId === undefined) return
+  if (teamId === null || teamId === undefined) return []
+  const ids = []
   await db.transaction('rw', db.players, async () => {
     const existing = await db.players.where('teamId').equals(teamId).toArray()
-    const numbers = new Set((roster || []).map(p => p.number).filter(n => n != null))
+    const kept = new Set()
+    const free = (ep) => !kept.has(ep.id)
     for (const p of roster || []) {
-      if (!p.number) continue
+      if (!hasNumber(p) && !String(p?.lastName || '').trim() && !String(p?.firstName || '').trim()) {
+        ids.push(null)
+        continue
+      }
       const fields = {
-        name: `${p.lastName} ${p.firstName}`,
+        number: hasNumber(p) ? p.number : null,
+        name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
         lastName: p.lastName,
         firstName: p.firstName,
         dob: p.dob || null,
@@ -32,14 +45,23 @@ export async function writeTeamPlayers(teamId, roster = []) {
         isCaptain: !!p.isCaptain,
         isLfp: !!p.isLfp
       }
-      const found = existing.find(ep => ep.number === p.number)
-      if (found) await db.players.update(found.id, fields)
-      else await db.players.add({ teamId, number: p.number, ...fields, role: null, createdAt: new Date().toISOString() })
+      const found = (p.id != null && existing.find(ep => ep.id === p.id && free(ep))) ||
+        existing.find(ep => free(ep) && sameNumber(ep, p))
+      if (found) {
+        await db.players.update(found.id, fields)
+        kept.add(found.id)
+        ids.push(found.id)
+      } else {
+        const id = await db.players.add({ teamId, ...fields, role: null, createdAt: new Date().toISOString() })
+        kept.add(id)
+        ids.push(id)
+      }
     }
     for (const ep of existing) {
-      if (!numbers.has(ep.number)) await db.players.delete(ep.id)
+      if (!kept.has(ep.id)) await db.players.delete(ep.id)
     }
   })
+  return ids
 }
 
 /**

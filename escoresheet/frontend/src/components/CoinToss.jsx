@@ -11,7 +11,7 @@ import SignaturePad from './SignaturePad'
 import { saveMatchSignature, clearMatchSignatures } from '../utils/saveSignature'
 import { rosterSignatureKey, staleSignatureFields, signaturesClearedRemark, signatureReplacedRemark } from '../domain/rosterSignatures'
 import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD as SIGNATURE_FIELD_OF_ROLE } from '../domain/phoneSignature'
-import { coinTossConfirmIssues } from '../domain/coinTossChecks'
+import { coinTossConfirmIssues, rosterNumberIssues } from '../domain/coinTossChecks'
 import { coinTossChoiceOf, coinTossDraftOf } from '../domain/coinTossDraft'
 import Modal from './Modal'
 import MenuList from './MenuList'
@@ -362,12 +362,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         // Get existing players
         const existingPlayers = await db.players.where('teamId').equals(teamId).toArray()
 
-        // Update or add players
+        // Update or add players: by shirt number, else by name (two players
+        // without a number are not the same player: null === null matched
+        // every numberless player to the first one)
+        const sameNumber = (a, b) => a.number != null && a.number !== '' && b.number != null && b.number !== '' && Number(a.number) === Number(b.number)
+        const samePlayer = (a, b) => sameNumber(a, b) || (a.lastName === b.lastName && a.firstName === b.firstName)
         for (const player of roster) {
-          const existingPlayer = existingPlayers.find(ep =>
-            ep.number === player.number ||
-            (ep.lastName === player.lastName && ep.firstName === player.firstName)
-          )
+          const existingPlayer = existingPlayers.find(ep => samePlayer(ep, player))
 
           if (existingPlayer) {
             await db.players.update(existingPlayer.id, {
@@ -393,10 +394,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
         // Delete players that are no longer in roster
         for (const ep of existingPlayers) {
-          const stillExists = roster.some(p =>
-            p.number === ep.number ||
-            (p.lastName === ep.lastName && p.firstName === ep.firstName)
-          )
+          const stillExists = roster.some(p => samePlayer(ep, p))
           if (!stillExists) {
             await db.players.delete(ep.id)
           }
@@ -1302,12 +1300,24 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   async function confirmCoinToss() {
     console.log('[CoinToss] confirmCoinToss called, match:', { id: matchId, test: match?.test })
 
+    // The checks (domain/coinTossChecks), in the scorer's language
+    const teamWord = { home: t('common.home'), away: t('common.away') }
+    const issueText = ({ key, params }) => t(key, params?.team ? { ...params, team: teamWord[params.team] } : params)
+
+    // A test or easy match skips the checks but the shirt numbers: players
+    // are saved without one, the line-up and the sheet go by numbers
+    if (match?.test) {
+      const numberErrors = rosterNumberIssues({ homeRoster, awayRoster }).map(issueText)
+      if (numberErrors.length > 0) {
+        setNoticeModal({ message: numberErrors.join('\n') })
+        return
+      }
+    }
+
     // Validation checks (skip for test matches)
     if (!match?.test) {
-      // The checks (domain/coinTossChecks), in the scorer's language
-      const teamWord = { home: t('common.home'), away: t('common.away') }
       const validationErrors = coinTossConfirmIssues({ match, home, away, homeRoster, awayRoster, benchHome, benchAway })
-        .map(({ key, params }) => t(key, params?.team ? { ...params, team: teamWord[params.team] } : params))
+        .map(issueText)
 
       // Show validation errors if any
       if (validationErrors.length > 0) {

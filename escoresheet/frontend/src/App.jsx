@@ -127,6 +127,7 @@ import { useSystemBarsHidden } from './utils/nativeSystemBars'
 import { generateSecurePin } from './utils/stringUtils'
 import { setErrorView } from './utils/errorReport'
 import { benchPlays } from './db/matchRepository'
+import { rosterNumberIssues } from './domain/coinTossChecks'
 
 function readStoredDisplayMode() {
   try {
@@ -3410,11 +3411,18 @@ export default function App() {
 
       // PIN check removed - no longer required
 
-      // Check match state to determine where to continue
+      // Check match state to determine where to continue. A player without a
+      // shirt number (saved so) keeps the match in Match setup: the coin toss
+      // waits for the numbers (owner 23.11.2026)
+      const [storedHome, storedAway] = await Promise.all([
+        existing.homeTeamId ? db.players.where('teamId').equals(existing.homeTeamId).toArray() : [],
+        existing.awayTeamId ? db.players.where('teamId').equals(existing.awayTeamId).toArray() : []
+      ])
       const isMatchSetupComplete = existing.homeCoachSignature &&
         existing.homeCaptainSignature &&
         existing.awayCoachSignature &&
-        existing.awayCaptainSignature
+        existing.awayCaptainSignature &&
+        rosterNumberIssues({ homeRoster: storedHome, awayRoster: storedAway }).length === 0
 
       // An easy match has no Match Setup: the coin toss until it is confirmed,
       // then the scoreboard or Match End as any test match
