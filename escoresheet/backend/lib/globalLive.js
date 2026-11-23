@@ -241,7 +241,7 @@ export function createGlobalLive({
       }
       if (entry.courts.size === 0) codes.delete(code)
     }
-    // a room whose court is gone (another room took it over, or it went)
+    // a room whose court went
     for (const [room, b] of rooms) if (!codes.get(b.code)?.courts.has(b.id)) rooms.delete(room)
     for (const [k, s] of sources) if (t - s.start > HOUR_MS) sources.delete(k)
   }
