@@ -89,6 +89,13 @@ package() {
   install -d "$pkgdir/usr/lib/$_pkgname"
   echo aur > "$pkgdir/usr/lib/$_pkgname/package-manager"
   chmod 644 "$pkgdir/usr/lib/$_pkgname/package-manager"
+  # The tablets' firewalld zone (src-tauri netshare/nm_settings.rs TABLET_ZONE):
+  # on a firewalld system the app starts the tablet Wi-Fi only into it, never
+  # into "trusted" (SEC-53). A release .deb without it (older) has none.
+  if [[ -f deb/usr/lib/firewalld/zones/openbeach-tablets.xml ]]; then
+    install -Dm644 deb/usr/lib/firewalld/zones/openbeach-tablets.xml \
+      "$pkgdir/usr/lib/firewalld/zones/openbeach-tablets.xml"
+  fi
   # Not taken from the .deb: /usr/libexec/$_pkgname/apt-upgrade and its polkit
   # action (the APT updater's root helper; pacman updates this package).
 }

@@ -109,7 +109,11 @@ works the same:
   active session may create shared connections. The Wi-Fi card must support
   AP mode. On a system without NetworkManager (systemd-networkd, iwd alone,
   connman) the app says the tablet network is not available; the hall Wi-Fi
-  or Ethernet works;
+  or Ethernet works. With firewalld the tablets' network goes into the
+  package's own zone (`/usr/lib/firewalld/zones/openvolley-tablets.xml`,
+  OpenBeach `openbeach-tablets.xml`: DHCP, DNS and the two relay ports),
+  never into `trusted`: after the install run `sudo firewall-cmd --reload`
+  once, else the app refuses to start the network and shows the command;
 - the tray icon (with `libayatana-appindicator`; GNOME needs the
   AppIndicator extension, as on any distribution);
 - data, backups and logs in the same places as the `.deb`

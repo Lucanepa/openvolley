@@ -4,7 +4,10 @@
      TABLET_ZONE). The tablets get an address (DHCP), names (DNS) and the
      app's built-in server (5173 pages, 8080 live updates); every other port
      of this computer stays closed to them, and nothing is forwarded to its
-     other networks. Installed by the .deb to /usr/lib/firewalld/zones. -->
+     other networks. In every Linux package (.deb, AppImage, AUR, Snap,
+     Flatpak) at /usr/lib/firewalld/zones; the .deb and the AUR package
+     install it. Without it on a firewalld system the app does not start the
+     tablets' network (never zone "trusted", SEC-53). -->
 <zone>
   <short>OpenVolley tablets</short>
   <description>Tablets on the network OpenVolley eScoresheet starts: DHCP, DNS and the app's built-in server only.</description>

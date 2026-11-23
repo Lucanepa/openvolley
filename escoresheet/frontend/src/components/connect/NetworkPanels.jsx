@@ -54,6 +54,10 @@ export function useNetErrorText() {
       'no-profile': t('connectTablets.err.noProfile', 'Windows found no network connection to start the Mobile Hotspot from.'),
       'radio-restriction': t('connectTablets.err.radio', 'The Wi-Fi radio refused the hotspot (band or country restriction). Try again, or use a travel router.'),
       busy: t('connectTablets.err.busy', 'The hotspot is still switching. Wait a moment and try again.'),
+      // Linux with firewalld: the app never opens every port to the tablets
+      // (SEC-53); the detail below has the command (netshare nm_settings.rs)
+      'firewall-zone-missing': t('connectTablets.err.firewallZone', 'This computer\'s firewall (firewalld) does not know the tablets\' network yet. Add it once with the command below, as administrator, then try again.'),
+      'firewall-zone-ports': t('connectTablets.err.firewallPorts', 'This computer\'s firewall (firewalld) does not open the app\'s ports to the tablets. Open them with the command below, as administrator, then try again.'),
       'hotspot-failed': t('connectTablets.err.hotspotFailed', 'The Wi-Fi for the tablets could not be started.'),
       'invalid-credentials': t('connectTablets.err.invalidCredentials', 'The network name or password is not valid.'),
       'unsupported-os': t('connectTablets.err.unsupportedOs', 'The app cannot create networks on this system.'),

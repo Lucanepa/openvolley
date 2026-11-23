@@ -154,6 +154,14 @@ local session).
   `WEBKIT_DISABLE_DMABUF_RENDERER=1 openvolley-escoresheet`.
 - No arm64 snap (no arm64 .deb is built).
 - Windows-only parts (the firewall rule, Mobile Hotspot) do not apply.
+- **firewalld hosts** (Fedora, openSUSE; Ubuntu's ufw is not affected): the
+  tablets' network asks for the zone `openvolley-tablets` (OpenBeach
+  `openbeach-tablets`), never `trusted`. The snap carries the zone file
+  (`$SNAP/usr/lib/firewalld/zones/`, from the .deb) but cannot install it,
+  and may not ask firewalld whether it is there: until it is added on the
+  host, firewalld puts the network into its default zone and the tablets
+  reach no page. Add it once with the command the AUR README and the app's
+  error give (`firewall-cmd --permanent --new-zone=openvolley-tablets ...`).
 
 ## Building
 

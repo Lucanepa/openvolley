@@ -2864,6 +2864,8 @@
       "bluetoothFailed": "S Bluetooth-Netz hät nöd chönne gstartet werde.",
       "bluetoothOff": "Bluetooth isch us und hät sich nöd lah iischalte.",
       "busy": "De Hotspot schaltet no. Churz warte und nomal probiere.",
+      "firewallPorts": "D Firewall vo däm Computer (firewalld) macht d Ports vo de App für d Tablets nöd uf. Mach sie mit em Befehl une als Administrator uf und probier s dänn nomal.",
+      "firewallZone": "D Firewall vo däm Computer (firewalld) kennt s Netz vo de Tablets no nöd. Füeg s eimal mit em Befehl une als Administrator hinzue und probier s dänn nomal.",
       "generic": "Öppis isch schiefgange.",
       "hardware": "De WLAN-Adapter vo däm Computer cha kei Hotspot mache.",
       "hotspotFailed": "S WLAN für d Tablets hät nöd chönne gstartet werde.",

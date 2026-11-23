@@ -2593,6 +2593,8 @@
       "bluetoothFailed": "Das Bluetooth-Netz konnte nicht gestartet werden.",
       "bluetoothOff": "Bluetooth ist aus und liess sich nicht einschalten.",
       "busy": "Der Hotspot schaltet noch. Kurz warten und erneut versuchen.",
+      "firewallPorts": "Die Firewall dieses Computers (firewalld) öffnet die Ports der App nicht für die Tablets. Öffne sie mit dem Befehl unten als Administrator und versuche es dann erneut.",
+      "firewallZone": "Die Firewall dieses Computers (firewalld) kennt das Netz der Tablets noch nicht. Füge es einmal mit dem Befehl unten als Administrator hinzu und versuche es dann erneut.",
       "generic": "Etwas ist schiefgegangen.",
       "hardware": "Der WLAN-Adapter dieses Computers kann keinen Hotspot bereitstellen.",
       "hotspotFailed": "Das WLAN für die Tablets konnte nicht gestartet werden.",

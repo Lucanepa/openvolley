@@ -16,6 +16,11 @@
           "/usr/share/polkit-1/actions/com.openvolley.escoresheet.update.policy": "linux/com.openvolley.escoresheet.update.policy",
           "/usr/lib/firewalld/zones/openvolley-tablets.xml": "linux/openvolley-tablets.xml"
         }
+      },
+      "appimage": {
+        "files": {
+          "/usr/lib/firewalld/zones/openvolley-tablets.xml": "linux/openvolley-tablets.xml"
+        }
       }
     }
   }

@@ -2863,6 +2863,8 @@
       "bluetoothFailed": "Le réseau Bluetooth n’a pas pu démarrer.",
       "bluetoothOff": "Le Bluetooth est désactivé et n’a pas pu être activé.",
       "busy": "Le point d’accès est encore en train de basculer. Patiente un instant et réessaie.",
+      "firewallPorts": "Le pare-feu de cet ordinateur (firewalld) n’ouvre pas les ports de l’app aux tablettes. Ouvre-les avec la commande ci-dessous, en administrateur, puis réessaie.",
+      "firewallZone": "Le pare-feu de cet ordinateur (firewalld) ne connaît pas encore le réseau des tablettes. Ajoute-le une fois avec la commande ci-dessous, en administrateur, puis réessaie.",
       "generic": "Une erreur s’est produite.",
       "hardware": "L’adaptateur Wi-Fi de cet ordinateur ne peut pas créer de point d’accès.",
       "hotspotFailed": "Le Wi-Fi pour les tablettes n’a pas pu démarrer.",

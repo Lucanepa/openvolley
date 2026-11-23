@@ -2870,6 +2870,8 @@
       "bluetoothFailed": "The Bluetooth network could not be started.",
       "bluetoothOff": "Bluetooth is switched off and could not be switched on.",
       "busy": "The hotspot is still switching. Wait a moment and try again.",
+      "firewallPorts": "This computer's firewall (firewalld) does not open the app's ports to the tablets. Open them with the command below, as administrator, then try again.",
+      "firewallZone": "This computer's firewall (firewalld) does not know the tablets' network yet. Add it once with the command below, as administrator, then try again.",
       "generic": "Something went wrong.",
       "hardware": "The Wi-Fi adapter of this computer cannot host a hotspot.",
       "hotspotFailed": "The Wi-Fi for the tablets could not be started.",

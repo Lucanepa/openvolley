@@ -2869,6 +2869,8 @@
       "bluetoothFailed": "Non è stato possibile avviare la rete Bluetooth.",
       "bluetoothOff": "Il Bluetooth è spento e non si è potuto accendere.",
       "busy": "L’hotspot sta ancora cambiando stato. Attendi un momento e riprova.",
+      "firewallPorts": "Il firewall di questo computer (firewalld) non apre le porte dell’app ai tablet. Aprile con il comando qui sotto, come amministratore, poi riprova.",
+      "firewallZone": "Il firewall di questo computer (firewalld) non conosce ancora la rete dei tablet. Aggiungila una volta con il comando qui sotto, come amministratore, poi riprova.",
       "generic": "Qualcosa è andato storto.",
       "hardware": "L’adattatore Wi-Fi di questo computer non può creare un hotspot.",
       "hotspotFailed": "Non è stato possibile avviare il Wi-Fi per i tablet.",
