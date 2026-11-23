@@ -372,8 +372,9 @@ const pinFailureCount = (name, fallback) => {
 /**
  * The ops alert of the PIN budget (all callers past their threshold, a full
  * table): an error-tracker event (the error digest and its push), never a
- * PIN. Its message is the [PIN] log line; the match key, PIN type, count and
- * ranges travel as data.
+ * PIN and never an address. Its message is the [PIN] log line; the match
+ * key, PIN type, count and ranges (their pseudonyms, lib/matchRestore.js
+ * pinRangeLabel: privacy section 14) travel as data.
  */
 function pinBudgetAlert({ scope, key, type, count, windowMinutes, ranges, otherRanges, message }) {
   const err = new Error(String(message || 'PIN guessing').replace(/^\[PIN\] /, 'PIN guessing: ').slice(0, 400))

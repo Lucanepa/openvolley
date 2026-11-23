@@ -64,13 +64,17 @@
  *     caller (limitKey): a range past its share is refused the match's game
  *     PIN (claim) or the game number (restore-by-pin) for a while, the right
  *     PIN too, and restore-by-pin never proves a match whose game PIN is
- *     locked for that range; every other range goes on. `trust` (both): a
- *     caller the server trusts beyond the PIN is not refused by a range lock
- *     (and not counted across addresses): { userId, isAdmin: async () =>
- *     boolean, deviceId } (a signed-in admin, the creator or an editor of the
- *     match, the device the database names as its scorer; trustedFor). A
- *     game number or match that does not exist counts nowhere across
- *     addresses.
+ *     locked for that range; every other range goes on. `trust` (both):
+ *     { userId, isAdmin: async () => boolean, deviceId }, who asks beyond
+ *     the PIN, trusted for the matches it created or edits, those whose
+ *     open match the database names its device as scorer, and all of them
+ *     for a signed-in admin (trustedIds), each match on its own. Claim: a
+ *     caller trusted for the match is not refused by a range lock (and not
+ *     counted across addresses). Restore-by-pin from a range refused the
+ *     game number: the PIN is compared only with the matches of the number
+ *     the caller is trusted for, anything else is 429 as for the rest of
+ *     the range. A game number or match that does not exist counts nowhere
+ *     across addresses.
  *     -> 200 { data: { match, sets, events, liveState }, error: null }
  *     -> 404 { data: null, error: { code: 'OV_NOT_FOUND' } }  (wrong PIN or game number)
  *     -> 429 { data: null, error: { code: 'OV_TOO_MANY_ATTEMPTS' } }
@@ -84,7 +88,7 @@
  *   const r = await restore.restoreMatch(body, { proto: req.headers['x-ov-proto'] })
  *   const p = await restore.restoreByPin(body, { limitKey: clientIp })
  */
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { projectAnonDbRows } from './publicColumns.js'
 
 /**
@@ -171,8 +175,17 @@ export const PIN_MATCH_FAILURE_MAX = 30
 export const PIN_SEARCH_FAILURE_MAX = 100
 export const PIN_RANGE_FAILURE_MAX = 20
 export const PIN_LOCK_MS = 10 * 60 * 1000
-// Keys the budget holds at once per table; a full table counts no new key
-export const PIN_LOCK_KEYS = 100000
+// Keys the budget holds at once: per table of range counts (PIN_LOCK_KEYS)
+// and per table of the counts of every caller together (PIN_ALERT_KEYS, one
+// per match and PIN type, game number or lookup, each naming its widest
+// ranges). A full table makes room by dropping what counts least
+// (createCountTable), it never stops counting. Sized for the backend's heap
+// (OV_NODE_HEAP_MB, 256 MB): every table of the three families full, with
+// their notes, is about 80 MB (twice as much at 100,000 keys per table).
+export const PIN_LOCK_KEYS = 50000
+export const PIN_ALERT_KEYS = 20000
+// The widest ranges an alert's count names (the rest as a number)
+const ALERT_RANGES = 8
 
 /**
  * What a PIN check compares against, the scope of createPinFailureBudget:
@@ -217,6 +230,32 @@ export function pinRangesOf (ipKey, share = PIN_RANGE_FAILURE_MAX) {
   return [{ range: key, max: share }]
 }
 
+const V4_24_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.0\/24$/
+const V6_RANGE_RE = /^[0-9a-f:]+::\/(48|56|64)$/i
+// A pseudonym's letters: no digits (the error tracker masks digit runs as
+// possible PINs, lib/errorTracker.js redactText) and no vowels (no words)
+const LABEL_LETTERS = 'bcdfghjkmnpqrstvwxz'
+
+/**
+ * A caller's address range (pinRangesOf) as the [PIN] log lines and the ops
+ * alerts name it: its width and a pseudonym, never the address. Privacy
+ * policy section 14: the server logs and the error reports hold no IP
+ * addresses (audit 2026-11 review, PL-R3: a lock line named the address).
+ * The pseudonym is an HMAC with `key`; createPinFailureBudget makes its key
+ * at random and never stores it, so a range keeps its name until the server
+ * restarts (the operator tells ranges apart and sees one come back) and no
+ * name leads back to an address.
+ *   'IPv4 /32 #kqtbwmzd' (an address), 'IPv4 /24 #...', 'IPv6 /64 #...',
+ *   'IPv6 /56 #...', 'IPv6 /48 #...', 'range #...' (any other key)
+ */
+export function pinRangeLabel (range, key) {
+  const s = String(range ?? '')
+  const v6 = V6_RANGE_RE.exec(s)
+  const width = V4_KEY_RE.test(s) ? 'IPv4 /32' : V4_24_RE.test(s) ? 'IPv4 /24' : v6 ? `IPv6 /${v6[1]}` : 'range'
+  const mac = createHmac('sha256', key).update(`ov-pin-range:${s}`, 'utf8').digest()
+  return `${width} #${[...mac.subarray(0, 8)].map((b) => LABEL_LETTERS[b % LABEL_LETTERS.length]).join('')}`
+}
+
 /**
  * Fixed-window attempt limiter with a bounded key map.
  * - `isLimited(key)` counts one attempt and says whether the key is over the limit.
@@ -259,90 +298,167 @@ export function createAttemptLimiter ({ max = 5, windowMs = 600000, maxKeys = 50
   }
 }
 
+// Counts above this share the top bucket of createCountTable's eviction order
+const EVICT_BUCKETS = 64
+
 /**
  * Counters by key (group, kind, sub) in a fixed window each, with a lock
- * (`until`, set by the caller): createPinFailureBudget's counts across
- * callers. At most `maxKeys` keys: expired ones are pruned at most once a
- * minute and when the table is full, and a full table makes no new key
- * (`touch` answers null). It never forgets a count or a lock to make room.
+ * (`lock(e, until)`): createPinFailureBudget's counts across addresses.
+ * Counts change through `add(e, d)` only (an entry counted down to nothing
+ * is dropped). At most `maxKeys` keys; expired ones are pruned at most once
+ * a minute, and at most once a second while the table is full.
+ *
+ * A full table never stops counting a wide range (`wide`: the widest range
+ * of a caller, an IPv4 /24 or an IPv6 /48, which holds the aggregate against
+ * guesses spread over many addresses): a new key takes the place of the
+ * entry that counts least. A narrow entry first (an IPv4 address, an IPv6
+ * /64 or /56: its caller's wider ranges count on, and so do the per-address
+ * limits), then a wide one; the lowest count first and, among equal counts,
+ * the one changed longest ago; a locked entry only when every entry is
+ * locked, the one whose lock ends first. A narrow key never takes the place
+ * of a wide entry or of a lock (`touch` answers null: that level is not
+ * counted). With `inherit`, a wide key that takes the place of a live
+ * unlocked wide entry starts at that entry's count (Space-Saving: a count
+ * is never under its true value, a fresh range at most starts high): else a
+ * guesser kept its own count at one by sending a fresh key after each guess
+ * once the table held higher counts only. A guesser pushes its own count
+ * out only by filling the whole table with counts at least as high (the
+ * table's size times that count in wrong PINs, within the window), and then
+ * every new range starts that high. A full table used to count no new key at
+ * all, and from then on a fresh range was neither counted nor refused (audit
+ * 2026-11 review, PL-R2). `onEvict(entry)` hears of each live entry dropped
+ * to make room.
  */
-function createCountTable ({ windowMs, maxKeys, now }) {
-  const groups = new Map() // group -> Map(kind -> Map(sub -> { count, start, until }))
-  let size = 0
+function createCountTable ({ windowMs, maxKeys, now, inherit = false, onEvict = () => {} }) {
+  const cap = Math.max(1, maxKeys)
+  const entries = new Map() // 'group\nkind\nsub' -> { count, start, until, group, key, wide }
+  const groups = new Map() // group -> Set of its entries
+  const keyOf = (group, kind, sub) => `${group}\n${kind}\n${sub}`
+  // The unlocked entries counted, by class (narrow, wide) and count bucket;
+  // each bucket in the order its entries last changed
+  const free = [new Map(), new Map()]
+  const locks = new Set() // locked entries in the order they were locked: the first one's lock ends first
   let lastPrune = now()
   const pruneEveryMs = Math.min(windowMs, 60000)
   const expired = (e, t) => (e.until ? t >= e.until : t - e.start > windowMs)
-  function drop (group, kind, sub) {
-    const g = groups.get(group)
-    const k = g?.get(kind)
-    if (!k || !k.delete(sub)) return
-    size--
-    if (k.size === 0) g.delete(kind)
-    if (g.size === 0) groups.delete(group)
+  const bucketOf = (count) => Math.min(count, EVICT_BUCKETS)
+  const present = (e) => entries.get(e.key) === e
+  function unlist (e) {
+    if (e.until) {
+      locks.delete(e)
+      return
+    }
+    if (e.count <= 0) return
+    const cls = free[e.wide ? 1 : 0]
+    const b = bucketOf(e.count)
+    const set = cls.get(b)
+    if (!set) return
+    set.delete(e)
+    if (set.size === 0) cls.delete(b)
+  }
+  function list (e) {
+    if (e.until) {
+      locks.add(e)
+      return
+    }
+    if (e.count <= 0) return
+    const cls = free[e.wide ? 1 : 0]
+    const b = bucketOf(e.count)
+    let set = cls.get(b)
+    if (!set) {
+      set = new Set()
+      cls.set(b, set)
+    }
+    set.add(e)
+  }
+  function remove (e) {
+    if (!present(e)) return
+    entries.delete(e.key)
+    const g = groups.get(e.group)
+    g.delete(e)
+    if (g.size === 0) groups.delete(e.group)
+    unlist(e)
   }
   function prune (t) {
     lastPrune = t
-    for (const [group, g] of groups) {
-      for (const [kind, k] of g) {
-        for (const [sub, e] of k) {
-          if (!expired(e, t)) continue
-          k.delete(sub)
-          size--
-        }
-        if (k.size === 0) g.delete(kind)
-      }
-      if (g.size === 0) groups.delete(group)
-    }
+    for (const e of entries.values()) if (expired(e, t)) remove(e)
   }
   // The live entry of a key (an expired one is dropped)
   function get (group, kind, sub, t) {
-    const e = groups.get(group)?.get(kind)?.get(sub)
+    const e = entries.get(keyOf(group, kind, sub))
     if (e && expired(e, t)) {
-      drop(group, kind, sub)
+      remove(e)
       return undefined
     }
     return e
   }
+  // The entry that gives its place to a new key (`wide`: of a wide range), or null
+  function victim (wide) {
+    for (const cls of wide ? free : [free[0]]) {
+      for (let b = 1; b <= EVICT_BUCKETS; b++) {
+        const set = cls.get(b)
+        if (set) return set.values().next().value
+      }
+    }
+    if (wide && locks.size > 0) return locks.values().next().value
+    return null
+  }
   return {
     tick (t) { if (t - lastPrune >= pruneEveryMs) prune(t) },
     get,
-    // The live entry of a key, made when missing; null when the table is full
-    touch (group, kind, sub, t) {
+    /**
+     * The live entry of a key, made when missing (count 0, or the count it
+     * inherits, until `add` counts it); null for a narrow key when a full
+     * table has no narrow entry to give its place.
+     */
+    touch (group, kind, sub, t, wide = true) {
       const e = get(group, kind, sub, t)
       if (e) return e
-      if (size >= maxKeys) {
-        prune(t)
-        if (size >= maxKeys) return null
+      if (entries.size >= cap && t - lastPrune >= 1000) prune(t)
+      let start = 0
+      while (entries.size >= cap) {
+        const v = victim(wide)
+        if (!v) return null
+        remove(v)
+        if (expired(v, t)) continue
+        if (inherit && wide && v.wide && !v.until) start = Math.max(start, v.count)
+        onEvict(v)
       }
+      const fresh = { count: start, start: t, until: 0, group, key: keyOf(group, kind, sub), wide: wide === true }
+      entries.set(fresh.key, fresh)
       let g = groups.get(group)
       if (!g) {
-        g = new Map()
+        g = new Set()
         groups.set(group, g)
       }
-      let k = g.get(kind)
-      if (!k) {
-        k = new Map()
-        g.set(kind, k)
-      }
-      const fresh = { count: 0, start: t, until: 0 }
-      k.set(sub, fresh)
-      size++
+      g.add(fresh)
       return fresh
     },
-    drop,
+    // Counts `d` more (or fewer) for an entry of the table; an unlocked one counted down to nothing is dropped
+    add (e, d) {
+      if (!present(e)) return
+      unlist(e)
+      e.count += d
+      if (e.count <= 0 && !e.until) {
+        remove(e)
+        return
+      }
+      list(e)
+    },
+    lock (e, until) {
+      if (!present(e)) return
+      unlist(e)
+      e.until = until
+      list(e)
+    },
     forget (group, kinds) {
       const g = groups.get(group)
       if (!g) return
-      for (const kind of kinds) {
-        const k = g.get(kind)
-        if (!k) continue
-        size -= k.size
-        g.delete(kind)
-      }
-      if (g.size === 0) groups.delete(group)
+      const prefixes = kinds.map((kind) => keyOf(group, kind, ''))
+      for (const e of [...g]) if (prefixes.some((p) => e.key.startsWith(p))) remove(e)
     },
     has (group) { return groups.has(group) },
-    get size () { return size }
+    get size () { return entries.size }
   }
 }
 
@@ -419,14 +535,17 @@ function createCountTable ({ windowMs, maxKeys, now }) {
  * the room key the caller picked).
  * `scopeOnly` checks are neither refused nor counted across addresses (the
  * server trusts them beyond the PIN). In memory, at most `lockKeys` keys per
- * table: a full table counts no new key (the per-address limits still hold)
- * and raises one alert per window; it never forgets a count or a lock to
- * make room (expired ones go first; a key refunded to nothing is dropped).
+ * table: a full table makes room by dropping the entry that counts least,
+ * narrow ranges first, a lock last (createCountTable), and raises one alert
+ * per window; it never stops counting a caller's widest range. Ranges are
+ * named in the log and the alerts by pinRangeLabel (`labelKey`, random when
+ * left out; `rangeLabel(range)` gives the name), never by their addresses.
  */
 export function createPinFailureBudget ({
   max = 20, ipMax = 60, windowMs = 600000, maxKeys = 50000,
   matchMax = PIN_MATCH_FAILURE_MAX, searchMax = PIN_SEARCH_FAILURE_MAX, rangeMax = PIN_RANGE_FAILURE_MAX,
-  lockMs = PIN_LOCK_MS, lockKeys = PIN_LOCK_KEYS, log = (line) => console.warn(line), alert = null, now = Date.now
+  lockMs = PIN_LOCK_MS, lockKeys = PIN_LOCK_KEYS, alertKeys = PIN_ALERT_KEYS, log = (line) => console.warn(line), alert = null, now = Date.now,
+  labelKey = randomBytes(32)
 } = {}) {
   const scoped = createAttemptLimiter({ max, windowMs, maxKeys })
   const total = createAttemptLimiter({ max: ipMax, windowMs, maxKeys })
@@ -435,23 +554,19 @@ export function createPinFailureBudget ({
   const minutes = (ms) => Math.max(1, Math.round(ms / 60000))
   // Match keys and PIN types come from the request: identifier characters only in the log
   const label = (v) => String(v).replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 80) || '-'
-  const rangeLabel = (v) => String(v).replace(/[^A-Za-z0-9_.:/-]/g, '').slice(0, 64) || '-'
+  // A range: its width and pseudonym, never the address (pinRangeLabel)
+  const rangeLabel = (v) => pinRangeLabel(v, labelKey)
   // PIN types already labelled, joined by '/'
   const kindsLabel = (v) => String(v).replace(/[^A-Za-z0-9_.:/-]/g, '').slice(0, 120) || '-'
   const W = minutes(windowMs)
   const L = minutes(lockMs)
   // alertOf(group, kind): what one alert per window is raised for (a match, a game number, one search)
-  const family = (name, threshold, lockLine, alertLine, alertOf = (group) => group) => ({
-    name,
-    threshold,
-    lockLine,
-    alertLine,
-    alertOf,
-    ranges: createCountTable({ windowMs, maxKeys: lockKeys, now }),
-    all: createCountTable({ windowMs, maxKeys: lockKeys, now }),
-    alerted: new Map(), // alertOf key -> time of its alert
-    fullAt: -Infinity
-  })
+  const family = (name, threshold, lockLine, alertLine, alertOf = (group) => group) => {
+    const fam = { name, threshold, lockLine, alertLine, alertOf, alerted: new Map(), fullAt: -Infinity } // alerted: alertOf key -> time of its alert
+    fam.ranges = createCountTable({ windowMs, maxKeys: lockKeys, now, inherit: true, onEvict: () => full(fam, now()) })
+    fam.all = createCountTable({ windowMs, maxKeys: alertKeys, now, onEvict: () => full(fam, now()) })
+    return fam
+  }
   const matches = family('match', matchMax,
     (match, kind, range, n) => `[PIN] match ${label(match)}: ${n} wrong ${label(kind)} PINs from ${rangeLabel(range)} within ${W} min; its ${label(kind)} PIN checks from that range are refused for ${L} min (other addresses, and match tokens already issued, keep working)`,
     (match, kind, n, ranges) => `[PIN] match ${label(match)}: ${n} wrong ${kindsLabel(kind)} PINs from all callers within ${W} min (${ranges}); ops alert, nobody is refused for it (only a range past its share is)`)
@@ -469,11 +584,11 @@ export function createPinFailureBudget ({
     if (typeof alert !== 'function') return
     try { alert({ ...payload, scope: fam.name, windowMinutes: W, message }) } catch { /* an alert never fails a PIN check */ }
   }
-  // A table without room: once per window
+  // A table that drops a live count to make room: once per window
   function full (fam, t) {
     if (t - fam.fullAt < windowMs) return
     fam.fullAt = t
-    raise(fam, `[PIN] the ${fam.name} counts are full (${lockKeys} keys): new wrong PINs are counted per address only until older ones expire`, { key: '-', type: '-', types: [], count: lockKeys, ranges: [], otherRanges: 0 })
+    raise(fam, `[PIN] the ${fam.name} counts are full (${lockKeys} range keys, ${alertKeys} for all callers): the counts that hold least make room (narrow ranges first, a lock last); every caller's widest range is still counted`, { key: '-', type: '-', types: [], count: lockKeys, ranges: [], otherRanges: 0 })
   }
   // Is (group, kind) refused to the caller of `levels`? A range at its share starts its lock here (one log line).
   function refusing (fam, group, kind, levels, t) {
@@ -482,26 +597,27 @@ export function createPinFailureBudget ({
       const e = fam.ranges.get(group, kind, range, t)
       if (!e) continue
       if (!e.until && e.count >= share) {
-        e.until = t + lockMs
+        fam.ranges.lock(e, t + lockMs)
         log(fam.lockLine(group, kind, range, e.count))
       }
       if (e.until) refused = true
     }
     return refused
   }
-  // The widest range of each caller counted for the alert (at most 16, the rest as a number)
+  // The widest range of each caller counted for the alert (at most ALERT_RANGES, the rest as a number)
   function noteRange (a, range, d) {
     if (!a.ranges) {
-      a.ranges = new Map()
+      a.ranges = [] // [range, count] pairs
       a.others = 0
     }
-    const n = a.ranges.get(range) || 0
+    const i = a.ranges.findIndex((r) => r[0] === range)
     if (d > 0) {
-      if (n > 0 || a.ranges.size < 16) a.ranges.set(range, n + 1)
+      if (i >= 0) a.ranges[i][1]++
+      else if (a.ranges.length < ALERT_RANGES) a.ranges.push([range, 1])
       else a.others++
-    } else if (n > 1) a.ranges.set(range, n - 1)
-    else if (n === 1) a.ranges.delete(range)
-    else if (a.others > 0) a.others--
+    } else if (i >= 0) {
+      if (--a.ranges[i][1] <= 0) a.ranges.splice(i, 1)
+    } else if (a.others > 0) a.others--
   }
   /**
    * The alerts due after `pairs` were counted: one per alertOf key and
@@ -548,17 +664,14 @@ export function createPinFailureBudget ({
     if (pairs.map(([group, kind]) => refusing(fam, group, kind, levels, t)).some(Boolean)) return false
     const widest = levels[levels.length - 1].range
     for (const [group, kind] of pairs) {
-      for (const { range } of levels) {
-        const e = fam.ranges.touch(group, kind, range, t)
-        if (e) e.count++
-        else full(fam, t)
-      }
+      // a narrow level a full table has no room for is not counted (its caller's widest range always is)
+      levels.forEach(({ range }, i) => {
+        const e = fam.ranges.touch(group, kind, range, t, i === levels.length - 1)
+        if (e) fam.ranges.add(e, 1)
+      })
       const a = fam.all.touch(group, kind, '*', t)
-      if (!a) {
-        full(fam, t)
-        continue
-      }
-      a.count++
+      if (!a) continue
+      fam.all.add(a, 1)
       noteRange(a, widest, 1)
     }
     alertsDue(fam, pairs, t)
@@ -572,15 +685,12 @@ export function createPinFailureBudget ({
     for (const [group, kind] of pairs) {
       for (const { range } of levels) {
         const e = fam.ranges.get(group, kind, range, t)
-        if (!e || e.until) continue
-        e.count--
-        if (e.count <= 0) fam.ranges.drop(group, kind, range)
+        if (e && !e.until) fam.ranges.add(e, -1)
       }
       const a = fam.all.get(group, kind, '*', t)
       if (!a) continue
-      a.count--
       noteRange(a, widest, -1)
-      if (a.count <= 0) fam.all.drop(group, kind, '*')
+      fam.all.add(a, -1)
     }
   }
   // What a scope is counted for across addresses: { fam, pairs: [group, kind][] }, or null
@@ -641,6 +751,8 @@ export function createPinFailureBudget ({
     },
     tracks (match) { return matches.ranges.has(matchGroup(match)) || matches.all.has(matchGroup(match)) },
     tracksAny () { return matches.ranges.size > 0 || matches.all.size > 0 },
+    // How the log lines and the alerts name a range (pinRangeLabel), never by its address
+    rangeLabel (range) { return rangeLabel(range) },
     repeated (ipKey, scope, pin, opts = {}) {
       const now = Date.now()
       for (const [k, at] of wrong) {
@@ -1051,23 +1163,28 @@ export function createMatchRestore (db, options = {}) {
   }
 
   /**
-   * Is the caller trusted beyond the PIN for one of the matches whose
-   * `column` is `value` (the match of a claim, the matches of a game
-   * number)? A signed-in admin (`trust.isAdmin()`), the creator or an editor
-   * of one of them (`trust.userId`), or the device the database names as the
-   * scorer of an open one (`trust.deviceId`, db/019 match_scorer_devices).
-   * Asked only when a range lock refuses the caller. Never throws (false).
+   * The matches whose `column` is `value` (the match of a claim, the matches
+   * of a game number) the caller is trusted for beyond the PIN: 'all' for a
+   * signed-in admin (`trust.isAdmin()`), else a Set of the ids of those it
+   * created or edits (`trust.userId`) and of the open ones whose scorer the
+   * database names its device (`trust.deviceId`, db/019
+   * match_scorer_devices); an empty Set for none. Each match on its own: a
+   * caller trusted for one match of a game number is not trusted for the
+   * others (audit 2026-11 review, PL-R1: owning any match of a game number,
+   * a test match of one's own included, let a locked range guess on at all of
+   * them). Never throws (an empty Set).
    */
-  async function trustedFor (column, value, trust) {
-    if (!trust || typeof trust !== 'object') return false
+  async function trustedIds (column, value, trust) {
+    const none = new Set()
+    if (!trust || typeof trust !== 'object') return none
     try {
-      if (typeof trust.isAdmin === 'function' && (await trust.isAdmin()) === true) return true
+      if (typeof trust.isAdmin === 'function' && (await trust.isAdmin()) === true) return 'all'
       const userId = typeof trust.userId === 'string' && UUID_RE.test(trust.userId) ? trust.userId : null
       const deviceId = typeof trust.deviceId === 'string' && UUID_RE.test(trust.deviceId) ? trust.deviceId : null
-      if (!userId && !deviceId) return false
+      if (!userId && !deviceId) return none
       const cat = await db.ensureCatalog()
       const mt = cat.tables.get(cfg.matchTable)
-      if (!mt || !mt.columns.has(column)) return false
+      if (!mt || !mt.columns.has(column)) return none
       const schema = quote(db.config.schema || 'public')
       const own = db.config.ownership
       const values = [value]
@@ -1087,14 +1204,20 @@ export function createMatchRestore (db, options = {}) {
         const open = mt.columns.has(cfg.closedColumn) ? ` AND m.${quote(cfg.closedColumn)} IS NULL` : ''
         ors.push(`(EXISTS (SELECT 1 FROM ${schema}.match_scorer_devices s WHERE s.match_id = m.${quote(cfg.matchId)} AND s.device_id = ${p(deviceId)})${open})`)
       }
-      if (ors.length === 0) return false
+      if (ors.length === 0) return none
       const r = await db.pool.query(
-        `SELECT 1 FROM ${schema}.${quote(cfg.matchTable)} m WHERE m.${quote(column)} = $1 AND (${ors.join(' OR ')}) LIMIT 1`, values)
-      return r.rows.length > 0
+        `SELECT m.${quote(cfg.matchId)} AS id FROM ${schema}.${quote(cfg.matchTable)} m WHERE m.${quote(column)} = $1 AND (${ors.join(' OR ')}) LIMIT 200`, values)
+      return new Set(r.rows.map((row) => row.id))
     } catch (err) {
       log.warn?.(`[matchRestore] could not check who asks: ${err.code || err.message}`)
-      return false
+      return none
     }
+  }
+
+  /** Is the caller trusted beyond the PIN for the match whose `column` (a unique one) is `value`? (trustedIds) */
+  async function trustedFor (column, value, trust) {
+    const ids = await trustedIds(column, value, trust)
+    return ids === 'all' || ids.size > 0
   }
 
   /**
@@ -1255,9 +1378,7 @@ export function createMatchRestore (db, options = {}) {
       // Across addresses, one attempt against the game number (pinBudget
       // gameLimited, by the caller's address ranges), counted up front: the
       // PIN is compared with every match that carries it. A game number no
-      // match has has no PIN to guess and counts nowhere. A caller the
-      // server trusts beyond the PIN (trustedFor) is not refused by a range
-      // lock, and nothing is counted for it.
+      // match has has no PIN to guess and counts nowhere.
       const any = await db.runQuery({
         table: cfg.matchTable,
         action: 'select',
@@ -1265,45 +1386,45 @@ export function createMatchRestore (db, options = {}) {
       }, { internal: true })
       if (any.body.error) return { status: any.status, body: any.body }
       if (any.body.data.length === 0) return errorBody(404, 'OV_NOT_FOUND', 'Match not found with this ID and PIN')
-      let trusted = false
-      if (pinBudget.gameLimited(gameN, callerKey)) {
-        trusted = await trustedFor(cfg.gameNColumn, gameN, trust)
-        if (!trusted) {
-          callerLimiter.refund(callerKey)
-          pinLimiter.refund(gameKey)
-          return tooMany()
-        }
+      const refused = pinBudget.gameLimited(gameN, callerKey)
+      const giveBack = () => {
+        callerLimiter.refund(callerKey)
+        pinLimiter.refund(gameKey)
+        return tooMany()
       }
+      // The matches of the game number the caller is trusted for beyond the
+      // PIN (trustedIds: each match on its own, never the game number), read
+      // before the PIN is compared and whatever it is. A range refused the
+      // game number has its PIN compared with those matches alone, and gets
+      // 429 for anything else, as the rest of the range does: whether the PIN
+      // is someone else's tells it nothing. Elsewhere, a match whose game PIN
+      // is locked for the caller's range is passed over unless it is one of them.
+      const mine = trust && (refused || pinBudget.tracksAny()) ? await trustedIds(cfg.gameNColumn, gameN, trust) : null
+      const isMine = (r) => mine === 'all' || (mine instanceof Set && mine.has(r[cfg.matchId]))
+      if (refused && !(mine === 'all' || mine?.size > 0)) return giveBack()
       // internal: the only place a secret column is filtered on, and only with exact equality.
       // A few rows: the same game number and PIN on more than one match is rare.
+      const filters = [
+        { type: 'eq', column: cfg.gameNColumn, value: gameN },
+        { type: 'in', column: cfg.pinColumn, value: pins.candidates('game', pin) }
+      ]
+      if (refused && mine !== 'all') filters.push({ type: 'in', column: cfg.matchId, value: [...mine] })
       const found = await db.runQuery({
         table: cfg.matchTable,
         action: 'select',
-        params: {
-          columns: '*',
-          filters: [
-            { type: 'eq', column: cfg.gameNColumn, value: gameN },
-            { type: 'in', column: cfg.pinColumn, value: pins.candidates('game', pin) }
-          ],
-          order,
-          limit: 5
-        }
+        params: { columns: '*', filters, order, limit: 5 }
       }, { internal: true })
       if (found.body.error) return { status: found.status, body: found.body }
       // A match whose game PIN is locked for the caller's range (its own
       // checks: claim, the relay) proves nothing here either, answered as a
       // wrong PIN, unless the caller is trusted beyond the PIN for it
-      let row = null
-      for (const r of found.body.data) {
-        if (trusted || !(r[cfg.matchKey] && pinBudget.locked(r[cfg.matchKey], 'game', callerKey)) ||
-            await trustedFor(cfg.matchId, r[cfg.matchId], trust)) {
-          row = r
-          break
-        }
-      }
-      if (!row) return errorBody(404, 'OV_NOT_FOUND', 'Match not found with this ID and PIN')
-      // Only failed guesses count against the caller.
-      if (!trusted) pinBudget.gameRefund(gameN, callerKey)
+      const row = found.body.data.find((r) => refused
+        ? isMine(r)
+        : !(r[cfg.matchKey] && pinBudget.locked(r[cfg.matchKey], 'game', callerKey)) || isMine(r)) || null
+      // (compared: the caller's own limits keep the attempt)
+      if (!row) return refused ? tooMany() : errorBody(404, 'OV_NOT_FOUND', 'Match not found with this ID and PIN')
+      // Only failed guesses count against the caller (a refused range's were not counted).
+      if (!refused) pinBudget.gameRefund(gameN, callerKey)
       pinLimiter.reset(gameKey)
       callerLimiter.refund(callerKey)
       const match = { ...row }

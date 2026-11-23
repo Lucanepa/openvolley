@@ -259,15 +259,18 @@ type), each twice:
   others follow). A range past its share is refused that check for 10
   minutes, the right PIN too (no oracle for the guesser), with one
   `[PIN] match …`, `[PIN] game number …` or `[PIN] … lookups without a
-  match` line per lock that names the range. Every other range goes on, and
-  the right PIN from there passes.
+  match` line per lock that names the range by its width and a pseudonym
+  (`IPv4 /24 #kqtbwmzd`, `pinRangeLabel`: an HMAC with a key made at random
+  per process and never stored; the same range has the same name until a
+  restart), never by its address (privacy policy section 14). Every other
+  range goes on, and the right PIN from there passes.
 - **from all callers together**: **30 wrong PINs per match** (any of its PIN
   types) or game number (`OV_PIN_MATCH_FAILURES`) and **100 per lookup
   without a match** (`OV_PIN_SEARCH_FAILURES`) in 10 minutes raise one ops
   alert per window: a `[PIN] … from all callers …` line and an error-tracker
   event (`view` `pin budget match|game|search`, the digest and its push):
-  the match key, PIN types, counts and the callers' widest ranges, never a
-  PIN. Nobody is refused for it: a hard refusal for every caller let 30
+  the match key, PIN types, counts and the callers' widest ranges (up to 8,
+  by their pseudonyms), never a PIN or an address. Nobody is refused for it: a hard refusal for every caller let 30
   anonymous guesses from two addresses lock out a match's referee, benches
   and scorer, and 100 every OpenBeach referee.
 A scoreboard's claim on the relay counts for the database match whose game
@@ -279,10 +282,15 @@ scoring device re-proving it on the relay (the device the database names as
 the match's scorer, or the device of the room's last sync for a match the
 database does not hold, the venue relay included) and subscribing to it;
 match tokens already issued (subscribe-match `{ token }`, `X-OV-Match-Token`:
-no PIN is compared); a relay room already bound to its match; and on
-restore-by-pin and claim a signed-in admin, the creator or an editor of the
-match (of a match of the game number), or the device the database names as
-its scorer (`device` of restore-by-pin; `trustedFor`). A scoreboard that
+no PIN is compared); a relay room already bound to its match; and on claim
+a signed-in admin, the creator or an editor of the match, or on
+restore-by-pin the device the database names as the scorer of an open match
+(`device`; `trustedIds`), each for that match only: from a range refused a
+game number, restore-by-pin compares the PIN only with the matches of the
+number the caller is trusted for (all of them for an admin) and answers
+anything else 429, as for the rest of the range (owning one match of a game
+number, a test match of one's own included, trusts nobody for the others;
+2026-11 review, PL-R1). A scoreboard that
 names no device (older apps) is refused with its range. A new PIN written by
 the scorer (`/api/db`, `/api/match/restore`, the relay sync) starts that
 PIN's counts again. restore-by-pin compares one PIN with every match of the
@@ -298,8 +306,16 @@ address). OpenBeach referee tablets (up to 3.0.2 at least) look up their PIN
 without naming the match; the lookup stays until the OpenBeach build that
 names its match is out. The OpenVolley apps name their match (the link, the
 game picked, or the one cloud match of the game number picked). In memory,
-per process (a restart forgets them); a full table (100,000 keys) counts no
-new key, keeps every lock and raises one alert.
+per process (a restart forgets them), at most 50,000 range counts and 20,000
+all-caller counts per family (about 80 MB with every table full). A full
+table never stops counting: a new key takes the place of what counts least,
+a narrow range (an IPv4 address, an IPv6 /64 or /56) first, then the lowest
+count of a widest range (whose count the new key carries on, so no
+guesser's count drops), a lock last; one `[PIN] the … counts are full` alert
+per window. A full table used to count no new key, so a fresh range was
+neither counted nor refused (2026-11 review, PL-R2). Only a flood of about
+the table's size times 40 wrong PINs in 10 minutes makes a fresh range
+start near its share (refused after its first wrong PINs).
 Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
 the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
 allows that header.

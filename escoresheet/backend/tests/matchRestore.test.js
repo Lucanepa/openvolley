@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 import pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { createPgQuery } from '../lib/pgQuery.js'
-import { createMatchRestore, createAttemptLimiter, createPinFailureBudget, pinRangesOf, PIN_RANGE_FAILURE_MAX } from '../lib/matchRestore.js'
+import { createMatchRestore, createAttemptLimiter, createPinFailureBudget, pinRangesOf, pinRangeLabel, pinScope, PIN_RANGE_FAILURE_MAX } from '../lib/matchRestore.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
+import { redactText } from '../lib/errorTracker.js'
 
 describe('createAttemptLimiter', () => {
   it('allows max attempts per key and window, then limits', () => {
@@ -158,7 +159,9 @@ describe('createPinFailureBudget across addresses', () => {
     assert.equal(b.isLimited(inA(9 * 256), 'm:referee:match-1'), true)
     assert.equal(b.locked('match-1', 'referee', inA(10 * 256)), true)
     assert.equal(lines.length, 1)
-    assert.match(lines[0], /^\[PIN\] match match-1: 6 wrong referee PINs from 2001:db8:aa00::\/48 within 10 min/)
+    // the range by its width and pseudonym, never its address (PL-R3)
+    assert.ok(lines[0].startsWith(`[PIN] match match-1: 6 wrong referee PINs from ${b.rangeLabel('2001:db8:aa00::/48')} within 10 min`), lines[0])
+    assert.match(b.rangeLabel('2001:db8:aa00::/48'), /^IPv6 \/48 #[b-z]{8}$/)
     // another range: the right PIN passes (counted up front, refunded)
     assert.equal(b.locked('match-1', 'referee', inB(0)), false)
     assert.equal(b.isLimited(inB(0), 'm:referee:match-1'), false)
@@ -193,8 +196,9 @@ describe('createPinFailureBudget across addresses', () => {
     for (let i = 0; i < 10; i++) assert.equal(b.isLimited(`198.51.${i}.1`, 'm:referee:match-1'), false, `caller ${i}`)
     assert.equal(alerts.length, 1)
     assert.deepEqual({ ...alerts[0], ranges: undefined, message: undefined }, { scope: 'match', key: 'match-1', type: 'referee', types: [{ type: 'referee', count: 4 }], count: 4, windowMinutes: 1, ranges: undefined, otherRanges: 0, message: undefined })
-    assert.deepEqual(alerts[0].ranges.map((r) => r.range).sort(), ['198.51.0.0/24', '198.51.1.0/24', '198.51.2.0/24', '198.51.3.0/24'])
-    assert.match(alerts[0].message, /^\[PIN\] match match-1: 4 wrong referee PINs from all callers within 1 min \(198\.51\.\d\.0\/24 x1/)
+    assert.deepEqual(alerts[0].ranges.map((r) => r.range).sort(), ['198.51.0.0/24', '198.51.1.0/24', '198.51.2.0/24', '198.51.3.0/24'].map((r) => b.rangeLabel(r)).sort())
+    assert.match(alerts[0].message, /^\[PIN\] match match-1: 4 wrong referee PINs from all callers within 1 min \(IPv4 \/24 #[b-z]{8} x1/)
+    assert.doesNotMatch(JSON.stringify(alerts) + lines.join('\n'), /198\.51/, 'never an address (PL-R3)')
     assert.doesNotMatch(JSON.stringify(alerts), /\b\d{6}\b/, 'never a PIN')
     assert.equal(lines.filter((l) => l.includes('from all callers')).length, 1)
     // the right PIN from yet another range still passes
@@ -263,7 +267,7 @@ describe('createPinFailureBudget across addresses', () => {
     for (let i = 0; i < 4; i++) assert.equal(b.isLimited(inA(i * 256), 'any:beach:referee'), false)
     assert.equal(b.isLimited(inA(7 * 256), 'any:beach:referee'), true, 'the guessing /48')
     assert.equal(lines.length, 1)
-    assert.match(lines[0], /^\[PIN\] 4 wrong beach:referee PINs in lookups without a match from 2001:db8:aa00::\/48/)
+    assert.ok(lines[0].startsWith(`[PIN] 4 wrong beach:referee PINs in lookups without a match from ${b.rangeLabel('2001:db8:aa00::/48')}`), lines[0])
     // the right PIN of an OpenBeach referee elsewhere (OB names no match)
     assert.equal(b.isLimited(inB(0), 'any:beach:referee'), false)
     assert.equal(b.isLimited('198.51.100.9', 'any:beach:referee'), false)
@@ -331,7 +335,7 @@ describe('createPinFailureBudget across addresses', () => {
     const b = createPinFailureBudget({ rangeMax: 3, matchMax: 5, log: (l) => lines.push(l), alert: (a) => alerts.push(a) })
     for (let i = 0; i < 6; i++) assert.equal(b.gameLimited(8181, `198.18.12.${i}`), false)
     assert.equal(b.gameLimited(8181, '198.18.12.200'), true, 'the guessing /24')
-    assert.equal(lines.filter((l) => l.startsWith('[PIN] game number 8181: 6 wrong game PINs in restore-by-pin from 198.18.12.0/24')).length, 1)
+    assert.equal(lines.filter((l) => l.startsWith(`[PIN] game number 8181: 6 wrong game PINs in restore-by-pin from ${b.rangeLabel('198.18.12.0/24')}`)).length, 1)
     assert.equal(alerts.length, 1)
     assert.equal(alerts[0].scope, 'game')
     // the right PIN from another range, another game number, and every match's own checks, go on
@@ -370,18 +374,149 @@ describe('createPinFailureBudget across addresses', () => {
     assert.equal(b.tracks('row-2'), false)
   })
 
-  // a full table must not refuse every caller: the range keys grow with the
-  // guessers' ranges, not with the matches
-  it('a full table counts no new key, keeps its locks and alerts once', () => {
+  // Audit 2026-11 review, PL-R2: a full table counted no new key, so a fresh
+  // range was neither counted nor refused (this test pinned that). Now a
+  // full table makes room by dropping what counts least.
+  it('a full table makes room by dropping what counts least: a fresh /48 is still refused after its 40th wrong PIN', () => {
     const alerts = []
-    const b = createPinFailureBudget({ rangeMax: 1, lockKeys: 1, log: quiet, alert: (a) => alerts.push(a) })
-    b.isLimited('ip-1', 'm:game:match-1')
-    assert.equal(b.isLimited('ip-1', 'm:game:match-1'), true)
-    // no room for new keys: not refused, not counted
-    for (let i = 0; i < 3; i++) assert.equal(b.isLimited(`ip-${i + 2}`, 'm:game:match-2'), false)
-    assert.equal(b.locked('match-2', 'game', 'ip-2'), false)
-    assert.equal(b.locked('match-1', 'game', 'ip-1'), true, 'the lock is kept')
+    const lines = []
+    // production shares (an IPv6 /48: 40), a table of 300 keys
+    const b = createPinFailureBudget({ lockKeys: 300, alertKeys: 100, max: 1e9, ipMax: 1e9, log: (l) => lines.push(l), alert: (a) => alerts.push(a) })
+    // the flood: wrong restore-by-pin guesses at 200 game numbers from fresh
+    // /64s (each in a /56 of its own) of ten /48s, until the table is full
+    let n = 0
+    const flood = (k) => { for (let i = 0; i < k; i++, n++) b.gameLimited(1000 + (n % 200), `2001:db8:${(n % 10).toString(16)}:${((n >> 4) & 0xffff).toString(16)}::/64`) }
+    flood(2000)
+    assert.equal(alerts.filter((a) => /the game counts are full/.test(a.message)).length, 1, 'one alert per window')
+    // a fresh /48 guesses game 7, one /64 in each of 40 /56s (the /64 and /56 never reach their shares), the flood going on
+    const fresh = (i) => `2001:db8:ffff:${(i << 8).toString(16)}::/64`
+    for (let i = 0; i < 40; i++) {
+      flood(50)
+      assert.equal(b.gameLimited(7, fresh(i)), false, `guess ${i + 1} is compared`)
+    }
+    flood(50)
+    assert.equal(b.gameLimited(7, fresh(40)), true, 'past its share: refused')
+    assert.equal(b.gameLimited(7, fresh(41)), true, 'the right PIN too')
+    assert.equal(lines.filter((l) => l.startsWith(`[PIN] game number 7: 40 wrong game PINs in restore-by-pin from ${b.rangeLabel('2001:db8:ffff::/48')}`)).length, 1)
+    // other ranges are not refused for it
+    assert.equal(b.gameLimited(7, '198.51.100.7'), false)
+    // the reviewer's PoC (matches family): fill it with GET /api/match/:id
+    // wrong PINs of 25 rooms, then a fresh /48 guesses one room's referee PIN
+    const m = createPinFailureBudget({ lockKeys: 300, alertKeys: 100, max: 1e9, ipMax: 1e9, log: () => {} })
+    const kinds = ['referee', 'bench_home', 'bench_away', 'game']
+    for (let p = 1; p <= 10; p++) for (let r = 0; r < 25; r++) for (let i = 0; i < 8; i++) m.isLimited(`2001:db8:${p.toString(16)}:${(i << 8).toString(16)}::/64`, pinScope.match('room' + r), { kinds })
+    let refused = 0
+    for (let i = 0; i < 100; i++) if (m.isLimited(fresh(i), pinScope.match('room0', 'referee'))) refused++
+    // at most 40 compared (its entry took the place of a wide count and starts from it)
+    assert.ok(refused >= 60, `refused ${refused} of 100`)
+    assert.ok(refused < 100, 'its first guess was compared')
+  })
+
+  it('a guesser cannot keep its count down by sending a fresh key after each guess', () => {
+    // shares: an IPv6 /48 40; a table of 50 keys, filled with wide counts of 2
+    const b = createPinFailureBudget({ lockKeys: 50, alertKeys: 1000, max: 1e9, ipMax: 1e9, log: () => {} })
+    const wide = (p) => `2001:db8:${p.toString(16)}::/64`
+    for (let g = 0; g < 50; g++) for (let k = 0; k < 2; k++) b.gameLimited(5000 + g, wide(1))
+    // each guess at game 7 from the guessing /48, then one guess at a fresh game number from another /48
+    let compared = 0
+    for (let i = 0; i < 100; i++) {
+      if (!b.gameLimited(7, `2001:db8:ffff:${(i << 8).toString(16)}::/64`)) compared++
+      b.gameLimited(6000 + i, wide(2 + i))
+    }
+    assert.ok(compared <= 40, `${compared} guesses compared`)
+  })
+
+  it('a full table drops narrow ranges before wide ones, the lowest count first, a lock last', () => {
+    const alerts = []
+    // production shares (a /64 20, a /56 30, a /48 40); room for every wide count, not for the narrow ones
+    const b = createPinFailureBudget({ lockKeys: 20, max: 1e9, ipMax: 1e9, log: () => {}, alert: (a) => alerts.push(a) })
+    // the guesser: 39 wrong PINs at match-1, a /56 of its /48 each
+    for (let i = 0; i < 39; i++) assert.equal(b.isLimited(inA(i * 256), 'm:referee:match-1'), false)
+    // a flood at ten other matches from fresh /56s of another /48 (39 each, below its share): hundreds of narrow keys
+    for (let k = 2; k <= 11; k++) for (let i = 0; i < 39; i++) assert.equal(b.isLimited(inB(i * 256 + k), `m:referee:match-${k}`), false)
+    assert.equal(alerts.filter((a) => /the match counts are full/.test(a.message)).length, 1)
+    // every wide count was kept: the 40th is compared, the 41st refused, for the guesser and the flood alike
+    assert.equal(b.isLimited(inA(200 * 256), 'm:referee:match-1'), false)
+    assert.equal(b.isLimited(inA(201 * 256), 'm:referee:match-1'), true)
+    assert.equal(b.isLimited(inB(200 * 256), 'm:referee:match-5'), false)
+    assert.equal(b.isLimited(inB(201 * 256), 'm:referee:match-5'), true)
+    // wide counts only: the lowest count makes room first, and a count that
+    // makes room passes on to the new key, so a guesser's count is never under
+    // its true value (share 5 here: refused at its 6th guess, flood or not)
+    const c = createPinFailureBudget({ rangeMax: 5, lockKeys: 3, max: 1e9, ipMax: 1e9, log: () => {} })
+    for (let i = 0; i < 3; i++) assert.equal(c.isLimited('hall-1', 'm:game:match-1'), false)
+    for (let i = 2; i < 30; i++) c.isLimited(`hall-${i}`, 'm:game:match-2')
+    let compared = 0
+    while (!c.isLimited('hall-1', 'm:game:match-1')) compared++
+    assert.ok(compared <= 2, `${compared} more compared`)
+    // a lock is kept while there are unlocked counts to drop
+    const d = createPinFailureBudget({ rangeMax: 1, lockKeys: 3, max: 1e9, ipMax: 1e9, log: () => {} })
+    d.isLimited('hall-1', 'm:game:match-1')
+    assert.equal(d.isLimited('hall-1', 'm:game:match-1'), true)
+    for (let i = 2; i < 30; i++) d.isLimited(`hall-${i}`, 'm:game:match-2')
+    assert.equal(d.locked('match-1', 'game', 'hall-1'), true, 'the lock is kept')
+    // a table of locks only: a new range takes the place of the lock that ends first
+    const e = createPinFailureBudget({ rangeMax: 1, lockKeys: 2, max: 1e9, ipMax: 1e9, log: () => {} })
+    for (const k of ['hall-1', 'hall-2']) {
+      e.isLimited(k, 'm:game:match-1')
+      assert.equal(e.isLimited(k, 'm:game:match-1'), true)
+    }
+    assert.equal(e.isLimited('hall-3', 'm:game:match-1'), false, 'counted')
+    assert.equal(e.locked('match-1', 'game', 'hall-1'), false, 'the oldest lock made room')
+    assert.equal(e.locked('match-1', 'game', 'hall-2'), true)
+    assert.equal(e.isLimited('hall-3', 'm:game:match-1'), true)
+  })
+
+  it('expired counts make room first; the alert of a full table comes once per window', () => {
+    let t = 1000000
+    const alerts = []
+    const b = createPinFailureBudget({ rangeMax: 5, lockKeys: 10, windowMs: 60000, now: () => t, max: 1e9, ipMax: 1e9, log: () => {}, alert: (a) => alerts.push(a) })
+    for (let i = 0; i < 10; i++) b.isLimited(`hall-${i}`, 'm:game:match-1')
+    t += 61000
+    // the old window has ended: room without dropping a live count, no alert
+    for (let i = 10; i < 20; i++) b.isLimited(`hall-${i}`, 'm:game:match-1')
+    assert.equal(alerts.length, 0)
+    for (let i = 20; i < 40; i++) b.isLimited(`hall-${i}`, 'm:game:match-1')
     assert.equal(alerts.filter((a) => /counts are full/.test(a.message)).length, 1)
+    t += 61000
+    for (let i = 40; i < 50; i++) b.isLimited(`hall-${i}`, 'm:game:match-1')
+    for (let i = 50; i < 70; i++) b.isLimited(`hall-${i}`, 'm:game:match-1')
+    assert.equal(alerts.filter((a) => /counts are full/.test(a.message)).length, 2, 'a new window, a new alert')
+  })
+
+  // Audit 2026-11 review, PL-R3: the lock lines named the address (an IPv4
+  // address, an IPv6 /64) and the alerts (stored as error reports) the /24 or /48
+  it('the log lines and the alerts name a range by its width and a pseudonym, never by its address', () => {
+    const lines = []
+    const alerts = []
+    const b = createPinFailureBudget({ rangeMax: 2, matchMax: 2, log: (l) => lines.push(l), alert: (a) => alerts.push(a) })
+    // a tablet behind one IPv4 address, an IPv6 /64, and two addresses of one /24
+    for (let i = 0; i < 4; i++) b.isLimited('198.51.100.23', 'm:all:room1', { kinds: ['referee'] })
+    for (let i = 0; i < 4; i++) b.isLimited('2a02:1210:5c03:ab00::/64', 'm:referee:room2')
+    for (const ip of ['198.51.100.24', '198.51.100.24', '198.51.100.25', '198.51.100.25', '198.51.100.26']) b.isLimited(ip, 'm:referee:room3')
+    assert.equal(lines.filter((l) => l.includes('PIN checks from that range are refused')).length, 3, lines.join('\n'))
+    assert.equal(alerts.length, 3)
+    assert.ok(lines.some((l) => l.includes(`from ${b.rangeLabel('198.51.100.0/24')} within`)), 'the /24 level')
+    const text = lines.join('\n') + JSON.stringify(alerts)
+    for (const leak of ['198.51.100', '198.51', '2a02', '1210', '5c03', 'ab00']) assert.ok(!text.includes(leak), leak)
+    assert.ok(lines.some((l) => l.includes(`from ${b.rangeLabel('198.51.100.23')} within`)), 'the address level')
+    assert.ok(lines.some((l) => l.includes(`from ${b.rangeLabel('2a02:1210:5c03:ab00::/64')} within`)), 'the /64 level')
+    assert.match(alerts[0].ranges[0].range, /^IPv4 \/24 #[b-z]{8}$/)
+    // one name per range while the process runs; another process (key), another name
+    assert.equal(b.rangeLabel('198.51.100.0/24'), b.rangeLabel('198.51.100.0/24'))
+    assert.notEqual(b.rangeLabel('198.51.100.0/24'), b.rangeLabel('198.51.101.0/24'))
+    assert.notEqual(createPinFailureBudget({ log: () => {} }).rangeLabel('198.51.100.0/24'), b.rangeLabel('198.51.100.0/24'))
+    const key = Buffer.alloc(32, 7)
+    assert.equal(createPinFailureBudget({ labelKey: key, log: () => {} }).rangeLabel('198.51.100.0/24'), pinRangeLabel('198.51.100.0/24', key))
+    assert.deepEqual(['203.0.113.7', '203.0.113.0/24', '2001:db8::/48', '2001:db8:0:100::/56', '2001:db8::1:0:0/64', 'hall'].map((r) => pinRangeLabel(r, key).split(' #')[0]),
+      ['IPv4 /32', 'IPv4 /24', 'IPv6 /48', 'IPv6 /56', 'range', 'range'])
+    assert.equal(pinRangeLabel('2001:db8:0:1::/64', key).split(' #')[0], 'IPv6 /64')
+    // the error tracker stores them as they are (no digits for its PIN masking)
+    for (let i = 0; i < 2000; i++) {
+      const l = pinRangeLabel(`198.${i >> 8}.${i & 255}.0/24`, key)
+      assert.match(l, /^IPv4 \/24 #[b-z]{8}$/)
+      assert.equal(redactText(l), l)
+    }
   })
 })
 
@@ -856,7 +991,7 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       const right = await r3.restoreByPin({ gameN: 8181, pin: '818181' }, { limitKey: '198.18.12.9' })
       assert.equal(right.status, 429)
       assert.equal(right.body.error.code, 'OV_TOO_MANY_ATTEMPTS')
-      assert.equal(lines.filter((l) => l.startsWith('[PIN] game number 8181: 4 wrong game PINs in restore-by-pin from 198.18.12.0/24')).length, 1)
+      assert.equal(lines.filter((l) => l.startsWith(`[PIN] game number 8181: 4 wrong game PINs in restore-by-pin from ${budget.rangeLabel('198.18.12.0/24')}`)).length, 1)
       // every caller together past 3: one ops alert, and nobody is refused for it
       assert.equal(alerts.length, 1)
       assert.equal(alerts[0].scope, 'game')
@@ -946,8 +1081,10 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       assert.equal((await lockedRestore({ deviceId: device })).status, 200)
       // claim records the editor (503 in this test database), past the lock
       assert.equal((await lockedClaim({ userId: creator })).status, 503)
-      // a trusted caller's wrong PIN is still a wrong PIN, and nothing is counted for it
-      assert.equal((await r3.restoreByPin({ gameN: 8787, pin: '100002' }, { limitKey: guesser, trust: { userId: creator } })).status, 404)
+      // a trusted caller's wrong PIN from the refused range: compared with its
+      // own match only, and answered as for the rest of the range (PL-R1;
+      // this pinned 404 while the trust held for the whole game number)
+      assert.equal((await r3.restoreByPin({ gameN: 8787, pin: '100002' }, { limitKey: guesser, trust: { userId: creator } })).status, 429)
       // the lock stands for everyone else of the range
       assert.equal((await lockedRestore(null)).status, 429)
       // a range locked out of the match's game PIN only (wrong claims): restore-by-pin
@@ -960,6 +1097,71 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       assert.equal((await viaRestore({ userId: stranger })).status, 404)
       // that answer counted as a wrong PIN for the game number (share 1 here): now refused
       assert.equal((await viaRestore(null)).status, 429)
+    })
+
+    // Audit 2026-11 review, PL-R1: the trust held for the whole game number.
+    // Owning any match of it (a test match of one's own: any account may make
+    // one), or scoring one on the caller's device, let a locked range guess on
+    // uncounted and take over everyone else's match of that number.
+    it('trust is per match: owning another match of the game number lets a refused range prove that match only', async () => {
+      const budget = createPinFailureBudget({ rangeMax: 1, log: () => {} })
+      const r3 = createMatchRestore(db, { logger: quietLogger(), pinBudget: budget })
+      const victimExt = uniq('VICTIM')
+      const ownExt = uniq('OWN')
+      const v = await restore.restoreMatch(backup(victimExt, { gameN: 8989, pin: '898989' }), W)
+      // the attacker's own: a test match with the victim's game number
+      const own = backup(ownExt, { gameN: 8989, pin: '121212' })
+      own.match.test = true
+      const o = await restore.restoreMatch(own, W)
+      assert.equal(o.status, 200, JSON.stringify(o.body))
+      const [victimOwner, attacker] = [randomUUID(), randomUUID()]
+      for (const u of [victimOwner, attacker]) await raw.query('INSERT INTO auth.users (id, email) VALUES ($1, $2)', [u, `${u}@example.ch`])
+      await raw.query('BEGIN')
+      await raw.query("SET LOCAL session_replication_role = 'replica'")
+      await raw.query('UPDATE matches SET created_by = $2 WHERE id = $1', [v.body.data.id, victimOwner])
+      await raw.query('UPDATE matches SET created_by = $2 WHERE id = $1', [o.body.data.id, attacker])
+      await raw.query('COMMIT')
+      const attackerDevice = randomUUID()
+      await raw.query("INSERT INTO match_scorer_devices (match_id, device_id, platform) VALUES ($1, $2, 'web')", [o.body.data.id, attackerDevice])
+      // count what is asked of the database: the answer and the work must not depend on whose PIN it is
+      let queries = 0
+      const counted = { ...db, runQuery: (...a) => { queries++; return db.runQuery(...a) }, pool: { query: (...a) => { queries++; return db.pool.query(...a) } } }
+      const r4 = createMatchRestore(counted, { logger: quietLogger(), pinBudget: budget })
+      // the guessing range (an IPv4 /24, share 2 here) locks the game number
+      const range = '198.18.40.1'
+      assert.equal((await r3.restoreByPin({ gameN: 8989, pin: '100001' }, { limitKey: range })).status, 404)
+      assert.equal((await r3.restoreByPin({ gameN: 8989, pin: '100002' }, { limitKey: '198.18.40.2' })).status, 404)
+      assert.equal((await r3.restoreByPin({ gameN: 8989, pin: '898989' }, { limitKey: '198.18.40.3' })).status, 429)
+      for (const trust of [{ userId: attacker, isAdmin: async () => false }, { deviceId: attackerDevice }, { userId: attacker, deviceId: attackerDevice }]) {
+        const what = JSON.stringify(Object.keys(trust))
+        // a wrong PIN and the victim's right PIN: the same answer, the same work
+        const q0 = queries
+        const wrong = await r4.restoreByPin({ gameN: 8989, pin: '100009' }, { limitKey: `198.18.40.${10 + queries % 50}`, trust })
+        const q1 = queries
+        const theirs = await r4.restoreByPin({ gameN: 8989, pin: '898989' }, { limitKey: `198.18.40.${60 + queries % 50}`, trust })
+        const q2 = queries
+        assert.equal(wrong.status, 429, what)
+        assert.equal(theirs.status, 429, what)
+        assert.deepEqual(theirs.body, wrong.body, what)
+        assert.equal(q2 - q1, q1 - q0, `${what}: as many queries for the victim's PIN as for a wrong one`)
+        // its own match: proved
+        const mine = await r4.restoreByPin({ gameN: 8989, pin: '121212' }, { limitKey: `198.18.40.${120 + queries % 50}`, trust })
+        assert.equal(mine.status, 200, what)
+        assert.equal(mine.body.data.match.external_id, ownExt)
+      }
+      // the victim's match took no editor and no scorer from there
+      assert.equal((await raw.query('SELECT count(*)::int n FROM match_editors WHERE match_id = $1', [v.body.data.id])).rows[0].n, 0)
+      assert.equal((await raw.query('SELECT count(*)::int n FROM match_scorer_devices WHERE match_id = $1', [v.body.data.id])).rows[0].n, 0)
+      // a range locked out of the victim's game PIN only (wrong claims): the
+      // victim's match is passed over for the attacker, given to its owner
+      const claimer = '198.18.41.1'
+      assert.equal((await r3.claimMatch({ externalId: victimExt, pin: '100003' }, { limitKey: claimer })).status, 404)
+      assert.equal((await r3.restoreByPin({ gameN: 8989, pin: '898989' }, { limitKey: claimer, trust: { userId: attacker } })).status, 404)
+      assert.equal((await r3.restoreByPin({ gameN: 8989, pin: '898989' }, { limitKey: '198.18.41.2', trust: { userId: victimOwner } })).status, 200)
+      // an admin is trusted for every match of the number
+      assert.equal((await r3.restoreByPin({ gameN: 8989, pin: '898989' }, { limitKey: range, trust: { userId: attacker, isAdmin: async () => true } })).status, 200)
+      // and another range proves the victim's match with its PIN
+      assert.equal((await r3.restoreByPin({ gameN: 8989, pin: '898989' }, { limitKey: '198.18.42.1' })).status, 200)
     })
 
     it('finds an older match of its game number however many newer ones there are', async () => {

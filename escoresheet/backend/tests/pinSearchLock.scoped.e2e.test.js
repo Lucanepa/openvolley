@@ -171,6 +171,8 @@ describe('SEC-06: the PIN-only lookup lock refuses the guessing ranges only', { 
     assert.match(events[0].message, /^PIN guessing: 100 wrong beach:referee PINs in lookups without a match from all callers within 10 min/)
     assert.equal(events[0].data.count, 100)
     assert.equal(events[0].data.ranges.length, 5)
+    for (const r of events[0].data.ranges) assert.match(r, /^IPv6 \/48 #[b-z]{8} x\d+$/)
+    assert.equal(/2001:db8/.test(JSON.stringify(events[0])), false, 'never an address (PL-R3)')
     for (const pin of ALL_PINS) assert.equal(JSON.stringify(events[0]).includes(pin), false, 'never a PIN')
     // the operator sees the lookups without a match, at most 60 lines per PIN type and window
     const lookups = pinLines().filter((l) => l.startsWith('[PIN] lookup without a match: beach:referee'))
@@ -191,7 +193,9 @@ describe('SEC-06: the PIN-only lookup lock refuses the guessing ranges only', { 
     }
     // 20 from each of two addresses reach the share of the /24 (40): the rest is refused
     assert.deepEqual(counts, { 404: 40, 429: 60 })
-    await waitUntil(() => pinLines().some((l) => l.startsWith('[PIN] 40 wrong beach:referee PINs in lookups without a match from 203.0.113.0/24')), { timeoutMs: 3000, what: 'the /24 lock line' })
+    // the /24 by its width and a pseudonym, never its address (PL-R3)
+    await waitUntil(() => pinLines().some((l) => /^\[PIN\] 40 wrong beach:referee PINs in lookups without a match from IPv4 \/24 #[b-z]{8} within/.test(l)), { timeoutMs: 3000, what: 'the /24 lock line' })
+    assert.deepEqual(pinLines().filter((l) => /203\.0\.113|2001:db8/.test(l)), [])
     // a fresh address of that /24: refused, the right PIN too, on both checks
     assert.equal((await obCheck('203.0.113.99', BEACH.pins.referee)).status, 429)
     assert.equal((await obRelay('203.0.113.98', BEACH.pins.referee)).status, 429)

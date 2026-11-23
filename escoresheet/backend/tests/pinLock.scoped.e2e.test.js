@@ -227,9 +227,12 @@ describe('SEC-05: the PIN lock refuses the guessing ranges only', { skip: SKIP }
     await waitUntil(async () => (await alertEvents('pin budget match')).length > 0, { timeoutMs: 5000, what: 'the alert in the error tracker' })
     const [alert, ...more] = await alertEvents('pin budget match')
     assert.deepEqual(more, [])
-    assert.match(alert.message, /^PIN guessing: match psl_m_[0-9a-f]+: 30 wrong referee\/bench_home\/bench_away\/game PINs from all callers within 10 min \(203\.0\.113\.0\/24 x30\)/)
+    // the range by its width and a pseudonym, never its address (PL-R3: privacy section 14)
+    assert.match(alert.message, /^PIN guessing: match psl_m_[0-9a-f]+: 30 wrong referee\/bench_home\/bench_away\/game PINs from all callers within 10 min \(IPv4 \/24 #[b-z]{8} x30\)/)
     assert.equal(alert.data.count, 30)
-    assert.deepEqual(alert.data.ranges, ['203.0.113.0/24 x30'])
+    assert.equal(alert.data.ranges.length, 1)
+    assert.match(alert.data.ranges[0], /^IPv4 \/24 #[b-z]{8} x30$/)
+    assert.equal(/203\.0\.113/.test(JSON.stringify(alert)), false, 'never an address')
     assert.equal(alert.data.match, M.ext)
     const text = JSON.stringify(alert)
     for (const pin of [M.gamePin, ...Object.values(M.pins)]) assert.equal(text.includes(pin), false, 'never a PIN')
@@ -260,10 +263,14 @@ describe('SEC-05: the PIN lock refuses the guessing ranges only', { skip: SKIP }
       assert.deepEqual(await subscribeAs(ip, { pin: M.pins.bench_home, role: 'bench', team: 'home' }), { access: 'full', errors: [] }, ip)
     }
     // one lock line per PIN type for the range; still one alert
-    await waitUntil(() => pinLines().some((l) => l.startsWith(`[PIN] match ${M.ext}: 40 wrong referee PINs from 203.0.113.0/24`)), { timeoutMs: 3000, what: 'the lock line' })
+    const lockLine = (type) => new RegExp(`^\\[PIN\\] match ${M.ext}: 40 wrong ${type} PINs from IPv4 /24 #[b-z]{8} within`)
+    await waitUntil(() => pinLines().some((l) => lockLine('referee').test(l)), { timeoutMs: 3000, what: 'the lock line' })
     for (const type of ['referee', 'bench_home', 'bench_away', 'game']) {
-      assert.equal(pinLines().filter((l) => l.startsWith(`[PIN] match ${M.ext}: 40 wrong ${type} PINs from 203.0.113.0/24`)).length, 1, type)
+      assert.equal(pinLines().filter((l) => lockLine(type).test(l)).length, 1, type)
     }
+    // one name for the range in every line; no address in any [PIN] line (PL-R3)
+    assert.equal(new Set(pinLines().filter((l) => /^\[PIN\] match .*: 40 wrong/.test(l)).map((l) => /IPv4 \/24 #[b-z]{8}/.exec(l)[0])).size, 1)
+    assert.deepEqual(pinLines().filter((l) => /203\.0\.113|198\.51\.100|192\.0\.2|2001:db8/.test(l)), [])
     assert.equal((await alertEvents('pin budget match')).length, 1)
   })
 
@@ -275,7 +282,7 @@ describe('SEC-05: the PIN lock refuses the guessing ranges only', { skip: SKIP }
     const refused = await restore(A(41), { gameN: M2.n, pin: M2.gamePin })
     assert.equal(refused.status, 429, refused.text)
     assert.equal(refused.headers.get('retry-after'), '600')
-    await waitUntil(() => pinLines().some((l) => l.startsWith(`[PIN] game number ${M2.n}: 40 wrong game PINs in restore-by-pin from 203.0.113.0/24`)), { timeoutMs: 3000, what: 'the game number lock line' })
+    await waitUntil(() => pinLines().some((l) => new RegExp(`^\\[PIN\\] game number ${M2.n}: 40 wrong game PINs in restore-by-pin from IPv4 /24 #[b-z]{8} within`).test(l)), { timeoutMs: 3000, what: 'the game number lock line' })
     // another range
     const fine = await restore(B(41), { gameN: M2.n, pin: M2.gamePin })
     assert.equal(fine.status, 200, fine.text)
@@ -312,5 +319,45 @@ describe('SEC-05: the PIN lock refuses the guessing ranges only', { skip: SKIP }
     assert.deepEqual(await scoreboard(A(48), SCORER_DEVICE), [])
     // another device with the right game PIN from there: refused
     assert.deepEqual(await scoreboard(A(49), '5c0e5c0e-0000-4000-8000-0000000005c8'), ['rate-limited'])
+  })
+
+  // Audit 2026-11 review, PL-R1 (the reviewer's PoC): the trust of
+  // restore-by-pin held for the whole game number. An account that owned ANY
+  // match with it (any account may make a test match) was trusted for all of
+  // them: from the locked range its guesses were compared uncounted, and the
+  // victim's right PIN with claim made it editor and scorer of the victim's match.
+  it('an account owning a test match of the game number is refused from the locked range, for a wrong PIN and the victim\'s right PIN alike', async () => {
+    const ATTACKER_DEVICE = '5c0e5c0e-0000-4000-8000-0000000005ca'
+    const T = { ext: `psl_t_${tag}`, gamePin: '000111' }
+    // a plain sign-up (no scorer role) and its own test match with M2's game number
+    const email = `psl-attacker-${tag}@example.ch`
+    assert.equal((await api(srv.base, '/api/auth/sign-up', { headers: as('192.0.2.203'), body: { email, password: 'correct-horse-battery', metadata: { first_name: 'X' } } })).status, 200)
+    const inn = await api(srv.base, '/api/auth/sign-in', { headers: as('192.0.2.203'), body: { email, password: 'correct-horse-battery' } })
+    const attacker = { id: inn.json.data.user.id, token: inn.json.data.session.access_token }
+    const t = await api(srv.base, '/api/db', {
+      token: attacker.token,
+      headers: as('192.0.2.203'),
+      body: { table: 'matches', action: 'upsert', params: { data: { external_id: T.ext, game_n: M2.n, game_pin: T.gamePin, test: true, connections: {}, status: 'live', sport_type: 'indoor', home_team: { name: 'H' }, away_team: { name: 'A' }, scheduled_at: new Date().toISOString() }, onConflict: 'external_id', returning: 'id', single: true } }
+    })
+    assert.equal(t.status, 200, t.text)
+    // M2's game number is locked for the guessing /24 (the test before): anonymous, the right PIN is refused
+    assert.equal((await restore(A(60), { gameN: M2.n, pin: M2.gamePin })).status, 429)
+    // signed in as the attacker, from that /24: wrong PINs and the victim's right PIN, all refused
+    for (let a = 61; a < 71; a++) {
+      const r = await restore(A(a), { gameN: M2.n, pin: nextWrong() }, attacker.token)
+      assert.equal(r.status, 429, `${a}: ${r.text}`)
+    }
+    const hit = await restore(A(71), { gameN: M2.n, pin: M2.gamePin, claim: true, device: { id: ATTACKER_DEVICE, platform: 'web' } }, attacker.token)
+    assert.equal(hit.status, 429, hit.text)
+    assert.equal(hit.json.error.code, 'OV_TOO_MANY_ATTEMPTS')
+    // the victim's match kept its scorer and got no editor
+    const dev = await sql.query('SELECT d.device_id FROM public.match_scorer_devices d JOIN public.matches m ON m.id = d.match_id WHERE m.external_id = $1', [M2.ext])
+    assert.deepEqual(dev.rows.map((r) => r.device_id), [SCORER_DEVICE_2])
+    const editors = await sql.query('SELECT count(*)::int n FROM public.match_editors e JOIN public.matches m ON m.id = e.match_id WHERE m.external_id = $1 AND e.user_id = $2', [M2.ext, attacker.id])
+    assert.equal(editors.rows[0].n, 0)
+    // its own test match: proved from there
+    const own = await restore(A(72), { gameN: M2.n, pin: T.gamePin }, attacker.token)
+    assert.equal(own.status, 200, own.text)
+    assert.equal(own.json.data.match.external_id, T.ext)
   })
 })
