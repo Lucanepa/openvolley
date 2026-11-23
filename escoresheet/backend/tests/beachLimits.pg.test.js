@@ -2,7 +2,8 @@
  * lib/beachTournaments.js against a real Postgres: the bounds of a
  * tournament, the per-account limits of the heavy calls, the locks of
  * delete and court removal, the saved-pair copy at the draw, and the
- * add-manager answer. Synthetic names and licences only.
+ * add-manager answer (an invitation, accepted by the invited manager).
+ * Synthetic names and licences only.
  *
  * Needs PG_TEST_URL (a throwaway Postgres, see tests/helpers/pgTestDb.js).
  */
@@ -184,7 +185,7 @@ describe('beach tournaments: bounds, limits and locks', { skip: SKIP_PG }, () =>
     assert.equal((await beach.schedule({ user: organiser, access, id: mine.id, body: { dryRun: true } })).status, 200)
   })
 
-  it('add-manager answers the same for any address and adds only beach competition managers', async () => {
+  it('add-manager answers the same for any address and lists every address alike until a beach competition manager accepts (PERM-18)', async () => {
     const t = data(await beach.createTournament({ user: organiser, access, body: { title: 'Team Cup', starts_on: '2026-07-04', ends_on: '2026-07-04' } }), 201).tournament
     const add = (email) => call(organiser, 'POST', `/api/beach/tournaments/${t.id}/managers`, { email })
     const known = await add(emails[other.id].toUpperCase())
@@ -195,8 +196,29 @@ describe('beach tournaments: bounds, limits and locks', { skip: SKIP_PG }, () =>
       assert.deepEqual(r.body, known.body, 'one answer for every address')
     }
     assert.ok(!JSON.stringify(known.body).includes(other.id), 'no account id')
-    const managers = data(await beach.getTournament({ user: organiser, access, id: t.id })).managers
-    assert.deepEqual(managers.map((m) => m.email).sort(), [emails[organiser.id], emails[other.id]].sort())
+    const before = data(await beach.getTournament({ user: organiser, access, id: t.id }))
+    assert.deepEqual(before.managers.map((m) => m.email), [emails[organiser.id]], 'nobody added before accepting')
+    assert.deepEqual(before.invited.map((i) => i.email).sort(), [emails[other.id], 'nobody@example.invalid', emails[adminOnly.id]].sort())
+    assert.ok(!JSON.stringify(before.invited).includes(other.id) && !JSON.stringify(before.invited).includes(adminOnly.id), 'no account id')
+    // the admin (no beach competition manager role) cannot accept; the beach competition manager can
+    const adminAccess = accessFromRoles(['admin'])
+    const inviteOf = async (user, a) => data(await beach.listInvites({ user, access: a })).invites
+    assert.deepEqual(await inviteOf(adminOnly, adminAccess), [])
+    const [inv] = await inviteOf(other, access)
+    assert.equal(inv.tournament.id, t.id)
+    const adminTry = await beach.answerInvite({ user: adminOnly, access: adminAccess, id: inv.id, accept: true })
+    assert.equal(adminTry.status, 404, 'an invitation to another address')
+    data(await beach.answerInvite({ user: other, access, id: inv.id, accept: true }))
+    const after = data(await beach.getTournament({ user: organiser, access, id: t.id }))
+    assert.deepEqual(after.managers.map((m) => m.email).sort(), [emails[organiser.id], emails[other.id]].sort())
+    assert.equal(after.invited.length, 2)
+    // an expired invitation can no longer be accepted, and is listed no more
+    await pool.query("UPDATE public.beach_tournament_invites SET invited_at = now() - interval '31 days' WHERE tournament_id = $1", [t.id])
+    assert.deepEqual(data(await beach.getTournament({ user: organiser, access, id: t.id })).invited, [])
+    // ... and is deleted by the next list or invitation (privacy section 10)
+    data(await beach.listInvites({ user: other, access }))
+    const { rows: [{ n: left }] } = await pool.query('SELECT count(*)::int AS n FROM public.beach_tournament_invites WHERE tournament_id = $1', [t.id])
+    assert.equal(left, 0)
     // a few a minute only
     let last = null
     for (let i = 0; i < 20 && !(last && last.status === 429); i++) last = await add(`probe${i}@example.invalid`)
