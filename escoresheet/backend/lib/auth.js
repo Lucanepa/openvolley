@@ -290,7 +290,10 @@ const DEFAULTS = Object.freeze({
   // gets newSourceTries tries per window (so the owner on a new network, or
   // after a restart, can still type the password).
   lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 },
-  accountLockout: { maxFailures: 100, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000, newSourceTries: 3 }
+  accountLockout: { maxFailures: 100, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000, newSourceTries: 3 },
+  // db/025: what an account asked for at sign-up (confirmEmailLink clears it
+  // when the confirmer is not shown to be the one who signed up)
+  accountRequestsTable: 'public.account_requests'
 })
 const FAILED_SOURCE_MS = 15 * 60 * 1000
 const KNOWN_SOURCE_MS = 60 * DAY * 1000
@@ -665,7 +668,8 @@ export function createAuth(options = {}) {
     tokens: cfg.tokensTable ? qualify(cfg.tokensTable) : null,
     audit: cfg.auditTable ? qualify(cfg.auditTable) : null,
     passkeys: cfg.passkeysTable ? qualify(cfg.passkeysTable) : null,
-    memberships: cfg.membershipsTable ? qualify(cfg.membershipsTable) : null
+    memberships: cfg.membershipsTable ? qualify(cfg.membershipsTable) : null,
+    requests: cfg.accountRequestsTable ? qualify(cfg.accountRequestsTable) : null
   }
 
   const limits = {
@@ -1784,13 +1788,36 @@ export function createAuth(options = {}) {
   }
 
   /**
+   * What a sign-up typed into the account (audit 2611 SEC-15), in the
+   * caller's transaction: the profile's name and licence number, and its
+   * open requests (db/025, also the ones a team manager proposed since). The
+   * owner enters their own on the account page; the licence question asks
+   * again (it asks a profile without one).
+   */
+  async function clearSignUpDetailsIn(client, userId) {
+    if (T.profiles) {
+      const pcols = await columnsOf(cfg.profilesTable, client)
+      const clear = ['first_name', 'last_name', 'license_number'].filter((c) => writable(pcols, c))
+      if (clear.length) {
+        const set = clear.map((c) => `${quoteIdent(c)} = NULL`)
+        if (writable(pcols, 'updated_at')) set.push('updated_at = now()')
+        await client.query(`UPDATE ${T.profiles} SET ${set.join(', ')} WHERE ${quoteIdent(cfg.profileUserIdColumn)} = $1`, [userId])
+      }
+    }
+    if (T.requests && (await columnsOf(cfg.accountRequestsTable, client)).has('user_id')) {
+      await client.query(`DELETE FROM ${T.requests} WHERE user_id = $1`, [userId])
+    }
+  }
+
+  /**
    * POST confirm-email { token, password? } (an `app` is ignored): marks the
    * address confirmed. An account created with a link may have been made by
    * someone else with this address: unless the clicker gives the account's
    * password, the confirmation keeps nothing of whoever signed up (password,
-   * sessions and passkeys go) and answers set_password_token, a reset link
-   * token for the clicker to choose a password (the click proved the inbox,
-   * as a reset link does).
+   * sessions, passkeys, the profile's name and licence number, the open
+   * requests go), tells no approver, and answers set_password_token, a reset
+   * link token for the clicker to choose a password (the click proved the
+   * inbox, as a reset link does).
    */
   async function confirmEmailLink(body, ctx) {
     const blocked = limit('tokenIp', ipKey(ctx.ip))
@@ -1820,8 +1847,11 @@ export function createAuth(options = {}) {
       }
       const { rows: urows } = await client.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1 FOR UPDATE`, [t.userId])
       if (confirmsByLink(urows[0]?.u) && urows[0].u.email_confirmed_at == null && !passwordOk) {
-        // Not shown to be the one who signed up: nothing of theirs stays
+        // Not shown to be the one who signed up: nothing of theirs stays,
+        // neither the password, sessions and passkeys nor the name, licence
+        // number and requests they typed (audit 2611 SEC-15)
         await setPasswordIn(client, t.userId, `!unset:${generateToken()}`, { confirmEmail: true })
+        await clearSignUpDetailsIn(client, t.userId)
         setPasswordToken = await issueToken(client, t.userId, 'reset')
         return { userId: t.userId, already: false, reset: true }
       }
@@ -1836,8 +1866,11 @@ export function createAuth(options = {}) {
     })
     if (!out) return INVALID_LINK()
     if (!out.already) {
-      await audit('account.email_confirmed', out.userId, out.reset ? { password_cleared: true } : {})
-      accountConfirmed(out.userId)
+      await audit('account.email_confirmed', out.userId, out.reset ? { password_cleared: true, details_cleared: true } : {})
+      // The approvers hear of a sign-up its owner confirmed; after a cleared
+      // one there is nothing to approve (no request, no name) and the owner
+      // enters their own details (the licence question asks again)
+      if (!out.reset) accountConfirmed(out.userId)
     }
     if (setPasswordToken) clearLocks(normalizeEmail((await findUserId(out.userId)).email))
     return ok({ confirmed: true, already_confirmed: out.already, ...(setPasswordToken ? { set_password_token: setPasswordToken } : {}) })
