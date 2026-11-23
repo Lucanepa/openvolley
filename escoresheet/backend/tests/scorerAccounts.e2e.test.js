@@ -147,9 +147,10 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     const blocked = await call(brute, 'POST', '/api/account/redeem-invite', { code: (await mk({})).code }, ip)
     expectCode(blocked, 429, 'OV_TOO_MANY_ATTEMPTS')
     assert.equal(blocked.headers.get('retry-after'), '600')
-    // the IP bucket blocks another account on the same address, not one elsewhere
+    // PERM-14: one account's failures do not lock another account on the same
+    // address (the address has its own, higher ceiling: tests/accounts.redeemRate.e2e.test.js)
     const other = await account('other-ip')
-    expectCode(await call(other, 'POST', '/api/account/redeem-invite', { code: 'ZZZZ-ZZZZ-ZZZZ' }, ip), 429, 'OV_TOO_MANY_ATTEMPTS')
+    expectCode(await call(other, 'POST', '/api/account/redeem-invite', { code: 'ZZZZ-ZZZZ-ZZZZ' }, ip), 404, 'OV_INVITE_INVALID')
     expectCode(await call(other, 'POST', '/api/account/redeem-invite', { code: 'ZZZZ-ZZZZ-ZZZZ' }, { 'cf-connecting-ip': '198.18.0.78' }), 404, 'OV_INVITE_INVALID')
     // a success does not count
     const fresh = await account('fresh-ok')

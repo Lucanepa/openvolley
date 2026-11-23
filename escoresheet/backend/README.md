@@ -243,9 +243,11 @@ whose scorer left first is ended for the new one: its watchers wait for its
 next sync, and its claim (game PIN, scoring device) is held for the rest of its
 take-over grace.
 `/api/admin/*` and `/api/saved-teams*` 300 per user; `/api/match/official-check`
-120 per user; `/api/account/redeem-invite` at most **10 failed attempts per
-account and per IP (/64) in 10 minutes** (a success is refunded; 429
-`OV_TOO_MANY_ATTEMPTS` with `Retry-After: 600`).
+120 per user; `/api/account/redeem-invite` and `/invite-preview` 30 per user
+and minute (429, `Retry-After: 60`), and at most **10 failed attempts per
+account and 50 per IP (/64) in 10 minutes** (only a refused code counts: a
+success, a refused call and a server error are refunded; 429
+`OV_TOO_MANY_ATTEMPTS` with `Retry-After: 600`; PERM-14).
 Across address buckets (`lib/matchRestore.js` `createPinFailureBudget`;
 owner decision 1 of the 2026-11 audit, SEC-05 / SEC-06: lock the guessers
 only), wrong PINs are counted per match and PIN type (game, referee, a bench,
