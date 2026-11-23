@@ -345,7 +345,8 @@ people I appoint). In addition, as far as their task needs it:
 - the managers of the club or team you asked for at sign-up (the approvers):
   your name, email address, sign-up date and whether your address is
   confirmed, until your request is decided;
-- the other managers of a beach tournament you manage: your email address;
+- the other managers of a beach tournament you manage, or to which you are
+  invited as co-manager: your email address;
 - the scorers who receive a roster you sent ahead: your name as its sender
   (section 10);
 - the other scorers of an official game you already score: your name, so
@@ -667,7 +668,11 @@ managers and the administrators of that sport. In OpenVolley a scorer account
 sees only the saved teams of its own matches of the current season (the teams
 of its clubs and their opponents, and the games of the matches it recorded or
 edits); a scorer without a club only while the game is near and for a few
-games a week, each recorded in the change log. The scorer apps cache these
+games a week, each recorded in the change log. In OpenBeach a scorer account
+sees only the saved pairs entered in its own published or running
+tournaments (a tournament of which it scores a match on a court tablet, or
+whose match it recorded or edits). A beach competition manager changes or
+deletes only the competitions it created. The scorer apps cache these
 teams and delete them on sign-out.
 
 **Filled from official matches (OpenVolley):** after the coin toss of an
@@ -747,7 +752,13 @@ reads is the club's responsibility.
 last names, licence numbers and countries, schedule, results, names of
 referees and scorers. If a tournament is marked **public**, the public
 tournament page shows teams, names and countries, never licence numbers or
-dates of birth.
+dates of birth. **Co-managers** are invited by email address: the
+invitation keeps the address that was typed, who sent it and when, and the
+managers of the tournament see that address. A competition manager with that
+address sees the invitation in the manager and becomes a co-manager only by
+accepting it. An invitation is deleted when it is accepted, declined or
+withdrawn; one left open can no longer be used after 30 days and is then
+deleted.
 
 **Purpose:** re-using rosters, preparing a game's roster ahead, adding a club's players and team officials
 to a roster and checking the players' gender against the team's, running tournaments, matching players by
