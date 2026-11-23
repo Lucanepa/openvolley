@@ -15818,12 +15818,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                   />
                 )}
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? 'calc(6.6cqw * var(--cqf, 1))' : 'calc(11.25cqw * var(--cqf, 1))',
                   fontWeight: 700,
                   color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || timeoutBlocked('left')) ? '#22c55e' : 'inherit')
                 }}>{getTimeoutsUsed('left')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginTop: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.timeoutFull')}</div>
               </div>
               <div
                 onClick={() => {
@@ -15852,12 +15852,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.sub')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? 'calc(6.6cqw * var(--cqf, 1))' : 'calc(11.25cqw * var(--cqf, 1))',
                   fontWeight: 700,
                   color: getSubstitutionsUsed('left') >= 6 ? '#ef4444' : getSubstitutionsUsed('left') >= 5 ? '#eab308' : 'inherit'
                 }}>{getSubstitutionsShown('left')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginTop: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.substitutionFull')}</div>
               </div>
             </div>
             {/* Closed time-out / substitution in the set interval: the reason
@@ -19296,12 +19296,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                   />
                 )}
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? 'calc(6.6cqw * var(--cqf, 1))' : 'calc(11.25cqw * var(--cqf, 1))',
                   fontWeight: 700,
                   color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || timeoutBlocked('right')) ? '#22c55e' : 'inherit')
                 }}>{getTimeoutsUsed('right')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginTop: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.timeoutFull')}</div>
               </div>
               <div
                 onClick={() => {
@@ -19330,12 +19330,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.sub')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? 'calc(6.6cqw * var(--cqf, 1))' : 'calc(11.25cqw * var(--cqf, 1))',
                   fontWeight: 700,
                   color: getSubstitutionsUsed('right') >= 6 ? '#ef4444' : getSubstitutionsUsed('right') >= 5 ? '#eab308' : 'inherit'
                 }}>{getSubstitutionsShown('right')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? 'calc(3.75cqw * var(--cqf, 1))' : 'max(11px, calc(5.1cqw * var(--cqf, 1)))', color: 'var(--muted)', marginTop: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.substitutionFull')}</div>
               </div>
             </div>
             {/* Closed time-out / substitution in the set interval: the reason

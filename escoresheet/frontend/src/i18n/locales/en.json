@@ -803,6 +803,8 @@
       "serveLabel": "SERVE",
       "to": "TO",
       "sub": "SUB",
+      "timeoutFull": "Time-out",
+      "substitutionFull": "Substitution",
       "last": "Last",
       "rallyStatus": "Rally status",
       "lastAction": "Last action",
