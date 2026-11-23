@@ -378,6 +378,21 @@ the hall network reads without a PIN. A venue server reached by a dotted name
 of the hall's router (`scorer-pc.fritz.box`) is no own page either: open it
 by its address or `.local` name.
 
+**Plain http on the cloud** (`lib/plainHttp.js`, SEC-61): Cloudflare's
+`cf-visitor` names the visitor's scheme. A page, a script or any address
+opened in a browser (`Sec-Fetch-Mode: navigate`, also under `/api/`) that came
+over http gets 301 (GET, HEAD) or 308 to the same address on https. API calls
+(`/api/*`), CORS preflights and ws:// upgrades are answered as before: 3.x apps
+set to `http://backend.openvolley.app` (a typed bare address became `http://`
+before 13.11.2026) would fail a redirected preflight, arrive with
+`Origin: null` after a redirected call, and cannot follow a redirected socket.
+They are counted (`plainHttp` in the internal `/health`) and logged as
+`[HTTP] plain http answered (SEC-61) kind=api|preflight|ws route=... origin=...`,
+one line per kind and app origin a minute. The health checks, a request
+without `cf-visitor` and a venue server are not touched. The Cloudflare side
+(no zone-wide Always Use HTTPS while such apps are in the field): deploy
+`RUNBOOK-hetzner.md`, "Edge and mail domain".
+
 ## Security model (Phase 7 security release)
 
 What protects what, in cloud mode (`DATABASE_URL`) and on the LAN. Tests:

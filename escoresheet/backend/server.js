@@ -43,6 +43,7 @@ import { ipBucketKey, createConcurrencyGate, bearerFromHeaders, EMAIL_CONFIRMATI
 import { createAttemptLimiter, createPinFailureBudget, pinScope, PIN_MATCH_FAILURE_MAX, PIN_SEARCH_FAILURE_MAX, PIN_RANGE_FAILURE_MAX, MATCH_SERVER_ONLY_COLUMNS, RESTORE_DEFAULTS } from './lib/matchRestore.js'
 import { accessForSport } from './lib/access.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
+import { plainHttpAnswer, isPlainVisitor, formatPlainHttpLine, plainHttpLogKey } from './lib/plainHttp.js'
 import { renderLandingPage, landingMatchRow, roleUrl, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
 import { createOriginPolicy, parsePublicOrigins, withoutDevOrigins } from './lib/cors.js'
 import { pageContentSecurityPolicy } from './lib/pageCsp.js'
@@ -3321,6 +3322,23 @@ const { getCorsOrigin, isTrustedOrigin } = createOriginPolicy({ isCloud: IS_CLOU
 // foreign origin, and role-socket frames over their size or byte budget
 const transportRefusals = { origin: 0, mediaType: 0, upgradeOrigin: 0, frames: 0, socketsClosed: 0 }
 
+// The cloud over plain http (SEC-61, lib/plainHttp.js), for /health
+// (relayStats): pages sent to https, and the API calls, preflights and
+// WebSocket upgrades of older apps that were still answered in the clear.
+// One ops line per kind and app origin a minute (the rest is counted in the
+// limiter's "suppressed" note), so the lead sees who still uses http.
+const plainHttpStats = { redirected: 0, api: 0, preflight: 0, ws: 0 }
+const logPlainHttp = createLogLimiter({ max: 1, windowMs: 60_000 })
+setInterval(() => logPlainHttp.flush(), 60_000).unref()
+
+/** Count and log (rate limited) a plain http call that is answered as before. */
+function notePlainHttp(req, kind) {
+  if (kind in plainHttpStats) plainHttpStats[kind]++
+  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined
+  const p = { kind, route: routeLabel(req), origin, trusted: origin !== undefined && isTrustedOrigin(origin, { host: req.headers.host }) }
+  logPlainHttp(formatPlainHttpLine(p), plainHttpLogKey(p))
+}
+
 // --- Writes: Origin and body type ---------------------------------------------
 // Any web page can make its visitor's browser send a cross-site POST of a
 // "simple" body type (text/plain, form-encoded, multipart) without a CORS
@@ -3440,6 +3458,8 @@ function relayStats() {
     activeRooms: rooms.size,
     // what the transport refused since the start (transportRefusals)
     transport: { ...transportRefusals },
+    // the cloud over plain http since the start (SEC-61, plainHttpStats)
+    plainHttp: { ...plainHttpStats },
     // new sockets told "relay busy" (heap above OV_ADMIT_HEAP_PCT) since the start;
     // sockets that proved nothing pushed out at a cap, or closed as idle under load
     admission: { refused: admissionRefused, heapPct: ADMIT_HEAP_PCT, maxConnections: MAX_CONNECTIONS, evicted: roleEvictions, idleClosed: roleIdleClosed },
@@ -3599,27 +3619,6 @@ function hasCredentials(req) {
   return !!(req.headers.authorization || req.headers['x-ov-match-token'] || req.headers['x-ov-match-pin'])
 }
 
-/**
- * The https address of a request the visitor sent to the cloud over plain
- * http, else null (SEC-61). Cloudflare's cf-visitor names the visitor's
- * scheme ({"scheme":"http"}); without it (a local caller, the tunnel's own
- * checks) nothing changes, nor for the health checks.
- */
-function plainHttpRedirect(req) {
-  const visitor = req.headers['cf-visitor']
-  if (typeof visitor !== 'string' || !visitor) return null
-  let scheme
-  try { scheme = JSON.parse(visitor)?.scheme } catch { return null }
-  if (scheme !== 'http') return null
-  const raw = String(req.url || '/')
-  const path = raw.startsWith('/') ? raw : '/'
-  const pathname = path.split('?')[0]
-  if (pathname === '/health' || pathname.startsWith('/health/')) return null
-  const host = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '')
-  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return null
-  return `https://${host}${path}`
-}
-
 function handleHttpRequest(req, res) {
   // Enable CORS with proper origin handling
   const cors = getCorsOrigin(req)
@@ -3655,19 +3654,23 @@ function handleHttpRequest(req, res) {
   // deployments are not left without a policy (PAGE_CSP, lib/pageCsp.js).
   res.setHeader('Content-Security-Policy', PAGE_CSP)
 
-  // The cloud over plain http (SEC-61): Cloudflare says which scheme the
-  // visitor used (cf-visitor). Such a request goes to https, never answered
-  // in the clear. The health checks (monitors, Docker), a venue server and a
-  // request without cf-visitor (the tunnel's own checks, local callers) are
-  // served as before.
-  const httpsLocation = IS_CLOUD ? plainHttpRedirect(req) : null
-  if (httpsLocation) {
+  // The cloud over plain http (SEC-61, lib/plainHttp.js): Cloudflare says
+  // which scheme the visitor used (cf-visitor). A page, a script or an
+  // address opened in the browser goes to https. An API call and a CORS
+  // preflight are answered as before: older apps (3.x set to
+  // http://backend.openvolley.app) would fail a redirected preflight and
+  // arrive with Origin: null after a redirect; they are counted in the ops
+  // log instead. The health checks, a venue server and a request without
+  // cf-visitor are served as before.
+  const plain = IS_CLOUD ? plainHttpAnswer(req) : null
+  if (plain?.action === 'redirect') {
+    plainHttpStats.redirected++
     req.resume()
-    // 308 keeps the method and body of an older app's write
-    res.writeHead(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, { Location: httpsLocation, 'Content-Type': 'text/plain; charset=utf-8' })
-    res.end(req.method === 'HEAD' ? undefined : `Use ${httpsLocation}\n`)
+    res.writeHead(plain.status, { Location: plain.location, 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end(req.method === 'HEAD' ? undefined : `Use ${plain.location}\n`)
     return
   }
+  if (plain?.action === 'serve') notePlainHttp(req, plain.kind)
 
   if (req.method === 'OPTIONS') {
     // the scoreboard codes: any site (CORS *, never with credentials)
@@ -6845,6 +6848,9 @@ server.on('upgrade', (req, socket, head) => {
     socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
     return
   }
+  // ws:// on the cloud (SEC-61): older apps set to http://backend.openvolley.app
+  // open their relay socket that way. Accepted as before, and counted.
+  if (IS_CLOUD && isPlainVisitor(req.headers)) notePlainHttp(req, 'ws')
   if (realtimeHub && isLiveRequest(req)) {
     relaySummary.count('live upgrades')
     realtimeHub.handleUpgrade(req, socket, head, { ip: getClientIp(req) })
