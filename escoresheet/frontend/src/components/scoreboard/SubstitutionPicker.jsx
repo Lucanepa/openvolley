@@ -36,6 +36,22 @@ function PairBox({ number, label }) {
  */
 function PlayerTile({ number, sub = null, captain = false, liberoPaint = null, pressed, disabled = false, onClick, label, testId }) {
   const painted = !!liberoPaint && !pressed
+  // A painted tile that cannot be tapped (the libero) keeps its shirt but
+  // reads no louder than the greyed tiles round it: a 1px edge in the ring
+  // colour, faded (the hairline without a ring), instead of the scoreboard's
+  // 2px ring, and fainter (a white shirt with its ring stood out as the
+  // active tile)
+  const quietPaint = painted && disabled
+  const paintStyle = painted
+    ? {
+        background: liberoPaint.bg,
+        color: liberoPaint.text,
+        ...(quietPaint
+          ? { border: `1px solid ${liberoPaint.ring ? `color-mix(in srgb, ${liberoPaint.ring} 40%, transparent)` : 'var(--ov-hairline)'}` }
+          : (liberoPaint.border ? { border: liberoPaint.border } : {})),
+        ...TEAM_COLOUR_MARK
+      }
+    : undefined
   return (
     <button
       type="button"
@@ -48,9 +64,9 @@ function PlayerTile({ number, sub = null, captain = false, liberoPaint = null, p
         'flex min-h-[66px] min-w-[76px] flex-col items-center justify-center gap-1 rounded-xl border p-1.5 transition-colors',
         FOCUS_RING,
         pressed ? 'border-2 border-yellow-500 bg-yellow-100 text-stone-900' : painted ? 'border-transparent' : 'border-stone-200 bg-stone-50 text-stone-900',
-        disabled ? 'cursor-default opacity-50' : (!pressed && !painted && 'hover:bg-stone-100')
+        disabled ? cn('cursor-default', quietPaint ? 'opacity-40' : 'opacity-50') : (!pressed && !painted && 'hover:bg-stone-100')
       )}
-      style={painted ? { background: liberoPaint.bg, color: liberoPaint.text, ...(liberoPaint.border ? { border: liberoPaint.border } : {}), ...TEAM_COLOUR_MARK } : undefined}
+      style={paintStyle}
     >
       <span className={cn(
         'font-bold tabular-nums leading-none',
@@ -177,7 +193,7 @@ export function SubstitutionPicker({ side = 'right', court = [], bench = [], leg
     if (c.isLibero) {
       // never substituted (libero replacements keep their own flow)
       if (picked || injury) return <EmptyPlace key={position} position={position} />
-      return <PlayerTile key={position} testId={`sub-dialog-court-${n}`} number={n} sub={position} liberoPaint={liberoPaint || { bg: '#dbeafe', text: '#1e3a8a', border: '1px solid #93c5fd' }} disabled label={t('scoreboard.subDialog.libero', { number: n, defaultValue: 'Libero #{{number}}' })} />
+      return <PlayerTile key={position} testId={`sub-dialog-court-${n}`} number={n} sub={position} liberoPaint={liberoPaint || { bg: '#dbeafe', text: '#1e3a8a', ring: '#93c5fd', border: '1px solid #93c5fd' }} disabled label={t('scoreboard.subDialog.libero', { number: n, defaultValue: 'Libero #{{number}}' })} />
     }
     if (injury) {
       // the injured player: the injury / exceptional substitution, as a tap on him
