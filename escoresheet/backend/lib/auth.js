@@ -166,7 +166,9 @@ const DEFAULTS = Object.freeze({
     { table: 'public.event_revisions', column: 'actor_id' },
     // db/016: match activity stays (club record) without the account
     { table: 'public.activity_log', column: 'account_id' },
-    { table: 'public.activity_log', column: 'uploader_id' }
+    { table: 'public.activity_log', column: 'uploader_id' },
+    // db/056: a referee the account added stays in the directory
+    { table: 'public.referee_database', column: 'created_by' }
   ],
   // Rows of a table that go with the account under a condition (the table's
   // other rows stay, detached above). db/016: the account's device and app

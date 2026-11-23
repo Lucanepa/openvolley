@@ -166,6 +166,8 @@ const READ_ONLY_TABLES = new Set(['svrz_games'])
 // referee from a picker), changing or deleting anything else is for admins.
 const REFEREE_DIRECTORY = 'referee_database'
 const REFEREE_DIRECTORY_UPDATABLE = new Set(['sport_type'])
+// db/056: read by admins only (the account that added a row)
+const REFEREE_DIRECTORY_ADMIN_COLUMNS = Object.freeze(['created_by'])
 // Relay reads (/api/match/list, /api/match/:id, /api/server/connections, ...)
 // per IP and minute, sized for a hall of 64 matches behind one address (see
 // MAX_OWNED_PER_IP): about 16 a minute per match (the scorer's tablet status
@@ -848,8 +850,10 @@ const WRITE_DENYLIST = {
   // dob: no date of birth is kept (db/048, owner 2026-11-19); an older app's
   // profile save still sends one. license_number (db/048) is the owner's
   profiles: ['roles', 'user_id', 'id', 'dob'],
-  // db/048: the referee directory keeps names, country and sports only
-  referee_database: ['dob'],
+  // db/048: the referee directory keeps names, country and sports only;
+  // db/056: who added a row and when are the server's (an older app sends
+  // created_at, which is dropped: the daily cap counts by it)
+  referee_database: ['dob', 'created_by', 'created_at'],
   user_matches: ['user_id', 'id'],
   // tournament_match_id (db/014): the link to a beach tournament match is the server's
   matches: MATCH_SERVER_ONLY_COLUMNS,
@@ -953,6 +957,92 @@ async function refereeSportsKept(layer, params) {
     console.warn('[DB] referee directory check failed:', err?.message)
     return false
   }
+}
+
+// PERM-07 (audit 2611): the directory is league-wide and only admins delete
+// from it (row by row). An approved scorer used to insert any number of rows
+// at once: 201,000 in 2.5 s, and every indoor picker loaded 200 pages and
+// then showed none (frontend lib/selectAll.js SELECT_ALL_MAX_PAGES). A
+// non-admin's insert takes 1 to REFEREE_DIRECTORY_INSERT_MAX rows, each with
+// a first and a last name, none already there (refereeDirectoryInsert), and
+// at most REFEREE_DIRECTORY_DAILY_MAX rows per account and 24 h (db/056
+// created_by). The apps add one referee at a time (Match setup's officials,
+// after their own "is the name there?" lookup), a few per match.
+const REFEREE_DIRECTORY_INSERT_MAX = 5
+const REFEREE_DIRECTORY_DAILY_MAX = 50
+const REFEREE_NAME_MAX = 100
+const refereeNameKey = (v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').toLowerCase() : '')
+/** The sports of a directory row as written (an array; a JSON text of one), unique. */
+function refereeSportsOf(row) {
+  let v = row?.sport_type
+  if (typeof v === 'string') {
+    try { v = JSON.parse(v) } catch { v = [] }
+  }
+  return Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && x.trim() !== '').map((x) => x.trim()))] : []
+}
+const refereeRefusal = (status, code, message) => ({ status, body: { data: null, error: { message, code } } })
+
+/**
+ * The rows of a non-admin's referee directory insert, checked before
+ * anything is read: { rows } or { refusal }.
+ */
+function refereeDirectoryRows(data) {
+  const rows = Array.isArray(data) ? data : [data]
+  if (rows.length < 1 || rows.length > REFEREE_DIRECTORY_INSERT_MAX || !rows.every((r) => r && typeof r === 'object' && !Array.isArray(r))) {
+    return { refusal: refereeRefusal(400, 'OV_REFEREE_DIRECTORY_ROWS', `Add 1 to ${REFEREE_DIRECTORY_INSERT_MAX} referees at a time`) }
+  }
+  const seen = new Set()
+  for (const r of rows) {
+    const first = refereeNameKey(r.first_name)
+    const last = refereeNameKey(r.last_name)
+    if (!first || !last || r.first_name.length > REFEREE_NAME_MAX || r.last_name.length > REFEREE_NAME_MAX) {
+      return { refusal: refereeRefusal(400, 'OV_INVALID_DATA', 'A referee needs a first and a last name') }
+    }
+    const key = `${first}\u0000${last}`
+    if (seen.has(key)) return { refusal: refereeRefusal(409, 'OV_REFEREE_DUPLICATE', 'This referee is twice in the request (duplicate)') }
+    seen.add(key)
+  }
+  return { rows }
+}
+
+/**
+ * The referee directory insert of /api/db (`p` checked and stripped), in one
+ * transaction serialised per account: the account is recorded as the rows'
+ * creator (db/056, when the column is there) and, for a non-admin
+ * (`capped`), a referee already in the directory (the same first and last
+ * name, any case and spacing, and a sport in common, or no sport given) is
+ * refused 409 OV_REFEREE_DUPLICATE ("duplicate": the older apps' save then
+ * stays quiet), and more than REFEREE_DIRECTORY_DAILY_MAX new rows in 24 h
+ * 429 OV_REFEREE_DIRECTORY_DAILY_LIMIT. Returns pgQuery's { status, body }.
+ */
+async function refereeDirectoryInsert(layer, userId, p, runOpts, { capped }) {
+  const rows = Array.isArray(p.data) ? p.data : [p.data]
+  return layer.db.withTransaction(async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ov:referee-directory:${userId}`])
+    const cols = (await layer.db.ensureCatalog()).tables.get(REFEREE_DIRECTORY)?.columns
+    const owned = cols?.has('created_by') === true && cols.has('created_at')
+    if (capped && owned) {
+      const { rows: [c] } = await client.query(
+        "SELECT count(*)::int AS n FROM public.referee_database WHERE created_by = $1 AND created_at::timestamptz > now() - interval '24 hours'", [userId])
+      if (c.n + rows.length > REFEREE_DIRECTORY_DAILY_MAX) {
+        return refereeRefusal(429, 'OV_REFEREE_DIRECTORY_DAILY_LIMIT', `At most ${REFEREE_DIRECTORY_DAILY_MAX} new referees a day per account`)
+      }
+    }
+    if (capped) {
+      const norm = (expr) => `lower(regexp_replace(btrim(coalesce(${expr}, '')), '\\s+', ' ', 'g'))`
+      for (const r of rows) {
+        const { rows: dup } = await client.query(
+          `SELECT 1 FROM public.referee_database
+            WHERE ${norm('first_name')} = ${norm('$1::text')} AND ${norm('last_name')} = ${norm('$2::text')}
+              AND (cardinality($3::text[]) = 0
+                   OR coalesce(jsonb_typeof(to_jsonb(sport_type)) = 'array' AND to_jsonb(sport_type) ?| $3::text[], false))
+            LIMIT 1`, [r.first_name, r.last_name, refereeSportsOf(r)])
+        if (dup.length) return refereeRefusal(409, 'OV_REFEREE_DUPLICATE', 'This referee is already in the directory (duplicate)')
+      }
+    }
+    const data = owned ? rows.map((r) => ({ ...r, created_by: userId })) : rows
+    return layer.db.runQuery({ table: REFEREE_DIRECTORY, action: 'insert', params: { ...p, data: Array.isArray(p.data) ? data : data[0] } }, { ...runOpts, client })
+  })
 }
 
 /**
@@ -4767,6 +4857,8 @@ Generated by eScoresheet
 
         // Reference tables: admins write, everyone else reads; the referee
         // directory's additions are open to the accounts that fill officials.
+        // A referee directory insert: { capped } (PERM-07, refereeDirectoryInsert)
+        let refereeInsert = null
         if (isWrite && (READ_ONLY_TABLES.has(table) || table === REFEREE_DIRECTORY)) {
           let allowed = false
           if (refereeDirectoryWriteAllowed(table, action, params)) {
@@ -4781,10 +4873,22 @@ Generated by eScoresheet
             }
             allowed = scorer && (action === 'insert' || (await refereeSportsKept(layer, params)))
           }
-          if (!allowed && !(await isAdminUser(layer, authUser.id))) {
+          const admin = await isAdminUser(layer, authUser.id)
+          if (!allowed && !admin) {
             logRejected(403, 'OV_READ_ONLY_TABLE')
             sendJson(res, 403, { data: null, error: { message: 'This table is read-only for your account', code: 'OV_READ_ONLY_TABLE' } })
             return
+          }
+          if (table === REFEREE_DIRECTORY && action === 'insert') {
+            if (!admin) {
+              const checked = refereeDirectoryRows(params.data)
+              if (checked.refusal) {
+                logRejected(checked.refusal.status, checked.refusal.body.error.code)
+                sendJson(res, checked.refusal.status, checked.refusal.body)
+                return
+              }
+            }
+            refereeInsert = { capped: !admin }
           }
         }
 
@@ -4859,6 +4963,15 @@ Generated by eScoresheet
             logRejected(403, 'OV_REFEREE_DIRECTORY')
             sendJson(res, 403, { data: null, error: { message: 'The referee directory is only for scorers', code: 'OV_REFEREE_DIRECTORY' } })
             return
+          }
+          // db/056: which account added a referee is for admins
+          if (!(await isAdminUser(layer, reader.id))) {
+            if (columnFilterOf(params, REFEREE_DIRECTORY_ADMIN_COLUMNS)) {
+              logRejected(400, 'OV_SECRET_FILTER')
+              sendJson(res, 400, { data: null, error: { message: 'This column cannot be used as a filter by your account', code: 'OV_SECRET_FILTER' } })
+              return
+            }
+            hiddenColumns = REFEREE_DIRECTORY_ADMIN_COLUMNS
           }
         }
         if (!isWrite && hasAnonPolicy(table)) {
@@ -5074,6 +5187,7 @@ Generated by eScoresheet
         const pinWrites = table === 'matches' && isWrite ? await watchPinWrites(layer, action, p, authUser?.id || null) : null
         // The scoring device's writes: checked, run and adopted in one transaction
         const runRequest = async () => {
+          if (refereeInsert) return refereeDirectoryInsert(layer, authUser.id, p, runOpts, refereeInsert)
           if (!scoringDevice) return layer.db.runQuery({ table, action, params: p }, runOpts)
           const g = await layer.scorer.guardedWrite({
             device: scoringDevice,
