@@ -704,6 +704,11 @@ function getDataLayer() {
       onGateSaturated: (info) => captureServerError(
         new Error(`auth: the sign-in gate is at capacity (${info.rejected} sign-ins answered auth_busy in ${info.seconds} s)`),
         { view: 'POST /api/auth/sign-in', status: 503, data: info }),
+      // db/057: an address past its account-wide ceiling of failed sign-ins
+      // (SEC-13); lib/auth.js mails the account itself
+      onSignInAttack: ({ userId, failures, windowHours }) => captureServerError(
+        new Error(`auth: ${failures} failed sign-ins on one account within ${windowHours} h; new sources are slowed down`),
+        { view: 'POST /api/auth/sign-in', status: 429, accountId: userId }),
       // db/025: what a new account asks for at sign-up (nothing is granted then)
       signUpRequests: { parse: arq.parseSignUpRequests, store: (client, userId, rows) => arq.storeSignUpRequests(client, userId, rows) },
       // The account's own delete-account: the admin path's last-super-admin

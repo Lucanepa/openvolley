@@ -35,6 +35,7 @@
  *     auth.bcryptGate                  -> { active, queued, peak, rejected, lanes } of the bcrypt limiter
  *     auth.bcryptStats()               -> the worker threads' state, or null (main thread)
  *     auth.close()                     -> stops the bcrypt worker threads
+ *     auth.sweepSignInFailures()       -> number (db/057 rows past their window; also run by sweepExpiredSessions)
  *   sendAuthResult(res, result), createRateLimiter(opts), createLockout(opts),
  *   createConcurrencyGate(opts), createFairGate(opts), ipBucketKey(ip),
  *   ipLaneKey(ip), hashToken(token), generateToken(), isWellFormedToken(token),
@@ -89,7 +90,8 @@
  * sources that failed lately, and per-IP buckets key IPv6 clients on their
  * /64 (ipBucketKey). The lockout is per account and source (DEFAULTS.lockout),
  * with an account-wide ceiling that a source which signed in before passes
- * (DEFAULTS.accountLockout).
+ * (DEFAULTS.accountLockout), and a ceiling per address in the database that
+ * survives a restart (db/057, DEFAULTS.accountCeiling, audit 2611 SEC-13).
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -315,6 +317,15 @@ const DEFAULTS = Object.freeze({
   // after a restart, can still type the password).
   lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 },
   accountLockout: { maxFailures: 100, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000, newSourceTries: 3 },
+  // db/057 (audit 2611 SEC-13): the failed sign-ins of each address, in the
+  // database (a restart forgets nothing; signInFailuresTable, null = off).
+  // Past maxFailures within windowMs, a source that signed in to the account
+  // before still gets in as usual; all other sources together get one try per
+  // newSourceIntervalMs, doubling with each further maxFailures failures, at
+  // most maxIntervalMs (429 account_locked meanwhile). The account is mailed
+  // and the admins told (options.onSignInAttack) once per window.
+  accountCeiling: { maxFailures: 100, windowMs: 24 * 60 * 60 * 1000, newSourceIntervalMs: 60 * 1000, maxIntervalMs: 60 * 60 * 1000 },
+  signInFailuresTable: 'auth.sign_in_failures',
   // db/025: what an account asked for at sign-up (confirmEmailLink clears it
   // when the confirmer is not shown to be the one who signed up)
   accountRequestsTable: 'public.account_requests'
@@ -846,7 +857,10 @@ export function createAuth(options = {}) {
     limits: { ...DEFAULTS.limits, ...(options.limits || {}) },
     lockout: options.lockout && typeof options.lockout.check === 'function'
       ? options.lockout
-      : { ...DEFAULTS.lockout, ...(options.lockout || {}) }
+      : { ...DEFAULTS.lockout, ...(options.lockout || {}) },
+    accountCeiling: options.accountCeiling === null || options.accountCeiling === false
+      ? null
+      : { ...DEFAULTS.accountCeiling, ...(options.accountCeiling || {}) }
   }
   if (cfg.sessionTtlSec > cfg.absoluteTtlSec) throw new Error('createAuth: sessionTtlSec exceeds absoluteTtlSec')
   cfg.contactEmail = cfg.contactEmail || process.env.CONTACT_EMAIL || 'support@openvolley.app'
@@ -907,6 +921,7 @@ export function createAuth(options = {}) {
     audit: cfg.auditTable ? qualify(cfg.auditTable) : null,
     passkeys: cfg.passkeysTable ? qualify(cfg.passkeysTable) : null,
     memberships: cfg.membershipsTable ? qualify(cfg.membershipsTable) : null,
+    failures: cfg.signInFailuresTable ? qualify(cfg.signInFailuresTable) : null,
     requests: cfg.accountRequestsTable ? qualify(cfg.accountRequestsTable) : null
   }
 
@@ -1246,7 +1261,22 @@ export function createAuth(options = {}) {
         WHERE expires_at <= now() OR created_at + make_interval(secs => $1) <= now()`,
       [cfg.absoluteTtlSec]
     )
+    await sweepSignInFailures()
     return rowCount
+  }
+
+  /** db/057: an address's failures go once their window is over (with the hourly session sweep). */
+  async function sweepSignInFailures() {
+    try {
+      if (!(await failuresAvailable())) return 0
+      const { rowCount } = await pool.query(
+        `DELETE FROM ${T.failures} WHERE window_start <= now() - make_interval(secs => $1)`,
+        [cfg.accountCeiling.windowMs / 1000])
+      return rowCount
+    } catch (err) {
+      failuresTrouble('sweep', err)
+      return 0
+    }
   }
 
   async function withTransaction(fn) {
@@ -1292,7 +1322,7 @@ export function createAuth(options = {}) {
     }
     const hash = await hashPassword(newPassword)
     const out = await withTransaction((client) => setPasswordIn(client, emailOrId, hash, { confirmEmail }))
-    clearLocks(out.email)
+    await clearAllLocks(out.email)
     return out
   }
 
@@ -1373,6 +1403,135 @@ export function createAuth(options = {}) {
   async function tokensAvailable(client = pool) {
     if (!cfg.tokensTable) return false
     return (await columnsOf(cfg.tokensTable, client)).size > 0
+  }
+
+  // --- the account-wide sign-in ceiling (db/057, audit 2611 SEC-13) ----------
+  // One row per address with failed sign-ins (known or not, so the answers
+  // never tell whether an account exists): the failures of its window, the
+  // next try a new source may have past the ceiling, and when the account
+  // was told. The key is a SHA-256 of the address: the table holds none.
+  const failureKey = (email) => createHash('sha256').update(`ov-sign-in-failures:${email}`, 'utf8').digest()
+  let failuresCheckedAt = 0
+  let failuresWarnedAt = 0
+  async function failuresAvailable(client = pool) {
+    if (!T.failures || !cfg.accountCeiling) return false
+    if (catalog.has(cfg.signInFailuresTable)) return true
+    // absent (db/057 not run yet): looked up again at most once a minute
+    if (Date.now() - failuresCheckedAt < 60 * 1000) return false
+    failuresCheckedAt = Date.now()
+    return (await columnsOf(cfg.signInFailuresTable, client)).size > 0
+  }
+  /** The ceiling never fails a sign-in: the in-memory lockouts still hold. */
+  function failuresTrouble(what, err) {
+    const t = Date.now()
+    if (t - failuresWarnedAt < 60 * 1000) return
+    failuresWarnedAt = t
+    log.warn?.(`[auth] sign-in ceiling (db/057) ${what} failed: ${err?.code || err?.message}`)
+  }
+
+  /**
+   * Before the password check: null to go on, or { retryAfterSec } when the
+   * address is past its ceiling and no try is free for a new source now. A
+   * source that signed in to the account before (`known`) always goes on.
+   */
+  async function ceilingCheck(email, known) {
+    const c = cfg.accountCeiling
+    try {
+      if (!(await failuresAvailable())) return null
+      const key = failureKey(email)
+      const { rows } = await pool.query(
+        `SELECT failures, greatest(0, ceil(extract(epoch FROM next_try_at - now())))::int AS wait
+           FROM ${T.failures}
+          WHERE email_key = $1 AND window_start > now() - make_interval(secs => $2)`,
+        [key, c.windowMs / 1000])
+      const r = rows[0]
+      if (!r || r.failures < c.maxFailures || known) return null
+      if (r.wait > 0) return { retryAfterSec: r.wait }
+      const steps = Math.min(20, Math.floor((r.failures - c.maxFailures) / c.maxFailures))
+      const intervalSec = Math.max(1, Math.ceil(Math.min(c.maxIntervalMs, c.newSourceIntervalMs * 2 ** steps) / 1000))
+      // one new source takes the try; the others wait for the next one
+      const claim = await pool.query(
+        `UPDATE ${T.failures} SET next_try_at = now() + make_interval(secs => $2)
+          WHERE email_key = $1 AND (next_try_at IS NULL OR next_try_at <= now())
+          RETURNING 1`,
+        [key, intervalSec])
+      return claim.rows.length ? null : { retryAfterSec: intervalSec }
+    } catch (err) {
+      failuresTrouble('check', err)
+      return null
+    }
+  }
+
+  /** A failed sign-in of `email`: counted; the first one past the ceiling tells the account. */
+  async function recordFailure(email) {
+    const c = cfg.accountCeiling
+    try {
+      if (!(await failuresAvailable())) return
+      const key = failureKey(email)
+      const { rows } = await pool.query(
+        `INSERT INTO ${T.failures} AS f (email_key, window_start, failures, updated_at)
+         VALUES ($1, now(), 1, now())
+         ON CONFLICT (email_key) DO UPDATE SET
+           failures = CASE WHEN f.window_start > now() - make_interval(secs => $2) THEN f.failures + 1 ELSE 1 END,
+           next_try_at = CASE WHEN f.window_start > now() - make_interval(secs => $2) THEN f.next_try_at END,
+           window_start = CASE WHEN f.window_start > now() - make_interval(secs => $2) THEN f.window_start ELSE now() END,
+           updated_at = now()
+         RETURNING failures, (alerted_at IS NOT NULL AND alerted_at >= window_start) AS alerted`,
+        [key, c.windowMs / 1000])
+      const r = rows[0]
+      if (!r || r.failures < c.maxFailures || r.alerted) return
+      const claim = await pool.query(
+        `UPDATE ${T.failures} SET alerted_at = now()
+          WHERE email_key = $1 AND (alerted_at IS NULL OR alerted_at < window_start)
+          RETURNING failures`, [key])
+      if (claim.rows[0]) background('sign-in attempts notice', () => tellOfAttempts(email, claim.rows[0].failures))
+    } catch (err) {
+      failuresTrouble('count', err)
+    }
+  }
+
+  /**
+   * Forgets the failures of an address (a new password, the account deleted):
+   * after the commit, best effort (a database without db/057, or without its
+   * grant yet, still sets the password).
+   */
+  async function forgetFailures(email) {
+    if (!email) return
+    try {
+      if (!(await failuresAvailable())) return
+      await pool.query(`DELETE FROM ${T.failures} WHERE email_key = $1`, [failureKey(normalizeEmail(email))])
+    } catch (err) {
+      failuresTrouble('reset', err)
+    }
+  }
+  /** clearLocks and the database counter: every lock of the address goes. */
+  async function clearAllLocks(email) {
+    clearLocks(email)
+    await forgetFailures(email)
+  }
+
+  /**
+   * The address is past its ceiling: its account (if there is one) is mailed
+   * and the admins are told (options.onSignInAttack: server.js, the error
+   * tracker), once per window. An address without an account tells nobody.
+   */
+  async function tellOfAttempts(email, failures) {
+    const user = await findUserByEmail(email)
+    if (!user || isUserBlocked(user)) return
+    const hours = Math.round(cfg.accountCeiling.windowMs / 3600000)
+    log.warn?.(`[auth] ${failures} failed sign-ins for ${maskEmail(user.email)} within ${hours} h: new sources are slowed down, the account and the admins are told`)
+    if (typeof cfg.onSignInAttack === 'function') {
+      try { await cfg.onSignInAttack({ userId: user.id, failures, windowHours: hours }) } catch (err) { log.error(`[auth] sign-in attempts alert failed: ${err?.message}`) }
+    }
+    if (!mailer.enabled) return
+    // the brand of its memberships, as audit() does: OpenBeach only gives 'beach'
+    let app = 'indoor'
+    if (T.memberships && (await columnsOf(cfg.membershipsTable)).size) {
+      const { rows } = await pool.query(`SELECT app FROM ${T.memberships} WHERE user_id = $1`, [user.id])
+      if (rows.length && rows.every((m) => m.app === 'beach')) app = 'beach'
+    }
+    const lang = pickLang(isPlainObject(user.raw_user_meta_data) ? user.raw_user_meta_data.mail_lang : null)
+    await mailer.send('sign_in_attempts', { to: user.email, lang, app, vars: { count: failures } })
   }
 
   /** New link token for userId; older open tokens of the same purpose are spent. */
@@ -1528,11 +1687,12 @@ export function createAuth(options = {}) {
     if (newSourceTry?.locked) return locked(ceiling.retryAfterSec)
     const attempt = typeof lockout.begin === 'function' ? lockout.begin(key) : lockout.check(key)
     if (attempt.locked) { newSourceTry?.release?.(); return locked(attempt.retryAfterSec) }
-    const failed = () => {
+    const failed = async () => {
       lockout.fail(key)
       if (newSourceTry) newSourceLockout.fail(key)
       accountLockout?.fail(email)
       failedSources.set(source, Date.now())
+      await recordFailure(email) // db/057: counted for the address, known or not
       return INVALID_CREDENTIALS()
     }
     try {
@@ -1543,16 +1703,21 @@ export function createAuth(options = {}) {
       const lastFail = failedSources.get(source)
       const failedLately = lastFail != null && Date.now() - lastFail < FAILED_SOURCE_MS
       if (failedLately && limits.signInGlobal?.hit('*').limited) return BUSY()
+      // db/057: past the address's ceiling only a source that signed in to it
+      // before goes on as usual (SEC-13)
+      const known = knownSource(email, source)
+      const ceilingLock = await ceilingCheck(email, known)
+      if (ceilingLock) return locked(ceilingLock.retryAfterSec)
 
       const cols = await usersColumns()
       const user = await findUserByEmail(email)
       // The bcrypt gate is fair between clients, and a source that signed in
       // to this account before (and did not fail since) goes first: a flood
       // of made-up sign-ins cannot turn its owner away (SEC-03)
-      const passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, knownSource(email, source) && !failedLately))
-      if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) return failed()
+      const passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, known && !failedLately))
+      if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) return await failed()
       const session = await createSession(user.id, user.encrypted_password)
-      if (!session) return failed() // password changed or account deleted while we were checking
+      if (!session) return await failed() // password changed or account deleted while we were checking
       lockout.succeed(key)
       rememberSource(email, source)
       return await finishSignIn(user, cols, session)
@@ -1916,7 +2081,7 @@ export function createAuth(options = {}) {
       const { rows } = await client.query(`DELETE FROM ${T.users} WHERE id = $1 RETURNING email`, [userId])
       return rows.length ? (rows[0].email ?? '') : null
     })
-    if (email) clearLocks(normalizeEmail(email))
+    if (email) await clearAllLocks(normalizeEmail(email))
     // Second pass: an upload that passed its session check before the
     // sessions were revoked may have landed in between. Best effort.
     if (typeof cfg.onAccountDeleted === 'function') {
@@ -2023,7 +2188,7 @@ export function createAuth(options = {}) {
       return setPasswordIn(client, t.userId, hash, { confirmEmail: true })
     })
     if (!out) return INVALID_LINK()
-    clearLocks(out.email)
+    await clearAllLocks(out.email)
     await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
     if (mailer.enabled) {
       const lang = mailLang(body, ctx)
@@ -2118,7 +2283,7 @@ export function createAuth(options = {}) {
       // enters their own details (the licence question asks again)
       if (!out.reset) accountConfirmed(out.userId)
     }
-    if (setPasswordToken) clearLocks(normalizeEmail((await findUserId(out.userId)).email))
+    if (setPasswordToken) await clearAllLocks(normalizeEmail((await findUserId(out.userId)).email))
     return ok({ confirmed: true, already_confirmed: out.already, ...(setPasswordToken ? { set_password_token: setPasswordToken } : {}) })
   }
 
@@ -2478,7 +2643,7 @@ export function createAuth(options = {}) {
       const { rows } = await client.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1`, [userId])
       return { ...r, session, user: rows[0]?.u }
     })
-    clearLocks(out.email)
+    await clearAllLocks(out.email)
     if (!out.session || !out.user) return INVALID_TOKEN()
     await audit('account.password_changed', userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
     return await finishSignIn(out.user, await usersColumns(), out.session)
@@ -2625,6 +2790,7 @@ export function createAuth(options = {}) {
     bcryptStats: () => bcryptPool?.stats() ?? null,
     /** Stops the bcrypt worker threads (shutdown, tests); later jobs run on the main thread. */
     close: async () => { await bcryptPool?.close() },
+    sweepSignInFailures,
     config: Object.freeze(Object.fromEntries(Object.entries(cfg).filter(
       ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted', 'selfDelete', 'mailer'].includes(k)))),
     /** Drops the cached column lists (after a restore or migration). */

@@ -63,7 +63,7 @@
  *   mailer.enabled / mailer.reason / mailer.managerUrl / mailer.from (OpenVolley's)
  *   mailer.managerUrlFor(app) / mailer.fromFor(app)   per brand ('indoor' | 'beach')
  *   mailer.send(kind, { to, lang, link, app, vars, attachments }) -> Promise<{ sent, skipped? }>
- *                                            kind: reset | confirm | password_changed | approval | approval_pin_locked
+ *                                            kind: reset | confirm | password_changed | sign_in_attempts | approval | approval_pin_locked
  *                                            | scoresheet | scoresheet_test (the final scoresheet, lib/finalMail.js:
  *                                            attachments [{ filename, content: Buffer }], PDFs only)
  *                                            | scoresheet_no_pdf | scoresheet_reopened (its notices)
@@ -92,7 +92,7 @@ import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
-export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened', 'signup', 'club_manager_invite', 'team_manager_proposal'])
+export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'sign_in_attempts', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened', 'signup', 'club_manager_invite', 'team_manager_proposal'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
@@ -120,7 +120,7 @@ export function mailApp(raw) {
 // app's profile sets).
 // The sign-up notice (lib/signupNotices.js) takes the brand of the app the
 // account signed up in.
-const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'signup'])
+const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'sign_in_attempts', 'signup'])
 
 /** The brand of one mail: mailApp(app) for the account mails, 'indoor' for the approval notices. */
 export function mailBrandOf(kind, app) {
@@ -141,7 +141,7 @@ export function mailBrandOf(kind, app) {
 // account mails. email_changed (a changed login address) is an account mail too.
 // "user" carries the mails a signed-in user asks for to its own address
 // (sendUser: the game PIN, the match information), which have no kind.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', confirm: 'confirm', approval: 'security', approval_pin_locked: 'security', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', sign_in_attempts: 'account', confirm: 'confirm', approval: 'security', approval_pin_locked: 'security', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them; scoresheet_test: test mails
 // (any scorer, any time) must not use up the final scoresheets' budget
@@ -468,6 +468,35 @@ const T = {
   // Approval notices (lib/approvals.js). vars: slot, game, result, id, time,
   // sender (may be ''). The link opens OpenVolley, where Profile -> Approval
   // PIN lists the official's approvals with an undo.
+  // Many wrong passwords for one account (lib/auth.js, db/057, audit 2611
+  // SEC-13), once per 24-hour window. vars: count. Links nothing, like the
+  // password notice: the way out is in the app.
+  sign_in_attempts: {
+    en: (v) => ({
+      subject: 'Many wrong passwords for your OpenVolley account',
+      before: ['Hello,', `a wrong password was typed for your OpenVolley account ${v.count} times in the last 24 hours. For now, sign-ins from devices and networks that never signed in to it are slowed down; your devices that are signed in stay signed in.`],
+      button: null,
+      after: ['If that was not you, someone may be trying to guess your password. If it is short or you use it elsewhere too, change it now (Profile → Change password, or "Forgot password?" when you sign in) and tell your club admin.']
+    }),
+    de: (v) => ({
+      subject: 'Viele falsche Passwörter für dein OpenVolley-Konto',
+      before: ['Hallo', `Für dein OpenVolley-Konto wurde in den letzten 24 Stunden ${v.count}-mal ein falsches Passwort eingegeben. Anmeldungen von Geräten und Netzwerken, die sich noch nie angemeldet haben, werden vorerst gebremst; deine angemeldeten Geräte bleiben angemeldet.`],
+      button: null,
+      after: ['Wenn du das nicht warst, versucht vielleicht jemand, dein Passwort zu erraten. Ist es kurz oder verwendest du es auch anderswo, ändere es jetzt (Profil → Passwort ändern, oder «Passwort vergessen?» bei der Anmeldung) und informiere den Admin deines Vereins.']
+    }),
+    fr: (v) => ({
+      subject: 'Beaucoup de mots de passe erronés pour ton compte OpenVolley',
+      before: ['Bonjour,', `un mot de passe erroné a été saisi ${v.count} fois pour ton compte OpenVolley au cours des dernières 24 heures. Pour l’instant, les connexions depuis des appareils et des réseaux qui ne s’y sont jamais connectés sont ralenties ; tes appareils connectés restent connectés.`],
+      button: null,
+      after: ['Si ce n’était pas toi, quelqu’un essaie peut-être de deviner ton mot de passe. S’il est court ou que tu l’utilises aussi ailleurs, change-le maintenant (Profil → Changer le mot de passe, ou « Mot de passe oublié ? » à la connexion) et préviens l’admin de ton club.']
+    }),
+    it: (v) => ({
+      subject: 'Molte password errate per il tuo account OpenVolley',
+      before: ['Buongiorno,', `per il tuo account OpenVolley è stata digitata una password errata ${v.count} volte nelle ultime 24 ore. Per ora gli accessi da dispositivi e reti che non vi hanno mai effettuato l’accesso sono rallentati; i tuoi dispositivi connessi restano connessi.`],
+      button: null,
+      after: ['Se non sei stato tu, forse qualcuno sta cercando di indovinare la tua password. Se è corta o la usi anche altrove, cambiala subito (Profilo → Cambia password, oppure «Password dimenticata?» all’accesso) e avvisa l’admin del tuo club.']
+    })
+  },
   // A new account confirmed its address (lib/signupNotices.js), to the admins
   // and the approvers of its requests. vars: name, email, parts [{ kind, club,
   // team }] (the parts this recipient decides; admins: all), admin (true for
@@ -816,6 +845,12 @@ const SHARED_PASSWORD_NOTE = {
     de: 'Dein Konto gilt für OpenVolley und OpenBeach: Das neue Passwort gilt für beide Apps.',
     fr: 'Ton compte est valable pour OpenVolley et OpenBeach : le nouveau mot de passe vaut pour les deux applications.',
     it: 'Il tuo account vale per OpenVolley e OpenBeach: la nuova password vale per entrambe le app.'
+  },
+  sign_in_attempts: {
+    en: 'Your account works for OpenVolley and OpenBeach: the password is the one of both apps.',
+    de: 'Dein Konto gilt für OpenVolley und OpenBeach: Das Passwort gilt für beide Apps.',
+    fr: 'Ton compte est valable pour OpenVolley et OpenBeach : le mot de passe vaut pour les deux applications.',
+    it: 'Il tuo account vale per OpenVolley e OpenBeach: la password vale per entrambe le app.'
   },
   email_changed: {
     en: 'Your account works for OpenVolley and OpenBeach: the change applies to both apps.',
