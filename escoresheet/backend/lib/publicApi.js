@@ -160,6 +160,15 @@ const lineupNumbers = (l) => {
   return Object.keys(out).length ? out : null
 }
 
+/** The serving team "A" / "B" of a live row, or null. */
+function servingTeamOf(row) {
+  const serving = str(row.serving_team, 10)
+  if (serving === 'A' || serving === 'B') return serving
+  const sideA = str(row.side_a, 10)
+  if ((serving !== 'left' && serving !== 'right') || (sideA !== 'left' && sideA !== 'right')) return null
+  return serving === sideA ? 'A' : 'B'
+}
+
 function homeSide(row) {
   const home = str(isObj(jsonOf(row.home_team)) ? jsonOf(row.home_team).name : null)
   if (home && str(row.team_b_name) === home && str(row.team_a_name) !== home) return 'B'
@@ -193,7 +202,9 @@ export function publicLive(input) {
     // the scoresheet's A / B are not always home / away: homeIs says which one is the home team
     homeIs: homeSide(row),
     sideA: str(row.side_a, 10),
-    serving: str(row.serving_team, 10),
+    // "A" / "B" (docs/public-api.md): the live row names the serving side
+    // (left / right), side_a where Team A stands (audit LOG-23)
+    serving: servingTeamOf(row),
     serverNumber: num(row.server_number),
     // The scorer's live state writes { set, home, away, a, b } (frontend
     // domain/livePublicFields: a / b by Team A / B); older rows { index,

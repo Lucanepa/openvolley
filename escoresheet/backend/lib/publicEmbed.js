@@ -76,7 +76,8 @@ export const LIVESCORE_JS = `(function () {
     var b = el('div');
     var st = FINAL.indexOf(d.status) >= 0 ? 'Final' : (!d.status || NOT_STARTED.indexOf(d.status) >= 0) ? 'Upcoming' : 'LIVE';
     var h = el('div', 'h'); h.appendChild(el('span', st === 'LIVE' ? 'live' : '', st)); h.appendChild(el('span', '', d.currentSet ? 'Set ' + d.currentSet : '')); b.appendChild(h);
-    (d.homeIs === 'B' ? ['B', 'A'] : ['A', 'B']).forEach(function (k) {
+    var rows = d.homeIs === 'B' ? ['B', 'A'] : ['A', 'B'];
+    rows.forEach(function (k) {
       var t = d.teams[k], r = el('div', 'r');
       r.appendChild(el('span', 'd' + (d.serving && String(d.serving).toUpperCase().charAt(0) === k && st === 'LIVE' ? ' s' : '')));
       r.appendChild(el('span', 'n', t.name));
@@ -84,7 +85,8 @@ export const LIVESCORE_JS = `(function () {
       r.appendChild(el('span', 'p', d.score['points' + k] == null ? '' : d.score['points' + k]));
       b.appendChild(r);
     });
-    if (d.setResults && d.setResults.length) b.appendChild(el('div', 'hist', d.setResults.map(function (s) { return s.pointsA + '-' + s.pointsB; }).join('   ')));
+    // the finished sets in the rows' order (home first)
+    if (d.setResults && d.setResults.length) b.appendChild(el('div', 'hist', d.setResults.map(function (s) { return s['points' + rows[0]] + '-' + s['points' + rows[1]]; }).join('   ')));
     return b;
   };
   customElements.define('ov-livescore', Live);
