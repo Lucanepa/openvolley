@@ -102,7 +102,7 @@
 import { createHash } from 'node:crypto'
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { ADMIN_ROLES } from './access.js'
-import { MAIL_BUDGET_OF, pickLang } from './mailer.js'
+import { MAIL_BUDGET_OF, pickLang, withoutLinks } from './mailer.js'
 import { connectClient } from './pgClient.js'
 import { EMAIL_RE } from './emailAddress.js'
 import { redactRemarkDobs } from './publicColumns.js'
@@ -250,24 +250,13 @@ export function refereeAddresses (officials) {
   return ['1st referee', '2nd referee'].map((role) => list.find((o) => o && o.role === role)?.email).filter(Boolean)
 }
 
-// The dots a link can be written with (full stop, ideographic and fullwidth ones, one dot leader)
-const DOT = '[.\\u3002\\uff0e\\uff61\\u2024]'
-const LINKISH = [
-  /\b[a-z][a-z0-9+.-]*:\/\/\S*/gi, // a scheme
-  /\S*[@＠]\S*/g, // an address
-  new RegExp(`\\bwww${DOT}\\S*`, 'giu'),
-  new RegExp(`\\S+${DOT}\\p{L}{2,}\\S*`, 'gu') // a dotted host (not "St. Gallen")
-]
-
 /**
  * A match's typed team name as a typed address's mail shows it (see the
  * header): one line, no control or bidi characters, nothing that reads as a
  * link or an address, at most 80 characters. Pure.
  */
 export function linkFreeText (raw, max = 80) {
-  let s = String(raw ?? '').replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]+/g, ' ')
-  for (const re of LINKISH) s = s.replace(re, ' ')
-  return s.replace(/\s+/g, ' ').trim().slice(0, max)
+  return withoutLinks(raw).replace(/\s+/g, ' ').trim().slice(0, max)
 }
 
 /** A final score as a typed address's mail shows it ("3-1", "3:1"); '' for anything else. */

@@ -308,15 +308,35 @@ const SLOT_LABELS = Object.freeze({
   it: { referee1: '1° arbitro', referee2: '2° arbitro', scorer: 'segnapunti' }
 })
 
+// The dots a link can be written with (full stop, ideographic and fullwidth ones, one dot leader)
+const LINK_DOT = '[.\\u3002\\uff0e\\uff61\\u2024]'
+const LINKISH = [
+  /\b[a-z][a-z0-9+.-]*:\/\/\S*/gi, // a scheme
+  /\S*[@\uff20]\S*/g, // an address
+  new RegExp(`\\bwww${LINK_DOT}\\S*`, 'giu'),
+  new RegExp(`\\S+${LINK_DOT}\\p{L}{2,}\\S*`, 'gu') // a dotted host
+]
+
+/**
+ * Text without control or bidi characters and without anything that reads as
+ * a link or an address (LINKISH), each replaced by a space. Not trimmed.
+ */
+export function withoutLinks(raw) {
+  let s = String(raw ?? '').normalize('NFC').replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g, ' ')
+  for (const re of LINKISH) s = s.replace(re, ' ')
+  return s
+}
+
 /**
  * A self-chosen person name as a mail shows it (SEC-34, audit 26.11: the
  * sign-up notices, a team manager's proposal, the sender of an approval):
- * letters, spaces, hyphens and apostrophes only (anything else becomes a
- * space, so no link, address, number or sentence punctuation), at most 60
- * characters. '' when nothing is left.
+ * without anything that reads as a link or an address (a scheme, www., a
+ * dotted host, also with another dot), then letters, spaces, hyphens and
+ * apostrophes only (anything else becomes a space: no number or sentence
+ * punctuation), at most 60 characters. '' when nothing is left.
  */
 export function mailName(raw, max = 60) {
-  return String(raw ?? '').normalize('NFC')
+  return withoutLinks(raw)
     .replace(/[^\p{L}\p{M} '\u2019-]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .replace(/^[\s'\u2019-]+|[\s'\u2019-]+$/g, '')
@@ -339,7 +359,8 @@ const SIGNUP_KINDS = Object.freeze({
   fr: { scorer: 'Marqueur', referee: 'Arbitre', team_manager: 'Responsable d’équipe / entraîneur', club_manager: 'Responsable du club', asks: 'Demande :', none: 'Le compte ne demande encore aucun rôle : donne-lui-en un, ou supprime-le, sous Comptes.' },
   it: { scorer: 'Segnapunti', referee: 'Arbitro', team_manager: 'Responsabile della squadra / allenatore', club_manager: 'Responsabile della società', asks: 'Richiesta:', none: 'L’account non chiede ancora nessun ruolo: dagliene uno, o eliminalo, in Account.' }
 })
-const signupWho = (v) => (v.name ? `${v.name} (${v.email})` : v.email)
+// The self-chosen name: letters, spaces, hyphens and apostrophes only (mailName, SEC-34)
+const signupWho = (v) => (mailName(v.name) ? `${mailName(v.name)} (${v.email})` : v.email)
 function signupParts(v, lang) {
   const L = SIGNUP_KINDS[lang]
   const parts = Array.isArray(v.parts) ? v.parts : []
@@ -574,7 +595,7 @@ const T = {
   team_manager_proposal: {
     en: (v) => ({
       subject: `Confirm a team manager`,
-      before: ['Hello,', `${v.proposer || 'A team manager'} proposes ${signupWho(v)} as team manager of ${v.team} (${v.club}).`,
+      before: ['Hello,', `${mailName(v.proposer) || 'A team manager'} proposes ${signupWho(v)} as team manager of ${v.team} (${v.club}).`,
         'The account gets the team only when a manager of the club or an admin approves the request.'],
       button: 'Open in the manager',
       after: [v.admin
@@ -583,7 +604,7 @@ const T = {
     }),
     de: (v) => ({
       subject: `Teamverantwortliche/n bestätigen`,
-      before: ['Hallo', `${v.proposer || 'Ein/e Teamverantwortliche/r'} schlägt ${signupWho(v)} als Teamverantwortliche/n von ${v.team} (${v.club}) vor.`,
+      before: ['Hallo', `${mailName(v.proposer) || 'Ein/e Teamverantwortliche/r'} schlägt ${signupWho(v)} als Teamverantwortliche/n von ${v.team} (${v.club}) vor.`,
         'Das Konto bekommt das Team erst, wenn eine vereinsverantwortliche Person oder ein Admin die Anfrage freigibt.'],
       button: 'Im Manager öffnen',
       after: [v.admin
@@ -592,7 +613,7 @@ const T = {
     }),
     fr: (v) => ({
       subject: `Confirmer un responsable d’équipe`,
-      before: ['Bonjour,', `${v.proposer || 'Un responsable d’équipe'} propose ${signupWho(v)} comme responsable d’équipe de ${v.team} (${v.club}).`,
+      before: ['Bonjour,', `${mailName(v.proposer) || 'Un responsable d’équipe'} propose ${signupWho(v)} comme responsable d’équipe de ${v.team} (${v.club}).`,
         'Le compte ne reçoit l’équipe qu’après l’approbation de la demande par un responsable du club ou un admin.'],
       button: 'Ouvrir dans le manager',
       after: [v.admin
@@ -601,7 +622,7 @@ const T = {
     }),
     it: (v) => ({
       subject: `Confermare un responsabile della squadra`,
-      before: ['Buongiorno,', `${v.proposer || 'Un responsabile della squadra'} propone ${signupWho(v)} come responsabile della squadra ${v.team} (${v.club}).`,
+      before: ['Buongiorno,', `${mailName(v.proposer) || 'Un responsabile della squadra'} propone ${signupWho(v)} come responsabile della squadra ${v.team} (${v.club}).`,
         'L’account riceve la squadra solo dopo che un responsabile della società o un admin ha approvato la richiesta.'],
       button: 'Aprire nel manager',
       after: [v.admin
@@ -646,28 +667,28 @@ const T = {
     en: (v) => ({
       subject: `Your approval PIN was used: ${v.game}`,
       before: ['Hello,', `your OpenVolley approval PIN was just used to approve a match result as ${SLOT_LABELS.en[v.slot] || v.slot}.`,
-        `Game: ${v.game}`, `Result: ${v.result}`, `Approved: ${v.time} · ID ${v.id}`, ...(v.sender ? [`Sent by the account of ${v.sender}.`] : [])],
+        `Game: ${v.game}`, `Result: ${v.result}`, `Approved: ${v.time} · ID ${v.id}`, ...(mailName(v.sender) ? [`Sent by the account of ${mailName(v.sender)}.`] : [])],
       button: 'Open OpenVolley',
       after: ['If that was not you: in OpenVolley, open your profile, Approval PIN, and undo the approval while the match is open. Then change your PIN and tell your club admin.']
     }),
     de: (v) => ({
       subject: `Deine Genehmigungs-PIN wurde verwendet: ${v.game}`,
       before: ['Hallo', `Mit deiner OpenVolley-Genehmigungs-PIN wurde soeben ein Spielresultat als ${SLOT_LABELS.de[v.slot] || v.slot} genehmigt.`,
-        `Spiel: ${v.game}`, `Resultat: ${v.result}`, `Genehmigt: ${v.time} · ID ${v.id}`, ...(v.sender ? [`Gesendet vom Konto von ${v.sender}.`] : [])],
+        `Spiel: ${v.game}`, `Resultat: ${v.result}`, `Genehmigt: ${v.time} · ID ${v.id}`, ...(mailName(v.sender) ? [`Gesendet vom Konto von ${mailName(v.sender)}.`] : [])],
       button: 'OpenVolley öffnen',
       after: ['Wenn du das nicht warst: Öffne in OpenVolley dein Profil, Genehmigungs-PIN, und mache die Genehmigung rückgängig, solange das Spiel offen ist. Ändere danach deine PIN und informiere den Admin deines Vereins.']
     }),
     fr: (v) => ({
       subject: `Ton PIN d’approbation a été utilisé : ${v.game}`,
       before: ['Bonjour,', `ton PIN d’approbation OpenVolley vient d’être utilisé pour approuver un résultat en tant que ${SLOT_LABELS.fr[v.slot] || v.slot}.`,
-        `Match : ${v.game}`, `Résultat : ${v.result}`, `Approuvé : ${v.time} · ID ${v.id}`, ...(v.sender ? [`Envoyé depuis le compte de ${v.sender}.`] : [])],
+        `Match : ${v.game}`, `Résultat : ${v.result}`, `Approuvé : ${v.time} · ID ${v.id}`, ...(mailName(v.sender) ? [`Envoyé depuis le compte de ${mailName(v.sender)}.`] : [])],
       button: 'Ouvrir OpenVolley',
       after: ['Si ce n’était pas toi : dans OpenVolley, ouvre ton profil, PIN d’approbation, et annule l’approbation tant que le match est ouvert. Change ensuite ton PIN et préviens l’admin de ton club.']
     }),
     it: (v) => ({
       subject: `Il tuo PIN di approvazione è stato usato: ${v.game}`,
       before: ['Buongiorno,', `il tuo PIN di approvazione OpenVolley è appena stato usato per approvare un risultato come ${SLOT_LABELS.it[v.slot] || v.slot}.`,
-        `Partita: ${v.game}`, `Risultato: ${v.result}`, `Approvato: ${v.time} · ID ${v.id}`, ...(v.sender ? [`Inviato dall’account di ${v.sender}.`] : [])],
+        `Partita: ${v.game}`, `Risultato: ${v.result}`, `Approvato: ${v.time} · ID ${v.id}`, ...(mailName(v.sender) ? [`Inviato dall’account di ${mailName(v.sender)}.`] : [])],
       button: 'Aprire OpenVolley',
       after: ['Se non sei stato tu: in OpenVolley apri il tuo profilo, PIN di approvazione, e annulla l’approvazione finché la partita è aperta. Poi cambia il PIN e avvisa l’admin del tuo club.']
     })

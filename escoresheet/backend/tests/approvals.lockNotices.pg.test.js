@@ -198,7 +198,7 @@ describe('approval PIN lock notices (SEC-32)', { skip: SKIP_PG }, () => {
     assert.equal((await approve('roguescorer', m, 'ref4', U.ref4.pin)).status, 200)
   })
 
-  it('the sender\'s self-chosen name in an approval mail: letters, spaces and hyphens only (SEC-34)', async () => {
+  it('the sender\'s self-chosen name in an approval mail: no link, letters, spaces and hyphens only (SEC-34)', async () => {
     const caller = await user('lurer', ['scorer'], { first: 'Club office: pay at', last: 'evil.example/pay +41 79 000' })
     const m = await lureMatch('lurer', 'ref2')
     assert.equal((await approve('lurer', m, 'ref2', U.ref2.pin)).status, 200)
@@ -206,7 +206,7 @@ describe('approval PIN lock notices (SEC-32)', { skip: SKIP_PG }, () => {
     const [mail] = mailsTo(U.ref2.email).filter((x) => /was used/.test(x.subject))
     assert.ok(mail)
     const line = mail.text.split(/\r?\n/).find((l) => l.startsWith('Sent by the account of'))
-    assert.equal(line, 'Sent by the account of Club office pay at evil example pay.')
+    assert.equal(line, 'Sent by the account of Club office pay at.')
     assert.ok(caller)
   })
 })

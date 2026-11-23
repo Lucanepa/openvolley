@@ -17,13 +17,19 @@ describe('isEmailAddress', () => {
   })
 })
 
+// SEC-34 (audit 26.11): the name is now letters, spaces, hyphens and
+// apostrophes only, at most 60 characters (it kept punctuation and digits,
+// at most 80, before)
 describe('noticeName', () => {
-  it('one line, no links, at most 80 characters', () => {
+  it('one line, no links, letters, spaces, hyphens and apostrophes only, at most 60 characters', () => {
     assert.equal(noticeName('Nora  Neu'), 'Nora Neu')
-    assert.equal(noticeName('Anna\nBcc: x'), 'Anna Bcc: x')
+    assert.equal(noticeName('Anna\nBcc: x'), 'Anna Bcc x')
     assert.equal(noticeName('Win now https://evil.example/x www.evil.example evil.example'), 'Win now')
     assert.equal(noticeName('\u202eAnna'), 'Anna')
-    assert.equal(noticeName('A'.repeat(200)).length, 80)
+    assert.equal(noticeName('A'.repeat(200)).length, 60)
     assert.equal(noticeName(null), '')
+    assert.equal(noticeName("Anna-Maria D'Alessandro Müller"), "Anna-Maria D'Alessandro Müller")
+    assert.equal(noticeName('Club office: new licence fees due / reply with IBAN'), 'Club office new licence fees due reply with IBAN')
+    assert.equal(noticeName('pay at 192.168.1.1/pay or evil\u3002example or x@evil.example'), 'pay at pay or or')
   })
 })

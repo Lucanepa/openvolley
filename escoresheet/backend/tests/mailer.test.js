@@ -89,8 +89,11 @@ describe('mailer: links and templates', () => {
       assert.ok(m.subject.includes('#12 Home – Away'), lang)
       assert.doesNotMatch(m.subject, /[\r\n]/)
       for (const v of ['25:20, 23:25', '6F1C2A9B', '07.10.2026 19:42']) assert.ok(m.text.includes(v), `${lang}: ${v}`)
-      assert.ok(m.text.includes('Olga <b>Owner</b> Bcc: evil@example.test'), 'one line')
-      assert.ok(m.html.includes('Olga &lt;b&gt;Owner&lt;/b&gt;'), 'escaped')
+      // SEC-34 (audit 26.11): the sender's self-chosen name used to pass through
+      // as one escaped line; it is letters, spaces and hyphens now (mailName)
+      assert.ok(m.text.includes(' Olga b Owner b Bcc.'), 'one line, letters only')
+      assert.ok(!m.text.includes('evil@example.test'), 'no address')
+      assert.ok(m.html.includes(' Olga b Owner b Bcc.'))
       assert.ok(!m.html.includes('<b>Owner'))
       const locked = renderMail('approval_pin_locked', lang, { link: DEFAULT_MANAGER_URL, vars: { game: '#12 A – B', until: '07.10.2026 20:00', disabled: false } })
       const blocked = renderMail('approval_pin_locked', lang, { link: DEFAULT_MANAGER_URL, vars: { game: '#12 A – B', until: '', disabled: true } })

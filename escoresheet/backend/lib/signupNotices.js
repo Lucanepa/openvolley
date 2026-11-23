@@ -22,8 +22,19 @@
  * admins only, in the OpenBeach manager (app 'beach').
  *
  * The mail goes in the recipient's own language (mail_lang of its sign-up),
- * on the mailer's 'notify' budget. A notice row is stored even when the mail
+ * on the mailer's 'signup' budget. A notice row is stored even when the mail
  * is dropped or fails. Without db/028 the mails still go out.
+ *
+ * What is mailed (SEC-34, audit 26.11), so that one sign-up asking for parts
+ * of many clubs and teams cannot mail all their managers, nor a few use up
+ * the hour's notices: every recipient gets the notice in the bell; the admins
+ * get the mail; of the managers only those of the club of the sign-up's
+ * first part (by kind, then club: lib/accountRequests.js REQUEST_KINDS) get
+ * it, at most MANAGER_MAILS_PER_SIGNUP of them, for at most
+ * SIGNUPS_MAILED_PER_CLUB_DAY sign-ups per club and day, and at most
+ * MANAGER_MAILS_PER_HOUR manager mails an hour in all (the rest: the bell).
+ * The self-chosen name is shown as noticeName makes it: letters, spaces,
+ * hyphens and apostrophes only; so is a proposer's (lib/mailer.js mailName).
  *
  * A team manager's yes to a team manager request (owner decision 3, db/036,
  * lib/accountRequests.js decide) is a proposal: the managers of the team's
@@ -42,7 +53,7 @@
  */
 import { invalid, isUuid, ok, unavailable } from './accounts.js'
 import { ADMIN_ROLES } from './access.js'
-import { mailApp, maskEmail, describeMailError } from './mailer.js'
+import { mailApp, mailName, maskEmail, describeMailError } from './mailer.js'
 
 // No db/025 / db/028 yet: a relation or column that does not exist
 const MISSING = new Set(['42P01', '42703'])
@@ -53,6 +64,12 @@ export const LIST_LIMIT = 50
 const MAX_READ_IDS = 100
 // A deactivated account (db/027 banned_until) is told nothing; to_jsonb: works before db/027 too
 const ACTIVE = (u) => `coalesce((to_jsonb(${u}) ->> 'banned_until')::timestamptz <= now(), true)`
+// The managers' sign-up mails (see the header): per sign-up, per club and day, per hour in all
+export const MANAGER_MAILS_PER_SIGNUP = 5
+export const SIGNUPS_MAILED_PER_CLUB_DAY = 3
+export const MANAGER_MAILS_PER_HOUR = 30
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
 
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -78,35 +95,57 @@ export function recipientsOf ({ userId, parts = [], admins = [], clubManagers = 
     if (m.user_id === userId || !m.email || out.has(m.user_id)) continue
     const mine = parts.filter((p) => p.club_id === m.club_id && p.kind !== 'referee')
     if (!mine.length) continue
-    out.set(m.user_id, { userId: m.user_id, email: m.email, lang: m.lang || null, admin: false, target: `myclub/${m.club_id}`, parts: mine.map(strip).sort(byKind) })
+    out.set(m.user_id, { userId: m.user_id, email: m.email, lang: m.lang || null, admin: false, target: `myclub/${m.club_id}`, parts: mine.map(strip).sort(byKind), clubIds: [m.club_id] })
   }
   // a team's managers its team manager parts
   for (const m of teamManagers) {
     if (m.user_id === userId || !m.email || out.has(m.user_id)) continue
     const mine = parts.filter((p) => p.team_id === m.team_id && p.kind === 'team_manager')
     if (!mine.length) continue
-    out.set(m.user_id, { userId: m.user_id, email: m.email, lang: m.lang || null, admin: false, target: `myteams/${m.team_id}`, parts: mine.map(strip).sort(byKind) })
+    out.set(m.user_id, { userId: m.user_id, email: m.email, lang: m.lang || null, admin: false, target: `myteams/${m.team_id}`, parts: mine.map(strip).sort(byKind), clubIds: [...new Set(mine.map((p) => p.club_id).filter(Boolean))] })
   }
   return [...out.values()]
 }
 
-/**
- * A self-chosen name as a notice shows it: one line, no control or bidi
- * characters, nothing that reads as a link (scheme, www., a dotted host),
- * at most 80 characters. Mails and the bell show it as the account's
- * name, never as OpenVolley's words.
- */
-export function noticeName (raw) {
-  return String(raw ?? '')
-    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g, ' ')
-    .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S*/gi, ' ')
-    .replace(/\bwww\.\S*/gi, ' ')
-    .replace(/\S+\.[a-z]{2,}(\/\S*)?/gi, ' ')
-    .replace(/\s+/g, ' ').trim().slice(0, 80)
+/** The club of a sign-up's first part (by kind, then club; a referee has none), or null. Pure. */
+export function firstClubOf (parts = []) {
+  return [...parts].filter((p) => p && p.kind !== 'referee' && p.club_id).sort(byKind)[0]?.club_id ?? null
 }
 
-export function createSignupNotices ({ pool, mailer = null, logger = console } = {}) {
+
+/**
+ * A self-chosen name as a notice shows it: one line, no control or bidi
+ * characters, nothing that reads as a link or an address (a scheme, www., a
+ * dotted host, also with another dot), and then only letters, spaces,
+ * hyphens and apostrophes (lib/mailer.js mailName: no numbers, colons or
+ * slashes; SEC-34), at most 60 characters. Mails and the bell show it as the
+ * account's name, never as OpenVolley's words.
+ */
+export function noticeName (raw) {
+  return mailName(raw)
+}
+
+export function createSignupNotices ({ pool, mailer = null, logger = console, now = Date.now } = {}) {
   const log = logger
+  // The managers' mail caps (see the header), in memory: club id -> [times
+  // of its mailed sign-ups], and the times of the manager mails of the hour
+  const clubMailed = new Map()
+  let hourMails = []
+  /** How many managers of `clubId`'s sign-up may be mailed now (0: the bell only). */
+  function managerMailsLeft (clubId) {
+    const t = now()
+    hourMails = hourMails.filter((x) => t - x < HOUR_MS)
+    if (clubMailed.size >= 5000) for (const [k, list] of clubMailed) if (!list.some((x) => t - x < DAY_MS)) clubMailed.delete(k)
+    const club = (clubMailed.get(clubId) || []).filter((x) => t - x < DAY_MS)
+    if (club.length >= SIGNUPS_MAILED_PER_CLUB_DAY) return 0
+    return Math.max(0, Math.min(MANAGER_MAILS_PER_SIGNUP, MANAGER_MAILS_PER_HOUR - hourMails.length))
+  }
+  function managerMailsUsed (clubId, n) {
+    if (!n) return
+    const t = now()
+    clubMailed.set(clubId, [...(clubMailed.get(clubId) || []).filter((x) => t - x < DAY_MS), t])
+    for (let i = 0; i < n; i++) hourMails.push(t)
+  }
 
   async function partsOf (userId) {
     try {
@@ -211,7 +250,13 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
       let mailed = 0
       if (mailer?.enabled) {
         const base = typeof mailer.managerUrlFor === 'function' ? mailer.managerUrlFor(app) : mailer.managerUrl
-        for (const r of recipients) {
+        // the admins, and the managers of the first part's club within the caps; the rest: the bell (SEC-34)
+        const club = firstClubOf(parts)
+        const managers = club ? recipients.filter((r) => !r.admin && (r.clubIds || []).includes(club)) : []
+        const allowed = managers.slice(0, club ? managerMailsLeft(club) : 0)
+        const toMail = [...recipients.filter((r) => r.admin), ...allowed]
+        let managerMails = 0
+        for (const r of toMail) {
           try {
             const res = await mailer.send('signup', {
               to: r.email,
@@ -220,11 +265,15 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
               link: `${String(base || '').replace(/\/+$/, '')}/#${r.target}`,
               vars: { name: account.name || '', email: account.email, admin: r.admin, parts: r.parts }
             })
-            if (res?.sent) mailed++
+            if (res?.sent) {
+              mailed++
+              if (!r.admin) managerMails++
+            }
           } catch (err) {
             log.error?.(`[notices] sign-up mail to ${maskEmail(r.email)} failed: ${describeMailError(err)}`)
           }
         }
+        if (club) managerMailsUsed(club, managerMails)
       }
       log.log?.(`[notices] sign-up ${userId.slice(0, 8)}: ${recipients.length} notified, ${mailed} mailed`)
       return { recipients: recipients.length, mailed }
@@ -296,7 +345,7 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
               to: r.email,
               lang: r.lang,
               link: `${String(base || '').replace(/\/+$/, '')}/#${r.target}`,
-              vars: { name: account.name || '', email: account.email, team: team.team, club: team.club, proposer: proposer?.name || proposer?.email || '', admin: r.admin }
+              vars: { name: account.name || '', email: account.email, team: team.team, club: team.club, proposer: mailName(proposer?.name) || proposer?.email || '', admin: r.admin }
             })
             if (res?.sent) mailed++
           } catch (err) {
