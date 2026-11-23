@@ -48,7 +48,7 @@ import { useBackupUnlock } from './hooks/useBackupUnlock'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import { publishEndedLiveStates } from './utils/matchEndLiveState'
 import ballFallback from './ball_fallback.png'
-import { isLocalOnly } from './domain/matchKind'
+import { isLocalOnly, usesKeyStore } from './domain/matchKind'
 
 // The scoring screen renders on its own state, data and contexts only: App's
 // renders while scoring (its live queries, the sync status) stop here. Its
@@ -2115,10 +2115,17 @@ export default function App() {
     })
   }
 
+  // The practice matches of this device (test and easy matches) with their
+  // events, sets and test teams. Never a Global or guest match
+  // (domain/matchKind usesKeyStore): a real match whose only full copy is on
+  // this device, kept with the test-match slot's external id. It goes only by
+  // Close match or by Delete match, which asks for its game PIN and names
+  // what it loses (audit LOG-01: Test match, Easy match and a new Global or
+  // guest match wiped it without a question)
   async function clearLocalTestData() {
     await db.transaction('rw', db.events, db.event_history, db.sets, db.matches, db.players, db.teams, async () => {
       const testMatches = await db.matches
-        .filter(m => isLocalOnly(m) || m.externalId === TEST_MATCH_EXTERNAL_ID)
+        .filter(m => !usesKeyStore(m) && (m.test === true || m.externalId === TEST_MATCH_EXTERNAL_ID))
         .toArray()
       for (const match of testMatches) {
         // a wipe, not an undo: no event history (db/eventHistory)
@@ -2127,12 +2134,16 @@ export default function App() {
         await db.matches.delete(match.id)
       }
 
+      // (a team row a kept match still uses stays with its players)
+      const keptTeamIds = new Set()
+      await db.matches.each(m => { keptTeamIds.add(m.homeTeamId); keptTeamIds.add(m.awayTeamId) })
       const testTeams = await db.teams
         .filter(
           t =>
-            t.externalId === TEST_HOME_TEAM_EXTERNAL_ID ||
-            t.externalId === TEST_AWAY_TEAM_EXTERNAL_ID ||
-            (t.seedKey && t.seedKey.startsWith('test-'))
+            !keptTeamIds.has(t.id) && (
+              t.externalId === TEST_HOME_TEAM_EXTERNAL_ID ||
+              t.externalId === TEST_AWAY_TEAM_EXTERNAL_ID ||
+              (t.seedKey && t.seedKey.startsWith('test-')))
         )
         .toArray()
 
@@ -3213,8 +3224,9 @@ export default function App() {
     let createdMatchId = null
 
     await db.transaction('rw', db.matches, db.sets, db.events, db.sync_queue, async () => {
+      // (never a Global or guest match: it keeps its own row, clearLocalTestData)
       let existingMatch =
-        (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) ||
+        (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey) && !usesKeyStore(m)).first()) ||
         (await db.matches.filter(m => m.test === true && !m.seedKey).first())
 
       // This device's own relay room (testMatchSeedKeyFor), kept across restarts
@@ -3286,8 +3298,27 @@ export default function App() {
     }
   }
 
+  /**
+   * A Global or guest match of this device that is not final (domain/
+   * matchKind usesKeyStore): a real match, kept on this device only, in the
+   * test-match slot. No new match of that slot (Test match, Easy match, a
+   * Global "Match", the signed-out "New match") replaces it: the scorer is
+   * told to continue it, or to delete it with Delete match, which asks for
+   * its game PIN and names what it loses (audit LOG-01). true when the
+   * scorer was told.
+   */
+  async function keyStoreMatchBlocks() {
+    const open = await db.matches.filter(m => usesKeyStore(m) && m.status !== 'final').first()
+    if (!open) return false
+    setAlertModal(open.global === true
+      ? t('home.modals.globalMatchStillOpen', 'A Global match is still open on this device. Continue it, or delete it with "Delete match" (with its game PIN), before starting another match.')
+      : t('home.modals.guestMatchStillOpen', 'A match without an account is still open on this device. Continue it, or delete it with "Delete match" (with its game PIN), before starting another match.'))
+    return true
+  }
+
   async function createNewTestMatch() {
     if (testMatchLoading) return
+    if (await keyStoreMatchBlocks()) return
 
     // (a copy another device scores is not recorded here)
     const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
@@ -3363,8 +3394,11 @@ export default function App() {
       setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
       return
     }
+    if (await keyStoreMatchBlocks()) return
     try {
-      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
+      // (the slot's relay room of a test or easy match; a final Global or
+      // guest match left on the device keeps its own)
+      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey) && !usesKeyStore(m)).first()) || null
       const seedKey = testMatchSeedKeyFor(previous?.seedKey)
       const refereePin = previous?.refereePin || generateSecurePin()
       await clearLocalTestData()
@@ -3537,8 +3571,10 @@ export default function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** "Easy match" in the New match menu: the form (the warnings come when it is started) */
-  function openEasyMatch(prefill = null) {
+  async function openEasyMatch(prefill = null) {
     if (testMatchLoading || easyMatchLoading) return
+    // (an open Global or guest match first: no form typed in for nothing)
+    if (await keyStoreMatchBlocks()) return
     setEasyMatchForm({ prefill })
   }
 
@@ -3549,6 +3585,12 @@ export default function App() {
    */
   async function startEasyMatch(form) {
     if (easyMatchLoading) return
+    // A Global or guest match is never replaced (keyStoreMatchBlocks): the
+    // form goes (a page address opened it), Home shows that match
+    if (await keyStoreMatchBlocks()) {
+      setEasyMatchForm(null)
+      return
+    }
     const previous = (await db.matches.filter(m => isLocalOnly(m) && m.status !== 'final').first()) || null
     const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
     const replacing = previous && ['live', 'ended'].includes(previous.status)
@@ -3576,9 +3618,13 @@ export default function App() {
    */
   async function createEasyMatch(form) {
     if (easyMatchLoading) return
+    if (await keyStoreMatchBlocks()) {
+      setEasyMatchForm(null)
+      return
+    }
     setEasyMatchLoading(true)
     try {
-      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
+      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey) && !usesKeyStore(m)).first()) || null
       const seedKey = testMatchSeedKeyFor(previous?.seedKey)
       const refereePin = previous?.refereePin || generateSecurePin()
       await clearLocalTestData()

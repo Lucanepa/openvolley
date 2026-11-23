@@ -1501,6 +1501,8 @@
       "existingMatchWarning": "Un match existe déjà. Veux-tu le supprimer et créer un nouveau match officiel ?",
       "testMatchOverwriteWarning": "Un match officiel est en cours. Démarrer un match test effacera la session précédente. Continuer ?",
       "officialMatchStillRecording": "Un match officiel est encore en cours d'enregistrement sur cet appareil. Continue-le, ou supprime-le avec \"Supprimer le match\", avant de créer un nouveau match officiel.",
+      "globalMatchStillOpen": "Un match Global est encore ouvert sur cet appareil. Continue-le, ou supprime-le avec \"Supprimer le match\" (avec son PIN du match), avant de commencer un autre match.",
+      "guestMatchStillOpen": "Un match sans compte est encore ouvert sur cet appareil. Continue-le, ou supprime-le avec \"Supprimer le match\" (avec son PIN du match), avant de commencer un autre match.",
       "officialMatchNotClosed": "Le match officiel de cet appareil est terminé mais pas fermé. Continue-le et ferme-le avec \"Fermer le match\" à la fin du match, ou supprime-le avec \"Supprimer le match\", avant de créer un nouveau match officiel.",
       "officialMatchUnsent": "Le match officiel de cet appareil a des modifications que le serveur n'a pas encore. Passe en ligne pour qu'elles soient envoyées, ou supprime-le avec \"Supprimer le match\", avant de créer un nouveau match officiel.",
       "officialMatchUnsentCount_one": "{{count}} modification n'est pas encore arrivée au serveur.",

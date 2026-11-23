@@ -1503,6 +1503,8 @@
       "existingMatchWarning": "There is an existing match. Do you want to delete it and create a new official match?",
       "testMatchOverwriteWarning": "An official match is still recording. Starting a new test match will wipe the previous test session. Continue?",
       "officialMatchStillRecording": "An official match is still recording on this device. Continue it, or delete it with \"Delete match\", before creating a new official match.",
+      "globalMatchStillOpen": "A Global match is still open on this device. Continue it, or delete it with \"Delete match\" (with its game PIN), before starting another match.",
+      "guestMatchStillOpen": "A match without an account is still open on this device. Continue it, or delete it with \"Delete match\" (with its game PIN), before starting another match.",
       "officialMatchNotClosed": "The official match on this device has ended and is not closed. Continue it and close it with \"Close match\" on its match end, or delete it with \"Delete match\", before creating a new official match.",
       "officialMatchUnsent": "The official match on this device has changes the server does not have yet. Go online so they can be sent, or delete it with \"Delete match\", before creating a new official match.",
       "officialMatchUnsentCount_one": "{{count}} change has not reached the server yet.",

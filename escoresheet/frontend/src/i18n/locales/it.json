@@ -1502,6 +1502,8 @@
       "existingMatchWarning": "Esiste già una partita. Vuoi eliminarla e creare una nuova partita ufficiale?",
       "testMatchOverwriteWarning": "Una partita ufficiale è in corso. Iniziare una partita test cancellerà la sessione precedente. Continuare?",
       "officialMatchStillRecording": "Su questo dispositivo è ancora in registrazione una partita ufficiale. Continuala, o eliminala con \"Elimina partita\", prima di creare una nuova partita ufficiale.",
+      "globalMatchStillOpen": "Su questo dispositivo è ancora aperta una partita Global. Continuala, o eliminala con \"Elimina partita\" (con il suo PIN partita), prima di iniziare un'altra partita.",
+      "guestMatchStillOpen": "Su questo dispositivo è ancora aperta una partita senza account. Continuala, o eliminala con \"Elimina partita\" (con il suo PIN partita), prima di iniziare un'altra partita.",
       "officialMatchNotClosed": "La partita ufficiale di questo dispositivo è terminata ma non chiusa. Continuala e chiudila con \"Chiudi partita\" a fine partita, o eliminala con \"Elimina partita\", prima di creare una nuova partita ufficiale.",
       "officialMatchUnsent": "La partita ufficiale di questo dispositivo ha modifiche che il server non ha ancora. Vai online perché vengano inviate, o eliminala con \"Elimina partita\", prima di creare una nuova partita ufficiale.",
       "officialMatchUnsentCount_one": "{{count}} modifica non è ancora arrivata al server.",
