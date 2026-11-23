@@ -254,8 +254,12 @@ services:
       # Phase 7 (backend README "Security model"): PINs at rest and match tokens
       OV_PIN_SECRET: ${OV_PIN_SECRET:?set OV_PIN_SECRET in .env}
       OV_MATCH_TOKEN_SECRET: ${OV_MATCH_TOKEN_SECRET:-}
-      # Wrong PINs across all callers before a match's PIN type (30), or the
-      # lookups that name no match (100), are refused for 10 min; empty = default
+      # Wrong PINs per address range (20 for an address or IPv6 /64, 30 for a
+      # /56, 40 for an IPv4 /24 or IPv6 /48) before that range is refused a
+      # match's PIN type or the lookups that name no match for 10 min; across
+      # all callers 30 per match (100 per lookup without a match) raise an ops
+      # alert, nobody is refused for it (backend README); empty = default
+      OV_PIN_RANGE_FAILURES: ${OV_PIN_RANGE_FAILURES:-}
       OV_PIN_MATCH_FAILURES: ${OV_PIN_MATCH_FAILURES:-}
       OV_PIN_SEARCH_FAILURES: ${OV_PIN_SEARCH_FAILURES:-}
       # V8's heap limit, below mem_limit (change them together). Node sizes

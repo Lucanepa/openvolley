@@ -246,38 +246,60 @@ take-over grace.
 120 per user; `/api/account/redeem-invite` at most **10 failed attempts per
 account and per IP (/64) in 10 minutes** (a success is refunded; 429
 `OV_TOO_MANY_ATTEMPTS` with `Retry-After: 600`).
-Across callers (every address together, `lib/matchRestore.js`
-`createPinFailureBudget`): **30 wrong PINs per match and PIN type in 10
-minutes** (game, referee, a bench, an upload PIN; every PIN check above
-counts, claim included; a relay check of all the match's PINs counts against
-each type it compared) refuse that PIN type of that match for 10 minutes, the
-right PIN too, with one `[PIN] match …` log line per lock. A scoreboard's
-claim on the relay counts for the database match whose game PIN it compares
-(the rows its room key and synced match name), whatever room key it names;
-a relay room re-pointed at a database match it never proved makes one
-counted comparison before its live state is published there. The match's
-other PIN types, other matches, match tokens already issued, a relay room
-already bound to its match, and the room's own scoring device re-proving it
-on the relay (the device the database names as the match's scorer, or the
-device of the room's last sync for a match the database does not hold, the
-venue relay included) are not affected; a scoreboard that names no device
-(older apps) is. A new PIN written by the scorer (`/api/db`,
-`/api/match/restore`, the relay sync) starts that PIN's count again.
-restore-by-pin compares one PIN with every match of the game number, so its
-wrong PINs count once for the **game number** (30 in 10 minutes refuse
-restore-by-pin of that game number only, one `[PIN] game number …` line),
-never against each match's game PIN; a match whose game PIN is locked is
-never proved by it (answered as a wrong PIN). The lookups that name no match
-(`validate-connection-pin` without `matchExternalId`, the relay's
-`validate-pin`) have a limit of their own: **100 wrong PINs per sport and PIN
-type in 10 minutes** refuse only those lookups for 10 minutes (one `[PIN] …
-lookups without a match` line); a lookup that names its match is never
-refused by it, and a locked match is never found by one (404, as a wrong
-PIN). OpenBeach referee and bench tablets (up to 3.0.2 at least) look up
-their PIN without naming the match, so they sit under that limit and see a
-match locked by others as a wrong PIN. `OV_PIN_MATCH_FAILURES` /
-`OV_PIN_SEARCH_FAILURES` override the two numbers. In memory, per process (a
-restart forgets them).
+Across address buckets (`lib/matchRestore.js` `createPinFailureBudget`;
+owner decision 1 of the 2026-11 audit, SEC-05 / SEC-06: lock the guessers
+only), wrong PINs are counted per match and PIN type (game, referee, a bench,
+an upload PIN; every PIN check above counts, claim included; a relay check of
+all the match's PINs counts against each type it compared), per **game
+number** of restore-by-pin, and per lookup that names no match (sport and PIN
+type), each twice:
+- **per address range of the caller** (`pinRangesOf`): an IPv4 address and
+  an IPv6 /64 may make **20 wrong PINs in 10 minutes**, an IPv6 /56 30, an
+  IPv4 /24 and an IPv6 /48 40 (`OV_PIN_RANGE_FAILURES` sets the first, the
+  others follow). A range past its share is refused that check for 10
+  minutes, the right PIN too (no oracle for the guesser), with one
+  `[PIN] match …`, `[PIN] game number …` or `[PIN] … lookups without a
+  match` line per lock that names the range. Every other range goes on, and
+  the right PIN from there passes.
+- **from all callers together**: **30 wrong PINs per match** (any of its PIN
+  types) or game number (`OV_PIN_MATCH_FAILURES`) and **100 per lookup
+  without a match** (`OV_PIN_SEARCH_FAILURES`) in 10 minutes raise one ops
+  alert per window: a `[PIN] … from all callers …` line and an error-tracker
+  event (`view` `pin budget match|game|search`, the digest and its push):
+  the match key, PIN types, counts and the callers' widest ranges, never a
+  PIN. Nobody is refused for it: a hard refusal for every caller let 30
+  anonymous guesses from two addresses lock out a match's referee, benches
+  and scorer, and 100 every OpenBeach referee.
+A scoreboard's claim on the relay counts for the database match whose game
+PIN it compares (the rows its room key and synced match name), whatever room
+key it names; a relay room re-pointed at a database match it never proved
+makes one counted comparison before its live state is published there. Not
+refused by a range lock, and not counted across buckets: the room's own
+scoring device re-proving it on the relay (the device the database names as
+the match's scorer, or the device of the room's last sync for a match the
+database does not hold, the venue relay included) and subscribing to it;
+match tokens already issued (subscribe-match `{ token }`, `X-OV-Match-Token`:
+no PIN is compared); a relay room already bound to its match; and on
+restore-by-pin and claim a signed-in admin, the creator or an editor of the
+match (of a match of the game number), or the device the database names as
+its scorer (`device` of restore-by-pin; `trustedFor`). A scoreboard that
+names no device (older apps) is refused with its range. A new PIN written by
+the scorer (`/api/db`, `/api/match/restore`, the relay sync) starts that
+PIN's counts again. restore-by-pin compares one PIN with every match of the
+game number, so its wrong PINs count once for the game number, never against
+each match's game PIN; a match whose game PIN is locked for the caller's
+range is never proved by it (answered as a wrong PIN). A lookup that names
+no match (`validate-connection-pin` without `matchExternalId`, the relay's
+`validate-pin` without `matchId`) never proves a match locked for the
+caller's range (404, as a wrong PIN) and is logged as `[PIN] lookup without
+a match: <sport>:<type> on <path>: found|wrong` (60 lines per PIN type in 10
+minutes, then one line that the rest is not logged; never a PIN or an
+address). OpenBeach referee tablets (up to 3.0.2 at least) look up their PIN
+without naming the match; the lookup stays until the OpenBeach build that
+names its match is out. The OpenVolley apps name their match (the link, the
+game picked, or the one cloud match of the game number picked). In memory,
+per process (a restart forgets them); a full table (100,000 keys) counts no
+new key, keeps every lock and raises one alert.
 Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
 the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
 allows that header.
