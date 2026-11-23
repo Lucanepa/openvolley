@@ -36,21 +36,25 @@
  *
  * Shares (audit 2026-11-23 SEC-17: one anonymous caller filled the store and
  * every later save got 507 for 180 days):
- *   - per network and day (lib/globalQuota.js, in memory; IPv6 /64 and /56,
- *     an IPv4 address): new keys and bytes added (a file that replaces one
- *     counts what it adds), 429 OV_GLOBAL_QUOTA beyond;
+ *   - per network and day (lib/globalQuota.js, in memory; IPv6 /64, /56 and
+ *     /48, an IPv4 address and its /24): new keys and bytes added (a file
+ *     that replaces one counts what it adds), 429 OV_GLOBAL_QUOTA beyond;
  *   - a full store (maxKeys / maxTotalBytes) no longer refuses everyone: it
- *     evicts keys to make room, those never loaded since the start first,
- *     then the largest, then the newest (a flood's own files), never the key
- *     being saved, at most maxEvictPerSave per save; 507 only if that is not
- *     enough. The device keeps its own copy of whatever is evicted;
+ *     evicts the keys of the networks (IPv6 /48, IPv4 /24) that created more
+ *     than evictShare of it since the start, the newest created first, at
+ *     most maxEvictPerSave per save, never the key being saved. Who created a
+ *     key is known in memory only (addresses are never stored), so a genuine
+ *     key is never chosen for its size or for not being loaded again (GCS-R2:
+ *     final backups and PDFs are rarely loaded and far larger than a flood's
+ *     files); such a network's own new key, and everything when no network is
+ *     over its share, gets 507 as before, and the data stays;
  *   - onAlert (server.js: the error tracker) when the store passes
  *     alertShare of a cap and when it evicts, at most hourly.
  */
 import { promises as fsp } from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { createNetworkBudget, createOncePer } from './globalQuota.js'
+import { addressPrefix, createNetworkBudget, createOncePer } from './globalQuota.js'
 
 export const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/
 export const KINDS = Object.freeze({
@@ -77,10 +81,15 @@ export const DEFAULTS = Object.freeze({
   // address adds about 600 MB (the final backup and PDFs of each)
   perNetwork: Object.freeze([
     Object.freeze({ name: '/64', v6Bits: 64, v4Bits: 32, max: Object.freeze({ keys: 200, bytes: 1024 * MiB }) }),
-    Object.freeze({ name: '/56', v6Bits: 56, v4Bits: 32, max: Object.freeze({ keys: 500, bytes: 2048 * MiB }) })
+    Object.freeze({ name: '/56', v6Bits: 56, v4Bits: 32, max: Object.freeze({ keys: 500, bytes: 2048 * MiB }) }),
+    // an IPv6 /48 (a tunnel broker's has 256 /56s) and an IPv4 /24 (GCS-R4)
+    Object.freeze({ name: '/48', v6Bits: 48, v4Bits: 24, max: Object.freeze({ keys: 1000, bytes: 2048 * MiB }) })
   ]),
   alertShare: 0.5,
-  maxEvictPerSave: 200
+  maxEvictPerSave: 200,
+  // a network that created more than this share of the keys or bytes since
+  // the start is the one a full store takes room from (GCS-R2)
+  evictShare: 0.1
 })
 
 /** Largest JSON body the HTTP layer should read for save (base64 + the envelope). */
@@ -112,8 +121,41 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
   let lastSweep = 0
   let sweeping = null
   const budget = createNetworkBudget({ limits: o.perNetwork, now })
-  // keys loaded since the start (memory only): evicted last
-  const loaded = new Set()
+  // GCS-R2: the keys this process saw created, key -> { net, bytes } (in
+  // creation order), and net -> { keys: Set, bytes }. Memory only: a key
+  // created before the start has no known creator and is never evicted.
+  const created = new Map()
+  const holdings = new Map()
+  const creatorOf = (ip) => addressPrefix(ip, 48, 24)
+  function forgetKey(k) {
+    const c = created.get(k)
+    if (!c) return
+    created.delete(k)
+    const h = holdings.get(c.net)
+    if (!h) return
+    h.keys.delete(k)
+    h.bytes -= c.bytes
+    if (!h.keys.size) holdings.delete(c.net)
+  }
+  function noteKey(k, net, adds, isNew) {
+    if (isNew) {
+      forgetKey(k)
+      while (created.size >= o.maxKeys + 100) forgetKey(created.keys().next().value)
+      created.set(k, { net, bytes: 0 })
+      let h = holdings.get(net)
+      if (!h) { h = { keys: new Set(), bytes: 0 }; holdings.set(net, h) }
+      h.keys.add(k)
+    }
+    const c = created.get(k)
+    if (!c) return
+    c.bytes = Math.max(0, c.bytes + adds)
+    const h = holdings.get(c.net)
+    if (h) h.bytes = Math.max(0, h.bytes + adds)
+  }
+  const overShare = (net) => {
+    const h = holdings.get(net)
+    return !!h && (h.keys.size > o.maxKeys * o.evictShare || h.bytes > o.maxTotalBytes * o.evictShare)
+  }
   let evicting = Promise.resolve()
   const alertOnce = createOncePer(60 * 60_000, now)
   const alert = (name, message) => {
@@ -181,7 +223,7 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
         for (const f of await fsp.readdir(dir).catch(() => [])) {
           newest = Math.max(newest, (await fsp.stat(path.join(dir, f)).catch(() => ({ mtimeMs: 0 }))).mtimeMs)
         }
-        if (newest < cutoff) { await fsp.rm(dir, { recursive: true, force: true }); removed++ }
+        if (newest < cutoff) { await fsp.rm(dir, { recursive: true, force: true }); forgetKey(k); removed++ }
       }
     }
     counted = null
@@ -189,43 +231,39 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
   }
 
   /**
-   * Make room for `bytes` more (and one more key when newKey) by removing
-   * keys: never loaded first, then the largest, then the newest; never
-   * `keep`. Returns whether there is room now. One eviction at a time.
+   * Make room for `bytes` more (and one more key when newKey) for a save
+   * from network `net`, by removing keys of the networks over their share
+   * (evictShare), the largest holder of what is short first, its newest
+   * created keys first; never `keep`, never a key whose creator is unknown,
+   * nothing for a network over its share itself. Returns whether there is
+   * room now. One eviction at a time.
    */
-  function evictFor({ keep, bytes, newKey }) {
+  function evictFor({ keep, bytes, newKey, net }) {
     const run = evicting.then(async () => {
       let u = await usage()
       const fits = () => u.bytes + bytes <= o.maxTotalBytes && (!newKey || u.keys < o.maxKeys)
-      if (fits()) return true
-      const keys = []
-      for (const a of await fsp.readdir(base).catch(() => [])) {
-        for (const k of await fsp.readdir(path.join(base, a)).catch(() => [])) {
+      if (fits() || overShare(net)) return fits()
+      const keysShort = newKey && u.keys >= o.maxKeys
+      const nets = [...holdings].filter(([n]) => n !== net && overShare(n))
+        .sort(([, a], [, b]) => (keysShort ? b.keys.size - a.keys.size : b.bytes - a.bytes))
+      let removed = 0
+      for (const [, h] of nets) {
+        for (const k of [...h.keys].reverse()) {
+          if (fits() || removed >= o.maxEvictPerSave) break
           if (k === keep) continue
-          const dir = path.join(base, a, k)
+          const dir = dirOf(k)
           let size = 0
-          let newest = 0
-          for (const f of await fsp.readdir(dir).catch(() => [])) {
-            const st = await fsp.stat(path.join(dir, f)).catch(() => null)
-            if (st) { size += st.size; newest = Math.max(newest, st.mtimeMs) }
-          }
-          const st = await fsp.stat(dir).catch(() => null)
-          keys.push({ key: k, dir, size, born: st && st.birthtimeMs > 0 ? st.birthtimeMs : newest })
+          for (const f of await fsp.readdir(dir).catch(() => [])) size += (await fsp.stat(path.join(dir, f)).catch(() => ({ size: 0 }))).size
+          await fsp.rm(dir, { recursive: true, force: true })
+          forgetKey(k)
+          removed++
+          u = { ...u, keys: u.keys - 1, bytes: Math.max(0, u.bytes - size) }
+          if (counted) counted = { ...counted, keys: u.keys, bytes: u.bytes }
         }
       }
-      keys.sort((x, y) => (loaded.has(x.key) - loaded.has(y.key)) || (y.size - x.size) || (y.born - x.born))
-      let removed = 0
-      for (const k of keys) {
-        if (fits() || removed >= o.maxEvictPerSave) break
-        await fsp.rm(k.dir, { recursive: true, force: true })
-        loaded.delete(k.key)
-        removed++
-        u = { ...u, keys: u.keys - 1, bytes: Math.max(0, u.bytes - k.size) }
-        if (counted) counted = { ...counted, keys: u.keys, bytes: u.bytes }
-      }
       if (removed) {
-        logger.warn?.(`[Global] the store was full: ${removed} key(s) evicted to make room`)
-        alert('evicted', `the Global store is full (${mb(u.bytes)} MB in ${u.keys} keys, caps ${mb(o.maxTotalBytes)} MB / ${o.maxKeys}): keys were evicted to make room`)
+        logger.warn?.(`[Global] the store was full: ${removed} key(s) of networks over their share evicted to make room`)
+        alert('evicted', `the Global store is full (${mb(u.bytes)} MB in ${u.keys} keys, caps ${mb(o.maxTotalBytes)} MB / ${o.maxKeys}): the newest keys of networks over a ${Math.round(o.evictShare * 100)}% share were evicted`)
       }
       return fits()
     })
@@ -277,7 +315,10 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
     // does; a full store makes room (evictFor) rather than refusing everyone
     const u = await usage()
     if ((!existing && u.keys >= o.maxKeys) || u.bytes - replaced + data.length > o.maxTotalBytes) {
-      if (!(await evictFor({ keep: key, bytes: data.length - replaced, newKey: !existing }))) return fail(507, 'OV_GLOBAL_FULL', 'Storage is full, try again later')
+      if (!(await evictFor({ keep: key, bytes: data.length - replaced, newKey: !existing, net: creatorOf(ip) }))) {
+        alert('full', `the Global store is full (${mb(u.bytes)} MB in ${u.keys} keys, caps ${mb(o.maxTotalBytes)} MB / ${o.maxKeys}) and no network is over its share: new data is refused`)
+        return fail(507, 'OV_GLOBAL_FULL', 'Storage is full, try again later')
+      }
     }
     const room = await roomFor(data.length)
     if (room === null) return fail(503, 'OV_GLOBAL_UNAVAILABLE', 'Storage unavailable')
@@ -308,6 +349,7 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
       }
     }
     budget.charge(ip, { keys: existing ? 0 : 1, bytes: adds })
+    noteKey(key, creatorOf(ip), data.length - replaced, !existing)
     return ok({ kind, bytes: data.length, replaced: had })
   }
 
@@ -317,10 +359,6 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
     if (typeof key !== 'string' || !KEY_RE.test(key) || !spec) return fail(400, 'OV_GLOBAL_INVALID', 'Invalid request')
     try {
       const data = await fsp.readFile(path.join(dirOf(key), `${kind}.${spec.ext}`))
-      if (!loaded.has(key)) {
-        if (loaded.size >= o.maxKeys) loaded.delete(loaded.values().next().value)
-        loaded.add(key)
-      }
       return ok({ fileBase64: data.toString('base64'), contentType: spec.types[0] })
     } catch (e) {
       if (e?.code === 'ENOENT') return { status: 200, body: { data: null, error: { message: 'Not found', code: 'OV_GLOBAL_NOT_FOUND' } } }
@@ -336,5 +374,8 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
     return fail(404, 'OV_NOT_FOUND', 'Not found')
   }
 
-  return { handle, sweep, maybeSweep, usage, budget, maxBodyBytes: maxBodyBytesFor(o.maxFileBytes) }
+  /** What the keys a network created since the start hold (tests). */
+  const createdBy = (ip) => { const h = holdings.get(creatorOf(ip)); return h ? { keys: h.keys.size, bytes: h.bytes } : { keys: 0, bytes: 0 } }
+
+  return { handle, sweep, maybeSweep, usage, budget, createdBy, maxBodyBytes: maxBodyBytesFor(o.maxFileBytes) }
 }

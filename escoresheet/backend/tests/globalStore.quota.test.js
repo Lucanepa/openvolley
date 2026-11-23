@@ -1,8 +1,11 @@
 // The Global store's shares (audit 2026-11-23 SEC-17): one anonymous caller
 // filled the whole store (4 GiB) under fresh keys, and every later save got
 // 507 OV_GLOBAL_FULL until the junk was 180 days old. Now each network (IPv6
-// /64 and /56, an IPv4 address) has a daily share, and a full store evicts
-// (never loaded, largest, newest first) instead of refusing everyone.
+// /64, /56 and /48, an IPv4 address and its /24) has a daily share, and a
+// full store evicts the newest keys of the networks that created more than a
+// tenth of it, instead of refusing everyone. GCS-R2 (the review of that fix)
+// changed the eviction: it chose never-loaded and large keys first, which
+// genuine final backups and PDFs are, so a flood of tiny files deleted them.
 //   cd escoresheet/backend && node --test tests/globalStore.quota.test.js
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
@@ -30,8 +33,10 @@ beforeEach(async () => {
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }) })
 
 describe('a network\'s share of the Global store', () => {
-  it('defaults: 200 keys and 1 GiB a day per /64, 500 keys and 2 GiB per /56', () => {
-    assert.deepEqual(DEFAULTS.perNetwork.map((l) => [l.name, l.max.keys, l.max.bytes]), [['/64', 200, 1024 * MiB], ['/56', 500, 2048 * MiB]])
+  it('defaults: 200 keys and 1 GiB a day per /64, 500 keys and 2 GiB per /56, 1000 keys and 2 GiB per /48 (an IPv4 /24)', () => {
+    assert.deepEqual(DEFAULTS.perNetwork.map((l) => [l.name, l.max.keys, l.max.bytes]), [['/64', 200, 1024 * MiB], ['/56', 500, 2048 * MiB], ['/48', 1000, 2048 * MiB]])
+    assert.deepEqual(DEFAULTS.perNetwork.map((l) => l.v4Bits), [32, 32, 24])
+    assert.equal(DEFAULTS.evictShare, 0.1)
   })
 
   it('fresh keys from one address stop at its daily share (429 OV_GLOBAL_QUOTA); another network saves; the next day it is back', async () => {
@@ -63,23 +68,30 @@ describe('a network\'s share of the Global store', () => {
 })
 
 describe('a full Global store makes room instead of refusing everyone', () => {
-  it('the audit\'s filler (many networks) takes the store; a victim still saves, and the victim\'s earlier key survives', async () => {
+  // one IPv6 /48 (a tunnel broker's), through its /56s and /64s: one caller
+  const in48 = (i) => `2001:db8:66:${(((i >> 4) & 255) << 8 | (i & 15)).toString(16)}::1`
+  // a hall: an IPv4 /24 each
+  const hall = (i) => `198.${18 + (i >> 8)}.${i & 255}.7`
+
+  it('the audit\'s filler from one /48 takes the store; a victim still saves, and the victim\'s earlier key survives unloaded', async () => {
     // global-store-full.mjs, limits scaled down: 1 MiB store, 3 KiB files
     const alerts = []
     const s = createGlobalStore({ root, logger: silent, statfs: plenty, minFreeBytes: 0, reserveBytes: 0, maxTotalBytes: MiB, maxFileBytes: 12 * 256, onAlert: (m) => alerts.push(m) })
     const victimEarlier = key()
-    assert.equal((await savePdf(s, victimEarlier, 800, '198.51.100.20')).status, 200)
-    assert.equal((await load(s, victimEarlier)).status, 200) // opened on another tablet: loaded
+    assert.equal((await savePdf(s, victimEarlier, 800, hall(1))).status, 200)
     let filled = 0
     for (let i = 0; i < 400; i++) {
-      const r = await savePdf(s, key(), 12 * 256, `2001:db8:${i.toString(16)}::1`)
-      assert.equal(r.status, 200, `filler save ${i}: ${JSON.stringify(r.body.error)}`)
+      const r = await savePdf(s, key(), 12 * 256, in48(i))
+      if (r.status !== 200) {
+        assert.equal(r.status, 507, `filler save ${i}: ${JSON.stringify(r.body.error)}`)
+        continue
+      }
       filled++
     }
-    assert.ok(filled * 12 * 256 > MiB, 'the filler wrote more than the store holds')
-    const victim = await savePdf(s, key(), 1000, '198.51.100.21')
-    assert.equal(victim.status, 200, 'not 507: the store evicted the filler\'s files')
-    assert.equal((await load(s, victimEarlier)).body.data?.contentType, 'application/pdf', 'the loaded, small, older key stays')
+    assert.ok(filled * 12 * 256 <= MiB + 12 * 256, 'the filler gets no room from itself once over its share')
+    const victim = await savePdf(s, key(), 12 * 256, hall(2))
+    assert.equal(victim.status, 200, 'not 507: the store evicted the filler\'s newest file')
+    assert.equal((await load(s, victimEarlier)).body.data?.contentType, 'application/pdf', 'the never loaded, older key stays')
     const u = await s.usage()
     assert.ok(u.bytes <= MiB, `the cap holds: ${u.bytes}`)
     assert.ok(alerts.some((m) => /over 50% full/.test(m)), 'alerted at half')
@@ -87,32 +99,75 @@ describe('a full Global store makes room instead of refusing everyone', () => {
     assert.equal(alerts.filter((m) => /evicted/.test(m)).length, 1, 'at most hourly')
   })
 
-  it('the order: never loaded before loaded, then the largest, then the newest; never the key being saved', async () => {
-    let t = Date.parse('2026-11-23T10:00:00Z')
-    const s = createGlobalStore({ root, logger: silent, statfs: plenty, minFreeBytes: 0, reserveBytes: 0, maxTotalBytes: 10 * KiB, now: () => t })
-    const big = key(); const small = key(); const loadedBig = key(); const newer = key()
-    await savePdf(s, loadedBig, 3 * KiB, '192.0.2.1')
-    await load(s, loadedBig)
-    await savePdf(s, big, 3 * KiB, '192.0.2.2')
-    await savePdf(s, small, 1 * KiB, '192.0.2.3')
-    await savePdf(s, newer, 2 * KiB, '192.0.2.4') // 9 KiB in all
-    // 3 KiB more: the largest never-loaded key goes (big), nothing else
-    assert.equal((await savePdf(s, key(), 3 * KiB, '192.0.2.5')).status, 200)
-    assert.equal((await load(s, big)).body.error?.code, 'OV_GLOBAL_NOT_FOUND')
-    for (const k of [small, loadedBig, newer]) assert.equal((await load(s, k)).status, 200)
-    // a key that grows past the cap: the others make room, never itself
-    const r = await savePdf(s, loadedBig, 9 * KiB, '192.0.2.1')
-    assert.equal(r.status, 200)
-    assert.equal((await load(s, loadedBig)).status, 200)
-    assert.ok((await s.usage()).bytes <= 10 * KiB)
+  it('the reviewer\'s flood (GCS-R2): 40 genuine final PDFs, never loaded and far larger, survive 700 tiny ones from one /48', async () => {
+    // store-evict.mjs: the shipped defaults, maxKeys scaled from 20000 to 600
+    const s = createGlobalStore({ root, logger: silent, statfs: plenty, minFreeBytes: 0, reserveBytes: 0, maxKeys: 600 })
+    const finalPdf = (k, n, ip) => s.handle('save', { key: k, kind: 'scoresheet-final', contentType: 'application/pdf', fileBase64: pdf(n) }, { ip })
+    const genuine = []
+    for (let i = 0; i < 40; i++) {
+      const k = key()
+      assert.equal((await finalPdf(k, 300 * KiB, hall(i))).status, 200)
+      genuine.push(k)
+    }
+    const statuses = {}
+    for (let i = 0; i < 700; i++) {
+      const r = await finalPdf(key(), 5, `2001:db8:66:${(((i / 400) | 0) << 8 | (i % 200)).toString(16)}::1`)
+      statuses[r.status] = (statuses[r.status] || 0) + 1
+    }
+    assert.equal(statuses[200], 560, JSON.stringify(statuses))
+    assert.equal(statuses[507], 140, 'the flood\'s own saves get no room')
+    let left = 0
+    for (const k of genuine) if ((await s.handle('load', { key: k, kind: 'scoresheet-final' })).body.data) left++
+    assert.equal(left, 40)
+    // a genuine new key still gets room (from the flood's newest)
+    assert.equal((await finalPdf(key(), 300 * KiB, hall(77))).status, 200)
+    assert.equal((await s.usage()).keys, 600)
   })
 
-  it('the key count too: a store at maxKeys evicts one for a new key', async () => {
+  it('the order: the newest keys of the network over its share, by creation (a re-save does not make a key new); never the key being saved', async () => {
+    let t = Date.parse('2026-11-23T10:00:00Z')
+    const s = createGlobalStore({ root, logger: silent, statfs: plenty, minFreeBytes: 0, reserveBytes: 0, maxTotalBytes: 20 * KiB, now: () => t })
+    const genuine = key()
+    await savePdf(s, genuine, 3 * KiB, hall(1))
+    const flood = []
+    for (let i = 0; i < 5; i++) { const k = key(); await savePdf(s, k, 3 * KiB, in48(i)); flood.push(k); t += 1000 }
+    // the flood's first key re-saved (its mtime is now the newest): still its oldest by creation
+    await savePdf(s, flood[0], 3 * KiB, in48(9))
+    // 18 KiB in all: 6 KiB more evicts two keys, the flood's two newest
+    assert.equal((await savePdf(s, key(), 6 * KiB, hall(2))).status, 200)
+    for (const k of [flood[3], flood[4]]) assert.equal((await load(s, k)).body.error?.code, 'OV_GLOBAL_NOT_FOUND')
+    for (const k of [genuine, flood[0], flood[1], flood[2]]) assert.equal((await load(s, k)).status, 200)
+    assert.ok((await s.usage()).bytes <= 20 * KiB)
+    // a key of the flood's that grows past the cap: no room from its own network
+    assert.equal((await savePdf(s, flood[0], 9 * KiB, in48(9))).status, 507)
+    assert.equal((await load(s, flood[0])).status, 200, 'never the key being saved')
+  })
+
+  it('no network over its share, or a restart forgot who created what: 507 as before, nothing is deleted', async () => {
+    const s = createGlobalStore({ root, logger: silent, statfs: plenty, minFreeBytes: 0, reserveBytes: 0, maxKeys: 30 })
+    // 30 halls, one key each (none over a tenth): full
+    const keys = []
+    for (let i = 0; i < 30; i++) { const k = key(); await savePdf(s, k, 500, hall(i)); keys.push(k) }
+    assert.equal((await savePdf(s, key(), 500, hall(40))).status, 507)
+    for (const k of keys) assert.equal((await load(s, k)).status, 200)
+    // a flood that filled a store before a restart: unknown creators
+    await fs.rm(path.join(root, 'global'), { recursive: true, force: true })
+    const before = createGlobalStore({ root, logger: silent, statfs: plenty, minFreeBytes: 0, reserveBytes: 0, maxKeys: 30 })
+    for (let i = 0; i < 30; i++) assert.equal((await savePdf(before, key(), 500, in48(i))).status, 200)
+    const again = createGlobalStore({ root, logger: silent, statfs: plenty, minFreeBytes: 0, reserveBytes: 0, maxKeys: 30 })
+    assert.equal((await savePdf(again, key(), 500, hall(41))).status, 507)
+    assert.equal((await again.usage()).keys, 30)
+  })
+
+  it('the key count too: a store at maxKeys evicts the newest key of the network over its share for another network\'s new key', async () => {
     const s = createGlobalStore({ root, logger: silent, statfs: plenty, minFreeBytes: 0, reserveBytes: 0, maxKeys: 3 })
     const keys = [key(), key(), key()]
     for (const k of keys) await savePdf(s, k, 500, '192.0.2.9')
-    assert.equal((await savePdf(s, key(), 500, '192.0.2.10')).status, 200)
+    assert.equal((await savePdf(s, key(), 500, '192.0.2.10')).status, 507, 'the same /24: no room from itself')
+    assert.equal((await savePdf(s, key(), 500, '198.51.100.10')).status, 200)
     assert.equal((await s.usage()).keys, 3)
+    assert.equal((await load(s, keys[2])).body.error?.code, 'OV_GLOBAL_NOT_FOUND')
+    assert.equal(s.createdBy('192.0.2.200').keys, 2)
   })
 })
 
