@@ -715,7 +715,7 @@ function getDataLayer() {
     // The manager's Data tab (lib/dataAdmin.js): super admins, one row at a time, audited
     const dataAdmin = dta.createDataAdmin({ pool: db.pool, audit: accounts.audit })
     // The manager's SQL tab (lib/sqlWorkspace.js): super admins; read mode as ov_readonly (roles.sql)
-    const sqlWorkspace = sqw.createSqlWorkspace({ pool: db.pool, audit: accounts.audit, ...(process.env.OV_SQL_READER_ROLE ? { readerRole: process.env.OV_SQL_READER_ROLE } : {}) })
+    const sqlWorkspace = sqw.createSqlWorkspace({ pool: db.pool, audit: accounts.audit, ...(process.env.OV_SQL_READER_ROLE ? { readerRole: process.env.OV_SQL_READER_ROLE } : {}), ...(process.env.OV_SQL_WRITER_ROLE ? { writerRole: process.env.OV_SQL_WRITER_ROLE } : {}) })
     // The error tracker (db/050, lib/errorTracker.js): every page's and app's
     // errors and the server's own; the Errors tab (super admins); the digest
     // by mail, push and bell (lib/errorAlerts.js, scheduled below)

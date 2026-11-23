@@ -13,7 +13,7 @@ import { dirname, join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import WebSocket from 'ws'
-import { createDatabase, testSchemaSql, applyRolesSql, dropRoles, readonlyRoleOf } from './pgTestDb.js'
+import { createDatabase, testSchemaSql, applyRolesSql, dropRoles, readonlyRoleOf, writerRoleOf } from './pgTestDb.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BACKEND_DIR = resolve(HERE, '..', '..')
@@ -203,7 +203,7 @@ export async function provisionDatabase() {
      */
     appUrl() {
       if (!appUrl) {
-        roles.push(`${name}_app`, `${name}_owner`, readonlyRoleOf(`${name}_app`))
+        roles.push(`${name}_app`, `${name}_owner`, readonlyRoleOf(`${name}_app`), writerRoleOf(`${name}_app`))
         appUrl = applyRolesSql(url.toString(), { appRole: `${name}_app`, ownerRole: `${name}_owner` })
       }
       return appUrl

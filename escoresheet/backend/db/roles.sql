@@ -61,6 +61,12 @@
 --             container's local socket logs in). ov_app may SET ROLE to it
 --             (no inherited rights): the SQL workspace's read mode. See the
 --             end of this file.
+--   ov_sql_writer the SQL workspace's write mode (lib/sqlWorkspace.js): NOLOGIN,
+--             ov_app may SET ROLE to it (no inherited rights). ov_app's own
+--             grants on public and ov_meta, copied, but SELECT only of the
+--             columns that are not secret, and the views of schema ov_write
+--             (each table of public with secret columns, by its name, without
+--             them). See the end of this file.
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -88,9 +94,10 @@ DO $$
 DECLARE r record;
 BEGIN
   -- ov_app inherits nothing: drop any role membership it was given (but
-  -- ov_readonly, granted below with INHERIT FALSE: the SQL workspace's read mode).
+  -- ov_readonly and ov_sql_writer, granted below with INHERIT FALSE: the SQL
+  -- workspace's read and write mode).
   FOR r IN SELECT g.rolname FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
-            WHERE m.member = 'ov_app'::regrole AND g.rolname <> 'ov_readonly' LOOP
+            WHERE m.member = 'ov_app'::regrole AND g.rolname NOT IN ('ov_readonly', 'ov_sql_writer') LOOP
     EXECUTE format('REVOKE %I FROM ov_app', r.rolname);
     RAISE NOTICE 'revoked membership of ov_app in %', r.rolname;
   END LOOP;
@@ -395,5 +402,130 @@ BEGIN
     EXECUTE format('GRANT SELECT ON ov_read.%I TO ov_readonly', r.relname);
   END LOOP;
 END $$;
+
+-- ov_sql_writer: the SQL workspace's write mode (lib/sqlWorkspace.js). It ran
+-- as ov_app, which reads every column: a check of the names refused
+-- `game_pin`, but SELECT *, a whole row, a UNION or a recursive CTE gave the
+-- secret columns back (audit SEC-40). Write mode now runs as this role (SET
+-- LOCAL ROLE inside its transaction, as read mode does with ov_readonly), so
+-- Postgres itself refuses whatever reads a secret column, by its name or
+-- not: ov_app's grants on public and ov_meta are copied here, but SELECT of
+-- a secret column (the pattern of ov_read above and of lib/dataAdmin.js
+-- SECRET_COLUMN_RE). Nothing on auth. Its triggers fire as this role; they
+-- read no secret column. Schema ov_write holds a view of every table of
+-- public that has secret columns, by the table's name, with the other
+-- columns (security_invoker: this role's grants on the table decide, the
+-- append-only rules too). Write mode's search path finds it before public,
+-- so SELECT * FROM matches, RETURNING * and INSERT / UPDATE / DELETE by the
+-- plain name work as before, without the secret columns, and
+-- `SELECT * FROM public.matches` is refused (42501). Rebuilt on every run,
+-- like ov_read: it follows new tables and columns (a new table gets no
+-- default grants here: this file runs after every migration).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ov_sql_writer') THEN
+    CREATE ROLE ov_sql_writer NOLOGIN;
+  END IF;
+END $$;
+ALTER ROLE ov_sql_writer WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT g.rolname FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+            WHERE m.member = 'ov_sql_writer'::regrole LOOP
+    EXECUTE format('REVOKE %I FROM ov_sql_writer', r.rolname);
+  END LOOP;
+END $$;
+SELECT format('REVOKE ALL ON DATABASE %I FROM ov_sql_writer', current_database()) \gexec
+REVOKE ALL ON SCHEMA public, auth FROM ov_sql_writer;
+GRANT USAGE ON SCHEMA public TO ov_sql_writer;
+DO $$
+BEGIN
+  IF to_regnamespace('ov_meta') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON SCHEMA ov_meta FROM ov_sql_writer';
+    IF has_schema_privilege('ov_app', 'ov_meta', 'USAGE') THEN
+      EXECUTE 'GRANT USAGE ON SCHEMA ov_meta TO ov_sql_writer';
+    END IF;
+  END IF;
+END $$;
+DO $$
+DECLARE
+  r record;
+  p record;
+  cols text;
+  visible text;
+  secret_re constant text := '(^|_)(pin|pins|password|secret|token|salt|mac)(_|$)|(^|_)hash$';
+BEGIN
+  FOR r IN SELECT c.oid, c.relkind, n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname IN ('public', 'auth', 'ov_meta') AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S') LOOP
+    -- from nothing, column grants too (a grant given by hand)
+    EXECUTE format('REVOKE ALL ON %s FROM ov_sql_writer', r.oid::regclass);
+    IF r.relkind <> 'S' THEN
+      SELECT string_agg(quote_ident(attname), ', ') INTO cols
+        FROM pg_attribute WHERE attrelid = r.oid AND attnum > 0 AND NOT attisdropped;
+      IF cols IS NOT NULL THEN
+        EXECUTE format('REVOKE ALL (%s) ON %s FROM ov_sql_writer', cols, r.oid::regclass);
+      END IF;
+    END IF;
+    CONTINUE WHEN r.nspname = 'auth';
+    -- ov_app's privileges on the table or sequence ...
+    FOR p IN SELECT DISTINCT a.privilege_type FROM pg_class c, aclexplode(c.relacl) a
+              WHERE c.oid = r.oid AND a.grantee = 'ov_app'::regrole LOOP
+      IF r.relkind = 'S' THEN
+        EXECUTE format('GRANT %s ON SEQUENCE %s TO ov_sql_writer', p.privilege_type, r.oid::regclass);
+      ELSIF p.privilege_type = 'SELECT' AND EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = r.oid AND attnum > 0
+                                                       AND NOT attisdropped AND attname ~ secret_re) THEN
+        SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) INTO visible
+          FROM pg_attribute WHERE attrelid = r.oid AND attnum > 0 AND NOT attisdropped AND attname !~ secret_re;
+        IF visible IS NOT NULL THEN
+          EXECUTE format('GRANT SELECT (%s) ON %s TO ov_sql_writer', visible, r.oid::regclass);
+        END IF;
+      ELSE
+        EXECUTE format('GRANT %s ON %s TO ov_sql_writer', p.privilege_type, r.oid::regclass);
+      END IF;
+    END LOOP;
+    -- ... and on its columns (the account columns of the append-only logs), SELECT of a secret one left out
+    CONTINUE WHEN r.relkind = 'S';
+    FOR p IN SELECT a.attname, x.privilege_type FROM pg_attribute a, aclexplode(a.attacl) x
+              WHERE a.attrelid = r.oid AND a.attnum > 0 AND NOT a.attisdropped AND x.grantee = 'ov_app'::regrole
+                AND NOT (x.privilege_type = 'SELECT' AND a.attname ~ secret_re) LOOP
+      EXECUTE format('GRANT %s (%I) ON %s TO ov_sql_writer', p.privilege_type, p.attname, r.oid::regclass);
+    END LOOP;
+  END LOOP;
+END $$;
+SET LOCAL client_min_messages = warning;
+DROP SCHEMA IF EXISTS ov_write CASCADE;
+RESET client_min_messages;
+CREATE SCHEMA ov_write AUTHORIZATION ov_owner;
+REVOKE ALL ON SCHEMA ov_write FROM PUBLIC;
+GRANT USAGE ON SCHEMA ov_write TO ov_sql_writer;
+DO $$
+DECLARE
+  r record;
+  visible text;
+  secret_re constant text := '(^|_)(pin|pins|password|secret|token|salt|mac)(_|$)|(^|_)hash$';
+BEGIN
+  FOR r IN SELECT c.oid, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+              AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attnum > 0
+                             AND NOT a.attisdropped AND a.attname ~ secret_re)
+            ORDER BY c.relname LOOP
+    SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) INTO visible
+      FROM pg_attribute WHERE attrelid = r.oid AND attnum > 0 AND NOT attisdropped AND attname !~ secret_re;
+    CONTINUE WHEN visible IS NULL;
+    EXECUTE format('CREATE VIEW ov_write.%I WITH (security_invoker = true) AS SELECT %s FROM public.%I', r.relname, visible, r.relname);
+    EXECUTE format('REVOKE ALL ON ov_write.%I FROM PUBLIC', r.relname);
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ov_write.%I TO ov_sql_writer', r.relname);
+  END LOOP;
+END $$;
+-- ov_app may SET ROLE to it inside write mode's transaction and inherits none
+-- of its rights. Revoked first so the options are exactly these.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = 'ov_sql_writer'::regrole AND m.member = 'ov_app'::regrole) THEN
+    REVOKE ov_sql_writer FROM ov_app;
+  END IF;
+END $$;
+GRANT ov_sql_writer TO ov_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 
 COMMIT;
