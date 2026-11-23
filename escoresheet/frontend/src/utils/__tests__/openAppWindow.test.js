@@ -6,6 +6,8 @@ import {
   MSG_OPEN,
   MSG_SAVE_PDF,
   currentInAppView,
+  isInAppViewOpen,
+  onInAppViewChange,
   detectAppPlatform,
   openAppWindow,
   openFailedMessageKey,
@@ -242,6 +244,72 @@ describe('openAppWindow in the Android app (Capacitor)', () => {
     } finally {
       window.Capacitor = bridge
     }
+  })
+
+  // The scoring screen's clock and heartbeat and the header's relay poll
+  // pause while the view covers the screen (perf pass, 22.11.2026)
+  describe('tells its listeners when it covers the screen', () => {
+    const watch = () => {
+      const seen = []
+      const off = onInAppViewChange((isOpen) => seen.push(isOpen))
+      return { seen, off }
+    }
+
+    it('true once on open, nothing when another page replaces the one shown, false on Back', () => {
+      const { seen, off } = watch()
+      expect(isInAppViewOpen()).toBe(false)
+      open('/scoresheet/?matchId=7')
+      expect(seen).toEqual([true])
+      expect(isInAppViewOpen()).toBe(true)
+      open('/scoresheet/?matchId=7&action=save')
+      expect(seen).toEqual([true])
+      document.querySelector('[data-testid="app-window-back"]').click()
+      expect(seen).toEqual([true, false])
+      expect(isInAppViewOpen()).toBe(false)
+      off()
+    })
+
+    it('false when its page closes it (MSG_CLOSE), on the Android Back button and on Escape', () => {
+      const { seen, off } = watch()
+      const r = open('/scoresheet/?matchId=7')
+      window.dispatchEvent(new MessageEvent('message', { data: { type: MSG_CLOSE }, origin: window.location.origin, source: r.window }))
+      expect(seen).toEqual([true, false])
+      open('/scoresheet/?matchId=7')
+      window.dispatchEvent(new PopStateEvent('popstate', { state: null }))
+      expect(seen).toEqual([true, false, true, false])
+      open('/scoresheet/?matchId=7')
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      expect(seen).toEqual([true, false, true, false, true, false])
+      expect(isInAppViewOpen()).toBe(false)
+      off()
+    })
+
+    it('false when the opener closes it (the match-end PDF), once, and nothing after unsubscribing', () => {
+      const { seen, off } = watch()
+      const r = open('/scoresheet/?matchId=7&action=getBlob')
+      r.close()
+      r.close()
+      expect(seen).toEqual([true, false])
+      off()
+      open('/scoresheet/?matchId=7')
+      currentInAppView().close()
+      expect(seen).toEqual([true, false])
+    })
+
+    it('a failing listener stops neither the others nor the view', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const offBad = onInAppViewChange(() => { throw new Error('boom') })
+      const { seen, off } = watch()
+      open('/scoresheet/?matchId=7')
+      expect(seen).toEqual([true])
+      expect(document.querySelector('[data-testid="app-window"]')).not.toBeNull()
+      currentInAppView().close()
+      expect(seen).toEqual([true, false])
+      expect(document.querySelector('[data-testid="app-window"]')).toBeNull()
+      offBad()
+      off()
+      warn.mockRestore()
+    })
   })
 
   it('sends external links to the system browser by navigation (Capacitor hands it to Android)', () => {

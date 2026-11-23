@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildDiagnosticsReport, buildTimeline, redactReport, diagnosticsFileName, mergeAppLog, matchSection, makeClock,
-  isTokenShaped, interactionItem, REPORT_MAX_BYTES, TIMELINE_MAX_LINES, APP_LOG_MAX
+  isTokenShaped, interactionItem, REPORT_MAX_BYTES, TIMELINE_MAX_LINES, APP_LOG_MAX, lookText, deviceCheckText
 } from '../diagnosticsReport'
 
 // Fake secrets made at run time (no credential-shaped literal in the source:
@@ -367,6 +367,28 @@ describe('diagnostics report: the whole report', () => {
     expect(r.bytes).toBe(new TextEncoder().encode(r.text).length)
     expect(r.lines).toBe(r.text.split('\n').length)
     expect(r.text).not.toContain('Desktop app')
+  })
+
+  it('the look switches and the device check\'s last result (numbers and booleans only)', () => {
+    const look = { blur: false, motion: false, clockSeconds: false, pdfSharp: false }
+    const deviceCheck = {
+      v: 1, at: T - 3600 * S, tier: 'slow', score: 140.2, workMs: 95.1, layoutMs: 45.1, workRunsMs: [95.1, 96, 94], layoutRunsMs: [45.1, 44, 46],
+      hints: { platform: 'android-app', cores: 8, memoryGb: 2, dpr: 1.5, screen: '1340x800', reducedMotion: false }, answer: 'applied'
+    }
+    const r = buildDiagnosticsReport(input({ summary: { ...input().summary, look, deviceCheck } }))
+    expect(r.text).toMatch(/Effects and speed:\s+blur off, animations off, clock without seconds, PDF 1\.5×/)
+    expect(r.text).toMatch(/Device check:\s+slow \(check v1, 2026-10-29 21:01:03\): score 140\.2 ms = work 95\.1 \+ layout 45\.1; android-app, 8 cores, 2 GB, 1\.5× pixels, screen 1340x800; recommendation applied/)
+    // not run yet; the tablet apps have neither line
+    expect(buildDiagnosticsReport(input({ summary: { ...input().summary, look: { ...look, blur: true }, deviceCheck: null } })).text).toMatch(/Device check:\s+not run on this device/)
+    expect(buildDiagnosticsReport(input()).text).not.toMatch(/Effects and speed|Device check/)
+  })
+
+  it('lookText and deviceCheckText', () => {
+    expect(lookText({ blur: true, motion: true, clockSeconds: true, pdfSharp: true })).toBe('blur on, animations on, clock with seconds, PDF 2×')
+    expect(lookText(null)).toBe(null)
+    expect(deviceCheckText(null, clock)).toBe('not run on this device')
+    expect(deviceCheckText({ v: 1, at: T, tier: 'fast', score: 26, workMs: 17, layoutMs: 9, hints: { reducedMotion: true }, answer: 'kept' }, clock))
+      .toBe('fast (check v1, 2026-10-29 22:01:03): score 26 ms = work 17 + layout 9; reduced motion; recommendation kept as is')
   })
 
   it('the tablet apps: no timeline, the note says why', () => {

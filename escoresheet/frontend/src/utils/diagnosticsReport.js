@@ -7,7 +7,8 @@
  * Sections:
  *   1. Summary      app, version, platform, device, screen, language, time
  *                   and time zone (and the relay's clock offset), online,
- *                   connection, sync queue, storage, device and account ids
+ *                   connection, sync queue, storage, device and account ids,
+ *                   the look switches and the device check's last result
  *   2. Match        the open (or last open) match: game, status, sets and
  *                   score, serving team, line-ups, time-outs and
  *                   substitutions, events (the last 30), the server's word on
@@ -671,6 +672,43 @@ function connectionRows(info = {}, clock) {
   return rows
 }
 
+/**
+ * Options › Effects and speed (utils/lookSettings): the four switches,
+ * "blur on, animations off, clock without seconds, PDF 1.5×".
+ */
+export function lookText(look) {
+  if (!look || typeof look !== 'object') return null
+  const onOff = (v) => (v === true ? 'on' : v === false ? 'off' : '?')
+  return [
+    `blur ${onOff(look.blur)}`,
+    `animations ${onOff(look.motion)}`,
+    `clock ${look.clockSeconds === false ? 'without' : 'with'} seconds`,
+    `PDF ${look.pdfSharp === false ? '1.5' : '2'}×`
+  ].join(', ')
+}
+
+/**
+ * The device check's last result (utils/deviceCheck): its tier, when, the
+ * measures and the hints, and the answer to its card. Numbers and booleans
+ * only.
+ */
+export function deviceCheckText(r, clock) {
+  if (!r || typeof r !== 'object' || !r.tier) return 'not run on this device'
+  const num = (v) => (Number.isFinite(v) ? v : '?')
+  const h = r.hints || {}
+  const hints = [
+    h.platform || null,
+    h.cores != null ? `${h.cores} cores` : null,
+    h.memoryGb != null ? `${h.memoryGb} GB` : null,
+    h.dpr != null ? `${h.dpr}× pixels` : null,
+    h.screen ? `screen ${h.screen}` : null,
+    h.reducedMotion ? 'reduced motion' : null
+  ].filter(Boolean).join(', ')
+  const answer = r.answer === 'applied' ? 'applied' : r.answer === 'kept' ? 'kept as is' : 'not answered'
+  const when = Number.isFinite(r.at) ? clock.dateTime(r.at) : '?'
+  return `${r.tier} (check v${num(r.v)}, ${when}): score ${num(r.score)} ms = work ${num(r.workMs)} + layout ${num(r.layoutMs)}${hints ? `; ${hints}` : ''}; recommendation ${answer}`
+}
+
 function summarySection(s, clock, now) {
   const rows = [
     ['App', `${s.appName}${s.app ? ` – ${s.app}` : ''}`],
@@ -682,6 +720,8 @@ function summarySection(s, clock, now) {
     ['Screen', s.screen],
     ['Window', s.window],
     ['Display mode', s.displayMode],
+    ['Effects and speed', lookText(s.look)],
+    ['Device check', s.look || s.deviceCheck ? deviceCheckText(s.deviceCheck, clock) : null],
     ['Language', s.language],
     ['Local time', `${clock.dateTime(now)} (${s.timeZone || 'unknown time zone'}, UTC${clock.offset(now)})`],
     ['Clock offset', s.clock ? `the relay's clock is ${s.clock.offsetMs >= 0 ? '+' : ''}${s.clock.offsetMs} ms from this device's (round trip ${s.clock.rttMs} ms, measured ${clock.time(s.clock.at)})` : 'unknown (no reply from the relay yet)'],

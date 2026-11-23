@@ -21,11 +21,17 @@ const CONFIG = {
   MAX_AGE_MS: 30 * 24 * 3600 * 1000, // pruneInteractionLogs: older rows go
   MAX_ROWS: 50000,            // ... and the oldest beyond this many
   PRUNE_INTERVAL_MS: 60 * 60 * 1000,
-  EMERGENCY_MAX: 2000         // beforeunload localStorage copy (entries)
+  EMERGENCY_MAX: 2000,        // beforeunload localStorage copy (entries)
+  SESSION_SECRETS_MAX: 5000   // entries of a password or PIN field kept in memory (keptSecrets)
 }
 
 // State
 let logBuffer = []
+// The entries of a password or PIN field (isSecretEntry) never go into
+// IndexedDB: once flushed they stay here, for this page load only, so the
+// support timeline still says that the field was used (getRecentLogs), as
+// when they were stored until the next start's purge. No export has them.
+let keptSecrets = []
 let flushTimer = null
 let gameNumber = null
 let matchId = null
@@ -309,10 +315,11 @@ async function flushToIndexedDB() {
   if (logBuffer.length === 0 || pendingFlush) return
 
   pendingFlush = true
-  const entriesToFlush = [...logBuffer]
+  const entriesToFlush = keepSecretsInMemory(logBuffer)
   logBuffer = []
 
   try {
+    if (entriesToFlush.length === 0) return
     // Check if table exists
     if (!db.interaction_logs) {
       console.warn('[ComprehensiveLogger] interaction_logs table not available')
@@ -356,17 +363,30 @@ async function flushToIndexedDB() {
   }
 }
 
+// The entries to store: those of a password or PIN field go to keptSecrets
+function keepSecretsInMemory(entries) {
+  const store = []
+  for (const e of entries) {
+    if (isSecretEntry(e)) keptSecrets.push(e)
+    else store.push(e)
+  }
+  if (keptSecrets.length > CONFIG.SESSION_SECRETS_MAX) keptSecrets = keptSecrets.slice(-CONFIG.SESSION_SECRETS_MAX)
+  return store
+}
+
 /**
  * Synchronous persist to localStorage (for beforeunload)
  */
 function persistToLocalStorageSync() {
-  if (logBuffer.length === 0) return
+  // never a password or PIN field's entry (the next start dropped them anyway)
+  const entries = logBuffer.filter(e => !isSecretEntry(e))
+  if (entries.length === 0) return
 
   try {
     const key = `comprehensive_logs_emergency_${sessionId}`
     const existing = localStorage.getItem(key)
     const existingLogs = existing ? JSON.parse(existing) : []
-    const combined = [...existingLogs, ...logBuffer].slice(-CONFIG.EMERGENCY_MAX)
+    const combined = [...existingLogs, ...entries].slice(-CONFIG.EMERGENCY_MAX)
     localStorage.setItem(key, JSON.stringify(combined))
   } catch (err) {
     // Silent fail
@@ -422,18 +442,39 @@ export function isSecretEntry(entry) {
   return [t.name, t.id, t.ariaLabel].some(v => typeof v === 'string' && SECRET_LABEL.test(v))
 }
 
+// Resolves true when the table holds no such entry any more
 async function purgeSecretEntries() {
   try {
-    if (!db.interaction_logs) return
+    if (!db.interaction_logs) return false
     const ids = await db.interaction_logs.filter(isSecretEntry).primaryKeys()
     if (ids.length) await db.interaction_logs.bulkDelete(ids)
+    return true
   } catch (err) {
     console.error('[ComprehensiveLogger] Purge failed:', err)
+    return false
+  }
+}
+
+// The purge walks the whole table (up to MAX_ROWS rows, every one read on
+// the main thread) and the first scorer actions after a start waited for it.
+// Since this version no such entry is stored, so it runs once per app
+// version (an older one stored them; a newer isSecretEntry may know more).
+// Storage blocked: at every start, as before.
+export const SECRETS_PURGED_KEY = 'ov.interactionLogs.secretsPurged'
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? String(__APP_VERSION__) : '0.0.0'
+async function purgeSecretEntriesOncePerVersion() {
+  let purgedFor = null
+  try {
+    purgedFor = localStorage.getItem(SECRETS_PURGED_KEY)
+  } catch { /* storage blocked: purge */ }
+  if (purgedFor === APP_VERSION) return
+  if (await purgeSecretEntries()) {
+    try { localStorage.setItem(SECRETS_PURGED_KEY, APP_VERSION) } catch { /* the next start purges again */ }
   }
 }
 
 async function recoverFromStorage() {
-  await purgeSecretEntries()
+  await purgeSecretEntriesOncePerVersion()
   try {
     // Check localStorage emergency backup
     const emergencyKeys = Object.keys(localStorage).filter(k => k.startsWith('comprehensive_logs_emergency_'))
@@ -615,7 +656,7 @@ export async function getRecentLogs({ from = 0, to = Date.now() } = {}) {
     console.warn('[ComprehensiveLogger] Recent logs not readable:', err?.message)
   }
   const byId = new Map()
-  for (const e of [...rows, ...logBuffer.filter(inRange)]) byId.set(e.id, e)
+  for (const e of [...rows, ...logBuffer.filter(inRange), ...keptSecrets.filter(inRange)]) byId.set(e.id, e)
   const entries = [...byId.values()].sort((a, b) => a.ts - b.ts)
   return entries.map(e => (isSecretEntry(e) ? secretStub(e) : scrubExportEntry(e)))
 }
@@ -822,8 +863,10 @@ export async function clearLogs(gameN = null) {
     // Clear buffer
     if (gameN !== null) {
       logBuffer = logBuffer.filter(e => e.gameNumber !== gameN)
+      keptSecrets = keptSecrets.filter(e => e.gameNumber !== gameN)
     } else {
       logBuffer = []
+      keptSecrets = []
     }
 
     console.log(`[ComprehensiveLogger] Cleared logs${gameN !== null ? ` for game ${gameN}` : ''}`)

@@ -77,3 +77,28 @@ describe('HomePage: who makes it', () => {
     expect(line.previousElementSibling.querySelector('img')).toHaveAttribute('alt', 'OpenVolley')
   })
 })
+
+// The device check's card (App, DeviceCheckCard) comes 3-5 s after Home shows:
+// out of the flow, so the buttons a scorer is about to tap never move
+describe('HomePage: the device check card', () => {
+  it('hangs in a slot of no height under the last row, never above the actions', () => {
+    render(<HomePage deviceCheckCard={<div data-testid="card-stub">card</div>} />)
+    const slot = screen.getByTestId('device-check-slot')
+    expect(slot.className).toMatch(/(^|\s)relative(\s|$)/)
+    expect(slot.className).toMatch(/(^|\s)h-0(\s|$)/)
+    // wide screens: at the foot of the actions' column
+    expect(slot.className).toMatch(/home-wide:col-start-2/)
+    expect(slot.className).toMatch(/home-wide:self-end/)
+    const holder = screen.getByTestId('card-stub').parentElement
+    expect(holder.parentElement).toBe(slot)
+    expect(holder.className).toMatch(/(^|\s)absolute(\s|$)/)
+    // after the actions in the page: nothing before them changes
+    const restore = document.querySelector('[data-help-id="home-restore-button"]')
+    expect(restore.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('no card: no slot', () => {
+    render(<HomePage />)
+    expect(screen.queryByTestId('device-check-slot')).toBe(null)
+  })
+})

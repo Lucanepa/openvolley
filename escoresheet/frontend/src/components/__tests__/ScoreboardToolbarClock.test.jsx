@@ -78,6 +78,12 @@ describe('Scoreboard: the toolbar clock', () => {
     const strip = document.querySelector('[data-testid="toolbar-strip"]')
     expect(strip.style.borderBottom).toBe('')
     expect(strip.querySelector('[data-testid="toolbar-strip-clock"]')).toBeTruthy()
+    // both clocks have their time in the fixed box (styles.css
+    // .toolbar-clock-time), the strip's at its line height of 1
+    expect(document.querySelector('.toolbar-clock > .toolbar-clock-time')).toBeTruthy()
+    const stripClock = strip.querySelector('[data-testid="toolbar-strip-clock"]')
+    expect(stripClock.querySelector(':scope > .toolbar-clock-time')).toBeTruthy()
+    expect(stripClock.style.getPropertyValue('--clock-lh')).toBe('1')
     const folded = strip.querySelector('[data-testid="toolbar-toggle"]')
     expect(folded.getAttribute('aria-expanded')).toBe('false')
 

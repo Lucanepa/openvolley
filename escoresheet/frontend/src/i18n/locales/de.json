@@ -1410,6 +1410,29 @@
   "idMode": {"title": "Neben jedem Namen", "dob": "Geburtsdaten verwenden", "number": "ID-Nummer verwenden", "text": "Text verwenden", "label": {"dob": "Geburtsdatum", "number": "ID-Nummer", "text": "Info", "licence": "Lizenz"}, "hint": {"licence": "oder Geburtsdatum (tt.mm.jjjj)"}},
   "globalImport": {"templateGames": "Spiele-Vorlage (Excel)", "templateRosters": "Kader-Vorlage (Excel)", "gamesTitle": "Spiele importieren", "rostersTitle": "Kader importieren", "gamesHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Spiel: Spiel, Datum, Zeit, Halle, Ort, Liga, Heim, Gast, Best of, Schiedsrichter. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "rostersHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Person: Mannschaft, Nummer, Vorname, Nachname, Rolle (Spieler, Libero, Kapitän, Trainer ...), Geburtsdatum. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "choose": "Datei wählen", "template": "Vorlage", "errFile": "Die Datei konnte nicht gelesen werden.", "errEmpty": "Die Datei enthält keine Zeilen.", "errColumns": "Die Spalten wurden nicht gefunden. Nimm die Vorlage.", "noTeamName": "(ohne Mannschaftsname)", "counts": "{{players}} Spieler, {{staff}} Betreuer", "warnings": "{{count}} Zeilen waren nicht sauber: {{list}}", "applied": "{{count}} Spieler hinzugefügt", "gamesButton": "Spiele importieren (Excel)", "rostersButton": "Kader importieren (Excel)"},
   "home": {
+    "deviceCheck": {
+      "title": {
+        "fast": "Dieses Gerät ist schnell.",
+        "ok": "Dieses Gerät ist mittelschnell.",
+        "slow": "Dieses Gerät ist eher langsam."
+      },
+      "smoother": "Für eine flüssigere Erfassung empfehlen wir: {{list}}.",
+      "fuller": "Es schafft die volle Darstellung: {{list}}.",
+      "lessMotion": "Dein Gerät ist auf weniger Bewegung eingestellt, darum empfehlen wir: keine Animationen.",
+      "item": {
+        "blurOff": "keine Unschärfe hinter Dialogen",
+        "blurOn": "Unschärfe hinter Dialogen",
+        "motionOff": "keine Animationen",
+        "motionOn": "Animationen",
+        "clockSecondsOff": "die Uhr ohne Sekunden",
+        "clockSecondsOn": "die Uhr mit Sekunden",
+        "pdfSharpOff": "ein leichteres PDF",
+        "pdfSharpOn": "ein scharfes PDF"
+      },
+      "apply": "Übernehmen",
+      "keep": "So lassen",
+      "changeLater": "Du kannst das jederzeit in den Optionen ändern."
+    },
     "storageWarning": "Dieser Browser darf die Daten der App löschen, und ein Spiel auf diesem Gerät hat noch nicht gesendete Änderungen. Melde dich an, damit sie synchronisiert werden, installiere die App oder füge sie dem Startbildschirm hinzu, oder schalte in den Optionen Backup-Downloads ein.",
     "tool": {"label": "Werkzeug", "swiss": "Schweiz", "global": "Global", "globalNote": "Jedes Turnier: ohne Anmeldung, ohne Spielliste. Teams und Spieler bleiben auf diesem Gerät."},
     "match": "Spiel",
@@ -1563,6 +1586,30 @@
     "err_io": "Diese Sicherung konnte nicht gelesen werden."
   },
   "options": {
+    "look": {
+      "title": "Effekte und Tempo",
+      "check": "Gerätetest",
+      "checkInfo": "Die App misst etwa eine Sekunde lang, wie schnell dieses Gerät arbeitet. Nichts verlässt das Gerät.",
+      "checkNow": "Dieses Gerät testen",
+      "checking": "Wird getestet…",
+      "notChecked": "Noch nicht getestet.",
+      "checkedOn": "Getestet am {{date}}: {{verdict}}",
+      "verdict": {
+        "fast": "Dieses Gerät ist schnell.",
+        "ok": "Dieses Gerät ist mittelschnell.",
+        "slow": "Dieses Gerät ist eher langsam."
+      },
+      "matches": "Deine Einstellungen entsprechen der Empfehlung.",
+      "checkFromHome": "Für einen neuen Test öffne die Optionen auf der Startseite.",
+      "blur": "Unschärfe hinter Dialogen",
+      "blurInfo": "Hinter einem offenen Dialog wird der Bildschirm unscharf. Aus: Er wird nur abgedunkelt, das ist weniger Arbeit für ein langsames Gerät.",
+      "motion": "Animationen",
+      "motionInfo": "Blinkende Knöpfe (Aufstellung, Unterschrift fehlt), gleitende Menüs und Balken. Aus: Nichts bewegt sich, und was deine Aufmerksamkeit braucht, behält seine Farbe.",
+      "clockSeconds": "Sekunden auf der Uhr",
+      "clockSecondsInfo": "Die Uhr auf dem Erfassungsbildschirm zeigt Sekunden. Aus: nur Stunden und Minuten, sie wechselt einmal pro Minute.",
+      "pdfSharp": "Scharfes PDF",
+      "pdfSharpInfo": "Das PDF des Matchblatts, auf diesem Gerät erstellt, in voller Schärfe. Aus: etwas weniger scharf, dafür schneller erstellt."
+    },
     "tool": {"title": "Werkzeug", "locked": "Auf diesem Gerät ist ein Spiel. Lösche es, um das Werkzeug zu wechseln.", "swissNote": "Schweizer Ligaspiele: Anmeldung, Spielliste, Einsatzliste, Club-Kader und die Cloud."},
     "title": "Optionen",
     "close": "Schliessen",

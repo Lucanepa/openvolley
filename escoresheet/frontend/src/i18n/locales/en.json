@@ -1418,6 +1418,29 @@
   "idMode": {"title": "Next to each name", "dob": "Use birthdates", "number": "Use an ID number", "text": "Use text", "label": {"dob": "Date of birth", "number": "ID number", "text": "Info", "licence": "Licence"}, "hint": {"licence": "or date of birth (dd.mm.yyyy)"}},
   "globalImport": {"templateGames": "Games template (Excel)", "templateRosters": "Rosters template (Excel)", "gamesTitle": "Import games", "rostersTitle": "Import rosters", "gamesHint": "An Excel or CSV file with one row per game: game, date, time, hall, city, league, home, away, best of, referees. Nothing is stored: the file is read on this device.", "rostersHint": "An Excel or CSV file with one row per person: team, number, first name, last name, role (player, libero, captain, coach...), date of birth. Nothing is stored: the file is read on this device.", "choose": "Choose file", "template": "Template", "errFile": "The file could not be read.", "errEmpty": "The file has no rows.", "errColumns": "The columns were not found. Use the template.", "noTeamName": "(no team name)", "counts": "{{players}} players, {{staff}} staff", "warnings": "{{count}} rows were not clean: {{list}}", "applied": "{{count}} players added", "gamesButton": "Import games (Excel)", "rostersButton": "Import rosters (Excel)"},
   "home": {
+    "deviceCheck": {
+      "title": {
+        "fast": "This device is fast.",
+        "ok": "This device is of medium speed.",
+        "slow": "This device is on the slow side."
+      },
+      "smoother": "For smoother scoring we recommend: {{list}}.",
+      "fuller": "It can show the full look: {{list}}.",
+      "lessMotion": "Your device is set to show less motion, so we recommend: no animations.",
+      "item": {
+        "blurOff": "no blur behind dialogs",
+        "blurOn": "blur behind dialogs",
+        "motionOff": "no animations",
+        "motionOn": "animations",
+        "clockSecondsOff": "the clock without seconds",
+        "clockSecondsOn": "the clock with seconds",
+        "pdfSharpOff": "a lighter PDF",
+        "pdfSharpOn": "a sharp PDF"
+      },
+      "apply": "Apply",
+      "keep": "Keep as is",
+      "changeLater": "You can change this later in Options, at any time."
+    },
     "storageWarning": "This browser may clear the app's data, and a match on this device has changes not sent yet. Sign in so they sync, install the app or add it to the home screen, or switch on backup downloads in Options.",
     "tool": {"label": "Tool", "swiss": "Swiss", "global": "Global", "globalNote": "Any tournament: no sign-in, no game list. Teams and players stay on this device."},
     "match": "Match",
@@ -1571,6 +1594,30 @@
     "err_io": "This backup could not be read."
   },
   "options": {
+    "look": {
+      "title": "Effects and speed",
+      "check": "Device check",
+      "checkInfo": "The app measures how fast this device works, for about a second. Nothing leaves this device.",
+      "checkNow": "Check this device",
+      "checking": "Checking…",
+      "notChecked": "Not checked yet.",
+      "checkedOn": "Checked on {{date}}: {{verdict}}",
+      "verdict": {
+        "fast": "this device is fast.",
+        "ok": "this device is of medium speed.",
+        "slow": "this device is on the slow side."
+      },
+      "matches": "Your settings match the recommendation.",
+      "checkFromHome": "To check again, open Options on the home screen.",
+      "blur": "Blur behind dialogs",
+      "blurInfo": "The screen behind an open dialog is blurred. Off: it is only dimmed, which is less work for a slow device.",
+      "motion": "Animations",
+      "motionInfo": "Flashing buttons (Line-up, Missing signature), sliding menus and bars. Off: nothing moves, and what needs your attention keeps its colour.",
+      "clockSeconds": "Seconds on the clock",
+      "clockSecondsInfo": "The clock on the scoring screen shows seconds. Off: hours and minutes only, and it changes once a minute.",
+      "pdfSharp": "Sharp PDF",
+      "pdfSharpInfo": "The scoresheet PDF made on this device, at full sharpness. Off: a little less sharp, but made faster."
+    },
     "tool": {"title": "Tool", "locked": "A match is on this device. Delete it to change the tool.", "swissNote": "Swiss league games: sign-in, game list, Einsatzliste, club rosters and the cloud."},
     "title": "Options",
     "close": "Close",

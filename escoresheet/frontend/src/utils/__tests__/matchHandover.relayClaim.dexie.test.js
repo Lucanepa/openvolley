@@ -5,7 +5,7 @@
 // claim each sync carries, so a device must keep one claim per match until
 // it continues the match again.
 import 'fake-indexeddb/auto'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { db } from '../../db/db'
 import { scorerClaimOf, relaySyncDevice, supersededClaimsOf } from '../matchHandover'
 
@@ -24,6 +24,42 @@ describe('the claim of a match on the venue relays', () => {
     expect(claims[2]).toEqual({ ...DEVICE, claim: claims[0] })
     expect((await db.matches.get(id)).scorerClaim).toBe(claims[0])
     expect(await scorerClaimOf(db, id)).toBe(claims[0])
+  })
+
+  // Every relay sync (one per scorer action) reads the claim: once made, it
+  // is read without a readwrite transaction on matches, which would wait
+  // for the reads of matches before it and hold back the ones after it
+  it('a claim made is read without a write transaction; the first one is written once', async () => {
+    const id = await db.matches.add({ seed_key: 'match_1_a', status: 'live', supersededClaims: ['phone-1'] })
+    const transaction = vi.spyOn(db, 'transaction')
+    const update = vi.spyOn(db.matches, 'update')
+    try {
+      const first = await relaySyncDevice(db, id, DEVICE)
+      expect(first).toEqual({ ...DEVICE, claim: expect.stringMatching(/^[0-9a-f-]{36}$/), supersedes: ['phone-1'] })
+      expect(transaction.mock.calls.filter(c => c[0] === 'rw')).toHaveLength(1)
+      expect(update).toHaveBeenCalledTimes(1)
+      transaction.mockClear()
+      update.mockClear()
+
+      // the same record as the write path gives for a claim made
+      expect(await relaySyncDevice(db, id, DEVICE)).toEqual(first)
+      expect(await scorerClaimOf(db, id)).toBe(first.claim)
+      expect(transaction).not.toHaveBeenCalled()
+      expect(update).not.toHaveBeenCalled()
+      expect((await db.matches.get(id)).scorerClaim).toBe(first.claim)
+
+      // cleared (a backup restore): the write path again, a new claim
+      await db.matches.update(id, { scorerClaim: '' })
+      update.mockClear()
+      const again = await scorerClaimOf(db, id)
+      expect(again).toMatch(/^[0-9a-f-]{36}$/)
+      expect(again).not.toBe(first.claim)
+      expect(transaction.mock.calls.filter(c => c[0] === 'rw')).toHaveLength(1)
+      expect(update).toHaveBeenCalledTimes(1)
+    } finally {
+      transaction.mockRestore()
+      update.mockRestore()
+    }
   })
 
   it('a match continued here again (a restore cleared it, an import is a new row) gets a new one', async () => {

@@ -71,6 +71,12 @@ export function normalizeMatchData(raw: any): MatchData {
   };
 }
 
+/** The key of a match in this device's database (a numeric ?matchId= is a number), or null for none. */
+export function localMatchKey(matchId: unknown): unknown {
+  const id = typeof matchId === 'string' && matchId !== '' && !Number.isNaN(Number(matchId)) ? Number(matchId) : matchId;
+  return id === null || id === undefined || id === '' ? null : id;
+}
+
 /**
  * A match from this device's database in one read transaction (the sets of
  * one moment are never paired with the events of another: "the points
@@ -78,8 +84,8 @@ export function normalizeMatchData(raw: any): MatchData {
  * not on this device.
  */
 export async function loadLocalMatchData(db: any, matchId: unknown): Promise<MatchData | null> {
-  const id = typeof matchId === 'string' && matchId !== '' && !Number.isNaN(Number(matchId)) ? Number(matchId) : matchId;
-  if (id === null || id === undefined || id === '') return null;
+  const id = localMatchKey(matchId);
+  if (id === null) return null;
   return db.transaction('r', [db.matches, db.teams, db.players, db.sets, db.events], async () => {
     const match = await db.matches.get(id);
     if (!match) return null;

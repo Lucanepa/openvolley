@@ -174,6 +174,9 @@ export function entryWithoutCompletedRally(events, setIndex, team, playerNumber)
  *  illegal    an illegal substitution was requested: reject + delay sanction (16.1.3)
  *  continue   go on with the request; nothing is recorded
  *  cancel     nothing happens
+ *
+ * A 'block' issue disables the button: requestBlockReason answers those
+ * without the lists, so a new one must be added there too.
  */
 export const REQUEST_ISSUES = {
   set_interval: { kind: 'block', rule: '18.1', options: [] },
@@ -273,13 +276,18 @@ export function timeoutRequestIssues(events, setIndex, team, { intervalRunning =
 /**
  * Why a team's regular time-out or substitution button is disabled now, or
  * null when it is open: 'replay_pending' or (time-outs) 'set_interval'.
+ *
+ * The first issue of timeoutRequestIssues / substitutionRequestIssues (no
+ * request) when it is a 'block', answered without the rest of the lists
+ * (their delay-warning and count scans and the sort): the only 'block'
+ * issues are the set interval and the replay pending, and both come first.
+ * Neither depends on the team. A new 'block' issue (REQUEST_ISSUES) must be
+ * added here too (oracle: __tests__/interruptionRequests.test.js).
  * @param {'timeout'|'substitution'} kind
  */
 export function requestBlockReason(events, setIndex, team, kind, { intervalRunning = false } = {}) {
-  const issues = kind === 'timeout'
-    ? timeoutRequestIssues(events, setIndex, team, { intervalRunning })
-    : substitutionRequestIssues(events, setIndex, team)
-  return issues[0]?.kind === 'block' ? issues[0].reason : null
+  if (kind === 'timeout' && intervalRunning) return 'set_interval'
+  return isReplayPending(events, setIndex) ? 'replay_pending' : null
 }
 
 /**

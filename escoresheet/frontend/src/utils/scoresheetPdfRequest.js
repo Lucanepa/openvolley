@@ -3,7 +3,8 @@
  * action=getBlob (an app window, a popup or the Android in-app view) and the
  * page answers by postMessage (appWindowGuest.js):
  *
- * - `pdfProgress` while it works (a heartbeat, once a second),
+ * - `pdfProgress` while it works (a heartbeat, once a second, and once at
+ *   each step of the capture with the time it took: `ms`),
  * - `pdfBlob` with the PDF, or
  * - `pdfBlobFailed` when it could not make it (`reason: 'closed'` when its
  *   window is closed while the PDF is being made).
@@ -117,7 +118,7 @@ function closeOpened(opened) {
  * closed, so none is left behind.
  * @param {(requestId: string) => ({ ok?: boolean, window?: Window|null, close?: () => void, isClosed?: () => boolean } | undefined)} open
  *   opens the page with `pdfReq=<requestId>` in its URL
- * @param {{ win?: Window, timeoutMs?: number, stallMs?: number, pollMs?: number, closedGraceMs?: number, blockedTickMs?: number, now?: () => number, signal?: AbortSignal, onProgress?: (p: { step: string|null }) => void, requestId?: string }} [opts]
+ * @param {{ win?: Window, timeoutMs?: number, stallMs?: number, pollMs?: number, closedGraceMs?: number, blockedTickMs?: number, now?: () => number, signal?: AbortSignal, onProgress?: (p: { step: string|null, ms?: number }) => void, requestId?: string }} [opts]
  */
 export function waitForScoresheetPdf(open, {
   win = window,
@@ -190,7 +191,9 @@ export function waitForScoresheetPdf(open, {
       if (type === MSG_PDF_PROGRESS) {
         if (settled) return
         armStall()
-        try { onProgress?.({ step: event.data.step ?? null }) } catch { /* ignore */ }
+        const step = event.data.step ?? null
+        const ms = event.data.ms
+        try { onProgress?.(Number.isFinite(ms) ? { step, ms } : { step }) } catch { /* ignore */ }
       } else if (type === MSG_PDF_BLOB) {
         if (settled) return
         done()

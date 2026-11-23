@@ -193,7 +193,7 @@ const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
   }
 };
 
-// Load match data from sessionStorage (for initial load and fallback)
+// Load match data from sessionStorage (a page opened without ?matchId=)
 const loadMatchData = () => {
   try {
     const dataStr = sessionStorage.getItem('scoresheetData');
@@ -618,7 +618,11 @@ const ScoresheetList: React.FC = () => {
 const storageParams = getStorageParams();
 const showList = shouldShowList();
 const urlMatchId = getMatchIdFromUrl();
-const initialMatchData = loadMatchData();
+// The sessionStorage copy only when no source above names the match: every
+// opener in the app puts ?matchId= in the URL and writes no copy any more
+// (perf pass 22.11.2026: each open stringified the whole match into it, and
+// this page parsed it, for nothing). Kept for an older link in the same tab.
+const initialMatchData = urlMatchId || storageParams || showList ? null : loadMatchData();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

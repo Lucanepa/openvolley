@@ -122,7 +122,12 @@ The bus (`bus.js`, no database import) carries the rest:
   top 5 `file:line` frames; the same message at most 5 times per 10 minutes.
 - `backup.error`.
 - `scoresheet.pdf` (`utils/scoresheetPdfLog.js`): the match-end PDF, with
-  `step` `requested`, `received` (bytes, ms), `cancelled`, `failed` (warn,
+  `step` `requested`, `received` (bytes, ms), `timing` (right after
+  `received`: where the time went on this device, as `key=value` numbers in
+  `reason`: `load` until the page began the capture, `capture` from then,
+  `page` the page's own time until then, the capture steps `styles`,
+  `canvas`, `retry`, `jpeg`, `pdf` as the page timed them, `events`, `dpr`
+  and the text `zoom`; `pdfTimingText`), `cancelled`, `failed` (warn,
   `reason` from `PDF_FAIL`), `not_queued` (warn: the queue refused the file)
   and `approved_without_pdf` (error). `purpose` is `approval` or `missing`
   (the approved view makes it again). No personal data.

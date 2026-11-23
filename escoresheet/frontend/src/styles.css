@@ -1257,6 +1257,34 @@ button:disabled {
   color: var(--muted);
 }
 
+/* The ticking time of the toolbar clock (scoreboard/ToolbarClock), in the
+   toolbar and the folded strip: a box of its own fixed size, so a tick lays
+   out the box alone, not the page (a relayout boundary: size and layout
+   containment). The date before it is plain text: a tight toolbar wraps the
+   time under it as before. The width here is where the box starts: the
+   time in Inter's tabular figures ("23:58:48" 6.8ch to 6.9ch, "23:58" 4.4ch
+   to 4.45ch, in every language but fr-CA); ToolbarClock then sets the box
+   to the time's exact width, so the clock wraps where it did and nothing is
+   cut. Top-aligned (the box has no baseline), one line tall: the toolbar's
+   1.3, the strip's 1 (--clock-lh on its span). Under Android's system font
+   size (a text zoom in the app's WebView) the font grows but 1em does not:
+   ToolbarClock then sets the line's height too. */
+.toolbar-clock-time {
+  display: inline-block;
+  vertical-align: top;
+  width: 6.9ch;
+  height: calc(var(--clock-lh, 1.3) * 1em);
+  line-height: var(--clock-lh, 1.3);
+  white-space: nowrap;
+  overflow: hidden;
+  contain: strict;
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar-clock-time[data-seconds='off'] {
+  width: 4.5ch;
+}
+
 .toolbar-center {
   display: flex;
   flex-direction: column;
@@ -2078,17 +2106,81 @@ button:disabled {
   }
 }
 
+/* The Line-up buttons on the court before a set (Scoreboard.jsx): the button
+   fades to 0.7 and back while its green glow widens from 20 to 30 px. Only
+   opacity is animated, so the flash runs on the compositor; a box-shadow in
+   the keyframes made the main thread restyle, paint and raster the large
+   button 60 times a second through the whole line-up entry. The two glows
+   are layers of their own that cross-fade (::before the narrow one, ::after
+   the wide one). They take the button's own animation (inline, none while
+   the line-up dialog is open over it, with data-still), so the three run in
+   step and stop together; stopped, the button has no glow (as in eink
+   before). Reduced motion changes nothing here: the buttons flash and glow,
+   as on main. */
+.lineup-button::before,
+.lineup-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  animation: inherit;
+}
+
+.lineup-button::before {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+  animation-name: lineupGlowNarrow;
+}
+
+.lineup-button::after {
+  box-shadow: 0 0 30px rgba(34, 197, 94, 0.8);
+  animation-name: lineupGlowWide;
+}
+
+/* Still with the button while the line-up dialog is open over it (the
+   data-still of Scoreboard.jsx): the glows keep their own animation names, so
+   a 'none' inherited from the button only took their duration to 0 and they
+   ran on from their first start, out of step with the button's flash once it
+   started again. Stopped here, all three start again together. */
+.lineup-button[data-still]::before,
+.lineup-button[data-still]::after {
+  animation: none;
+}
+
 @keyframes lineupFlash {
 
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px rgba(34, 197, 94, 0.5);
   }
 
   50% {
     opacity: 0.7;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 30px rgba(34, 197, 94, 0.8);
+  }
+}
+
+@keyframes lineupGlowNarrow {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes lineupGlowWide {
+
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 1;
   }
 }
 
@@ -2110,8 +2202,14 @@ button:disabled {
 
 /* "Missing signature" on the scoring screen (PreMatchSignDialog.jsx): a team's
    coach or captain has not signed yet; it flashes until the match starts.
-   amber-950 on amber-100..300 stays above 7:1 at both ends of the flash. */
+   amber-950 on amber-100..300 stays above 7:1 at both ends of the flash.
+   The flash is a layer under the text (::before, the strong amber of its
+   peak) that fades in and out: opacity only, so it runs on the compositor.
+   An animated background, border and ring ran on the main thread 60 times a
+   second, also while a coach signed in the dialog over it. */
 .missing-signature-button {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2129,7 +2227,25 @@ button:disabled {
   line-height: 1.15;
   text-align: center;
   cursor: pointer;
+}
+
+/* Over the border too (inset -2px): the peak's darker border is its ring */
+.missing-signature-button::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: inherit;
+  background: #fcd34d;
+  box-shadow: inset 0 0 0 2px #b45309, 0 0 0 4px rgba(217, 119, 6, 0.35);
+  pointer-events: none;
+  opacity: 0;
   animation: missingSignatureFlash 1.2s ease-in-out infinite;
+}
+
+/* Still while its signing dialog is open over it (the still prop) */
+.missing-signature-button[data-still]::before {
+  animation: none;
 }
 
 .missing-signature-button:focus-visible {
@@ -2158,24 +2274,26 @@ button:disabled {
 
   0%,
   100% {
-    background: #fef3c7;
-    border-color: #d97706;
-    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.55);
+    opacity: 0;
   }
 
   50% {
-    background: #fcd34d;
-    border-color: #b45309;
-    box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.35);
+    opacity: 1;
   }
 }
 
-/* Reduced motion: no flash, the strong amber stays */
+/* Reduced motion: no flash, the strong amber stays, drawn by the button
+   itself as before the perf pass (the layer over the border left a lighter
+   fringe on the rounded corners) */
 @media (prefers-reduced-motion: reduce) {
   .missing-signature-button {
-    animation: none;
     background: #fcd34d;
     border-color: #b45309;
+  }
+
+  .missing-signature-button::before {
+    animation: none;
+    display: none;
   }
 }
 
@@ -2887,6 +3005,20 @@ button.start-rally-button {
   font-size: calc(20px * var(--scale-factor) + var(--tall-extra, 0px) * 0.14);
   font-weight: 700;
   padding: calc(16px * var(--scale-factor)) calc(28px * var(--scale-factor));
+}
+
+/* Pressed: Point and Start rally / Start set darken the moment the finger
+   lands, before the action is written and the screen redrawn (hundreds of
+   ms on the hall tablet, where a tap looked ignored and was tapped again).
+   A wash drawn inside the button: no transform, filter or blur for the
+   tablet's GPU, and nothing in React (the tap guard and "Not counted" keep
+   their timing). Start rally keeps its hairline. */
+.rally-point-button:not(:disabled):active {
+  box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.12);
+}
+
+.rally-controls button.start-rally-button:not(:disabled):active {
+  box-shadow: inset 0 0 0 1px var(--ov-hairline-strong), inset 0 0 0 999px rgba(0, 0, 0, 0.12);
 }
 
 @media (max-width: 1400px) {
@@ -4111,7 +4243,9 @@ body.ios-fullscreen {
    screen, so the scorer sees at a glance what can be tapped. Drawn in the
    button's own text colour; a disabled button shows none. A tile that is not a
    <button> (bench players, liberos, officials, SUB) carries data-tap-hint only
-   while a tap does something. */
+   while a tap does something. The finger's 0.6 is the group opacity inside
+   the mask image, not an opacity on the pseudo-element: the same pixels, one
+   offscreen layer less for each of the 25-35 fingers. */
 .tap-hint,
 [data-tap-hint] {
   position: relative;
@@ -4125,9 +4259,8 @@ body.ios-fullscreen {
   width: var(--tap-hint-size, clamp(10px, 1.05vw, 15px));
   height: var(--tap-hint-size, clamp(10px, 1.05vw, 15px));
   background-color: currentColor;
-  opacity: 0.6;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 14a8 8 0 0 1-8 8'/%3E%3Cpath d='M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2'/%3E%3Cpath d='M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1'/%3E%3Cpath d='M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10'/%3E%3Cpath d='M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 14a8 8 0 0 1-8 8'/%3E%3Cpath d='M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2'/%3E%3Cpath d='M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1'/%3E%3Cpath d='M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10'/%3E%3Cpath d='M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/svg%3E") center / contain no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg opacity='0.6'%3E%3Cpath d='M22 14a8 8 0 0 1-8 8'/%3E%3Cpath d='M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2'/%3E%3Cpath d='M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1'/%3E%3Cpath d='M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10'/%3E%3Cpath d='M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg opacity='0.6'%3E%3Cpath d='M22 14a8 8 0 0 1-8 8'/%3E%3Cpath d='M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2'/%3E%3Cpath d='M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1'/%3E%3Cpath d='M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10'/%3E%3Cpath d='M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
   pointer-events: none;
 }
 /* Sanction buttons: a smaller finger tucked into the corner. */

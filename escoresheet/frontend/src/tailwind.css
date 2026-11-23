@@ -1124,3 +1124,96 @@
     box-shadow: none;
   }
 }
+
+/* Lite graphics (html.ov-lite, utils/liteGraphics.js: Options › Effects and
+   speed › Blur behind dialogs off, the default in the Android app): dialog
+   scrims dim without the backdrop blur. On the hall tablet's GPU a
+   full-screen blur is redrawn for every frame that anything under a dialog
+   changes. Unlayered, so it beats the utilities. */
+html.ov-lite :is(.backdrop-blur-sm, .backdrop-blur) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Animations off (html[data-no-motion], utils/lookSettings.js: Options ›
+   Effects and speed › Animations). Nothing moves: no keyframes, no
+   transitions, no smooth scrolling, also where a component sets its animation
+   or transition inline (only !important beats an inline style). Unlayered, so
+   it beats the kit's and the legacy layer's rules.
+   Only on what moves, never on every element: a rule on * (or :not(...))
+   gives every element of the page four more declarations, and each restyle
+   of the scoring screen took 20-30 % longer (6x: 40 -> 52 ms, 22.11.2026),
+   the opposite of what the switch is for. One selector per class, so the
+   browser only looks at the elements that carry it. Every class of the app
+   that animates or transitions is listed (noMotionCss.test.js checks the
+   sources); inline animations and transitions by their style attribute.
+   animation: none, not a 0 s duration: an animation that ends hidden (the
+   rally tap notice fades out, Scoreboard removes it) shows its plain style
+   instead. Spinners still turn (Loader2's animate-spin, the AppSpinner orbit,
+   the inline 'spin' rings: Chromium writes their style as "animation: 1s
+   linear 0s infinite normal none running spin", so they are told by the name
+   anywhere in it): small, only while something loads, and a wait on a slow
+   device should not look like a frozen app. Countdowns still count; their
+   bars step instead of gliding. */
+html[data-no-motion] .lineup-button,
+html[data-no-motion] .lineup-button::before,
+html[data-no-motion] .lineup-button::after,
+html[data-no-motion] .missing-signature-button::before,
+html[data-no-motion] .rally-tap-notice,
+html[data-no-motion] .status-dot,
+html[data-no-motion] .modal-wrapper-roll-down > div,
+html[data-no-motion] .modal-wrapper-roll-up > div,
+html[data-no-motion] .turn-upright-icon,
+html[data-no-motion] .animate-pulse,
+html[data-no-motion] .animate-ping,
+html[data-no-motion] .animate-bounce,
+html[data-no-motion] [style*='animation']:not([style*='spin']) {
+  animation: none !important;
+}
+
+html[data-no-motion] .transition,
+html[data-no-motion] .transition-all,
+html[data-no-motion] .transition-colors,
+html[data-no-motion] .transition-opacity,
+html[data-no-motion] .transition-transform,
+html[data-no-motion] .transition-\[filter\],
+html[data-no-motion] button.sign,
+html[data-no-motion] .lineup-pos,
+html[data-no-motion] .lineup-pos__label,
+html[data-no-motion] .lineup-chip,
+html[data-no-motion] .lineup-gcapt__choice,
+html[data-no-motion] .game-card,
+html[data-no-motion] .home-card--clickable,
+html[data-no-motion] [style*='transition'] {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
+html[data-no-motion] {
+  scroll-behavior: auto !important;
+}
+
+/* A screen's loading spinner (ScreenLoading, tokens.css .ov-spinner-late)
+   keeps its short wait, so a read that answers at once still shows no
+   spinner; it then appears without the fade. */
+html[data-no-motion] .ov-spinner-late {
+  animation-duration: 0s !important;
+}
+
+/* The state cues keep a still look. The Line-up buttons on the court stay
+   green-lit: the narrow glow of the flash at rest (styles.css .lineup-button
+   ::before), the button at full opacity. */
+html[data-no-motion] .lineup-button::before {
+  opacity: 1;
+}
+
+/* Missing signature: the strong amber of the flash's peak, drawn by the button
+   itself, as under reduced motion (styles.css). */
+html[data-no-motion] .missing-signature-button {
+  background: #fcd34d;
+  border-color: #b45309;
+}
+
+html[data-no-motion] .missing-signature-button::before {
+  display: none;
+}

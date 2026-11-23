@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from 'react'
+import { useEffect, useCallback, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { apiFrom, apiMatchKnown, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY, BACKEND_REACHED_EVENT } from '../lib/apiClient'
@@ -2567,14 +2567,21 @@ export function useSyncStatus() {
   return syncStatus
 }
 
-export function useSyncQueue() {
+/**
+ * The device's sync queue: flush, retryErrors, the shared syncStatus and
+ * isOnline. watchStatus false: the caller does not re-render at each status
+ * change (the scoring screen, which never shows it; App does), and the
+ * syncStatus it gets stays the one of its first render.
+ */
+export function useSyncQueue({ watchStatus = true } = {}) {
   const [syncStatus, setLocalSyncStatus] = useState(currentSyncStatus)
   const setSyncStatus = publishSyncStatus
   useEffect(() => {
+    if (!watchStatus) return undefined
     syncStatusListeners.add(setLocalSyncStatus)
     setLocalSyncStatus(currentSyncStatus)
     return () => { syncStatusListeners.delete(setLocalSyncStatus) }
-  }, [])
+  }, [watchStatus])
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   )
@@ -2944,12 +2951,19 @@ export async function countServerBehindJobs() {
 }
 
 const EMPTY_STATS = { pending: 0, error: 0, failed: 0 }
+const EMPTY_STATS_KEY = JSON.stringify(EMPTY_STATS)
 
-/** Live sync queue counts (getSyncQueueStats, and serverBehind: countServerBehindJobs); zeros until the first read. */
+/**
+ * Live sync queue counts (getSyncQueueStats, and serverBehind:
+ * countServerBehindJobs); zeros until the first read. The query answers the
+ * counts as a string, so the header's indicator re-renders only when a count
+ * changes, not at each of the queue's writes of a point (add, coalesce, sent).
+ */
 export function useSyncQueueStats() {
-  return useLiveQuery(() => Promise.all([getSyncQueueStats(), countServerBehindJobs()])
-    .then(([stats, serverBehind]) => ({ ...stats, serverBehind }))
-    .catch(() => EMPTY_STATS), [], EMPTY_STATS)
+  const key = useLiveQuery(() => Promise.all([getSyncQueueStats(), countServerBehindJobs()])
+    .then(([stats, serverBehind]) => JSON.stringify({ ...stats, serverBehind }))
+    .catch(() => EMPTY_STATS_KEY), [], EMPTY_STATS_KEY)
+  return useMemo(() => (key === EMPTY_STATS_KEY ? EMPTY_STATS : JSON.parse(key)), [key])
 }
 
 // ---------------------------------------------------------------------------

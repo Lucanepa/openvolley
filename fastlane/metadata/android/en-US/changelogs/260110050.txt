@@ -1,0 +1,9 @@
+OpenVolley 26.11.5
+- Faster on slow tablets; a device check suggests lighter effects (Options)
+- Scoresheet preview no longer stuck on "Loading"
+- A finger marks every button you can tap (off in Options)
+- Time-out: "TO 1 of 2"; Replay without sanctions; last action names a replay
+- Score numbers next to the colon
+- Game PIN shown after Create match, can be sent by email
+- Playing coach: a player who is also C/AC/P/M is one person
+- "Keep as game captain"; copy an earlier set's line-up

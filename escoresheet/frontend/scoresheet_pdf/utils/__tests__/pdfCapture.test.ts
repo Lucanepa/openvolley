@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { fontFaceRules, hideImages, imageBox, isWebKitEngine, isWebKitGtk, missingPictures, nextFrames, physicalOf, picturesReady, resetSheetFontEmbedCSS, SHEET_FONT_FAMILY, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet, withoutLogicalAliases } from '../pdfCapture'
+import { ANDROID_APP_CAPTURE_PIXEL_RATIO, CAPTURE_PIXEL_RATIO, capturePixelRatio, fontFaceRules, hideImages, imageBox, isWebKitEngine, isWebKitGtk, missingPictures, nextFrames, physicalOf, picturesReady, resetSheetFontEmbedCSS, SHEET_FONT_FAMILY, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet, withoutLogicalAliases } from '../pdfCapture'
 
 describe('isWebKitEngine', () => {
   it('every WebKit: Safari, the macOS app, WebKitGTK and all iPhone / iPad browsers; never Chromium or Firefox', () => {
@@ -326,5 +326,70 @@ describe('pictures before the capture (logo, signatures)', () => {
     expect(Date.now() - t0).toBeLessThan(1000)
     // an <img> without a source is not a missing picture
     expect(missingPictures(root)).toEqual([stuck, broken])
+  })
+})
+
+// The capture's pixel ratio (owner 22.11.2026): Options › Effects and speed ›
+// Sharp PDF (utils/lookSettings pdfSharpFor), read from the window that makes
+// the PDF; never set, 1.5 in the Android app only, the page itself or the
+// sheet in the app's in-app view (a same-origin iframe: the app's window
+// holds Capacitor), 2 everywhere else
+describe('capturePixelRatio', () => {
+  const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; SM-T220 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Safari/537.36'
+  const IPAD_UA = 'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
+  const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+  const appWindow = (native: boolean, userAgent: string, extra: Record<string, unknown> = {}): any => {
+    const w: any = { navigator: { userAgent }, ...extra }
+    w.parent = w
+    w.frameElement = null
+    if (native) w.Capacitor = { isNativePlatform: () => true }
+    return w
+  }
+  // the sheet in the in-app view: an iframe marked data-ov-app-window
+  const inView = (app: any): any => ({ parent: app, frameElement: { hasAttribute: (a: string) => a === 'data-ov-app-window' }, navigator: { userAgent: app.navigator.userAgent } })
+
+  it('is 2 and 1.5', () => {
+    expect(CAPTURE_PIXEL_RATIO).toBe(2)
+    expect(ANDROID_APP_CAPTURE_PIXEL_RATIO).toBe(1.5)
+  })
+
+  it('1.5 in the Android app: its own page and the sheet in its in-app view', () => {
+    const android = appWindow(true, ANDROID_UA)
+    expect(capturePixelRatio(android)).toBe(1.5)
+    expect(capturePixelRatio(inView(android))).toBe(1.5)
+  })
+
+  it('2 on the web (Android\'s Chrome too), in the iOS app, the desktop apps and the server render', () => {
+    expect(capturePixelRatio(appWindow(false, ANDROID_UA))).toBe(2)
+    expect(capturePixelRatio(inView(appWindow(false, ANDROID_UA)))).toBe(2)
+    expect(capturePixelRatio(appWindow(true, IPAD_UA))).toBe(2)
+    expect(capturePixelRatio(inView(appWindow(true, IPAD_UA)))).toBe(2)
+    expect(capturePixelRatio(appWindow(false, DESKTOP_UA, { __TAURI__: {} }))).toBe(2)
+    // headless Chromium, the render service and the pixel check (Playwright)
+    expect(capturePixelRatio(appWindow(false, 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0.0.0 Safari/537.36'))).toBe(2)
+    // jsdom's own window
+    expect(capturePixelRatio(window)).toBe(2)
+    expect(capturePixelRatio(undefined)).toBe(2)
+  })
+
+  it('the device\'s Sharp PDF switch, read from the window\'s storage when the PDF is made', () => {
+    const store = (value: string | null) => ({ getItem: (k: string) => (k === 'ov.look.pdfSharp' ? value : null) })
+    // set off on a computer: 1.5; set on in the Android app: 2
+    expect(capturePixelRatio(appWindow(false, DESKTOP_UA, { localStorage: store('false') }))).toBe(1.5)
+    expect(capturePixelRatio(appWindow(true, ANDROID_UA, { localStorage: store('true') }))).toBe(2)
+    // never set, or unreadable: the default
+    expect(capturePixelRatio(appWindow(true, ANDROID_UA, { localStorage: store(null) }))).toBe(1.5)
+    expect(capturePixelRatio(appWindow(false, DESKTOP_UA, { localStorage: store('maybe') }))).toBe(2)
+    const locked = appWindow(false, DESKTOP_UA)
+    Object.defineProperty(locked, 'localStorage', { get: () => { throw new Error('SecurityError') } })
+    expect(capturePixelRatio(locked)).toBe(2)
+    // jsdom's window: the app's localStorage
+    localStorage.setItem('ov.look.pdfSharp', 'false')
+    try {
+      expect(capturePixelRatio(window)).toBe(1.5)
+    } finally {
+      localStorage.removeItem('ov.look.pdfSharp')
+    }
+    expect(capturePixelRatio(window)).toBe(2)
   })
 })

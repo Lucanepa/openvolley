@@ -1755,26 +1755,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     return
                   }
 
-                  // Fetch teams and players for scoresheet
-                  const [homeTeam, awayTeam, homePlayers, awayPlayers] = await Promise.all([
-                    match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
-                    match.awayTeamId ? db.teams.get(match.awayTeamId) : null,
-                    match.homeTeamId ? db.players.where('teamId').equals(match.homeTeamId).toArray() : [],
-                    match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).toArray() : []
-                  ])
-
-                  const scoresheetData = {
-                    match,
-                    homeTeam,
-                    awayTeam,
-                    homePlayers: homePlayers || [],
-                    awayPlayers: awayPlayers || [],
-                    sets: [],
-                    events: [],
-                    sanctions: []
-                  }
-
-                  sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+                  // the page reads the match from this device's database (?matchId=)
                   const opened = openAppWindow(`/scoresheet/?matchId=${matchId}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
 
                   if (!opened.ok) {
