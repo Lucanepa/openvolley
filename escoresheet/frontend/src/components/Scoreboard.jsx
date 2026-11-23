@@ -85,7 +85,7 @@ import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice
 import HoldToConfirmButton from './scoreboard/HoldToConfirmButton.jsx'
 import { POINT_HOLD_MS, cancelActiveHold } from '../hooks/useHoldToConfirm'
 import { readRallyMode } from '../utils/rallyMode'
-import { decisionChangeOutcomes } from '../domain/decisionChange'
+import { decisionChangeOutcomes, replayToDecide, replayDecisionOutcomes, REPLAY_POINT_OPTIONS, teamOfReplayOption, replacedReplayRecord, rallyStartGoesWithPoint } from '../domain/decisionChange'
 import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
@@ -409,6 +409,12 @@ const TOUCH_DRAG_HOLD_MS = 350
 const officialRoleAbbr = (role) => ({
   'Coach': 'C', 'Assistant Coach 1': 'AC1', 'Assistant Coach 2': 'AC2', 'Physiotherapist': 'P', 'Medic': 'M'
 })[role] || role
+// The grey role tag on the bench chip of a player who is on the bench as a
+// team official (a playing coach, domain/playerOfficials), or null: none for
+// the coach when his number is circled (the team captain's ring). Owner
+// 23.11.2026: "if the number is circled, no need to write C". AC1, AC2, P and
+// M stay.
+const benchOfficialTag = (role, circled) => (!role || (circled && role === 'Coach') ? null : officialRoleAbbr(role))
 const officialName = (official) => `${official.lastName || ''} ${official.firstName || ''}`.trim()
 // Tablet mode: a bench official is a box with the role only (C, AC1...), as
 // big as a bench player's chip and in the same wrapping row (owner,
@@ -916,7 +922,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [toSubDetailsModal, setToSubDetailsModal] = useState(null) // { type: 'timeout'|'substitution', side: 'left'|'right' } | null
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
-  const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string, selectedOption: 'swap'|'replay' } | null
+  // { event: Event, description: string, selectedOption: 'swap'|'replay'|'record_replay' } | null;
+  // on a replay (kind 'replay', event: the replay): options 'point_home' / 'point_away' (+ 'record_replay')
+  const [replayRallyConfirm, setReplayRallyConfirm] = useState(null)
   const [replayConfirm, setReplayConfirm] = useState(false) // "Replay rally" during a rally waits for this confirmation
   const [stopMatchModal, setStopMatchModal] = useState(null) // 'select' | null - Stop the match modal selection
   // rule: 'default' (refused to play / did not appear, FIVB 6.4.1-2) or 'incomplete' (6.4.3)
@@ -3624,7 +3632,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const decisionTakeBack = useMemo(() => (
     !canReplayRally && data?.set ? decisionChangeTakeBack(data.events, data.set.index, data?.match) : null
   ), [canReplayRally, data?.events, data?.set, data?.match])
-  const canChangeDecision = canReplayRally || !!decisionTakeBack
+  // A decision change on a replay (owner 23.11.2026: "keep decision change, a
+  // replay can change to another decision"): the set's last event is a
+  // replay, and the referee gives that rally to a team after all
+  // (domain/decisionChange replayToDecide; replaceReplayByPoint)
+  const replayDecision = useMemo(() => (
+    data?.set ? replayToDecide(data.events, data.set.index) : null
+  ), [data?.events, data?.set])
+  const canChangeDecision = canReplayRally || !!decisionTakeBack || !!replayDecision
 
   // "Start set" vs "Start rally": the set's first rally is not started yet
   // (no set_start, no rally_start: domain/rally isFirstRallyOf). A penalty
@@ -3694,11 +3709,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return data?.set ? requestBlockReason(data.events, data.set.index, teamKey, kind, { intervalRunning }) : null
   }
   const timeoutBlocked = (side) => !!requestBlockFor(mapSideToTeamKey(side), 'timeout')
-  // The one line under a team's TO / SUB counters while they are closed
+  // The one line under a team's TO / SUB counters while they are closed: the
+  // set interval's only. A replay pending keeps them closed with no line
+  // (owner 23.11.2026: the "Replay pending: no time-out or substitution..."
+  // text goes, the rule stays). The phone shows this line too
   const requestBlockLine = (side) => {
     if (rallyStatus !== 'idle') return null
     const reason = requestBlockFor(mapSideToTeamKey(side), 'timeout')
-    return reason ? t(`scoreboard.requestBlock.${reason}`) : null
+    return reason && reason !== 'replay_pending' ? t(`scoreboard.requestBlock.${reason}`) : null
   }
 
   // The break runs while the screen is between sets with its countdown on
@@ -5340,8 +5358,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Simple timestamp for reference (not used for ordering)
     const timestamp = options.timestamp ? new Date(options.timestamp) : new Date()
 
-    // Add event first (without snapshot - we need the event to exist to capture state)
+    // Add event first (without snapshot - we need the event to exist to capture state).
+    // options.localFields: bookkeeping fields of the row ('_' keys: never
+    // sent, not an edit; a point's _replacedReplay, replaceReplayByPoint)
     const eventId = await db.events.add({
+      ...(options.localFields || {}),
       matchId,
       setIndex: actualSetIndex,
       type,
@@ -6012,7 +6033,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // between rallies it opens its rally itself, with Start rally's gates, and
   // writes the rally_start right before the point.
   const handlePoint = useCallback(
-    (side, skipConfirmation = false, { tap = false, penaltySeq = null, opensRally = false } = {}) => runAction('point', async () => {
+    (side, skipConfirmation = false, { tap = false, penaltySeq = null, opensRally = false, localFields = null } = {}) => runAction('point', async () => {
       cLogger.logHandler('handlePoint', { side, skipConfirmation, tap, opensRally })
       if (!data?.set) return
       // A match over in the database (stopped, forfeited; opened here from
@@ -6449,7 +6470,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       })
       // A penalty's point names its sanction: Undo takes the two back together
       const pointPayload = { team: teamKey, score: { home: homePoints, away: awayPoints }, ...(penaltySeq != null ? { penaltySeq } : {}) }
-      const pointSeq = await logEvent('point', pointPayload, { setIndexOverride: setIndex, beforeSnapshot: writeSideOutRows })
+      const pointSeq = await logEvent('point', pointPayload, { setIndexOverride: setIndex, beforeSnapshot: writeSideOutRows, ...(localFields ? { localFields } : {}) })
 
       // Debug log: point awarded
       debugLogger.log('POINT_AWARDED', {
@@ -6865,11 +6886,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       setReplayRallyConfirm(decisionDialog({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests, takeBackByOption: decisionTakeBack.byOption }))
       return
     }
+    // The set's last event is a replay: its decision change gives that rally
+    // to a team after all, "Point A" or "Point B" in the order of the point
+    // buttons (left, right), none chosen; continuous play adds "Rally
+    // replayed": the rally played since was replayed too
+    if (rallyStatus === 'idle' && replayDecision) {
+      setReplayRallyConfirm({
+        event: replayDecision,
+        kind: 'replay',
+        continuous: continuousPlay,
+        description: 'Rally replayed',
+        options: [
+          REPLAY_POINT_OPTIONS[mapSideToTeamKey('left')],
+          REPLAY_POINT_OPTIONS[mapSideToTeamKey('right')],
+          ...(continuousPlay ? ['record_replay'] : [])
+        ],
+        selectedOption: null
+      })
+      return
+    }
     // Continuous play, between rallies with no last point to change (none
-    // yet since Start set, or a replay recorded since): the rally just
-    // played was replayed. Asked as the in-play Replay is (confirmReplay)
+    // yet since Start set): the rally just played was replayed. Asked as the
+    // in-play Replay is (confirmReplay)
     if (continuousPlay && rallyStatus === 'idle' && !isFirstRally) setReplayConfirm(true)
-  }, [rallyStatus, canReplayRally, decisionTakeBack, data?.events, data?.homeTeam?.name, data?.awayTeam?.name, decisionDialog, continuousPlay, isFirstRally])
+  }, [rallyStatus, canReplayRally, decisionTakeBack, replayDecision, mapSideToTeamKey, data?.events, data?.homeTeam?.name, data?.awayTeam?.name, decisionDialog, continuousPlay, isFirstRally])
 
   // Continuous play: a replayed rally recorded between rallies, on its own
   // (no rally_start: there was no Start rally). Score and serve stay; until
@@ -8362,10 +8402,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // For point events, also delete the rally_start that opened its rally
       // (continuous play writes it right before the point); never an older
-      // rally's, when this point had none (domain/rally rallyStartOfPoint)
+      // rally's, when this point had none (domain/rally rallyStartOfPoint).
+      // A point that took a replay's place (the decision change on a replay,
+      // replaceReplayByPoint) leaves the replayed rally's start to the replay
+      // it brings back (domain/decisionChange rallyStartGoesWithPoint)
+      const storedPoint = lastEvent.type === 'point' ? (allEvents.find(e => e.id === lastEvent.id) || lastEvent) : null
       if (lastEvent.type === 'point' && !penalty) {
-        const rallyStartEvent = rallyStartOfPoint(allEvents, allEvents.find(e => e.id === lastEvent.id) || lastEvent)
-        if (rallyStartEvent && !eventsToDelete.some(e => e.id === rallyStartEvent.id)) {
+        const rallyStartEvent = rallyStartOfPoint(allEvents, storedPoint)
+        if (rallyStartGoesWithPoint(storedPoint, rallyStartEvent) && !eventsToDelete.some(e => e.id === rallyStartEvent.id)) {
           eventsToDelete.push(rallyStartEvent)
         }
       }
@@ -8374,6 +8418,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // OUTSIDE the event log
       console.log('[handleUndo] Deleting', eventsToDelete.length, 'events')
       await discardEvents(eventsToDelete)
+      // ... and the replay that point took the place of comes back (a local
+      // row: no cloud job), its replay pending with it
+      const replacedReplay = storedPoint?._replacedReplay
+      if (replacedReplay?.type === 'replay' && replacedReplay.id != null) await db.events.put(replacedReplay)
 
       // 2. Find the previous event's snapshot: the newest REMAINING event of the
       // same set that actually carries one (rally_start / raw rotation lineups
@@ -8673,6 +8721,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [replayRallyConfirm, data?.set, afterPointScored])
 
+  // The decision change on a replay (owner 23.11.2026): the rally that was
+  // replayed is given to `team` after all. Inside the decision change's
+  // action, so it is one: the replay goes (a local row, never sent) and the
+  // point is recorded as the point buttons record it (handlePoint: the score,
+  // the serve, a side-out's rotation and automatic libero exit, the set end
+  // or the deciding set's change of courts, the tablets, the live state and
+  // the last action). The replay pending ends with it. In continuous play a
+  // replay recorded on its own (no rally_start) gets the point's rally_start,
+  // as a held point does. The point keeps the replay (`_replacedReplay`, a
+  // local bookkeeping field): one Undo takes the point back and brings the
+  // replay back (undoEventTx). A point handlePoint refuses (the set already
+  // won, the match over, a player sent off on court; its own message says
+  // why) leaves the replay as it was.
+  const replaceReplayByPoint = useCallback(async (replay, team) => {
+    const stored = replay?.id != null ? await db.events.get(replay.id) : null
+    if (!stored || stored.type !== 'replay') return
+    const events = await db.events.where('matchId').equals(matchId).toArray()
+    // still the set's last event (the screen was behind)
+    if (replayToDecide(events, stored.setIndex)?.id !== stored.id) {
+      console.warn('[Scoreboard] Decision change on a replay that is no longer the last event: ignored')
+      return
+    }
+    await discardEvents([stored])
+    // the point row carries the replay from its first write
+    await handlePoint(mapTeamKeyToSide(team), true, { opensRally: true, localFields: { _replacedReplay: replacedReplayRecord(stored) } })
+    const recorded = (await db.events.where('matchId').equals(matchId).toArray())
+      .some(e => e.type === 'point' && e._replacedReplay?.id === stored.id)
+    if (!recorded) await db.events.put(stored)
+  }, [matchId, discardEvents, handlePoint, mapTeamKeyToSide])
+
   // Handle decision change - either swap point to other team or replay rally
   const runDecisionChange = useConfirmAction(onConfirmFailed)
   // One action: the swapped point, the rotation it moves, its event history
@@ -8696,6 +8774,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (selectedOption === 'record_replay') {
       deferUi(() => setReplayRallyConfirm(null))
       await recordContinuousReplay()
+      return
+    }
+
+    // A replay's decision change: the rally given to a team after all
+    if (replayRallyConfirm.kind === 'replay') {
+      deferUi(() => setReplayRallyConfirm(null))
+      const team = teamOfReplayOption(selectedOption)
+      if (team) await replaceReplayByPoint(lastEvent, team)
       return
     }
 
@@ -8970,7 +9056,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleReplayRally()
       return // handleReplayRally closes the modal and syncs
     }
-  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx, recordContinuousReplay])
+  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx, recordContinuousReplay, replaceReplayByPoint])
 
 
 
@@ -14842,8 +14928,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // the last point (they are taken back with it, row 19)
         canChangeDecision,
         isRallyReplayed,
-        // Why the regular time-outs / substitutions are closed (replay
-        // pending, set interval), one line for both teams
+        // Why the regular time-outs / substitutions are closed in the set
+        // interval, one line for both teams (none for a replay pending)
         requestBlockText: requestBlockLine('left') || requestBlockLine('right'),
         // "Not counted" (RallyTapNotice): > 0 while shown; its text when
         // another ("Hold to give the point")
@@ -15774,8 +15860,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}>{getSubstitutionsShown('left')}</div>
               </div>
             </div>
-            {/* Closed time-out / substitution: the reason in one line (replay
-                pending, set interval; domain/interruptionRequests.js) */}
+            {/* Closed time-out / substitution in the set interval: the reason
+                in one line (a replay pending has none; domain/interruptionRequests.js) */}
             {requestBlockLine('left') && (
               <div data-testid="request-block-left" style={{ marginTop: '-1.5cqw', marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(3.3cqw * var(--cqf, 1))' : 'max(11px, calc(4.2cqw * var(--cqf, 1)))', lineHeight: 1.3, color: 'var(--muted)', textAlign: 'center' }}>
                 {requestBlockLine('left')}
@@ -16186,9 +16272,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               ringColour={isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)')}
                               label={t('scoreboard.phone.markCaptain', 'captain')}
                             />
-                            {player.asOfficial && (
+                            {benchOfficialTag(player.asOfficial, player.isCaptain) && (
                               <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
-                                {officialRoleAbbr(player.asOfficial)}
+                                {benchOfficialTag(player.asOfficial, player.isCaptain)}
                               </span>
                             )}
                             {isSubstitutedByLibero && (
@@ -16459,9 +16545,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
-                              {player.asOfficial && (
+                              {benchOfficialTag(player.asOfficial, player.isCaptain || player.captain) && (
                                 <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
-                                  {officialRoleAbbr(player.asOfficial)}
+                                  {benchOfficialTag(player.asOfficial, player.isCaptain || player.captain)}
                                 </span>
                               )}
                               {/* injured, may come back: the injury cross */}
@@ -19252,8 +19338,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}>{getSubstitutionsShown('right')}</div>
               </div>
             </div>
-            {/* Closed time-out / substitution: the reason in one line (replay
-                pending, set interval; domain/interruptionRequests.js) */}
+            {/* Closed time-out / substitution in the set interval: the reason
+                in one line (a replay pending has none; domain/interruptionRequests.js) */}
             {requestBlockLine('right') && (
               <div data-testid="request-block-right" style={{ marginTop: '-1.5cqw', marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(3.3cqw * var(--cqf, 1))' : 'max(11px, calc(4.2cqw * var(--cqf, 1)))', lineHeight: 1.3, color: 'var(--muted)', textAlign: 'center' }}>
                 {requestBlockLine('right')}
@@ -19664,9 +19750,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               ringColour={isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)')}
                               label={t('scoreboard.phone.markCaptain', 'captain')}
                             />
-                            {player.asOfficial && (
+                            {benchOfficialTag(player.asOfficial, player.isCaptain) && (
                               <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
-                                {officialRoleAbbr(player.asOfficial)}
+                                {benchOfficialTag(player.asOfficial, player.isCaptain)}
                               </span>
                             )}
                             {isSubstitutedByLibero && (
@@ -19935,9 +20021,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
                                 {liberoTag(player.libero)}
                               </span>
-                              {player.asOfficial && (
+                              {benchOfficialTag(player.asOfficial, player.isCaptain || player.captain) && (
                                 <span data-as-official-tag style={{ fontSize: 'max(calc(11px * var(--bench-fit, 1)), calc(4.2cqw * var(--cqf, 1)))', fontWeight: 700, color: 'var(--ov-text-muted)' }}>
-                                  {officialRoleAbbr(player.asOfficial)}
+                                  {benchOfficialTag(player.asOfficial, player.isCaptain || player.captain)}
                                 </span>
                               )}
                               {/* injured, may come back: the injury cross */}
@@ -24657,6 +24743,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {replayRallyConfirm && (() => {
         const lastEvent = replayRallyConfirm.event
         const oldTeam = lastEvent?.payload?.team
+        // A replay's decision change (owner 23.11.2026): "Point A" / "Point
+        // B" (continuous play: and "Rally replayed"), none pre-selected
+        const onReplay = replayRallyConfirm.kind === 'replay'
+        const continuousDialog = onReplay ? !!replayRallyConfirm.continuous : !!replayRallyConfirm.options
         // Continuous play's dialog: a third option (record_replay) and none
         // pre-selected; the others pre-select "Assign to other team"
         const options = replayRallyConfirm.options || ['swap', 'replay']
@@ -24669,8 +24759,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // The score and the serve each option leaves (domain/decisionChange):
         // swap, the other team scores and serves; replay, the point is taken
         // back and the team that served it serves again (after a side-out not
-        // the point's team: the preview said so); record_replay, unchanged
-        const outcomes = decisionChangeOutcomes({ events: data?.events, point: lastEvent, score: { home: currentHomePoints, away: currentAwayPoints }, match: data?.match })
+        // the point's team: the preview said so); record_replay, unchanged.
+        // On a replay: the team given the rally scores and serves
+        const score = { home: currentHomePoints, away: currentAwayPoints }
+        const outcomes = onReplay
+          ? replayDecisionOutcomes({ events: data?.events, setIndex: lastEvent?.setIndex, score, match: data?.match })
+          : decisionChangeOutcomes({ events: data?.events, point: lastEvent, score, match: data?.match })
         const outcome = selectedOption ? outcomes[selectedOption] : null
 
         // Get team names for display
@@ -24685,11 +24779,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const homeColor = data?.homeTeam?.color || '#ef4444'
         const awayColor = data?.awayTeam?.color || '#3b82f6'
         const oldTeamColor = oldTeam === 'home' ? homeColor : awayColor
+        // Continuous play's three options short (owner 23.11.2026: "Replay",
+        // "Rally replayed"); the rally dialog keeps "Replay the rally"
         const optionLabels = {
           swap: t('scoreboard.dialogs.assignToOtherTeam', 'Assign to other team'),
-          replay: t('scoreboard.dialogs.replayTheRally', 'Replay the rally'),
-          record_replay: t('scoreboard.dialogs.recordReplay', 'Rally replayed: no point')
+          replay: continuousDialog ? t('scoreboard.dialogs.replayShort', 'Replay') : t('scoreboard.dialogs.replayTheRally', 'Replay the rally'),
+          record_replay: t('scoreboard.dialogs.recordReplay', 'Rally replayed'),
+          [REPLAY_POINT_OPTIONS.home]: t('scoreboard.buttons.pointTeam', { team: homeLabel }),
+          [REPLAY_POINT_OPTIONS.away]: t('scoreboard.buttons.pointTeam', { team: awayLabel })
         }
+        const dialogTitle = continuousDialog ? t('scoreboard.modals.decisionReplay') : t('scoreboard.modals.decisionChange')
 
         // Helper to render team with A/B badge
         const TeamWithLabel = ({ team, name }) => (
@@ -24708,15 +24807,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         return (
           <Modal
-            title={replayRallyConfirm.options ? t('scoreboard.modals.decisionReplay') : t('scoreboard.modals.decisionChange')}
+            title={dialogTitle}
             open={true}
             onClose={cancelReplayRally}
             width={options.length > 2 ? 580 : 500}
           >
             <div style={{ padding: '4px 0' }}>
-              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
-                {t('scoreboard.dialogs.lastPointTo', 'Last point was assigned to')} <strong><span style={{ ...teamBoxStyle(oldTeamColor), padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
-              </p>
+              {onReplay ? (
+                <p data-testid="decision-last-replay" style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
+                  {t('scoreboard.dialogs.lastRallyReplayed', 'The last rally was replayed')}
+                </p>
+              ) : (
+                <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
+                  {t('scoreboard.dialogs.lastPointTo', 'Last point was assigned to')} <strong><span style={{ ...teamBoxStyle(oldTeamColor), padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
+                </p>
+              )}
 
               {/* Row 19: what came after the point is taken back first, in
                   the order it was recorded (handleDecisionChange) */}
@@ -24766,7 +24871,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Horizontal radio buttons (continuous play: three, none
                   chosen until one is tapped) */}
-              <div role="radiogroup" aria-label={replayRallyConfirm.options ? t('scoreboard.modals.decisionReplay') : t('scoreboard.modals.decisionChange')} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <div role="radiogroup" aria-label={dialogTitle} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                 {options.map(option => (
                   <div
                     key={option}

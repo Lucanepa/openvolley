@@ -93,8 +93,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     otherEntered: !!(team.side === 'left' ? right : left)?.lineupSet
   })
   // Between rallies. A replayed rally that is not completed yet closes the
-  // regular time-outs and substitutions (team.blocked, with the reason in
-  // rally.requestBlockText) and, as before, the libero: a forced
+  // regular time-outs and substitutions (team.blocked; no reason line, owner
+  // 23.11.2026: rally.requestBlockText is the set interval's only) and, as
+  // before, the libero: a forced
   // substitution (injury, through the court player) stays open
   const idle = rally.status === 'idle'
   // The last actions fill the height left over: as many whole lines as fit
@@ -579,7 +580,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       <section aria-label={t('scoreboard.phone.teamActions')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
         {teamActions(left)}
         {teamActions(right)}
-        {/* Why the time-outs / substitutions are closed (replay pending, set interval) */}
+        {/* Why the time-outs / substitutions are closed: the set interval (a replay pending has no line) */}
         {idle && rally.requestBlockText && (
           <p data-testid="phone-request-block" style={{ gridColumn: '1 / -1', margin: '-2px 0 0', fontSize: 12, lineHeight: '15px', color: 'var(--ov-text-secondary)', textAlign: 'center' }}>
             {rally.requestBlockText}

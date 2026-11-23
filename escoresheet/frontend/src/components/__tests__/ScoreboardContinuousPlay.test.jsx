@@ -4,9 +4,13 @@
 //  - a held point writes the rally_start and the point in one action, and
 //    Undo takes the two back; a short tap gives nothing ("Hold to give the
 //    point")
-//  - the dialog: three options, none chosen; "Rally replayed: no point"
-//    records only the replay (score and serve stay; time-outs closed until
-//    the next point); the other two as before
+//  - the dialog: three options, none chosen, short ("Replay", "Rally
+//    replayed", owner 23.11.2026); "Rally replayed" records only the replay
+//    (score and serve stay; time-outs closed until the next point, with no
+//    "Replay pending" line); the other two as before
+//  - after a replay the dialog offers "Point A" / "Point B" / "Rally
+//    replayed": a point takes the replay's place (with its rally_start, a
+//    side-out rotates), one Undo brings the replay back (owner 23.11.2026)
 //  - Start rally's gates hold for the point that opens its rally: Start set
 //    first, no player sent off on court
 //  - the scoring keys hold too; Enter starts only the set
@@ -199,7 +203,7 @@ describe('continuous play: Point A and Point B, held', () => {
 })
 
 describe('continuous play: Decision change / Replay', () => {
-  it('three options, none chosen; "Rally replayed: no point" records only the replay and closes the time-outs until the next point', async () => {
+  it('three options, none chosen; "Rally replayed" records only the replay and closes the time-outs until the next point, with no line saying so', async () => {
     const { matchId, setId } = await matchAfterOnePoint()
     mount(matchId)
     await waitFor(() => expect(screen.getByTestId('decision-replay-button')).toBeTruthy(), { timeout: 15000 })
@@ -209,6 +213,7 @@ describe('continuous play: Decision change / Replay', () => {
     await waitFor(() => expect(dialog(/Decision change \/ Replay/)).toBeTruthy(), { timeout: 5000 })
     const radios = [...dialog(/Decision change \/ Replay/).querySelectorAll('[role="radio"]')]
     expect(radios.map(r => r.getAttribute('data-decision-option'))).toEqual(['swap', 'replay', 'record_replay'])
+    expect(radios.map(r => r.textContent.trim())).toEqual(['Assign to other team', 'Replay', 'Rally replayed'])
     expect(radios.every(r => r.getAttribute('aria-checked') === 'false')).toBe(true)
     const confirm = () => [...dialog(/Decision change \/ Replay/).querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm')
     expect(confirm().disabled).toBe(true)
@@ -228,17 +233,91 @@ describe('continuous play: Decision change / Replay', () => {
     expect(await ofType('point')).toHaveLength(1)
     const set = await db.sets.get(setId)
     expect([set.homePoints, set.awayPoints]).toEqual([1, 0])
-    // replay pending: no regular time-out or substitution until the next point
-    await waitFor(() => expect(screen.getByTestId('request-block-left').textContent).toMatch(/Replay pending/), { timeout: 5000 })
+    // replay pending: no regular time-out or substitution until the next
+    // point, and no "Replay pending" line under the boxes (owner 23.11.2026)
+    await waitFor(() => expect(screen.queryByTestId('timeout-tap-hint-left')).toBeNull(), { timeout: 5000 })
+    expect(screen.queryByTestId('timeout-tap-hint-right')).toBeNull()
+    expect(screen.queryByTestId('request-block-left')).toBeNull()
+    expect(screen.queryByTestId('request-block-right')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Replay pending/)
 
     // the next point completes the replayed rally: time-outs open again
     await settle()
     await hold(holdButton('A'))
     await waitFor(async () => expect(await ofType('point')).toHaveLength(2), { timeout: 5000 })
-    await waitFor(() => expect(screen.queryByTestId('request-block-left')).toBeNull(), { timeout: 5000 })
+    await waitFor(() => expect(screen.getByTestId('timeout-tap-hint-left')).toBeTruthy(), { timeout: 5000 })
   }, 60000)
 
-  it('"Assign to other team" and "Replay the rally" work as before; the replay preview serves the rally\'s server after a side-out', async () => {
+  it('after "Rally replayed": Point B gives that rally to B (its rally_start, a side-out rotation), "Rally replayed" again records a second replay, one Undo brings the replay back', async () => {
+    // 1:0, home served and scored; the rally since was replayed
+    const { matchId, setId } = await matchAfterOnePoint([{ type: 'replay', payload: { reason: 'continuous' } }])
+    mount(matchId)
+    await waitFor(() => expect(screen.getByTestId('decision-replay-button')).toBeTruthy(), { timeout: 15000 })
+    await waitFor(() => expect(screen.queryByTestId('timeout-tap-hint-left')).toBeNull(), { timeout: 5000 })
+    await settle()
+    const open = async () => {
+      fireEvent.click(screen.getByTestId('decision-replay-button'))
+      await waitFor(() => expect(dialog(/Decision change \/ Replay/)).toBeTruthy(), { timeout: 5000 })
+      return [...dialog(/Decision change \/ Replay/).querySelectorAll('[role="radio"]')]
+    }
+    const confirm = () => [...dialog(/Decision change \/ Replay/).querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm')
+
+    // "Rally replayed" again: the rally played since was replayed too
+    let radios = await open()
+    expect(screen.getByTestId('decision-last-replay').textContent).toBe('The last rally was replayed')
+    expect(radios.map(r => r.getAttribute('data-decision-option'))).toEqual(['point_home', 'point_away', 'record_replay'])
+    expect(radios.map(r => r.textContent.trim())).toEqual(['Point A', 'Point B', 'Rally replayed'])
+    expect(radios.every(r => r.getAttribute('aria-checked') === 'false')).toBe(true)
+    expect(confirm().disabled).toBe(true)
+    fireEvent.click(radios[2])
+    await waitFor(() => expect(confirm().disabled).toBe(false), { timeout: 5000 })
+    await settle()
+    fireEvent.click(confirm())
+    await waitFor(async () => expect(await ofType('replay')).toHaveLength(2), { timeout: 5000 })
+    await waitFor(() => expect(dialog(/Decision change \/ Replay/)).toBeFalsy(), { timeout: 5000 })
+    const replay = (await ofType('replay')).at(-1)
+    await settle()
+
+    // Point B: the replayed rally to B
+    radios = await open()
+    fireEvent.click(radios[1])
+    await waitFor(() => expect(screen.getByTestId('decision-preview-serve').getAttribute('data-serve')).toBe('away'), { timeout: 5000 })
+    expect(screen.getByTestId('decision-preview').textContent).toContain('1 : 1')
+    await settle()
+    fireEvent.click(confirm())
+    await waitFor(async () => expect((await ofType('point')).at(-1)._replacedReplay).toBeTruthy(), { timeout: 5000 })
+    expect(await ofType('point')).toHaveLength(2)
+    expect((await ofType('replay')).map(e => e.id)).not.toContain(replay.id)
+    expect(await ofType('replay')).toHaveLength(1)
+    const [start, point] = (await events()).filter(e => e.type === 'rally_start' || e.type === 'point').slice(-2)
+    expect(start).toMatchObject({ type: 'rally_start', payload: { continuous: true } })
+    expect(point).toMatchObject({ type: 'point', payload: { team: 'away' } })
+    expect(start.seq).toBeGreaterThan(replay.seq)
+    expect(point._replacedReplay).toMatchObject({ id: replay.id, seq: replay.seq })
+    const set = await db.sets.get(setId)
+    expect([set.homePoints, set.awayPoints]).toEqual([1, 1])
+    // a side-out: away rotated
+    expect((await ofType('lineup')).filter(e => e.payload.team === 'away').at(-1).payload.lineup).toMatchObject({ I: '12', VI: '11' })
+    // the replay pending is over
+    await waitFor(() => expect(screen.getByTestId('timeout-tap-hint-left')).toBeTruthy(), { timeout: 5000 })
+
+    // one Undo: the point and the rally_start it wrote go, the replay comes back
+    await settle()
+    fireEvent.click(button('Undo'))
+    await waitFor(() => expect(dialog(/undo/i)).toBeTruthy(), { timeout: 5000 })
+    fireEvent.click([...dialog(/undo/i).querySelectorAll('button')].find(b => b.textContent.trim() === 'Yes'))
+    await waitFor(async () => expect(await ofType('point')).toHaveLength(1), { timeout: 5000 })
+    expect((await ofType('replay')).map(e => e.id)).toContain(replay.id)
+    expect((await ofType('rally_start')).map(e => e.seq)).toEqual([5])
+    await waitFor(async () => {
+      const after = await db.sets.get(setId)
+      expect([after.homePoints, after.awayPoints]).toEqual([1, 0])
+    }, { timeout: 5000 })
+    expect((await ofType('lineup')).filter(e => e.payload.team === 'away').at(-1).payload.lineup).toEqual(AWAY_LINEUP)
+    await waitFor(() => expect(screen.queryByTestId('timeout-tap-hint-left')).toBeNull(), { timeout: 5000 })
+  }, 90000)
+
+  it('"Assign to other team" and "Replay" work as before; the replay preview serves the rally\'s server after a side-out', async () => {
     // away won the second rally on home's serve (a side-out): 1:1
     const { matchId, setId } = await matchAfterOnePoint([
       { type: 'rally_start', payload: { continuous: true } },
