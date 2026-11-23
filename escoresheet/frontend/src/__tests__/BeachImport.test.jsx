@@ -22,7 +22,9 @@ const api = vi.hoisted(() => ({
   get: vi.fn(),
   create: vi.fn(),
   importPreview: vi.fn(),
-  importApply: vi.fn()
+  importApply: vi.fn(),
+  // the co-manager invitations card of the list (none here)
+  invites: vi.fn(async () => ({ data: { invites: [] }, error: null, status: 200 }))
 }))
 vi.mock('../lib/tournamentApi', async (orig) => ({ ...(await orig()), tournamentApi: api }))
 const teams = vi.hoisted(() => ({ fetchBundle: vi.fn() }))
