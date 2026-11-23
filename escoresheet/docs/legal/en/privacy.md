@@ -557,7 +557,11 @@ after 3 hours without an update (15 minutes for a summary that came only once
 and not through the relay), or when the server restarts. Anyone who knows the
 code can see the summaries of its matches on openvolley.app/tv, on
 livescore.openvolley.app or read them from the server's interface; a venue
-relay shows them on its own network too. A scorer device with a live screen
+relay shows them on its own network too. The screens are no official record:
+a summary that reaches the server only through the desktop app or a venue
+relay, from OpenBeach up to 3.1.1 or OpenVolley up to 26.11.5, can be
+overwritten by someone who knows the code and the match's public id. A scorer
+device with a live screen
 code also lists the summaries of its Global matches on
 livescore.openvolley.app, for anyone and without the code, unless "Show Global
 matches on livescore.openvolley.app" is switched off on it in Options, Live

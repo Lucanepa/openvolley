@@ -646,7 +646,11 @@ minutes pour un résumé arrivé une seule fois et pas par le relais) ou au
 redémarrage du serveur. Toute personne qui connaît le code peut voir les
 résumés de ses matchs sur openvolley.app/tv et livescore.openvolley.app ou les
 lire via l'interface du serveur ; un relais de salle les montre aussi sur son
-propre réseau. Un appareil de marque qui a un code d'écran en direct liste en
+propre réseau. Les écrans ne sont pas un document officiel : un résumé qui
+n'arrive au serveur que par l'application de bureau ou un relais de salle,
+d'OpenBeach jusqu'à 3.1.1 ou d'OpenVolley jusqu'à 26.11.5, peut être écrasé
+par quelqu'un qui connaît le code et l'identifiant public du match. Un
+appareil de marque qui a un code d'écran en direct liste en
 outre les résumés de ses matchs Global sur livescore.openvolley.app, pour tout
 le monde et sans le code, sauf si « Afficher les matchs Global sur
 livescore.openvolley.app » est désactivé sur cet appareil dans Options, Écran

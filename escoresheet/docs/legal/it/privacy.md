@@ -607,7 +607,11 @@ fine della partita, dopo 3 ore senza aggiornamenti (15 minuti per un riepilogo
 arrivato una sola volta e non tramite il relay) o al riavvio del server.
 Chiunque conosca il codice può vedere i riepiloghi delle sue partite su
 openvolley.app/tv e livescore.openvolley.app o leggerli tramite l'interfaccia
-del server; un relay di palestra li mostra anche nella sua rete. Un
+del server; un relay di palestra li mostra anche nella sua rete. Gli schermi
+non sono un documento ufficiale: un riepilogo che arriva al server solo
+tramite l'app desktop o un relay di palestra, da OpenBeach fino alla 3.1.1 o
+da OpenVolley fino alla 26.11.5, può essere sovrascritto da chi conosce il
+codice e l'identificativo pubblico della partita. Un
 dispositivo segnapunti con un codice dello schermo live elenca inoltre i
 riepiloghi delle sue partite Global su livescore.openvolley.app, per chiunque
 e senza il codice, a meno che «Mostra le partite Global su

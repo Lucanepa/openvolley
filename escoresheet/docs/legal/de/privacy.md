@@ -627,7 +627,11 @@ einmal und nicht über das Relais kam) oder beim Neustart des Servers entfernt.
 Wer den Code kennt, kann die Zusammenfassungen seiner Spiele auf
 openvolley.app/tv und livescore.openvolley.app sehen oder über die
 Schnittstelle des Servers abrufen; ein Hallen-Relais zeigt sie auch in seinem
-eigenen Netz. Ein Schreibergerät mit Live-Bildschirm-Code listet die
+eigenen Netz. Die Bildschirme sind kein offizielles Dokument: Eine
+Zusammenfassung, die den Server nur über die Desktop-App oder ein
+Hallen-Relais erreicht, von OpenBeach bis 3.1.1 oder OpenVolley bis 26.11.5,
+kann überschreiben, wer den Code und die öffentliche Kennung des Spiels kennt.
+Ein Schreibergerät mit Live-Bildschirm-Code listet die
 Zusammenfassungen seiner Global-Spiele zudem auf livescore.openvolley.app, für
 alle und ohne den Code, ausser «Global-Spiele auf livescore.openvolley.app
 zeigen» ist auf ihm in Optionen, Live-Bildschirm ausgeschaltet (standardmässig
