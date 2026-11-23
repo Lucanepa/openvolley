@@ -79,7 +79,7 @@
 	<string>The app connects to the scoretable computer or the venue server on the local network.</string>
 	<!-- WKWebView ends the app when a page asks for the camera without this text -->
 	<key>NSCameraUsageDescription</key>
-	<string>The camera scans QR codes, for example to connect a device.</string>
+	<string>The camera scans QR codes, for example to connect a device, and takes a photo of a team's Einsatzliste, which is read on this device.</string>
 	<!-- No UIFileSharingEnabled / LSSupportsOpeningDocumentsInPlace: the
 	     app's files (backups, logs, scoresheet PDFs, in Library/NoCloud) are
 	     not shown in the Files app or over USB (owner decision 9, as on

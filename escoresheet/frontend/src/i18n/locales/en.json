@@ -3169,6 +3169,9 @@
       "q_importPdf": "How do I import a roster from PDF?",
       "a_importPdf": "In “Edit roster”, keep “Local” selected and tap “Upload PDF”. Choose the team's roster PDF or the Einsatzliste, then tap “Import PDF”. It replaces the players and the bench officials. With more than 14 players, tick who plays. Then check the dates of birth, enter missing shirt numbers, and set the captain and the liberos. A date of birth on 1 January is often a placeholder (01.01.1900 when the date is not known) or an import error: the roster lists these people above the players. Correct the dates you know. The coin toss does not ask about them.",
       "tip_importPdf": "Tap here to import the players from a roster PDF.",
+      "q_importPhoto": "Can I import the Einsatzliste from a photo?",
+      "a_importPhoto": "Yes. In “Edit roster”, keep “Local” selected and tap “Photo of the list”. Take a photo of the printed list or choose a picture of it (a screenshot works too; zoom in so the table fills it). Drag the four corners onto the page, then tap “Read the list”: the photo is read on this device, not sent and not kept. Check the rows: a red field must be fixed, an amber one checked. Shirt numbers, the captain (C, K or a circled number) and liberos (L) written on the list are taken for this game; numbers left blank come from the saved team. Nothing changes until you tap “Use”. A PDF of the list is read more reliably than a photo.",
+      "tip_importPhoto": "Tap here to read the Einsatzliste from a photo.",
       "q_liberos": "How do I designate liberos?",
       "a_liberos": "In the roster, choose “Libero 1” or “Libero 2” in the libero column. A team has at most 2 liberos. With more than 12 players it needs 2.",
       "tip_liberos": "Choose “Libero 1” or “Libero 2” here to make this player a libero.",
@@ -7283,5 +7286,86 @@
     "scorerOffline": "Scorer offline",
     "fullscreen": "Full screen",
     "exitFullscreen": "Leave full screen"
+  },
+  "rosterPhoto": {
+    "button": "Photo of the list",
+    "title": "Einsatzliste from a photo · {{team}}",
+    "loading": "Opening the photo…",
+    "source": {
+      "description": "Take a photo of the printed list, or choose a picture of it on this device.",
+      "tipFlat": "Lay the list flat and hold the device straight above it.",
+      "tipLight": "Good light, no shadow across the names.",
+      "tipWhole": "The whole page in the picture, sharp.",
+      "take": "Take a photo",
+      "choose": "Choose a picture",
+      "private": "Read on this device: the photo is not sent or kept."
+    },
+    "crop": {
+      "description": "Drag the four corners onto the corners of the page. The thick edge is the top: Turn moves it.",
+      "top": "Top",
+      "turn": "Turn",
+      "another": "Another photo",
+      "read": "Read the list",
+      "cornerTopLeft": "Top left corner",
+      "cornerTopRight": "Top right corner",
+      "cornerBottomRight": "Bottom right corner",
+      "cornerBottomLeft": "Bottom left corner"
+    },
+    "reading": {
+      "prepare": "Preparing the text recognition…",
+      "read": "Reading the list… {{percent}} %"
+    },
+    "confirm": {
+      "description": "Check every row and correct what was misread. Nothing changes until you tap Use.",
+      "method": "Read on this device (text recognition)",
+      "fromSaved_one": "{{count}} name from the saved team",
+      "fromSaved_other": "{{count}} names from the saved team",
+      "toFix_one": "{{count}} field to fix (red)",
+      "toFix_other": "{{count}} fields to fix (red)",
+      "toCheck_one": "{{count}} field to check (amber)",
+      "toCheck_other": "{{count}} fields to check (amber)",
+      "players_one": "{{count}} player",
+      "players_other": "{{count}} players",
+      "officials": "Coach and assistants",
+      "empty": "No player rows left.",
+      "add": "Add a row",
+      "remove": "Remove",
+      "apply_one": "Use {{count}} player",
+      "apply_other": "Use {{count}} players"
+    },
+    "col": {
+      "number": "No.",
+      "lastName": "Last name",
+      "firstName": "First name",
+      "licence": "Licence",
+      "captain": "C",
+      "captainLong": "Captain",
+      "libero": "L",
+      "liberoLong": "Libero"
+    },
+    "role": {
+      "coach": "Coach",
+      "ac1": "Assistant 1",
+      "ac2": "Assistant 2"
+    },
+    "issue": {
+      "number": "A shirt number is 1 to 99.",
+      "duplicateNumber": "This number is on the list twice.",
+      "licence": "Check the licence number: digits only, as on the list.",
+      "missingLicence": "No licence number was read.",
+      "missingName": "A last name is needed.",
+      "odd": "Looks misread: check it.",
+      "unsure": "Hard to read in the photo: check it.",
+      "twoCaptains": "Only one captain.",
+      "tooManyLiberos": "At most two liberos.",
+      "captainLibero": "A libero cannot be the captain."
+    },
+    "error": {
+      "photo-unreadable": "The photo could not be opened. Try another one.",
+      "ocr-load": "The text recognition could not start. On the web it needs a connection the first time (about 12 MB). Try again, import the PDF or type the players.",
+      "ocr-timeout": "Reading took too long on this device. Try a sharp photo with only the list in it, import the PDF or type the players.",
+      "ocr-empty": "No player row was found. Check that the whole list is in the photo and sharp, then try again.",
+      "retry": "Try again"
+    }
   }
 }

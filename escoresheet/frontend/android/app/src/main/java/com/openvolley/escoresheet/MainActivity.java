@@ -1,6 +1,7 @@
 package com.openvolley.escoresheet;
 
 import android.os.Bundle;
+import android.os.Environment;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
@@ -13,6 +14,8 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.BridgeActivity;
+
+import java.io.File;
 
 public class MainActivity extends BridgeActivity {
 
@@ -52,6 +55,31 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         keepWebViewInsideSystemBars();
         handleBackButton();
+        deleteOldCameraPhotos();
+    }
+
+    /**
+     * The photos "Take a photo" left behind (the photo import of an
+     * Einsatzliste, docs/roster-photo-spec.md): the camera app writes each
+     * into the app's own Pictures folder (Capacitor's BridgeWebChromeClient,
+     * JPEG_<time>_*.jpg) and nothing deletes it; the page reads it once and
+     * keeps no copy. Gone at the next start; one younger than ten minutes
+     * stays (the camera can restart this activity while it takes one).
+     */
+    private void deleteOldCameraPhotos() {
+        try {
+            File dir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+            File[] photos = dir == null ? null : dir.listFiles((d, name) -> name.startsWith("JPEG_") && name.endsWith(".jpg"));
+            if (photos == null) return;
+            long before = System.currentTimeMillis() - 10 * 60 * 1000L;
+            for (File photo : photos) {
+                if (photo.isFile() && photo.lastModified() < before && !photo.delete()) {
+                    android.util.Log.w("OpenVolley", "A camera photo could not be deleted");
+                }
+            }
+        } catch (RuntimeException e) {
+            android.util.Log.w("OpenVolley", "Camera photos not cleaned up: " + e.getMessage());
+        }
     }
 
     /**

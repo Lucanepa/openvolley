@@ -1,0 +1,400 @@
+/**
+ * A roster from the words the text recognition read in a photo of a list
+ * (Tesseract's lines and words with their boxes; utils/rosterPhoto/ocr.js),
+ * by the PDF importer's own reader: the words become the positioned items
+ * pdf.js gives (parseRosterContent's `items`: str, x, y, width, page), so the
+ * same columns, rows, SV numbers, LFP marks and officials are found.
+ *
+ * What a photo has and a PDF has not:
+ *   - reading slips: an O for a 0 in an SV number, a table rule read as "|";
+ *   - what the team wrote in (owner 2026-11-23): a shirt number before the
+ *     SV number or after the date, a C (or K, Kapitän) for the captain and an
+ *     L for a libero; taken out of the row before the reader sees it, and
+ *     given back to the player with that SV number;
+ *   - a confidence per word (0..100): each field gets the lowest of its words
+ *     (0..1). Handwritten marks never count as sure (HANDWRITTEN_MAX).
+ *
+ * Plain functions, no Tesseract: tests run on recorded word lists. Whether
+ * a number is circled is asked of the page's pixels (opts.circled).
+ */
+
+import { parseRosterContent, officialRoleOf } from '../parseRosterPdf'
+
+// the reader's items are PDF units: a line of text is about 10 high there
+// (Y_TOLERANCE 3, LFP_TOLERANCE 15 in parseRosterPdf.js)
+const LINE_HEIGHT = 10
+// words whose left edges are this close (in those units) start one column
+const COLUMN_SNAP = 4
+// a mark the team wrote by hand is never sure: the scorer checks it
+export const HANDWRITTEN_MAX = 0.7
+
+const LICENCE = /^\d{5,6}$/
+// an SV number with a digit lost or added in the reading
+const LOOSE_LICENCE = /^\d{4,7}$/
+const STAND_IN_DATE = '01.01.2000'
+// a date the reader takes as a date of birth (parseRosterPdf birthDate: born 1900 up to 4 years ago)
+const birthDateLike = (t) => {
+  const m = /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/.exec(t)
+  return !!m && +m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1900 && +m[3] <= new Date().getFullYear() - 4
+}
+const GENDER_WORD = /^[MFH]$/
+// the LFP column's header (parseRosterPdf LFP_HEADER_RE) and its mark
+const LFP_HEADER = /^(GFL|LAS|JFL|LFP)$/i
+const LFP_MARK = /^[Xx×]$/
+// the name columns' headers (parseRosterPdf FIRST_NAME_HEADER, LAST_NAME_HEADER)
+const NAME_HEADER = /^(vorname|nachname|prénom|prenom|nome|cognome)$/i
+const SHIRT = /^\d{1,2}$/
+// a circled number as the recognition may write it: "(7)", "(7", "7)", "©7", "@7"
+const CIRCLED_TEXT = /^(?:[(©®@](\d{1,2})\)?|(\d{1,2})\))$/
+// a handwritten digit read as a letter ("IJ" for an italic 11), trusted only
+// before the SV number, where nothing but a number or a mark stands
+const HAND_DIGIT = { I: '1', l: '1', i: '1', J: '1', j: '1', '|': '1', '/': '1', O: '0', o: '0', D: '0', S: '5', s: '5', Z: '2', z: '2', B: '8', G: '6', b: '6', g: '9', q: '9', T: '7', A: '4' }
+const handNumber = (text) => (text.length <= 2 && [...text].every((c) => /\d/.test(c) || c in HAND_DIGIT)
+  ? [...text].map((c) => HAND_DIGIT[c] ?? c).join('')
+  : null)
+const DATE = /^\d{1,2}[./]\d{1,2}[./]\d{4}$/
+// before the SV number or after the date a mark may be read small or twice
+// ("c", "Cc" for one handwritten C)
+const MARK = /^[([]?([CKL])\1?[)\].]?$/i
+const BARE_MARK = /^[CKL]$/
+// a date with a dot lost ("11.122000", "14032004")
+const LOOSE_DATE = /^(\d{2})[./]?(\d{2})[./]?(\d{4})$/
+// a table rule or a speck read as a character of its own
+const RULE = /^[|¦!I[\]{}_~•·,;'"`‘’“”„✓✔√/\\]+$/
+// characters read for digits, in a word that is mostly digits
+const DIGIT_LOOKALIKE = { O: '0', o: '0', D: '0', Q: '0', I: '1', l: '1', '|': '1', i: '1', S: '5', s: '5', B: '8', Z: '2', z: '2', G: '6' }
+
+/**
+ * The lines of Tesseract's answer ({ blocks } or { lines }), top to bottom,
+ * each { words, top, bottom }. Lines that lie mostly beside each other (one
+ * table row Tesseract read as two: a number written a little higher, a wide
+ * gap between the columns) are one.
+ */
+export function ocrLines (data) {
+  const found = []
+  const take = (line) => {
+    const words = (line?.words || [])
+      .filter((w) => w && typeof w.text === 'string' && w.bbox)
+      .map((w) => ({ text: w.text, conf: Number.isFinite(w.confidence) ? w.confidence : 0, ...w.bbox }))
+    if (words.length) found.push({ words, top: Math.min(...words.map((w) => w.y0)), bottom: Math.max(...words.map((w) => w.y1)) })
+  }
+  if (Array.isArray(data?.blocks) && data.blocks.length) {
+    for (const b of data.blocks) for (const p of b?.paragraphs || []) for (const l of p?.lines || []) take(l)
+  } else if (Array.isArray(data?.lines)) {
+    for (const l of data.lines) take(l)
+  }
+  found.sort((a, b) => (a.top + a.bottom) - (b.top + b.bottom))
+  const lines = []
+  for (const l of found) {
+    const prev = lines[lines.length - 1]
+    const overlap = prev ? Math.min(prev.bottom, l.bottom) - Math.max(prev.top, l.top) : 0
+    if (prev && overlap > 0.5 * Math.min(prev.bottom - prev.top, l.bottom - l.top)) {
+      prev.words.push(...l.words)
+      prev.top = Math.min(prev.top, l.top)
+      prev.bottom = Math.max(prev.bottom, l.bottom)
+    } else lines.push({ ...l, words: [...l.words] })
+  }
+  return lines
+}
+
+/** A word as the list meant it: specks and rules gone, digits read for look-alikes in a number. */
+export function cleanWord (text) {
+  // (a tick column's ✓ is read as a quote and glued to the next mark: "“L")
+  let s = String(text ?? '').trim().replace(/^[|¦[\]{},;:"'`‘’“”„✓✔√]+|[|¦[\]{},;"'`‘’“”„✓✔√]+$/g, '')
+  if (!s || RULE.test(s)) return ''
+  // a bracket left of a rule ("(LFP"); kept round a number, where it may be a circle ("(7")
+  if (!/^\(?\d{1,2}\)?$/.test(s)) {
+    if (s.startsWith('(') && !s.includes(')')) s = s.slice(1)
+    if (s.endsWith(')') && !s.includes('(')) s = s.slice(0, -1)
+    if (!s) return ''
+  }
+  // a date or a number with a letter read for a digit ("1O.03.2OO4", "12B45")
+  const bare = s.replace(/[./]/g, '')
+  const realDigits = (bare.match(/\d/g) || []).length
+  if (bare.length >= 4 && realDigits >= bare.length / 2 && [...bare].every((c) => /\d/.test(c) || c in DIGIT_LOOKALIKE)) {
+    s = [...s].map((c) => (c in DIGIT_LOOKALIKE ? DIGIT_LOOKALIKE[c] : c)).join('')
+  }
+  // the gender column's letter read twice ("FF")
+  s = s.replace(/^([MFH])\1+$/, '$1')
+  s = s.replace(/[.,]$/, (m) => (DATE.test(s.slice(0, -1)) ? '' : m))
+  const loose = !DATE.test(s) && LOOSE_DATE.exec(s)
+  return loose ? `${loose[1]}.${loose[2]}.${loose[3]}` : s
+}
+
+/**
+ * The marks a team wrote in a player row, taken out of it: a shirt number
+ * before the SV number (the one nearest it) or after the date (a number
+ * anywhere else is part of the list), circled for the captain; C or K for
+ * the captain, L for a libero (owner 2026-11-23).
+ * circled(word): whether a ring of ink lies around the word (scan.js ringScore).
+ * @returns {{ words, number, numberConf, captain, libero, markConf }}
+ */
+function takeMarks (words, circled = () => false, tableRight = Infinity) {
+  const at = words.findIndex((w) => LICENCE.test(w.text))
+  if (at < 0) return { words, number: null, numberConf: 1, captain: false, libero: false, markConf: 1 }
+  const out = []
+  let number = null
+  let leadingNumber = false
+  let numberWord = null
+  let numberConf = 1
+  let captain = false
+  let libero = false
+  let markConf = 1
+  const dateAt = words.findIndex((w, i) => i > at && DATE.test(w.text))
+  words.forEach((w, i) => {
+    const mark = MARK.exec(w.text)
+    const leading = i < at
+    const trailing = dateAt >= 0 && i > dateAt
+    // before the SV number or after the date; between the names only a bare
+    // letter ("L." there is a middle name's initial). The gender column is M / F / H.
+    if (mark && (leading || trailing || (i > at + 1 && BARE_MARK.test(w.text)))) {
+      if (mark[1].toUpperCase() === 'L') libero = true
+      else captain = true
+      markConf = Math.min(markConf, w.conf / 100)
+      return
+    }
+    const ringed = CIRCLED_TEXT.exec(w.text)
+    const shirt = ringed ? ringed[1] || ringed[2] : (SHIRT.test(w.text) ? w.text : (leading ? handNumber(w.text) : null))
+    // after the date only right of the printed table (its tick and mark
+    // columns read as digits: a ✓ comes out as "4")
+    const outside = w.x0 > tableRight
+    if (shirt && Number(shirt) >= 1 && (leading || (trailing && outside && number === null))) {
+      // "1" "1" side by side is one 11 (the recognition split it)
+      const joined = leading && numberWord && w.x0 - numberWord.x1 < 0.5 * (w.y1 - w.y0) && String(number).length === 1 && shirt.length === 1
+      // before the SV number the nearest one wins (a mark between them aside)
+      number = joined ? Number(`${number}${shirt}`) : Number(shirt)
+      numberConf = joined ? Math.min(numberConf, w.conf / 100) : w.conf / 100
+      numberWord = w
+      if (leading) leadingNumber = true
+      if (ringed || circled(w)) {
+        captain = true
+        markConf = Math.min(markConf, w.conf / 100)
+      }
+      return
+    }
+    // whatever else stands before the SV number is no part of the row
+    if (leading) return
+    out.push(w)
+  })
+  return { words: out, number, numberConf, captain, libero, markConf, leadingNumber }
+}
+
+// "Trainer: #12345 | Anna Muster (1980)" as read: the "#" or the "|" lost or
+// read as something else; written back the way parseLabelledOfficials reads it
+const OFFICIAL_LINE = /^(.{1,80}?):\s*[#H*]?\s*(\d{3,7})\s*[|Il1!/]?\s*([^\d()]+?)\s*\(?\s*(\d{4})\s*\)?\s*$/u
+
+function officialLine (text) {
+  const m = OFFICIAL_LINE.exec(text)
+  if (!m || !officialRoleOf(m[1].split(/\s+/).slice(-4).join(' '))) return null
+  // "1." / "2." in front is that assistant, whatever became of the role's
+  // words ("2. Allenatore ===}+<nte"): VolleyManager numbers only the assistants
+  const nth = /^\s*([12])\s*[.)]/.exec(m[1])
+  const label = nth ? `${nth[1]}. Assistant Coach` : m[1].trim()
+  // a name misread with signs in it ("E==mp=!") keeps its letters, capitalised,
+  // so the official is not lost: the confirm screen shows it to check
+  const names = m[3].split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}'’-]/gu, ''))
+    .filter((w) => /\p{L}/u.test(w))
+    .map((w) => w.charAt(0).toLocaleUpperCase() + w.slice(1))
+  if (names.length < 2) return null
+  return `${label}: #${m[2]} | ${names.join(' ')} (${m[4]})`
+}
+
+const median = (values) => {
+  const s = values.filter(Number.isFinite).sort((a, b) => a - b)
+  return s.length ? s[Math.floor(s.length / 2)] : 0
+}
+
+/** Each left edge moved to the first of its column (edges COLUMN_SNAP apart or closer are one). */
+function snapColumns (items) {
+  const xs = [...new Set(items.map((it) => it.x))].sort((a, b) => a - b)
+  const start = new Map()
+  let first = null
+  let prev = null
+  for (const x of xs) {
+    if (prev === null || x - prev > COLUMN_SNAP) first = x
+    start.set(x, first)
+    prev = x
+  }
+  for (const it of items) it.x = start.get(it.x)
+}
+
+/**
+ * The roster in Tesseract's answer: parseRosterContent's result
+ * ({ players, coach, ac1, ac2 }) with, per player, the number, captain and
+ * libero the team wrote in and a confidence per field; null fields where the
+ * photo had nothing.
+ */
+export function rosterFromOcr (data, { circled, ringAt } = {}) {
+  const lines = ocrLines(data)
+  const height = median(lines.flatMap((l) => l.words.map((w) => w.y1 - w.y0))) || 1
+  const scale = LINE_HEIGHT / height
+  const items = []
+  const textLines = []
+  const rows = new Map() // licence -> what the row had beside the reader's fields
+  // The table's header (the line with the LFP column): an X belongs to the
+  // column whose header starts nearest left of it (a PDF's tolerance is for
+  // a narrow column; in a photo the X sits in the middle of a wide one)
+  let headers = null
+  let tableRight = Infinity // the right end of the table's header row
+  // stand-in SV numbers for misread ones: six digits no row of the page has
+  const read = new Set(lines.flatMap((l) => l.words.map((w) => cleanWord(w.text))).filter((t) => LICENCE.test(t)))
+  let standIns = 0
+  const standIn = () => {
+    let n
+    do n = String(990000 + (++standIns)); while (read.has(n))
+    return n
+  }
+  let lastRow = null // the player row just above: { licence, words, bottom }
+  lines.forEach((line, index) => {
+    const words = line.words
+      .map((w) => ({ ...w, text: cleanWord(w.text) }))
+      .filter((w) => w.text)
+      .sort((a, b) => a.x0 - b.x0)
+    // a name that went on in the line below its row ("Sánchez-Robles" /
+    // "Herrero"): a short line of letters only, right under a player row
+    if (lastRow && words.length && words.length <= 3 && words.every((w) => /^\p{L}[\p{L}'’.-]*$/u.test(w.text)) &&
+        line.top - lastRow.bottom < 0.8 * height) {
+      const under = lastRow.words.reduce((best, w) => (Math.abs(w.x0 - words[0].x0) < Math.abs(best.x0 - words[0].x0) ? w : best))
+      rows.get(lastRow.licence).more.push({ under: under.text, text: words.map((w) => w.text).join(' ') })
+      lastRow = { ...lastRow, bottom: line.bottom }
+      return
+    }
+    lastRow = null
+    // the table's header row: its columns (LFP among them) and where it ends
+    if (words.some((w) => LFP_HEADER.test(w.text) || NAME_HEADER.test(w.text))) {
+      headers = words.map((w) => ({ x: w.x0, lfp: LFP_HEADER.test(w.text) }))
+      tableRight = Math.max(...words.map((w) => w.x1))
+    }
+    // An SV number read with a digit too few or too many ("9122"): the row
+    // is kept all the same, under a stand-in the reader accepts, and gets
+    // the digits as read back (red on the confirm screen), never dropped
+    let rawLicence = null
+    if (!words.some((w) => LICENCE.test(w.text))) {
+      const i = words.findIndex((w, k) => k <= 3 && LOOSE_LICENCE.test(w.text) && /^\p{L}{2,}/u.test(words[k + 1]?.text || ''))
+      if (i >= 0) {
+        rawLicence = words[i].text
+        words[i] = { ...words[i], text: standIn() }
+      }
+    }
+    const marks = takeMarks(words, circled, tableRight)
+    const kept = marks.words
+    if (!kept.length) return
+    const licenceWord = kept.find((w) => LICENCE.test(w.text))
+    if (licenceWord) {
+      // A date of birth misread ("16101083") or missing: the reader finds a
+      // player row by its date, never keeps it (db/048). A stand-in date
+      // keeps the row; the date is dropped again below.
+      let dateGuessed = false
+      const at = kept.indexOf(licenceWord)
+      if (!kept.slice(at + 1).some((w) => birthDateLike(w.text))) {
+        // the names: the words of letters right after the SV number, up to the gender or a number
+        let lastName = at
+        while (lastName + 1 < kept.length && /^\p{L}{2,}/u.test(kept[lastName + 1].text) && !GENDER_WORD.test(kept[lastName + 1].text)) lastName++
+        if (lastName > at) {
+          // (the misread date itself, else a new word after the name and gender)
+          const after = kept.findIndex((w, k) => k > lastName && (w.text.match(/\d/g) || []).length >= 4)
+          if (after >= 0) kept[after] = { ...kept[after], text: STAND_IN_DATE }
+          else {
+            const gender = GENDER_WORD.test(kept[lastName + 1]?.text || '') ? lastName + 1 : lastName
+            const w = kept[gender]
+            kept.splice(gender + 1, 0, { ...w, text: STAND_IN_DATE, x0: w.x1 + 6, x1: w.x1 + 60, conf: 0 })
+          }
+          dateGuessed = true
+        }
+      }
+      lastRow = { licence: licenceWord.text, words: kept, bottom: line.bottom }
+      // no number read in front of the SV number: a circle there (the
+      // recognition skips many circled numbers) still makes the captain
+      let ring = null
+      if (!marks.leadingNumber && ringAt) {
+        // (a circle is drawn bigger than the row: two lines above and below)
+        ring = ringAt({ x0: licenceWord.x0 - 7 * height, y0: line.top - 2 * height, x1: licenceWord.x0 - 2, y1: line.bottom + 2 * height }, height)
+        if (ring) {
+          marks.captain = true
+          marks.markConf = Math.min(marks.markConf, HANDWRITTEN_MAX)
+          // the number inside the circle is read again (ocr.js), not one from after the date
+          marks.number = null
+        }
+      }
+      const nameWords = kept.filter((w) => /\p{L}{2,}/u.test(w.text))
+      const lfpWord = headers && kept.find((w) => w.x0 > licenceWord.x1 && LFP_MARK.test(w.text))
+      const column = lfpWord && headers.filter((h) => h.x <= (lfpWord.x0 + lfpWord.x1) / 2).pop()
+      rows.set(licenceWord.text, {
+        lfp: !!column?.lfp,
+        licenceConf: licenceWord.conf / 100,
+        nameConf: nameWords.length ? Math.min(...nameWords.map((w) => w.conf)) / 100 : 0,
+        number: marks.number,
+        numberConf: Math.min(marks.numberConf, HANDWRITTEN_MAX),
+        captain: marks.captain,
+        libero: marks.libero,
+        markConf: Math.min(marks.markConf, HANDWRITTEN_MAX),
+        ring: ring?.inner || null,
+        rawLicence,
+        dateGuessed,
+        more: []
+      })
+    }
+    const joined = kept.map((w) => w.text).join(' ')
+    textLines.push({ text: officialLine(joined) || joined, words: kept })
+    // one y per line (its order): the reader's rows are Tesseract's lines,
+    // however a photo's rows slope
+    const y = -index * LINE_HEIGHT * 2
+    for (const w of kept) items.push({ str: w.text, x: Math.round(w.x0 * scale), y, width: (w.x1 - w.x0) * scale, page: 1 })
+  })
+  snapColumns(items)
+
+  const result = parseRosterContent(textLines.map((l) => l.text).join('\n'), items)
+  result.players = result.players.map((p) => {
+    const row = p.licence ? rows.get(p.licence) : null
+    if (!row) return { ...p, confidence: { licence: 0.5, firstName: 0.5, lastName: 0.5 } }
+    // the rest of a name from the line below goes to the name it stood under
+    const names = { firstName: p.firstName, lastName: p.lastName }
+    for (const m of row.more) {
+      const key = String(p.firstName).split(/\s+/).includes(m.under) ? 'firstName' : 'lastName'
+      names[key] = `${names[key]} ${m.text}`.trim()
+    }
+    return {
+      ...p,
+      ...names,
+      ...(row.rawLicence !== null ? { licence: row.rawLicence } : {}),
+      ...(row.dateGuessed ? { dob: '' } : {}),
+      number: row.number ?? p.number ?? null,
+      isLfp: p.isLfp || row.lfp,
+      isCaptain: row.captain,
+      isLibero: row.libero,
+      // the box inside a circle whose number was not read (ocr.js reads it again)
+      ...(row.ring && row.number === null ? { ringAt: row.ring } : {}),
+      confidence: {
+        licence: row.rawLicence !== null ? Math.min(row.licenceConf, 0.3) : row.licenceConf,
+        firstName: row.nameConf,
+        lastName: row.nameConf,
+        ...(row.number !== null ? { number: row.numberConf } : {}),
+        ...(row.captain ? { isCaptain: row.markConf } : {}),
+        ...(row.libero ? { isLibero: row.markConf } : {})
+      }
+    }
+  })
+  for (const k of ['coach', 'ac1', 'ac2']) {
+    const o = result[k]
+    if (!o) continue
+    // each field by its own words (the role's label is no part of them)
+    const line = textLines.find((l) => o.licence && l.text.includes(`#${o.licence}`))
+    const confOf = (pred) => {
+      const ws = line ? line.words.filter(pred) : []
+      return ws.length ? Math.min(...ws.map((w) => w.conf)) / 100 : 0.5
+    }
+    const nameWords = (name) => new Set(String(name || '').split(/\s+/).filter(Boolean))
+    const first = nameWords(o.firstName)
+    const last = nameWords(o.lastName)
+    result[k] = {
+      ...o,
+      confidence: {
+        licence: confOf((w) => w.text.includes(o.licence)),
+        firstName: confOf((w) => first.has(w.text)),
+        lastName: confOf((w) => last.has(w.text))
+      }
+    }
+  }
+  return result
+}
