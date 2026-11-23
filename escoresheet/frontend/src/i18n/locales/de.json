@@ -1227,6 +1227,8 @@
       "sameSanctionTwice": "{{who}} hat diese Sanktion bereits ({{sanction}}). Ein Teammitglied kann dieselbe Sanktion nicht zweimal erhalten.",
       "lighterSanction": "{{who}} hat bereits eine schwerere Sanktion ({{sanction}}). Jede weitere Sanktion eines Teammitglieds muss schwerer sein.",
       "teamAlreadyWarned": "Keine Warnung möglich: Das Team hat bereits eine Warnung erhalten.",
+      "decisionAfterSanction": "Nach dem letzten Ballwechsel wurde eine Sanktion oder ein Strafpunkt eingetragen. Die Entscheidungsänderung betrifft diesen Ballwechsel: Mach zuerst die Sanktion rückgängig (eine Strafe geht mit ihrem Punkt).",
+      "undoSanctionFirst": "Zuerst die Sanktion rückgängig machen",
       "penaltyRecordedPointLater": "Strafe erfasst. Punkt wird nach Aufstellung beider Teams vergeben.",
       "liberoUnableDetail": "Dieser Libero ist spielunfähig (verletzt, ausgeschlossen, disqualifiziert oder für spielunfähig erklärt)",
       "playerNotAtPositionEntry": "Spieler #{{number}} ist nicht auf Position {{position}}. Der Libero kann nicht eintreten.",

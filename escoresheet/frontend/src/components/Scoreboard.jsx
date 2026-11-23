@@ -85,7 +85,7 @@ import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice
 import HoldToConfirmButton from './scoreboard/HoldToConfirmButton.jsx'
 import { POINT_HOLD_MS, cancelActiveHold } from '../hooks/useHoldToConfirm'
 import { readRallyMode } from '../utils/rallyMode'
-import { decisionChangeOutcomes, replayToDecide, replayDecisionOutcomes, REPLAY_POINT_OPTIONS, teamOfReplayOption, replacedReplayRecord, rallyStartGoesWithPoint } from '../domain/decisionChange'
+import { decisionChangeOutcomes, replayToDecide, replayDecisionOutcomes, REPLAY_POINT_OPTIONS, teamOfReplayOption, replacedReplayRecord, rallyStartGoesWithPoint, decisionPointOf, decisionChangeBlock, isPenaltyPoint } from '../domain/decisionChange'
 import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
@@ -3586,54 +3586,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     !!data?.set && isReplayPending(data?.events, data.set.index)
   ), [data?.events, data?.set])
 
-  // Check if the last event was a point (can replay rally). A remark or a
-  // bench injury recorded since does not count (domain/rally isBookkeepingEvent)
-  const canReplayRally = useMemo(() => {
-    if (!data?.events || !data?.set || data.events.length === 0) {
-      return false
-    }
-
-    // Get events for current set only and sort by sequence number (most recent first)
-    const currentSetEvents = data.events
-      .filter(e => e.setIndex === data.set.index && !isBookkeepingEvent(e))
-      .sort((a, b) => {
-        const aSeq = a.seq || 0
-        const bSeq = b.seq || 0
-        if (aSeq !== 0 || bSeq !== 0) {
-          return bSeq - aSeq
-        }
-        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-        return bTime - aTime
-      })
-
-    if (currentSetEvents.length === 0) {
-      return false
-    }
-
-    const lastEvent = currentSetEvents[0]
-
-    // Can replay rally if the last event was a point
-    // OR if the last event is a rotation lineup that followed a point (same base seq)
-    if (lastEvent.type === 'point') {
-      return true
-    }
-
-    // Check if last event is a sub-event following a point (decimal seq like 5.1 or 5.2)
-    // This covers rotation lineups, libero_exit, etc. that happen automatically after a point
-    const lastSeq = lastEvent.seq || 0
-    const isSubEvent = lastSeq !== Math.floor(lastSeq)
-    if (isSubEvent) {
-      // This is a sub-event - check if parent event was a point
-      const baseSeq = Math.floor(lastSeq)
-      const parentEvent = currentSetEvents.find(e => Math.floor(e.seq || 0) === baseSeq && e.type === 'point')
-      if (parentEvent) {
-        return true
-      }
-    }
-
-    return false
-  }, [data?.events, data?.set])
+  // The point "Decision change" changes: the set's last event is a rally
+  // point or a row it wrote (N.x). A remark or a bench injury recorded since
+  // does not count (domain/rally isBookkeepingEvent); a penalty's point is no
+  // rally (domain/decisionChange decisionPointOf, audit LOG-06)
+  const decisionPoint = useMemo(() => (
+    data?.set ? decisionPointOf(data.events, data.set.index) : null
+  ), [data?.events, data?.set])
+  const canReplayRally = !!decisionPoint
 
   // A decision change on the last point after time-outs or substitutions
   // that followed it (row 19): they are taken back with it, as one action
@@ -3651,6 +3611,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     data?.set ? replayToDecide(data.events, data.set.index) : null
   ), [data?.events, data?.set])
   const canChangeDecision = canReplayRally || !!decisionTakeBack || !!replayDecision
+  // A sanction or a penalty's point recorded after the set's last rally: the
+  // decision change on that rally waits until it is taken back with Undo
+  // (domain/decisionChange decisionChangeBlock). Shown, not offered
+  const decisionBlock = useMemo(() => (
+    !canChangeDecision && data?.set ? decisionChangeBlock(data.events, data.set.index) : null
+  ), [canChangeDecision, data?.events, data?.set])
 
   // "Start set" vs "Start rally": the set's first rally is not started yet
   // (no set_start, no rally_start: domain/rally isFirstRallyOf). A penalty
@@ -6866,46 +6832,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       setReplayConfirm(true)
       return
     }
-    // After point: show confirmation modal to undo point
-    if (rallyStatus === 'idle' && canReplayRally && data?.events) {
-      // Find the last event by sequence number (highest seq), past a remark
-      // or a bench injury recorded since (as canReplayRally)
-      const allEvents = data.events.filter(e => !isBookkeepingEvent(e)).sort((a, b) => {
-        const aSeq = a.seq || 0
-        const bSeq = b.seq || 0
-        if (aSeq !== 0 || bSeq !== 0) {
-          return bSeq - aSeq // Descending
-        }
-        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-        return bTime - aTime
-      })
-
-      const lastEvent = allEvents[0]
-      let pointEvent = null
-
-      if (lastEvent && lastEvent.type === 'point') {
-        // Last event is the point itself
-        pointEvent = lastEvent
-      } else if (lastEvent) {
-        // Last event might be a sub-event (decimal seq) following a point
-        const lastSeq = lastEvent.seq || 0
-        const isSubEvent = lastSeq !== Math.floor(lastSeq)
-        if (isSubEvent) {
-          // Find the parent point event
-          const baseSeq = Math.floor(lastSeq)
-          pointEvent = allEvents.find(e => Math.floor(e.seq || 0) === baseSeq && e.type === 'point')
-        }
-      }
-
-      if (pointEvent) {
-        // Simple description for decision change confirmation
-        const teamName = pointEvent.payload?.team === 'home'
-          ? (data?.homeTeam?.name || t('common.home'))
-          : (data?.awayTeam?.name || t('common.away'))
-        const description = `Point for ${teamName}`
-        setReplayRallyConfirm(decisionDialog({ event: pointEvent, description, selectedOption: 'swap' })) // Default to swap (continuous play: none)
-      }
+    // After point: show confirmation modal to undo point. The set's last
+    // rally point, past a remark or a bench injury recorded since and never
+    // a penalty's point (decisionPoint, domain/decisionChange decisionPointOf)
+    if (rallyStatus === 'idle' && canReplayRally && decisionPoint) {
+      const pointEvent = decisionPoint
+      // Simple description for decision change confirmation
+      const teamName = pointEvent.payload?.team === 'home'
+        ? (data?.homeTeam?.name || t('common.home'))
+        : (data?.awayTeam?.name || t('common.away'))
+      const description = `Point for ${teamName}`
+      setReplayRallyConfirm(decisionDialog({ event: pointEvent, description, selectedOption: 'swap' })) // Default to swap (continuous play: none)
       return
     }
     // After the point, time-outs or substitutions were recorded (row 19):
@@ -6938,10 +6875,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
     // Continuous play, between rallies with no last point to change (none
-    // yet since Start set): the rally just played was replayed. Asked as the
-    // in-play Replay is (confirmReplay)
-    if (continuousPlay && rallyStatus === 'idle' && !isFirstRally) setReplayConfirm(true)
-  }, [rallyStatus, canReplayRally, decisionTakeBack, replayDecision, mapSideToTeamKey, data?.events, data?.homeTeam?.name, data?.awayTeam?.name, decisionDialog, continuousPlay, isFirstRally])
+    // yet since Start set, or a sanction since the last rally): the rally
+    // just played was replayed. Asked as the in-play Replay is (confirmReplay)
+    if (continuousPlay && rallyStatus === 'idle' && !isFirstRally) {
+      setReplayConfirm(true)
+      return
+    }
+    // A sanction or a penalty's point since the last rally (a stale screen
+    // still offered the button): it is taken back first, with Undo
+    if (rallyStatus === 'idle' && decisionBlock) showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+  }, [rallyStatus, canReplayRally, decisionPoint, decisionTakeBack, replayDecision, decisionBlock, mapSideToTeamKey, data?.homeTeam?.name, data?.awayTeam?.name, decisionDialog, continuousPlay, isFirstRally, showAlert, t])
 
   // Continuous play: a replayed rally recorded between rallies, on its own
   // (no rally_start: there was no Start rally). Score and serve stay; until
@@ -8809,6 +8752,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
+    // A penalty's point is no rally to change (a dialog opened on it from a
+    // stale screen): nothing is written, the sanction is taken back first
+    // with Undo (audit LOG-06)
+    if (replayRallyConfirm.kind !== 'replay' && isPenaltyPoint(lastEvent)) {
+      deferUi(() => {
+        setReplayRallyConfirm(null)
+        showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+      })
+      return
+    }
+
     // A replay's decision change: the rally given to a team after all
     if (replayRallyConfirm.kind === 'replay') {
       deferUi(() => setReplayRallyConfirm(null))
@@ -9071,7 +9025,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleReplayRally()
       return // handleReplayRally closes the modal and syncs
     }
-  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx, recordContinuousReplay, replaceReplayByPoint])
+  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx, recordContinuousReplay, replaceReplayByPoint, showAlert, t])
 
 
 
@@ -19065,8 +19019,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.buttons.decisionChange')}
                         </button>
                       )}
+                      {/* a sanction or a penalty's point after the last rally:
+                          shown, not offered, and why (decisionBlock) */}
+                      {!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && decisionBlock && (
+                        <button
+                          data-testid="decision-change-blocked"
+                          className="secondary"
+                          disabled
+                          title={t('scoreboard.dialogs.decisionAfterSanction')}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', lineHeight: 1.15 }}
+                        >
+                          <span>{t('scoreboard.buttons.decisionChange')}</span>
+                          <span style={{ fontSize: '0.7em', fontWeight: 500 }}>{t('scoreboard.dialogs.undoSanctionFirst')}</span>
+                        </button>
+                      )}
                       {/* Keep Undo in its half even when the left button is absent */}
-                      {!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden="true" />}
+                      {!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && !decisionBlock && <span aria-hidden="true" />}
                       <button
                         data-help-id="scoreboard-undo"
                         className="danger tap-hint"
@@ -24086,24 +24054,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           awayColor={data?.awayTeam?.color || data?.match?.awayColor || '#3b82f6'}
           onConfirm={confirmSetEndTime}
           onDecisionChange={async () => {
+            // Find the last POINT event (ignoring set_end, sanctions, etc that might be after it)
+            // We need to find the actual point that caused the set end condition
+            const pointEvent = (data?.events && data?.set)
+              ? data.events
+                .filter(e => e.setIndex === data.set.index)
+                .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+                .find(e => e.type === 'point')
+              : null
+
+            // A penalty's point ended the set: the decision change works on
+            // a rally, the sanction is taken back first with Undo. The set
+            // end stays asked
+            if (isPenaltyPoint(pointEvent)) {
+              showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+              return
+            }
+
             // Track that user dismissed via undo to prevent re-showing
             setEndModalDismissedRef.current = setEndTimeModal.setIndex
 
-            // Find the last point event directly and open decision modal
-            if (data?.events && data?.set) {
-              const currentSetEvents = data.events
-                .filter(e => e.setIndex === data.set.index)
-                .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-
-              // Find the last POINT event (ignoring set_end, sanctions, etc that might be after it)
-              // We need to find the actual point that caused the set end condition
-              const pointEvent = currentSetEvents.find(e => e.type === 'point')
-
-              if (pointEvent) {
-                // Open decision modal (no selectedOption forces choice);
-                // cancelled, the set end comes back
-                setReplayRallyConfirm({ event: pointEvent, description: 'Decision Change', selectedOption: null, fromDialog: 'setEnd' })
-              }
+            if (pointEvent) {
+              // Open decision modal (no selectedOption forces choice);
+              // cancelled, the set end comes back
+              setReplayRallyConfirm({ event: pointEvent, description: 'Decision Change', selectedOption: null, fromDialog: 'setEnd' })
             }
 
             // Close the set end modal
@@ -24323,6 +24297,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       .sort((a, b) => (b.seq || 0) - (a.seq || 0))
 
                     const pointEvent = currentSetEvents.find(e => e.type === 'point')
+                    // A penalty's point took the team to 8: the decision
+                    // change works on a rally, the sanction is taken back
+                    // first with Undo (the change of courts stays asked)
+                    if (isPenaltyPoint(pointEvent)) {
+                      showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+                      return
+                    }
                     if (pointEvent) {
                       // Cancelled, or confirmed with a team still at 8,
                       // the change of courts comes back

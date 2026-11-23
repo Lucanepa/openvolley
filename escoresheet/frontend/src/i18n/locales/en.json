@@ -1235,6 +1235,8 @@
       "sameSanctionTwice": "{{who}} already has this sanction ({{sanction}}). A team member cannot receive the same sanction type twice.",
       "lighterSanction": "{{who}} already has a heavier sanction ({{sanction}}). Each further sanction of a team member must be heavier.",
       "teamAlreadyWarned": "Warning cannot be given because the team has already been warned.",
+      "decisionAfterSanction": "A sanction or a penalty point was recorded after the last rally. The decision change works on that rally: undo the sanction first (a penalty goes with its point).",
+      "undoSanctionFirst": "Undo the sanction first",
       "penaltyRecordedPointLater": "Penalty recorded. Point will be awarded after both teams set their line-ups.",
       "liberoUnableDetail": "This libero is unable to play (injured, expelled, disqualified, or declared unable)",
       "playerNotAtPositionEntry": "Player #{{number}} is not at position {{position}}. Cannot proceed with libero entry.",

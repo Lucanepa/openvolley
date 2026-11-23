@@ -503,7 +503,9 @@ export function decisionChangeTakeBack(events, setIndex, match = null) {
   const lastPointSeq = lastCompletedRallySeq(events, setIndex)
   if (lastPointSeq === -Infinity) return null
   const point = inSet.find(e => e.type === 'point' && seqOf(e) === lastPointSeq)
-  if (!point) return null
+  // the decision is about a rally: never a penalty's point (its sanction is
+  // taken back first, with Undo; domain/decisionChange decisionChangeBlock)
+  if (!point || point.payload?.penaltySeq != null) return null
   const after = inSet.filter(e => baseSeqOf(e) > baseSeqOf(point) && !isBookkeepingEvent(e))
   if (after.length === 0) return null
   const heads = after.filter(e => seqOf(e) === baseSeqOf(e))

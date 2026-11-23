@@ -1234,6 +1234,8 @@
       "sameSanctionTwice": "{{who}} ha già questa sanzione ({{sanction}}). Un membro della squadra non può ricevere due volte la stessa sanzione.",
       "lighterSanction": "{{who}} ha già una sanzione più grave ({{sanction}}). Ogni ulteriore sanzione di un membro della squadra deve essere più grave.",
       "teamAlreadyWarned": "Avvertimento impossibile: la squadra è già stata avvertita.",
+      "decisionAfterSanction": "Dopo l'ultimo scambio è stata registrata una sanzione o un punto di penalità. Il cambio decisione riguarda quello scambio: annulla prima la sanzione (una penalità va con il suo punto).",
+      "undoSanctionFirst": "Annulla prima la sanzione",
       "penaltyRecordedPointLater": "Penalità registrata. Il punto sarà assegnato dopo che entrambe le squadre avranno impostato le formazioni.",
       "liberoUnableDetail": "Questo libero è inabile a giocare (infortunato, espulso, squalificato o dichiarato inabile)",
       "playerNotAtPositionEntry": "Il giocatore #{{number}} non è in posizione {{position}}. Il libero non può entrare.",

@@ -1233,6 +1233,8 @@
       "sameSanctionTwice": "{{who}} a déjà cette sanction ({{sanction}}). Un membre de l'équipe ne peut pas recevoir deux fois la même sanction.",
       "lighterSanction": "{{who}} a déjà une sanction plus lourde ({{sanction}}). Chaque nouvelle sanction d'un membre de l'équipe doit être plus lourde.",
       "teamAlreadyWarned": "Avertissement impossible : l'équipe a déjà été avertie.",
+      "decisionAfterSanction": "Une sanction ou un point de pénalité a été inscrit après le dernier échange. Le changement de décision porte sur cet échange : annule d'abord la sanction (une pénalité part avec son point).",
+      "undoSanctionFirst": "Annule d'abord la sanction",
       "penaltyRecordedPointLater": "Pénalité enregistrée. Le point sera attribué après la composition des deux équipes.",
       "liberoUnableDetail": "Ce libéro est inapte à jouer (blessé, expulsé, disqualifié ou déclaré inapte)",
       "playerNotAtPositionEntry": "Le joueur #{{number}} n'est pas en position {{position}}. Le libéro ne peut pas entrer.",
