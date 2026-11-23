@@ -13,10 +13,11 @@ import { LegalSentence } from '../../legal/LegalLinks'
 export const MIN_PASSWORD_LENGTH = 10
 
 /**
- * The sign-up form: first and last name (required), country, email, password
- * + confirmation and an optional licence number (4 to 7 digits). No date of
- * birth (owner 2026-11-19: "the scorers/referees etc can sign up with their
- * name, last name, email and licence number (not mandatory)"). Accounts are
+ * The sign-up form: first and last name, country, email, password +
+ * confirmation and the licence number (4 to 7 digits), all required. No date
+ * of birth (owner 2026-11-19); the licence number is required since
+ * 23.11.2026 ("have registered people insert their licence n in
+ * registration"; the server refuses a sign-up without one). Accounts are
  * made on manager.openvolley.app only; the scorer apps link there
  * (CreateAccountLink).
  *
@@ -50,7 +51,7 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [country, setCountry] = useState('CHE')
-  // The licence number (db/048): optional, digits only
+  // The licence number (db/048): required (owner 23.11.2026), digits only
   const [licence, setLicence] = useState('')
   const [licenceError, setLicenceError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -84,6 +85,10 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
 
     if (!firstName.trim() || !lastName.trim()) {
       setError(t('auth.nameRequired'))
+      return
+    }
+    if (!licenceValue(licence)) {
+      setLicenceError(t('auth.licenceNumberRequired'))
       return
     }
     if (!licenceOk(licence)) {
@@ -122,6 +127,8 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
         setError(t('access.requests.signUpRefused'))
         setChoice(emptyRequestChoice())
         loadClubs()
+      } else if (signUpError.code === 'licence_required') {
+        setLicenceError(t('auth.licenceNumberRequired'))
       } else {
         setError(existingAccountMessage && signUpError.code === 'user_already_exists' ? existingAccountMessage : signUpError.message)
       }
@@ -215,6 +222,8 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
               value={licence}
               onChange={e => { setLicence(licenceInput(e.target.value)); setLicenceError('') }}
               autoComplete="off"
+              required
+              aria-required="true"
               data-testid="signup-licence"
             />
           </Field>

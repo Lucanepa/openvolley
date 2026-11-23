@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.26 · As of 22 November 2026
+**OpenVolley and OpenBeach** · Version 1.27 · As of 23 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -274,8 +274,9 @@ match results as an official. Accounts are opened on
 `manager.openvolley.app` and `manager-beach.openvolley.app`.
 
 **Data:** email address, password (stored only as a hash, never in plain
-text), first and last name, country, licence number (optional: your Swiss
-Volley licence number, 4 to 7 digits), the language chosen at sign-up (for
+text), first and last name, country, licence number (your Swiss Volley
+licence number, 4 to 7 digits; needed for a new account since 23 November
+2026, accounts opened before are asked for it at their next sign-in), the language chosen at sign-up (for
 the account's emails), roles (for
 example scorer, referee, competition manager), the apps the account is for
 (indoor, beach), times of creation, last sign-in and email confirmation. What

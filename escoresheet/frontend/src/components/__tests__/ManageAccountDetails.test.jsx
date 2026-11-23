@@ -83,6 +83,59 @@ describe('AccountsPanel: Name and email', () => {
   })
 })
 
+// owner 23.11.2026: "like here: name, email, licence" (db/048 profiles.license_number)
+describe('AccountsPanel: the licence number', () => {
+  const LICENSED = { ...SCORER, license_number: '1234567' }
+  const NEW = { can_delete: true, can_edit: true, can_edit_licence: true }
+
+  it('on the account page with the email; on the row; "–" when the account has none', async () => {
+    api.admin.listAccounts.mockResolvedValue(list([LICENSED, { ...BOSS, license_number: null }], NEW))
+    const { unmount } = render(<AccountsPanel selfId="u-self" app="indoor" route="u-sc" onRoute={() => {}} />)
+    const facts = await screen.findByTestId('account-facts')
+    expect(within(facts).getByText('manage.accounts.page.licence')).toBeTruthy()
+    expect(within(facts).getByTestId('account-page-licence')).toHaveTextContent('1234567')
+    expect(within(facts).getByTestId('edit-details')).toHaveTextContent('manage.accounts.editDetailsLicence')
+    unmount()
+    render(<AccountsPanel selfId="u-self" app="indoor" route="u-boss" onRoute={() => {}} selfIsSuperAdmin />)
+    expect(await screen.findByTestId('account-page-licence')).toHaveTextContent('–')
+  })
+
+  it('an older backend (no license_number, no can_edit_licence): no licence line, no field, the old label', async () => {
+    api.admin.listAccounts.mockResolvedValue(list([SCORER]))
+    render(<AccountsPanel selfId="u-self" app="indoor" route="u-sc" onRoute={() => {}} />)
+    const facts = await screen.findByTestId('account-facts')
+    expect(within(facts).queryByTestId('account-page-licence')).toBeNull()
+    fireEvent.click(within(facts).getByTestId('edit-details'))
+    expect(within(facts).getByTestId('edit-details')).toHaveTextContent('manage.accounts.editDetails')
+    expect(screen.queryByTestId('account-licence')).toBeNull()
+  })
+
+  it('Name, email and licence: digits only, a bad one is refused, a new one sent alone, empty removes it', async () => {
+    api.admin.listAccounts.mockResolvedValue(list([LICENSED], NEW))
+    api.admin.updateAccount.mockResolvedValue({ data: { id: 'u-sc' }, error: null, status: 200 })
+    render(<AccountsPanel selfId="u-self" app="indoor" />)
+    const row = await screen.findByTestId('account-u-sc')
+    expect(within(row).getByTestId('account-row-licence')).toHaveTextContent('manage.accounts.licenceMeta')
+    fireEvent.click(within(row).getByTestId('edit-details'))
+    const field = screen.getByTestId('account-licence')
+    expect(field).toHaveValue('1234567')
+    fireEvent.change(field, { target: { value: '12' } })
+    fireEvent.click(screen.getByTestId('save-account-details'))
+    expect(await screen.findByText('auth.licenceNumberInvalid')).toBeTruthy()
+    expect(api.admin.updateAccount).not.toHaveBeenCalled()
+    fireEvent.change(field, { target: { value: 'SV 765-4321' } })
+    expect(field).toHaveValue('7654321')
+    fireEvent.click(screen.getByTestId('save-account-details'))
+    await waitFor(() => expect(api.admin.updateAccount).toHaveBeenCalledWith('u-sc', { license_number: '7654321' }))
+
+    api.admin.updateAccount.mockClear()
+    fireEvent.click(within(await screen.findByTestId('account-u-sc')).getByTestId('edit-details'))
+    fireEvent.change(screen.getByTestId('account-licence'), { target: { value: '' } })
+    fireEvent.click(screen.getByTestId('save-account-details'))
+    await waitFor(() => expect(api.admin.updateAccount).toHaveBeenCalledWith('u-sc', { license_number: null }))
+  })
+})
+
 describe('requestedClubs: a sign-up request\'s clubs, shown in amber until approved', () => {
   it('the clubs of the request the account is not a member of, once each', async () => {
     const { requestedClubs } = await import('../manage/AccountsPanel')

@@ -528,6 +528,9 @@ function getDataLayer() {
       mailer,
       onAccountConfirmed: (userId) => notices.notify(userId),
       contactEmail: CONTACT_EMAIL,
+      // Sign-up needs the licence number (owner 23.11.2026); OV_SIGNUP_LICENCE=optional
+      // keeps it optional (the e2e servers, tests/helpers/e2eServer.js)
+      licenceRequired: process.env.OV_SIGNUP_LICENCE !== 'optional',
       // db/025: what a new account asks for at sign-up (nothing is granted then)
       signUpRequests: { parse: arq.parseSignUpRequests, store: (client, userId, rows) => arq.storeSignUpRequests(client, userId, rows) },
       // The account's own delete-account: the admin path's last-super-admin

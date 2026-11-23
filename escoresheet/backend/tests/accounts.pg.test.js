@@ -318,7 +318,7 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(pend.status, 200)
       const fresh = pend.body.data.accounts.find((a) => a.id === id)
       // db/020 / db/023 / db/025: what it manages and its open sign-up request
-      assert.deepEqual(Object.keys(fresh).sort(), ['clubs', 'created_at', 'deactivated', 'email', 'email_confirmed', 'first_name', 'id', 'last_name', 'last_sign_in_at', 'managed_clubs', 'managed_teams', 'pending', 'requests', 'roles'])
+      assert.deepEqual(Object.keys(fresh).sort(), ['clubs', 'created_at', 'deactivated', 'email', 'email_confirmed', 'first_name', 'id', 'last_name', 'last_sign_in_at', 'license_number', 'managed_clubs', 'managed_teams', 'pending', 'requests', 'roles'])
       assert.deepEqual([fresh.managed_clubs, fresh.managed_teams, fresh.requests], [[], [], []])
       assert.equal(fresh.pending, true)
       assert.equal(pend.body.data.accounts.some((a) => a.id === ids.admin), false)
@@ -349,7 +349,7 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const id = await user('rename', [])
       const r = await accounts.updateProfile({ actor: a, userId: id, body: { first_name: '  Anna  Maria ', last_name: 'Muster', email: ' Anna.Muster@Example.CH ' } })
       assert.equal(r.status, 200, JSON.stringify(r.body))
-      assert.deepEqual(r.body.data, { id, first_name: 'Anna Maria', last_name: 'Muster', email: 'anna.muster@example.ch', changed: ['first_name', 'last_name', 'email'] })
+      assert.deepEqual(r.body.data, { id, first_name: 'Anna Maria', last_name: 'Muster', email: 'anna.muster@example.ch', license_number: null, changed: ['first_name', 'last_name', 'email'] })
       const row = (await pool.query('SELECT u.email, p.first_name, p.last_name FROM auth.users u JOIN public.profiles p ON p.user_id = u.id WHERE u.id = $1', [id])).rows[0]
       assert.deepEqual(row, { email: 'anna.muster@example.ch', first_name: 'Anna Maria', last_name: 'Muster' })
       const entry = (await auditOf('account.profile')).find((x) => x.target_user_id === id)

@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.26 · Aggiornata al 22 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.27 · Aggiornata al 23 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -299,8 +299,10 @@ approvare risultati come ufficiale di gara. Gli account si aprono su
 `manager.openvolley.app` e `manager-beach.openvolley.app`.
 
 **Dati:** indirizzo e-mail, password (salvata solo come hash, mai in chiaro),
-nome e cognome, paese, numero di licenza (facoltativo: il tuo numero di
-licenza Swiss Volley, da 4 a 7 cifre), la lingua scelta all'apertura (per
+nome e cognome, paese, numero di licenza (il tuo numero di
+licenza Swiss Volley, da 4 a 7 cifre; necessario per un nuovo account dal
+23 novembre 2026, agli account aperti prima viene chiesto al prossimo
+accesso), la lingua scelta all'apertura (per
 le e-mail all'account), ruoli (per esempio
 segnapunti, arbitro, gestore di competizione), le app per cui vale l'account
 (indoor, beach), date di apertura, ultimo accesso e conferma dell'e-mail. I

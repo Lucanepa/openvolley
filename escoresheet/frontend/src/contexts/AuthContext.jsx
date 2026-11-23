@@ -13,6 +13,8 @@ import { clearPendingTeamLink } from '../utils/teamLink'
 import { TODAY_GAMES_CACHE_KEY } from '../lib/todayGamesCache'
 import i18n from 'i18next'
 import PasskeyOfferHost from '../components/auth/PasskeyOfferHost'
+import LicenceAskHost from '../components/auth/LicenceAskHost'
+import { askLicenceAfterSignIn, clearLicenceAsk } from '../components/auth/licenceAsk'
 
 const AuthContext = createContext(null)
 
@@ -328,6 +330,8 @@ export function AuthProvider({ children, app = null }) {
       activeUserId.current = data.user.id
       setUser(prev => keepSameUser(prev, data.user))
       await fetchProfile(data.user.id)
+      // no licence number yet: asked now (LicenceAskHost; owner 23.11.2026)
+      askLicenceAfterSignIn(data.user.id)
     }
 
     return { data, error }
@@ -345,6 +349,7 @@ export function AuthProvider({ children, app = null }) {
       activeUserId.current = data.user.id
       setUser(prev => keepSameUser(prev, data.user))
       await fetchProfile(data.user.id)
+      askLicenceAfterSignIn(data.user.id)
     }
     return { data, error }
   }, [fetchProfile])
@@ -385,6 +390,7 @@ export function AuthProvider({ children, app = null }) {
     if (!hasBackend()) {
       return { error: { message: 'Backend not configured' } }
     }
+    clearLicenceAsk()
 
     // Signed out on this device at once, before the server is asked
     // (apiAuth.signOut waits for it only briefly and sends it again later):
@@ -427,6 +433,29 @@ export function AuthProvider({ children, app = null }) {
     setProfile(prev => keepSameProfile(prev, profileForDevice(updatedProfile)))
     cacheProfile(updatedProfile)
 
+    return { data: updatedProfile, error: null }
+  }, [user])
+
+  // The licence number alone (LicenceAskHost): no other column, so an
+  // OpenBeach account's profile keeps its sport (profileUpdateColumns writes
+  // indoor). Saved only when the backend hands the row back with it.
+  const updateLicenceNumber = useCallback(async (licenceNumber) => {
+    if (!hasBackend() || !user) {
+      return { error: { message: 'Not authenticated' } }
+    }
+    const columns = { license_number: licenceNumber || null }
+    const { data, error } = await apiFrom('profiles')
+      .update(columns)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+    if (error) return { data, error }
+    const updatedProfile = confirmedProfileRow(columns, data)
+    if (!updatedProfile) {
+      return { data: null, error: { message: 'Your profile was not saved. Please reload the app and try again.', code: PROFILE_NOT_SAVED } }
+    }
+    setProfile(prev => keepSameProfile(prev, profileForDevice(updatedProfile)))
+    cacheProfile(updatedProfile)
     return { data: updatedProfile, error: null }
   }, [user])
 
@@ -698,6 +727,7 @@ export function AuthProvider({ children, app = null }) {
     signUp,
     signOut,
     updateProfile,
+    updateLicenceNumber,
     updateEmail,
     resetPassword,
     resendConfirmation,
@@ -705,13 +735,15 @@ export function AuthProvider({ children, app = null }) {
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }), [user, currentProfile, access, meLoaded, redeemInvite, loading, signIn, signInWithPasskey, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
+  }), [user, currentProfile, access, meLoaded, redeemInvite, loading, signIn, signInWithPasskey, signUp, signOut, updateProfile, updateLicenceNumber, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>
       {children}
       {/* the offer to set up a passkey after a password sign-in (LoginModal) */}
       <PasskeyOfferHost />
+      {/* "Your licence number?" for an account without one, after a sign-in */}
+      <LicenceAskHost />
     </AuthContext.Provider>
   )
 }

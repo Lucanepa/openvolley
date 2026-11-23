@@ -200,6 +200,10 @@ const DEFAULTS = Object.freeze({
   // score test matches only.
   defaultRoles: [],
   defaultCountry: 'CHE',
+  // Sign-up needs the licence number (owner 23.11.2026: "have registered
+  // people insert their licence n in registration"). server.js turns it on
+  // unless OV_SIGNUP_LICENCE=optional; off, it stays optional (db/048).
+  licenceRequired: false,
   // Extra metadata keys copied verbatim into same-named profile columns when
   // that column exists (the live profiles table has sport_type, 001 did not).
   extraProfileFields: ['sport_type'],
@@ -293,8 +297,8 @@ const TOKEN_BYTES = 32
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/ // base64url of 32 bytes, no padding
 const BCRYPT_RE = /^\$2[aby]\$(\d{2})\$[./A-Za-z0-9]{53}$/
 // one strict address (lib/emailAddress.js)
-// profiles.license_number (db/048)
-const LICENSE_RE = /^[0-9]{4,7}$/
+// profiles.license_number (db/048); lib/accounts.js checks an admin's edit with it
+export const LICENSE_RE = /^[0-9]{4,7}$/
 
 /** 32 random bytes, base64url (43 chars). Returned to the client once, never stored. */
 export function generateToken() {
@@ -1352,9 +1356,12 @@ export function createAuth(options = {}) {
     if (utf8Length(JSON.stringify(meta)) > cfg.maxMetadataBytes) {
       return fail(422, 'User metadata is too large', 'validation_failed')
     }
-    // The licence number (db/048): optional, 4 to 7 digits; '' or null is none
+    // The licence number (db/048): 4 to 7 digits; '' or null is none, which
+    // a server with licenceRequired refuses (owner 23.11.2026)
     if (meta.license_number === '' || meta.license_number === null) delete meta.license_number
-    else if (meta.license_number !== undefined) {
+    if (meta.license_number === undefined) {
+      if (cfg.licenceRequired) return fail(422, 'A licence number is required (4 to 7 digits)', 'licence_required')
+    } else {
       const lic = typeof meta.license_number === 'number' && Number.isInteger(meta.license_number) ? String(meta.license_number)
         : (typeof meta.license_number === 'string' ? meta.license_number.trim() : null)
       if (lic === null || !LICENSE_RE.test(lic)) return fail(422, 'Invalid licence number (4 to 7 digits)', 'validation_failed')

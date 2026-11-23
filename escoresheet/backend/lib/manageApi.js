@@ -48,7 +48,7 @@
  *   POST   /api/admin/clubs, PATCH/DELETE /api/admin/clubs/:id   isAdmin
  *   GET    /api/admin/club-teams?q=                  isAdmin: VolleyManager team names with their club
  *   PUT    /api/admin/accounts/:id/clubs             isAdmin: the account's clubs (the whole list)
- *   PATCH  /api/admin/accounts/:id { first_name?, last_name?, email? }  isAdmin: the account's name
+ *   PATCH  /api/admin/accounts/:id { first_name?, last_name?, email?, license_number? }  isAdmin: the account's name
  *                                                    and address (a super admin's only by a super admin)
  *   POST   /api/admin/accounts/:id/deactivate        isAdmin: the account can no longer sign in (its
  *                                                     sessions end); nothing is deleted
