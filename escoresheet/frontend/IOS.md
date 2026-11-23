@@ -57,8 +57,13 @@ and what stands in for the other Android ones (MainActivity):
 | `OpenVolleyApp` exitApp | Back on the first page | none: no Back button, an iOS app never ends itself |
 | `UpdateSource` | F-Droid updates | none: the App Store updates the app |
 
-Saved scoresheet PDFs go to the app's Documents, which the Files app shows
-under On My iPad › OpenVolley.
+The app's files (match backups, activity logs, saved scoresheet PDFs) are in
+its own Library/NoCloud, as on Android in its own folder (owner decision 9):
+the Files app and a USB cable do not show them, and they are, like the web
+view's data (Library/WebKit) and the app's other folders, excluded from
+iCloud and computer backups (`AppDelegate.swift` AppData). A PDF leaves the
+app through Share (Mail, AirDrop, Save to Files). What older versions left in
+Documents moves in at the first start (`nativeBackup/androidFiles.js`).
 
 Icon and launch screen: `scripts/make-brand-assets.py` renders them from
 `brand/` (1024 px opaque icon; iOS rounds the corners).
