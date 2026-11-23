@@ -2,8 +2,10 @@
 //   SEC-07  the token was SHA-256 of the seed key, a league or OpenBeach
 //           match's public id: anyone could compute it and take over the court
 //           on every TV. Now it comes from a random liveSecret of the match,
-//           made once on the device (a Global match: its globalKey), never
-//           from the seed key; no secret, no token.
+//           made once on the device (a Global match: its globalKey; since
+//           the 2611 review, SR-3, a match with a game PIN: an HMAC of its
+//           seed key keyed with the PIN), never from the seed key alone; no
+//           secret, no token.
 //   LOG-11  the first live push after a page load went without the token (it
 //           was still being worked out), and the relay made a second, frozen
 //           court of it. liveScreenFieldsFor works it out before the push.
@@ -56,6 +58,48 @@ describe('the court token never comes from the seed key (SEC-07)', () => {
     const gid = await database.matches.add({ seed_key: 'm4', global: true, globalKey: 'k'.repeat(22) })
     expect((await ensureLiveSecret(database, gid, await database.matches.get(gid))).liveSecret).toBeUndefined()
     database.close()
+  })
+})
+
+// 2611 review, SR-3: the random liveSecret was made on each device, never
+// relayed and stripped from native backups, so a second tablet of the match
+// (a handover, a restore) made its own token: a second, frozen court on every
+// TV of the desktop relay and of an HTTP push, for up to 3 hours. A match with
+// a game PIN takes its token from it now, which every scoring device knows.
+const hmac = async (key, text) => {
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return [...new Uint8Array(await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32)
+}
+describe('every scoring device of a match pushes the same court token (SR-3)', () => {
+  it('two devices with the same match and game PIN, each with a liveSecret of its own, push one token; never the seed key\'s', async () => {
+    const tablet = { seed_key: 'match_7_public', gamePin: '482913', liveSecret: newLiveSecret() }
+    const second = { seed_key: 'match_7_public', gamePin: 482913, liveSecret: newLiveSecret() }
+    const token = await courtTokenFor(tablet)
+    expect(token).toMatch(/^[0-9a-f]{32}$/)
+    expect(await courtTokenFor(second)).toBe(token)
+    expect(token).toBe(await hmac('482913', 'court\0match_7_public'))
+    expect(token).not.toBe(await sha('court\0match_7_public'))
+    expect(token).not.toBe(await sha(`court\0${tablet.liveSecret}`))
+    // another match, or another PIN: another court
+    expect(await courtTokenFor({ ...tablet, seed_key: 'match_8_public' })).not.toBe(token)
+    expect(await courtTokenFor({ ...tablet, gamePin: '482914' })).not.toBe(token)
+    // a Global match keeps its globalKey's token (its devices hold the backup code)
+    expect(await courtTokenFor({ ...tablet, globalKey: 'g'.repeat(22) })).toBe(await sha(`court\0${'g'.repeat(22)}`))
+  })
+
+  it('a match with a game PIN needs no liveSecret: none is made or stored; one without keeps getting its own', async () => {
+    const database = await freshDb()
+    const id = await database.matches.add({ seed_key: 'match_9_public', gamePin: '135792' })
+    setLiveCode('ABCD2345')
+    const first = await liveScreenFieldsFor({ match: await database.matches.get(id), db: database, matchId: id })
+    expect(first.fields.globalLiveCourt).toBe(await hmac('135792', 'court\0match_9_public'))
+    expect((await database.matches.get(id)).liveSecret).toBeUndefined()
+    // the same match restored on another device (another Dexie id, the same PIN): the same court
+    const other = await freshDb()
+    const oid = await other.matches.add({ seed_key: 'match_9_public', gamePin: '135792', restored: true })
+    expect((await liveScreenFieldsFor({ match: await other.matches.get(oid), db: other, matchId: oid })).fields.globalLiveCourt).toBe(first.fields.globalLiveCourt)
+    database.close()
+    other.close()
   })
 })
 

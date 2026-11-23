@@ -3509,7 +3509,7 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                                 .unwrap_or_else(|| crate::global_live::court_token_of(&match_id));
                             let mut store = state.global_live.lock().unwrap_or_else(|e| e.into_inner());
                             let screen = crate::global_live::screen_of(data.get("globalLiveScreen"), bundle);
-                            store.update(code, &court, &bundle["liveState"], bundle, now_ms(), screen);
+                            store.update_room(code, &match_id, &court, &bundle["liveState"], bundle, now_ms(), screen);
                         }
                     }
                     let msg = json!({ "type": "live-state-update", "matchId": match_id, "liveState": live });
@@ -6005,8 +6005,18 @@ mod tests {
         handle_ws_message(&state, 1, &tx, &live_msg("41", json!({ "globalLive": "ABCD2345", "globalLiveCourt": crate::global_live::court_token_of("41") }))).await;
         let v: Value = serde_json::from_str(&get_path(&state, "/api/global/live/ABCD2345", &[]).await.2).unwrap();
         assert_eq!(v["data"]["courts"].as_array().unwrap().len(), 1);
-        // a match's own court token is another court
+        // a match's own court token moves the room's court, it adds none (one
+        // court per room, as the Node relay keeps it: 2611 review, SR-3, a
+        // second tablet's token left a second, frozen court on every TV)
+        let before = v["data"]["courts"][0]["id"].clone();
         handle_ws_message(&state, 1, &tx, &live_msg("41", json!({ "globalLive": "ABCD2345", "globalLiveCourt": "a".repeat(32) }))).await;
+        let v: Value = serde_json::from_str(&get_path(&state, "/api/global/live/ABCD2345", &[]).await.2).unwrap();
+        assert_eq!(v["data"]["courts"].as_array().unwrap().len(), 1);
+        assert_ne!(v["data"]["courts"][0]["id"], before);
+        // another room (another match) is another court
+        connect(&state, 3, "192.168.1.11").await;
+        sync(&state, 3, "43", global_bundle(43, "626364")).await.unwrap();
+        handle_ws_message(&state, 3, &tx, &live_msg("43", json!({ "globalLive": "ABCD2345", "globalLiveCourt": "b".repeat(32) }))).await;
         let v: Value = serde_json::from_str(&get_path(&state, "/api/global/live/ABCD2345", &[]).await.2).unwrap();
         assert_eq!(v["data"]["courts"].as_array().unwrap().len(), 2);
     }

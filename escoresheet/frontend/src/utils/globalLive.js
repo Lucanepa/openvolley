@@ -60,15 +60,22 @@ export const liveCodeUrl = (code) => (isLiveCode(code) ? `${TV_SITE}${code}` : n
 /** The same page on a venue relay (no internet needed): its HTTP base + /tv/<code>. */
 export const localTvUrl = (base, code) => (isLiveCode(code) && typeof base === 'string' && /^https?:\/\//.test(base) ? `${base.replace(/\/+$/, '')}/tv/${code}` : null)
 
-// A match's court token (backend isCourtToken): the first 32 hex characters
-// of SHA-256 of its own secret, so its court is one court on the page whether
-// it comes over the relay, from a venue relay's forward or from the desktop
-// app's push. The secret is the match's liveSecret (random, 128 bits, made on
-// this device, never relayed: serverDataSync NEVER_RELAYED), a Global match's
-// globalKey before it has one. Never its seed key: that is a league or
-// OpenBeach match's public id, and its hash let anyone take over the court on
-// every TV (audit SEC-07). No secret: no token (the relay then keeps one
-// court per room).
+// A match's court token (backend isCourtToken): 32 hex characters that every
+// scoring device of the match works out alike and the public cannot, so its
+// court is one court on the page whether it comes over the relay, from a
+// venue relay's forward or from the desktop app's push, and whichever device
+// scores it (2611 review, SR-3: a random secret per device gave a second,
+// frozen court on every TV after a device switch or a restore):
+//   - a Global or guest match: SHA-256 of 'court' and its globalKey (the
+//     backup code every device of it holds);
+//   - a match with a game PIN and a seed key: HMAC-SHA256 keyed with the game
+//     PIN (every scoring device knows it: the scorer sets it, a takeover or a
+//     restore proves it; never relayed or public) of 'court' and the seed key;
+//   - else its liveSecret (random, 128 bits, made on this device, never
+//     relayed: serverDataSync NEVER_RELAYED).
+// Never the seed key alone: that is a league or OpenBeach match's public id,
+// and its hash let anyone take over the court on every TV (audit SEC-07). No
+// source: no token (the relay then keeps one court per room).
 const LIVE_SECRET_RE = /^[A-Za-z0-9_-]{22,64}$/
 export const isLiveSecret = (v) => typeof v === 'string' && LIVE_SECRET_RE.test(v)
 /** A new liveSecret: 16 random bytes, base64url. */
@@ -79,27 +86,58 @@ export function newLiveSecret(cryptoImpl = globalThis.crypto) {
   for (const b of bytes) bin += String.fromCharCode(b)
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
-/** The match's secret for its court token, or null. */
-export function liveSecretOf(match) {
-  if (isLiveSecret(match?.liveSecret)) return match.liveSecret
-  if (typeof match?.globalKey === 'string' && match.globalKey) return match.globalKey
+const GAME_PIN_RE = /^[0-9]{4,8}$/
+const seedKeyOf = (match) => [match?.seed_key, match?.seedKey].find((k) => typeof k === 'string' && k.trim()) || null
+const gamePinOf = (match) => {
+  const v = match?.gamePin ?? match?.game_pin
+  const pin = v == null ? '' : String(v).trim()
+  return GAME_PIN_RE.test(pin) ? pin : null
+}
+/**
+ * What the match's court token comes from: { kind: 'key', secret } (a
+ * Global or guest match's globalKey), { kind: 'pin', pin, seedKey } or
+ * { kind: 'secret', secret } (its liveSecret); null when none.
+ */
+export function courtSourceOf(match) {
+  if (typeof match?.globalKey === 'string' && match.globalKey) return { kind: 'key', secret: match.globalKey }
+  const pin = gamePinOf(match)
+  const seedKey = seedKeyOf(match)
+  if (pin && seedKey) return { kind: 'pin', pin, seedKey }
+  if (isLiveSecret(match?.liveSecret)) return { kind: 'secret', secret: match.liveSecret }
   return null
 }
+/** The match's secret for its court token when it has no game PIN, or null (kept for the callers of before). */
+export function liveSecretOf(match) {
+  const src = courtSourceOf(match)
+  return src && src.kind !== 'pin' ? src.secret : null
+}
 const tokens = new Map()
+const sourceKey = (src) => (src.kind === 'pin' ? `pin\0${src.pin}\0${src.seedKey}` : `s\0${src.secret}`)
+const hex32 = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32)
 export async function courtTokenFor(match, subtle = globalThis.crypto?.subtle) {
-  const secret = liveSecretOf(match)
-  if (!secret || !subtle) return null
-  if (tokens.has(secret)) return tokens.get(secret)
-  const digest = await subtle.digest('SHA-256', new TextEncoder().encode(`court\0${secret}`))
-  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32)
-  tokens.set(secret, hex)
+  const src = courtSourceOf(match)
+  if (!src || !subtle) return null
+  const k = sourceKey(src)
+  if (tokens.has(k)) return tokens.get(k)
+  const enc = new TextEncoder()
+  let digest
+  if (src.kind === 'pin') {
+    const key = await subtle.importKey('raw', enc.encode(src.pin), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+    digest = await subtle.sign('HMAC', key, enc.encode(`court\0${src.seedKey}`))
+  } else {
+    digest = await subtle.digest('SHA-256', enc.encode(`court\0${src.secret}`))
+  }
+  const hex = hex32(digest)
+  if (tokens.size >= 500) tokens.clear()
+  tokens.set(k, hex)
   return hex
 }
 /** The token if already worked out; starts the work otherwise. */
 export function cachedCourtToken(match) {
-  const secret = liveSecretOf(match)
-  if (!secret) return null
-  if (tokens.has(secret)) return tokens.get(secret)
+  const src = courtSourceOf(match)
+  if (!src) return null
+  const k = sourceKey(src)
+  if (tokens.has(k)) return tokens.get(k)
   courtTokenFor(match).catch(() => null)
   return null
 }
@@ -108,15 +146,17 @@ export function cachedCourtToken(match) {
 const making = new Map()
 /**
  * The match with its liveSecret: made and stored once (Dexie matches row),
- * the first time the match goes to a live screen. Unchanged when it has one
- * (or a Global match's globalKey), or when it cannot be stored (no token then
- * rather than a new one with every push).
+ * the first time a match without a game PIN goes to a live screen. Unchanged
+ * when it has one, a globalKey or a game PIN with its seed key (courtSourceOf),
+ * or when it cannot be stored (no token then rather than a new one with
+ * every push).
  * @param {import('dexie').Dexie} database
  * @param {number|string} matchId
  * @param {object} match
  */
 export async function ensureLiveSecret(database, matchId, match) {
-  if (!match || liveSecretOf(match) || matchId == null || !database?.matches) return match
+  // a globalKey, or a game PIN with a seed key: the token needs no secret of this device
+  if (!match || courtSourceOf(match) || matchId == null || !database?.matches) return match
   if (!making.has(matchId)) {
     making.set(matchId, (async () => {
       try {
