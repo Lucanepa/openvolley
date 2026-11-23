@@ -1082,7 +1082,10 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
     }
 
     it('never runs more than bcryptMaxConcurrent compares at once', async () => {
-      const spy = countingBcrypt()
+      // each compare lasts at least 40 ms: since the sign-in reads db/057's
+      // tables before its compare, 12 requests can reach a bare compare one
+      // after another (it ends before the next starts) and none overlap
+      const spy = countingBcrypt({ delayMs: 40 })
       const auth = makeAuth({ bcrypt: spy, bcryptMaxConcurrent: 2, bcryptMaxQueue: 64 })
       await signIn(auth, 'gate-warmup@example.ch', 'x') // builds the dummy hash
       const rs = await Promise.all(Array.from({ length: 12 }, (_, i) =>
