@@ -183,10 +183,24 @@ export function applyRolesSql (dbUrl, { appRole, ownerRole, readonlyRole = reado
     .replace(/\bov_readonly\b/g, readonlyRole)
     .replace(/\bov_sql_writer\b/g, writerRole)
   const password = 'app-' + Math.random().toString(36).slice(2).padEnd(16, '0')
+  const psql = (input) => execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-v', `ov_app_pw=${password}`, '-d', dbUrl],
+    { input, stdio: ['pipe', 'ignore', 'pipe'] })
   // ov_owner is the cluster superuser in production (roles.sql header): the
   // foreign-key checks run as the owner of the referenced table
-  execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-v', `ov_app_pw=${password}`, '-d', dbUrl],
-    { input: `CREATE ROLE "${ownerRole}" NOLOGIN SUPERUSER;\n` + sql, stdio: ['pipe', 'ignore', 'pipe'] })
+  psql(`CREATE ROLE "${ownerRole}" NOLOGIN SUPERUSER;\n`)
+  // roles.sql revokes CONNECT on the shared databases postgres and template1
+  // (one pg_database row for every test file): files that apply it at the same
+  // moment can meet on that row ("tuple concurrently updated"). roles.sql is
+  // one transaction, so the failed run left nothing; run it again.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      psql(sql)
+      break
+    } catch (err) {
+      if (attempt >= 5 || !/tuple concurrently updated/.test(String(err?.stderr || ''))) throw err
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 + Math.floor(Math.random() * 200))
+    }
+  }
   const u = new URL(dbUrl)
   u.username = appRole
   u.password = password
