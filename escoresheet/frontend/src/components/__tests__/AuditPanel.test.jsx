@@ -131,6 +131,9 @@ describe('the audit log screen', () => {
     expect(line('club.delete', { club_id: VBCM, name: 'VBC Gone', scorers: 3 })).toBe('VBC Gone · Scorers: 3')
     // renamed: the club's name once
     expect(line('club.update', { club_id: VBCM, name: 'VBC Musterdorf' }, { club_name: 'VBC Musterdorf' })).toBe('VBC Musterdorf')
+    // LOG-24: a team the schedule sync renamed to its region's name
+    expect(line('club.update', { club_id: VBCM, team_id: 't-1', renamed: { from: 'VBC Esempio HU23-1', to: 'VBC Esempio 1' }, by: 'vm-sync' }, { club_name: 'VBC Esempio' }))
+      .toBe('VBC Esempio · VBC Esempio HU23-1 → VBC Esempio 1 · VolleyManager')
     expect(line('account.clubs', { before: [], after: [VBCM, 'x'], names: ['VBC Musterdorf', 'VBC Other'] })).toBe('VBC Musterdorf, VBC Other')
     expect(line('account.clubs', { before: [VBCM], after: [], names: [] })).toBe('No club')
     expect(line('account.clubs', { invite_id: 'i-1', joined: VBCM }, { club_name: 'VBC Musterdorf' })).toBe('+ VBC Musterdorf')
