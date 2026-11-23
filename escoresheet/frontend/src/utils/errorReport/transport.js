@@ -4,10 +4,16 @@
  * the sync queue, which waits for a signed-in session; works signed out. A
  * batch goes 5 s after the first report, at once for an error, and by
  * navigator.sendBeacon (text/plain) when the page is hidden or closed. A
- * report that could not be sent, or that the server's rate limit dropped
- * (202 { dropped }), is sent again later with the same uid (the server counts
- * it once); a dropped one at most a day after it happened. A session's Bearer token goes along when there is
- * one, so the server can name the account; the body never names it.
+ * report that could not be sent, or that a shared limit of the server
+ * dropped (202 { dropped }: its rate limit, the new-group window of reports
+ * without a session, a full store), is sent again later with the same uid
+ * (the server keeps it once); a dropped one at most a day after it happened,
+ * behind the rest of the queue. A beacon's answer is never read, so what it
+ * sent stays queued until a fetch confirms it (sent again later, once per
+ * page: the server dedupes by uid), and a report a 202 kept is not lost at
+ * the next screen-off (review ET-5 of SEC-19). A session's Bearer token goes
+ * along when there is one (not by beacon), so the server can name the
+ * account; the body never names it.
  * Switched off (Options › Support and feedback): nothing is queued or sent,
  * and what was queued is dropped.
  */
@@ -61,6 +67,8 @@ export function createTransport({ url, authHeader = () => ({}), fetchImpl = (...
   let timer = null
   let sending = false
   let memory = [] // when storage is unusable
+  // uids sent by beacon in this page's life: not beaconed again, they wait for a fetch
+  const beaconed = new Set()
 
   const queue = () => (store ? readQueue(store) : memory)
   const save = (q) => { if (store) writeQueue(q, store); else memory = q.slice(-MAX_QUEUE) }
@@ -114,7 +122,10 @@ export function createTransport({ url, authHeader = () => ({}), fetchImpl = (...
           const cutoff = now() - DROPPED_MAX_AGE_MS
           const inBatch = new Set(batch.map((e) => e.uid))
           const tooOld = (e) => Date.parse(e.client_ts) < cutoff
-          save(queue().filter((e) => !dropped.done.has(e.uid) && !(inBatch.has(e.uid) && tooOld(e))))
+          const left = queue().filter((e) => !dropped.done.has(e.uid) && !(inBatch.has(e.uid) && tooOld(e)))
+          // what this batch kept goes behind the rest: a report the server
+          // keeps refusing does not hold up the others
+          save([...left.filter((e) => !inBatch.has(e.uid)), ...left.filter((e) => inBatch.has(e.uid))])
           schedule(RETRY_MS)
           break
         }
@@ -148,15 +159,26 @@ export function createTransport({ url, authHeader = () => ({}), fetchImpl = (...
     }
   }
 
-  /** The page is going away: what is queued goes by beacon (no headers, so no account). */
+  /**
+   * The page is hidden or going away: what is queued and was not beaconed
+   * yet goes by beacon (no headers, so no account). It stays queued: a
+   * beacon's answer is never read (a 202 dropped would be lost), so a fetch
+   * sends it again when the page is back, or the next visit does.
+   */
   function flushOnExit() {
     if (!errorReportsEnabled(store)) return
     const target = url()
     const q = queue()
-    if (!target || !q.length) return
+    const queued = new Set(q.map((e) => e.uid))
+    for (const uid of beaconed) if (!queued.has(uid)) beaconed.delete(uid)
+    const batch = q.filter((e) => !beaconed.has(e.uid)).slice(0, BATCH)
+    if (!target || !batch.length) return
     try {
-      const body = new Blob([JSON.stringify({ events: q.slice(0, BATCH) })], { type: 'text/plain;charset=UTF-8' })
-      if (beacon(target, body)) save(q.slice(BATCH))
+      const body = new Blob([JSON.stringify({ events: batch })], { type: 'text/plain;charset=UTF-8' })
+      if (beacon(target, body)) {
+        for (const e of batch) beaconed.add(e.uid)
+        schedule(RETRY_MS)
+      }
     } catch { /* no beacon */ }
   }
 

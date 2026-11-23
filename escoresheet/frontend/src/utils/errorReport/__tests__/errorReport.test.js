@@ -124,7 +124,8 @@ describe('the send queue', () => {
     expect(t.queue()).toHaveLength(1)
     t.flushOnExit()
     expect(beacons[0].b.type).toMatch(/^text\/plain;charset=utf-8$/i)
-    expect(t.queue()).toHaveLength(0)
+    // kept until a fetch confirms it: a beacon's answer is never read (audit SEC-19 review ET-5)
+    expect(t.queue()).toHaveLength(1)
   })
 
   it('switched off: nothing is queued, and what was queued goes', () => {
