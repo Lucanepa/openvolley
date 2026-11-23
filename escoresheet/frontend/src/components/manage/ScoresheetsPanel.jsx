@@ -27,6 +27,9 @@ function saveBlob(blob, name) {
 
 const pdfOf = (blob) => (blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' }))
 
+/** A match whose PDF an admin may rebuild: a closed indoor one (see `canRebuild` below). */
+const rebuildable = (m) => !!m?.closed_at && m.sport !== 'beach'
+
 /**
  * Every match of the console's sport with its stored scoresheet PDF (admins
  * and the sport's competition managers; lib/scoresheets.js on the server):
@@ -41,7 +44,10 @@ const pdfOf = (blob) => (blob.type === 'application/pdf' ? blob : new Blob([blob
  * `canRebuild` (admins): "Rebuild PDF" draws the sheet again from the
  * server's data, with a "Rebuilt after the match" remark, the stored
  * signatures and the account approvals, and stores it as the match's newest,
- * a closed match too.
+ * a closed match too. Only for a closed indoor match (rebuildable): a beach
+ * match's sheet is OpenBeach's own and the sheet drawn here is the indoor one
+ * (LOG-02), and a match reopened for a correction gets its PDF from the new
+ * approval (LOG-10). The server refuses both (409) as well.
  */
 export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false, state: stateProp = null }) {
   const { t } = useTranslation()
@@ -135,7 +141,8 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false, s
       reload()
       return null
     }
-    if ([400, 401, 403, 404].includes(vec.status ?? vec.error?.status)) return errorText(vec.error)
+    // (409: a beach match, or one not closed: never drawn here either)
+    if ([400, 401, 403, 404, 409].includes(vec.status ?? vec.error?.status)) return errorText(vec.error)
     const res = await scoresheetsApi.matchRecord(m.id)
     if (res.error) return errorText(res.error)
     // The officials' account approvals (their own table, match_approvals):
@@ -269,7 +276,7 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false, s
                   // an admin released its game (a duplicate): not the game's official match, not mailed as final
                   return m.released ? <><Chip>{t('manage.games.releaseGame')}</Chip>{stored}</> : stored
                 })()}
-                tools={(!noPdf || (canReopen && m.closed_at) || (canRebuild && m.closed_at)) && <>
+                tools={(!noPdf || (canReopen && m.closed_at) || (canRebuild && rebuildable(m))) && <>
                   {!noPdf && <>
                     <RowTool primary className={TOOL_OFF} disabled={!online || !!busy} onClick={() => open(m, false)} aria-busy={busy === `${m.id}:view` || undefined}>
                       <Eye size={13} aria-hidden />{t('manage.scoresheets.view')}
@@ -278,7 +285,7 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false, s
                       <Download size={13} aria-hidden />{t('manage.scoresheets.download')}
                     </RowTool>
                   </>}
-                  {canRebuild && (!noPdf || m.closed_at) && (
+                  {canRebuild && rebuildable(m) && (
                     <RowTool className={TOOL_OFF} disabled={!online || !!busy || !!rebuilding} onClick={() => setRebuildFor(m)} data-testid="scoresheet-rebuild">
                       <RefreshCw size={13} aria-hidden />{t('manage.scoresheets.rebuild')}
                     </RowTool>
