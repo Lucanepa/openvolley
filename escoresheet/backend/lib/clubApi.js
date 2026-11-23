@@ -224,6 +224,15 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
     return fn(m, c)
   }
   const clubWide = (fn) => (m, c) => (c.p.teamId ? OWN_TEAM_ONLY() : fn(m, c))
+  // PERM-13: read scope reaches no personal data. A game's roster summary
+  // (lib/teams.js games) names the team manager who sent it and the scorer
+  // who accepted it: the read routes answer the counts and times without them
+  // (the keys stay, null, for software that reads them)
+  const summaryWithoutNames = (roster) => (roster ? { ...roster, updated_by_name: null, used_by_name: null } : roster)
+  const gameWithoutNames = (g) => ('roster' in g ? { ...g, roster: summaryWithoutNames(g.roster) } : g)
+  const gamesWithoutNames = (r) => (r.status === 200 && Array.isArray(r.body?.data?.games)
+    ? ok({ ...r.body.data, games: r.body.data.games.map(gameWithoutNames) })
+    : r)
   const routes = [
     ['GET', /^\/club$/, 'read', clubWide(async (m, c) => {
       const r = await clubs.clubDetail({ id: c.p.clubId })
@@ -238,7 +247,7 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
       // ids and names only: the team managers' accounts are not the API's business
       return ok({ teams: r.body.data.teams.filter((t) => !c.p.teamId || t.id === c.p.teamId).map((t) => ({ id: t.id, name: t.name })) })
     }],
-    ['GET', new RegExp(`^/teams/${ID}/games$`), 'read', ownTeam((m) => teams.games({ teamId: m[1] }))],
+    ['GET', new RegExp(`^/teams/${ID}/games$`), 'read', ownTeam(async (m) => gamesWithoutNames(await teams.games({ teamId: m[1] })))],
     ['GET', new RegExp(`^/teams/${ID}/games/${GAME}/roster$`), 'rosters:write', ownTeam((m) => teams.getRoster({ teamId: m[1], game: m[2] })), true],
     ['PUT', new RegExp(`^/teams/${ID}/games/${GAME}/roster$`), 'rosters:write', ownTeam((m, c) => teams.putRoster({ actorId: c.p.userId, teamId: m[1], game: m[2], body: c.body }))],
     ['DELETE', new RegExp(`^/teams/${ID}/games/${GAME}/roster$`), 'rosters:write', ownTeam((m, c) => teams.deleteRoster({ actorId: c.p.userId, teamId: m[1], game: m[2] }))],
@@ -253,7 +262,7 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
       const out = []
       for (const t of rows.slice(0, 60)) {
         const r = await teams.games({ teamId: t.id })
-        if (r.status === 200) for (const g of r.body.data.games) out.push({ team_id: t.id, ...g })
+        if (r.status === 200) for (const g of r.body.data.games) out.push({ team_id: t.id, ...gameWithoutNames(g) })
       }
       out.sort((a, b) => String(a.datetime ?? '').localeCompare(String(b.datetime ?? '')))
       return ok({ games: out })
