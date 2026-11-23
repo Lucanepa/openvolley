@@ -462,16 +462,18 @@ del referto finale (qui sotto). Base giuridica:
 sezione 20; conservate con la partita (sezione 16).
 
 **Chi inserisce i dati:** il segnapunti nell'app, i responsabili di squadra
-sulla pagina delle liste squadra (`roster.openvolley.app`) e nel sito di gestione (sezione 10), i gestori di
-competizione tramite le squadre salvate (sezione 10) e le designazioni
-ufficiali di Swiss Volley (sezione 11). Le giocatrici e i giocatori non
-inseriscono essi stessi i propri dati. Un'Einsatzliste importata nella
-preparazione della partita compila nomi, numeri di maglia e numeri di
-licenza; le sue date di nascita non vengono riprese. Può essere importata
-dal suo PDF o da una sua foto: la foto viene letta sul dispositivo
-(riconoscimento del testo nell'app), non viene inviata da nessuna parte e non
-viene conservata; le righe lette vengono mostrate al segnapunti, che le
-corregge prima che qualcosa venga ripreso.
+sulla pagina delle liste squadra (`roster.openvolley.app`) e nel sito di
+gestione (sezione 10), i gestori di competizione tramite le squadre salvate
+(sezione 10) e le designazioni ufficiali di Swiss Volley (sezione 11). Le
+giocatrici e i giocatori non inseriscono essi stessi i propri dati.
+Un'Einsatzliste importata nella preparazione della partita compila nomi,
+numeri di maglia e numeri di licenza; le sue date di nascita non vengono
+riprese. Può essere importata dal suo PDF o da una sua foto: la foto viene
+letta sul dispositivo (riconoscimento del testo nell'app), non viene inviata
+da nessuna parte e non viene conservata (su Android il file che l'app
+fotocamera salva per l'app viene eliminato al successivo avvio dell'app); le
+righe lette vengono mostrate al segnapunti, che le corregge prima che qualcosa
+venga ripreso.
 
 **Scopo:** un referto elettronico per le partite ufficiali: registrazione
 durante la partita, verbale ufficiale della partita, controllo
