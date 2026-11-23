@@ -458,7 +458,8 @@ export function gameSummary(row, nowIso = new Date().toISOString()) {
       const b = x.pointsB ?? x.away_points
       return { index: x.index, homePoints: aIsHome ? a : b, awayPoints: aIsHome ? b : a, finished: true }
     })
-  const liveState = { ...row, match_status: row.match_status || row.status, points_a: row.points_a ?? 0, points_b: row.points_b ?? 0, sets_won_a: row.sets_won_a ?? 0, sets_won_b: row.sets_won_b ?? 0 }
+  // best of: the scorer's live row, else the match's own format (a game not started has no live row)
+  const liveState = { ...row, match_status: row.match_status || row.status, points_a: row.points_a ?? 0, points_b: row.points_b ?? 0, sets_won_a: row.sets_won_a ?? 0, sets_won_b: row.sets_won_b ?? 0, best_of: row.best_of ?? info.best_of ?? null }
   const scheduledAt = row.scheduled_at instanceof Date ? row.scheduled_at.toISOString() : row.scheduled_at
   const entry = {
     match: { coinTossTeamA: aIsHome ? 'home' : 'away', hall: info.hall ?? null, scheduledAt: scheduledAt ?? null, gameN: row.game_n ?? null },
