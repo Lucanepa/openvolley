@@ -162,6 +162,33 @@ refuses to `initdb` when a cluster has existed on the filesystem (`state/initial
 **Never `source` `.env`** into a shell: Compose prefers exported shell variables over `.env`,
 so later `up`/rollback commands in that shell would silently use the old values.
 
+## Pre-deploy checklist: the backend of the 2026-11 audit fixes
+
+Read-only, on the production host, before `deploy.sh` (the release session, with the owner's go):
+
+1. **Settings that compose now passes.** Before, `compose.yaml` passed only some of these to
+   the backend, and a value in `.env` was silently ignored; from this deploy on it takes
+   effect (2611 review, COMPOSE-ENV-NOW-EFFECTIVE). Read them, and remove a value that is
+   left from a test or an incident:
+   ```bash
+   sudo grep -nE '^(OV_SIGNUP_LICENCE|MAIL_BUDGET_[A-Z_]+|OV_ALLOW_DEV_ORIGINS|OV_PIN_ONLY_LOOKUP|OV_BEACH_REFEREE_ADDRESS|OV_SIGN_IN_CEILING_SLOTS)=' /opt/openvolley/.env
+   ```
+   Expected in production: `OV_SIGNUP_LICENCE` empty (a licence number is required at
+   sign-up; `optional` turns that off), every `MAIL_BUDGET_*` empty or sized on purpose (the
+   defaults are in env.example; a small one drops account mails), `OV_ALLOW_DEV_ORIGINS`
+   unset or empty (1 only on the test backend), and the three switches below empty unless
+   the owner decided otherwise.
+2. **The Global cloud's write budget.** Measure what a match really writes and size
+   `OV_GLOBAL_CLOUD_WRITE_MB_DAY` (default 1024; a venue network gets a quarter of it) before
+   a weekend of tournaments (2611 review, GLOBAL-CLOUD-WRITE-BUDGET-SIZING):
+   ```bash
+   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/global-cloud-usage.mjs
+   ```
+   It prints the estimated charge of a match, the matches a day the budget serves in all and
+   per network, and `suggestedWriteMbDay` (the busiest day of the last 30 twice over). A
+   larger budget writes more WAL into the backups (8 days kept): check the backup volume's
+   room before raising it.
+
 ## Post-release checklist: switches that wait for the old apps
 
 Some checks of the 2026-11 audit stay lenient on purpose, because app builds still in the halls
