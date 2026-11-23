@@ -1109,17 +1109,32 @@ async function claimByUpsertPin(layer, userId, data, clientIp) {
 }
 
 /**
- * The relay room that holds the key `externalId` (an active room, a held one
- * within its grace, or a lapsed one that kept its game PIN), as { pin }
- * (pin null: a room without a game PIN), or null when the relay holds none.
+ * The relay's claim on the key `externalId`, as { key, pin, device } (pin
+ * null: a room without a game PIN), or null when the relay knows none. Of a
+ * key with an origin (roomOriginOf: synced within ROOM_TTL_MS), the game PIN
+ * and the scoring device of its first sync: a take-over past the grace puts
+ * another PIN in the room, and a finished match's claim goes 60 s after its
+ * scorer did. Else the room that holds the key (an active room, a held one
+ * within its grace, or a lapsed one that kept its game PIN), no device.
  */
 function relayRoomOfKey(externalId) {
   const key = normalizeMatchId(externalId)
   if (!key) return null
+  const origin = roomOriginOf(key)
+  if (origin) return { key, pin: origin.pin, device: origin.device }
   const room = activeMatches.get(key) || heldRoomOf(key)
-  if (room?.match) return { key, pin: gamePinOf(room.match) }
+  if (room?.match) return { key, pin: gamePinOf(room.match), device: null }
   const lapsed = heldRooms.get(key)
-  return lapsed?.lapsed ? { key, pin: lapsed.pin ?? null } : null
+  return lapsed?.lapsed ? { key, pin: lapsed.pin ?? null, device: null } : null
+}
+
+// A row's external_id as the database stores it (text, which a number or a
+// boolean is cast to): a room's key may be any of them (normalizeMatchId)
+function rowKeyOf(row) {
+  const v = row && typeof row === 'object' ? row.external_id : undefined
+  if (typeof v === 'string') return v
+  if ((typeof v === 'number' && Number.isFinite(v)) || typeof v === 'boolean') return String(v)
+  return null
 }
 
 const MATCH_KEY_IN_USE_BODY = { data: null, error: { message: 'This match id belongs to a live match on another device: creating it here needs that match\'s game PIN', code: 'OV_MATCH_KEY_IN_USE' } }
@@ -1136,30 +1151,43 @@ const PIN_ATTEMPTS_BODY = { data: null, error: { message: 'Too many attempts. Pl
  * compared the filer's PIN). A row with a PIN is a counted guess in that
  * room's game-PIN scope (pinFailureLimiter, refunded when right). Rows already
  * stored are the ownership guard's; the unique index stays the backstop.
+ * The PIN is the key's first one (relayRoomOfKey: its origin), not the one a
+ * take-over put in the room since: an anonymous socket takes a key over with
+ * a PIN of its own once its scorer has been gone past the grace (60 s for a
+ * finished match), and the scorer's pending first insert was then refused
+ * for good. The key's first installation (`device`, the request's db/019
+ * device: the relay never hands it out) files its own row without a game
+ * PIN: an older app's Create match queued before Save made the PIN (OV
+ * 3.2.0-3.2.9), OpenBeach's Create match before its relay made one, a
+ * restore that keeps a PIN it made up off the server. A row with a PIN
+ * needs the key's own: a PIN-less row proves no relay claim
+ * (verifyRelayClaim), and a match's owners read its activity log, device ids
+ * included, so the device is no proof of a PIN.
  * `rows`: the write's rows with their PINs in clear (before pins.hashMatchRow).
  * @returns {Promise<{ status: number, body: object, code: string } | null>} a refusal, or null
  */
-async function newRowRoomRefusal(layer, rows, clientIp) {
+async function newRowRoomRefusal(layer, rows, clientIp, device = null) {
   const held = []
   for (const row of (Array.isArray(rows) ? rows : [rows])) {
-    if (!row || typeof row !== 'object' || typeof row.external_id !== 'string') continue
-    const room = relayRoomOfKey(row.external_id)
-    if (room) held.push({ row, room })
+    const ext = rowKeyOf(row)
+    if (ext === null) continue
+    const room = relayRoomOfKey(ext)
+    if (room) held.push({ row, ext, room })
   }
   if (held.length === 0) return null
   const found = await layer.db.runQuery({
     table: 'matches',
     action: 'select',
-    params: { columns: 'external_id', filters: [{ type: 'in', column: 'external_id', value: [...new Set(held.map((h) => h.row.external_id))] }] }
+    params: { columns: 'external_id', filters: [{ type: 'in', column: 'external_id', value: [...new Set(held.map((h) => h.ext))] }] }
   }, { internal: true })
   if (found.body.error) return { status: 503, body: DB_UNAVAILABLE_BODY, code: 'OV_DB_UNAVAILABLE' }
-  const stored = new Set((found.body.data || []).map((m) => m.external_id))
+  const stored = new Set((found.body.data || []).map((m) => String(m.external_id)))
   const ipKey = ipBucketKey(clientIp)
-  for (const { row, room } of held) {
-    if (stored.has(row.external_id)) continue
+  for (const { row, ext, room } of held) {
+    if (stored.has(ext)) continue
     const pin = gamePinOf(row)
     if (pin === null) {
-      if (room.pin === null) continue
+      if (room.pin === null || (device && room.device !== null && device.id === room.device)) continue
       return { status: 409, body: MATCH_KEY_IN_USE_BODY, code: 'OV_MATCH_KEY_IN_USE' }
     }
     const scope = pinScope.match(room.key, 'game')
@@ -1793,8 +1821,11 @@ const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 // after ORPHAN_TAKEOVER_MS when it is finished, after STALE_TAKEOVER_MS when it
 // is still in play (a scorer offline through a set break keeps its match), and
 // then its own game PIN may reclaim it once. Same rules as the LAN relays
-// (frontend/electron/lanRelayCore.cjs).
-const ORPHAN_TAKEOVER_MS = 60 * 1000
+// (frontend/electron/lanRelayCore.cjs). OV_ORPHAN_TAKEOVER_TEST_MS: tests
+// only, a shorter grace for finished matches; never in production.
+const ORPHAN_TAKEOVER_MS = process.env.NODE_ENV !== 'production' && Number(process.env.OV_ORPHAN_TAKEOVER_TEST_MS) > 0
+  ? Number(process.env.OV_ORPHAN_TAKEOVER_TEST_MS)
+  : 60 * 1000
 const STALE_TAKEOVER_MS = 10 * 60 * 1000
 // Wrong game-PIN claims per socket and minute before claims needing proof are
 // refused without comparing the PIN (no guessing oracle). Only a claim that
@@ -5104,12 +5135,13 @@ Generated by eScoresheet
         }
 
         // PERM-01: a new match under the key of a live relay room needs that
-        // room's game PIN (newRowRoomRefusal), before anything below acts on
-        // the write (a held game's take-over); admins write unguarded
+        // key's first game PIN, or comes without a PIN from the key's first
+        // device (newRowRoomRefusal), before anything below acts on the write
+        // (a held game's take-over); admins write unguarded
         if (table === 'matches' && (action === 'insert' || action === 'upsert') && params.data !== undefined && matchOwner && !matchOwner.admin) {
           let refused
           try {
-            refused = await newRowRoomRefusal(layer, params.data, clientIp)
+            refused = await newRowRoomRefusal(layer, params.data, clientIp, deviceOf(request.device))
           } catch (err) {
             console.warn('[DB] relay room check failed:', err?.message)
             refused = { status: 503, body: DB_UNAVAILABLE_BODY, code: 'OV_DB_UNAVAILABLE' }
@@ -5342,11 +5374,12 @@ Generated by eScoresheet
             return
           }
           // PERM-01: a restore that creates the match under the key of a
-          // live relay room needs that room's game PIN (newRowRoomRefusal)
+          // live relay room needs that key's first game PIN, or comes without
+          // a PIN from the key's first device (newRowRoomRefusal)
           if (!matchOwner.admin && body?.match && typeof body.match === 'object') {
             let refused
             try {
-              refused = await newRowRoomRefusal(layer, [body.match], getClientIp(req))
+              refused = await newRowRoomRefusal(layer, [body.match], getClientIp(req), deviceOf(body.device))
             } catch (err) {
               console.warn('[match/restore] relay room check failed:', err?.message)
               refused = { status: 503, body: DB_UNAVAILABLE_BODY }
@@ -7562,6 +7595,64 @@ const claimFailures = new Map() // key -> { count, windowStart }
 const newClaims = new Map() // ip -> { count, windowStart }
 const displacedPins = new Map() // matchId -> game PIN an unfinished match had before a stale takeover
 
+// PERM-01 (audit 2611): the origin of a room key on the cloud relay: the game
+// PIN and the scoring device (db/019 device id, never broadcast) of the key's
+// first granted sync, kept ROOM_TTL_MS after the key's last sync, through
+// take-overs and past the end of a held claim (its grace, its lapse). A new
+// matches row under the key needs this PIN, or comes without a PIN from this
+// device (newRowRoomRefusal). The room's current PIN was not enough: past the grace
+// (60 s for a finished match) any socket takes the key over with a PIN of its
+// own, or the finished match's claim is simply gone, and the scorer's pending
+// first insert was refused, or anyone's went through. The relay's memory: a
+// restart forgets every origin; over ROOM_ORIGIN_MAX the longest idle go.
+const ROOM_ORIGIN_MAX = 50000
+const roomOrigins = new Map() // matchId -> { pin, device, seenAt }, the longest idle first
+
+function roomOriginOf(matchId) {
+  const o = roomOrigins.get(matchId)
+  if (!o) return null
+  if (Date.now() - o.seenAt < ROOM_TTL_MS) return o
+  roomOrigins.delete(matchId)
+  return null
+}
+
+/** The origins idle past ROOM_TTL_MS go (the map is kept longest idle first). */
+function sweepRoomOrigins() {
+  const now = Date.now()
+  for (const [matchId, o] of roomOrigins) {
+    if (now - o.seenAt < ROOM_TTL_MS) break
+    roomOrigins.delete(matchId)
+  }
+}
+
+/**
+ * A granted sync of `matchId` (handleSyncMatchData, `kind` claimMatch's): the
+ * key's first one records its origin, with the PIN a take-over displaced
+ * when there is one (the PIN the relay still lets reclaim the key); every
+ * later one keeps it ROOM_TTL_MS longer. Only the first one's own line fills
+ * in what it lacked: the game PIN its owner attached afterwards (a match
+ * created before Save), the device a sync proving that PIN names.
+ */
+function noteRoomOrigin(matchId, kind, pin, deviceId) {
+  if (!DB_MODE) return
+  const now = Date.now()
+  let o = roomOriginOf(matchId)
+  if (o) {
+    roomOrigins.delete(matchId) // set again as the newest
+    if (kind === 'owner' && o.pin === null && pin !== null) o.pin = pin
+    if ((kind === 'owner' || kind === 'proved') && o.device === null && deviceId !== null &&
+        o.pin !== null && pin !== null && safeEqualStr(pin, o.pin)) o.device = deviceId
+    o.seenAt = now
+  } else {
+    while (roomOrigins.size >= ROOM_ORIGIN_MAX) roomOrigins.delete(roomOrigins.keys().next().value)
+    const displaced = displacedPins.get(matchId)
+    o = displaced !== undefined
+      ? { pin: displaced, device: null, seenAt: now }
+      : { pin, device: deviceId, seenAt: now }
+  }
+  roomOrigins.set(matchId, o)
+}
+
 function windowEntry(map, key) {
   const e = map.get(key)
   if (e && Date.now() - e.windowStart <= RATE_LIMIT_WINDOW_MS) return e
@@ -7747,8 +7838,8 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
   // is still looked up, but a test row never proves a claim (test matches
   // are local-only), nor, for a local-only room, a row created since the
   // relay first held the key: that room's match is never in the database,
-  // so such a row is someone else's. A new row under a held key needs the
-  // room's game PIN anyway (newRowRoomRefusal).
+  // so such a row is someone else's. A new row under a key the relay knows
+  // needs the key's first game PIN anyway (newRowRoomRefusal).
   const room = activeMatches.get(matchId) || heldRoomOf(matchId)
   const localRoom = !!room?.match && relayRoomIsLocal(room.match)
   if (localRoom && relayRoomIsLocal(match)) return { ok: true, dbProved: false, knownScorer: false, dbRows: [] }
@@ -7774,23 +7865,31 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
   }
   const newerThanRoom = (r) => localRoom && room.firstSyncAt != null && r.created_at != null &&
     new Date(r.created_at).getTime() >= room.firstSyncAt
+  const known = rows.filter((r) => r && r.id != null && r.test !== true && !newerThanRoom(r))
+  // Only the room key's own row speaks for the room (proves the claim, names
+  // its scorer, evicts the room's other owners: claimMatch's dbProved
+  // reclaim). The row the sync names by uuid (match.externalId) may be any
+  // row, the claimant's own under a key of its own: it "proved" the
+  // claimant's PIN for any room key (MW-R1, audit 2611). Its game PIN is
+  // still compared (a wrong one refuses the sync, as before), and a right one
+  // binds the room's live states to it (dbRows), nothing more.
+  const own = known.filter((r) => r.external_id != null && String(r.external_id) === matchId)
+  const hasPin = (r) => r.game_pin != null && String(r.game_pin).trim() !== ''
   // Who scores the match, read before the PIN is compared (the answer waits
   // for the PIN all the same)
-  const known = rows.filter((r) => r && r.id != null && r.test !== true && !newerThanRoom(r))
   let scorer = null
-  if (device && layer.scorer && known.length > 0) {
+  if (device && layer.scorer && own.length > 0) {
     try {
-      scorer = await layer.scorer.check({ device, refs: { externalIds: [], ids: known.map((r) => String(r.id)) } })
+      scorer = await layer.scorer.check({ device, refs: { externalIds: [], ids: own.map((r) => String(r.id)) } })
     } catch (err) {
       // as on /api/db: never in the way of a match day
       console.warn('[relay] scoring-device check of a scoreboard claim failed (allowed):', err?.message)
     }
   }
-  const knownScorer = scorer?.mine === true
+  const proving = own.some(hasPin)
+  const knownScorer = scorer?.mine === true && proving
   // The two keys may name the same row
-  const stored = [...new Map(known
-    .filter((r) => r.game_pin != null && String(r.game_pin).trim() !== '')
-    .map((r) => [String(r.id), r])).values()]
+  const stored = [...new Map(known.filter(hasPin).map((r) => [String(r.id), r])).values()]
   if (stored.length > 0) {
     const pin = gamePinOf(match)
     if (pin === null) return { ok: false, code: 'pins-required' }
@@ -7800,7 +7899,7 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
     if (r === 'wrong') return { ok: false, code: 'not-match-owner' }
   }
   if (scorer?.moved) return { ok: false, code: 'scorer-moved' }
-  return { ok: true, dbProved: stored.length > 0, knownScorer: knownScorer && stored.length > 0, dbRows: stored.map((row) => String(row.id)) }
+  return { ok: true, dbProved: proving, knownScorer, dbRows: stored.map((row) => String(row.id)) }
 }
 
 // The key pinFailureLimiter counts a database match under: its external_id,
@@ -8308,6 +8407,8 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   if (lapsed && opts.dbProved !== true && (gamePinOf(match) === null || !safeEqualStr(gamePinOf(match), lapsed.pin))) {
     displacedPins.set(matchId, lapsed.pin)
   }
+  // the key's first PIN and device (what a new row under it needs)
+  noteRoomOrigin(matchId, claimed.kind, gamePinOf(match), device ? device.id : null)
   const newlyOwned = !clientInfo.ownedMatches.has(matchId)
   clientInfo.ownedMatches.add(matchId)
   // Bench requests of a set that is over are dropped; a scorer that has just
@@ -8640,8 +8741,9 @@ function broadcastToRoom(matchId, message, excludeClientId = null, accessOnly = 
   else relaySummary.count('room broadcasts')
 }
 
-// Periodic cleanup of stale connections, and of the held claims of emptied
-// rooms whose grace is over (heldRoomOf releases them)
+// Periodic cleanup of stale connections, of the held claims of emptied
+// rooms whose grace is over (heldRoomOf releases them), and of the room
+// keys' origins idle past ROOM_TTL_MS
 setInterval(() => {
   connections.forEach((clientInfo, clientId) => {
     if (clientInfo.ws.readyState === 3) { // WebSocket.CLOSED
@@ -8649,6 +8751,7 @@ setInterval(() => {
     }
   })
   sweepHeldRooms()
+  sweepRoomOrigins()
 }, 30000) // Every 30 seconds
 
 server.on('error', (err) => {

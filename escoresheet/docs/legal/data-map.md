@@ -476,7 +476,7 @@ source). Neither is a recipient.
 | Backups | 48 h / 7 days on the VM; 30 / 90 days on the NAS + snapshots up to ~6 months |
 | Device: IndexedDB matches | Until the user deletes them |
 | Device: desktop/Android backup files | 30 days, ≤ 500 files and 64 MB per match |
-| Relay (cloud and LAN) | Memory; cloud rooms dropped 24 h after the last activity (`server.js:835`) |
+| Relay (cloud and LAN) | Memory; cloud rooms dropped 24 h after the last activity (`server.js:835`). The cloud relay keeps a room key's first game PIN and the random device id of its first sync as long, 24 h after the key's last sync, take-overs included (`roomOrigins`: a new matches row under the key needs that PIN, or comes without a PIN from that device); a restart forgets them |
 
 ## 7. Findings (gaps between the code and "as long as needed, delete on request")
 
