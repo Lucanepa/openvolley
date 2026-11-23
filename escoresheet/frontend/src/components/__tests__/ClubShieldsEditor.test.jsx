@@ -60,6 +60,18 @@ describe('shields in the squad editor', () => {
     expect(shields('staff-row')).toEqual(['club', 'hand'])
   })
 
+  // PERM-19, review CR-1: the official's link search hands the daily limit on to the picker
+  it('linking an official: the server\'s daily search limit shows as such', async () => {
+    const search = vi.fn(async () => okRes({ people: [], more: false, limited: true }))
+    render(<TeamEditor team={team} competition={null} online fixedFields saveRoster={vi.fn()} clubPlayers={{ ...clubPlayers, search }} />)
+    fireEvent.click(within(screen.getAllByTestId('staff-row')[1]).getByTestId('club-shield'))
+    const picker = await screen.findByTestId('club-picker')
+    expect(picker.dataset.mode).toBe('link')
+    await waitFor(() => expect(search).toHaveBeenCalledWith('Physio'))
+    await waitFor(() => expect(within(picker).getByTestId('club-picker-search-limited')).toBeInTheDocument())
+    expect(within(picker).queryByTestId('club-picker-search-more')).toBeNull()
+  })
+
   it('no shields without the club\'s lists (Competitions)', () => {
     render(<TeamEditor team={team} competition={null} online fixedFields saveRoster={vi.fn()} />)
     expect(screen.queryAllByTestId('club-shield')).toEqual([])

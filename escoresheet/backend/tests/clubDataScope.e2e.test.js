@@ -32,7 +32,7 @@ import { grantRoles, quietLogger } from './helpers/pgTestDb.js'
 import { zurichDay } from '../lib/clubs.js'
 import { seasonOf } from '../lib/officialGame.js'
 import { seasonLabel } from '../lib/teams.js'
-import { createLicences, MAX_MANUAL_PER_CLUB, MAX_MANUAL_PER_DAY, MAX_SEARCH_RESULTS } from '../lib/licences.js'
+import { createLicences, MAX_MANUAL_PER_CLUB, MAX_MANUAL_PER_DAY } from '../lib/licences.js'
 
 const dayPlus = (day, n) => { const t = new Date(`${day}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10) }
 const YEAR = seasonOf(new Date())
@@ -281,8 +281,10 @@ describe('club data: only what each role needs', { skip: SKIP }, () => {
       assert.equal(r.json.data.more, false)
       // by licence number, and Bea of the players list (an official may be anyone of the club)
       assert.deepEqual((await call(users.coachU16, 'GET', path(BEA.sv_number))).json.data.people.map((p) => p.last_name), ['Brunner'])
+      // review CR-1 (the first MAX_SEARCH_RESULTS rows before): a team manager's
+      // answer names people only when it is whole; a broad one says more: true
       const many = await call(users.coachU16, 'GET', path('MUSTER'))
-      assert.equal(many.json.data.people.length, MAX_SEARCH_RESULTS)
+      assert.deepEqual(many.json.data.people, [])
       assert.equal(many.json.data.more, true)
       assert.equal((await call(users.coachU16, 'GET', path('ab'))).status, 400)
       assert.equal((await call(users.coachH1, 'GET', `/api/team/${teams['VBC Alpha U16'].id}/club-people?q=coachm`)).status, 403)

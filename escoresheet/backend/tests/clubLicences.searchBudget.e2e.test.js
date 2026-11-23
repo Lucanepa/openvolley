@@ -93,10 +93,17 @@ describe('club people search: a person, never the list (PERM-19)', { skip: SKIP 
   })
 
   it('at most a few rows an answer', async () => {
+    // review CR-1 (this pinned the first 10 rows of a broad query for the team
+    // manager before): the team manager's answer names people only when it is
+    // whole (tests/clubLicences.searchNarrow.e2e.test.js); the club manager
+    // still gets the first MAX_SEARCH_RESULTS
     const r = await search(users.Teamy, 'muster')
     assert.equal(r.status, 200, r.text)
-    assert.equal(r.json.data.people.length, MAX_SEARCH_RESULTS)
+    assert.deepEqual(r.json.data.people, [])
     assert.equal(r.json.data.more, true)
+    const c = await search(users.Clubby, 'muster')
+    assert.equal(c.json.data.people.length, MAX_SEARCH_RESULTS)
+    assert.equal(c.json.data.more, true)
   })
 
   it('a team manager gets at most SEARCH_DAILY_PEOPLE different people a day; those shown come again', async () => {
@@ -119,7 +126,8 @@ describe('club people search: a person, never the list (PERM-19)', { skip: SKIP 
     const r = await search(users.Teamy, `muster ${fresh.first_name.slice(0, 2)}`)
     assert.deepEqual(r.json.data.people, [])
     assert.equal(r.json.data.limited, true)
-    assert.equal(r.json.data.more, true)
+    // review CR-1 (true before): only the budget held them back, typing more would not help
+    assert.equal(r.json.data.more, false)
   })
 
   it('every search is audited, with ids and counts only', async () => {

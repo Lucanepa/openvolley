@@ -154,7 +154,7 @@ has them.
 | `POST /api/club/:id/licences/people` | the club's managers, admins | section 8 |
 | `DELETE /api/club/:id/licences/rows/:rowId` | the club's managers, admins | one row added by hand (section 9) |
 | `GET /api/team/:id/club-players` | whoever may manage the team | `{ team, gender: 'm' \| 'f' \| null, age_class: 'U16' \| null, players, people }`: `players` the players list of the team's gender (four fields and `manual`; `age_class` is shown only, no filter since db/048), `people` the people of the team's saved team and those players once `{ sv_number, last_name, first_name, gender, manual, lists }` (section 9) |
-| `GET /api/team/:id/club-people?q=` | whoever may manage the team | owner decision 7 (PERM-19): a licence number (whole), or words that each begin a part of the name (the longest at least 3 letters): at most 10 people of the three lists; at most 50 different people per account in 24 hours (those shown already come again, `limited: true` when someone was left out); audited `club.people_search` (team, counts, row ids; never a name or the query). A manager of the club and an admin: no budget, no audit. `{ people, more, limited? }` |
+| `GET /api/team/:id/club-people?q=` | whoever may manage the team | owner decision 7 (PERM-19): a licence number (whole), or words that each begin a part of the name (the longest at least 3 letters): at most 10 people of the three lists; at most 50 different people per account in 24 hours (those shown already come again, `limited: true` when someone was left out, `more: false` then when nobody else matches). The budgeted answer names people only when it is whole (review CR-1: at most 5 match; a broader query names nobody, `more: true`, and costs nothing, so the picker's searches while a name is typed spend no budget); audited `club.people_search` (team, counts, row ids; never a name or the query). A manager of the club and an admin: no budget, no audit, the first 10 of a broad query. `{ people, more, limited? }` |
 | `POST /api/team/:id/club-people` | whoever may manage the team | section 8, to the team's club |
 | `GET /api/club-licences` | indoor `canReadTeams` (scorers) | `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }`: the caller's clubs, `players` and `people` as above (section 9) |
 | `GET /api/club-licences/dob?club=&sv=` | the same | since db/048 always `{ club_id, people: [] }` (apps before it ask; nothing is looked up or audited) |
@@ -316,7 +316,9 @@ filtered on the server. Since db/048 nobody gets a date of birth (none is kept).
   player of its gender; `age_class` is still answered for the label. `people`: the people of the
   team's saved team and those players. An official may be anyone of the club: the picker asks the
   server's name search (`GET /api/team/:id/club-people?q=`, at least 3 characters, at most 10
-  rows). Saving a squad or a game roster no longer fills in anything from the lists.
+  rows; for a team manager only once at most 5 match: "More people match. Type more of the
+  name." until then, and its own message when the daily limit held someone back). Saving a squad
+  or a game roster no longer fills in anything from the lists.
 - **Scorers.** `GET /api/club-licences` sends the four fields. `GET /api/club-licences/dob`
   answers `{ club_id, people: [] }` (older apps ask; the scorer types a date of birth on a
   match's own sheet if one is wanted).

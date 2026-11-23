@@ -34,9 +34,12 @@ const matches = (p, needle) => !needle || fold(`${p.last_name} ${p.first_name ||
  * (empty when that finds nobody: a typo). onPick([person]).
  *
  * `search(q)` (owner decision 2: a team manager never gets the club's whole
- * lists): the server's name search ({ people, more }, or the API answer with
- * them in data), asked from SEARCH_MIN_LENGTH characters on; its people are
- * offered after those of `players` that match.
+ * lists): the server's name search ({ people, more, limited? }, or the API
+ * answer with them in data), asked from SEARCH_MIN_LENGTH characters on; its
+ * people are offered after those of `players` that match. `more`: more people
+ * match (type more of the name); `limited` (PERM-19, review CR-1): the
+ * account's daily search budget held someone back (typing more does not
+ * help: its own message).
  * `resolve(people)`: what the chosen people become before onPick (Match
  * Setup: the dates of birth the tablet's copy leaves out, asked for the
  * chosen ones only); the people as they are when it fails.
@@ -64,7 +67,7 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
   const [q, setQ] = useState(() => (initialQuery && (search || players.some((p) => matches(p, fold(initialQuery)))) ? initialQuery : ''))
   const [chosen, setChosen] = useState(() => new Set())
   const [role, setRole] = useState(() => (roles.some((r) => r.value === initialRole) ? initialRole : roles[0]?.value ?? null))
-  const [found, setFound] = useState({ q: '', people: [], more: false, loading: false })
+  const [found, setFound] = useState({ q: '', people: [], more: false, limited: false, loading: false })
   const [busy, setBusy] = useState(false)
   const seen = useRef(new Map())
   const roleLabel = (v) => roles.find((r) => r.value === v)?.label || v || ''
@@ -77,16 +80,18 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
     const timer = setTimeout(async () => {
       let people = []
       let more = false
+      let limited = false
       try {
         const r = await search(q.trim())
         const d = r?.data ?? r
         people = Array.isArray(d?.people) ? d.people.filter((p) => p && p.sv_number != null) : []
         more = d?.more === true
+        limited = d?.limited === true
       } catch { /* offline: the local ones only */ }
       if (!live) return
       // the ones found stay pickable when the search goes on
       for (const p of people) seen.current.set(p.sv_number, p)
-      setFound({ q: needle, people, more, loading: false })
+      setFound({ q: needle, people, more, limited, loading: false })
     }, SEARCH_DELAY_MS)
     return () => { live = false; clearTimeout(timer) }
   }, [searching, needle]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -120,6 +125,11 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
     else onPick(out)
   }
   const holder = officials && role ? holderOf(role) : null
+  // what the server's answer says beyond its people: the daily limit first (typing more does not help)
+  const note = searching && found.q === needle && !found.loading
+    ? (found.limited ? 'limited' : found.more ? 'more' : null)
+    : null
+  const noteText = note === 'limited' ? t('clubPlayers.searchLimited') : note === 'more' ? t('clubPlayers.searchMore') : null
   const shirt = (p) => {
     const n = typeof numberOf === 'function' ? numberOf(p) : null
     return n === null || n === undefined || n === '' ? null : t('clubPlayers.shirtNumber', { number: n })
@@ -159,11 +169,14 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
           <>
             <SearchInput size="md" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('clubPlayers.search')} aria-label={t('clubPlayers.search')} data-testid="club-picker-search" />
             {search && !searching && <p className="m-0 text-xs text-stone-500" data-testid="club-picker-search-hint">{t('clubPlayers.searchHint', { count: SEARCH_MIN_LENGTH })}</p>}
-            {searching && found.q === needle && found.more && <p className="m-0 text-xs text-stone-500" data-testid="club-picker-search-more">{t('clubPlayers.searchMore')}</p>}
+            {note && list.length > 0 && <p className="m-0 text-xs text-stone-500" data-testid={`club-picker-search-${note}`}>{noteText}</p>}
             {list.length === 0 ? (
               searching && (found.loading || found.q !== needle)
                 ? <EmptyInset>{t('clubPlayers.searching')}</EmptyInset>
-                : <EmptyInset>{t(single ? 'clubPlayers.noMatchPeople' : 'clubPlayers.noMatch')}</EmptyInset>
+                // nobody named, but someone matches: say why instead of "nobody matches"
+                : note
+                  ? <div data-testid={`club-picker-search-${note}`}><EmptyInset>{noteText}</EmptyInset></div>
+                  : <EmptyInset>{t(single ? 'clubPlayers.noMatchPeople' : 'clubPlayers.noMatch')}</EmptyInset>
             ) : (
               <ul
                 className="divide-y divide-stone-200/70 overflow-hidden rounded-xl border border-stone-200/70 bg-white"

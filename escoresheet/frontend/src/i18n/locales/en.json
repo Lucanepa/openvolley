@@ -6920,6 +6920,7 @@
     "search": "Search by name or licence",
     "searchHint": "Type at least {{count}} letters to find anyone of the club.",
     "searchMore": "More people match. Type more of the name.",
+    "searchLimited": "Today's search limit is reached: only people you found before come up. Try again tomorrow, or ask a club manager.",
     "searching": "Searching…",
     "none": "No players in the club's licence list yet. A club manager uploads it under My club.",
     "noMatch": "No player matches the search.",

@@ -6913,6 +6913,7 @@
     "search": "Chercher un nom ou une licence",
     "searchHint": "Saisis au moins {{count}} lettres pour trouver une personne du club.",
     "searchMore": "D’autres personnes correspondent. Saisis davantage du nom.",
+    "searchLimited": "La limite de recherche du jour est atteinte : seules les personnes déjà trouvées s’affichent. Réessaie demain ou demande à un responsable du club.",
     "searching": "Recherche…",
     "none": "La liste des licences du club n’a pas encore de joueurs. Un responsable du club la charge sous Mon club.",
     "noMatch": "Aucun joueur ne correspond à la recherche.",

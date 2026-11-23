@@ -6902,6 +6902,7 @@
     "search": "Name oder Lizenz suchen",
     "searchHint": "Gib mindestens {{count}} Buchstaben ein, um jemanden des Vereins zu finden.",
     "searchMore": "Es gibt weitere Treffer. Gib mehr vom Namen ein.",
+    "searchLimited": "Das Tageslimit der Suche ist erreicht: Es erscheinen nur Personen, die du schon gefunden hast. Versuch es morgen wieder oder frag einen Vereinsverantwortlichen.",
     "searching": "Suche…",
     "none": "Die Lizenzliste des Vereins hat noch keine Spieler. Ein Vereinsverantwortlicher lädt sie unter Mein Verein hoch.",
     "noMatch": "Kein Spieler passt zur Suche.",

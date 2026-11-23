@@ -6919,6 +6919,7 @@
     "search": "Cerca nome o licenza",
     "searchHint": "Digita almeno {{count}} lettere per trovare qualcuno della società.",
     "searchMore": "Ci sono altre persone. Digita una parte più lunga del nome.",
+    "searchLimited": "Il limite giornaliero di ricerca è raggiunto: compaiono solo le persone già trovate. Riprova domani o chiedi a un responsabile della società.",
     "searching": "Ricerca…",
     "none": "L’elenco delle licenze della società non ha ancora giocatori. Un responsabile della società lo carica in La mia società.",
     "noMatch": "Nessun giocatore corrisponde alla ricerca.",

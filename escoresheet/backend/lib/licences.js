@@ -112,6 +112,11 @@ export const SEARCH_MIN_LENGTH = 3
 // whole, and one account gets at most SEARCH_DAILY_PEOPLE different people
 // in 24 hours (those it was shown already come again); every search is audited
 export const SEARCH_DAILY_PEOPLE = 50
+// ... and its answer names people only when it is whole: at most this many
+// match (review CR-1). A broader query names nobody and costs nothing, so the
+// picker's searches while a name is typed ("Sch", "Schm") spend no budget, and
+// every narrower query after a whole answer finds people shown already
+export const SEARCH_NARROW_MAX = 5
 const SEARCH_WINDOW = '24 hours'
 const MANUAL_FIELDS = Object.freeze(['list', ...LICENCE_FIELDS])
 const SV_RE = /^[0-9]{4,7}$/
@@ -850,10 +855,15 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
    * "ller" nobody), the longest at least SEARCH_MIN_LENGTH letters. An
    * account sees at most SEARCH_DAILY_PEOPLE different people in 24 hours;
    * past that only those it was shown already (`limited`: someone was left
-   * out). Each search is audited (club.people_search: the team, the counts,
-   * the ids of the rows shown; never a name, a licence or the query).
+   * out; `more` is false then when nobody else matches: typing more would
+   * not help). Its answer names people only when at most SEARCH_NARROW_MAX
+   * match (review CR-1: the budget follows lookups, not the picker's searches
+   * while a name is typed); a broader one is { people: [], more: true } and
+   * costs nothing. Each search is audited (club.people_search: the team, the
+   * counts, the ids of the rows shown; never a name, a licence or the query).
    * `unlimited`: an admin or a manager of the team's club (they read the
-   * whole lists anyway): no budget, no audit. { people, more, limited? }
+   * whole lists anyway): no budget, no audit, the first MAX_SEARCH_RESULTS
+   * of a broad query. { people, more, limited? }
    */
   async function searchPeople ({ teamId, q, userId = null, unlimited = false } = {}) {
     if (!isUuid(teamId)) return notFound()
@@ -903,10 +913,11 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
             WHERE a.actor_id = $1 AND a.action = 'club.people_search' AND a.at > now() - $2::interval`, [userId, SEARCH_WINDOW])
         const seen = new Set(seenRows.map((r) => r.id))
         let room = Math.max(0, SEARCH_DAILY_PEOPLE - seen.size)
+        // a whole answer only (CR-1): a broader one names nobody, costs nothing
+        const narrow = hits.length <= SEARCH_NARROW_MAX
         const shown = []
         let held = 0
-        for (const p of hits) {
-          if (shown.length >= MAX_SEARCH_RESULTS) break
+        for (const p of narrow ? hits : []) {
           const k = keyOf.get(p.sv_number)
           if (k && seen.has(k)) { shown.push(p); continue }
           if (room > 0) { room--; shown.push(p); continue }
@@ -916,9 +927,11 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
         await audit(client, {
           actorId: userId,
           action: 'club.people_search',
-          details: { club_id: team.club_id, team_id: team.id, results: shown.length, new: ids.filter((k) => !seen.has(k)).length, limited: held > 0, ids }
+          details: { club_id: team.club_id, team_id: team.id, results: shown.length, new: ids.filter((k) => !seen.has(k)).length, limited: held > 0, narrow, ids }
         })
-        return ok({ people: shown, more: hits.length > shown.length, ...(held > 0 ? { limited: true } : {}) })
+        // more: someone matches past the answer (typing more of the name finds them);
+        // those the budget held back are `limited`, not `more`
+        return ok({ people: shown, more: !narrow, ...(held > 0 ? { limited: true } : {}) })
       })
     })
   }
