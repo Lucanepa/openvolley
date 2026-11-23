@@ -130,6 +130,115 @@ describe('createFairGate', () => {
     assert.deepEqual(order, ['run', 'owner', 'x', 'y'])
   })
 
+  // review of the SEC-03 fix (I-1): priority went first whatever its lane and
+  // nobody could push it out, so correct sign-ins to an attacker's own
+  // accounts from their known sources turned everyone else away
+  it('priority from one lane: one job waits as priority, the rest as normal ones; other lanes\' priority and normal jobs get in', async () => {
+    const reasons = []
+    const gate = createFairGate({ maxConcurrent: 1, maxQueue: 4, onReject: (r) => reasons.push(r) })
+    const order = []
+    const job = controlled(gate, order)
+    const flood = Array.from({ length: 5 }, (_, i) => job(`a${i}`, { lane: 'atk', priority: true, account: `atk${i}@x` }))
+    await sleep(5)
+    assert.deepEqual(order, ['a0'])
+    assert.equal(gate.queued, 4)
+    const known = job('known', { lane: 'hall', priority: true, account: 'scorer@x' })
+    await assert.rejects(flood[4].p, (e) => e.code === 'AUTH_BUSY', 'a priority newcomer takes the place of the flood\'s newest normal job')
+    const fresh = job('fresh', { lane: 'new', account: 'referee@x' })
+    await assert.rejects(flood[3].p, (e) => e.code === 'AUTH_BUSY', 'so does a normal newcomer: the flood\'s other jobs wait as normal ones')
+    const more = job('a5', { lane: 'atk', priority: true, account: 'atk5@x' })
+    await assert.rejects(more.p, (e) => e.code === 'AUTH_BUSY', 'the flooding lane finds no place of its own')
+    assert.deepEqual(reasons, ['evicted', 'evicted', 'full'])
+    flood[0].release(); await flood[0].p
+    await sleep(5)
+    assert.deepEqual(order, ['a0', 'known'], 'the known source of a lane served less recently goes first')
+    known.release(); await known.p
+    await sleep(5)
+    assert.deepEqual(order, ['a0', 'known', 'a1'], 'then the flood\'s one priority job')
+    flood[1].release(); await flood[1].p
+    await sleep(5)
+    assert.deepEqual(order, ['a0', 'known', 'a1', 'fresh'], 'then the other lane, before the flood\'s normal jobs')
+    fresh.release(); await fresh.p
+    await sleep(5)
+    flood[2].release(); await flood[2].p
+    assert.deepEqual(order, ['a0', 'known', 'a1', 'fresh', 'a2'])
+    assert.equal(gate.queued, 0)
+  })
+
+  it('one account from several lanes: one waiting job keeps priority; a lane it has not served gets in', async () => {
+    const gate = createFairGate({ maxConcurrent: 1, maxQueue: 4 })
+    const order = []
+    const job = controlled(gate, order)
+    // the attacker's lanes were busy before (its own sign-ins)
+    for (const l of ['L1', 'L2', 'L3', 'L4', 'L5']) { const w = job(`warm-${l}`, { lane: l }); w.release(); await w.p }
+    const running = job('run', { lane: 'R' })
+    const flood = ['L1', 'L2', 'L3', 'L4'].map((l) => job(l, { lane: l, priority: true, account: 'mallory@x' }))
+    await sleep(5)
+    const extra = job('L5', { lane: 'L5', priority: true, account: 'mallory@x' })
+    await assert.rejects(extra.p, (e) => e.code === 'AUTH_BUSY', 'no place for a fifth: it waits as a normal job and pushes nobody out')
+    const fresh = job('fresh', { lane: 'new' })
+    const out1 = await Promise.race(flood.map((j, i) => j.p.then(() => null, () => i)))
+    assert.notEqual(out1, 0, 'the one priority job stays')
+    const known = job('known', { lane: 'hall', priority: true, account: 'scorer@x' })
+    const settled = await Promise.allSettled(flood.map((j) => Promise.race([j.p, sleep(20).then(() => 'waiting')])))
+    assert.equal(settled.filter((r) => r.status === 'rejected').length, 2, 'the known source took the place of another of them')
+    running.release(); await running.p
+    await sleep(5)
+    assert.equal(order.at(-1), 'known')
+    known.release(); await known.p
+    await sleep(5)
+    assert.equal(order.at(-1), 'L1', 'the account\'s one priority job')
+    flood[0].release(); await flood[0].p
+    await sleep(5)
+    assert.equal(order.at(-1), 'fresh', 'then the lane the flood has not served')
+    fresh.release(); await fresh.p
+    for (const j of flood.slice(1)) j.release()
+    await Promise.allSettled(flood.map((j) => j.p))
+  })
+
+  it('priorityGapMs: a lane starts a waiting priority job at most that often; other lanes go between', async () => {
+    const gate = createFairGate({ maxConcurrent: 1, maxQueue: 8, priorityGapMs: 60_000 })
+    const order = []
+    const job = controlled(gate, order)
+    const first = job('a0', { lane: 'atk', priority: true, account: 'a0@x' })
+    const p1 = job('a1', { lane: 'atk', priority: true, account: 'a1@x' })
+    await sleep(5)
+    const other = job('b1', { lane: 'B' })
+    first.release(); await first.p
+    await sleep(5)
+    assert.deepEqual(order, ['a0', 'a1'], 'its waiting priority job goes first')
+    const p2 = job('a2', { lane: 'atk', priority: true, account: 'a2@x' })
+    p1.release(); await p1.p
+    await sleep(5)
+    assert.deepEqual(order, ['a0', 'a1', 'b1'], 'its next one waits as a normal job: the other lane goes first')
+    other.release(); await other.p
+    await sleep(5)
+    p2.release(); await p2.p
+    assert.deepEqual(order, ['a0', 'a1', 'b1', 'a2'])
+  })
+
+  it('only priority jobs wait: a priority newcomer takes the place of the one whose lane was served most recently, if more recently than its own', async () => {
+    const gate = createFairGate({ maxConcurrent: 1, maxQueue: 2 })
+    const order = []
+    const job = controlled(gate, order)
+    for (const l of ['X', 'Y']) { const w = job(`warm-${l}`, { lane: l }); w.release(); await w.p }
+    const running = job('run', { lane: 'R' })
+    const x = job('x', { lane: 'X', priority: true, account: 'x@x' })
+    const y = job('y', { lane: 'Y', priority: true, account: 'y@x' })
+    await sleep(5)
+    const known = job('known', { lane: 'hall', priority: true, account: 'scorer@x' })
+    await assert.rejects(y.p, (e) => e.code === 'AUTH_BUSY', 'Y was served last')
+    const late = job('late', { lane: 'Y', priority: true, account: 'y@x' })
+    await assert.rejects(late.p, (e) => e.code === 'AUTH_BUSY', 'a lane served more recently pushes out neither')
+    running.release(); await running.p
+    await sleep(5)
+    assert.equal(order.at(-1), 'known')
+    known.release(); await known.p
+    await sleep(5)
+    x.release(); await x.p
+    assert.deepEqual(order.slice(-2), ['known', 'x'])
+  })
+
   it('maxWaitMs: a job that waited that long answers AUTH_BUSY quickly and leaves the queue', async () => {
     const reasons = []
     const gate = createFairGate({ maxConcurrent: 1, maxQueue: 8, maxWaitMs: 60, onReject: (r) => reasons.push(r) })
@@ -283,6 +392,55 @@ describe('sign-in floods (audit 2611 SEC-03)', { skip: SKIP_PG }, () => {
     assert.equal(legit.status, 200, `the scorer from a known source goes first (${JSON.stringify(legit.body.error)}; flood ${JSON.stringify(t)})`)
     assert.ok((t['503:auth_busy'] || 0) > 0)
   })
+
+  // review of the SEC-03 fix (I-1, scratchpad prioflood.mjs): 6 accounts of
+  // the attacker's own, each signed in once from 20 sources; then ~50 correct
+  // sign-ins a second from those known sources (priority), with one slot
+  const attackerLayouts = [
+    ['20 /64s of one /48', (i) => `2001:db8:aaaa:${(i + 1).toString(16)}::1`],
+    ['20 /48s', (i) => `2001:db8:${(0xa000 + i).toString(16)}:1::1`]
+  ]
+  for (const [layout, atkIp] of attackerLayouts) {
+    it(`correct sign-ins to an attacker's own accounts from their known sources (${layout}) turn away neither a known scorer nor a new referee`, async () => {
+      const tag = layout.replace(/[^a-z0-9]+/gi, '')
+      let delay = 0
+      const bcrypt = { hash: bcryptjs.hash, compare: async (pw, h) => { const [r] = await Promise.all([bcryptjs.compare(pw, h), sleep(delay)]); return r } }
+      const auth = makeAuth({ bcrypt, bcryptMaxConcurrent: 1 })
+      const PW = 'right-password-1'
+      const add = (e) => pool.query(`INSERT INTO auth.users (email, encrypted_password, email_confirmed_at) VALUES ($1, crypt($2, gen_salt('bf', 4)), now())`, [e, PW])
+      const ACC = 6
+      const SRC = 20
+      for (let a = 0; a < ACC; a++) await add(`atk${a}-${tag}@example.ch`)
+      await add(`known-${tag}@example.ch`)
+      await add(`newref-${tag}@example.ch`)
+      for (let a = 0; a < ACC; a++) {
+        for (let i = 0; i < SRC; i++) assert.equal((await signIn(auth, `atk${a}-${tag}@example.ch`, PW, atkIp(i))).status, 200)
+      }
+      const hall = v4()
+      assert.equal((await signIn(auth, `known-${tag}@example.ch`, PW, hall)).status, 200, 'the scorer signed in from the hall before')
+      delay = 60 // ~ one bcrypt, one at a time (the production default: one worker thread)
+      let stop = false
+      const flood = []
+      const pump = (async () => {
+        for (let n = 0; !stop; n++) {
+          flood.push(signIn(auth, `atk${n % ACC}-${tag}@example.ch`, PW, atkIp(Math.floor(n / ACC) % SRC)))
+          await sleep(20)
+        }
+      })()
+      await sleep(600)
+      const res = { known: [], newReferee: [] }
+      for (let k = 0; k < 6; k++) {
+        res.known.push((await signIn(auth, `known-${tag}@example.ch`, PW, hall)).status)
+        res.newReferee.push((await signIn(auth, `newref-${tag}@example.ch`, PW, v4())).status)
+        await sleep(150)
+      }
+      stop = true
+      await pump
+      const t = tally(await Promise.all(flood))
+      assert.deepEqual(res, { known: [200, 200, 200, 200, 200, 200], newReferee: [200, 200, 200, 200, 200, 200] }, `flood ${JSON.stringify(t)}`)
+      assert.ok((t['503:auth_busy'] || 0) > 0, `the flood is shed: ${JSON.stringify(t)}`)
+    })
+  }
 
   it('the queue sheds quickly: a waiting sign-in answers 503 auth_busy after bcryptMaxWaitMs, not seconds later', async () => {
     const auth = makeAuth({ bcrypt: slowBcrypt(150), bcryptMaxConcurrent: 1, bcryptMaxQueue: 16, bcryptMaxWaitMs: 200 })

@@ -83,7 +83,8 @@
  * call goes through a gate that is fair between clients (createFairGate,
  * audit 2611 SEC-03): one job at a time per client lane (an IPv6 /48 or an
  * IPv4 address, ipLaneKey), the lane served least recently first, a source
- * that signed in to the account before ahead of the rest, a short wait
+ * that signed in to the account before ahead of the rest (one waiting job
+ * per lane and per account, so priority cannot be stacked), a short wait
  * (bcryptMaxWaitMs), and 503 "auth_busy" at once when there is no place; an
  * ops alert when that goes on (onGateSaturated). Sign-in also has a global
  * bucket (limits.signInGlobal) next to the per-IP one, charged only to
@@ -253,6 +254,11 @@ const DEFAULTS = Object.freeze({
   bcryptMaxQueue: 16,
   bcryptMaxWaitMs: 3000,
   bcryptLaneConcurrent: 1,
+  // A source that signed in to the account before goes ahead of the rest,
+  // but a lane (or an account) at most once per bcryptPriorityGapMs, with at
+  // most one such job waiting (createFairGate): known sources of an
+  // attacker's own accounts cannot keep everyone else waiting (SEC-03).
+  bcryptPriorityGapMs: 5000,
   // Ops alert (options.onGateSaturated, server.js: the error tracker) when
   // sign-ins keep being turned away (auth_busy, the gate at capacity) for
   // bcryptSaturatedMs; at most once per bcryptAlertCooldownMs.
@@ -333,6 +339,8 @@ const DEFAULTS = Object.freeze({
 const FAILED_SOURCE_MS = 15 * 60 * 1000
 const KNOWN_SOURCE_MS = 60 * DAY * 1000
 const KNOWN_SOURCES_MAX = 50_000
+// createFairGate: how many lanes it remembers the last start of (idle ones too)
+const SERVED_LANES_MAX = 10_000
 
 const TOKEN_BYTES = 32
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/ // base64url of 32 bytes, no padding
@@ -556,24 +564,34 @@ export function ipLaneKey(ip) {
 
 /**
  * A concurrency gate that is fair between clients (audit 2611 SEC-03), for the
- * bcrypt work of sign-in. run(fn, { lane, priority, abandoned }):
+ * bcrypt work of sign-in. run(fn, { lane, priority, account, abandoned }):
  *   - at most maxConcurrent jobs run; at most laneConcurrent of one lane (a
  *     client, ipLaneKey); a job without a lane (scripts, the dummy hash) has
  *     no lane limit;
- *   - waiting jobs start priority first, then the lane served least recently,
- *     then in arrival order: a flood from one lane cannot keep another
+ *   - waiting jobs start priority first, then the lane served least recently
+ *     (remembered for the last SERVED_LANES_MAX lanes, also once a lane is
+ *     idle), then in arrival order: a flood from one lane cannot keep another
  *     client's job waiting behind it;
- *   - when the queue (maxQueue) is full, a newcomer whose lane waits with
- *     fewer jobs than the longest lane takes the place of that lane's newest
- *     job, and a priority newcomer the place of the newest job of the longest
- *     lane; the job pushed out, or a newcomer that finds no place, rejects at
- *     once with err.code === 'AUTH_BUSY';
+ *   - priority (a source that signed in to the account before) is fair too:
+ *     at most one waiting job per lane and one per `account` keeps it, and a
+ *     lane or an account that started a waiting priority job less than
+ *     priorityGapMs ago gets none; any further one waits as a normal job (one
+ *     lane, or one account from many lanes, can neither fill the queue with
+ *     jobs nobody may push out nor keep the other lanes' jobs waiting);
+ *   - when the queue (maxQueue) is full, a newcomer whose lane waits with at
+ *     least two jobs fewer than the longest lane (all its jobs counted) takes
+ *     the place of that lane's newest normal job, and a priority newcomer
+ *     the place of a normal job of the longest lane; otherwise a newcomer
+ *     takes the place of a job (a priority newcomer: also a priority job)
+ *     whose lane waits with more jobs than its own and was served more
+ *     recently (victimFor); the job pushed out, or a newcomer that finds no
+ *     place, rejects at once with err.code === 'AUTH_BUSY';
  *   - a job that waited maxWaitMs rejects with 'AUTH_BUSY' (a quick 503
  *     instead of a long wait);
  *   - `abandoned` as in createConcurrencyGate.
  * onReject(reason): 'full' | 'evicted' | 'timeout', for the saturation alert.
  */
-export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, laneConcurrent = 1, onReject = null } = {}) {
+export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, laneConcurrent = 1, priorityGapMs = 0, onReject = null } = {}) {
   if (!(maxConcurrent > 0) || !(maxQueue >= 0) || !(laneConcurrent > 0)) {
     throw new Error('createFairGate: maxConcurrent (> 0), laneConcurrent (> 0) and maxQueue (>= 0) are required')
   }
@@ -581,12 +599,15 @@ export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, lan
   let peak = 0
   let rejected = 0
   let served = 0
-  const lanes = new Map() // lane -> { active, queued, served }
-  const waiting = [] // { lane, priority, resolve, reject, timer }
+  const lanes = new Map() // lane -> { active, queued, prio }
+  const accountPrio = new Map() // account -> its waiting priority jobs (0 or 1)
+  const lastServed = new Map() // lane -> number of its last start, most recent last
+  const prioStarted = new Map() // lane or account -> when it last started a waiting priority job
+  const waiting = [] // { lane, account, priority, resolve, reject, timer }
   const busy = () => Object.assign(new Error('auth: bcrypt queue is full'), { code: 'AUTH_BUSY' })
   const laneOf = (lane) => {
     let s = lanes.get(lane)
-    if (!s) { s = { active: 0, queued: 0, served: 0 }; lanes.set(lane, s) }
+    if (!s) { s = { active: 0, queued: 0, prio: 0 }; lanes.set(lane, s) }
     return s
   }
   const tidy = (lane) => {
@@ -594,7 +615,7 @@ export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, lan
     if (s && !s.active && !s.queued) lanes.delete(lane)
   }
   const canStart = (lane) => lane == null || (lanes.get(lane)?.active || 0) < laneConcurrent
-  const servedOf = (lane) => (lane == null ? 0 : lanes.get(lane)?.served || 0)
+  const servedOf = (lane) => (lane == null ? 0 : lastServed.get(lane) || 0)
   const refuse = (reason) => {
     rejected++
     try { onReject?.(reason) } catch { /* an alert must never fail a sign-in */ }
@@ -604,14 +625,49 @@ export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, lan
     active++
     if (active > peak) peak = active
     if (lane != null) {
-      const s = laneOf(lane)
-      s.active++
-      s.served = ++served
+      laneOf(lane).active++
+      lastServed.delete(lane) // re-inserted: most recent last
+      lastServed.set(lane, ++served)
+      if (lastServed.size > SERVED_LANES_MAX) lastServed.delete(lastServed.keys().next().value)
     }
+  }
+  const prioKey = (kind, k) => `${kind}\u0000${k}`
+  const recentPrio = (kind, k, t) => k != null && priorityGapMs > 0 && t - (prioStarted.get(prioKey(kind, k)) ?? -Infinity) < priorityGapMs
+  function notePrio(kind, k, t) {
+    if (k == null || !(priorityGapMs > 0)) return
+    const key = prioKey(kind, k)
+    prioStarted.delete(key) // re-inserted: most recent last
+    prioStarted.set(key, t)
+    if (prioStarted.size > 2 * SERVED_LANES_MAX) prioStarted.delete(prioStarted.keys().next().value)
+  }
+  /** May a priority job of `lane` and `account` wait as one now? */
+  function keepsPriority(lane, account) {
+    if (lane != null && (lanes.get(lane)?.prio || 0) > 0) return false
+    if (account != null && (accountPrio.get(account) || 0) > 0) return false
+    const t = Date.now()
+    if (recentPrio('lane', lane, t) || recentPrio('account', account, t)) return false
+    return true
+  }
+  function enqueue(e) {
+    if (e.lane != null) {
+      const s = laneOf(e.lane)
+      s.queued++
+      if (e.priority) s.prio++
+    }
+    if (e.priority && e.account != null) accountPrio.set(e.account, (accountPrio.get(e.account) || 0) + 1)
+    waiting.push(e)
   }
   function unqueue(e) {
     clearTimeout(e.timer)
-    if (e.lane != null) { const s = lanes.get(e.lane); if (s) s.queued-- }
+    if (e.lane != null) {
+      const s = lanes.get(e.lane)
+      if (s) { s.queued--; if (e.priority) s.prio-- }
+    }
+    if (e.priority && e.account != null) {
+      const n = (accountPrio.get(e.account) || 0) - 1
+      if (n > 0) accountPrio.set(e.account, n)
+      else accountPrio.delete(e.account)
+    }
   }
   function pick() {
     let best = -1
@@ -632,6 +688,11 @@ export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, lan
       const [e] = waiting.splice(i, 1)
       unqueue(e)
       start(e.lane)
+      if (e.priority) {
+        const t = Date.now()
+        notePrio('lane', e.lane, t)
+        notePrio('account', e.account, t)
+      }
       e.resolve()
     }
   }
@@ -644,36 +705,53 @@ export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, lan
     }
     pump()
   }
-  /** Index of the waiting job a newcomer of `lane` may push out, or -1. */
+  /**
+   * Index of the waiting job a newcomer of `lane` may push out, or -1. The
+   * candidate: a normal job before a priority one (which only a priority
+   * newcomer may push out), then the lane waiting with the most jobs (all its
+   * jobs counted), then the lane served most recently, then the newest; never
+   * one of the newcomer's own lane. It gives way when its lane waits with at
+   * least two jobs more than the newcomer's (to a priority newcomer: any
+   * normal job), or when its lane waits with more jobs than the newcomer's and
+   * was served more recently (lanes that one client keeps busy make room for
+   * one it has not served lately).
+   */
   function victimFor(lane, priority) {
+    const keyOf = (e) => e.lane ?? e // a job without a lane is a lane of its own
     const counts = new Map()
-    for (const e of waiting) {
-      if (e.priority) continue
-      const k = e.lane ?? e
-      counts.set(k, (counts.get(k) || 0) + 1)
-    }
-    let most = 0
-    for (const n of counts.values()) if (n > most) most = n
-    if (!most) return -1
+    for (const e of waiting) counts.set(keyOf(e), (counts.get(keyOf(e)) || 0) + 1)
     const mine = lane == null ? 0 : (counts.get(lane) || 0)
-    if (!priority && most <= mine + 1) return -1
-    // the newest job of a longest lane
+    let best = -1
     for (let i = waiting.length - 1; i >= 0; i--) {
       const e = waiting[i]
-      if (!e.priority && counts.get(e.lane ?? e) === most) return i
+      if (e.priority && !priority) continue
+      if (lane != null && e.lane === lane) continue
+      if (best === -1) { best = i; continue }
+      const b = waiting[best]
+      if (e.priority !== b.priority) { if (!e.priority) best = i; continue }
+      const ce = counts.get(keyOf(e))
+      const cb = counts.get(keyOf(b))
+      if (ce !== cb) { if (ce > cb) best = i; continue }
+      if (servedOf(e.lane) > servedOf(b.lane)) best = i
     }
+    if (best === -1) return -1
+    const v = waiting[best]
+    const n = counts.get(keyOf(v))
+    if (!v.priority && (priority || n > mine + 1)) return best
+    if (n > mine && servedOf(v.lane) > servedOf(lane)) return best
     return -1
   }
   return {
     maxConcurrent,
     maxQueue,
     laneConcurrent,
-    async run(fn, { lane = null, priority = false, abandoned } = {}) {
+    async run(fn, { lane = null, priority = false, account = null, abandoned } = {}) {
       if (active < maxConcurrent && canStart(lane)) {
         start(lane)
       } else {
+        const prio = !!priority && keepsPriority(lane, account)
         if (waiting.length >= maxQueue) {
-          const v = maxQueue > 0 ? victimFor(lane, priority) : -1
+          const v = maxQueue > 0 ? victimFor(lane, prio) : -1
           if (v === -1) throw refuse('full')
           const [out] = waiting.splice(v, 1)
           unqueue(out)
@@ -681,8 +759,7 @@ export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, lan
           out.reject(refuse('evicted'))
         }
         await new Promise((resolve, reject) => {
-          const entry = { lane, priority: !!priority, resolve, reject, timer: null }
-          if (lane != null) laneOf(lane).queued++
+          const entry = { lane, account, priority: prio, resolve, reject, timer: null }
           if (maxWaitMs > 0) {
             entry.timer = setTimeout(() => {
               const i = waiting.indexOf(entry)
@@ -694,7 +771,7 @@ export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, lan
             }, maxWaitMs)
             entry.timer.unref?.()
           }
-          waiting.push(entry)
+          enqueue(entry)
         })
       }
       if (typeof abandoned === 'function' && abandoned()) {
@@ -878,6 +955,7 @@ export function createAuth(options = {}) {
     maxQueue: cfg.bcryptMaxQueue,
     maxWaitMs: cfg.bcryptMaxWaitMs,
     laneConcurrent: cfg.bcryptLaneConcurrent,
+    priorityGapMs: cfg.bcryptPriorityGapMs,
     onReject: () => noteGateBusy()
   })
   // o: { lane, priority } of the request (createFairGate)
@@ -1077,8 +1155,11 @@ export function createAuth(options = {}) {
     return bcrypt.hash(password, cfg.bcryptCost, gateOptions)
   }
 
-  /** The bcrypt gate's options of a request from `ip`. */
-  const gateFor = (ip, priority = false) => ({ lane: laneKey(ip), priority })
+  /**
+   * The bcrypt gate's options of a request from `ip`; `account` (the address
+   * signing in) for the gate's one waiting priority job per account.
+   */
+  const gateFor = (ip, priority = false, account = null) => ({ lane: laneKey(ip), priority, account })
 
   // --- users -------------------------------------------------------------------
   function isUserBlocked(u) {
@@ -1714,7 +1795,7 @@ export function createAuth(options = {}) {
       // The bcrypt gate is fair between clients, and a source that signed in
       // to this account before (and did not fail since) goes first: a flood
       // of made-up sign-ins cannot turn its owner away (SEC-03)
-      const passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, known && !failedLately))
+      const passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, known && !failedLately, email))
       if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) return await failed()
       const session = await createSession(user.id, user.encrypted_password)
       if (!session) return await failed() // password changed or account deleted while we were checking
