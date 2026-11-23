@@ -1184,6 +1184,7 @@ html[data-no-motion] .lineup-chip,
 html[data-no-motion] .lineup-gcapt__choice,
 html[data-no-motion] .game-card,
 html[data-no-motion] .home-card--clickable,
+html[data-no-motion] .hold-fill,
 html[data-no-motion] [style*='transition'] {
   transition-duration: 0s !important;
   transition-delay: 0s !important;
