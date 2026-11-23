@@ -843,6 +843,7 @@ function routeLabel(req) {
 // Live sockets are anonymous: rows are redacted (PINs) and then projected to
 // the public columns (no rosters, dates of birth, signatures, officials,
 // connection data, event payloads), see lib/publicColumns.js.
+const LIVE_PER_NET = Object.freeze({ v6net56: 200, v6net48: 400, v4net24: 400 })
 const realtimeHub = DB_MODE
   ? createRealtimeHub({
     redact: redactSecrets,
@@ -850,6 +851,12 @@ const realtimeHub = DB_MODE
     summaryProject: projectLiveSummaryRow,
     // one subscriber holds a whole IPv6 /64, as for the role sockets
     bucketOf: (ip) => ipBucketKey(ip),
+    // ...and one customer a /56 or /48: 30 /64s of one /56 held all 3000
+    // live slots (audit 2611 SEC-08). Per IPv6 /56 twice one /64's 100, per
+    // /48 and per IPv4 /24 four times; at the total cap a socket that holds
+    // no channel makes room, and one without a channel for 10 s is closed.
+    netsOf: (ip) => roleNetsOf(ip, ipBucketKey(ip)),
+    maxPerNet: LIVE_PER_NET,
     getClientIp: (req) => getClientIp(req)
   })
   : null

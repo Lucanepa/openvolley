@@ -342,10 +342,22 @@ function sameColumns(known, row) {
  *           a venue's NAT needs tens, not hundreds.
  * @property {(ip: string) => string} [bucketOf]  The bucket of an address (server.js:
  *           ipBucketKey, an IPv6 /64 is one subscriber). Default: the address.
- * @property {number} [maxTotal=3000]      Live sockets in total.
+ * @property {(ip: string) => Array<[string, string]>} [netsOf]  The wider networks of an address
+ *           that maxPerNet counts, as [kind, key] (server.js: the IPv6 /56 and /48, the
+ *           IPv4 /24). Default: none.
+ * @property {Object<string, number>} [maxPerNet]  Live sockets per network of each kind of
+ *           netsOf: one IPv6 customer holds a /56 or a /48, and per /64 alone 30 of
+ *           them filled maxTotal (audit 2611 SEC-08).
+ * @property {number} [maxTotal=3000]      Live sockets in total. At it, the oldest socket
+ *           that holds no channel makes room for a new one; the new one is refused only
+ *           when every socket holds a channel.
  * @property {number} [maxViewers]         Of those, sockets that open as a livescore viewer
  *           (`?purpose=live&client=viewer`). Default 80 % of maxTotal: the rest stays
  *           for the referee and bench tablets, however many people watch.
+ * @property {number} [channelGraceMs=10000]  A socket that holds no channel for this long
+ *           (from its connection, or since its last channel went) is closed (1008); 0 never.
+ *           relayRealtime subscribes at once and closes its socket 5 s after its last
+ *           channel goes.
  * @property {number} [summaryIntervalMs=1000]  A `summary: true` channel (the livescore
  *           list) gets one frame of the newest rows per interval (`db-changes`), in the
  *           columns of summaryProject.
@@ -395,8 +407,11 @@ export function createRealtimeHub(options = {}) {
     allowUnfiltered = false,
     maxPerIp = 100,
     bucketOf = (ip) => ip,
+    netsOf = null,
+    maxPerNet = {},
     maxTotal = 3000,
     maxViewers = Math.floor(maxTotal * 0.8),
+    channelGraceMs = 10000,
     summaryIntervalMs = 1000,
     summaryProject = null,
     reorderWindowMs = 60000,
@@ -442,7 +457,10 @@ export function createRealtimeHub(options = {}) {
   /** @type {Map<import('ws').WebSocket, {ip:string, channels:Map<string,object>, window:number, count:number}>} */
   const sockets = new Map()
   const ipCounts = new Map()
+  /** `${kind}\0${key}` (netsOf) -> live sockets */
+  const netCounts = new Map()
   let viewerCount = 0
+  let graceTimer = null
   /**
    * Channels by the filter of a sub: `${table}\0${column}\0${value}` (and
    * `${table}\0` for an unfiltered sub) -> channels. A publish looks up the
@@ -458,7 +476,7 @@ export function createRealtimeHub(options = {}) {
   const summaryGroups = new Map()
   const summaryColumnsOf = new Map()
   let summaryTimer = null
-  const counters = { published: 0, delivered: 0, rejected: 0, terminatedSlow: 0, staleDropped: 0, duplicateDropped: 0, summaryFrames: 0 }
+  const counters = { published: 0, delivered: 0, rejected: 0, terminatedSlow: 0, staleDropped: 0, duplicateDropped: 0, summaryFrames: 0, evicted: 0, closedNoChannel: 0 }
   /** `${table}\0${key}` -> newest published order ({ ts, session, seq, epoch, rseq }) */
   const newest = new Map()
   /**
@@ -629,6 +647,38 @@ export function createRealtimeHub(options = {}) {
     const n = (ipCounts.get(state.bucket) || 1) - 1
     if (n <= 0) ipCounts.delete(state.bucket)
     else ipCounts.set(state.bucket, n)
+    for (const net of state.nets) {
+      const m = (netCounts.get(net) || 1) - 1
+      if (m <= 0) netCounts.delete(net)
+      else netCounts.set(net, m)
+    }
+    if (sockets.size === 0 && graceTimer) {
+      clearInterval(graceTimer)
+      graceTimer = null
+    }
+  }
+
+  /** The oldest socket that holds no channel (it makes room at maxTotal), or null. */
+  function oldestWithoutChannel() {
+    for (const [ws, state] of sockets) if (state.channels.size === 0) return ws
+    return null
+  }
+
+  /** Close the sockets that held no channel for channelGraceMs. */
+  function closeChannelless() {
+    const now = Date.now()
+    for (const [ws, state] of [...sockets]) {
+      if (state.channels.size > 0 || now - state.noChannelSince < channelGraceMs) continue
+      counters.closedNoChannel++
+      try { ws.close(1008, 'No subscription') } catch { /* gone */ }
+      dropSocket(ws)
+    }
+  }
+
+  function ensureGraceTimer() {
+    if (graceTimer || !(channelGraceMs > 0)) return
+    graceTimer = setInterval(closeChannelless, Math.max(250, Math.floor(channelGraceMs / 2)))
+    graceTimer.unref?.()
   }
 
   /** Validate one sub; returns a normalised sub or an error string. */
@@ -684,6 +734,7 @@ export function createRealtimeHub(options = {}) {
     // summary: the livescore list, which shows scores only and needs no frame per state
     const channel = { id, ws, subs, tables: new Set(subs.map(s => s.table)), summary: msg.summary === true }
     state.channels.set(id, channel)
+    state.noChannelSince = null
     indexChannel(channel)
     send(ws, { type: 'subscribe-db-ack', id })
   }
@@ -694,6 +745,7 @@ export function createRealtimeHub(options = {}) {
     if (channel) {
       unindexChannel(channel)
       state.channels.delete(id)
+      if (state.channels.size === 0) state.noChannelSince = Date.now()
     }
     send(ws, { type: 'unsubscribe-db-ack', id })
   }
@@ -720,7 +772,9 @@ export function createRealtimeHub(options = {}) {
     const ip = info.ip || getClientIp(req)
     const bucket = bucketOf(ip)
     const viewer = isViewerRequest(req)
-    if (sockets.size >= maxTotal || (viewer && viewerCount >= maxViewers)) {
+    let nets = []
+    try { nets = (netsOf ? netsOf(ip) || [] : []).map(([kind, key]) => [kind, `${kind}\0${key}`]) } catch { nets = [] }
+    if (viewer && viewerCount >= maxViewers) {
       ws.close(1013, 'Live connection limit reached')
       return false
     }
@@ -728,12 +782,33 @@ export function createRealtimeHub(options = {}) {
       ws.close(1008, 'Too many live connections from this IP')
       return false
     }
+    for (const [kind, net] of nets) {
+      const max = maxPerNet?.[kind]
+      if (max > 0 && (netCounts.get(net) || 0) >= max) {
+        ws.close(1008, 'Too many live connections from this network')
+        return false
+      }
+    }
+    // At the total cap a socket that holds no channel makes room (it would
+    // be closed after channelGraceMs anyway): idle sockets filled every slot
+    if (sockets.size >= maxTotal) {
+      const idle = oldestWithoutChannel()
+      if (!idle) {
+        ws.close(1013, 'Live connection limit reached')
+        return false
+      }
+      counters.evicted++
+      try { idle.close(1013, 'Live connection limit reached') } catch { /* gone */ }
+      dropSocket(idle)
+    }
 
-    const state = { ip, bucket, viewer, channels: new Map(), window: Date.now(), count: 0 }
+    const state = { ip, bucket, viewer, nets: nets.map(([, net]) => net), channels: new Map(), noChannelSince: Date.now(), window: Date.now(), count: 0 }
     sockets.set(ws, state)
     if (viewer) viewerCount++
     ipCounts.set(bucket, (ipCounts.get(bucket) || 0) + 1)
+    for (const net of state.nets) netCounts.set(net, (netCounts.get(net) || 0) + 1)
     heartbeat.track(ws)
+    ensureGraceTimer()
 
     ws.on('message', (data, isBinary) => {
       if (!sockets.has(ws)) return
@@ -1058,6 +1133,7 @@ export function createRealtimeHub(options = {}) {
       sockets: sockets.size,
       viewers: viewerCount,
       ips: ipCounts.size,
+      nets: netCounts.size,
       channels,
       summaryGroups: summaryGroups.size,
       tables: Object.fromEntries([...tableChannels].map(([t, set]) => [t, set.size])),
@@ -1070,6 +1146,10 @@ export function createRealtimeHub(options = {}) {
   /** Close every live socket and stop the heartbeat (shutdown, tests). */
   function close(code = 1001, reason = 'Server shutting down') {
     heartbeat.stop()
+    if (graceTimer) {
+      clearInterval(graceTimer)
+      graceTimer = null
+    }
     if (summaryTimer) {
       clearInterval(summaryTimer)
       summaryTimer = null
