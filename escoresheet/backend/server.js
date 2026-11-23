@@ -4191,7 +4191,7 @@ function handleHttpRequest(req, res) {
         // discarded, never held; the connection stays open so the client can
         // still read the answer (closed, a client still uploading gets EPIPE
         // instead)
-        console.warn(`[Contact] ${contactSlots.inFlight} messages already being received: busy`)
+        console.warn(`[Contact] ${contactSlots.inFlight} messages already being received (at most ${contactSlots.perKey} per address): busy`)
         req.resume()
         sendJson(res, 503, BUSY_BODY)
         return

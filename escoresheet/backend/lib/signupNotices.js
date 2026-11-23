@@ -112,7 +112,6 @@ export function firstClubOf (parts = []) {
   return [...parts].filter((p) => p && p.kind !== 'referee' && p.club_id).sort(byKind)[0]?.club_id ?? null
 }
 
-
 /**
  * A self-chosen name as a notice shows it: one line, no control or bidi
  * characters, nothing that reads as a link or an address (a scheme, www., a
