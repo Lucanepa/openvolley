@@ -81,7 +81,7 @@ jobs:
       - name: Deploy kit tests
         run: |
           set -euo pipefail
-          for t in archive-command backup bump-cask check-edge deploy compose-env restore-test; do
+          for t in archive-command backup bump-cask check-edge deploy compose-env restore-test ov-backup-pull; do
             echo "::group::$t"
             "escoresheet/deploy/tests/$t.test.sh"
             echo "::endgroup::"

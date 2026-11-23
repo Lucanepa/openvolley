@@ -166,6 +166,12 @@ hetzner# cd /opt/openvolley && install -m 600 env.example .env && editor .env
   `docker exec ov-backend node scripts/hash-pins.mjs --apply` once after the first start. A restored
   dump needs the secret it was written with (the nightly backup keeps an encrypted copy,
   `secrets-<UTC>.env.gpg`).
+- `OV_PIN_SECRET` and `OV_MATCH_TOKEN_SECRET` (if set) are kept in the club vault (Vaultwarden,
+  entry "OpenVolley PIN and match token secrets", both values): store them there when you set or
+  move them, and check the entry matches `.env` after every move. They have two off-site copies:
+  that entry, and the `secrets-<UTC>.env.gpg` files the hourly pull carries to the NAS
+  (`ov-backup-pull.sh`, 90 days, next to the dumps, their `.counts` and `wal/`). Without either,
+  a server lost for good leaves every stored PIN and match token unverifiable.
 - `TUNNEL_TOKEN` from step 2.
 - `RESEND_*`, `CONTACT_EMAIL` from the old backend's settings. (No `REOPEN_PASSWORD_HASH`:
   it was replaced by the admin reopen of db/007.) `SMTP_*`, `MAIL_FROM`, `MANAGER_URL`: leave

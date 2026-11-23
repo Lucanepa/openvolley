@@ -11,7 +11,8 @@ Postgres on one Linux VM, reachable only through a Cloudflare Tunnel.
   0750): `ssh ov-vps sudo docker compose --project-directory /opt/openvolley ...`. Images are
   still built on lenovoserver: `build-image.sh --ship ov-vps` (sudo on the host). Releases publish
   there (`publish-pkgs.sh`, default `OV_PKGS_DEST=ov-vps:/data/openvolley/pkgs/`). lenovoserver
-  copies the VPS's encrypted backups to the NAS every hour (`~/stacks/ov-backup-pull`).
+  copies the VPS's encrypted backups to the NAS every hour (`ov-backup-pull.sh`, installed as
+  `~/stacks/ov-backup-pull`): dumps with their `.counts`, tars, `secrets-*.env.gpg` and `wal/`.
   Operations: [RUNBOOK-hetzner.md](RUNBOOK-hetzner.md), from "Match-day rules" on (run the
   commands on `ov-vps`). Moved with [RUNBOOK-move-to-own-vm.md](RUNBOOK-move-to-own-vm.md).
 - **16.10.–09.11.2026: lenovoserver**, the owner's home server, still the build machine. Its
@@ -52,10 +53,12 @@ network, and carries `traefik.enable=false`.
      ov-vps since 18.11.2026: both on LUKS2 volumes, see "Encryption at rest"
    /data/openvolley/backups  hourly db dumps + nightly storage tars, GPG-encrypted (public key only)
    /var/lib/openvolley-status/last_backup   (mounted read-only into ov-backend)
-        |  lenovoserver's nightly borg backup (the loop images are excluded)
+        |  hourly pull by lenovoserver (ov-backup-pull.sh: ssh ov-vps -> ssh nas-ts)
         v
-   NAS (borg)            weekly restore test: restore-test.sh on lenovoserver (holds the private key)
-   (nas-pull.sh, a pull of the encrypted files over Tailscale, was never configured)
+   NAS /volume1/backups/openvolley/infomaniak   dumps + .counts, tars, secrets-*.env.gpg, wal/
+        weekly restore test of the newest dump there: restore-test.sh on lenovoserver
+        (holds the private key)
+   (nas-pull.sh, the same pull run on the NAS over rsync, was never configured)
 ```
 
 ## Files
@@ -83,7 +86,8 @@ network, and carries `traefik.enable=false`.
 | `restore-db.sh` | VM, root | Restores a decrypted dump into a **fresh** database, all-or-nothing (`--single-transaction`), count check, rolls back on any failure, resets the backup count guard |
 | `host-prep.sh` | VM, as root (not on ov-vps since its volumes are encrypted, see Encryption at rest) | Idempotent host setup: loop filesystems, sentinels, `chattr +i`, fstab (`nofail`), dirs, `ovbackup` user, backup units. `--check` is read-only |
 | `backup-openvolley.sh` + `systemd/openvolley-backup*.{service,timer}` | VM, root | Hourly `pg_dump -Fc` + nightly storage tars, GPG to the public key, count-drop guard, rotation, `last_backup` |
-| `nas-pull.sh` | NAS (DSM Task Scheduler) | Pulls the encrypted files over Tailscale with a restricted read-only key, NAS-side retention, freshness check. Not set up (never was): lenovoserver's borg backup covers `/data/openvolley/backups` |
+| `ov-backup-pull.sh` | lenovoserver, hourly (`ov-backup-pull.timer`; live copy in `~/stacks/ov-backup-pull`) | Copies the VPS's encrypted backups to the NAS (ssh + cat, sizes compared, mtimes kept, NAS-side retention): dumps and `.counts` 30 days, tars and `secrets-*.env.gpg` 90, `wal/` 91; FreeScout's dumps. A failure posts to ntfy. Tested by `tests/ov-backup-pull.test.sh`, which also fails when `backup-openvolley.sh` writes a file that is neither pulled nor named as staying on the VPS |
+| `nas-pull.sh` | NAS (DSM Task Scheduler) | The same pull run on the NAS over rsync with a restricted read-only key, NAS-side retention, freshness check. Not set up (never was): `ov-backup-pull.sh` does it from lenovoserver |
 | `publish-pkgs.sh --resign` + `systemd/openvolley-pkgs-resign.{service,timer}` | lenovoserver, weekly, from its own clean checkout of main (`~/ov-ops/pkgs-resign`) | Signs the APT index of get.openvolley.app anew (its `Release` is valid 30 days, `Valid-Until`), so a host that replays an old index cannot keep clients on an old version for longer, and the index never expires between releases. Re-signs and syncs `apt/dists/` only, refuses when the index would change. Install the timer **before** the first publish with `Valid-Until`: without it APT users get "Release file is expired" 30 days after the last publish. `OV_PKGS_KUMA_PUSH_URL` (push monitor, heartbeat ~8 days) alerts on a failed or missing run |
 | `restore-test.sh` + `systemd/openvolley-restore-test.{service,timer}` | lenovoserver, weekly, from its own clean checkout of main (`~/ov-ops/restore-test`) | Takes the newest dump of the NAS copy (default `nas-ts:/volume1/backups/openvolley/infomaniak`, ssh + cat), its `.counts` and the `secrets-*.env.gpg` it needs, restores into a throwaway Postgres, boots the backend image against it (default: the tag `build-image.sh --ship local` recorded) as production does (`IS_CLOUD=1`, `TRUST_PROXY_FROM`, the dump's `OV_PIN_SECRET` / `OV_MATCH_TOKEN_SECRET`, all in an env file; `RT_BACKEND_ENV_FILE` adds settings), checks `/health` and row-count floors, tears down. A failure posts to ntfy (`RT_NTFY_URL`); `RT_KUMA_PUSH_URL` catches a run that never happens. Tested by `tests/restore-test.test.sh` (with `PG_TEST_URL` it boots `server.js` with the env file it makes) |
 
