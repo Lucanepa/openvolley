@@ -42,6 +42,7 @@ jobs:
           .githooks/test-gitleaks-config.sh
           .githooks/test-gitignore.sh
           .githooks/test-ci-leak-scan.sh
+          .githooks/test-pre-push.sh
 
       - name: Scan the new commits
         env:
