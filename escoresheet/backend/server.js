@@ -756,6 +756,8 @@ function getDataLayer() {
       readMatch: (id) => restore.readWhole(id),
       readApprovals: (id) => approvals.recordsForMatch(id),
       vector,
+      // a refused vector copy is an ops error (the error tracker), the device's PDF staying official (LOG-09)
+      captureError: (err, opts) => captureServerError(err, opts),
       // tests only (tests/vectorPdf.e2e.test.js): shorter waits for the vector copy; never in production
       vectorTimes: process.env.NODE_ENV !== 'production' && process.env.OV_VECTOR_TEST_TIMES ? JSON.parse(process.env.OV_VECTOR_TEST_TIMES) : null
     })

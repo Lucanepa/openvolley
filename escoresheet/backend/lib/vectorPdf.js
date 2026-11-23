@@ -12,7 +12,7 @@
  *   createVectorPdf({ url, token, timeoutMs, fetchImpl, logger })
  *     .enabled                         true when configured
  *     .render({ record, rebuildReason, rebuiltAt })
- *        -> { ok: true, pdf: Buffer, filename, ms }
+ *        -> { ok: true, pdf: Buffer, filename, ms, missingPictures (count) }
  *         | { ok: false, status, code, message }   (never throws)
  *
  * One request at a time from this process, at most `maxWaiting` waiting: the
@@ -57,7 +57,9 @@ export function createVectorPdf ({ url, token, timeoutMs = DEFAULT_TIMEOUT_MS, m
     }
     let filename = null
     try { filename = decodeURIComponent(res.headers.get('x-ov-filename') || '') || null } catch { /* keep null */ }
-    return { ok: true, pdf, filename, ms: Date.now() - t0 }
+    // the pictures the print could not show (escoresheet/render: a signature that did not load)
+    const missing = Number(res.headers.get('x-ov-missing-pictures'))
+    return { ok: true, pdf, filename, ms: Date.now() - t0, missingPictures: Number.isInteger(missing) && missing > 0 ? missing : 0 }
   }
 
   function render (payload) {

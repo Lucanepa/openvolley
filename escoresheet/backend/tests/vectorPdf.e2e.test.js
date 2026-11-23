@@ -67,12 +67,17 @@ describe('vector PDF end to end', { skip: SKIP }, () => {
   async function newMatch (owner, { sport = 'indoor', set = true } = {}) {
     const ext = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
     const n = gameSeq++
-    const data = { external_id: ext, game_n: n, status: 'live', scheduled_at: '2026-11-15T14:00:00Z', home_team: { name: `Home ${n}` }, away_team: { name: `Away ${n}` }, ...(sport === 'beach' ? { sport_type: 'beach' } : {}) }
+    // a set played: the record ends as its close says (the result the close wrote, the last
+    // point at the set's score; lib/scoresheets.js recordGate, owner decision 3)
+    const result = set ? { set_results: [{ set: 1, home: 25, away: 20 }], final_score: '1-0', winner: 'home' } : {}
+    const data = { external_id: ext, game_n: n, status: 'live', scheduled_at: '2026-11-15T14:00:00Z', home_team: { name: `Home ${n}` }, away_team: { name: `Away ${n}` }, ...result, ...(sport === 'beach' ? { sport_type: 'beach' } : {}) }
     const r = await api(srv.base, '/api/db', { token: owner.token, body: { table: 'matches', action: 'insert', params: { data, returning: 'id', single: true } } })
     assert.equal(r.status, 200, r.text)
     if (set) {
       const s = await api(srv.base, '/api/db', { token: owner.token, body: { table: 'sets', action: 'insert', params: { data: { match_id: r.json.data.id, external_id: `${ext}:set:1`, index: 1, home_points: 25, away_points: 20, finished: true } } } })
       assert.equal(s.status, 200, s.text)
+      await sql.query("INSERT INTO public.events (external_id, match_id, set_index, type, payload, seq) VALUES ($1, $2, 1, 'point', $3::json, 45)",
+        [`${ext}:e:45`, r.json.data.id, JSON.stringify({ team: 'home', score: { home: 25, away: 20 } })])
     }
     return { ext, n, id: r.json.data.id }
   }

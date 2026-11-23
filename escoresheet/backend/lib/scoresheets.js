@@ -374,26 +374,84 @@ export const VECTOR_MAX_TRIES = 3
 /** and given up after this long (the device's raster PDF stays). */
 export const VECTOR_MAX_WAIT_MS = 60 * 60 * 1000
 
-/**
- * The record ends as its close says: every finished set's score on the sheet
- * is the score the server's sets hold (the close's result is built from
- * them), and the match has a finished set at all. A record still missing the
- * last points (the device's events still on their way) fails this.
- */
-export function setsMatchClose (record) {
-  const sets = Array.isArray(record?.sets) ? record.sets : []
-  const finished = sets.filter((x) => x && x.finished === true)
-  if (!finished.length) return false
-  const events = Array.isArray(record?.events) ? record.events : []
-  for (const set of finished) {
-    const pts = events.filter((e) => e && e.set_index === set.index && e.type === 'point')
-    if (!pts.length) continue
-    const last = pts.reduce((a, b) => (Number(b.seq) > Number(a.seq) ? b : a))
-    const sc = last.payload?.score
-    if (sc && (Number(sc.home) !== Number(set.home_points) || Number(sc.away) !== Number(set.away_points))) return false
-  }
-  return true
+const jsonOf = (v) => {
+  if (typeof v !== 'string') return v
+  try { return JSON.parse(v) } catch { return null }
 }
+const FINAL_SCORE_RE = /^\s*(\d{1,2})\s*[-:]\s*(\d{1,2})\s*$/
+
+/**
+ * The server's record ends as its close says (owner decision 3, LOG-09): only
+ * then may the server's vector copy replace the device's signed PDF as the
+ * match's official sheet. A FULL check of the record (match row, sets,
+ * events) against the result the close wrote (matches.set_results [{ set,
+ * home, away }], final_score "home-away", winner 'home' | 'away', as the
+ * scorer apps send them at the match end and after a correction):
+ *   - every set row is finished (a closed match with an unfinished set: the
+ *     device's set end, or its delete, never reached the server);
+ *   - as many finished sets as set_results lists, each at the score it lists;
+ *   - final_score is the sets each side won, and winner the side that won more;
+ *   - every finished set has point events, and its last point is at the set's
+ *     score (a point without the running score: the points counted by team),
+ *     except a set the forfeit ended (set_end reason 'forfait') and every set
+ *     of a match forfeited in default (all of them rewritten 0:25).
+ * { ok: true } or { ok: false, reason } (a code for the ops log, never data):
+ * no_finished_set, unfinished_set, no_set_results, set_results_count,
+ * set_score, final_score, winner, no_points, points_score.
+ */
+export function recordGate (record) {
+  const no = (reason) => ({ ok: false, reason })
+  const sets = (Array.isArray(record?.sets) ? record.sets : []).filter((x) => x && typeof x === 'object')
+  const finished = sets.filter((x) => x.finished === true)
+  if (!finished.length) return no('no_finished_set')
+  if (finished.length !== sets.length) return no('unfinished_set')
+  const match = record?.match && typeof record.match === 'object' ? record.match : {}
+  const results = jsonOf(match.set_results)
+  if (!Array.isArray(results) || !results.length) return no('no_set_results')
+  if (results.length !== finished.length) return no('set_results_count')
+  const byIndex = new Map(finished.map((s) => [Number(s.index), s]))
+  if (byIndex.size !== finished.length) return no('set_results_count')
+  const seen = new Set()
+  for (const r of results) {
+    const idx = Number(r?.set ?? r?.index)
+    const s = byIndex.get(idx)
+    if (!s || seen.has(idx)) return no('set_results_count')
+    seen.add(idx)
+    if (Number(r.home ?? r.home_points) !== Number(s.home_points) || Number(r.away ?? r.away_points) !== Number(s.away_points)) return no('set_score')
+  }
+  const won = { home: 0, away: 0 }
+  for (const s of finished) {
+    if (Number(s.home_points) > Number(s.away_points)) won.home++
+    else if (Number(s.away_points) > Number(s.home_points)) won.away++
+  }
+  const fs = FINAL_SCORE_RE.exec(String(match.final_score ?? ''))
+  if (!fs || Number(fs[1]) !== won.home || Number(fs[2]) !== won.away) return no('final_score')
+  const leader = won.home > won.away ? 'home' : won.away > won.home ? 'away' : null
+  if (!leader || match.winner !== leader) return no('winner')
+  const events = (Array.isArray(record?.events) ? record.events : []).filter((e) => e && typeof e === 'object')
+  const payloadOf = (e) => jsonOf(e.payload) || {}
+  const inDefault = events.some((e) => e.type === 'forfait' && payloadOf(e).scope === 'match' && payloadOf(e).inDefault === true)
+  const seqOf = (e) => (Number.isFinite(Number(e.seq)) && e.seq !== null ? Number(e.seq) : -Infinity)
+  for (const s of finished) {
+    const idx = Number(s.index)
+    const ofSet = events.filter((e) => Number(e.set_index) === idx)
+    if (inDefault || ofSet.some((e) => e.type === 'set_end' && payloadOf(e).reason === 'forfait')) continue
+    const pts = ofSet.filter((e) => e.type === 'point')
+    if (!pts.length) return no('no_points')
+    // the newest point (the record comes ordered by seq, ts, id: ties keep that order)
+    let last = pts[0]
+    for (const e of pts) if (seqOf(e) >= seqOf(last)) last = e
+    const sc = payloadOf(last).score
+    const score = sc && Number.isFinite(Number(sc.home)) && Number.isFinite(Number(sc.away))
+      ? { home: Number(sc.home), away: Number(sc.away) }
+      : { home: pts.filter((e) => payloadOf(e).team === 'home').length, away: pts.filter((e) => payloadOf(e).team === 'away').length }
+    if (score.home !== Number(s.home_points) || score.away !== Number(s.away_points)) return no('points_score')
+  }
+  return { ok: true }
+}
+
+/** recordGate's verdict alone: the record ends as its close says. */
+export const setsMatchClose = (record) => recordGate(record).ok
 
 /** An answer for the caller, thrown out of a transaction (which then rolls back). */
 class Refused extends Error {
@@ -412,7 +470,7 @@ class Refused extends Error {
  * @param {(matchId: string) => Promise<object|null>} [o.readMatch]  the match's whole
  *   record (lib/matchRestore.js readWhole), for matchForRebuild
  */
-export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, readApprovals = null, vector = null, vectorTimes = null, logger = console, now = () => Date.now(), setTimer = setTimeout } = {}) {
+export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, readApprovals = null, vector = null, vectorTimes = null, captureError = null, logger = console, now = () => Date.now(), setTimer = setTimeout } = {}) {
   const log = logger
   /** token -> { file, expires } (insertion order = age) */
   const viewLinks = new Map()
@@ -1600,14 +1658,20 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
       }
       const record = await renderRecord(matchId)
       if (!record) return done()
-      if (!setsMatchClose(record)) {
-        log.warn?.(`[scoresheets] vector copy of ${matchId}: the sets do not end as the close says, the device's PDF stays`)
+      const gate = recordGate(record)
+      if (!gate.ok) {
+        vectorRefused(record.match, gate.reason)
         return done()
       }
       const out = await vector.render({ record })
       if (!out.ok) {
         if (job.tries < VT.maxTries && out.status !== 422) return plan(VT.retryMs * job.tries)
         log.warn?.(`[scoresheets] vector copy of ${matchId}: ${out.code}, the device's PDF stays`)
+        return done()
+      }
+      // a picture (a signature) the print could not show: not the signed sheet
+      if (Number(out.missingPictures) > 0) {
+        vectorRefused(record.match, 'missing_pictures')
         return done()
       }
       // the newest PDF is still the one the job waited behind (none came since)
@@ -1619,6 +1683,21 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
       done()
     }
     plan(Math.max(VT.recheckMs, VT.graceMs))
+  }
+
+  /**
+   * The vector copy of match row `m` is refused (`reason`: recordGate's, or
+   * missing_pictures): the device's signed PDF stays the official sheet, and
+   * the ops see it in the error tracker (server.js captureServerError, kind
+   * job.failed; the game number, as ids are masked there), not only in a log
+   * line. Never throws.
+   */
+  function vectorRefused (m, reason) {
+    const message = `vector copy refused (${reason}): the device's PDF stays the official scoresheet`
+    log.error?.(`[scoresheets] ${message} (match ${m?.id}, game ${m?.game_n ?? '-'})`)
+    try {
+      captureError?.(new Error(message), { kind: 'job.failed', view: 'scoresheet vector copy', data: { game_n: Number.isInteger(m?.game_n) ? m.game_n : null, reason } })
+    } catch { /* an ops note never fails the job */ }
   }
 
   /** A vector copy of match `matchId` is still to come: the final mail waits for it (lib/finalMail.js). */

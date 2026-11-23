@@ -79,13 +79,25 @@ describe('vectorPdf', () => {
     }
   })
 
-  it('setsMatchClose: every finished set ends on the score of its last point; no finished set, no copy', () => {
+  it('setsMatchClose: every finished set ends on the score of its last point and of the close; no finished set, no copy', () => {
     const ev = (set, seq, home, away) => ({ set_index: set, seq, type: 'point', payload: { score: { home, away } } })
     const sets = [{ index: 1, finished: true, home_points: 25, away_points: 20 }]
-    assert.equal(setsMatchClose({ sets, events: [ev(1, 1, 1, 0), ev(1, 50, 25, 20)] }), true)
+    // the result the close wrote (owner decision 3: the full check, tests/scoresheets.vectorGate.e2e.test.js)
+    const match = { set_results: [{ set: 1, home: 25, away: 20 }], final_score: '1-0', winner: 'home' }
+    assert.equal(setsMatchClose({ match, sets, events: [ev(1, 1, 1, 0), ev(1, 50, 25, 20)] }), true)
     // the device's last points still on their way
-    assert.equal(setsMatchClose({ sets, events: [ev(1, 1, 1, 0), ev(1, 40, 24, 20)] }), false)
-    assert.equal(setsMatchClose({ sets: [{ index: 1, finished: false }], events: [] }), false)
-    assert.equal(setsMatchClose({ sets: [], events: [] }), false)
+    assert.equal(setsMatchClose({ match, sets, events: [ev(1, 1, 1, 0), ev(1, 40, 24, 20)] }), false)
+    // (before LOG-09 a record without the close's result passed)
+    assert.equal(setsMatchClose({ sets, events: [ev(1, 1, 1, 0), ev(1, 50, 25, 20)] }), false)
+    assert.equal(setsMatchClose({ match, sets: [{ index: 1, finished: false }], events: [] }), false)
+    assert.equal(setsMatchClose({ match, sets: [], events: [] }), false)
+  })
+
+  it('the render service\'s count of missing pictures comes back with the PDF', async () => {
+    const v = (headers) => createVectorPdf({ url: 'http://r', token: TOKEN, logger: quiet, fetchImpl: async () => pdfResponse(headers) })
+    assert.equal((await v({ 'x-ov-missing-pictures': '2' }).render({ record })).missingPictures, 2)
+    assert.equal((await v({ 'x-ov-missing-pictures': '0' }).render({ record })).missingPictures, 0)
+    // an older service without the header
+    assert.equal((await v({}).render({ record })).missingPictures, 0)
   })
 })
