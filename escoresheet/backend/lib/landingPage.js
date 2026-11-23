@@ -13,17 +13,30 @@ import { icon } from './icons.js'
 import { brandMark } from './brandMark.js'
 import { legalUrl } from './legalLinks.js'
 
+// path: the page on a venue relay (http://<Host><path>). cloudUrl: the same
+// role's own site, for the cloud's page (SEC-64): the cloud serves no app
+// pages, so its paths are 404, and its page must never send anyone to http://.
 export const INDOOR_ROLES = [
-  { key: 'referee', label: 'Referee', path: '/referee', icon: 'whistle' },
-  { key: 'bench_home', label: 'Home bench', path: '/bench?team=home', icon: 'house' },
-  { key: 'bench_away', label: 'Away bench', path: '/bench?team=away', icon: 'plane' },
-  { key: 'roster', label: 'Roster upload', path: '/roster', icon: 'clipboard-list' }
+  { key: 'referee', label: 'Referee', path: '/referee', cloudUrl: 'https://referee.openvolley.app', icon: 'whistle' },
+  { key: 'bench_home', label: 'Home bench', path: '/bench?team=home', cloudUrl: 'https://bench.openvolley.app/?team=home', icon: 'house' },
+  { key: 'bench_away', label: 'Away bench', path: '/bench?team=away', cloudUrl: 'https://bench.openvolley.app/?team=away', icon: 'plane' },
+  { key: 'roster', label: 'Roster upload', path: '/roster', cloudUrl: 'https://roster.openvolley.app', icon: 'clipboard-list' }
 ]
 
 export const BEACH_ROLES = [
-  { key: 'beach_referee', label: 'Referee', path: '/beach-referee', icon: 'whistle' },
-  { key: 'beach_scoreboard', label: 'Scoreboard', path: '/beach-scoreboard', icon: 'tv' }
+  { key: 'beach_referee', label: 'Referee', path: '/beach-referee', cloudUrl: 'https://referee-beach.openvolley.app', icon: 'whistle' },
+  { key: 'beach_scoreboard', label: 'Scoreboard', path: '/beach-scoreboard', cloudUrl: 'https://beach.openvolley.app', icon: 'tv' }
 ]
+
+/**
+ * The address a role's card links to and its QR code holds: on the cloud the
+ * role's own https site, on a venue relay its page on this server.
+ * @param {{ path: string, cloudUrl: string }} role
+ * @param {{ cloud: boolean, baseUrl: string }} opts baseUrl: http://<Host header>
+ */
+export function roleUrl(role, { cloud, baseUrl }) {
+  return cloud ? role.cloudUrl : `${baseUrl}${role.path}`
+}
 
 /** Text and attribute values into HTML. Team names come from any scoreboard socket. */
 export function escapeHtml(value) {
@@ -188,7 +201,8 @@ export function landingMatchRow(matchId, matchData) {
 
 /**
  * @param {object} p
- * @param {string} p.baseUrl        http://<Host header>
+ * @param {string} p.baseUrl        http://<Host header> on a venue relay, https://<Host header> on the cloud
+ * @param {boolean} [p.cloud]       the cloud's page: the roles link to their own sites (roleUrl), no Wi-Fi step
  * @param {number|null} p.clientCount    open sockets; null: not shown (the cloud)
  * @param {number|null} p.matchCount     active matches; null: not shown (the cloud)
  * @param {Array}  p.indoor         INDOOR_ROLES + { url, svg } (svg: the QR code from `qrcode`)
@@ -196,7 +210,7 @@ export function landingMatchRow(matchId, matchData) {
  * @param {Array}  p.matches        { home, away, updatedAt }
  * @param {(ts: number) => string} [p.formatTime]
  */
-export function renderLandingPage({ baseUrl, clientCount, matchCount, indoor, beach, matches, formatTime = (ts) => new Date(ts).toLocaleTimeString() }) {
+export function renderLandingPage({ baseUrl, cloud = false, clientCount, matchCount, indoor, beach, matches, formatTime = (ts) => new Date(ts).toLocaleTimeString() }) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -225,7 +239,9 @@ ${clientCount == null ? '' : `      <span class="pill"><span class="dot sky"></s
     <ol class="steps">
       <li class="step">
         <span class="step-num">1</span>
-        <span class="step-text">Make sure all devices are on the <strong>same Wi-Fi network</strong></span>
+        <span class="step-text">${cloud
+          ? 'Use any device with an <strong>internet connection</strong>'
+          : 'Make sure all devices are on the <strong>same Wi-Fi network</strong>'}</span>
       </li>
       <li class="step">
         <span class="step-num">2</span>
