@@ -30,7 +30,7 @@
  */
 
 import i18n from 'i18next'
-import { appFilesDirectories } from './nativeBackup/platform.js'
+import { appFilesDirectories, canExportToDocuments, capacitorOs } from './nativeBackup/platform.js'
 import { exportPdfToDocuments, PDF_SUBDIR } from './nativeBackup/androidFiles.js'
 import { DEFAULT_MAX_AGE_DAYS } from './nativeBackup/rotation.js'
 
@@ -412,17 +412,18 @@ export function absolutePathOf(uri, fallback) {
 /**
  * Writes a PDF with @capacitor/filesystem to the app's own folder
  * (nativeBackup/platform appFilesDirectories: internal storage, else the
- * app's external folder), under a free name. Returns its path (`fullPath`:
- * absolute) and the file's URI (for Open / Share), and its name (Export to
- * Documents).
+ * app's external folder; iOS: Library/NoCloud, not shown in the Files app),
+ * under a free name. Returns its path (`fullPath`: absolute) and the file's
+ * URI (for Open / Share), and its name (Export to Documents).
  * @param {{ Filesystem, Directory }} fs the plugin module
+ * @param {{ os?: 'android'|'ios'|null }} [opts]
  */
-export async function writePdfNative(fs, arrayBuffer, filename) {
+export async function writePdfNative(fs, arrayBuffer, filename, { os = capacitorOs() } = {}) {
   const { Filesystem, Directory } = fs
   const wanted = safeName(filename)
   const data = toBase64(arrayBuffer)
   let lastError = null
-  for (const directory of appFilesDirectories(Directory)) {
+  for (const directory of appFilesDirectories(Directory, os)) {
     try {
       const name = await freePdfName(Filesystem, directory, wanted)
       const res = await Filesystem.writeFile({ path: `${PDF_SUBDIR}/${name}`, data, directory, recursive: true })
@@ -474,7 +475,11 @@ async function savePdf({ arrayBuffer, filename }, status, actions, win = window)
     const fs = await import('@capacitor/filesystem')
     const { uri, name } = await writePdfNative(fs, arrayBuffer, filename)
     const days = DEFAULT_MAX_AGE_DAYS
-    const saved = t('appWindow.pdfSavedInApp', `PDF saved in the app for ${days} days: ${name}. Share it or export it to Documents to keep a copy.`, { name, days })
+    // iOS: no Documents folder the user sees (owner decision 9): Share is the way out
+    const toDocuments = canExportToDocuments(capacitorOs(win))
+    const saved = toDocuments
+      ? t('appWindow.pdfSavedInApp', `PDF saved in the app for ${days} days: ${name}. Share it or export it to Documents to keep a copy.`, { name, days })
+      : t('appWindow.pdfSavedInAppShare', `PDF saved in the app for ${days} days: ${name}. Share it to keep a copy.`, { name, days })
     status.textContent = saved
     if (actions) {
       const plugin = uri ? (await filesPlugin(win))?.plugin : null
@@ -503,7 +508,7 @@ async function savePdf({ arrayBuffer, filename }, status, actions, win = window)
           actionButton(doc, t('appWindow.sharePdf', 'Share'), run('share'))
         )
       }
-      actions.append(actionButton(doc, t('appWindow.exportPdf', 'Export to Documents'), exportCopy))
+      if (toDocuments) actions.append(actionButton(doc, t('appWindow.exportPdf', 'Export to Documents'), exportCopy))
       actions.style.display = 'flex'
     }
   } catch (e) {

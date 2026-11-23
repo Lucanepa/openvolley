@@ -80,11 +80,10 @@
 	<!-- WKWebView ends the app when a page asks for the camera without this text -->
 	<key>NSCameraUsageDescription</key>
 	<string>The camera scans QR codes, for example to connect a device.</string>
-	<!-- Saved scoresheet PDFs (Documents) show in the Files app under OpenVolley -->
-	<key>UIFileSharingEnabled</key>
-	<true/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
+	<!-- No UIFileSharingEnabled / LSSupportsOpeningDocumentsInPlace: the
+	     app's files (backups, logs, scoresheet PDFs, in Library/NoCloud) are
+	     not shown in the Files app or over USB (owner decision 9, as on
+	     Android); a PDF goes out through Share (ScoresheetFilesPlugin) -->
 	<!-- HTTPS only, no own cryptography: no export compliance documents -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>

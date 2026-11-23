@@ -1,13 +1,67 @@
 import UIKit
 import Capacitor
 
+/**
+ * The app's data stays on this device (owner decision 9, SEC-52, as
+ * android/.../data_extraction_rules.xml on Android): no iCloud backup, no
+ * computer (Finder / iTunes) backup, so a second iPad set up from a club
+ * iPad's backup does not open with the first scorer's session and device id,
+ * and an unencrypted computer backup holds no rosters or PINs.
+ *
+ * isExcludedFromBackup on each folder the app or its web view writes: the
+ * web view's storage (Library/WebKit: localStorage with the session, the
+ * match database, the PINs), the files (Library/NoCloud: backups, logs,
+ * scoresheet PDFs, src/utils/nativeBackup/platform.js), the other Library
+ * folders (cookies, preferences, Application Support) and Documents (what
+ * older versions left there until the first start moves it). Library/Caches
+ * is never backed up. Set at every launch and when the app goes to the
+ * background (SceneDelegate), so a folder made during a run is covered too.
+ */
+enum AppData {
+    static func excludeFromBackup() {
+        let fm = FileManager.default
+        guard let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first else { return }
+        var folders: [URL] = []
+        // made here if they are not there yet, so they are excluded before the first write
+        for name in ["NoCloud", "WebKit"] {
+            let url = library.appendingPathComponent(name, isDirectory: true)
+            try? fm.createDirectory(at: url, withIntermediateDirectories: true)
+            folders.append(url)
+        }
+        if let children = try? fm.contentsOfDirectory(at: library, includingPropertiesForKeys: [.isDirectoryKey]) {
+            for url in children where url.lastPathComponent != "Caches" {
+                if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                    folders.append(url)
+                }
+            }
+        }
+        if let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
+            folders.append(documents)
+        }
+        for folder in folders {
+            exclude(folder)
+        }
+    }
+
+    private static func exclude(_ folder: URL) {
+        var url = folder
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        do {
+            try url.setResourceValues(values)
+        } catch {
+            NSLog("[AppData] cannot exclude %@ from backups: %@", folder.lastPathComponent, error.localizedDescription)
+        }
+    }
+}
+
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        AppData.excludeFromBackup()
         return true
     }
 

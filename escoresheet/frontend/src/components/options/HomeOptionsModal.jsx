@@ -21,6 +21,7 @@ import ThemeOption from './ThemeOption'
 import LookOptions from './LookOptions'
 import RallyModeOption from './RallyModeOption'
 import { exportNativeFilesToDocuments } from '../../utils/nativeBackup'
+import { canExportToDocuments } from '../../utils/nativeBackup/platform'
 import { configuredRecoveryKey } from '../../utils/backupCrypto/recovery'
 import { useToolMode } from '../../utils/toolMode'
 import { downloadGlobalTemplate } from '../../utils/globalTemplates'
@@ -125,6 +126,8 @@ function ExportToDocuments({ t, exportFiles = exportNativeFilesToDocuments }) {
 function NativeBackupRow({ backup, backupMatchId, onRestoreFromFile, t }) {
   const [saving, setSaving] = useState(false)
   const enabled = backup.autoBackupEnabled
+  // iOS: no Documents folder the user sees (owner decision 9); PDFs go out through Share
+  const toDocuments = canExportToDocuments()
   return (
     <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
       <div className="flex items-center justify-between">
@@ -145,10 +148,10 @@ function NativeBackupRow({ backup, backupMatchId, onRestoreFromFile, t }) {
             {backup.backupFolder || t('options.nativeBackupPreparing')}
           </div>
           {backup.platform === 'capacitor' && (
-            <div className="mt-1.5 text-[11px] leading-snug text-stone-500">{t('options.nativeBackupCopyHint')}</div>
+            <div className="mt-1.5 text-[11px] leading-snug text-stone-500">{t(toDocuments ? 'options.nativeBackupCopyHint' : 'options.nativeBackupCopyHintIos')}</div>
           )}
           <div className="mt-1.5 text-[11px] leading-snug text-stone-500" data-testid="native-backup-privacy">
-            {t(backup.platform === 'capacitor' ? 'options.nativeBackupPrivacyAndroid' : 'options.nativeBackupPrivacy')}
+            {t(backup.platform !== 'capacitor' ? 'options.nativeBackupPrivacy' : toDocuments ? 'options.nativeBackupPrivacyAndroid' : 'options.nativeBackupPrivacyIos')}
             {configuredRecoveryKey() && ` ${t('options.nativeBackupRecoveryNote')}`}
           </div>
         </div>
@@ -198,7 +201,7 @@ function NativeBackupRow({ backup, backupMatchId, onRestoreFromFile, t }) {
           </button>
         )}
       </div>
-      {backup.platform === 'capacitor' && <ExportToDocuments t={t} exportFiles={backup.exportToDocuments} />}
+      {backup.platform === 'capacitor' && toDocuments && <ExportToDocuments t={t} exportFiles={backup.exportToDocuments} />}
     </Row>
   )
 }
