@@ -64,7 +64,8 @@ describe('globalStore', () => {
   })
 
   it('enforces the size caps', async () => {
-    const s = createGlobalStore({ root, logger: silent, maxFileBytes: 100, maxBytesPerKey: 150, maxKeys: 1 })
+    // maxEvictPerSave 0: the cap itself (a full store evicts since 2026-11-23, SEC-17: globalStore.quota.test.js)
+    const s = createGlobalStore({ root, logger: silent, maxFileBytes: 100, maxBytesPerKey: 150, maxKeys: 1, maxEvictPerSave: 0 })
     const big = b64('{"x":"' + 'a'.repeat(200) + '"}')
     assert.equal((await s.handle('save', { key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: big })).status, 413)
     const f = (n) => b64('%PDF-' + 'a'.repeat(n))
@@ -134,7 +135,8 @@ describe('globalStore', () => {
   })
 
   it('keeps the total cap when keys that exist grow (not only for new keys)', async () => {
-    const s = createGlobalStore({ root, logger: silent, maxFileBytes: 1000, maxBytesPerKey: 1000, maxTotalBytes: 400, maxKeys: 100 })
+    // maxEvictPerSave 0: the cap itself, without the eviction of a full store (SEC-17, globalStore.quota.test.js)
+    const s = createGlobalStore({ root, logger: silent, maxFileBytes: 1000, maxBytesPerKey: 1000, maxTotalBytes: 400, maxKeys: 100, maxEvictPerSave: 0 })
     const f = (n) => b64('%PDF-' + 'a'.repeat(n - 5))
     const K2 = 'ZyXwVuTsRqPoNmLkJiHgFe'
     const save = (key, n) => s.handle('save', { key, kind: 'scoresheet', contentType: 'application/pdf', fileBase64: f(n) })

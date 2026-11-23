@@ -32,11 +32,25 @@
  * so it also runs when nobody saves any more.
  *
  * Node built-ins only. Pure: the HTTP layer (server.js) does the rate limit
- * per IP and the body cap.
+ * per IP and the body cap, and passes the caller's address (handle's ctx.ip).
+ *
+ * Shares (audit 2026-11-23 SEC-17: one anonymous caller filled the store and
+ * every later save got 507 for 180 days):
+ *   - per network and day (lib/globalQuota.js, in memory; IPv6 /64 and /56,
+ *     an IPv4 address): new keys and bytes added (a file that replaces one
+ *     counts what it adds), 429 OV_GLOBAL_QUOTA beyond;
+ *   - a full store (maxKeys / maxTotalBytes) no longer refuses everyone: it
+ *     evicts keys to make room, those never loaded since the start first,
+ *     then the largest, then the newest (a flood's own files), never the key
+ *     being saved, at most maxEvictPerSave per save; 507 only if that is not
+ *     enough. The device keeps its own copy of whatever is evicted;
+ *   - onAlert (server.js: the error tracker) when the store passes
+ *     alertShare of a cap and when it evicts, at most hourly.
  */
 import { promises as fsp } from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { createNetworkBudget, createOncePer } from './globalQuota.js'
 
 export const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/
 export const KINDS = Object.freeze({
@@ -58,7 +72,15 @@ export const DEFAULTS = Object.freeze({
   // league's backup/ writes, which stop at the same floor
   reserveBytes: 1024 * MiB,
   retentionDays: 180,
-  sweepEveryMs: 60 * 60 * 1000
+  sweepEveryMs: 60 * 60 * 1000,
+  // per network and day (SEC-17): a tournament day of 60 matches behind one
+  // address adds about 600 MB (the final backup and PDFs of each)
+  perNetwork: Object.freeze([
+    Object.freeze({ name: '/64', v6Bits: 64, v4Bits: 32, max: Object.freeze({ keys: 200, bytes: 1024 * MiB }) }),
+    Object.freeze({ name: '/56', v6Bits: 56, v4Bits: 32, max: Object.freeze({ keys: 500, bytes: 2048 * MiB }) })
+  ]),
+  alertShare: 0.5,
+  maxEvictPerSave: 200
 })
 
 /** Largest JSON body the HTTP layer should read for save (base64 + the envelope). */
@@ -83,12 +105,23 @@ const kindOf = (kind) => (typeof kind === 'string' && Object.hasOwn(KINDS, kind)
 const fail = (status, code, message) => ({ status, body: { data: null, error: { message, code } } })
 const ok = (data) => ({ status: 200, body: { data, error: null } })
 
-export function createGlobalStore({ root, logger = console, now = Date.now, statfs = (p) => fsp.statfs(p), ...limits } = {}) {
+export function createGlobalStore({ root, logger = console, now = Date.now, statfs = (p) => fsp.statfs(p), onAlert = null, ...limits } = {}) {
   if (!root) throw new TypeError('globalStore: root required')
   const o = { ...DEFAULTS, ...limits }
   const base = path.join(root, 'global')
   let lastSweep = 0
   let sweeping = null
+  const budget = createNetworkBudget({ limits: o.perNetwork, now })
+  // keys loaded since the start (memory only): evicted last
+  const loaded = new Set()
+  let evicting = Promise.resolve()
+  const alertOnce = createOncePer(60 * 60_000, now)
+  const alert = (name, message) => {
+    if (!alertOnce(name)) return
+    logger.error?.(`[Global] ALERT ${message}`)
+    try { onAlert?.(message) } catch { /* an alert never fails a request */ }
+  }
+  const mb = (n) => Math.round(n / MiB)
   // { at, keys, bytes }: walked at most every USAGE_TTL_MS (and after a
   // sweep), kept up to date by every write in between: a walk of 20000 keys
   // on each new key's save cost every caller its disk time
@@ -138,6 +171,7 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
     return sweep()
   }
   async function sweepNow() {
+    budget.sweep()
     const cutoff = now() - o.retentionDays * 86400_000
     let removed = 0
     for (const a of await fsp.readdir(base).catch(() => [])) {
@@ -154,7 +188,52 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
     return removed
   }
 
-  async function save(body) {
+  /**
+   * Make room for `bytes` more (and one more key when newKey) by removing
+   * keys: never loaded first, then the largest, then the newest; never
+   * `keep`. Returns whether there is room now. One eviction at a time.
+   */
+  function evictFor({ keep, bytes, newKey }) {
+    const run = evicting.then(async () => {
+      let u = await usage()
+      const fits = () => u.bytes + bytes <= o.maxTotalBytes && (!newKey || u.keys < o.maxKeys)
+      if (fits()) return true
+      const keys = []
+      for (const a of await fsp.readdir(base).catch(() => [])) {
+        for (const k of await fsp.readdir(path.join(base, a)).catch(() => [])) {
+          if (k === keep) continue
+          const dir = path.join(base, a, k)
+          let size = 0
+          let newest = 0
+          for (const f of await fsp.readdir(dir).catch(() => [])) {
+            const st = await fsp.stat(path.join(dir, f)).catch(() => null)
+            if (st) { size += st.size; newest = Math.max(newest, st.mtimeMs) }
+          }
+          const st = await fsp.stat(dir).catch(() => null)
+          keys.push({ key: k, dir, size, born: st && st.birthtimeMs > 0 ? st.birthtimeMs : newest })
+        }
+      }
+      keys.sort((x, y) => (loaded.has(x.key) - loaded.has(y.key)) || (y.size - x.size) || (y.born - x.born))
+      let removed = 0
+      for (const k of keys) {
+        if (fits() || removed >= o.maxEvictPerSave) break
+        await fsp.rm(k.dir, { recursive: true, force: true })
+        loaded.delete(k.key)
+        removed++
+        u = { ...u, keys: u.keys - 1, bytes: Math.max(0, u.bytes - k.size) }
+        if (counted) counted = { ...counted, keys: u.keys, bytes: u.bytes }
+      }
+      if (removed) {
+        logger.warn?.(`[Global] the store was full: ${removed} key(s) evicted to make room`)
+        alert('evicted', `the Global store is full (${mb(u.bytes)} MB in ${u.keys} keys, caps ${mb(o.maxTotalBytes)} MB / ${o.maxKeys}): keys were evicted to make room`)
+      }
+      return fits()
+    })
+    evicting = run.catch(() => {})
+    return run
+  }
+
+  async function save(body, ctx = {}) {
     const { key, kind, contentType, fileBase64 } = body || {}
     const spec = kindOf(kind)
     if (typeof key !== 'string' || !KEY_RE.test(key) || !spec) return fail(400, 'OV_GLOBAL_INVALID', 'Invalid request')
@@ -186,9 +265,20 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
       else others += size
     }
     if (others + data.length > o.maxBytesPerKey) return fail(413, 'OV_GLOBAL_TOO_LARGE', 'Too much data for this match')
-    // the store's totals on every write: a key that grows counts as a new one does
+    // this network's share of the day (SEC-17): new keys and what the write adds
+    const ip = typeof ctx?.ip === 'string' ? ctx.ip : null
+    const adds = Math.max(0, data.length - replaced)
+    const over = budget.over(ip, { keys: existing ? 0 : 1, bytes: adds })
+    if (over) {
+      logger.warn?.(`[Global] refusing a write: a network's daily ${over.what} budget (${over.limit}) is spent`)
+      return fail(429, 'OV_GLOBAL_QUOTA', 'Too much stored from this network today, try again later')
+    }
+    // the store's totals on every write: a key that grows counts as a new one
+    // does; a full store makes room (evictFor) rather than refusing everyone
     const u = await usage()
-    if ((!existing && u.keys >= o.maxKeys) || u.bytes - replaced + data.length > o.maxTotalBytes) return fail(507, 'OV_GLOBAL_FULL', 'Storage is full, try again later')
+    if ((!existing && u.keys >= o.maxKeys) || u.bytes - replaced + data.length > o.maxTotalBytes) {
+      if (!(await evictFor({ keep: key, bytes: data.length - replaced, newKey: !existing }))) return fail(507, 'OV_GLOBAL_FULL', 'Storage is full, try again later')
+    }
     const room = await roomFor(data.length)
     if (room === null) return fail(503, 'OV_GLOBAL_UNAVAILABLE', 'Storage unavailable')
     if (!room) {
@@ -213,7 +303,11 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
     if (counted) {
       counted.bytes += data.length - replaced
       if (!existing) counted.keys++
+      if (counted.bytes >= o.maxTotalBytes * o.alertShare || counted.keys >= o.maxKeys * o.alertShare) {
+        alert('half', `the Global store is over ${Math.round(o.alertShare * 100)}% full (${mb(counted.bytes)} MB in ${counted.keys} keys, caps ${mb(o.maxTotalBytes)} MB / ${o.maxKeys})`)
+      }
     }
+    budget.charge(ip, { keys: existing ? 0 : 1, bytes: adds })
     return ok({ kind, bytes: data.length, replaced: had })
   }
 
@@ -223,6 +317,10 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
     if (typeof key !== 'string' || !KEY_RE.test(key) || !spec) return fail(400, 'OV_GLOBAL_INVALID', 'Invalid request')
     try {
       const data = await fsp.readFile(path.join(dirOf(key), `${kind}.${spec.ext}`))
+      if (!loaded.has(key)) {
+        if (loaded.size >= o.maxKeys) loaded.delete(loaded.values().next().value)
+        loaded.add(key)
+      }
       return ok({ fileBase64: data.toString('base64'), contentType: spec.types[0] })
     } catch (e) {
       if (e?.code === 'ENOENT') return { status: 200, body: { data: null, error: { message: 'Not found', code: 'OV_GLOBAL_NOT_FOUND' } } }
@@ -230,13 +328,13 @@ export function createGlobalStore({ root, logger = console, now = Date.now, stat
     }
   }
 
-  async function handle(action, body) {
+  async function handle(action, body, ctx = {}) {
     // retention runs on any request, a load too (and on server.js's timer)
     maybeSweep().catch((e) => logger.warn?.('[Global] sweep failed:', e?.message))
-    if (action === 'save') return save(body)
+    if (action === 'save') return save(body, ctx)
     if (action === 'load') return load(body)
     return fail(404, 'OV_NOT_FOUND', 'Not found')
   }
 
-  return { handle, sweep, maybeSweep, usage, maxBodyBytes: maxBodyBytesFor(o.maxFileBytes) }
+  return { handle, sweep, maybeSweep, usage, budget, maxBodyBytes: maxBodyBytesFor(o.maxFileBytes) }
 }
