@@ -105,4 +105,14 @@ describe('NotificationsBell', () => {
     render(<NotificationsBell app="indoor" />)
     await waitFor(() => expect(screen.queryByTestId('notifications-bell')).toBeNull())
   })
+
+  // 23.11: the list opened at z 1000, behind the console (fixed, z 1100):
+  // the bell looked dead
+  it('opens its list above the manager console (z 1100)', async () => {
+    render(<NotificationsBell app="indoor" />)
+    fireEvent.click(await screen.findByTestId('notifications-bell'))
+    await screen.findByTestId('notifications-list')
+    const layer = document.querySelector('[data-menu-popover]').closest('[style*="z-index"]')
+    expect(Number(layer.style.zIndex)).toBeGreaterThan(1100)
+  })
 })

@@ -8,6 +8,8 @@ import { dayTimeLabel } from '../../ui/format.js'
 
 // How often the bell asks for new notices while the manager is open
 export const NOTIFICATIONS_POLL_MS = 60 * 1000
+// The list's layer: over the console (z 1100), under its kit dialogs (2000)
+export const NOTIFICATIONS_Z = 1200
 
 /**
  * The console header's bell (db/028, backend lib/signupNotices.js): the
@@ -93,7 +95,10 @@ export default function NotificationsBell({ app, onOpen }) {
           </span>
         )}
       </button>
-      <MenuPopover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} label={t('manage.notifications.title')} role="dialog" align="end" closeLabel={t('common.close', 'Close')} className="w-[min(22rem,calc(100vw-16px))] p-0" bodyClassName="p-0">
+      {/* Above the console (ManageConsole, z 1100): at MenuPopover's default
+          1000 the list opened behind the page and the bell did nothing
+          (owner 23.11) */}
+      <MenuPopover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} label={t('manage.notifications.title')} role="dialog" align="end" zIndex={NOTIFICATIONS_Z} closeLabel={t('common.close', 'Close')} className="w-[min(22rem,calc(100vw-16px))] p-0" bodyClassName="p-0">
         <div className="flex items-center justify-between gap-2 border-b border-stone-100 px-3 py-2">
           <h2 className="text-sm font-semibold text-stone-900">{t('manage.notifications.title')}</h2>
           {unread > 0 && (
