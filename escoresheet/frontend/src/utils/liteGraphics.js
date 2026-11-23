@@ -62,8 +62,13 @@ export function liteGraphicsOn(doc = typeof document !== 'undefined' ? document 
   return !!doc?.documentElement?.classList.contains(LITE_GRAPHICS_CLASS)
 }
 
-/** The scorer's court cover with the blur on (Scoreboard.jsx, tablet court). */
-export const PRIVACY_COVER_FROSTED = Object.freeze({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
+/**
+ * The scorer's court cover with the blur on (Scoreboard.jsx, tablet court).
+ * With the -webkit- name too, as the phone court's and the referee's covers:
+ * WebKit before Safari 18 (iPadOS 15 to 17, macOS 11 and 12) knows only that
+ * one, and without it the cover was a see-through 50 % panel there.
+ */
+export const PRIVACY_COVER_FROSTED = Object.freeze({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' })
 
 /**
  * The fill of the cover over a team's line-up on the court until the other

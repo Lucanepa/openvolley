@@ -174,7 +174,7 @@ describe('the line-up cover follows the blur switch', () => {
   it('blur on: frosted; off: the opaque panel', () => {
     runOn('web')
     setLook({ blur: true })
-    expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
+    expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' })
     setLook({ blur: false })
     expect(privacyCoverFill()).toEqual({ background: 'rgb(15, 23, 42)' })
   })

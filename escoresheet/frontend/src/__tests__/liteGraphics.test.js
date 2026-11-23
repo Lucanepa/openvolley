@@ -46,7 +46,7 @@ describe('ov-lite: the blur switch off', () => {
       expect(android).toBe(false)
       expect(lookDefaults({ androidApp: android }).blur).toBe(true)
       expect(liteGraphicsOn()).toBe(false)
-      expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
+      expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' })
     })
   }
 
@@ -67,7 +67,7 @@ describe('ov-lite: the blur switch off', () => {
 
 describe('the line-up privacy cover', () => {
   it('off: frosted as before', () => {
-    expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
+    expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' })
   })
 
   // At 92 % without the blur the numbers stayed readable at close range
