@@ -378,7 +378,8 @@ describe('Save PDF', () => {
         localStorage.removeItem('ov.look.pdfSharp')
       }
     }
-  })
+    // two whole sheets drawn and captured: past 30 s on the CI runners
+  }, 90000)
 
   it('a lean capture that fails in Chromium is tried once more with the lean list, never with the full copy (~8x larger)', async () => {
     const htmlToImage: any = await import('html-to-image')

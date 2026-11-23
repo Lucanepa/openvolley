@@ -101,7 +101,9 @@ function domText(root) {
   const walk = (node, depth) => {
     const pad = '  '.repeat(depth)
     if (node.nodeType === 3) {
-      const text = node.textContent.replace(/\s+/g, ' ').trim()
+      // A date is written in the machine's default locale (the toolbar clock:
+      // 21/11/2026 here, 11/21/2026 on the CI runners): only its place counts
+      const text = node.textContent.replace(/\s+/g, ' ').trim().replace(/\b\d{1,2}[./]\d{1,2}[./]\d{4}\b/g, '<date>')
       if (text) lines.push(`${pad}"${text}"`)
       return
     }
