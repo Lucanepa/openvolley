@@ -39,7 +39,7 @@
 import { compareBySeq, formatScore, teamLabel, displaySetNumber, tr, sanctionLabel, isTeamSanctionType, otherTeam } from './describe'
 import { getFirstServeForSet, getSetResult, isDecidingSet, setTargetsOf, pointsToWinFor } from './rules'
 import { rotateLineup } from './rotation'
-import { resolveSanction, isDelaySanction, validateMemberSanction } from './sanctions'
+import { resolveSanction, isDelaySanction, validateMemberSanction, awardsPoint, penaltyOfPoint, pointOfPenalty } from './sanctions'
 import { MAX_SUBSTITUTIONS_PER_SET } from './substitutions'
 import { isSentOff } from './interruptionRequests'
 import { setsToWin } from '../utils/matchFormat'
@@ -168,6 +168,8 @@ const ISSUE_DEFAULTS = {
   sameSanctionTwice: 'Set {{set}}, {{score}}: {{what}} of {{team}}: this person already has this sanction.',
   lighterSanction: 'Set {{set}}, {{score}}: {{what}} of {{team}}: this person already had a heavier sanction (each further sanction must be heavier).',
   teamAlreadyWarned: 'Set {{set}}, {{score}}: {{what}} of {{team}}: the team was already warned.',
+  penaltyWithoutPoint: 'Set {{set}}, {{score}}: {{what}} of {{team}}: the point it gives the opponent is missing.',
+  penaltyLinkBroken: 'Set {{set}}, {{score}}: the point of {{team}} is marked as a penalty point, but no penalty of the opponent gave it.',
   pointsAfterWin: 'Set {{set}} was already won at {{score}}; {{n}} more point(s) follow.',
   setScoreInvalid: 'Set {{set}} ended {{score}}: not a possible final score.',
   setWinnerChanged: 'Set {{set}} is now won by {{team}} ({{score}}).',
@@ -215,6 +217,7 @@ export function recomputeMatch(events, ctx = {}) {
   }
   for (const setIndex of sets) recomputeSet(all.filter(e => setOf(e) === setIndex), setIndex, ctx, out, issue, roster, all)
   checkSanctions(all, ctx, issue)
+  checkPenaltyPoints(all, ctx, issue)
   checkMatchResult(all, ctx, issue)
   return out
 }
@@ -659,6 +662,47 @@ function checkSanctions(all, ctx, issue) {
   }
 }
 
+/**
+ * A penalty and its point (FIVB 16.2.3, 21.3.1: a misconduct penalty or a
+ * delay penalty gives the opponent a point and the service; audit LOG-05):
+ *  - penaltyWithoutPoint: a sanction that gives a point and has none: no
+ *    point names it (payload.penaltySeq) and no later point of the opponent
+ *    in its set is free to stand for it (one written before the link, or a
+ *    sanction added at the match end, circles the opponent's next point).
+ *    Not in a set with no point yet (a penalty before the line-ups gets its
+ *    point once they are in, domain/sanctions deferredPenaltyPoints), not
+ *    after the set's end, and not the sanction whose point the correction
+ *    itself gives next (ctx.owedPenalty, a plan's followUp);
+ *  - penaltyLinkBroken: a point that names a penalty (payload.penaltySeq)
+ *    no penalty of the opponent in its set is.
+ */
+function checkPenaltyPoints(all, ctx, issue) {
+  const isLinked = (x) => !!penaltyOfPoint(all, x)
+  for (const e of all) {
+    if (e.type !== 'point' || e.payload?.penaltySeq === undefined || e.payload?.penaltySeq === null || isLinked(e)) continue
+    const setIndex = setOf(e)
+    const sc = scoreAt(all, e)
+    if (isTeam(e.payload?.team)) sc[e.payload.team] += 1
+    issue('penaltyLinkBroken', { set: displaySetNumber(setIndex, ctx.match), score: formatScore(sc, e.payload?.team, ctx), team: teamLabel(e.payload?.team, ctx)?.name || '?' }, e, setIndex)
+  }
+  for (const s of all) {
+    const p = s.payload || {}
+    if (s.type !== 'sanction' || !awardsPoint(p.type) || !isTeam(p.team)) continue
+    const setIndex = setOf(s)
+    const inSet = all.filter(x => setOf(x) === setIndex)
+    if (!inSet.some(x => x.type === 'point')) continue
+    if (inSet.some(x => x.type === 'set_end' && compareBySeq(x, s) < 0)) continue
+    if (ctx.owedPenalty && ctx.owedPenalty.setIndex === setIndex && ctx.owedPenalty.seq === s.seq) continue
+    if (pointOfPenalty(all, s)) continue
+    issue('penaltyWithoutPoint', {
+      set: displaySetNumber(setIndex, ctx.match),
+      score: formatScore(scoreAt(all, s), p.team, ctx),
+      what: sanctionLabel(p.type, ctx.t),
+      team: teamLabel(p.team, ctx)?.name || '?'
+    }, s, setIndex)
+  }
+}
+
 function scoreAt(all, ev) {
   const s = { home: 0, away: 0 }
   for (const e of all) {
@@ -755,7 +799,14 @@ function relinkSeqReferences(events, plan) {
     if ((e.type === 'point' || e.type === 'cancelled_point') && p.penaltySeq !== undefined && p.penaltySeq !== null) {
       const sanction = sanctionBySeq.get(`${setOf(e)}:${p.penaltySeq}`)
       if (!sanction) continue
-      if (removed.has(sanction.id)) {
+      // the sanction as the plan leaves it: moved to another set, made a
+      // sanction that gives no point, or given to the point's own team, it
+      // no longer gave this point (audit LOG-16: the link was rewritten to
+      // a seq of the other set)
+      const now = { ...sanction, ...(updates.get(sanction.id) || {}) }
+      const pointSet = updates.get(e.id)?.setIndex ?? setOf(e)
+      const stillGives = setOf(now) === pointSet && awardsPoint(now.payload?.type) && now.payload?.team !== p.team
+      if (removed.has(sanction.id) || !stillGives) {
         // eslint-disable-next-line no-unused-vars
         const { penaltySeq, ...rest } = p
         extra.push({ id: e.id, changes: { payload: rest } })
@@ -790,7 +841,12 @@ export function finalizePlan(events, plan, ctx = {}) {
   const absoluteLineups = new Set((plan.add || []).filter(r => r.type === 'lineup' && r.payload?.fromRectification).map(r => r.tempKey))
   // each line-up row as written before this plan (see storedAsWritten)
   const storedAsWritten = new Map(events.filter(e => e?.type === 'lineup' && e.id != null).map(e => [e.id, e.payload || {}]))
-  const rctx = { ...ctx, match, absoluteLineups, storedAsWritten }
+  // the sanction whose point the correction gives next (planAddSanction,
+  // pointAlreadyGiven false): no "point missing" for it
+  const owedPenalty = plan.followUp?.awardPointTo && plan.followUp.penaltySeq != null
+    ? { setIndex: setOf((plan.add || []).find(r => r.type === 'sanction')), seq: plan.followUp.penaltySeq }
+    : null
+  const rctx = { ...ctx, match, absoluteLineups, storedAsWritten, ...(owedPenalty ? { owedPenalty } : {}) }
   const after = applyPlanToEvents(events, plan)
   const rc = recomputeMatch(after, rctx)
 

@@ -50,7 +50,7 @@ import { actualStartLines, actualStartReason, remarkClock, isSheetRemark } from 
 import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { intervalMinutesAfter } from './setInterval'
 import { validateManualTimeout, validateManualSubstitution, classifySubstitutionRequest } from './substitutions'
-import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
+import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction, penaltyOfPoint, pointOfPenalty } from './sanctions'
 import { playerOfficialLinks, playsAsOf, rolesOfPlayer } from './playerOfficials'
 import { applyPlanToEvents, finalizePlan, isRotationLiberoExit, isRally } from './recompute'
 import { planRectificationReversal } from './rectify'
@@ -122,7 +122,10 @@ export const ERROR_DEFAULTS = {
   endBeforeStart: 'Set {{set}} cannot end before it starts.',
   pointEndsSet: 'This point ends set {{set}}: give it with the point button on the scoreboard.',
   pointChangesCourts: 'This point takes set {{set}} to {{n}}, where the teams change courts: give it with the point button on the scoreboard.',
-  noPointToRemove: '{{team}} has no point in set {{set}} to remove.'
+  noPointToRemove: '{{team}} has no point in set {{set}} to remove.',
+  penaltyPoint: 'This point was given by a sanction of {{team}} ({{sanction}}): it goes to the opponent. Correct or remove the sanction instead.',
+  onlyPenaltyPoints: 'Every point of {{team}} in set {{set}} was given by a sanction of the opponent: remove that sanction instead.',
+  penaltyOtherSet: 'The point this sanction gave is in set {{set}} ({{score}}). Remove the sanction (and correct that set), then add it in the other set.'
 }
 
 export const NOTE_DEFAULTS = {
@@ -145,12 +148,19 @@ export const NOTE_DEFAULTS = {
   invalidFinalScore: '{{score}} is not a possible final score of set {{set}}.',
   liberoInLineup: '#{{n}} is a libero: a libero is not in the starting line-up.',
   recalculated: 'Everything after it is recalculated: rotations, serve, libero replacements and the score.',
-  coinTossRedone: 'Set 1 has not started: the coin toss is done again, team A starts on the left.'
+  coinTossRedone: 'Set 1 has not started: the coin toss is done again, team A starts on the left.',
+  penaltyWithPoint: 'The sanction of {{team}} it was given for ({{sanction}}) is removed with it: a penalty always gives its point.'
 }
 
 /** A planner failure. `text` is the English sentence (UI translates `error`). */
 export function fail(key, params = {}) {
   return { error: `corrections.error.${key}`, params, text: tr(null, '', ERROR_DEFAULTS[key] || key, params) }
+}
+
+// A point a sanction gave goes to the opponent of the sanctioned team (FIVB
+// 16.2.3, 21.3.1): the sanction is corrected, not its point (audit LOG-05)
+function failPenaltyPoint(sanction, ctx = {}) {
+  return fail('penaltyPoint', { team: teamLabel(sanction.payload?.team, ctx)?.name || '?', sanction: sanctionLabel(sanction.payload?.type, ctx.t) })
 }
 
 /** The translated text of a planner error. */
@@ -526,9 +536,14 @@ export function planRemoveSubstitution(events, id, ctx = {}) {
 
 // ───────────────────────────── sanctions ─────────────────────────────
 
-/** The opponent's first point after `seq` (base seq) in the set, or null. */
+/**
+ * The opponent's first point after `seq` (base seq) in the set that is not
+ * another penalty's point (it names its own sanction), or null: the point a
+ * sanction added here circles, as the sheet does (domain/sanctions
+ * pointOfPenalty).
+ */
 function nextPointOf(events, setIndex, team, seq) {
-  return setEvents(events, setIndex).find(e => e.type === 'point' && e.payload?.team === team && baseOf(e) >= seq) || null
+  return setEvents(events, setIndex).find(e => e.type === 'point' && e.payload?.team === team && baseOf(e) >= seq && !penaltyOfPoint(events, e)) || null
 }
 
 function pointScoreAfter(events, point) {
@@ -659,7 +674,10 @@ export function planRemoveSanction(events, id, { removePoint = false } = {}, ctx
   const type = ev.payload?.type
   const setIndex = setOf(ev)
   if (awardsPoint(type)) {
-    const p = nextPointOf(events, setIndex, otherTeam(ev.payload?.team), baseOf(ev) + 1)
+    // its point: the one that names it, else the opponent's next free one
+    // (domain/sanctions pointOfPenalty); never another penalty's point
+    const found = pointOfPenalty(events, ev)
+    const p = found?.type === 'point' ? found : null
     if (removePoint && p) {
       const points = setEvents(events, setIndex).filter(e => e.type === 'point')
       const isLast = points[points.length - 1]?.id === p.id
@@ -711,11 +729,24 @@ export function planEditEvent(events, id, values = {}, ctx = {}) {
   const ev = (events || []).find(e => e.id === id)
   if (!ev) return fail('notFound')
   if (!['timeout', 'substitution', 'sanction'].includes(ev.type)) return planEditEntry(events, id, values, ctx)
+  const v = { setIndex: setOf(ev), team: ev.payload?.team, ...values }
+  // The point a penalty gave stays in its set: moved to another set, the
+  // sanction circled a point there and left this one behind as a plain
+  // point with a link to nothing (audit LOG-16). Removed first, then added
+  // in the other set, the scorer decides about that point
+  const linkedPoint = ev.type === 'sanction'
+    ? (events || []).find(p => p.type === 'point' && penaltyOfPoint(events, p)?.id === ev.id) || null
+    : null
+  if (linkedPoint && v.setIndex !== setOf(ev)) {
+    return fail('penaltyOtherSet', {
+      set: setNumber(setOf(linkedPoint), ctx),
+      score: formatScore(pointScoreAfter(events, linkedPoint), linkedPoint.payload?.team, ctx)
+    })
+  }
   const raw = { ...ctx, raw: true }
   const removal = planRemoveAny(events, id, raw)
   if (removal.error) return removal
   const without = applyPlanToEvents(events, removal)
-  const v = { setIndex: setOf(ev), team: ev.payload?.team, ...values }
   // A playing coach's sanction kept on him keeps the number it recorded
   // (plays): the form names the role only
   const was = ev.payload || {}
@@ -738,8 +769,13 @@ export function planEditEvent(events, id, values = {}, ctx = {}) {
   merged.update.push({ id, changes: { seq: replacement.seq, ts: replacement.ts, setIndex: replacement.setIndex, payload: replacement.payload } })
   merged.remarkRemove = removal.remarkRemove
   merged.remarkAdd = addition.remarkAdd
-  // the removal's "point stays" note is about a removal; not shown on an edit
+  // the removal's "point stays" note is about a removal; not shown on an
+  // edit, unless the edited sanction no longer gives the point it gave (a
+  // penalty made a warning, or given to the other team): that point stays
+  // a rally point, its link goes (recompute relinkSeqReferences)
   merged.notes = addition.notes
+  const gives = (p) => awardsPoint(p?.type) && p?.team !== linkedPoint?.payload?.team
+  if (linkedPoint && !gives(replacement.payload)) merged.notes = [...merged.notes, note('pointStays', {}, ctx.t)]
   const after = applyPlanToEvents(events, merged)
   const from = describeEvent(ev, events, ctx)?.text || ''
   merged.log = makeLog(`edit${ev.type[0].toUpperCase()}${ev.type.slice(1)}`, after.find(e => e.id === id), after, ctx, { from })
@@ -927,6 +963,10 @@ export function planSetPointTeam(events, id, team, ctx = {}) {
   if (!ev || ev.type !== 'point') return fail('notFound')
   if (team !== 'home' && team !== 'away') return fail('chooseTarget')
   if (ev.payload?.team === team) return fail('noScoreChange')
+  // a penalty's point: given to the sanctioned team it lost its link and
+  // the sheet circled another point (audit LOG-05)
+  const penalty = penaltyOfPoint(events, ev)
+  if (penalty) return failPenaltyPoint(penalty, ctx)
   const plan = emptyPlan()
   plan.remove = pointSubEventsForTeam(events, ev, ev.payload?.team).map(e => e.id)
   plan.update = [{ id, changes: { payload: { ...ev.payload, team } } }]
@@ -1233,6 +1273,8 @@ export function planAdjustFinalScore(events, sets, { setIndex, team, delta } = {
   if (delta === -1) {
     const last = points[points.length - 1]
     if (!last || last.payload?.team !== team) return fail('notLastPoint', { set, team: teamLabel(team, ctx)?.name || '?' })
+    const penalty = penaltyOfPoint(events, last)
+    if (penalty) return failPenaltyPoint(penalty, ctx)
     plan.remove = pointGroupIds(events, last)
     return done(events, finishPlan(plan, events, ctx, 'removePoint', last), ctx)
   }
@@ -1331,8 +1373,13 @@ export function planRemovePoint(events, sets, { setIndex, team } = {}, ctx = {})
   const row = (sets || []).find(s => s.index === setIndex)
   if (row?.finished || setIsFinished(events, setIndex)) return planAdjustFinalScore(events, sets, { setIndex, team, delta: -1 }, ctx)
   const points = setEvents(events, setIndex).filter(e => e.type === 'point' && e.payload?.team === team)
-  const last = points[points.length - 1]
-  if (!last) return fail('noPointToRemove', { set: setNumber(setIndex, ctx), team: teamLabel(team, ctx)?.name || '?' })
+  if (!points.length) return fail('noPointToRemove', { set: setNumber(setIndex, ctx), team: teamLabel(team, ctx)?.name || '?' })
+  // the team's latest rally point: a penalty's point goes only with its
+  // sanction (it was removed alone and the sanction stayed without it,
+  // audit LOG-05)
+  const rallies = points.filter(p => !penaltyOfPoint(events, p))
+  const last = rallies[rallies.length - 1]
+  if (!last) return fail('onlyPenaltyPoints', { set: setNumber(setIndex, ctx), team: teamLabel(team, ctx)?.name || '?' })
   return planRemoveEntry(events, last.id, ctx)
 }
 
@@ -1663,6 +1710,14 @@ export function planRemoveEntry(events, id, ctx = {}) {
       }
     }
     plan.remove = pointGroupIds(events, ev)
+    // A penalty's point goes with its sanction, as Undo takes them back: the
+    // sanction stayed without its point and the sheet circled a later rally
+    // point (audit LOG-05). The confirmation lists both (describeRemoval)
+    const penalty = penaltyOfPoint(events, ev)
+    if (penalty) {
+      plan.remove.push(...entryGroupIds(events, penalty))
+      plan.notes.push(note('penaltyWithPoint', { team: teamLabel(penalty.payload?.team, ctx)?.name || '?', sanction: sanctionLabel(penalty.payload?.type, ctx.t) }, ctx.t))
+    }
     plan.affectedSets = [setIndex]
     if (setHasPointAfter(events, ev)) plan.notes.push(note('recalculated', {}, ctx.t))
   } else if (ev.type === 'decision_change') {

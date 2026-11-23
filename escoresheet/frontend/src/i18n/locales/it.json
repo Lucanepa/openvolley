@@ -6266,7 +6266,10 @@
       "noSuchPlayer": "Questo giocatore non è nell’elenco.",
       "pointEndsSet": "Questo punto chiude il set {{set}}: assegnalo con il pulsante del punto sul tabellone segnapunti.",
       "pointChangesCourts": "Questo punto porta il set {{set}} a {{n}}, dove le squadre cambiano campo: assegnalo con il pulsante del punto sul tabellone segnapunti.",
-      "noPointToRemove": "{{team}} non ha punti da togliere nel set {{set}}."
+      "noPointToRemove": "{{team}} non ha punti da togliere nel set {{set}}.",
+      "penaltyPoint": "Questo punto è stato dato da una sanzione di {{team}} ({{sanction}}): spetta all'avversario. Correggi o togli invece la sanzione.",
+      "onlyPenaltyPoints": "Ogni punto di {{team}} nel set {{set}} viene da una sanzione dell'avversario: togli invece quella sanzione.",
+      "penaltyOtherSet": "Il punto dato da questa sanzione è nel set {{set}} ({{score}}). Togli la sanzione (e correggi quel set), poi aggiungila nell'altro set."
     },
     "note": {
       "ladder": "Secondo le regole sarebbe un/a {{expected}}; registrato come deciso dall'arbitro.",
@@ -6288,7 +6291,8 @@
       "invalidFinalScore": "{{score}} non è un punteggio finale possibile del set {{set}}.",
       "liberoInLineup": "#{{n}} è libero: un libero non è nella formazione iniziale.",
       "recalculated": "Tutto ciò che segue viene ricalcolato: rotazioni, servizio, cambi del libero e punteggio.",
-      "coinTossRedone": "Il set 1 non è ancora iniziato: il sorteggio vale di nuovo, la squadra A inizia a sinistra."
+      "coinTossRedone": "Il set 1 non è ancora iniziato: il sorteggio vale di nuovo, la squadra A inizia a sinistra.",
+      "penaltyWithPoint": "La sanzione di {{team}} per cui è stato dato ({{sanction}}) viene tolta con lui: una penalità dà sempre il suo punto."
     },
     "title": "Correzioni",
     "pageTitle": "Correzioni",
@@ -6557,6 +6561,8 @@
       "sameSanctionTwice": "Set {{set}}, {{score}}: {{what}} di {{team}}: questa persona ha già questa sanzione.",
       "lighterSanction": "Set {{set}}, {{score}}: {{what}} di {{team}}: questa persona aveva già una sanzione più grave (ogni ulteriore sanzione deve essere più grave).",
       "teamAlreadyWarned": "Set {{set}}, {{score}}: {{what}} di {{team}}: la squadra era già stata ammonita.",
+      "penaltyWithoutPoint": "Set {{set}}, {{score}}: {{what}} di {{team}}: manca il punto per l'avversario.",
+      "penaltyLinkBroken": "Set {{set}}, {{score}}: il punto di {{team}} è segnato come punto di penalità, ma nessuna penalità dell'avversario lo ha dato.",
       "pointsAfterWin": "Il set {{set}} era già vinto sul {{score}}; seguono ancora {{n}} punti.",
       "setScoreInvalid": "Il set {{set}} è finito {{score}}: non è un punteggio finale possibile.",
       "setWinnerChanged": "Il set {{set}} ora è vinto da {{team}} ({{score}}).",

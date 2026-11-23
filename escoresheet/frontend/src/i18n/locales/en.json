@@ -6267,7 +6267,10 @@
       "noSuchPlayer": "This player is not on the roster.",
       "pointEndsSet": "This point ends set {{set}}: give it with the point button on the scoreboard.",
       "pointChangesCourts": "This point takes set {{set}} to {{n}}, where the teams change courts: give it with the point button on the scoreboard.",
-      "noPointToRemove": "{{team}} has no point in set {{set}} to remove."
+      "noPointToRemove": "{{team}} has no point in set {{set}} to remove.",
+      "penaltyPoint": "This point was given by a sanction of {{team}} ({{sanction}}): it goes to the opponent. Correct or remove the sanction instead.",
+      "onlyPenaltyPoints": "Every point of {{team}} in set {{set}} was given by a sanction of the opponent: remove that sanction instead.",
+      "penaltyOtherSet": "The point this sanction gave is in set {{set}} ({{score}}). Remove the sanction (and correct that set), then add it in the other set."
     },
     "note": {
       "ladder": "By the rules this would have been a {{expected}}; recorded as the referee decided.",
@@ -6289,7 +6292,8 @@
       "invalidFinalScore": "{{score}} is not a possible final score of set {{set}}.",
       "liberoInLineup": "#{{n}} is a libero: a libero is not in the starting line-up.",
       "recalculated": "Everything after it is recalculated: rotations, serve, libero replacements and the score.",
-      "coinTossRedone": "Set 1 has not started: the coin toss is done again, team A starts on the left."
+      "coinTossRedone": "Set 1 has not started: the coin toss is done again, team A starts on the left.",
+      "penaltyWithPoint": "The sanction of {{team}} it was given for ({{sanction}}) is removed with it: a penalty always gives its point."
     },
     "title": "Corrections",
     "pageTitle": "Corrections",
@@ -6558,6 +6562,8 @@
       "sameSanctionTwice": "Set {{set}}, {{score}}: {{what}} of {{team}}: this person already has this sanction.",
       "lighterSanction": "Set {{set}}, {{score}}: {{what}} of {{team}}: this person already had a heavier sanction (each further sanction must be heavier).",
       "teamAlreadyWarned": "Set {{set}}, {{score}}: {{what}} of {{team}}: the team was already warned.",
+      "penaltyWithoutPoint": "Set {{set}}, {{score}}: {{what}} of {{team}}: the point it gives the opponent is missing.",
+      "penaltyLinkBroken": "Set {{set}}, {{score}}: the point of {{team}} is marked as a penalty point, but no penalty of the opponent gave it.",
       "pointsAfterWin": "Set {{set}} was already won at {{score}}; {{n}} more point(s) follow.",
       "setScoreInvalid": "Set {{set}} ended {{score}}: not a possible final score.",
       "setWinnerChanged": "Set {{set}} is now won by {{team}} ({{score}}).",

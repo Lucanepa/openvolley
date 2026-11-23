@@ -6261,7 +6261,10 @@
       "noSuchPlayer": "De Spieler isch nöd im Kader.",
       "pointEndsSet": "Dä Punkt beändet Satz {{set}}: Gib ihn mit em Punkt-Chnopf uf em Scoreboard.",
       "pointChangesCourts": "Mit dem Punkt chunnt Satz {{set}} uf {{n}}, d Teams wächsled d Siite: Gib ihn mit em Punkt-Chnopf uf em Scoreboard.",
-      "noPointToRemove": "{{team}} hät im Satz {{set}} kei Punkt, wo mer cha wägnäh."
+      "noPointToRemove": "{{team}} hät im Satz {{set}} kei Punkt, wo mer cha wägnäh.",
+      "penaltyPoint": "De Punkt hät e Sanktion vo {{team}} ggäh ({{sanction}}): Er ghört em Gegner. Korrigier oder lösch stattdesse d Sanktion.",
+      "onlyPenaltyPoints": "Jede Punkt vo {{team}} im Satz {{set}} chunnt us ere Sanktion vom Gegner: Lösch stattdesse die Sanktion.",
+      "penaltyOtherSet": "De Punkt vo dere Sanktion isch im Satz {{set}} ({{score}}). Lösch d Sanktion (und korrigier dä Satz) und trag sie denn im andere Satz ii."
     },
     "note": {
       "ladder": "Nach de Regle wär das e {{expected}} gsi; erfasst, wie de Schiri entschiede hät.",
@@ -6283,7 +6286,8 @@
       "invalidFinalScore": "{{score}} isch kein mögliche Endstand vo Satz {{set}}.",
       "liberoInLineup": "#{{n}} isch Libero: en Libero staht nöd i de Startufstellig.",
       "recalculated": "Alles dänach wird neu berächnet: Rotatione, Ufschlag, Libero-Wächsel und Spielstand.",
-      "coinTossRedone": "Satz 1 het no nöd aagfange: d Usloosig gilt neu, Team A fangt links aa."
+      "coinTossRedone": "Satz 1 het no nöd aagfange: d Usloosig gilt neu, Team A fangt links aa.",
+      "penaltyWithPoint": "D Sanktion vo {{team}}, für die er ggäh worde isch ({{sanction}}), wird mitglöscht: E Straaf git immer ihre Punkt."
     },
     "title": "Korrekture",
     "pageTitle": "Korrekture",
@@ -6552,6 +6556,8 @@
       "sameSanctionTwice": "Satz {{set}}, {{score}}: {{what}} vo {{team}}: die Person hät die Sanktion scho.",
       "lighterSanction": "Satz {{set}}, {{score}}: {{what}} vo {{team}}: die Person hät scho e schwereri Sanktion gha (jedi witeri Sanktion mues schwerer si).",
       "teamAlreadyWarned": "Satz {{set}}, {{score}}: {{what}} vo {{team}}: s Team isch scho verwarnt worde.",
+      "penaltyWithoutPoint": "Satz {{set}}, {{score}}: {{what}} vo {{team}}: De Punkt für de Gegner fehlt.",
+      "penaltyLinkBroken": "Satz {{set}}, {{score}}: De Punkt vo {{team}} isch als Straafpunkt markiert, aber kei Straaf vom Gegner hät en ggäh.",
       "pointsAfterWin": "Satz {{set}} isch bi {{score}} scho gwunne gsi; dänach folged no {{n}} Punkt.",
       "setScoreInvalid": "Satz {{set}} hät {{score}} gändet: kein mögliche Endstand.",
       "setWinnerChanged": "Satz {{set}} gwünnt jetzt {{team}} ({{score}}).",

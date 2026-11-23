@@ -101,6 +101,44 @@ export function penaltyOfPoint(events, point) {
   ) || null
 }
 
+const timeOf = (e) => (typeof e?.ts === 'number' ? e.ts : Date.parse(e?.ts || 0) || 0)
+// a after b in the log: by seq, by time for rows without one
+const isAfter = (a, b) => {
+  const as = a?.seq || 0
+  const bs = b?.seq || 0
+  if (as !== 0 || bs !== 0) return as > bs
+  return timeOf(a) > timeOf(b)
+}
+
+/**
+ * The point a misconduct penalty or a delay penalty gave the opponent: the
+ * point that names it (payload.penaltySeq; a going back may have cancelled
+ * it, then the cancelled_point), else, for a penalty written before the link
+ * or added on the correction board, the opponent's next point in its set
+ * that names no other penalty. One rule for the sheet's circled point
+ * (scoresheet_pdf setModel), the corrections and their check (audit LOG-05).
+ * @param {Array} events
+ * @param {object} sanction the sanction event
+ * @returns {object|null} the point (or cancelled_point) event
+ */
+export function pointOfPenalty(events, sanction) {
+  if (sanction?.type !== 'sanction' || !awardsPoint(sanction.payload?.type)) return null
+  const team = sanction.payload?.team
+  const opponent = team === 'home' ? 'away' : team === 'away' ? 'home' : null
+  if (!opponent) return null
+  const setIndex = sanction.setIndex ?? 1
+  const inSet = (events || []).filter(e => e && (e.setIndex ?? 1) === setIndex)
+  const linked = inSet.find(e => (e.type === 'point' || e.type === 'cancelled_point') &&
+    e.payload?.penaltySeq != null && e.payload.penaltySeq === sanction.seq && e.payload?.team === opponent)
+  if (linked) return linked
+  let next = null
+  for (const e of inSet) {
+    if (e.type !== 'point' || e.payload?.team !== opponent || !isAfter(e, sanction) || penaltyOfPoint(events, e)) continue
+    if (!next || isAfter(next, e)) next = e
+  }
+  return next
+}
+
 /**
  * The team-sanction flags shown on the scoreboard (match.sanctions), derived
  * from the sanction events — the single source of truth. The flags used to be

@@ -6249,7 +6249,10 @@
       "noSuchPlayer": "Diese Person steht nicht auf der Spielerliste.",
       "pointEndsSet": "Dieser Punkt beendet Satz {{set}}: Gib ihn mit der Punkt-Taste auf dem Scoreboard.",
       "pointChangesCourts": "Mit diesem Punkt erreicht Satz {{set}} {{n}} Punkte, die Teams wechseln die Seiten: Gib ihn mit der Punkt-Taste auf dem Scoreboard.",
-      "noPointToRemove": "{{team}} hat in Satz {{set}} keinen Punkt, der entfernt werden kann."
+      "noPointToRemove": "{{team}} hat in Satz {{set}} keinen Punkt, der entfernt werden kann.",
+      "penaltyPoint": "Diesen Punkt gab eine Sanktion von {{team}} ({{sanction}}): Er gehört dem Gegner. Korrigiere oder entferne stattdessen die Sanktion.",
+      "onlyPenaltyPoints": "Jeder Punkt von {{team}} in Satz {{set}} kommt aus einer Sanktion des Gegners: Entferne stattdessen diese Sanktion.",
+      "penaltyOtherSet": "Der Punkt dieser Sanktion liegt in Satz {{set}} ({{score}}). Entferne die Sanktion (und korrigiere diesen Satz) und trage sie dann im anderen Satz ein."
     },
     "note": {
       "ladder": "Nach den Regeln wäre das eine {{expected}} gewesen; erfasst, wie der Schiedsrichter entschieden hat.",
@@ -6271,7 +6274,8 @@
       "invalidFinalScore": "{{score}} ist kein möglicher Endstand von Satz {{set}}.",
       "liberoInLineup": "#{{n}} ist Libero: ein Libero steht nicht in der Startaufstellung.",
       "recalculated": "Alles danach wird neu berechnet: Rotationen, Aufschlag, Libero-Wechsel und Spielstand.",
-      "coinTossRedone": "Satz 1 hat noch nicht begonnen: Die Auslosung gilt neu, Team A beginnt links."
+      "coinTossRedone": "Satz 1 hat noch nicht begonnen: Die Auslosung gilt neu, Team A beginnt links.",
+      "penaltyWithPoint": "Die Sanktion von {{team}}, für die er gegeben wurde ({{sanction}}), wird mit entfernt: Eine Strafe gibt immer ihren Punkt."
     },
     "title": "Korrekturen",
     "pageTitle": "Korrekturen",
@@ -6540,6 +6544,8 @@
       "sameSanctionTwice": "Satz {{set}}, {{score}}: {{what}} von {{team}}: diese Person hat diese Sanktion bereits.",
       "lighterSanction": "Satz {{set}}, {{score}}: {{what}} von {{team}}: diese Person hatte bereits eine schwerere Sanktion (jede weitere Sanktion muss schwerer sein).",
       "teamAlreadyWarned": "Satz {{set}}, {{score}}: {{what}} von {{team}}: die Mannschaft wurde bereits verwarnt.",
+      "penaltyWithoutPoint": "Satz {{set}}, {{score}}: {{what}} von {{team}}: Der Punkt für den Gegner fehlt.",
+      "penaltyLinkBroken": "Satz {{set}}, {{score}}: Der Punkt von {{team}} ist als Strafpunkt markiert, aber keine Strafe des Gegners hat ihn gegeben.",
       "pointsAfterWin": "Satz {{set}} war bei {{score}} bereits gewonnen; danach folgen noch {{n}} Punkt(e).",
       "setScoreInvalid": "Satz {{set}} endete {{score}}: kein möglicher Endstand.",
       "setWinnerChanged": "Satz {{set}} gewinnt jetzt {{team}} ({{score}}).",

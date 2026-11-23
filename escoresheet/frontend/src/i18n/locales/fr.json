@@ -6260,7 +6260,10 @@
       "noSuchPlayer": "Ce joueur ne figure pas sur la liste.",
       "pointEndsSet": "Ce point termine le set {{set}} : donne-le avec le bouton de point du tableau de marque.",
       "pointChangesCourts": "Ce point amène le set {{set}} à {{n}}, où les équipes changent de côté : donne-le avec le bouton de point du tableau de marque.",
-      "noPointToRemove": "{{team}} n’a aucun point à retirer dans le set {{set}}."
+      "noPointToRemove": "{{team}} n’a aucun point à retirer dans le set {{set}}.",
+      "penaltyPoint": "Ce point a été donné par une sanction de {{team}} ({{sanction}}) : il revient à l'adversaire. Corrige ou retire plutôt la sanction.",
+      "onlyPenaltyPoints": "Chaque point de {{team}} dans le set {{set}} vient d'une sanction de l'adversaire : retire plutôt cette sanction.",
+      "penaltyOtherSet": "Le point donné par cette sanction est dans le set {{set}} ({{score}}). Retire la sanction (et corrige ce set), puis ajoute-la dans l'autre set."
     },
     "note": {
       "ladder": "Selon les règles, ce serait un/e {{expected}} ; enregistré selon la décision de l'arbitre.",
@@ -6282,7 +6285,8 @@
       "invalidFinalScore": "{{score}} n'est pas un score final possible du set {{set}}.",
       "liberoInLineup": "#{{n}} est libéro : un libéro ne figure pas dans la formation de départ.",
       "recalculated": "Tout ce qui suit est recalculé : rotations, service, remplacements de libéro et score.",
-      "coinTossRedone": "Le set 1 n’a pas commencé : le tirage au sort est refait, l’équipe A commence à gauche."
+      "coinTossRedone": "Le set 1 n’a pas commencé : le tirage au sort est refait, l’équipe A commence à gauche.",
+      "penaltyWithPoint": "La sanction de {{team}} pour laquelle il a été donné ({{sanction}}) est retirée avec lui : une pénalité donne toujours son point."
     },
     "title": "Corrections",
     "pageTitle": "Corrections",
@@ -6551,6 +6555,8 @@
       "sameSanctionTwice": "Set {{set}}, {{score}} : {{what}} de {{team}} : cette personne a déjà cette sanction.",
       "lighterSanction": "Set {{set}}, {{score}} : {{what}} de {{team}} : cette personne avait déjà une sanction plus lourde (chaque nouvelle sanction doit être plus lourde).",
       "teamAlreadyWarned": "Set {{set}}, {{score}} : {{what}} de {{team}} : l’équipe a déjà été avertie.",
+      "penaltyWithoutPoint": "Set {{set}}, {{score}} : {{what}} de {{team}} : le point pour l'adversaire manque.",
+      "penaltyLinkBroken": "Set {{set}}, {{score}} : le point de {{team}} est marqué comme point de pénalité, mais aucune pénalité de l'adversaire ne l'a donné.",
       "pointsAfterWin": "Le set {{set}} était déjà gagné à {{score}} ; {{n}} point(s) suivent encore.",
       "setScoreInvalid": "Le set {{set}} s’est terminé {{score}} : ce n’est pas un score final possible.",
       "setWinnerChanged": "Le set {{set}} est maintenant gagné par {{team}} ({{score}}).",
