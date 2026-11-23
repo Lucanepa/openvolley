@@ -5,6 +5,7 @@ import vmShot from './fixtures/ocr-vm-de-screenshot.json'
 import tableDe from './fixtures/ocr-table-de-skew.json'
 import tableIt from './fixtures/ocr-table-it-flat.json'
 import vmDegraded from './fixtures/ocr-vm-de-degraded.json'
+import vmAnywhere from './fixtures/ocr-vm-de-anywhere-skew.json'
 import { fieldIssues, importedRosterOf } from '../../../domain/importedRoster'
 
 // The fixtures are Tesseract's answers (tesseract.js 7, deu+fra+ita, PSM 6)
@@ -39,12 +40,12 @@ describe('rosterFromOcr: VolleyManager\'s Einsatzliste in a photo', () => {
     expect(last.lastName).toMatch(/^Ram.rez-Cort.s Delgado$/)
   })
 
-  it('a circle left of the SV number makes the captain; the number inside is left to be read again', () => {
+  it('a circle on the row makes the captain; the number inside is left to be read again; a neighbour\'s circle does not', () => {
     const asked = []
     const ringAt = (region, line) => {
       asked.push({ region, line })
-      // the circle of the made-up list: left of 323411 only
-      return region.x1 < 300 && region.y0 < 500 && region.y1 > 490 ? { ring: { x0: 120, y0: 470, x1: 180, y1: 535 }, inner: { x0: 142, y0: 490, x1: 158, y1: 515 } } : null
+      // the circle of the made-up list, left of 323411: found by any search over that row
+      return region.x0 < 150 && region.x1 > 180 && region.y0 < 470 && region.y1 > 535 ? { ring: { x0: 120, y0: 470, x1: 180, y1: 535 }, inner: { x0: 142, y0: 490, x1: 158, y1: 515 } } : null
     }
     const r = rosterFromOcr(vmShot, { ringAt })
     const dora = r.players.find(p => p.licence === '323411')
@@ -90,6 +91,26 @@ describe('rosterFromOcr: a poor reading loses no row', () => {
 
   it('"FF" is the gender F, not part of the name', () => {
     expect(r.players.find(q => q.licence === '328966').lastName).not.toMatch(/FF/)
+  })
+})
+
+describe('rosterFromOcr: marks written anywhere on the row (skewed photo)', () => {
+  // vm-de-anywhere: numbers in the margin, between SV number and first name,
+  // between the names and after the last name; a K beside a first name, an L
+  // in the margin and after the date; a circle round an 8 over the first name
+  const r = rosterFromOcr(vmAnywhere)
+  const by = (licence) => r.players.find(p => p.licence === licence)
+
+  it('keeps every row, also the one whose first name the circle covered', () => {
+    expect(r.players).toHaveLength(10)
+    expect(by('323411')).toMatchObject({ firstName: '', lastName: 'Muster' })
+  })
+
+  it('takes the numbers and marks wherever they stand', () => {
+    expect(by('91811').number).toBe(5) // margin
+    expect(by('174933')).toMatchObject({ number: 14, lastName: expect.stringMatching(/^Kova/) }) // between the names
+    expect(by('88544')).toMatchObject({ number: 7, isCaptain: true, firstName: 'Fiona' }) // K beside the first name
+    expect(by('328966')).toMatchObject({ number: 2, isLibero: true, firstName: 'Carla' }) // before the first name, L after the date
   })
 })
 
@@ -139,6 +160,27 @@ describe('rosterFromOcr: marks the team wrote in', () => {
     expect(rosterFromOcr(page(header, row(140, [['K', 20], ['7', 50]]))).players[0]).toMatchObject({ number: 7, isCaptain: true })
     expect(rosterFromOcr(page(header, row(140, [['1', 40, 12], ['1', 55, 12]]))).players[0].number).toBe(11)
     expect(rosterFromOcr(page(header, row(140, [['IJ', 40, 24]]))).players[0].number).toBe(11)
+  })
+
+  it('anywhere a coach writes (owner: "next (left) or between name and licence, kinda everywhere")', () => {
+    const at = (words) => rosterFromOcr(page(header, line(140, words))).players[0]
+    const base = { licence: '123456', firstName: 'Anna', lastName: 'Muster' }
+    // between the SV number and the first name
+    expect(at([['123456', 100], ['7', 170], ['Anna', 200], ['Muster', 320], ['F', 460], ['14.03.2004', 500]])).toMatchObject({ ...base, number: 7 })
+    // between first and last name, and after the last name
+    expect(at([['123456', 100], ['Anna', 200], ['12', 280], ['Muster', 320], ['F', 460], ['14.03.2004', 500]])).toMatchObject({ ...base, number: 12 })
+    expect(at([['123456', 100], ['Anna', 200], ['Muster', 320], ['9', 420], ['F', 460], ['14.03.2004', 500]])).toMatchObject({ ...base, number: 9 })
+    // a mark right after the SV number (any form) or a bare capital between the names
+    expect(at([['123456', 100], ['(K)', 165], ['Anna', 200], ['Muster', 320], ['F', 460], ['14.03.2004', 500]])).toMatchObject({ ...base, isCaptain: true })
+    expect(at([['123456', 100], ['l', 165], ['Anna', 200], ['Muster', 320], ['F', 460], ['14.03.2004', 500]])).toMatchObject({ ...base, isLibero: true })
+    expect(at([['123456', 100], ['Anna', 200], ['L', 290], ['Muster', 320], ['F', 460], ['14.03.2004', 500]])).toMatchObject({ ...base, isLibero: true })
+    // the one in front wins over one further in
+    expect(at([['4', 40], ['123456', 100], ['Anna', 200], ['12', 280], ['Muster', 320], ['F', 460], ['14.03.2004', 500]]).number).toBe(4)
+  })
+
+  it('a date the reading split ("14" "03.2004") is no shirt number, and the row stays', () => {
+    const p = rosterFromOcr(page(header, line(140, [['123456', 100], ['Anna', 200], ['Muster', 320], ['F', 460], ['14', 500, 20], ['03.2004', 525]]))).players[0]
+    expect(p).toMatchObject({ licence: '123456', firstName: 'Anna', lastName: 'Muster', number: null, dob: '' })
   })
 
   it('a circled number: "(7)" as read, or a ring round its box (opts.circled)', () => {

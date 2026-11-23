@@ -10,6 +10,7 @@ run without Tesseract.
 | `ocr-vm-de-skew.json` | `vm-de.html`: VolleyManager's layout (no rules, officials above the table, LK / LAS / E / ⚠ columns, a wrapped last name), numbers, C / L and a circled number written in a hand-like script | a skewed, unevenly lit photo on a table (JPEG 0.82, blurred, noise) |
 | `ocr-vm-de-screenshot.json` | `vm-de.html` | a phone screenshot of the page (1080 px wide, PNG) |
 | `ocr-vm-de-degraded.json` | `vm-de.html` | the skewed photo saved again as JPEG: a poorer reading (a digit lost, a date and a name misread) |
+| `ocr-vm-de-anywhere-skew.json` | `vm-de-anywhere.html`: the same list with the marks spread over the row (margin, between SV number and name, between the names, after the name, a circle over a first name) | the skewed photo |
 | `ocr-table-de-skew.json` | `table-de.html`: a ruled table, German headers | the skewed photo |
 | `ocr-table-it-flat.json` | `table-it.html`: a ruled table, Italian headers | a straight photo |
 
