@@ -29,7 +29,10 @@
     "pendingTeam2Roster",
     "pending_team1_roster",
     "pending_team2_roster",
-    "globalKey"
+    "globalKey",
+    "globalOrganizer",
+    "cloudShareToken",
+    "liveSecret"
   ],
   "matchRosterFields": [
     "players_home",

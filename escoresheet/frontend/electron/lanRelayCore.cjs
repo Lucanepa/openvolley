@@ -350,7 +350,7 @@ const MATCH_PRIVATE_FIELDS = [
   'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges',
   'manual_changes', 'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster',
   'pending_away_roster', 'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster',
-  'pending_team2_roster', 'globalKey',
+  'pending_team2_roster', 'globalKey', 'globalOrganizer', 'cloudShareToken', 'liveSecret',
 ]
 
 // Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS.
