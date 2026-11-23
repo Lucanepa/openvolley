@@ -257,27 +257,43 @@ const GLOBAL_CLOUD_SMALL_BODY_MAX = 4 * 1024
 const STORAGE_IP_RATE_LIMIT_MAX = 600 // /api/storage/* per IP (per-user write quota lives in lib/storage.js)
 // /api/storage/* bodies (audit 2026-11-23 SEC-18), like /api/match/restore's:
 // read with an idle and a total timeout (a body that goes silent or trickles
-// gives its slot back, 408), at most STORAGE_GATE_CONCURRENCY of a kind per
-// process and STORAGE_ACCOUNT_CONCURRENCY per account at once, a short
-// queue behind them, 503 OV_BUSY beyond. An upload's total time grows with
-// its size at the apps' slowest assumed uplink (20 KB/s, frontend apiClient
-// storageUploadTimeoutMs), below Node's own 5-minute requestTimeout; a
-// download, list or remove body is a path or a list of paths
-// (STORAGE_SMALL_BODY_MAX). The idle and total times are those of the
-// restore (RESTORE_BODY_IDLE_MS, RESTORE_BODY_TOTAL_MS); OV_STORAGE_BODY_TEST_MS
-// (tests only, not in production) shortens them.
+// gives its slot back, 408), at most STORAGE_ACCOUNT_CONCURRENCY of a kind
+// per account at once with a short queue behind them, 503 OV_BUSY beyond. An
+// upload's total time grows with its size at the apps' slowest assumed uplink
+// (20 KB/s, frontend apiClient storageUploadTimeoutMs), below Node's own
+// 5-minute requestTimeout, and after its first STORAGE_UPLOAD_RATE_GRACE_MS it
+// must average STORAGE_UPLOAD_FLOOR_BYTES_PER_S; a download, list or remove
+// body is a path or a list of paths (STORAGE_SMALL_BODY_MAX, 20 s at most).
+// GCS-R5 (the review of that fix): the process-wide gate was held while the
+// body was read, so 4 accounts trickling bodies held all 16 slots and the
+// queue, and every other account got 503 for its backups and PDFs. Now the
+// read holds only its account's slot, and a lease on the bytes all storage
+// bodies of its kind hold in memory (STORAGE_BODY_BYTES_MAX: what the gate
+// bounded before; a trickle holds almost none, 503 OV_BUSY when a chunk
+// would pass it); the process gate (STORAGE_GATE_CONCURRENCY) is taken after
+// the read, for the checks and the write. The idle time is the restore's
+// (RESTORE_BODY_IDLE_MS); OV_STORAGE_BODY_TEST_MS (tests only, not in
+// production) shortens the times.
 const STORAGE_SMALL_BODY_MAX = 256 * 1024
 const STORAGE_BODY_TEST_MS = process.env.NODE_ENV !== 'production' && Number(process.env.OV_STORAGE_BODY_TEST_MS) > 0 ? Number(process.env.OV_STORAGE_BODY_TEST_MS) : 0
 const STORAGE_BODY_IDLE_MS = STORAGE_BODY_TEST_MS || 30 * 1000
 const STORAGE_BODY_TOTAL_MS = STORAGE_BODY_TEST_MS ? 2 * STORAGE_BODY_TEST_MS : 2 * 60 * 1000
+const STORAGE_SMALL_BODY_TOTAL_MS = STORAGE_BODY_TEST_MS ? 2 * STORAGE_BODY_TEST_MS : 20 * 1000
 const STORAGE_UPLOAD_TOTAL_MAX_MS = STORAGE_BODY_TEST_MS ? 2 * STORAGE_BODY_TEST_MS : 280 * 1000
 const STORAGE_UPLOAD_MIN_BYTES_PER_S = 20 * 1000
-/** The read timeouts of a storage body: { idleMs, totalMs }. */
+const STORAGE_UPLOAD_FLOOR_BYTES_PER_S = 1024
+const STORAGE_UPLOAD_RATE_GRACE_MS = STORAGE_BODY_TEST_MS || 10 * 1000
+/** The read limits of a storage body: { idleMs, totalMs, minBytesPerSec, minRateGraceMs }. */
 function storageBodyLimits(req, upload) {
-  if (!upload) return { idleMs: STORAGE_BODY_IDLE_MS, totalMs: STORAGE_BODY_TOTAL_MS }
+  if (!upload) return { idleMs: STORAGE_BODY_IDLE_MS, totalMs: STORAGE_SMALL_BODY_TOTAL_MS }
   const len = Number(req.headers['content-length'])
   const byLength = Number.isFinite(len) && len > 0 ? STORAGE_BODY_TOTAL_MS + Math.ceil(len / STORAGE_UPLOAD_MIN_BYTES_PER_S) * 1000 : STORAGE_UPLOAD_TOTAL_MAX_MS
-  return { idleMs: STORAGE_BODY_IDLE_MS, totalMs: Math.min(STORAGE_UPLOAD_TOTAL_MAX_MS, Math.max(STORAGE_BODY_TOTAL_MS, byLength)) }
+  return {
+    idleMs: STORAGE_BODY_IDLE_MS,
+    totalMs: Math.min(STORAGE_UPLOAD_TOTAL_MAX_MS, Math.max(STORAGE_BODY_TOTAL_MS, byLength)),
+    minBytesPerSec: STORAGE_UPLOAD_FLOOR_BYTES_PER_S,
+    minRateGraceMs: STORAGE_UPLOAD_RATE_GRACE_MS
+  }
 }
 const STORAGE_GATE_CONCURRENCY = 16
 const STORAGE_ACCOUNT_CONCURRENCY = 4
@@ -286,9 +302,32 @@ const storageGates = {
   upload: createConcurrencyGate({ maxConcurrent: STORAGE_GATE_CONCURRENCY, maxQueue: 64, maxWaitMs: 30 * 1000 }),
   read: createConcurrencyGate({ maxConcurrent: STORAGE_GATE_CONCURRENCY, maxQueue: 64, maxWaitMs: 15 * 1000 })
 }
+// the bytes of storage bodies held in memory, by kind: 16 uploads near the
+// limit (about 6.8 MiB each) as the process gate held before, 16 small bodies
+const STORAGE_BODY_BYTES_MAX = { upload: 112 * 1024 * 1024, read: 16 * STORAGE_SMALL_BODY_MAX }
+/** A byte budget: lease() gives a holder with take(n) (false when it would pass max) and release(). */
+function createByteBudget(max) {
+  let held = 0
+  return {
+    lease() {
+      let mine = 0
+      return {
+        take(n) {
+          if (held + n > max) return false
+          held += n
+          mine += n
+          return true
+        },
+        release() { held -= mine; mine = 0 }
+      }
+    },
+    get held() { return held }
+  }
+}
+const storageBodyBytes = { upload: createByteBudget(STORAGE_BODY_BYTES_MAX.upload), read: createByteBudget(STORAGE_BODY_BYTES_MAX.read) }
 const storageAccountGates = new Map() // `${kind}\n${userId}` -> { gate, users }
-/** fn in the account's gate, then the process's gate of its kind ('upload' or 'read'); AUTH_BUSY when full. */
-async function runStorageGated(kind, userId, fn, opts) {
+/** fn in the account's gate of its kind ('upload' or 'read'); AUTH_BUSY when full. The process gate (storageGates) is the caller's, after the body. */
+async function runStorageAccountGated(kind, userId, fn, opts) {
   const id = `${kind}\n${userId}`
   let entry = storageAccountGates.get(id)
   if (!entry) {
@@ -297,7 +336,7 @@ async function runStorageGated(kind, userId, fn, opts) {
   }
   entry.users++
   try {
-    return await entry.gate.run(() => storageGates[kind].run(fn, opts), opts)
+    return await entry.gate.run(fn, opts)
   } finally {
     if (--entry.users === 0) storageAccountGates.delete(id)
   }
@@ -1957,17 +1996,26 @@ function readJsonBody(req, maxSize = MAX_BODY_SIZE, opts = {}) {
   })
 }
 
-function readBodyBuffer(req, maxSize = MAX_BODY_SIZE, { idleMs = 0, totalMs = 0 } = {}) {
+// lease (optional, the storage bodies': GCS-R5): each chunk is taken from a
+// budget of bytes held in memory (lease.take(n) false: rejects with code
+// BODY_BUSY, 503); the caller gives it back when it is done with the body.
+// minBytesPerSec (optional): after minRateGraceMs, a body that has averaged
+// less since its start rejects with BODY_TIMEOUT (a byte every 29 s beats any
+// idle timer).
+function readBodyBuffer(req, maxSize = MAX_BODY_SIZE, { idleMs = 0, totalMs = 0, lease = null, minBytesPerSec = 0, minRateGraceMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const chunks = []
     let size = 0
     let settled = false
     let idleTimer = null
     let totalTimer = null
+    let rateTimer = null
+    const started = Date.now()
     const fail = (message, code) => {
       settled = true
       clearTimeout(idleTimer)
       clearTimeout(totalTimer)
+      clearInterval(rateTimer)
       chunks.length = 0
       const err = new Error(message)
       err.code = code
@@ -1991,10 +2039,22 @@ function readBodyBuffer(req, maxSize = MAX_BODY_SIZE, { idleMs = 0, totalMs = 0 
     }
     armIdle()
     if (totalMs > 0) totalTimer = setTimeout(() => { if (!settled) fail('Body read timed out', 'BODY_TIMEOUT') }, totalMs)
+    if (minBytesPerSec > 0) {
+      rateTimer = setInterval(() => {
+        const s = (Date.now() - started - minRateGraceMs) / 1000
+        if (!settled && s > 0 && size < s * minBytesPerSec) fail('Body read too slow', 'BODY_TIMEOUT')
+      }, Math.max(250, Math.min(1000, minRateGraceMs / 4 || 1000)))
+      rateTimer.unref?.()
+    }
     req.on('data', (chunk) => {
       if (settled) return
       size += chunk.length
       if (size > maxSize) return tooLarge()
+      if (lease && !lease.take(chunk.length)) {
+        fail('Server busy', 'BODY_BUSY')
+        req.resume() // drain and discard
+        return
+      }
       chunks.push(chunk)
       armIdle()
     })
@@ -2003,6 +2063,7 @@ function readBodyBuffer(req, maxSize = MAX_BODY_SIZE, { idleMs = 0, totalMs = 0 
       settled = true
       clearTimeout(idleTimer)
       clearTimeout(totalTimer)
+      clearInterval(rateTimer)
       resolve(Buffer.concat(chunks))
     })
     req.on('error', (err) => {
@@ -2010,6 +2071,7 @@ function readBodyBuffer(req, maxSize = MAX_BODY_SIZE, { idleMs = 0, totalMs = 0 
       settled = true
       clearTimeout(idleTimer)
       clearTimeout(totalTimer)
+      clearInterval(rateTimer)
       reject(err)
     })
     req.on('close', () => {
@@ -2033,6 +2095,11 @@ function sendBodyError(res, err, { tooLargeBody, invalidBody } = {}) {
   if (err?.code === 'BODY_TIMEOUT') {
     res.writeHead(408, { 'Content-Type': 'application/json', Connection: 'close' })
     res.end(JSON.stringify({ data: null, error: { message: 'Request body timed out', code: 'OV_BODY_TIMEOUT', retryable: true } }))
+    return
+  }
+  if (err?.code === 'BODY_BUSY') {
+    res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '5', Connection: 'close' })
+    res.end(JSON.stringify({ data: null, error: { message: 'Server busy, retry shortly', code: 'OV_BUSY', retryable: true } }))
     return
   }
   res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -5799,89 +5866,99 @@ Generated by eScoresheet
         const layer = await getDataLayer()
         const user = await layer.auth.requireUser(req, res)
         if (!user) return
-        // the account's and the process's share of the bodies in memory (SEC-18)
-        await runStorageGated(upload ? 'upload' : 'read', user.id, async () => {
-          let body
+        // the account's share of the bodies being read and the bytes they
+        // hold (SEC-18); the process's slot only once the body is here (GCS-R5)
+        const kind = upload ? 'upload' : 'read'
+        await runStorageAccountGated(kind, user.id, async () => {
+          const lease = storageBodyBytes[kind].lease()
           try {
-            body = await readJsonBody(req, upload ? layer.storage.maxBodyBytes : STORAGE_SMALL_BODY_MAX, storageBodyLimits(req, upload))
-          } catch (err) {
-            sendBodyError(res, err, { tooLargeBody: layer.storage.bodyTooLarge().body })
-            return
-          }
-          // Match backups and app logs (bucket backup, {userId}/...): accounts
-          // with a role only (scorer, referee, manager or admin, either sport).
-          // Any self-registered account could otherwise fill the volume to the
-          // free-space floor every account's backups share; each account also
-          // has a total of its own (lib/storage.js maxOwnerBytes).
-          if (action === 'upload' && body && body.bucket === 'backup') {
-            let hasRole
+            let body
             try {
-              hasRole = (await layer.access.get(user.id)).roles.length > 0
+              body = await readJsonBody(req, upload ? layer.storage.maxBodyBytes : STORAGE_SMALL_BODY_MAX, { ...storageBodyLimits(req, upload), lease })
             } catch (err) {
-              console.warn('[Storage] access check failed:', err?.message)
-              sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+              sendBodyError(res, err, { tooLargeBody: layer.storage.bodyTooLarge().body })
               return
             }
-            if (!hasRole) {
-              sendJson(res, 403, { data: null, error: { message: 'Cloud backups need an account with a role', code: 'OV_STORAGE_FORBIDDEN' } })
-              return
-            }
+            await storageGates[kind].run(async () => {
+              // Match backups and app logs (bucket backup, {userId}/...): accounts
+              // with a role only (scorer, referee, manager or admin, either sport).
+              // Any self-registered account could otherwise fill the volume to the
+              // free-space floor every account's backups share; each account also
+              // has a total of its own (lib/storage.js maxOwnerBytes).
+              if (action === 'upload' && body && body.bucket === 'backup') {
+                let hasRole
+                try {
+                  hasRole = (await layer.access.get(user.id)).roles.length > 0
+                } catch (err) {
+                  console.warn('[Storage] access check failed:', err?.message)
+                  sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+                  return
+                }
+                if (!hasRole) {
+                  sendJson(res, 403, { data: null, error: { message: 'Cloud backups need an account with a role', code: 'OV_STORAGE_FORBIDDEN' } })
+                  return
+                }
+              }
+              // Scoresheets of official matches: approved scorers only, of the sport
+              // of the path (beach/... needs beach scoring rights)
+              if (action === 'upload' && body && body.bucket === 'scoresheets') {
+                let canScore
+                try {
+                  const a = await layer.access.get(user.id)
+                  const sport = scoresheetSportOf(body.path)
+                  canScore = a.apps ? a.apps[sport]?.canScore === true : sport === 'indoor' && a.canScore === true
+                } catch (err) {
+                  console.warn('[Storage] access check failed:', err?.message)
+                  sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+                  return
+                }
+                if (!canScore) {
+                  sendJson(res, 403, { data: null, error: { message: 'Your account is not approved for official matches yet', code: 'OV_SCORER_REQUIRED' } })
+                  return
+                }
+                // Only the paths the scorer apps write ({day}/game….pdf|json,
+                // beach/{day}/game….pdf|json): a file at a day folder's name, or one
+                // below a scoresheet's name, would turn every later upload of that
+                // day or match into a conflict (lib/scoresheets.js isScoresheetUploadPath)
+                if (!layer.isScoresheetUploadPath(body.path)) {
+                  sendJson(res, 400, { data: null, error: { message: 'Not a scoresheet path', code: 'OV_STORAGE_INVALID_PATH' } })
+                  return
+                }
+                // a day folder is the match's scheduled date: none lies more than a
+                // week ahead, and such a folder escaped the retention (SEC-16)
+                if ((await import('./lib/storage.js')).scoresheetDayTooFar(body.path)) {
+                  sendJson(res, 400, { data: null, error: { message: 'The scoresheet\'s day is too far in the future', code: 'OV_STORAGE_INVALID_PATH' } })
+                  return
+                }
+              }
+              // A scoresheet PDF is stored only for a match the caller may write,
+              // and a closed match's PDF stays; an OpenBeach JSON of a match is
+              // written only by an account that may write it (lib/scoresheets.js, db/033)
+              const sheetFile = body && body.bucket === 'scoresheets' &&
+                ((action === 'upload' && layer.isMatchScoresheetFile(body.path)) ||
+                  (action === 'remove' && Array.isArray(body.paths) && body.paths.some(layer.isScoresheetPdf)))
+              if (sheetFile) {
+                let matchOwner
+                try {
+                  matchOwner = await matchOwnerFor(layer, user)
+                } catch (err) {
+                  console.warn('[Storage] access check failed:', err?.message)
+                  sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+                  return
+                }
+                const r = action === 'upload'
+                  ? await layer.scoresheets.storeFile({ userId: user.id, matchOwner, body })
+                  : await layer.scoresheets.removeFiles({ userId: user.id, admin: matchOwner.admin === true, body })
+                sendJson(res, r.status, r.body, r.status >= 500 ? { 'Retry-After': '5' } : {})
+                return
+              }
+              const { status, body: out } = await layer.storage.handle(action, body, { userId: user.id })
+              sendJson(res, status, out)
+              // (a request read to its end is destroyed: only its socket says the client left)
+            }, { abandoned: () => !req.socket || req.socket.destroyed })
+          } finally {
+            lease.release()
           }
-          // Scoresheets of official matches: approved scorers only, of the sport
-          // of the path (beach/... needs beach scoring rights)
-          if (action === 'upload' && body && body.bucket === 'scoresheets') {
-            let canScore
-            try {
-              const a = await layer.access.get(user.id)
-              const sport = scoresheetSportOf(body.path)
-              canScore = a.apps ? a.apps[sport]?.canScore === true : sport === 'indoor' && a.canScore === true
-            } catch (err) {
-              console.warn('[Storage] access check failed:', err?.message)
-              sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
-              return
-            }
-            if (!canScore) {
-              sendJson(res, 403, { data: null, error: { message: 'Your account is not approved for official matches yet', code: 'OV_SCORER_REQUIRED' } })
-              return
-            }
-            // Only the paths the scorer apps write ({day}/game….pdf|json,
-            // beach/{day}/game….pdf|json): a file at a day folder's name, or one
-            // below a scoresheet's name, would turn every later upload of that
-            // day or match into a conflict (lib/scoresheets.js isScoresheetUploadPath)
-            if (!layer.isScoresheetUploadPath(body.path)) {
-              sendJson(res, 400, { data: null, error: { message: 'Not a scoresheet path', code: 'OV_STORAGE_INVALID_PATH' } })
-              return
-            }
-            // a day folder is the match's scheduled date: none lies more than a
-            // week ahead, and such a folder escaped the retention (SEC-16)
-            if ((await import('./lib/storage.js')).scoresheetDayTooFar(body.path)) {
-              sendJson(res, 400, { data: null, error: { message: 'The scoresheet\'s day is too far in the future', code: 'OV_STORAGE_INVALID_PATH' } })
-              return
-            }
-          }
-          // A scoresheet PDF is stored only for a match the caller may write,
-          // and a closed match's PDF stays; an OpenBeach JSON of a match is
-          // written only by an account that may write it (lib/scoresheets.js, db/033)
-          const sheetFile = body && body.bucket === 'scoresheets' &&
-            ((action === 'upload' && layer.isMatchScoresheetFile(body.path)) ||
-              (action === 'remove' && Array.isArray(body.paths) && body.paths.some(layer.isScoresheetPdf)))
-          if (sheetFile) {
-            let matchOwner
-            try {
-              matchOwner = await matchOwnerFor(layer, user)
-            } catch (err) {
-              console.warn('[Storage] access check failed:', err?.message)
-              sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
-              return
-            }
-            const r = action === 'upload'
-              ? await layer.scoresheets.storeFile({ userId: user.id, matchOwner, body })
-              : await layer.scoresheets.removeFiles({ userId: user.id, admin: matchOwner.admin === true, body })
-            sendJson(res, r.status, r.body, r.status >= 500 ? { 'Retry-After': '5' } : {})
-            return
-          }
-          const { status, body: out } = await layer.storage.handle(action, body, { userId: user.id })
-          sendJson(res, status, out)
         }, { abandoned: () => req.destroyed })
       } catch (err) {
         if (err?.code === 'AUTH_BUSY') {

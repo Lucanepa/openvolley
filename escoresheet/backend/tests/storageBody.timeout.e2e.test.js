@@ -20,7 +20,7 @@ import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
 
-const BODY_TEST_MS = 1500 // idle 1.5 s, total 3 s
+const BODY_TEST_MS = 1500 // idle 1.5 s, total 3 s; an upload's floor rate after 1.5 s
 
 describe('/api/storage/* bodies: timeouts and gates (SEC-18)', { skip: SKIP }, () => {
   let db, srv, sql, storageRoot
@@ -114,6 +114,36 @@ describe('/api/storage/* bodies: timeouts and gates (SEC-18)', { skip: SKIP }, (
     await Promise.all(held)
     await sleep(200)
     assert.equal((await download(user, '203.0.113.75')).status, 200)
+  })
+
+  it('four accounts trickling 20 uploads each hold their own slots only: a fifth account still uploads (GCS-R5)', async () => {
+    // self-registered accounts, no role: the bucket is in the body, which they never finish
+    const attackers = await Promise.all([0, 1, 2, 3].map((i) => account(`trickler${i}`, null)))
+    const scorer = await account('fifth', ['scorer'])
+    const from = open.length
+    const held = attackers.flatMap((a, i) => Array.from({ length: 20 }, () => slowBody(a, 'upload', { contentLength: 6_800_000, trickleMs: 200, ip: `203.0.113.${90 + i}` })))
+    await sleep(500) // signed in, in their gates
+    // the attack is on: an attacker's next body is refused at once
+    const extra = await api(srv.base, '/api/storage/upload', { token: attackers[0].token, body: { bucket: 'backup', path: 'x.json', fileBase64: 'e30=', contentType: 'application/json' }, headers: { 'cf-connecting-ip': '203.0.113.95' } })
+    assert.equal(extra.status, 503, extra.text)
+    // before the fix the 16 process slots were theirs: the fifth waited in the
+    // process queue until their bodies timed out (in production 503 OV_BUSY
+    // after 30 s, their uploads may trickle for 280 s); now it is served at once
+    const t0 = Date.now()
+    const up = await api(srv.base, '/api/storage/upload', { token: scorer.token, body: { bucket: 'backup', path: 'backups/fifth.json', fileBase64: Buffer.from('{"set":1}').toString('base64'), contentType: 'application/json' }, headers: { 'cf-connecting-ip': '203.0.113.96' } })
+    assert.equal(up.status, 200, up.text)
+    assert.ok(Date.now() - t0 < BODY_TEST_MS / 2, `the fifth waited ${Date.now() - t0} ms for the attackers' bodies`)
+    const down = await api(srv.base, '/api/storage/download', { token: scorer.token, body: { bucket: 'backup', path: 'backups/fifth.json' }, headers: { 'cf-connecting-ip': '203.0.113.96' } })
+    assert.equal(down.status, 200, down.text)
+    for (const r of open.slice(from)) r.destroy()
+    await Promise.all(held)
+  })
+
+  it('an upload that trickles is cut once it averages under the floor rate, before its total time (GCS-R5)', async () => {
+    const user = await account('slowup', ['scorer'])
+    const r = await Promise.race([slowBody(user, 'upload', { contentLength: 6_800_000, trickleMs: 200, ip: '203.0.113.97' }), sleep(20_000).then(() => ({ status: 'still waiting' }))])
+    assert.equal(r.status, 408)
+    assert.ok(r.ms >= BODY_TEST_MS - 200 && r.ms < 2 * BODY_TEST_MS - 300, `${r.ms} ms`)
   })
 
   it('a download, list or remove body is small (256 KiB at most); an upload keeps its own cap', async () => {
