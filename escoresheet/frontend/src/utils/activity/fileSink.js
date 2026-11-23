@@ -7,11 +7,13 @@
  *             nativeBackup/platform appFilesDirectories; no other app reads
  *             them, and they go with the app. Older versions wrote to the
  *             public Documents folder: nativeBackup/androidFiles moves them in)
+ *   iOS:      the same in Library/NoCloud (not Documents, which the Files
+ *             app showed; owner decision 9), moved in the same way
  *   browser:  none (Dexie only)
  * One JSON object per line; written every 2 s or 50 lines and on quit. At
  * most 30 daily files and 50 MB are kept. Never throws into the app.
  */
-import { appFilesDirectories, detectBackupPlatform } from '../nativeBackup/platform'
+import { appFilesDirectories, capacitorOs, detectBackupPlatform } from '../nativeBackup/platform'
 
 export const LOG_SUBDIR = 'OpenVolley/logs'
 export const FILE_FLUSH_MS = 2000
@@ -54,8 +56,8 @@ function tauriWriter(invoke) {
   }
 }
 
-function capacitorWriter({ Filesystem, Directory, Encoding }, { log = console } = {}) {
-  const candidates = appFilesDirectories(Directory)
+function capacitorWriter({ Filesystem, Directory, Encoding }, { log = console, os } = {}) {
+  const candidates = appFilesDirectories(Directory, os)
   let ready = null
   let lastPrune = 0
 
@@ -120,7 +122,7 @@ export async function createActivityFileSink({ platform = detectBackupPlatform()
   let writer = null
   try {
     if (platform === 'tauri') writer = tauriWriter((cmd, args) => win.__TAURI_INTERNALS__.invoke(cmd, args))
-    else if (platform === 'capacitor') writer = capacitorWriter(await load())
+    else if (platform === 'capacitor') writer = capacitorWriter(await load(), { os: capacitorOs(win) })
   } catch (e) {
     console.warn('[Activity] no log file writer:', e?.message || e)
   }

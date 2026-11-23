@@ -28,7 +28,7 @@
  * Directory }) and never throws for one file.
  */
 
-import { appFilesDirectories, BACKUP_SUBDIR } from './platform'
+import { appFilesDirectories, BACKUP_SUBDIR, capacitorOs } from './platform'
 import { DEFAULT_MAX_AGE_DAYS, LATEST_FILE } from './rotation'
 import { LOG_SUBDIR } from '../activity/fileSink'
 
@@ -81,8 +81,8 @@ async function freeName(Filesystem, folder, directory, name) {
 }
 
 /** The app's own folder for these files (the first of platform.appFilesDirectories that takes a folder). */
-export async function appDirectory({ Filesystem, Directory }, subdir = BACKUP_SUBDIR) {
-  for (const directory of appFilesDirectories(Directory)) {
+export async function appDirectory({ Filesystem, Directory }, subdir = BACKUP_SUBDIR, os = capacitorOs()) {
+  for (const directory of appFilesDirectories(Directory, os)) {
     try {
       await mkdirs(Filesystem, subdir, directory)
       return directory
@@ -122,16 +122,17 @@ async function publicFoldersReadable(Filesystem) {
  * Moves the backups, PDFs and activity logs an older version left in
  * Documents/OpenVolley (and the external folder) into the app's own folder.
  * Once per install (the MOVED_MARKER file in the app folder); resolves to
- * { moved, left }.
+ * { moved, left }. iOS (`os`): from Documents, which the Files app showed,
+ * into Library/NoCloud (platform.appFilesDirectories).
  */
-export async function moveLegacyFiles(fs, { log = console } = {}) {
+export async function moveLegacyFiles(fs, { log = console, os = capacitorOs() } = {}) {
   const { Filesystem, Directory, Encoding } = fs
-  for (const directory of appFilesDirectories(Directory)) {
+  for (const directory of appFilesDirectories(Directory, os)) {
     if (await exists(Filesystem, MOVED_MARKER, directory)) return { moved: 0, left: 0, skipped: true }
   }
-  const backupDir = await appDirectory(fs, BACKUP_SUBDIR)
-  const pdfDir = await appDirectory(fs, PDF_SUBDIR)
-  const logDir = await appDirectory(fs, LOG_SUBDIR)
+  const backupDir = await appDirectory(fs, BACKUP_SUBDIR, os)
+  const pdfDir = await appDirectory(fs, PDF_SUBDIR, os)
+  const logDir = await appDirectory(fs, LOG_SUBDIR, os)
   const sources = []
   if (Directory.Documents && await publicFoldersReadable(Filesystem)) sources.push(Directory.Documents)
   if (Directory.External && Directory.External !== backupDir) sources.push(Directory.External)
@@ -206,10 +207,10 @@ export async function moveLegacyFiles(fs, { log = console } = {}) {
 }
 
 /** Deletes the saved PDFs older than maxAgeDays (the backups' age limit). Resolves to the number deleted. */
-export async function pruneScoresheetPdfs(fs, { now = Date.now(), maxAgeDays = DEFAULT_MAX_AGE_DAYS, log = console } = {}) {
+export async function pruneScoresheetPdfs(fs, { now = Date.now(), maxAgeDays = DEFAULT_MAX_AGE_DAYS, log = console, os = capacitorOs() } = {}) {
   const { Filesystem, Directory } = fs
   let removed = 0
-  for (const directory of appFilesDirectories(Directory)) {
+  for (const directory of appFilesDirectories(Directory, os)) {
     for (const file of await list(Filesystem, PDF_SUBDIR, directory)) {
       if (file.type === 'directory' || !Number(file.mtime)) continue
       if (now - Number(file.mtime) <= maxAgeDays * DAY_MS) continue

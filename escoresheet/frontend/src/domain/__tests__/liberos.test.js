@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { playerReplacedByLibero, playersForLiberoRedesignation, liberoPlayState, liberoToReplaceByRedesignation, liberoReplacedByRedesignation, LIBERO_RECOVERED } from '../liberos'
+import { playerReplacedByLibero, playersForLiberoRedesignation, liberoPlayState, liberoToReplaceByRedesignation, liberoReplacedByRedesignation, liberoUnableReason, LIBERO_RECOVERED } from '../liberos'
 
 // What Scoreboard writes for a libero replacement: the libero_entry event
 // (playerOut / liberoIn) and its lineup sub-event (seq N.1) whose
@@ -209,9 +209,16 @@ describe('liberoToReplaceByRedesignation: the libero a re-designation puts out f
     expect(target([unable(5, 12, 'injury')])).toBe(12)
   })
 
-  it('one who may not come back anyway (declared) before an injured one who may, whatever the order', () => {
-    expect(target([unable(5, 11, 'declared'), unable(6, 12, 'injury')])).toBe(11)
+  // Owner decision 23.11.2026 (FIVB 19.4.2, Swiss exam Q84): the libero whose
+  // unavailability triggered the re-designation, the latest to become unable,
+  // whatever the reason. (Until then one who could not come back anyway was
+  // replaced before an injured one: 11 in the first case.)
+  it('the latest to become unable, whatever the reason: declared then injured replaces the injured one', () => {
+    expect(target([unable(5, 11, 'declared'), unable(6, 12, 'injury')])).toBe(12)
     expect(target([unable(5, 12, 'injury'), unable(6, 11, 'declared')])).toBe(11)
+    const disqualified = { seq: 4, setIndex: 1, type: 'sanction', payload: { team: 'home', type: 'disqualification', playerType: 'libero', playerNumber: 11 } }
+    expect(target([disqualified, unable(6, 12, 'injury')])).toBe(12)
+    expect(target([unable(3, 12, 'injury'), disqualified])).toBe(11)
   })
 
   it('both injured, or both declared: the latest to become unable', () => {
@@ -232,5 +239,36 @@ describe('playersForLiberoRedesignation: no way back for a libero a re-designati
     const events = [{ seq: 6, setIndex: 1, type: 'libero_redesignation', payload: { team: 'home', unableLiberoNumber: 12, newLiberoNumber: 10 } }]
     const list = playersForLiberoRedesignation(roster, events, 'home', { onCourt: [2, 3, 4, 5, 6, 7], unableLiberoNumber: 10 }).map(p => p.number)
     expect(list).toEqual([8, 9])
+  })
+})
+
+// The reason a re-designation records (audit LOG-14): the Redesignate buttons
+// and the prompts after a sanction or an injury substitution gave none, so
+// every such re-designation was recorded as 'declared'
+describe('liberoUnableReason: why the libero a re-designation replaces is unable', () => {
+  const unable = (seq, liberoNumber, reason) => ({ seq, setIndex: 1, type: 'libero_unable', payload: { team: 'home', liberoNumber, reason } })
+  const sanction = (seq, playerNumber, type) => ({ seq, setIndex: 1, type: 'sanction', payload: { team: 'home', type, playerType: 'libero', playerNumber } })
+
+  it('his latest libero_unable: injured, expelled, disqualified, declared', () => {
+    expect(liberoUnableReason([unable(5, 12, 'injury')], 'home', 12)).toBe('injury')
+    expect(liberoUnableReason([unable(5, '12', 'injury')], 'home', 12)).toBe('injury')
+    expect(liberoUnableReason([unable(5, 12, 'expulsion')], 'home', 12)).toBe('expulsion')
+    expect(liberoUnableReason([unable(5, 12, 'disqualification')], 'home', 12)).toBe('disqualification')
+    expect(liberoUnableReason([unable(5, 12, 'declared')], 'home', 12)).toBe('declared')
+    // injured, back, then declared: declared
+    expect(liberoUnableReason([unable(5, 12, 'injury'), { seq: 6, setIndex: 1, type: LIBERO_RECOVERED, payload: { team: 'home', liberoNumber: 12 } }, unable(7, 12, 'declared')], 'home', 12)).toBe('declared')
+  })
+
+  it('a sanction or an injury substitution without a libero_unable (older data)', () => {
+    expect(liberoUnableReason([sanction(5, 12, 'disqualification')], 'home', 12)).toBe('disqualification')
+    expect(liberoUnableReason([unable(4, 12, 'declared'), sanction(5, 12, 'expulsion')], 'home', 12)).toBe('expulsion')
+    expect(liberoUnableReason([{ seq: 5, setIndex: 1, type: 'substitution', payload: { team: 'home', playerOut: 12, playerIn: 7, isInjury: true } }], 'home', 12)).toBe('injury')
+  })
+
+  it('declared when nothing says otherwise; another libero\'s or team\'s events do not count', () => {
+    expect(liberoUnableReason([], 'home', 12)).toBe('declared')
+    expect(liberoUnableReason([unable(5, 12, undefined)], 'home', 12)).toBe('declared')
+    expect(liberoUnableReason([unable(5, 11, 'injury'), { ...unable(6, 12, 'injury'), payload: { team: 'away', liberoNumber: 12, reason: 'injury' } }], 'home', 12)).toBe('declared')
+    expect(liberoUnableReason([sanction(5, 12, 'warning')], 'home', 12)).toBe('declared')
   })
 })

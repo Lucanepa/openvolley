@@ -25,6 +25,10 @@ import { REASON, wire, scrubLeftovers, rebuildSheets, scrubJsonFiles, parseArgs 
 const silent = { error () {}, warn () {}, log () {}, info () {} }
 const sha = (b) => createHash('sha256').update(b).digest('hex')
 const DAY = '2026-10-03'
+// a match's result as its close writes it, and its last point at the set's score (one set 25:20)
+const RESULT_COLUMNS = 'set_results, final_score, winner'
+const RESULT_VALUES = `'[{"set":1,"home":25,"away":20}]', '1-0', 'home'`
+const LAST_POINT_SQL = `INSERT INTO public.events (match_id, set_index, type, payload, seq) VALUES ($1, 1, 'point', '{"team":"home","score":{"home":25,"away":20}}', 45)`
 
 describe('scrub-sheet-birthdates', { skip: SKIP_PG }, () => {
   let tdb, sql, base, storage, w
@@ -67,9 +71,12 @@ describe('scrub-sheet-birthdates', { skip: SKIP_PG }, () => {
       '[{"number":1,"last_name":"Muster","dob":"2008-03-14","license_number":"123456"}]')`)
     // an indoor match closed with two PDFs (the approval's and a rebuild), its record already without dates (db/048)
     const players = JSON.stringify([{ number: 1, first_name: 'Mia', last_name: 'Muster', dob: '123456' }, { number: 2, first_name: 'Lea', last_name: 'Probe', dob: null }])
-    id.indoor = (await sql.query(`INSERT INTO public.matches (external_id, game_n, status, scheduled_at, players_home, created_by)
-      VALUES ('scrub_indoor', 480101, 'live', '${DAY}T18:00:00Z', $1, $2) RETURNING id`, [players, id.user])).rows[0].id
+    // (the record ends as its close says, lib/scoresheets.js recordGate: owner decision 3 for any vector
+    // print that replaces the device's PDF)
+    id.indoor = (await sql.query(`INSERT INTO public.matches (external_id, game_n, status, scheduled_at, players_home, created_by, ${RESULT_COLUMNS})
+      VALUES ('scrub_indoor', 480101, 'live', '${DAY}T18:00:00Z', $1, $2, ${RESULT_VALUES}) RETURNING id`, [players, id.user])).rows[0].id
     await sql.query("INSERT INTO public.sets (match_id, index, home_points, away_points, finished) VALUES ($1, 1, 25, 20, true)", [id.indoor])
+    await sql.query(LAST_POINT_SQL, [id.indoor])
     await sql.query("UPDATE public.matches SET status = 'final' WHERE id = $1", [id.indoor])
     paths.a = `${DAY}/game480101_k${randomBytes(16).toString('hex')}.pdf`
     paths.b = `${DAY}/game480101_k${randomBytes(16).toString('hex')}.pdf`
@@ -172,9 +179,10 @@ describe('scrub-sheet-birthdates', { skip: SKIP_PG }, () => {
   })
 
   it('the render service down: nothing is replaced, every file of the match is listed', async () => {
-    const id2 = (await sql.query(`INSERT INTO public.matches (external_id, game_n, status, scheduled_at, created_by)
-      VALUES ('scrub_indoor2', 480102, 'live', '${DAY}T20:00:00Z', $1) RETURNING id`, [id.user])).rows[0].id
+    const id2 = (await sql.query(`INSERT INTO public.matches (external_id, game_n, status, scheduled_at, created_by, ${RESULT_COLUMNS})
+      VALUES ('scrub_indoor2', 480102, 'live', '${DAY}T20:00:00Z', $1, ${RESULT_VALUES}) RETURNING id`, [id.user])).rows[0].id
     await sql.query("INSERT INTO public.sets (match_id, index, home_points, away_points, finished) VALUES ($1, 1, 25, 20, true)", [id2])
+    await sql.query(LAST_POINT_SQL, [id2])
     await sql.query("UPDATE public.matches SET status = 'final' WHERE id = $1", [id2])
     const p = `${DAY}/game480102_k${randomBytes(16).toString('hex')}.pdf`
     await storeFile(p, '%PDF-1.4 keep me', id.user, { record: id2 })

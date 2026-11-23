@@ -15,13 +15,21 @@
  * without the secret columns (game PINs, token and code hashes), nothing of
  * auth. Always rolled back, also on success.
  *
- * Write mode: as the backend's own role (ov_app), with ov.user_id and
- * ov.admin set like an admin session of /api/db, and NOT ov.allow_closed, so
- * the closed-match lock of db/007 / db/039 holds. Without `commit: true` the
- * run is a preview: it runs whole and is rolled back, and the answer says
- * what it did (the rows of the last statement, or its row count). With
- * `commit: true` it runs again and commits. ov_app has no DDL rights: schema
- * changes stay migrations.
+ * Write mode: as ov_sql_writer (backend/db/roles.sql), the backend's own
+ * grants (ov_app's) without SELECT of a secret column (game PINs, token and
+ * code hashes), and nothing of auth; with ov.user_id and ov.admin set like an
+ * admin session of /api/db, and NOT ov.allow_closed, so the closed-match lock
+ * of db/007 / db/039 holds. The search path starts with its schema ov_write:
+ * every table of public with secret columns by its plain name, without them
+ * (a view; INSERT, UPDATE, DELETE go through), so SELECT * FROM matches and
+ * RETURNING * work and never carry a secret column, and whatever reads one
+ * anyway (public.matches, a whole row of it, UNION, a recursive CTE) is
+ * refused by Postgres itself (42501; audit SEC-40). checkWriteScope names a
+ * secret column or auth in the statement first, with a better message.
+ * Without `commit: true` the run is a preview: it runs whole and is rolled
+ * back, and the answer says what it did (the rows of the last statement, or
+ * its row count). With `commit: true` it runs again and commits. No DDL
+ * rights: schema changes stay migrations.
  *
  * Both modes: one transaction, statement_timeout 15 s, every statement
  * checked before anything runs (checkStatementPolicy: nothing that leaves
@@ -47,6 +55,8 @@ const SCHEMA_TTL_MS = 60_000
 const VALUE_HINT_MAX = 40
 const VALUE_HINT_MAX_DISTINCT = 40
 export const READER_SCHEMA = 'ov_read'
+/** Write mode's schema of views (db/roles.sql): the tables with secret columns, without them. */
+export const WRITER_SCHEMA = 'ov_write'
 
 // Temporal and binary values come back as Postgres prints them: a `date` must
 // not become a JS Date at the server's midnight (it shifts a day in the
@@ -320,7 +330,11 @@ const MIGRATION_HINT = 'Functions, triggers, rules, roles, grants and ownership 
 /** Read mode: what a 42501 from the reader role means. */
 export const CREDENTIAL_DENIED_HINT = 'Read mode reads the tables by their plain names (matches, not public.matches), ' +
   'without their secret columns (game PINs, token and code hashes) and without the sign-in data (auth). ' +
-  'Write mode works on the tables themselves.'
+  'Write mode changes them, also without their secret columns.'
+/** Write mode: what a 42501 from the writer role means. */
+export const WRITE_DENIED_HINT = 'Write mode reaches the tables by their plain names (matches, not public.matches) without their ' +
+  'secret columns (game PINs, token and code hashes): SELECT * and RETURNING * leave them out. No sign-in data (auth), ' +
+  'no schema changes (those are migrations), and the logs are append-only.'
 const POOLED_HINT = 'The workspace borrows a pooled database connection that later requests reuse, so nothing it runs may ' +
   'leave session state behind.'
 
@@ -484,11 +498,18 @@ export function checkStatementPolicy(stmt) {
 }
 
 
+const SECRET_HINT = 'A game PIN is read or reset in Closed matches; token and code hashes are never needed by hand.'
+
 /**
- * Write mode runs as the backend role, which may read the sign-in data
- * (auth.users, sessions, passkeys) and the secret columns: refused here, so
- * write mode reaches no more than read mode plus the writes themselves.
+ * Write mode runs as ov_sql_writer (db/roles.sql): ov_app's grants without
+ * SELECT of a secret column, so Postgres refuses whatever reads one (by its
+ * name or not: SELECT * of public.matches, a whole row, UNION, a recursive
+ * CTE; SEC-40), and the views of ov_write give the tables by their plain
+ * names without them. This check only names what write mode never needs,
+ * with a better message than Postgres' 42501: the sign-in data (auth) and
+ * a secret column named in the statement (also one it would write).
  * Pure; exported for the unit test.
+ * @param {string} stmt
  * @returns {null | { code: string, message: string, hint: string }}
  */
 export function checkWriteScope (stmt) {
@@ -501,8 +522,7 @@ export function checkWriteScope (stmt) {
         'Accounts are changed in Accounts (names, addresses, roles, deactivation, deletion).')
     }
     if (SECRET_COLUMN_RE.test(name)) {
-      return refusal('secret_column_not_allowed', `"${name}" is a secret column: not reachable from the SQL workspace`,
-        'A game PIN is read or reset in Closed matches; token and code hashes are never needed by hand.')
+      return refusal('secret_column_not_allowed', `"${name}" is a secret column: not reachable from the SQL workspace`, SECRET_HINT)
     }
   }
   return null
@@ -525,7 +545,7 @@ function statementError (pgErr, index, writeMode) {
     return fail(400, 'credential_column_denied', `${message}: read mode has no access to that`, { ...details, detail: message, hint: CREDENTIAL_DENIED_HINT })
   }
   if (writeMode && pgErr?.code === '42501') {
-    return fail(400, String(pgErr.code), message, { ...details, hint: details.hint || 'Write mode runs as the backend role: no schema changes (those are migrations), no sign-in data.' })
+    return fail(400, String(pgErr.code), message, { ...details, hint: details.hint || WRITE_DENIED_HINT })
   }
   if (pgErr?.code === 'OVC01' || pgErr?.code === 'OVC02') {
     return fail(409, String(pgErr.code), message, { ...details, hint: 'A closed match is reopened first (Closed matches), which keeps its record.' })
@@ -534,12 +554,14 @@ function statementError (pgErr, index, writeMode) {
 }
 
 /**
- * @param {{ pool: import('pg').Pool, audit: Function, readerRole?: string, logger?: Console }} deps
- *   audit: lib/accounts.js audit(client, entry); readerRole: OV_SQL_READER_ROLE (tests), default ov_readonly
+ * @param {{ pool: import('pg').Pool, audit: Function, readerRole?: string, writerRole?: string, logger?: Console }} deps
+ *   audit: lib/accounts.js audit(client, entry); readerRole: OV_SQL_READER_ROLE (tests), default ov_readonly;
+ *   writerRole: OV_SQL_WRITER_ROLE (tests), default ov_sql_writer
  */
-export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', logger = console }) {
+export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', writerRole = 'ov_sql_writer', logger = console }) {
   const log = logger || console
   if (!/^[a-z_][a-z0-9_]{0,62}$/.test(readerRole)) throw new Error(`sqlWorkspace: invalid reader role ${readerRole}`)
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(writerRole)) throw new Error(`sqlWorkspace: invalid writer role ${writerRole}`)
   let schemaCache = null
 
   async function withClient (fn) {
@@ -724,10 +746,18 @@ export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', l
           const r = Array.isArray(res) ? res[res.length - 1] : res
           const fields = r?.fields || []
           if (fields.length) {
-            const names = fields.map((f) => f.name)
+            // write mode: the writer role reads no secret column (db/roles.sql);
+            // a column by such a name is left out of the answer all the same
+            const secret = (f) => SECRET_COLUMN_RE.test(String(f.name).toLowerCase())
+            const shown = writeMode ? fields.filter((f) => !secret(f)) : fields
+            const hidden = writeMode ? fields.filter(secret).map((f) => f.name) : []
             const all = r.rows || []
+            const names = shown.map((f) => f.name)
             const rows = all.slice(0, DEFAULT_ROW_CAP).map((row) => names.map((n) => row[n] ?? null))
-            out = { columns: names, rows, row_count: all.length > DEFAULT_ROW_CAP ? DEFAULT_ROW_CAP : all.length, truncated: all.length > DEFAULT_ROW_CAP }
+            out = {
+              columns: names, rows, row_count: all.length > DEFAULT_ROW_CAP ? DEFAULT_ROW_CAP : all.length, truncated: all.length > DEFAULT_ROW_CAP,
+              ...(hidden.length ? { hidden_columns: hidden } : {})
+            }
           } else {
             out = { columns: ['command', 'rowCount'], rows: [[r?.command ?? 'OK', r?.rowCount ?? 0]], row_count: 1, truncated: false, affected: r?.rowCount ?? 0 }
           }
@@ -756,10 +786,22 @@ export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', l
         await client.query('BEGIN')
         try {
           await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`)
-          await client.query('SET LOCAL search_path = public, pg_catalog')
           await client.query("SELECT set_config('ov.user_id', $1, true), set_config('ov.admin', 'on', true)", [actorId])
+          // ov_write first: matches, club_api_tokens, ... by their plain names are its views without the secret columns
+          await client.query(`SET LOCAL search_path = ${WRITER_SCHEMA}, public, pg_catalog`)
+          try {
+            await client.query(`SET LOCAL ROLE "${writerRole}"`)
+          } catch (err) {
+            if (err?.code !== '42704' && err?.code !== '42501') throw err
+            log.error?.(`[sql] the writer role ${writerRole} is missing or not granted: ${err.code}`)
+            throw Object.assign(new Error('writer'), {
+              __result: fail(503, 'OV_SQL_WRITER_MISSING', 'The writer role is missing or not granted to the backend: run apply-roles.sh < roles.sql on the server.')
+            })
+          }
           await runAll(client)
           if (commit) {
+            // the audit entry as the backend itself (its statements are done)
+            await client.query('RESET ROLE')
             await audit(client, auditEntry(out))
             await client.query('COMMIT')
           } else {

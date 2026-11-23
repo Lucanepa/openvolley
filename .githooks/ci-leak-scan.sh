@@ -3,7 +3,11 @@
 # adds with .gitleaks.toml (credentials and the match-data-* personal-data
 # rules). The hook only runs where core.hooksPath is set; this catches clones
 # without it and files uploaded on the web. Run by
-# .github/workflows/leak-scan.yml.
+# .github/workflows/leak-scan.yml, from a checkout of the base branch (this
+# script and .gitleaks.toml as reviewed there, not as the scanned commits
+# have them), with ci-allowlist-guard.sh next to it.
+# Inline `gitleaks:allow` comments are ignored: the scanned content cannot
+# exempt itself.
 #
 # The CI log of a public repo is public, so findings are listed by rule, file,
 # line and commit only, never with the matched text.
@@ -36,7 +40,7 @@ report="$(mktemp)"
 trap 'rm -f "$report"' EXIT
 LEAKS_FOUND=42
 rc=0
-gitleaks git --log-opts="$range" --config .gitleaks.toml --redact --no-banner \
+gitleaks git --log-opts="$range" --config .gitleaks.toml --ignore-gitleaks-allow --redact --no-banner \
   --log-level warn --report-format json --report-path "$report" \
   --exit-code "$LEAKS_FOUND" . || rc=$?
 
@@ -56,7 +60,8 @@ EOF
   echo "  Personal data (match-data-*): remove the file or data from the branch before"
   echo "  merging; if it reached a public branch, tell the owner: it stays in the"
   echo "  history until purged."
-  echo "  False positive? Add an allowlist entry to .gitleaks.toml."
+  echo "  False positive? Add an allowlist entry to .gitleaks.toml in a pull request of"
+  echo "  its own (code owner review): the scan uses the base branch's rules."
   exit 1
 elif (( rc != 0 )); then
   echo "Leak scan: gitleaks failed to run (exit $rc), nothing was scanned." >&2

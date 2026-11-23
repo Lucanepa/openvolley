@@ -505,10 +505,16 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
       assert.equal(late.messages.some((m) => m.access === 'full'), false)
       const http = await api(srv.base, `/api/match/${room}`, { method: 'GET', proto: null, headers: { 'cf-connecting-ip': '2001:db8:77::abcd', 'X-OV-Match-Pin': '642097' } })
       assert.equal(http.status, 429, 'the relay guesses used up the HTTP budget of the /64 for this match')
-      // What was not guessed stays open to the /64: a PIN looked up among all
-      // matches (another device of the hall connecting)
+      // Owner decision 1 (audit 2026-11, SEC-05): the /64 made 20 wrong
+      // guesses at this match's PINs, its share as an address range, so this
+      // match's referee PIN is locked for the /64 on every path: its lookup
+      // among all matches does not prove the match either (answered as a
+      // wrong PIN; this test pinned the old rule, where that lookup still
+      // compared the guessed match's PIN). Another range finds it.
       const validate = await api(srv.base, '/api/match/validate-pin', { proto: null, headers: { 'cf-connecting-ip': '2001:db8:77::abce' }, body: { pin: '642097', type: 'referee' } })
-      assert.equal(validate.status, 200, validate.text)
+      assert.equal(validate.status, 404, validate.text)
+      const elsewhere = await api(srv.base, '/api/match/validate-pin', { proto: null, headers: { 'cf-connecting-ip': '2001:db8:78::abce' }, body: { pin: '642097', type: 'referee' } })
+      assert.equal(elsewhere.status, 200, elsewhere.text)
       // Another network is not affected; the right PIN joins with the bundle
       const ref = await from('203.0.113.77')
       ref.send({ type: 'join_match', matchId: room, role: 'referee', pin: '642097' })

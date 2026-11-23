@@ -44,7 +44,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 // after all of them, as scripts/migrate.mjs applies it after the numbered
 // files: a file added to the list that redefines one of its functions
 // without updating it shows up in the tests too.
-export const MIGRATIONS_SQL = ['005_match_ownership.sql', '006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql', '009_beach_saved_teams.sql', '010_auth_tokens.sql', '011_account_approvals.sql', '012_app_memberships.sql', '013_beach_official_index.sql', '014_beach_tournaments.sql', '015_event_revisions.sql', '016_activity_log.sql', '017_match_remarks.sql', '018_clubs.sql', '019_match_scorer_device.sql', '020_club_managers.sql', '021_final_mail.sql', '022_passkeys.sql', '023_team_managers.sql', '024_club_licences.sql', '025_account_requests.sql', '026_club_licences_manual.sql', '027_account_deactivate.sql', '028_notifications.sql', '029_club_manager_links.sql', '030_manager_roles.sql', '031_manager_roles_definer.sql', '032_match_id_scoping.sql', '033_match_scoresheets.sql', '034_official_game_season.sql', '035_game_rosters_scope.sql', '036_team_manager_confirm.sql', '037_club_data_scope.sql', '038_audit_protection.sql', '039_record_integrity.sql', '040_final_mail.sql', '041_schedule_sync.sql', '042_retention.sql', '043_drop_supabase_definers.sql', '044_club_api_tokens.sql', '045_sheet_changes.sql', '046_global_matches.sql', '047_live_state_public_counts.sql', '048_no_birthdates.sql', '049_drop_birthdate_columns.sql', '050_error_tracker.sql', '051_referee_licences.sql', '052_redacted_people.sql']
+export const MIGRATIONS_SQL = ['005_match_ownership.sql', '006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql', '009_beach_saved_teams.sql', '010_auth_tokens.sql', '011_account_approvals.sql', '012_app_memberships.sql', '013_beach_official_index.sql', '014_beach_tournaments.sql', '015_event_revisions.sql', '016_activity_log.sql', '017_match_remarks.sql', '018_clubs.sql', '019_match_scorer_device.sql', '020_club_managers.sql', '021_final_mail.sql', '022_passkeys.sql', '023_team_managers.sql', '024_club_licences.sql', '025_account_requests.sql', '026_club_licences_manual.sql', '027_account_deactivate.sql', '028_notifications.sql', '029_club_manager_links.sql', '030_manager_roles.sql', '031_manager_roles_definer.sql', '032_match_id_scoping.sql', '033_match_scoresheets.sql', '034_official_game_season.sql', '035_game_rosters_scope.sql', '036_team_manager_confirm.sql', '037_club_data_scope.sql', '038_audit_protection.sql', '039_record_integrity.sql', '040_final_mail.sql', '041_schedule_sync.sql', '042_retention.sql', '043_drop_supabase_definers.sql', '044_club_api_tokens.sql', '045_sheet_changes.sql', '046_global_matches.sql', '047_live_state_public_counts.sql', '048_no_birthdates.sql', '049_drop_birthdate_columns.sql', '050_error_tracker.sql', '051_referee_licences.sql', '052_redacted_people.sql', '053_global_quota.sql', '054_error_quota.sql', '055_beach_ownership.sql', '056_referee_directory_owner.sql', '057_sign_in_failures.sql', '058_club_membership_suggestions.sql', '059_club_team_former_names.sql', '060_deleted_match_devices.sql']
   .map((f) => readFileSync(join(here, '..', '..', 'db', f), 'utf8'))
   .join('\n') + '\n' + readFileSync(join(here, '..', '..', 'db', 'current_definitions.sql'), 'utf8')
 // db/034 turns the club rule (db/018) on unless an admin switched it off. The
@@ -168,23 +168,39 @@ export async function createTestDatabase (label, { schemaSql = SCHEMA_SQL } = {}
 /**
  * Applies db/roles.sql itself (with psql, like apply-roles.sh) to the
  * database at `dbUrl`, with `appRole` / `ownerRole` in place of ov_app /
- * ov_owner (and `readonlyRole`, default <appRole>_ro, for ov_readonly): roles
- * are cluster-wide and the test server is shared, so every test database gets
+ * ov_owner (and `readonlyRole`, default <appRole>_ro, for ov_readonly, and
+ * `writerRole`, default <appRole>_w, for ov_sql_writer): roles are
+ * cluster-wide and the test server is shared, so every test database gets
  * its own set. Returns the app role's connection string:
  * the backend then runs with exactly the production grants. The caller drops
  * both roles after the database (dropRoles).
  */
-export function applyRolesSql (dbUrl, { appRole, ownerRole, readonlyRole = readonlyRoleOf(appRole) }) {
+export function applyRolesSql (dbUrl, { appRole, ownerRole, readonlyRole = readonlyRoleOf(appRole), writerRole = writerRoleOf(appRole) }) {
   const sql = readFileSync(join(here, '..', '..', 'db', 'roles.sql'), 'utf8')
     .replace(/\bov_app\b/g, appRole)
     .replace(/\bov_owner\b/g, ownerRole)
-    // ov_readonly (db-browse.sh) too: parallel files would ALTER one shared role
+    // ov_readonly (db-browse.sh) and ov_sql_writer too: parallel files would ALTER one shared role
     .replace(/\bov_readonly\b/g, readonlyRole)
+    .replace(/\bov_sql_writer\b/g, writerRole)
   const password = 'app-' + Math.random().toString(36).slice(2).padEnd(16, '0')
+  const psql = (input) => execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-v', `ov_app_pw=${password}`, '-d', dbUrl],
+    { input, stdio: ['pipe', 'ignore', 'pipe'] })
   // ov_owner is the cluster superuser in production (roles.sql header): the
   // foreign-key checks run as the owner of the referenced table
-  execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-v', `ov_app_pw=${password}`, '-d', dbUrl],
-    { input: `CREATE ROLE "${ownerRole}" NOLOGIN SUPERUSER;\n` + sql, stdio: ['pipe', 'ignore', 'pipe'] })
+  psql(`CREATE ROLE "${ownerRole}" NOLOGIN SUPERUSER;\n`)
+  // roles.sql revokes CONNECT on the shared databases postgres and template1
+  // (one pg_database row for every test file): files that apply it at the same
+  // moment can meet on that row ("tuple concurrently updated"). roles.sql is
+  // one transaction, so the failed run left nothing; run it again.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      psql(sql)
+      break
+    } catch (err) {
+      if (attempt >= 5 || !/tuple concurrently updated/.test(String(err?.stderr || ''))) throw err
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 + Math.floor(Math.random() * 200))
+    }
+  }
   const u = new URL(dbUrl)
   u.username = appRole
   u.password = password
@@ -193,6 +209,8 @@ export function applyRolesSql (dbUrl, { appRole, ownerRole, readonlyRole = reado
 
 /** The ov_readonly stand-in of applyRolesSql for an app role. */
 export const readonlyRoleOf = (appRole) => `${appRole}_ro`.slice(0, 63)
+/** The ov_sql_writer stand-in of applyRolesSql for an app role (OV_SQL_WRITER_ROLE of the test server). */
+export const writerRoleOf = (appRole) => `${appRole}_w`.slice(0, 63)
 
 /** Drops the roles of applyRolesSql once their database is gone. */
 export async function dropRoles (admin, roles) {

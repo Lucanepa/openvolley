@@ -1817,7 +1817,12 @@ async function processJobInner(job, ctx) {
         }
         if (error.code === 'OV_MATCH_CLOSED') {
           // The match is closed and keeps the PDF it has: this file is never
-          // taken (after an admin reopen, the new approval queues new files)
+          // taken (after an admin reopen, the new approval queues new files),
+          // and never sent again (a later reopen would take an old approval's
+          // file). Not silently (LOG-10): the refusal stays on the job's row,
+          // and a refused approval PDF is an error for the error tracker, not
+          // a warning (reportJobOutcome): the signed sheet of this device is
+          // not the stored one, which an admin can repair
           safeLog.warn('[SyncQueue] Scoresheet upload refused, the match is closed: dropped')
           ctx.error = summarizeError(error)
           return DROP_JOB
@@ -1936,7 +1941,17 @@ function reportJobOutcome(job, result, jobError) {
     code: jobError?.code ?? null,
     requestId: jobError?.requestId ?? null,
     attempt: (job.attempts || 0) + 1
-  }, { level: 'warn', matchExt: jobMatchKey(job) })
+  }, { level: isRefusedApprovalPdf(job, result, jobError) ? 'error' : 'warn', matchExt: jobMatchKey(job) })
+}
+
+/**
+ * The approval's PDF of this device dropped because the server keeps another
+ * one for the closed match (409 OV_MATCH_CLOSED): the signed sheet is lost
+ * unless someone acts (LOG-10), so it is reported as an error.
+ */
+export function isRefusedApprovalPdf(job, result, jobError) {
+  return result === DROP_JOB && job?.resource === SCORESHEET_UPLOAD_RESOURCE && jobError?.code === 'OV_MATCH_CLOSED' &&
+    /\.pdf$/i.test(String(job.payload?.path || ''))
 }
 
 // An event insert that may go in a batch: its namespaced id names the match
@@ -2176,7 +2191,8 @@ export async function runQueuePass({ resources = SCORE_LANE, lease = null } = {}
       }
 
       if (result === DROP_JOB) {
-        await db.sync_queue.update(job.id, { status: 'dropped' })
+        // the reason stays on the row (debugging, support): a drop is never silent
+        await db.sync_queue.update(job.id, { status: 'dropped', ...(jobError ? { last_error: jobError } : {}) })
         // A dropped match creation (its match retired, utils/matchHandover),
         // or a match that moved to another device or was closed on the server
         // (its jobs set aside): the rest of the match is not sent in this

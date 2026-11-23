@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
-import { grantRoles, readonlyRoleOf } from './helpers/pgTestDb.js'
+import { grantRoles, readonlyRoleOf, writerRoleOf } from './helpers/pgTestDb.js'
 import { checkStatementPolicy, checkWriteScope, leadingKeyword, maskSql, splitStatements } from '../lib/sqlWorkspace.js'
 
 describe('sqlWorkspace (unit)', () => {
@@ -75,7 +75,7 @@ describe('sqlWorkspace end to end', { skip: SKIP }, () => {
     assert.equal(r.json?.error?.code, code, r.text)
   }
   const lastAudit = async (action) => (await sql.query('SELECT * FROM public.audit_log WHERE action = $1 ORDER BY id DESC LIMIT 1', [action])).rows[0]
-  let appRole, readerRole, club, closed
+  let appRole, readerRole, writerRole, club, closed
 
   before(async () => {
     db = await provisionDatabase()
@@ -84,7 +84,8 @@ describe('sqlWorkspace end to end', { skip: SKIP }, () => {
     const appUrl = db.appUrl()
     appRole = new URL(appUrl).username
     readerRole = readonlyRoleOf(appRole)
-    srv = await bootServer({ DATABASE_URL: appUrl, OV_SQL_READER_ROLE: readerRole, TRUST_PROXY: 'cloudflare', TRUST_PROXY_FROM: '127.0.0.1/32,::1/128' })
+    writerRole = writerRoleOf(appRole)
+    srv = await bootServer({ DATABASE_URL: appUrl, OV_SQL_READER_ROLE: readerRole, OV_SQL_WRITER_ROLE: writerRole, TRUST_PROXY: 'cloudflare', TRUST_PROXY_FROM: '127.0.0.1/32,::1/128' })
     await account('root', ['super_admin'])
     await account('admin', ['admin'])
     ;({ rows: [club] } = await sql.query("INSERT INTO public.clubs (name, contact_email) VALUES ('VBC Sqlhausen', 'info@example.ch') RETURNING id"))
@@ -134,14 +135,18 @@ describe('sqlWorkspace end to end', { skip: SKIP }, () => {
     expectCode(await runSql({ sql: "select set_config('ov.allow_closed', 'on', false)" }), 400, 'function_not_allowed')
     expectCode(await runSql({ sql: 'commit; delete from clubs' }), 400, 'statement_not_allowed')
 
-    // the role and the settings do not survive on the pooled connection
+    // the role and the settings do not survive on the pooled connection:
+    // read mode is the reader, write mode the writer (SEC-40: no longer the
+    // app role itself, which reads the secret columns), whatever ran before
     const who = await runSql({ sql: 'select current_user as u' })
     assert.equal(who.json.data.rows[0][0], readerRole)
     for (let i = 0; i < 4; i++) {
-      const back = await runSql({ sql: "select current_user as u, current_setting('ov.allow_closed', true) as ac", write_mode: true })
+      const back = await runSql({ sql: "select current_user as u, session_user as s, current_setting('ov.allow_closed', true) as ac", write_mode: true })
       assert.equal(back.status, 200, back.text)
-      assert.equal(back.json.data.rows[0][0], appRole)
-      assert.ok(!back.json.data.rows[0][1])
+      assert.deepEqual(back.json.data.rows[0].slice(0, 2), [writerRole, appRole])
+      assert.ok(!back.json.data.rows[0][2])
+      const read = await runSql({ sql: 'select current_user as u' })
+      assert.equal(read.json.data.rows[0][0], readerRole)
     }
   })
 

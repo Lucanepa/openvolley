@@ -173,9 +173,14 @@ const MATCHES_LIVE_COLUMNS = Object.freeze({
   coin_toss: COIN_TOSS_KEYS
 })
 
+// A live socket proves nothing: a live state goes out in the columns a viewer
+// without a PIN gets (MATCH_LIVE_STATE_PUBLIC_COLUMNS), as on anonymous
+// /api/db and the relay's PIN-less summary. Its private columns only to a
+// channel that may have them (LIVE_GRANTED_COLUMNS, server.js liveRowGranted:
+// the match token of that match, audit 2611 PERM-03).
 export const LIVE_COLUMNS = Object.freeze({
   matches: MATCHES_LIVE_COLUMNS,
-  match_live_state: MATCH_LIVE_STATE_COLUMNS,
+  match_live_state: MATCH_LIVE_STATE_PUBLIC_COLUMNS,
   sets: SETS_COLUMNS,
   // Live subscribers only use an events change as a refetch trigger: no
   // payload, no state snapshot, no lineups.
@@ -306,11 +311,17 @@ export const MATCH_ROSTER_COLUMNS = Object.freeze(['players_home', 'players_away
  * state keeps its private columns (LIVE_STATE_PRIVATE_COLUMNS) only on the row
  * of `grantedMatchUuid` (the match token's matches.id: the referee/bench
  * fallback of getMatchData).
+ *
+ * `grantedRole` (the token's role, payload.r): the granted row's rosters as
+ * the relay gives that role (relayBundleView): the referee both teams whole,
+ * a bench (bench_home / bench_away, beach bench_team1 / bench_team2) its own
+ * team whole and the other team's players as shirt numbers, its officials as
+ * their role (numberOnly). Left out (undefined): the rosters whole.
  * @param {string} table
  * @param {object|object[]|null} rows
- * @param {{ grantedExternalId?: string|null, grantedMatchUuid?: string|null, grantRow?: (row: object) => boolean }} [opts]
+ * @param {{ grantedExternalId?: string|null, grantedMatchUuid?: string|null, grantRow?: (row: object) => boolean, grantedRole?: string|null }} [opts]
  */
-export function projectAnonDbRows(table, rows, { grantedExternalId = null, grantedMatchUuid = null, grantRow = null } = {}) {
+export function projectAnonDbRows(table, rows, { grantedExternalId = null, grantedMatchUuid = null, grantRow = null, grantedRole } = {}) {
   if (table === 'match_live_state' && grantedMatchUuid) {
     const one = (row) => (row != null && typeof row === 'object' && row.match_id === grantedMatchUuid
       ? projectRow(MATCH_LIVE_STATE_GRANTED_COLUMNS, table, row)
@@ -319,13 +330,31 @@ export function projectAnonDbRows(table, rows, { grantedExternalId = null, grant
   }
   const projected = projectRows(ANON_DB_COLUMNS, table, rows)
   if (table !== 'matches') return projected
+  const view = grantedRole === undefined ? 'referee' : relayViewOf(grantedRole)
   const strip = (row) => {
     if (row == null || typeof row !== 'object') return row
-    if (grantedExternalId && row.external_id === grantedExternalId && (!grantRow || grantRow(row))) return row
+    if (grantedExternalId && row.external_id === grantedExternalId && (!grantRow || grantRow(row))) return grantedRosters(row, view)
     for (const c of MATCH_ROSTER_COLUMNS) delete row[c]
     return row
   }
   return Array.isArray(projected) ? projected.map(strip) : strip(projected)
+}
+
+/**
+ * The roster columns of a granted matches row (projected, so ours to change)
+ * for `view` (relayViewOf of the token's role): as relayMatchView, the other
+ * team's people of a bench as shirt numbers (officials: role), of any view
+ * but the referee's and the scorer's both teams so.
+ */
+function grantedRosters(row, view) {
+  if (view === 'referee' || view === 'scorer') return row
+  for (const side of ['home', 'away']) {
+    if (side === view) continue
+    for (const c of TEAM_ROSTER_FIELDS[side]) {
+      if (MATCH_ROSTER_COLUMNS.includes(c) && Array.isArray(row[c])) row[c] = row[c].map(numberOnly)
+    }
+  }
+  return row
 }
 
 /** Column pgQuery adds to a select with opts.readOwner. */
@@ -359,6 +388,12 @@ export function projectRows(policy, table, rows) {
 
 /** The realtime hub's projection (LIVE_COLUMNS). */
 export const projectLiveRow = (table, row) => projectRow(LIVE_COLUMNS, table, row)
+
+/** LIVE_COLUMNS with the live state's private columns (LIVE_STATE_PRIVATE_COLUMNS). */
+export const LIVE_GRANTED_COLUMNS = Object.freeze({ ...LIVE_COLUMNS, match_live_state: MATCH_LIVE_STATE_COLUMNS })
+
+/** The realtime hub's projection of a row its channel was granted (the match's token). */
+export const projectLiveGrantedRow = (table, row) => projectRow(LIVE_GRANTED_COLUMNS, table, row)
 
 // The livescore list's columns of a live state (frontend utils/relayLivescore
 // LIVESCORE_LIVE_FIELDS): what a summary channel of the hub sends.
@@ -510,7 +545,13 @@ export const MATCH_PRIVATE_FIELDS = Object.freeze([
   'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster',
   // a Global match's key to its backup store (frontend utils/globalCloud);
   // a scorer before 2026-11-17 sent it
-  'globalKey'
+  'globalKey',
+  // a Global match's tournament code (it lists the tournament's matches and
+  // PDFs and adds matches to it) and its read-only share link (frontend
+  // utils/globalCloudDb); a scorer up to 26.11.x sends them (audit SEC-28)
+  'globalOrganizer', 'cloudShareToken',
+  // the secret of the match's court on the live screen (frontend utils/globalLive)
+  'liveSecret'
 ])
 /**
  * Match keys only the referee and the scorer's own devices get (relayBundleView):
@@ -889,8 +930,25 @@ const refereeEventsOf = storedOnce((events) => {
 })
 
 /**
+ * The event that starts a set (frontend/src/domain/lineupPrivacy.js startsSet,
+ * domain/rally isFirstRallyOf): the set's start or a rally's, or a point that
+ * is not a penalty. A set that opens with a penalty point (a sanction before
+ * the first serve) has not started (audit LOG-19).
+ */
+const startsSet = (e) => e.type === 'set_start' || e.type === 'rally_start' || (e.type === 'point' && e.payload?.penaltySeq == null)
+
+/** The sets that have started (startsSet): a Set of set indexes. */
+const startedSetsOf = storedOnce((events) => {
+  const started = new Set()
+  for (const e of Array.isArray(events) ? events : []) {
+    if (e && typeof e === 'object' && startsSet(e)) started.add(Number(e.setIndex ?? 1))
+  }
+  return started
+})
+
+/**
  * The sets in which one team's first line-up is covered (only that team's
- * line-up is in and no point has been scored): setIndex → 'home' / 'away'.
+ * line-up is in and the set has not started): setIndex → 'home' / 'away'.
  */
 const coveredLineupSets = storedOnce((events) => {
   const sets = new Map()
@@ -898,7 +956,7 @@ const coveredLineupSets = storedOnce((events) => {
     if (!e || typeof e !== 'object') continue
     const i = Number(e.setIndex ?? 1)
     const s = sets.get(i) || { started: false, home: false, away: false }
-    if (e.type === 'point') s.started = true
+    if (startsSet(e)) s.started = true
     if (e.type === 'lineup' && (e.payload?.team === 'home' || e.payload?.team === 'away')) s[e.payload.team] = true
     sets.set(i, s)
   }
@@ -962,7 +1020,8 @@ export function relayMatchView(entry, view, covered = coveredLineupSets(entry?.e
   return match
 }
 
-// A covered line-up in the live state: the set at 0:0 and only one team's
+// A covered line-up in the live state: the set not started (at 0:0, or with
+// penalty points only, which the room's events tell) and only one team's
 // line-up in. The scorer app sends it as null (frontend/src/domain/
 // lineupPrivacy.js withCoveredLiveLineups); an older one sends it as it is,
 // and the relay covers it (relayLiveStateView).
@@ -974,10 +1033,15 @@ const teamAOf = (match) => (match?.coinTossTeamA === 'away' ? 'away' : 'home')
  * it is covered, or null. Team A is the match's coinTossTeamA.
  * @param {object} liveState match_live_state shape (Team A / B)
  * @param {object} [match] the stored match
+ * @param {object[]} [events] the room's events: a set with points but no
+ *   start (penalty points only) has not started either
  */
-export function coveredLiveLineupTeam(liveState, match) {
+export function coveredLiveLineupTeam(liveState, match, events = null) {
   if (!liveState || typeof liveState !== 'object' || Array.isArray(liveState)) return null
-  if ((Number(liveState.points_a) || 0) + (Number(liveState.points_b) || 0) !== 0) return null
+  if ((Number(liveState.points_a) || 0) + (Number(liveState.points_b) || 0) !== 0) {
+    const set = Number(liveState.current_set)
+    if (!Array.isArray(events) || !Number.isFinite(set) || startedSetsOf(events).has(set)) return null
+  }
   const a = isLiveLineup(liveState.lineup_a)
   if (a === isLiveLineup(liveState.lineup_b)) return null
   const teamA = teamAOf(match)
@@ -993,9 +1057,10 @@ export function coveredLiveLineupTeam(liveState, match) {
  * @param {object} liveState
  * @param {string|null} view
  * @param {object} [match] the stored match (Team A)
+ * @param {object[]} [events] the room's events (coveredLiveLineupTeam)
  */
-export function relayLiveStateView(liveState, view, match) {
-  const covered = coveredLiveLineupTeam(liveState, match)
+export function relayLiveStateView(liveState, view, match, events = null) {
+  const covered = coveredLiveLineupTeam(liveState, match, events)
   if (!covered || view === 'referee' || view === 'scorer' || view === covered) return liveState
   const out = { ...liveState }
   if (covered === teamAOf(match)) out.lineup_a = null
@@ -1035,6 +1100,6 @@ export function relayBundleView(entry, view) {
         ? officialEventsOf(entry?.events)
         : benchEvents(entry?.events, team, covered)
   }
-  if (entry?.liveState !== undefined) out.liveState = relayLiveStateView(entry.liveState, view, entry?.match)
+  if (entry?.liveState !== undefined) out.liveState = relayLiveStateView(entry.liveState, view, entry?.match, entry?.events)
   return out
 }

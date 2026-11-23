@@ -3,6 +3,7 @@
 //! linux.rs turns them into D-Bus values.
 
 use super::creds::Credentials;
+use super::NetError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Val {
@@ -47,25 +48,75 @@ pub const TABLET_ZONE: &str = if matches!(crate::flavour::CURRENT.key.as_bytes()
     "openvolley-tablets"
 };
 
-/// firewalld's zone that accepts everything: only where the app's own zone
-/// cannot be used (see firewall_zone).
-pub const FALLBACK_ZONE: &str = "trusted";
+/// Why the tablets' network cannot start safely (SEC-53): firewalld runs and
+/// does not know the app's zone, or the zone does not open the ports the
+/// relay listens on. Never "trusted" (every port of this computer open to
+/// the tablets, and NetworkManager masquerades them to its uplink) in place
+/// of the zone.
+pub const ZONE_MISSING: &str = "firewall-zone-missing";
+pub const ZONE_PORTS: &str = "firewall-zone-ports";
+
+/// Does firewalld's port list (getPorts: [port or "a-b", protocol]) open `port`/tcp?
+fn opens_tcp(ports: &[(String, String)], port: u16) -> bool {
+    ports.iter().any(|(p, proto)| {
+        if proto != "tcp" {
+            return false;
+        }
+        match p.split_once('-') {
+            Some((a, b)) => matches!((a.parse::<u16>(), b.parse::<u16>()), (Ok(a), Ok(b)) if a <= port && port <= b),
+            None => p.parse::<u16>().ok() == Some(port),
+        }
+    })
+}
 
 /// The firewalld zone for the tablets' networks. firewalld puts a shared
 /// connection without a zone into "nm-shared", which rejects everything but
 /// DHCP / DNS / SSH: the tablets would get an address and still not reach the
-/// relay. So the app's own zone (TABLET_ZONE) where firewalld knows it and the
-/// relay runs on its default ports; "trusted" (every port of the laptop open
-/// to the tablets, as before) only where it does not: an AppImage or a .deb
-/// whose zone firewalld has not loaded yet, or ports moved with
-/// OPENVOLLEY_HTTP_PORT / OPENVOLLEY_WS_PORT. `zones`: firewalld's zones,
-/// None when firewalld does not run (NetworkManager then ignores the zone).
-pub fn firewall_zone(zones: Option<&[String]>, default_ports: bool) -> &'static str {
-    match zones {
-        None => TABLET_ZONE,
-        Some(zones) if default_ports && zones.iter().any(|z| z == TABLET_ZONE) => TABLET_ZONE,
-        Some(_) => FALLBACK_ZONE,
+/// relay. So the app's own zone (TABLET_ZONE: DHCP, DNS, ping and the relay's
+/// two ports), and only where firewalld knows it and it opens the ports the
+/// relay listens on; otherwise the network does not start, and the error
+/// says how to add the zone or the ports (one root command, the same for the
+/// .deb, the AppImage, the AUR, Snap and Flatpak packages). `zones`:
+/// firewalld's zones, None when firewalld does not run (NetworkManager then
+/// ignores the zone) or may not be asked (a sandbox: the zone is asked for
+/// all the same, and firewalld puts an unknown one in its default zone,
+/// which is never "trusted"). `zone_ports`: the ports TABLET_ZONE opens now (getPorts),
+/// None when firewalld did not say: then the zone file's own, `default_ports`.
+pub fn firewall_zone(
+    zones: Option<&[String]>,
+    zone_ports: Option<&[(String, String)]>,
+    (http, ws): (u16, u16),
+    default_ports: (u16, u16),
+) -> Result<&'static str, NetError> {
+    let Some(zones) = zones else { return Ok(TABLET_ZONE) };
+    let zone = TABLET_ZONE;
+    if !zones.iter().any(|z| z == zone) {
+        let (dh, dw) = default_ports;
+        let ports = if (http, ws) == default_ports { String::new() } else { format!(" --add-port={http}/tcp --add-port={ws}/tcp") };
+        return Err(NetError::new(
+            ZONE_MISSING,
+            format!(
+                "firewalld has no zone {zone} for the tablets (the .deb installs it: run firewall-cmd --reload). Add it once as root: \
+firewall-cmd --permanent --new-zone={zone} && firewall-cmd --permanent --zone={zone} --add-service=dhcp --add-service=dns \
+--add-protocol=icmp --add-port={dh}/tcp --add-port={dw}/tcp{ports} && firewall-cmd --reload"
+            ),
+        ));
     }
+    let defaults = [(default_ports.0.to_string(), "tcp".to_string()), (default_ports.1.to_string(), "tcp".to_string())];
+    let open = zone_ports.unwrap_or(&defaults);
+    let missing: Vec<u16> = [http, ws].into_iter().filter(|p| !opens_tcp(open, *p)).collect();
+    if missing.is_empty() {
+        return Ok(zone);
+    }
+    let add: String = missing.iter().map(|p| format!(" --add-port={p}/tcp")).collect();
+    Err(NetError::new(
+        ZONE_PORTS,
+        format!(
+            "The firewalld zone {zone} does not open the relay's port(s) {}. Open them as root: \
+firewall-cmd --zone={zone}{add} && firewall-cmd --permanent --zone={zone}{add}",
+            missing.iter().map(|p| format!("{p}/tcp")).collect::<Vec<_>>().join(", ")
+        ),
+    ))
 }
 
 fn connection_section(id: &str, kind: &str, interface: Option<&str>, login: Option<&str>, zone: &str) -> Section {
@@ -213,19 +264,50 @@ mod tests {
         assert_eq!(get(&st, "ipv4", "method"), Some(&Val::Str("shared".into())));
     }
 
-    /// tauri-shell-3: not "trusted" (every port of the laptop) where the
-    /// app's own zone can be used.
+    /// tauri-shell-3, SEC-53: never "trusted" (every port of the laptop open
+    /// to the tablets): the app's own zone where firewalld knows it and it
+    /// opens the relay's ports, else the network does not start and the error
+    /// gives the root command (every package: AppImage, AUR, Snap, Flatpak).
     #[test]
-    fn the_tablets_get_the_own_zone_not_trusted() {
+    fn the_tablets_get_the_own_zone_never_trusted() {
         let with = vec!["public".to_string(), "nm-shared".into(), TABLET_ZONE.into(), "trusted".into()];
         let without = vec!["public".to_string(), "nm-shared".into(), "trusted".into()];
-        assert_eq!(firewall_zone(Some(&with), true), TABLET_ZONE);
-        // firewalld without the zone (an AppImage, not reloaded yet): the relay must stay reachable
-        assert_eq!(firewall_zone(Some(&without), true), FALLBACK_ZONE);
-        // relay on other ports than the zone opens
-        assert_eq!(firewall_zone(Some(&with), false), FALLBACK_ZONE);
-        // no firewalld: the zone is ignored, never "trusted"
-        assert_eq!(firewall_zone(None, true), TABLET_ZONE);
+        let defaults = (5173, 8080);
+        assert_eq!(firewall_zone(Some(&with), None, defaults, defaults), Ok(TABLET_ZONE));
+        // no firewalld, or one this sandbox may not ask: the app zone, never "trusted"
+        assert_eq!(firewall_zone(None, None, defaults, defaults), Ok(TABLET_ZONE));
+        assert_eq!(firewall_zone(None, None, (9000, 9001), defaults), Ok(TABLET_ZONE));
+        // firewalld without the zone (an AppImage, AUR, Snap, Flatpak, a .deb not reloaded yet)
+        let e = firewall_zone(Some(&without), None, defaults, defaults).unwrap_err();
+        assert_eq!(e.code, ZONE_MISSING);
+        assert!(e.detail.contains("firewall-cmd --permanent --new-zone=openvolley-tablets"), "{}", e.detail);
+        assert!(e.detail.contains("--add-port=5173/tcp --add-port=8080/tcp") && e.detail.contains("--add-service=dhcp"), "{}", e.detail);
+        assert!(!e.detail.contains("trusted"));
+        // firewalld answered with no zones at all: no zone, no "trusted"
+        assert_eq!(firewall_zone(Some(&[]), None, defaults, defaults).unwrap_err().code, ZONE_MISSING);
+        // ports moved (OPENVOLLEY_HTTP_PORT / _WS_PORT): only when the zone opens them
+        let e = firewall_zone(Some(&with), None, (9000, 8080), defaults).unwrap_err();
+        assert_eq!(e.code, ZONE_PORTS);
+        assert!(e.detail.contains("--add-port=9000/tcp") && !e.detail.contains("--add-port=8080/tcp"), "{}", e.detail);
+        let opened = vec![("9000".to_string(), "tcp".to_string()), ("8000-8100".to_string(), "tcp".to_string())];
+        assert_eq!(firewall_zone(Some(&with), Some(&opened), (9000, 8080), defaults), Ok(TABLET_ZONE));
+        // the zone's own ports as firewalld says them, udp does not count
+        let udp = vec![("5173".to_string(), "udp".to_string()), ("8080".to_string(), "tcp".to_string())];
+        assert_eq!(firewall_zone(Some(&with), Some(&udp), defaults, defaults).unwrap_err().code, ZONE_PORTS);
+        let missing_ports = firewall_zone(Some(&without), None, (9000, 9001), defaults).unwrap_err();
+        assert!(missing_ports.detail.contains("--add-port=9000/tcp --add-port=9001/tcp"), "{}", missing_ports.detail);
+    }
+
+    /// No "trusted" anywhere in the zone choice (SEC-53).
+    #[test]
+    fn no_trusted_fallback_is_left() {
+        let code_of = |src: &'static str| -> String {
+            let end = src.find("#[cfg(test)]").unwrap_or(src.len());
+            src[..end].lines().filter(|l| !l.trim_start().starts_with("//")).collect::<Vec<_>>().join("\n")
+        };
+        for code in [code_of(include_str!("nm_settings.rs")), code_of(include_str!("linux.rs"))] {
+            assert!(!code.contains("FALLBACK_ZONE") && !code.contains("\"trusted\""));
+        }
     }
 
     /// The zone file the .deb ships opens DHCP, DNS and the relay's two

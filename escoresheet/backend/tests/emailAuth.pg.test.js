@@ -575,7 +575,13 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       assert.equal((await accounts.setRoles({ actor: adminActor, userId, body: { remove: ['scorer'] } })).status, 200, 'removing stays possible')
 
       const { token } = linkToken(sent.find((m) => m.to === 'someone.else@club.example'))
-      assert.equal((await auth.handleAuthRequest('confirm-email', { token }, { ip: nextV6() })).status, 200)
+      const cf = await auth.handleAuthRequest('confirm-email', { token }, { ip: nextV6() })
+      assert.equal(cf.status, 200)
+      // without the sign-up's password the address is confirmed only with the
+      // clicker's new password (audit 2611 SEC-15, review I-3)
+      assert.equal((await accounts.redeemInvite({ userId, code: inv.body.data.code })).status, 409, 'still unconfirmed until the new password is set')
+      const set = await auth.handleAuthRequest('reset-password/confirm', { token: cf.body.data.set_password_token, password: 'the-owners-password-1' }, { ip: nextV6() })
+      assert.equal(set.status, 200, JSON.stringify(set.body))
       const ok = await accounts.redeemInvite({ userId, code: inv.body.data.code })
       assert.equal(ok.status, 200, JSON.stringify(ok.body))
       assert.deepEqual(ok.body.data.roles, ['scorer'])

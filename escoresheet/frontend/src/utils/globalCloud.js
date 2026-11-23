@@ -1,6 +1,7 @@
 import { getCloudApiUrl } from './backendConfig'
 import { db } from '../db/db'
 import { usesKeyStore } from '../domain/matchKind'
+import { isRetryableRefusal, keepGlobalPending, retryAfterOf } from './globalPending'
 
 /**
  * The Global tool's server side (backend lib/globalStore.js): a match's backup
@@ -45,17 +46,22 @@ async function post(action, payload) {
   try {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     const json = await res.json().catch(() => null)
-    if (!res.ok || json?.error) return { ok: false, reason: json?.error?.code || `HTTP ${res.status}`, permanent: res.status >= 400 && res.status < 500 && res.status !== 429 }
+    if (!res.ok || json?.error) return { ok: false, reason: json?.error?.code || `HTTP ${res.status}`, status: res.status, retryAfter: retryAfterOf(res), permanent: res.status >= 400 && res.status < 500 && res.status !== 429 }
     return { ok: true, data: json?.data ?? null }
   } catch (err) {
     return { ok: false, reason: err?.message || 'network' }
   }
 }
 
+/** The request body of a file for the store. */
+async function saveBody(key, kind, body, contentType) {
+  return { key, kind, contentType, fileBase64: await toBase64(body) }
+}
+
 /** Store a file ('backup' JSON string, 'scoresheet' / 'scoresheet-final' PDF blob). */
 export async function saveGlobal(key, kind, body, contentType) {
   if (!isGlobalKey(key)) return { ok: false, reason: 'key' }
-  return post('save', { key, kind, contentType, fileBase64: await toBase64(body) })
+  return post('save', await saveBody(key, kind, body, contentType))
 }
 
 /** The stored file as text (backup) or a Blob (PDF), or null when there is none. */
@@ -104,16 +110,20 @@ async function globalBackupText(matchId, backupData) {
 }
 
 /**
- * A backup read by its code, as Global mode restores it: only a Global match,
- * a real match that stays local (domain/matchKind isLocalOnly: the sync queue
- * and the restore never send it to the league's server). A backup made
- * before 2026-11-17 holds test: true, dropped here. null for anything else: a code that holds an
- * official match, or a file someone with the code replaced, is not restored
- * into this device's official matches.
+ * A backup read by its code, as Restore match takes it back: only a match
+ * that keeps its files in this store (domain/matchKind usesKeyStore), a
+ * Global match or a guest match (the Swiss "New match" signed out), each
+ * kept as the kind it is (audit LOG-07: a guest backup was stored but never
+ * restored). A real match that stays local (isLocalOnly: the sync queue and
+ * the restore never send it to the league's server). A backup made before
+ * 2026-11-17 holds test: true, dropped here. null for anything else: a code
+ * that holds an official match, or a file someone with the code replaced, is
+ * not restored into this device's official matches.
  */
 export function globalRestoreData(data) {
-  if (!data || typeof data !== 'object' || !data.match || data.match.global !== true) return null
-  return { ...data, match: { ...data.match, global: true, test: false } }
+  if (!data || typeof data !== 'object' || !data.match || !usesKeyStore(data.match)) return null
+  const kind = data.match.global === true ? { global: true } : { guest: true }
+  return { ...data, match: { ...data.match, ...kind, test: false } }
 }
 
 /**
@@ -143,21 +153,33 @@ export async function uploadGlobalBackup(backupData, matchId = null) {
   return r.ok ? `global/${m.globalKey}/backup` : null
 }
 
-/** The opt-in readable copy in the database (utils/globalCloudDb), best effort. */
-function saveCloudCopy(backupData, matchId, pdfBlob = null) {
+/**
+ * The opt-in readable copy in the database (utils/globalCloudDb), best effort.
+ * `final`: the closed match's copy, kept and sent again later when the server
+ * refuses it for now (utils/globalPending): no later save would bring it.
+ */
+function saveCloudCopy(backupData, matchId, pdfBlob = null, { final = false } = {}) {
   const m = backupData?.match
   if (m?.global !== true || m.cloud !== true) return Promise.resolve(null)
   const data = matchId != null && m.id == null ? { ...backupData, match: { ...m, id: matchId } } : backupData
   return import('./globalCloudDb')
-    .then(({ saveGlobalCloud }) => saveGlobalCloud(data, { pdfBlob, database: db }))
+    .then(({ saveGlobalCloud }) => saveGlobalCloud(data, { pdfBlob, database: db, keepIfRefused: final }))
     .catch(() => null)
 }
 
-/** The closed match: its PDF and its final backup, retried a few times (never queued: nothing of a Global match goes through the sync queue). */
+/**
+ * The closed match: its PDF and its final backup, retried a few times (never
+ * queued: nothing of a Global match goes through the sync queue). One the
+ * server still refuses for now (a hall's daily share spent: 429 until the day
+ * ends, a busy or full server, no connection) is kept on the device and sent
+ * again after the server's Retry-After (utils/globalPending; 2611 review,
+ * SR-4): { ok, pending } (pending: the uploads kept for later).
+ */
 export async function uploadGlobalFinal({ match, matchId = null, pdfBlob, backupData }, { retries = 3, waitMs = 4000 } = {}) {
   if (!usesKeyStore(match) || !isGlobalKey(match.globalKey)) return { ok: false, reason: 'not-global' }
   const jobs = []
   let allOk = true
+  let pending = 0
   if (pdfBlob) jobs.push(['scoresheet-final', pdfBlob, 'application/pdf'])
   if (backupData) {
     try {
@@ -169,7 +191,7 @@ export async function uploadGlobalFinal({ match, matchId = null, pdfBlob, backup
   }
   allOk = allOk && jobs.length > 0
   // the cloud copy with the final PDF (not part of allOk: the store above is the scorer's safety net)
-  if (backupData) saveCloudCopy(backupData, matchId ?? match.id, pdfBlob)
+  if (backupData) saveCloudCopy(backupData, matchId ?? match.id, pdfBlob, { final: true })
   for (const [kind, body, type] of jobs) {
     let r
     for (let i = 0; i <= retries; i++) {
@@ -177,7 +199,13 @@ export async function uploadGlobalFinal({ match, matchId = null, pdfBlob, backup
       if (r.ok || r.permanent || r.reason === 'offline') break
       if (i < retries) await new Promise((res) => setTimeout(res, waitMs * (i + 1)))
     }
-    if (!r.ok) allOk = false
+    if (!r.ok) {
+      allOk = false
+      if (!r.permanent && isRetryableRefusal(r.status)) {
+        const kept = await keepGlobalPending({ id: `${match.globalKey}|${kind}`, path: '/api/global/save', body: await saveBody(match.globalKey, kind, body, type), retryAfterSec: r.retryAfter })
+        if (kept) pending++
+      }
+    }
   }
-  return { ok: allOk }
+  return { ok: allOk, pending }
 }

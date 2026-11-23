@@ -69,6 +69,8 @@ backup_set*_*.json
 # Logs, diagnostics and activity exports; browser network exports (HAR) of
 # the API traffic
 debug_logs/
+# OpenBeach's debug log export (debugLogger_beach.js), e.g. when testing it here
+debug_logs_*.json
 logs_*.txt
 diagnostic_log*.json
 *.ndjson

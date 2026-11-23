@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.27 · Aggiornata al 23 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.28 · Aggiornata al 23 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -356,11 +356,23 @@ responsabile di una squadra della società, che poi gestisce quella squadra
 server si trova solo un hash di esso. Una sessione dura 30 giorni dall'ultimo
 utilizzo, al massimo 90 giorni, e termina con l'uscita, il cambio della
 password e la cancellazione dell'account. Per proteggersi dagli attacchi, il
-server conta i tentativi falliti per indirizzo IP e per indirizzo e-mail, solo
-nella memoria di lavoro.
+server conta i tentativi falliti per indirizzo IP e per indirizzo e-mail nella
+sua memoria di lavoro. La sua banca dati tiene inoltre, per un indirizzo e-mail
+con tentativi falliti, quanti sono stati nelle ultime 24 ore, sotto un hash a
+senso unico dell'indirizzo (non l'indirizzo stesso), e, per ogni account, fino
+a 20 reti da cui è stato usato (un indirizzo IPv4, o la prima metà di un
+indirizzo IPv6): un hash con chiave dell'indirizzo e-mail e della rete, che
+senza la chiave segreta del server non dice nulla. Viene scritto quando vi
+accedi con la tua password o una passkey, o vi apri un link di un'e-mail
+dell'account. Dopo 100 tentativi falliti in 24 ore, da queste reti si
+continua come di consueto, ogni altra può provare solo di tanto in tanto, e
+l'account riceve un avviso per e-mail (una volta in quel periodo). Il numero
+viene cancellato dopo le sue 24 ore, con una nuova password e con l'account;
+una rete 60 giorni dopo il suo ultimo uso e con l'account.
 
 **E-mail:** invio solo e-mail legate all'account: conferma dell'indirizzo
 e-mail, link per reimpostare la password, avviso di cambio password, avviso
+che qualcuno continua a provare ad accedere al tuo account (sopra), avviso
 che un risultato è stato approvato con il tuo PIN di approvazione e avviso
 che il tuo PIN è stato bloccato. Non contengono pixel di tracciamento né
 immagini caricate da remoto. Un link di conferma vale 24 ore, un link di
@@ -540,7 +552,11 @@ della federazione, che questa conserva offline. Chi conosce il codice e questo
 PIN può ripristinare la partita; conservali quindi come una password. Un
 nuovo backup sostituisce il precedente. I file vengono
 cancellati 180 giorni dopo l'ultima modifica; i backup del server (sezione 18)
-ne conservano ancora una copia per un certo tempo. L'organizzatrice o
+ne conservano ancora una copia per un certo tempo. Se per il momento il server
+rifiuta l'ultimo backup e il PDF (la quota giornaliera della tua rete è
+esaurita, il server è sovraccarico, nessuna connessione), restano sul tuo
+dispositivo e vengono inviati di nuovo più tardi, al massimo per 7 giorni;
+lo stesso vale per l'ultima copia di «Salva nel cloud» (sotto). L'organizzatrice o
 l'organizzatore del torneo è responsabile di poter registrare i dati e di
 informare le giocatrici, i giocatori e i loro genitori (sezione 17).
 
@@ -603,17 +619,24 @@ osservazioni, firme e PIN non vengono inviati; in OpenBeach, però, il nome di
 una squadra è di solito quello delle sue giocatrici o dei suoi giocatori, e
 allora compare sullo schermo. Il riepilogo è conservato solo nella memoria del
 server, mai in un database o in un file, e viene rimosso 45 minuti dopo la
-fine della partita, dopo 3 ore senza aggiornamenti o al riavvio del server.
+fine della partita, dopo 3 ore senza aggiornamenti (15 minuti per un riepilogo
+arrivato una sola volta e non tramite il relay) o al riavvio del server.
 Chiunque conosca il codice può vedere i riepiloghi delle sue partite su
 openvolley.app/tv e livescore.openvolley.app o leggerli tramite l'interfaccia
-del server; un relay di palestra li mostra anche nella sua rete. Un
+del server; un relay di palestra li mostra anche nella sua rete. Gli schermi
+non sono un documento ufficiale: un riepilogo che arriva al server solo
+tramite l'app desktop o un relay di palestra, da OpenBeach fino alla 3.1.1 o
+da OpenVolley fino alla 26.11.5, può essere sovrascritto da chi conosce il
+codice e l'identificativo pubblico della partita. Un
 dispositivo segnapunti con un codice dello schermo live elenca inoltre i
 riepiloghi delle sue partite Global su livescore.openvolley.app, per chiunque
 e senza il codice, a meno che «Mostra le partite Global su
 livescore.openvolley.app» sia disattivato su di esso in Opzioni, Schermo live
-(di default è attivo). Le partite di campionato sono comunque nel livescore;
-le partite di prova e semplici non vi compaiono mai. Disattiva lo schermo live
-nelle Opzioni per interrompere l'invio.
+(di default è attivo). Un codice con un riepilogo in questa lista mostra solo
+i suoi riepiloghi elencati, anche sui TV; una partita che non deve essere
+elencata ha bisogno di un codice proprio. Le partite di campionato sono
+comunque nel livescore; le partite di prova e semplici non vi compaiono mai.
+Disattiva lo schermo live nelle Opzioni per interrompere l'invio.
 
 **Approvazione con PIN:** gli ufficiali di gara possono confermare il
 risultato, oltre che con la firma, con un PIN di approvazione personale.
@@ -964,7 +987,8 @@ richiesta.
   il server limita richieste e connessioni per indirizzo IP, e il relay in
   diretta lo usa per riconoscere i dispositivi della stessa palestra. Tiene
   gli indirizzi IP solo nella memoria di lavoro e non li salva né li registra
-  (salvo come hash pseudonimizzato di un'approvazione, sezione 7).
+  (salvo come hash pseudonimizzato di un'approvazione, sezione 7, e come hash
+  con chiave delle reti da cui un account è stato usato, sezione 6).
 - **Registro delle modifiche:** per la tracciabilità il server annota chi ha
   modificato ruoli, approvato, chiuso o riaperto partite, aggiunto
   co-editori o modificato iscrizioni a un torneo, e quando. Le voci possono
@@ -1032,6 +1056,8 @@ ricevi una copia di queste garanzie.
 |---|---|
 | Account e profilo | Finché tu non cancelli l'account o un amministratore lo cancella (su richiesta, o un nuovo account rifiutato) |
 | Sessione | 30 giorni dall'ultimo utilizzo, al massimo 90 giorni |
+| Tentativi di accesso falliti di un indirizzo e-mail (un numero, sotto un hash dell'indirizzo) | 24 ore; cancellati prima con una nuova password o con l'account |
+| Reti da cui un account è stato usato (hash con chiave, al massimo 20) | 60 giorni dopo l'ultimo uso da lì; cancellate con l'account |
 | Link nelle e-mail | Validi 60 minuti o 24 ore, cancellati 7 giorni dopo |
 | PIN di approvazione | Finché non lo rimuovi o non cancelli il tuo account |
 | Referti, eventi delle partite, cronologia degli eventi, firme, approvazioni, osservazioni (compresi i dati sulla salute), file dei referti | Come verbale ufficiale della partita: la stagione della partita e le 2 stagioni successive (una stagione va dal 1° luglio al 30 giugno), poi cancellati da un passaggio giornaliero; per esempio i verbali della stagione 2024/25 vengono cancellati il 1° luglio 2027. Prima su richiesta nella misura in cui il verbale non necessita dei dati (sezione 19) |

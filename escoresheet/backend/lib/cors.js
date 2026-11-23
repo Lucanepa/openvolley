@@ -5,9 +5,11 @@
  *
  * Trusted, and nothing else:
  * - the exact sites below and PUBLIC_ORIGINS (env, comma list: e.g. the
- *   Cloudflare Pages previews dev.openvolley-<app>.pages.dev). No wildcard: a
- *   host under openvolley.app that is not listed (the support desk, the
- *   download host, a dev build, a forgotten DNS record) is a stranger;
+ *   test backend's Cloudflare Pages previews dev.openvolley-<app>.pages.dev;
+ *   a production cloud backend drops dev-branch sites from it at the start,
+ *   withoutDevOrigins). No wildcard: a host under openvolley.app that is not
+ *   listed (the support desk, the download host, a dev build, a forgotten
+ *   DNS record) is a stranger;
  * - the native shells and local development (in the list);
  * - the server's own pages: an origin whose host is the request's Host, by
  *   a name no outside party can point at this server (DNS rebinding: a page
@@ -82,6 +84,41 @@ export const ALLOWED_ORIGINS = Object.freeze([
 /** PUBLIC_ORIGINS: a comma list, trimmed, without trailing slashes. */
 export function parsePublicOrigins(raw) {
   return String(raw || '').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean)
+}
+
+/**
+ * A dev-branch site (SEC-60): a Cloudflare Pages alias or preview
+ * (*.pages.dev) or a dev site under openvolley.app (dev-app., dev-beach.,
+ * dev.). Dev builds talk to the test backend (owner decision 5,
+ * docs/manager-site-deploy.md "Dev builds and the test backend"), never to
+ * production, so the production backend trusts none of them.
+ * @param {string} origin
+ */
+export function isDevOrigin(origin) {
+  let host
+  try { host = new URL(origin).hostname.toLowerCase().replace(/\.$/, '') } catch { return false }
+  if (host === 'pages.dev' || host.endsWith('.pages.dev')) return true
+  if (host !== 'openvolley.app' && host.endsWith('.openvolley.app')) {
+    const first = host.slice(0, -'.openvolley.app'.length).split('.')[0]
+    return first === 'dev' || first.startsWith('dev-')
+  }
+  return false
+}
+
+/**
+ * PUBLIC_ORIGINS of a cloud backend without its dev-branch sites (SEC-60).
+ * The test backend lists them on purpose and says so with
+ * OV_ALLOW_DEV_ORIGINS=1 (`allowDev`); a venue server keeps its list as it is.
+ * @param {string[]} origins parsePublicOrigins
+ * @param {{ isCloud: boolean, allowDev?: boolean }} opts
+ * @returns {{ kept: string[], dropped: string[] }}
+ */
+export function withoutDevOrigins(origins, { isCloud, allowDev = false }) {
+  if (!isCloud || allowDev) return { kept: [...origins], dropped: [] }
+  const kept = []
+  const dropped = []
+  for (const o of origins) (isDevOrigin(o) ? dropped : kept).push(o)
+  return { kept, dropped }
 }
 
 /** An http(s) origin as { hostname, host } (IPv6 without brackets), else null. */

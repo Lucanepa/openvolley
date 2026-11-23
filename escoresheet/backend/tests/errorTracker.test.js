@@ -172,7 +172,8 @@ describe('error alerts: the digest', () => {
   it('names roles and clubs, never a member, and links the group', () => {
     const a = alertOf()
     const d = renderDigest([a], { managerUrl: 'https://manager.example' })
-    assert.match(d.subject, /^\[OpenVolley\] New error — TypeError: x is undefined$/)
+    // the subject: the count, the kind and the tool, never the reported text (SEC-33)
+    assert.match(d.subject, /^\[OpenVolley\] New error — 3× js\.error · scorer$/)
     assert.match(d.text, /Who: 1 member: scorer, referee \(VBC Musterdorf\) and guests \(not signed in\)/)
     assert.match(d.text, /Device: Android 15 · Chrome WebView 131\.0\.6778\.39 · android_app · 1280x752/)
     assert.ok(d.text.includes(groupLink('https://manager.example', a.group.id)))
@@ -517,6 +518,14 @@ describe('error tracker end to end', { skip: SKIP }, () => {
     assert.ok(del.json.data.deleted >= 1)
     const { rows: [left] } = await sql.query('SELECT count(*)::int AS n FROM public.error_events WHERE account_id = $1', [users.Scorer.id])
     assert.equal(left.n, 0)
+    // the errors only guests fed (audit SEC-02 review): gone with their reports; the others stay
+    const { rows: [kept] } = await sql.query('SELECT count(*)::int AS n FROM public.error_groups WHERE NOT anonymous')
+    const guests = await call(users.Root, 'DELETE', '/api/admin/errors/events?anonymous=1&confirm=yes')
+    assert.equal(guests.status, 200, guests.text)
+    assert.equal(typeof guests.json.data.groups, 'number')
+    assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.error_groups WHERE anonymous AND NOT important')).rows[0].n, 0)
+    assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.error_groups WHERE NOT anonymous')).rows[0].n, kept.n)
+    assert.equal((await call(users.Root, 'DELETE', '/api/admin/errors/events?anonymous=1')).status, 400, 'confirm=yes is required')
 
     const tracker = createErrorTracker({ pool, log: quiet })
     const s1 = await tracker.captureServer(new Error('vm sync exploded 1234567'), { kind: 'job.failed', view: 'vm sync' })

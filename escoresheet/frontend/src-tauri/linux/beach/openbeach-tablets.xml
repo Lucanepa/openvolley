@@ -4,7 +4,10 @@
      TABLET_ZONE). The devices get an address (DHCP), names (DNS) and the
      app's built-in server (5174 pages, 8081 live updates); every other port
      of this computer stays closed to them, and nothing is forwarded to its
-     other networks. Installed by the .deb to /usr/lib/firewalld/zones. -->
+     other networks. In every Linux package (.deb, AppImage, AUR, Snap,
+     Flatpak) at /usr/lib/firewalld/zones; the .deb and the AUR package
+     install it. Without it on a firewalld system the app does not start the
+     tablets' network (never zone "trusted", SEC-53). -->
 <zone>
   <short>OpenBeach tablets</short>
   <description>Tablets and court displays on the network OpenBeach starts: DHCP, DNS and the app's built-in server only.</description>

@@ -56,12 +56,18 @@ function DetailsSection({ bundle, reload, onDeleted }) {
     const email = await askText({ title: t('tournaments.addManager'), label: t('tournaments.managerEmail'), type: 'email', confirmLabel: t('tournaments.add') })
     if (!email) return
     const res = await tournamentApi.addManager(tour.id, email.trim())
-    if (res.error) return toast.error(res.error.code === 'OV_NOT_FOUND' ? t('tournaments.errors.noManager') : errorText(res.error))
-    // the server answers the same for every address; the managers list says whether one was added
-    const fresh = await reload()
-    const wanted = email.trim().toLowerCase()
-    if ((fresh?.data?.managers || []).some(m => (m.email || '').toLowerCase() === wanted)) toast.success(t('tournaments.managerAdded'))
-    else toast.error(t('tournaments.errors.noManager'))
+    if (res.error) return toast.error(errorText(res.error))
+    // PERM-18: the same answer and list row for every address; a beach
+    // competition manager with it accepts in its own Tournaments tab and is
+    // listed as a co-manager only then
+    toast.success(t('tournaments.managerInvited'))
+    reload()
+  }
+  const removeInvite = async (i) => {
+    if (!(await askConfirm({ title: t('tournaments.removeInviteTitle', { email: i.email }), confirmLabel: t('tournaments.remove'), tone: 'danger' }))) return
+    const res = await tournamentApi.removeInvite(tour.id, i.id)
+    if (res.error) return toast.error(errorText(res.error))
+    reload()
   }
   const removeManager = async (m) => {
     if (!(await askConfirm({ title: t('tournaments.removeManagerTitle', { name: m.name || m.email }), confirmLabel: t('tournaments.remove'), tone: 'danger' }))) return
@@ -138,7 +144,16 @@ function DetailsSection({ bundle, reload, onDeleted }) {
                 )}
               />
             ))}
+            {(bundle.invited || []).map(i => (
+              <SimpleRow
+                key={i.id}
+                title={i.email}
+                titleExtra={<Chip>{t('tournaments.invitedChip')}</Chip>}
+                trailing={<IconButton label={t('tournaments.removeInvite')} icon={Trash2} variant="subtle" onClick={() => removeInvite(i)} />}
+              />
+            ))}
           </RowList>
+          {(bundle.invited || []).length > 0 && <p className="mt-1 text-xs text-stone-500">{t('tournaments.invitedHint')}</p>}
         </Card>
       )}
 

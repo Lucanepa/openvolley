@@ -106,6 +106,18 @@ export const MAX_MANUAL_PER_DAY = 100
 // A team manager's search of the club's people (an official): a few rows, never the list
 export const MAX_SEARCH_RESULTS = 10
 export const SEARCH_MIN_LENGTH = 3
+// Owner decision 7 (audit 2611, PERM-19): it finds a person, it cannot dump a
+// list. A name word matches the START of a part of a name (at least
+// SEARCH_MIN_LENGTH letters for the longest word), a licence number matches
+// whole, and one account gets at most SEARCH_DAILY_PEOPLE different people
+// in 24 hours (those it was shown already come again); every search is audited
+export const SEARCH_DAILY_PEOPLE = 50
+// ... and its answer names people only when it is whole: at most this many
+// match (review CR-1). A broader query names nobody and costs nothing, so the
+// picker's searches while a name is typed ("Sch", "Schm") spend no budget, and
+// every narrower query after a whole answer finds people shown already
+export const SEARCH_NARROW_MAX = 5
+const SEARCH_WINDOW = '24 hours'
 const MANUAL_FIELDS = Object.freeze(['list', ...LICENCE_FIELDS])
 const SV_RE = /^[0-9]{4,7}$/
 // No db/024 (or db/023) yet: a relation or column that does not exist
@@ -580,8 +592,10 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       const taken = new Set(held.map((r) => r.sv_number))
       const fresh = p.filter((x) => !taken.has(x.sv_number))
       if (fresh.length) {
+        // the rows no upload brought, by hand and from a match: the same rows
+        // addFromMatch counts against the same cap (PERM-04)
         const { rows: [n] } = await client.query(
-          `SELECT (SELECT count(*)::int FROM public.club_licences WHERE club_id = $1 AND source = 'manual') AS club,
+          `SELECT (SELECT count(*)::int FROM public.club_licences WHERE club_id = $1 AND source <> 'import') AS club,
                   (SELECT count(*)::int FROM public.club_licences
                     WHERE imported_by = $2 AND source = 'manual' AND imported_at > now() - interval '1 day') AS mine`,
           [club, isUuid(userId) ? userId : null])
@@ -622,10 +636,12 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
    * them). A person addPeople would refuse is left out (`invalid`). No
    * gender: a roster does not say it (an official match's player of the
    * other gender is a scorer's mistake to fix, not a fact to keep).
+   * `importedBy` (PERM-04): the account the rows come from (the writer of the
+   * match, or the manager who confirmed its suggestion), as imported_by.
    * { added, already, capped, invalid, lists }. Throws on a DB error (a
    * database without db/048 refuses the source: 23514).
    */
-  async function addFromMatch (client, { clubId, people } = {}) {
+  async function addFromMatch (client, { clubId, people, importedBy = null } = {}) {
     const out = { added: 0, already: 0, capped: 0, invalid: 0, lists: {} }
     if (!isUuid(clubId) || !Array.isArray(people) || !people.length) return out
     const byKey = new Map()
@@ -663,11 +679,11 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
     if (!go.length) return out
     const { rows: added } = await client.query(
       `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, gender, imported_by, source, season)
-       SELECT $1, x.list, x.sv, x.ln, x.fn, NULL, NULL, 'match', $6
+       SELECT $1, x.list, x.sv, x.ln, x.fn, NULL, $7, 'match', $6
          FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS x(list, sv, ln, fn)
        ON CONFLICT (club_id, list, sv_number) DO NOTHING
        RETURNING list`,
-      [clubId, go.map((x) => x.list), go.map((x) => x.sv_number), go.map((x) => x.last_name), go.map((x) => x.first_name), seasonNow()])
+      [clubId, go.map((x) => x.list), go.map((x) => x.sv_number), go.map((x) => x.last_name), go.map((x) => x.first_name), seasonNow(), isUuid(importedBy) ? importedBy : null])
     out.added = added.length
     out.already += go.length - added.length
     for (const r of added) out.lists[r.list] = (out.lists[r.list] || 0) + 1
@@ -829,26 +845,93 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
   }
 
   /**
-   * GET /api/team/:id/club-people?q=: the people of the club's lists whose
-   * name or licence number has `q` (at least SEARCH_MIN_LENGTH characters;
-   * accents and case aside), at most MAX_SEARCH_RESULTS, each once with its
-   * `lists`. An official may be anyone of
-   * the club (owner 2026-11-09), so a team manager finds one by name instead
-   * of reading the whole lists. { people, more } (more: there were more).
+   * GET /api/team/:id/club-people?q=: the people of the club's lists that `q`
+   * names (accents and case aside), at most MAX_SEARCH_RESULTS, each once
+   * with its `lists`. An official may be anyone of the club (owner
+   * 2026-11-09), so a team manager finds one by name instead of reading the
+   * whole lists (owner decision 2), and cannot rebuild them from the search
+   * (owner decision 7, PERM-19): `q` is a licence number (whole), or words
+   * that each begin a part of the person's name ("mül an" finds Anna Müller,
+   * "ller" nobody), the longest at least SEARCH_MIN_LENGTH letters. An
+   * account sees at most SEARCH_DAILY_PEOPLE different people in 24 hours;
+   * past that only those it was shown already (`limited`: someone was left
+   * out; `more` is false then when nobody else matches: typing more would
+   * not help). Its answer names people only when at most SEARCH_NARROW_MAX
+   * match (review CR-1: the budget follows lookups, not the picker's searches
+   * while a name is typed); a broader one is { people: [], more: true } and
+   * costs nothing. Each search is audited (club.people_search: the team, the
+   * counts, the ids of the rows shown; never a name, a licence or the query).
+   * `unlimited`: an admin or a manager of the team's club (they read the
+   * whole lists anyway): no budget, no audit, the first MAX_SEARCH_RESULTS
+   * of a broad query. { people, more, limited? }
    */
-  async function searchPeople ({ teamId, q } = {}) {
+  async function searchPeople ({ teamId, q, userId = null, unlimited = false } = {}) {
     if (!isUuid(teamId)) return notFound()
-    const needle = fold(typeof q === 'string' ? q : '')
+    const needle = fold(typeof q === 'string' ? q : '').replace(/[,;]+/g, ' ').trim()
     if (needle.length < SEARCH_MIN_LENGTH || needle.length > 80) return invalid(`q: ${SEARCH_MIN_LENGTH} to 80 characters`)
+    const licence = /^[0-9]{4,7}$/.test(needle) ? needle : null
+    const words = licence ? [] : needle.split(/\s+/).filter(Boolean)
+    if (!licence && Math.max(0, ...words.map((w) => w.length)) < SEARCH_MIN_LENGTH) {
+      return invalid(`q: a word of ${SEARCH_MIN_LENGTH} letters at least, or a licence number`)
+    }
+    const partsOf = (p) => fold(`${p.last_name} ${p.first_name || ''}`).split(/[\s\-'’.]+/).filter(Boolean)
+    // each word begins a part of the name, two words not the same part
+    const named = (p) => {
+      const parts = partsOf(p)
+      const used = new Set()
+      return words.every((w) => {
+        const i = parts.findIndex((x, j) => !used.has(j) && x.startsWith(w))
+        if (i === -1) return false
+        used.add(i)
+        return true
+      })
+    }
     return guarded('search-people', async () => {
       const x = await teamRows(teamId)
       if (x.answer) return x.answer
-      const { rows } = x
-      const hits = mergeLicencePeople(rows).filter((p) =>
-        p.sv_number === needle || fold(`${p.last_name} ${p.first_name || ''} ${p.first_name || ''} ${p.last_name}`).includes(needle))
-      return ok({
-        people: hits.slice(0, MAX_SEARCH_RESULTS),
-        more: hits.length > MAX_SEARCH_RESULTS
+      const { rows, team } = x
+      const hits = mergeLicencePeople(rows).filter((p) => (licence ? p.sv_number === licence : named(p)))
+      let free = !!unlimited
+      if (!free && isUuid(userId)) {
+        const { rows: m } = await pool.query('SELECT 1 FROM public.club_managers WHERE club_id = $1 AND user_id = $2', [team.club_id, userId])
+        free = m.length > 0
+      }
+      if (free) return ok({ people: hits.slice(0, MAX_SEARCH_RESULTS), more: hits.length > MAX_SEARCH_RESULTS })
+      // the person's key in the budget: its first row id (db/037), never the licence number
+      const keyOf = new Map()
+      for (const r of rows) {
+        if (!r.id) continue
+        const k = keyOf.get(r.sv_number)
+        if (!k || r.id < k) keyOf.set(r.sv_number, r.id)
+      }
+      return withTx(async (client) => {
+        // one search of the account at a time: the budget is read and spent together
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ov:people-search:${userId}`])
+        const { rows: seenRows } = await client.query(
+          `SELECT DISTINCT jsonb_array_elements_text(CASE WHEN jsonb_typeof(a.details -> 'ids') = 'array' THEN a.details -> 'ids' ELSE '[]'::jsonb END) AS id
+             FROM public.audit_log a
+            WHERE a.actor_id = $1 AND a.action = 'club.people_search' AND a.at > now() - $2::interval`, [userId, SEARCH_WINDOW])
+        const seen = new Set(seenRows.map((r) => r.id))
+        let room = Math.max(0, SEARCH_DAILY_PEOPLE - seen.size)
+        // a whole answer only (CR-1): a broader one names nobody, costs nothing
+        const narrow = hits.length <= SEARCH_NARROW_MAX
+        const shown = []
+        let held = 0
+        for (const p of narrow ? hits : []) {
+          const k = keyOf.get(p.sv_number)
+          if (k && seen.has(k)) { shown.push(p); continue }
+          if (room > 0) { room--; shown.push(p); continue }
+          held++
+        }
+        const ids = shown.map((p) => keyOf.get(p.sv_number)).filter(Boolean)
+        await audit(client, {
+          actorId: userId,
+          action: 'club.people_search',
+          details: { club_id: team.club_id, team_id: team.id, results: shown.length, new: ids.filter((k) => !seen.has(k)).length, limited: held > 0, narrow, ids }
+        })
+        // more: someone matches past the answer (typing more of the name finds them);
+        // those the budget held back are `limited`, not `more`
+        return ok({ people: shown, more: !narrow, ...(held > 0 ? { limited: true } : {}) })
       })
     })
   }

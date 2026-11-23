@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getCloudApiUrl } from '../utils/backendConfig'
-import { formatLiveCode } from '../utils/globalLive'
+import { formatLiveCode, setNumberOf } from '../utils/globalLive'
 import { Card } from '../ui/Card.jsx'
 
 export const LIST_POLL_MS = 10000
@@ -63,7 +63,7 @@ function CourtRow({ court: c, t }) {
     ? t('globalLive.page.final')
     : c.timeout ? t('globalLive.page.timeout')
       : c.interval ? t('globalLive.page.interval')
-        : c.currentSet ? t('globalLive.page.set', { n: c.currentSet }) : ''
+        : c.currentSet ? t('globalLive.page.set', { n: setNumberOf(c) }) : ''
   const team = (side) => (
     <div className="flex items-center gap-2">
       <span className="h-4 w-1.5 shrink-0 rounded-full" style={{ background: c[side]?.color || '#a8a29e' }} aria-hidden="true" />

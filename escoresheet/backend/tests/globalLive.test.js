@@ -185,8 +185,12 @@ describe('list (the public livescore, opt-in)', () => {
     assert.equal(l.events[0].code, CODE)
     assert.equal(l.events[0].courts.length, 1)
     assert.equal(l.events[0].courts[0].points.home, 12)
-    // the code's own page still has both
-    assert.equal(store.get(CODE).courts.length, 2)
+    // the code's own page has the listed court only (owner decision 8,
+    // 23.11.2026, audit PERM-21: the list gives the code to anyone); before,
+    // it had both
+    assert.deepEqual(store.get(CODE).courts.map((c) => c.points.home), [12])
+    // a code without a listed court shows all its courts
+    assert.equal(store.get('QRST6789').courts.length, 1)
     assert.equal(JSON.stringify(l).includes('room-'), false)
     assert.equal(JSON.stringify(l).includes('Anna'), false)
   })

@@ -15,6 +15,7 @@ T1 is the tournament core: the data model, the API, manual creation in OpenBeach
 |---|---|
 | `beach_tournaments` | `slug` (unique, `a-z0-9-`, the public address), `title`, `venue`, `city`, `plus_code`, `starts_on`/`ends_on` (at most 14 days), `day_start`/`day_end` (Zurich play hours), `status` draft → published → live → finished → archived, `public`, `source` manual\|xlsx\|swissvolley, `created_by` |
 | `beach_tournament_managers` | `(tournament_id, user_id)`, `added_by` |
+| `beach_tournament_invites` (db/055) | `tournament_id`, `email` (lower case), `invited_by`, `invited_at`: open co-manager invitations, 30 days |
 | `beach_courts` | `number` (unique per tournament), `name`, `active`, `flex` |
 | `beach_draws` | `gender`, `category`, `format` (`DE` in T1), `board_size` 8/16/32, `scoring` `{best_of, points}`, `slot_minutes`, `rest_minutes`, `registration_end`, `coaching_allowed`, `sv_tournament_id` (unique, T5), `status` entries → seeded → drawn → playing → done |
 | `beach_entries` | `seed` (unique per draw, deferred, so seeds can swap), `team_id` → `competition_teams` (a saved beach pair, db/009), `name`, `player1`/`player2` `{first, last, licence, country}`, `wildcard`, `late`, `status` registered\|withdrawn\|replaced\|dq, `final_rank` |
@@ -42,10 +43,12 @@ The beach roles of the row's sport (`lib/access.js`), never the app the client s
 |---|---|
 | `GET /api/beach/tournaments` | `{ tournaments: [{ ...tournament, draws, can_edit }] }` |
 | `POST /api/beach/tournaments` | `{ title, starts_on, ends_on, slug?, venue?, city?, plus_code?, day_start?, day_end?, public?, courts?, source? }` (`source` `manual` or `xlsx`, T2); without `slug` one is made from the title and year (`zuri-open-2026`, then `-2`, ...). 201 `{ tournament }`; 409 `OV_SLUG_TAKEN` |
-| `GET /api/beach/tournaments/:id` | `{ tournament, managers (editors only), courts, draws, entries, matches }`; player licences for editors only |
+| `GET /api/beach/tournaments/:id` | `{ tournament, managers, invited (both editors only), courts, draws, entries (at most 4096; `entries_truncated` beyond), matches }`; player licences for editors only |
 | `PATCH /api/beach/tournaments/:id` | any field above plus `status`, `public` |
 | `DELETE /api/beach/tournaments/:id` | 409 `OV_DRAW_STARTED` once a match has begun or has a result |
-| `POST /api/beach/tournaments/:id/managers { email }`, `DELETE .../managers/:userId` | co-managers |
+| `POST /api/beach/tournaments/:id/managers { email }`, `DELETE .../managers/:userId` | co-managers: an invitation by address, `{ requested: true }` and an `invited` row for every address (PERM-18; 409 `OV_TOO_MANY_INVITES` past 50 open ones); `DELETE .../invites/:inviteId` withdraws one |
+| `GET /api/beach/invites`, `POST /api/beach/invites/:id/accept`, `.../decline` | the open invitations to the caller's own address (a `beach:competition_manager`'s); accepted, it is a co-manager |
+| entries (bounds, PERM-02) | at most 256 registered pairs a draw (409 `OV_DRAW_FULL`), 1024 entries of any status a tournament (409 `OV_TOURNAMENT_ENTRIES_FULL`); the import's rows past them are errors (`draw_full`, `tournament_full`) |
 | `PUT /api/beach/tournaments/:id/courts { courts: [{ number, name, active, flex }] }` | the full list; courts left out are removed (their matches lose the court) |
 | `POST /api/beach/tournaments/:id/draws` | `{ gender, category, format: 'DE', board_size?, slot_minutes?, rest_minutes?, coaching_allowed?, registration_end? }` |
 | `PATCH`, `DELETE /api/beach/draws/:id` | gender and board fixed once drawn (409 `OV_DRAW_DRAWN`); delete refused once begun |
@@ -60,7 +63,7 @@ The beach roles of the row's sport (`lib/access.js`), never the app the client s
 | `DELETE /api/beach/tmatches/:id/result` | the match is open again (same lock) |
 | `POST /api/beach/tournaments/:id/import[?dryRun=1]` | the Excel/CSV import (T2, section 9): `{ entries?, matches?, hash? }`; editors only |
 | `GET /api/beach/draws/:id/ranking` | `{ tournament, draw, complete, ranking, csv }` (editors; licences included) |
-| `GET /api/public/beach/t/:slug` | anonymous, 120 per minute and IP, `Cache-Control: public, max-age=15` (and 15 s in the process). Only `public` tournaments that are not drafts. Names and countries only: no licence, no account ids or emails, no scored-match ids, no officials (D9) |
+| `GET /api/public/beach/t/:slug` | anonymous, 120 per minute and IP, `Cache-Control: public, max-age=15` (and 15 s in the process, as JSON bytes and their gzip built once, dropped by a write of the tournament; at most 1 MiB, `truncated: true` beyond). Only `public` tournaments that are not drafts. Names and countries only: no licence, no account ids or emails, no scored-match ids, no officials (D9) |
 
 Every write is audit-logged with `app = 'beach'`: `tournament.create`, `.update`, `.delete`, `.managers`, `.draw`, `.entry`, `.schedule`, `.result`, `.import` (T2: counts only, no names or licences).
 

@@ -10,6 +10,7 @@ import { describeTarget, maskPath, installBreadcrumbs, recordCrumb, getCrumbs, r
 import { createTransport, errorReportsEnabled, setErrorReportsEnabled, QUEUE_KEY, OFF_KEY } from '../transport'
 import { installErrorReporter, reportError, setErrorView, setErrorTool, resetErrorReporter, framesOf } from '../index'
 import { guessTool } from '../boot'
+import { emitActivity } from '../../activity/bus'
 import { checkClientEvent } from '../../../../../backend/lib/errorTracker.js'
 
 const UA = {
@@ -124,7 +125,8 @@ describe('the send queue', () => {
     expect(t.queue()).toHaveLength(1)
     t.flushOnExit()
     expect(beacons[0].b.type).toMatch(/^text\/plain;charset=utf-8$/i)
-    expect(t.queue()).toHaveLength(0)
+    // kept until a fetch confirms it: a beacon's answer is never read (audit SEC-19 review ET-5)
+    expect(t.queue()).toHaveLength(1)
   })
 
   it('switched off: nothing is queued, and what was queued goes', () => {
@@ -181,6 +183,16 @@ describe('the reporter', () => {
     window.dispatchEvent(ev)
     const q = JSON.parse(localStorage.getItem(QUEUE_KEY))
     expect(q.map((e) => [e.kind, e.error_name, e.message])).toEqual([['js.error', 'RangeError', 'window boom'], ['js.unhandledrejection', 'Error', 'promise boom']])
+  })
+
+  it('a dropped upload from the activity bus is a warning; a refused approval PDF (LOG-10) an error', () => {
+    installErrorReporter({ tool: 'scorer', win: window })
+    const dropped = { resource: 'scoresheet', action: 'upload', status: 409, code: 'OV_MATCH_CLOSED', attempt: 1 }
+    emitActivity('sync.dropped', dropped, { level: 'warn' })
+    emitActivity('sync.dropped', { ...dropped, attempt: 2 }, { level: 'error' })
+    const q = JSON.parse(localStorage.getItem(QUEUE_KEY))
+    expect(q.map((e) => [e.kind, e.level])).toEqual([['sync.dropped', 'warn'], ['sync.dropped', 'error']])
+    for (const ev of q) expect(checkClientEvent(ev, { accountId: null }).code).toBeUndefined()
   })
 
   it('stack lines lose their origin and query', () => {

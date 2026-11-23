@@ -9,13 +9,17 @@
  * returning groups; the manager's Errors tab (super admins) triages them.
  *
  *   POST /api/errors {events:[<=20]}   anyone (Bearer optional), server.js:
- *        per address, per device and in total rate limited; ≤ 64 KB
+ *        per address, per device and per product rate limited (RATE_LIMITS);
+ *        ≤ 64 KB; the new groups a report may open are limited
+ *        (NEW_GROUP_LIMITS) and the stored volume has a ceiling
+ *        (OV_ERRORS_MAX_BYTES), past which reports are counted, not stored
  *   GET    /api/admin/errors?status=&product=&tool=&os=&version=&source=&level=&since=&q=&sort=&limit=
  *   GET    /api/admin/errors/:id                 the group, 14 days, breakdowns
  *   GET    /api/admin/errors/:id/events?before=&limit=   occurrences with the member (audited)
  *   GET    /api/admin/errors/events?device=|account=&before=&limit=   one device's / account's (audited)
  *   PATCH  /api/admin/errors/:id {status, important, mute, resolved_in_version, note, commit_ref}
  *   DELETE /api/admin/errors/events?device=|account=&confirm=yes   delete on request (audited)
+ *   DELETE /api/admin/errors/events?anonymous=1&confirm=yes        the groups only reports without a session fed (audited)
  *   (all /api/admin/errors* for super admins only: lib/manageApi.js)
  *
  * Privacy (docs/legal privacy §5, data map 4.18):
@@ -24,7 +28,8 @@
  *   - messages, frames, breadcrumbs, views and data are sanitized again here
  *     (PINs, long numbers, e-mail addresses, dates, tokens, URL queries,
  *     Postgres "Key (col)=(value)" details) whatever the device sent;
- *   - events are kept 90 days (purge), an account's go with it (lib/auth.js).
+ *   - events are kept 90 days (purge), at most EVENTS_KEPT_PER_GROUP of a
+ *     group; an account's go with it (lib/auth.js).
  *
  * Grouping: product | source | kind | error name | message with ids and
  * numbers masked (normalizeMessage) | the top frame's file without the build
@@ -74,12 +79,53 @@ export const CLIENT_TS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 export const LIST_MAX = 200
 const REASON_RANK = { ongoing: 1, new: 2, regression: 3 }
 export const EVENTS_MAX = 100
-// Rate limits of POST /api/errors (events, fixed windows, in memory)
+// Rate limits of POST /api/errors (events, fixed windows, in memory). The
+// caller's own (per address, per device) are taken first and count every
+// object sent; the shared ones (per product) only the events that passed the
+// check, and reports without a session may use only `anonymous` of a
+// product's `total`: the rest is kept for signed-in accounts (SEC-19). The
+// server's own errors (captureServer) take none of them.
 export const RATE_LIMITS = Object.freeze({
   ip: { max: 120, windowMs: 5 * 60 * 1000 },
   device: { max: 300, windowMs: 60 * 60 * 1000 },
-  total: { max: 5000, windowMs: 5 * 60 * 1000 }
+  total: { max: 5000, windowMs: 5 * 60 * 1000 },
+  anonymous: { max: 4000, windowMs: 5 * 60 * 1000 }
 })
+// New groups (a fingerprint never seen) a report may open (SEC-02): without
+// a session per address and in total, signed in per account. Over the
+// caller's own window (its address, its account) the report is counted
+// (capped) and not stored; over the shared one (every report without a
+// session) it is answered as dropped, so the device keeps it and sends it
+// again later, and the owner hears of it once an hour (review ET-4). Server
+// errors: no limit.
+export const NEW_GROUP_LIMITS = Object.freeze({
+  ip: { max: 20, windowMs: 60 * 60 * 1000 },
+  anonymous: { max: 200, windowMs: 60 * 60 * 1000 },
+  account: { max: 60, windowMs: 60 * 60 * 1000 }
+})
+// What the two tables may hold (OV_ERRORS_MAX_BYTES; error_events and
+// error_groups live on the volume of the match records). Past it a report
+// only counts in its group; no client report opens a group (answered as
+// dropped: the device sends it again later), and a server error's new group
+// keeps its first event. Reports without a session fill at most
+// ANONYMOUS_STORE_SHARE of it, past which theirs only count: the rest stays
+// for signed-in reports and the server's own errors (review ET-3). The
+// volume is estimated from the tables at the first report, hourly (every 5
+// minutes while a ceiling is reached, so a cleanup shows soon), after each
+// purge and each delete of the Errors tab, and counted along in between
+// (SEC-02).
+export const MAX_STORE_BYTES = 512 * 1024 * 1024
+export const ANONYMOUS_STORE_SHARE = 0.6
+const VOLUME_RESYNC_MS = 60 * 60 * 1000
+const VOLUME_RESYNC_FULL_MS = 5 * 60 * 1000
+const NOTICE_EVERY_MS = 60 * 60 * 1000
+// groups the Errors tab's delete of guest errors takes per statement
+const DELETE_CHUNK = 1000
+// estimated bytes of a row beyond its message and JSON (other columns, the indexes)
+const EVENT_ROW_OVERHEAD = 768
+const GROUP_ROW_OVERHEAD = 2048
+// Events kept per group, the newest (purge): two weeks at the daily cap
+export const EVENTS_KEPT_PER_GROUP = 14 * DAILY_EVENTS_PER_GROUP
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const ID_TEXT_RE = /^[A-Za-z0-9_.:-]{1,64}$/
@@ -108,8 +154,17 @@ const PG_KEY_RE = /\bKey \(([^)]{1,120})\)=\(([^)]*)\)/g
 const URL_QUERY_RE = /(https?:\/\/[^\s?#"']+|\/[^\s?#"']*)\?[^\s#"']*/g
 // a capability or id in a path: /tv/AB12CD, /api/match/<uuid>, long hex / base64ish runs
 const LONG_TOKEN_RE = /\b[A-Za-z0-9_-]{24,}\b/g
+// A link in a report goes into the operator's digest and the Errors tab
+// (SEC-33: anyone may report): only OpenVolley's own hosts stay readable,
+// any other becomes [link], so a report cannot put a link of its choosing
+// in front of the owner.
+const LINK_RE = /\b(?:(?:https?|wss?|ftp):\/\/|www\.|javascript:(?=\S))[^\s"'<>]*/gi
+const OWN_LINK_RE = /^(?:https?|wss?):\/\/(?:[a-z0-9-]+\.)*openvolley\.app(?::\d{1,5})?(?:[/#]|$)/i
+// Line breaks and tabs (and the Unicode line separators): one line, so a
+// report cannot add lines of its own to a digest (a fake "Open:" line)
+const BREAK_RE = /\s*[\t\n\r\u0085\u2028\u2029][\s\u0085]*/g
 
-/** Free text as it may be stored: no PIN, long number, address, date, token, query or key value. */
+/** Free text as it may be stored: no PIN, long number, address, date, token, query, key value, foreign link or line break. */
 export function redactText(text, { max = MESSAGE_MAX, frame = false } = {}) {
   if (typeof text !== 'string') return null
   let out = text
@@ -118,12 +173,14 @@ export function redactText(text, { max = MESSAGE_MAX, frame = false } = {}) {
     .replace(JWT_RE, REDACTED)
     .replace(EMAIL_RE, '[email]')
     .replace(URL_QUERY_RE, '$1')
+    .replace(LINK_RE, (m) => (OWN_LINK_RE.test(m) ? m : '[link]'))
     .replace(SECRET_PAIR_RE, `$1$2${REDACTED}`)
   if (!frame) out = out.replace(DATE_RE, '[date]')
   out = redactFreeText(out, { frame })
   out = out.replace(LONG_TOKEN_RE, (m) => (/^[a-z_.-]+$/i.test(m) && !/\d/.test(m) ? m : REDACTED))
+  out = out.replace(BREAK_RE, ' ')
   // eslint-disable-next-line no-control-regex
-  out = out.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
+  out = out.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
   return out.length > max ? out.slice(0, max - 1) + '…' : out
 }
 
@@ -213,6 +270,79 @@ export function cleanData(v, { depth = 3, keys = 30 } = {}) {
   }
   const out = isPlainObject(v) ? walk(v, 0) : {}
   return JSON.stringify(out).length > 4096 ? { _truncated: true } : out
+}
+
+// ------------------------------------------------------------------ size
+
+// db/050 refuses an event whose frames + breadcrumbs + data take more than
+// 16384 bytes as jsonb (pg_column_size, uncompressed). Each part is bounded
+// on its own, but not their sum (20 breadcrumbs with 4 KB each), and jsonb
+// takes more room than the JSON text (a small number 12 bytes for "1,"). An
+// event is trimmed to this estimate, which is never below the real size
+// (tests/errorTracker.size.test.js), so a rich report is stored, trimmed,
+// instead of being refused by the database (SEC-41).
+export const EVENT_JSON_MAX_BYTES = 16000
+const utf8Bytes = (s) => Buffer.byteLength(s, 'utf8')
+
+/** Base-10000 digit groups of a number as Postgres' numeric keeps it (trailing and leading zero groups dropped). */
+function numericGroups(x) {
+  if (x === 0 || !Number.isFinite(x)) return 0
+  const [mant, e] = Math.abs(x).toExponential().split('e')
+  const digits = mant.replace('.', '').replace(/0+$/, '') || '0'
+  const first = Number(e)
+  const last = first - (digits.length - 1)
+  return Math.floor(first / 4) - Math.floor(last / 4) + 1
+}
+
+/**
+ * An upper bound of pg_column_size(<value>::jsonb): the varlena header, then
+ * per container a header, per child a 4-byte entry (objects: key and value)
+ * and the child's data with its alignment (numerics and containers are
+ * 4-byte aligned).
+ */
+export function jsonbSizeEstimate(v) {
+  const content = (x) => {
+    if (x === null || x === undefined || typeof x === 'boolean') return 0
+    if (typeof x === 'number') return 3 + 8 + 2 * numericGroups(x)
+    if (typeof x === 'string') return utf8Bytes(x)
+    if (Array.isArray(x)) return 3 + 4 + x.reduce((n, y) => n + 4 + content(y === undefined ? null : y), 0)
+    if (typeof x === 'object') {
+      let n = 3 + 4
+      for (const [k, y] of Object.entries(x)) {
+        if (y === undefined) continue
+        n += 8 + utf8Bytes(k) + content(y)
+      }
+      return n
+    }
+    return 0
+  }
+  return 4 + content(v)
+}
+
+/**
+ * Trims a checked event's frames, breadcrumbs and data until their jsonb
+ * fits EVENT_JSON_MAX_BYTES: first the oldest breadcrumbs' details, then the
+ * oldest breadcrumbs, then the extra data, then the lowest frames. What was
+ * cut is marked (data._trimmed). Changes and returns `row`.
+ */
+export function fitEventJson(row, max = EVENT_JSON_MAX_BYTES) {
+  const size = () => jsonbSizeEstimate(row.frames) + jsonbSizeEstimate(row.breadcrumbs) + jsonbSizeEstimate(row.data)
+  if (size() <= max) return row
+  row.frames = [...row.frames]
+  row.breadcrumbs = [...row.breadcrumbs]
+  for (let i = 0; i < row.breadcrumbs.length && size() > max; i++) {
+    if (row.breadcrumbs[i].d) {
+      const { d: _drop, ...rest } = row.breadcrumbs[i]
+      row.breadcrumbs[i] = rest
+    }
+  }
+  while (row.breadcrumbs.length > 1 && size() > max) row.breadcrumbs.shift()
+  if (size() > max) row.data = { _truncated: true }
+  while (row.frames.length > 1 && size() > max) row.frames.pop()
+  if (size() > max) row.breadcrumbs = []
+  if (size() > max) row.frames = []
+  if (!row.data._truncated) row.data = { ...row.data, _trimmed: true }
+  return row
 }
 
 // ------------------------------------------------------------------ grouping
@@ -342,13 +472,13 @@ export function checkClientEvent(e, { now = Date.now(), accountId = null } = {})
     breadcrumbs: cleanBreadcrumbs(e.breadcrumbs),
     data: cleanData(e.data || {})
   }
-  return { row }
+  return { row: fitEventJson(row) }
 }
 
 /** The server's own event of an Error. */
 export function serverEvent(err, { tool = 'server', kind = 'server.exception', view = null, requestId = null, status = null, accountId = null, product = 'openvolley', version = null, build = null, data = null, now = Date.now() } = {}) {
   const e = err instanceof Error ? err : new Error(typeof err === 'string' ? err : String(err?.message || err))
-  return {
+  return fitEventJson({
     uid: randomUUID(),
     client_ts: new Date(now).toISOString(),
     level: 'error',
@@ -383,7 +513,7 @@ export function serverEvent(err, { tool = 'server', kind = 'server.exception', v
     frames: framesOfStack(e.stack),
     breadcrumbs: [],
     data: cleanData({ ...(Number.isInteger(status) ? { status } : {}), ...(isPlainObject(data) ? data : {}) })
-  }
+  })
 }
 
 // ------------------------------------------------------------------ rate limits
@@ -405,6 +535,11 @@ export function createWindowCounter({ max, windowMs, now = Date.now, maxKeys = 2
       if (w.n + n > max) return false
       w.n += n
       return true
+    },
+    /** What the key may still take in its window (nothing is taken). */
+    room(key) {
+      const w = windows.get(key)
+      return !w || now() - w.start >= windowMs ? max : Math.max(0, max - w.n)
     }
   }
 }
@@ -444,15 +579,22 @@ export function deviceLine(e) {
 
 /**
  * @param {{ pool: import('pg').Pool, audit?: Function, clubsOfMany?: Function, log?: Console, now?: () => number,
- *           dailyEventsPerGroup?: number, debounceMs?: number, remindAfterMs?: number, rateLimits?: object }} deps
+ *           dailyEventsPerGroup?: number, debounceMs?: number, remindAfterMs?: number, rateLimits?: object,
+ *           newGroupLimits?: object, maxStoreBytes?: number, anonymousStoreShare?: number, eventsKeptPerGroup?: number }} deps
  */
-export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sourceMaps = null, log = console, now = Date.now, dailyEventsPerGroup = DAILY_EVENTS_PER_GROUP, debounceMs = ALERT_DEBOUNCE_MS, remindAfterMs = REMIND_AFTER_MS, rateLimits = RATE_LIMITS } = {}) {
+export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sourceMaps = null, log = console, now = Date.now, dailyEventsPerGroup = DAILY_EVENTS_PER_GROUP, debounceMs = ALERT_DEBOUNCE_MS, remindAfterMs = REMIND_AFTER_MS, rateLimits = RATE_LIMITS, newGroupLimits = NEW_GROUP_LIMITS, maxStoreBytes = MAX_STORE_BYTES, anonymousStoreShare = ANONYMOUS_STORE_SHARE, eventsKeptPerGroup = EVENTS_KEPT_PER_GROUP } = {}) {
+  const rl = { ...RATE_LIMITS, ...rateLimits }
+  const ng = { ...NEW_GROUP_LIMITS, ...newGroupLimits }
   const limits = {
-    ip: createWindowCounter({ ...rateLimits.ip, now }),
-    device: createWindowCounter({ ...rateLimits.device, now }),
-    total: createWindowCounter({ ...rateLimits.total, now })
+    ip: createWindowCounter({ ...rl.ip, now }),
+    device: createWindowCounter({ ...rl.device, now }),
+    total: createWindowCounter({ ...rl.total, now }),
+    anonymous: createWindowCounter({ ...rl.anonymous, now }),
+    newGroupIp: createWindowCounter({ ...ng.ip, now }),
+    newGroupAnonymous: createWindowCounter({ ...ng.anonymous, now }),
+    newGroupAccount: createWindowCounter({ ...ng.account, now })
   }
-  const counters = { accepted: 0, rejected: 0, dropped: 0, capped: 0, failed: 0, lastFailureAt: null }
+  const counters = { accepted: 0, rejected: 0, dropped: 0, capped: 0, refusedGroups: 0, tooLarge: 0, failed: 0, lastFailureAt: null, storeFull: false, anonymousFull: false }
   const dbError = (where, err) => {
     counters.failed++
     counters.lastFailureAt = new Date(now()).toISOString()
@@ -460,14 +602,105 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
     return fail(503, 'OV_DB_UNAVAILABLE', 'Service unavailable')
   }
 
+  // ---------------------------------------------------------------- the stored volume (SEC-02)
+
+  let volume = null // { bytes, anonymousBytes, at }
+  let volumeSync = null
+  const noticeAt = new Map()
+  const MB = (b) => Math.round(b / 1048576)
+  const eventBytes = (row) => EVENT_ROW_OVERHEAD + utf8Bytes(String(row.message || '')) +
+    jsonbSizeEstimate(row.frames || []) + jsonbSizeEstimate(row.breadcrumbs || []) + jsonbSizeEstimate(row.data || {})
+
+  /**
+   * The two tables' live volume, estimated from their rows (cheap: no TOAST
+   * is read), in all and of what reports without a session brought (their
+   * events, the groups only they fed).
+   */
+  async function syncVolume(q) {
+    const { rows: [r] } = await q.query(
+      `SELECT e.events, e.payload, e.anonymous_events, e.anonymous_payload, g.groups, g.anonymous_groups
+         FROM (SELECT count(*)::bigint AS events,
+                      coalesce(sum(x.size), 0)::bigint AS payload,
+                      count(*) FILTER (WHERE x.anonymous)::bigint AS anonymous_events,
+                      coalesce(sum(x.size) FILTER (WHERE x.anonymous), 0)::bigint AS anonymous_payload
+                 FROM (SELECT coalesce(octet_length(message), 0) + pg_column_size(frames) + pg_column_size(breadcrumbs) + pg_column_size(data) AS size,
+                              (source = 'client' AND account_id IS NULL) AS anonymous
+                         FROM public.error_events) x) e,
+              (SELECT count(*)::bigint AS groups, count(*) FILTER (WHERE anonymous)::bigint AS anonymous_groups FROM public.error_groups) g`)
+    const n = (k) => Number(r?.[k] || 0)
+    volume = {
+      bytes: n('payload') + n('events') * EVENT_ROW_OVERHEAD + n('groups') * GROUP_ROW_OVERHEAD,
+      anonymousBytes: n('anonymous_payload') + n('anonymous_events') * EVENT_ROW_OVERHEAD + n('anonymous_groups') * GROUP_ROW_OVERHEAD,
+      at: now()
+    }
+  }
+
+  /**
+   * Is the store at its ceiling (`full`), and the share of reports without a
+   * session (`anonymousFull`, also when full)? On the caller's client: no
+   * second connection is held.
+   */
+  async function storeQuota(q) {
+    if (!(maxStoreBytes > 0)) return { full: false, anonymousFull: false }
+    const every = counters.storeFull || counters.anonymousFull ? VOLUME_RESYNC_FULL_MS : VOLUME_RESYNC_MS
+    if (!volume || now() - volume.at >= every) {
+      volumeSync ??= syncVolume(q).finally(() => { volumeSync = null })
+      await volumeSync
+    }
+    const full = volume.bytes >= maxStoreBytes
+    const anonymousFull = full || volume.anonymousBytes >= maxStoreBytes * anonymousStoreShare
+    if (full && !counters.storeFull) log.warn?.(`[errors] the error store holds about ${MB(volume.bytes)} MB (OV_ERRORS_MAX_BYTES ${MB(maxStoreBytes)} MB): reports are counted, not stored`)
+    else if (anonymousFull && !counters.anonymousFull) log.warn?.(`[errors] reports without a session hold about ${MB(volume.anonymousBytes)} MB, their share of OV_ERRORS_MAX_BYTES: theirs are counted, not stored`)
+    counters.storeFull = full
+    counters.anonymousFull = anonymousFull
+    return { full, anonymousFull }
+  }
+
+  /** The owner hears of it: one server error an hour per kind (its group alerts as any other). */
+  function notice(key, message) {
+    const t = now()
+    if (t - (noticeAt.get(key) ?? -Infinity) < NOTICE_EVERY_MS) return
+    noticeAt.set(key, t)
+    setImmediate(() => { void captureServer(new Error(message), { kind: 'job.failed', view: 'error tracker' }) })
+  }
+  const noticeFull = () => notice('full', 'the error store is full (OV_ERRORS_MAX_BYTES): reports are counted, not stored')
+  const noticeAnonymousFull = () => notice('anonymous', 'reports without a session have filled their share of the error store (OV_ERRORS_MAX_BYTES): theirs are counted, not stored')
+  const noticeGroupFlood = () => notice('groups', 'reports without a session used up the new-group window (NEW_GROUP_LIMITS.anonymous): new errors of devices without a session wait')
+
+  /**
+   * May this report open a new group? null when it may (the window taken),
+   * 'own' over the caller's own window (its address, its account: counted,
+   * the device drops it), 'shared' over the window of every report without
+   * a session (dropped: the device sends it again later). The shared window
+   * is taken before the address's, so a report it refuses costs the address
+   * nothing. A server error always may.
+   */
+  function groupRefusal(row, ipKey) {
+    if (row.source === 'server') return null
+    if (row.account_id) return limits.newGroupAccount.take(String(row.account_id)) ? null : 'own'
+    const ip = String(ipKey ?? 'unknown')
+    if (limits.newGroupIp.room(ip) < 1) return 'own'
+    if (!limits.newGroupAnonymous.take('all')) return 'shared'
+    limits.newGroupIp.take(ip)
+    return null
+  }
+
   /**
    * Stores one checked event: its group made or updated (counts, versions,
    * regression, alert state), the event itself unless the group's daily cap
-   * is reached. A uid stored before changes nothing. Returns
-   * { stored, duplicate, capped, groupId, alert }.
+   * is reached or the store is full (for a report without a session: its
+   * share). A uid stored before changes nothing. A client report that would
+   * open a group over NEW_GROUP_LIMITS, or while the store is full, changes
+   * nothing either: `refused` 'own' (counted as capped) or 'shared' (the
+   * window of everyone without a session, the store: ingest answers it as
+   * dropped). Returns { stored, duplicate, capped, refused?, groupId, alert }.
+   * @param {object} row  checkClientEvent's row or serverEvent()
+   * @param {{ ipKey?: string }} [opts]  the caller's address bucket (the new-group limit only)
    */
-  async function storeEvent(row) {
+  async function storeEvent(row, { ipKey = null } = {}) {
     const fingerprint = fingerprintOf(row)
+    // a group only reports without a session have fed (SEC-33: a smaller share of the digests)
+    const anonymous = row.source === 'client' && !row.account_id
     const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
@@ -477,21 +710,36 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
         return { stored: false, duplicate: true }
       }
       const t = new Date(now())
+      const quota = await storeQuota(client)
+      // nothing new is stored: the store is full, or the share of reports without a session
+      const full = quota.full || (anonymous && quota.anonymousFull)
       const ins = await client.query(
         `INSERT INTO public.error_groups (fingerprint, product, source, kind, level, title, culprit, first_seen, last_seen,
-                                          event_count, first_version, last_version, stored_day, stored_today)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $8::timestamptz, 0, $9, $9, $8::timestamptz::date, 0)
+                                          event_count, first_version, last_version, stored_day, stored_today, anonymous)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $8::timestamptz, 0, $9, $9, $8::timestamptz::date, 0, $10)
          ON CONFLICT (fingerprint) DO NOTHING
          RETURNING *`,
-        [fingerprint, row.product, row.source, row.kind, row.level, titleOf(row), culpritOf(row), t.toISOString(), row.app_version])
+        [fingerprint, row.product, row.source, row.kind, row.level, titleOf(row), culpritOf(row), t.toISOString(), row.app_version, anonymous])
       const fresh = ins.rows.length > 0
+      const refused = fresh && row.source !== 'server' ? (full ? 'shared' : groupRefusal(row, ipKey)) : null
+      if (refused) {
+        await client.query('ROLLBACK')
+        counters.refusedGroups++
+        if (quota.full) noticeFull()
+        else if (full) noticeAnonymousFull()
+        else if (refused === 'shared') noticeGroupFlood()
+        return { stored: false, duplicate: false, capped: true, refused }
+      }
       const g = fresh
         ? ins.rows[0]
         : (await client.query('SELECT * FROM public.error_groups WHERE fingerprint = $1 FOR UPDATE', [fingerprint])).rows[0]
       const today = t.toISOString().slice(0, 10)
       const storedDay = g.stored_day instanceof Date ? g.stored_day.toISOString().slice(0, 10) : String(g.stored_day || '').slice(0, 10)
       const storedToday = storedDay === today ? Number(g.stored_today) || 0 : 0
-      const capped = storedToday >= dailyEventsPerGroup
+      // past the ceiling only the count grows; a new server group keeps its first event
+      const capped = storedToday >= dailyEventsPerGroup || (full && !(fresh && row.source === 'server'))
+      if (quota.full) noticeFull()
+      else if (full) noticeAnonymousFull()
       if (!capped) {
         const values = EVENT_COLUMNS.map((c) => (JSON_COLUMNS.has(c) ? JSON.stringify(row[c] ?? (c === 'data' ? {} : [])) : row[c] ?? null))
         const e = await client.query(
@@ -537,10 +785,15 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
                 last_version = coalesce($3, last_version), first_version = coalesce(first_version, $3),
                 level = $4, status = $5, regressed = $6, resolved_at = $7, alert_due_at = $8, alert_reason = $11,
                 muted_until = CASE WHEN $5 = 'muted' THEN muted_until END,
-                stored_day = $9::date, stored_today = $10
+                stored_day = $9::date, stored_today = $10, anonymous = anonymous AND $12
           WHERE id = $1`,
-        [g.id, t.toISOString(), row.app_version, level, status, regressed, resolvedAt, due, today, storedToday + (capped ? 0 : 1), alertReason])
+        [g.id, t.toISOString(), row.app_version, level, status, regressed, resolvedAt, due, today, storedToday + (capped ? 0 : 1), alertReason, anonymous])
       await client.query('COMMIT')
+      if (volume) {
+        const added = (capped ? 0 : eventBytes(row)) + (fresh ? GROUP_ROW_OVERHEAD : 0)
+        volume.bytes += added
+        if (anonymous) volume.anonymousBytes += added
+      }
       return { stored: !capped, duplicate: false, capped, groupId: g.id, alert: owes ? reason : null }
     } catch (err) {
       try { await client.query('ROLLBACK') } catch { /* broken connection */ }
@@ -552,38 +805,84 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
 
   /**
    * POST /api/errors. `accountId`: the verified session's account (server.js),
-   * or null. `ipKey`: the caller's address bucket, for the rate limit only.
+   * or null. `ipKey`: the caller's address bucket, for the rate limits only.
+   * 200 { accepted, rejected }: each uid either taken (stored, counted or a
+   * duplicate) or refused for good (OV_ERROR_INVALID, OV_ERROR_TOO_LARGE),
+   * so the device drops both. 202 { accepted, rejected, dropped }: a shared
+   * limit kept `dropped` of them out, the uids in neither list (a rate limit:
+   * all of them, `accepted` empty; the shared new-group window or a full
+   * store: those that would have opened a group). A device sends those again
+   * later (an app with the SEC-19 retry; older apps drop them as before).
    */
   async function ingest({ body, accountId = null, ipKey = 'unknown' } = {}) {
     if (!isPlainObject(body) || !Array.isArray(body.events)) return invalid('events must be an array')
     if (body.events.length === 0) return answer(200, { accepted: [], rejected: [] })
     if (body.events.length > MAX_EVENTS) return invalid(`at most ${MAX_EVENTS} events`)
-    const n = body.events.length
-    const device = body.events.find((e) => typeof e?.device_id === 'string')?.device_id
-    if (!limits.total.take('all', n) || !limits.ip.take(String(ipKey), n) || (device && !limits.device.take(`d:${String(device).slice(0, 64)}`, n))) {
+    // only an object can be a report: anything else costs no budget and is never stored
+    const objects = body.events.filter(isPlainObject)
+    const n = objects.length
+    const device = objects.find((e) => typeof e.device_id === 'string')?.device_id
+    // the caller's own budgets first: a caller over them spends nobody else's (SEC-19)
+    if (n && (!limits.ip.take(String(ipKey), n) || (device && !limits.device.take(`d:${String(device).slice(0, 64)}`, n)))) {
       counters.dropped += n
       return answer(202, { accepted: [], rejected: [], dropped: n })
     }
-    const accepted = []
     const rejected = []
+    const rows = []
     const t = now()
-    try {
-      for (const e of body.events) {
-        const r = checkClientEvent(e, { now: t, accountId })
-        if (r.code) {
+    for (const e of body.events) {
+      const r = checkClientEvent(e, { now: t, accountId })
+      if (r.code) {
+        counters.rejected++
+        if (typeof e?.uid === 'string' && e.uid.length <= 64) rejected.push({ uid: e.uid, code: r.code })
+        continue
+      }
+      rows.push(r.row)
+    }
+    // the shared budgets, per product, for the checked events only; without a
+    // session only a share of them (the rest is for signed-in accounts)
+    const signedIn = UUID_RE.test(String(accountId || ''))
+    const perProduct = new Map()
+    for (const r of rows) perProduct.set(r.product, (perProduct.get(r.product) || 0) + 1)
+    const fits = [...perProduct].every(([p, k]) => limits.total.room(p) >= k && (signedIn || limits.anonymous.room(p) >= k))
+    if (!fits) {
+      counters.dropped += rows.length
+      return answer(202, { accepted: [], rejected, dropped: rows.length })
+    }
+    for (const [p, k] of perProduct) {
+      limits.total.take(p, k)
+      if (!signedIn) limits.anonymous.take(p, k)
+    }
+    const accepted = []
+    let dropped = 0
+    for (const row of rows) {
+      let s
+      try {
+        s = await storeEvent(row, { ipKey })
+      } catch (err) {
+        // the database's own limit (db/050 CHECK) refuses this report alone,
+        // for good: the device drops it instead of sending it again (SEC-41)
+        if (err?.code === '23514') {
+          counters.tooLarge++
           counters.rejected++
-          if (typeof e?.uid === 'string' && e.uid.length <= 64) rejected.push({ uid: e.uid, code: r.code })
+          log.warn?.(`[errors] a report refused by the database: ${String(err?.constraint || err?.message || '').slice(0, 80)}`)
+          rejected.push({ uid: row.uid, code: 'OV_ERROR_TOO_LARGE' })
           continue
         }
-        const s = await storeEvent(r.row)
-        if (s.capped) counters.capped++
-        if (!s.duplicate) counters.accepted++
-        accepted.push(r.row.uid)
+        return dbError('ingest', err)
       }
-      return answer(200, { accepted, rejected })
-    } catch (err) {
-      return dbError('ingest', err)
+      if (s.refused === 'shared') {
+        // not this caller's limit: kept on the device and sent again (ET-4)
+        counters.dropped++
+        dropped++
+        continue
+      }
+      if (s.capped) counters.capped++
+      if (!s.duplicate) counters.accepted++
+      accepted.push(row.uid)
     }
+    if (dropped) return answer(202, { accepted, rejected, dropped })
+    return answer(200, { accepted, rejected })
   }
 
   /** The server's own error (server.js). Never throws; resolves to the store result or null. */
@@ -658,7 +957,7 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
   const ORDERS = { last_seen: 'g.last_seen DESC', count: 'g.event_count DESC, g.last_seen DESC', new: 'g.first_seen DESC' }
   const GROUP_COLUMNS = `g.id, g.product, g.source, g.kind, g.level, g.title, g.culprit, g.first_seen, g.last_seen, g.event_count,
     g.first_version, g.last_version, g.status, g.important, g.muted_until, g.resolved_at, g.resolved_in_version, g.regressed,
-    g.note, g.commit_ref, g.last_alert_at`
+    g.note, g.commit_ref, g.last_alert_at, g.anonymous`
   const groupOut = (r) => ({
     ...r,
     first_seen: iso(r.first_seen),
@@ -901,23 +1200,59 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
     }
   }
 
-  /** DELETE /api/admin/errors/events?device=|account=&confirm=yes: delete on request (audited). */
+  /**
+   * DELETE /api/admin/errors/events?device=|account=&confirm=yes: delete on
+   * request (audited). ?anonymous=1&confirm=yes: every group only reports
+   * without a session fed (error_groups.anonymous) and not marked important,
+   * with its events: a flood of junk reports is cleaned up from the Errors
+   * tab (review ET-3). The stored volume is read again at the next report.
+   */
   async function deleteEvents({ actorId = null, query } = {}) {
     if (queryValue(query, 'confirm') !== 'yes') return invalid('confirm=yes is required')
     const device = queryValue(query, 'device')
     const account = queryValue(query, 'account')
-    if (!device && !account) return invalid('device or account')
+    const anonymous = queryValue(query, 'anonymous')
+    if (anonymous != null && anonymous !== '1') return invalid('anonymous')
+    const onlyAnonymous = anonymous === '1'
+    if (onlyAnonymous && (device || account)) return invalid('anonymous without device or account')
+    if (!onlyAnonymous && !device && !account) return invalid('device or account')
     if (device && !ID_TEXT_RE.test(device)) return invalid('device')
     if (account && !UUID_RE.test(account)) return invalid('account')
     try {
       const client = await connectClient(pool, log)
       try {
         await client.query('BEGIN')
-        const r = await client.query(
-          `DELETE FROM public.error_events WHERE ${device ? 'device_id = $1' : 'account_id = $1::uuid'}`, [device || account])
-        if (audit) await audit(client, { actorId, action: 'errors.delete', targetUserId: account || null, details: { device: device || null, account: account || null, rows: r.rowCount } })
+        let rows = 0
+        let groups = null
+        if (onlyAnonymous) {
+          // a chunk of groups at a time (each statement well inside the app
+          // role's 10 s), locked first: a report in flight into one waits,
+          // and none turns signed-in before it goes
+          groups = 0
+          for (;;) {
+            const { rows: chunk } = await client.query(
+              'SELECT id FROM public.error_groups WHERE anonymous AND NOT important ORDER BY id LIMIT $1 FOR UPDATE', [DELETE_CHUNK])
+            if (!chunk.length) break
+            const ids = chunk.map((r) => r.id)
+            rows += (await client.query('DELETE FROM public.error_events WHERE group_id = ANY($1::uuid[])', [ids])).rowCount
+            groups += (await client.query('DELETE FROM public.error_groups WHERE id = ANY($1::uuid[])', [ids])).rowCount
+            if (chunk.length < DELETE_CHUNK) break
+          }
+        } else {
+          rows = (await client.query(
+            `DELETE FROM public.error_events WHERE ${device ? 'device_id = $1' : 'account_id = $1::uuid'}`, [device || account])).rowCount
+        }
+        if (audit) {
+          await audit(client, {
+            actorId,
+            action: 'errors.delete',
+            targetUserId: account || null,
+            details: { device: device || null, account: account || null, ...(onlyAnonymous ? { anonymous: true, groups } : {}), rows }
+          })
+        }
         await client.query('COMMIT')
-        return answer(200, { deleted: r.rowCount })
+        volume = null
+        return answer(200, { deleted: rows, ...(onlyAnonymous ? { groups } : {}) })
       } catch (err) {
         try { await client.query('ROLLBACK') } catch { /* broken connection */ }
         throw err
@@ -933,7 +1268,9 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
 
   /**
    * The groups whose digest is due (alert_due_at passed, open, an error),
-   * oldest due first, each with what a mail needs and no name or address:
+   * oldest due first (those only reports without a session fed after the
+   * others: lib/errorAlerts.js gives them a smaller share), each with what a
+   * mail needs and no name or address:
    * the newest event, the counts since the last alert, tools, versions,
    * devices, and the members' roles + clubs ("guest" when none).
    */
@@ -943,7 +1280,7 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
     const { rows } = await pool.query(
       `SELECT ${GROUP_COLUMNS}, g.alert_due_at, g.alert_reason FROM public.error_groups g
         WHERE g.alert_due_at IS NOT NULL AND g.alert_due_at <= $1::timestamptz
-        ORDER BY g.alert_due_at, g.id LIMIT $2`, [new Date(now()).toISOString(), limit])
+        ORDER BY g.anonymous, g.alert_due_at, g.id LIMIT $2`, [new Date(now()).toISOString(), limit])
     const out = []
     for (const g of rows) {
       // since the last digest (database time, as the events' `at`); a group
@@ -1000,14 +1337,29 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
       [ids, new Date(until).toISOString()])
   }
 
-  /** Retention (daily): events after 90 days; groups without events, not open, after 180. */
+  /**
+   * Retention (daily): events after 90 days, and of a group only its newest
+   * EVENTS_KEPT_PER_GROUP; groups without events after 180 days, whatever
+   * their status (an open group nobody triaged went too, SEC-02). `events`:
+   * all events deleted, `trimmed` the part of them past the per-group cap.
+   */
   async function purge({ at = new Date(now()) } = {}) {
     const events = await pool.query(
       `DELETE FROM public.error_events WHERE at < $1::timestamptz - make_interval(days => $2)`, [at.toISOString(), EVENT_RETENTION_DAYS])
+    const trimmed = await pool.query(
+      `DELETE FROM public.error_events e USING (
+         SELECT id FROM (
+           SELECT id, row_number() OVER (PARTITION BY group_id ORDER BY id DESC) AS rn
+             FROM public.error_events
+            WHERE group_id IN (SELECT group_id FROM public.error_events GROUP BY group_id HAVING count(*) > $1)) x
+          WHERE x.rn > $1) d
+        WHERE e.id = d.id`, [eventsKeptPerGroup])
     const groups = await pool.query(
-      `DELETE FROM public.error_groups g WHERE g.status <> 'open' AND g.last_seen < $1::timestamptz - make_interval(days => $2)
+      `DELETE FROM public.error_groups g WHERE g.last_seen < $1::timestamptz - make_interval(days => $2)
           AND NOT EXISTS (SELECT 1 FROM public.error_events e WHERE e.group_id = g.id)`, [at.toISOString(), GROUP_RETENTION_DAYS])
-    return { events: events.rowCount, groups: groups.rowCount }
+    // the volume is read from the tables again at the next report
+    volume = null
+    return { events: events.rowCount + trimmed.rowCount, trimmed: trimmed.rowCount, groups: groups.rowCount }
   }
 
   /** Counters for the internal /health body (no values). */

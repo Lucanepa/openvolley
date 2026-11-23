@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getCloudApiUrl } from '../utils/backendConfig'
-import { formatLiveCode } from '../utils/globalLive'
+import { formatLiveCode, setNumberOf } from '../utils/globalLive'
 
 export const POLL_MS = 5000
 
@@ -87,7 +87,7 @@ function CourtCard({ court: c, t }) {
     ? t('globalLive.page.final')
     : c.timeout ? t('globalLive.page.timeout')
       : c.interval ? t('globalLive.page.interval')
-        : c.currentSet ? t('globalLive.page.set', { n: c.currentSet }) : ''
+        : c.currentSet ? t('globalLive.page.set', { n: setNumberOf(c) }) : ''
   return (
     <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-stone-200" data-testid="tournament-live-court">
       <div className="mb-3 flex items-center justify-between gap-2 text-sm text-stone-500">

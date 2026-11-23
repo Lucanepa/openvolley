@@ -37,21 +37,26 @@ pub const ROOM_MAX: usize = 128;
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 /// total: live codes; fail_per_ip: wrong codes per address and window
-/// (guesses); lookup_per_ip: every lookup per address and window (a board
-/// polling /api/display/live every 2 s makes 150); set_per_owner: set /
-/// revoke per scorer socket and window; tombstones: ended codes remembered.
+/// (guesses); lookup_per_ip: every other lookup per address and window (a
+/// board polling /api/display/live every 2 s makes 150); hit_per_ip: lookups
+/// per address and window of the codes it resolved before (every board of a
+/// hall behind one NAT address polling); known: the (address, code) pairs
+/// remembered for that; set_per_owner: set / revoke per scorer socket and
+/// window; tombstones: ended codes remembered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Caps {
     pub total: usize,
     pub fail_per_ip: u32,
     pub lookup_per_ip: u32,
+    pub hit_per_ip: u32,
+    pub known: usize,
     pub set_per_owner: u32,
     pub tombstones: usize,
 }
 
 #[cfg_attr(not(test), allow(dead_code))] // the JS core's API; the relay uses the LAN side
-pub const CLOUD_CAPS: Caps = Caps { total: 5000, fail_per_ip: 20, lookup_per_ip: 600, set_per_owner: 30, tombstones: 5000 };
-pub const LAN_CAPS: Caps = Caps { total: 200, fail_per_ip: 60, lookup_per_ip: 1200, set_per_owner: 60, tombstones: 500 };
+pub const CLOUD_CAPS: Caps = Caps { total: 5000, fail_per_ip: 20, lookup_per_ip: 600, hit_per_ip: 6000, known: 20000, set_per_owner: 30, tombstones: 5000 };
+pub const LAN_CAPS: Caps = Caps { total: 200, fail_per_ip: 60, lookup_per_ip: 1200, hit_per_ip: 12000, known: 2000, set_per_owner: 60, tombstones: 500 };
 
 /// The live-state columns only a socket with the match's PIN gets (the same
 /// list as backend/lib/publicColumns.js LIVE_STATE_PRIVATE_COLUMNS): line-ups
@@ -344,6 +349,8 @@ pub struct DisplayCodes {
     dead: Ordered<Tombstone>,
     /// key -> (count, start, window)
     rate: HashMap<String, (u32, u64, u64)>,
+    /// "<ipKey>\0<hash>": the address resolved that live code (oldest first)
+    known: Ordered<()>,
     ended: Vec<Ended>,
     sweeper: bool,
     sweeper_wanted: bool,
@@ -360,6 +367,7 @@ impl DisplayCodes {
             by_room: HashMap::new(),
             dead: Ordered::default(),
             rate: HashMap::new(),
+            known: Ordered::default(),
             ended: Vec::new(),
             sweeper: false,
             sweeper_wanted: false,
@@ -475,6 +483,12 @@ impl DisplayCodes {
             }
         }
         self.rate.retain(|_, (_, start, w)| t.saturating_sub(*start) < *w);
+        for k in self.known.keys() {
+            let h = k.rsplit('\0').next().unwrap_or_default();
+            if self.by_hash.get(h).is_none() && self.dead.get(h).is_none() {
+                self.known.remove(&k);
+            }
+        }
     }
 
     fn valid_room(room: Option<&str>) -> Option<&str> {
@@ -569,6 +583,27 @@ impl DisplayCodes {
 
     /// A board's lookup. `ip_key`: the caller's address (`ip_key`).
     pub fn resolve(&mut self, code: &Value, ip_key: &str) -> Result<Resolved, Refusal> {
+        let c = normalize_code_value(code);
+        let hash = c.as_deref().map(code_key);
+        // a code this address resolved before: its own budget, never the wrong codes'
+        let known_key = hash.as_deref().map(|h| format!("{ip_key}\0{h}"));
+        if let (Some(k), Some(h)) = (known_key.as_deref(), hash.as_deref()) {
+            if self.known.get(k).is_some() {
+                if let Some(e) = self.live(h) {
+                    let wait = self.limited(format!("hit:{ip_key}"), self.caps.hit_per_ip);
+                    if wait > 0 {
+                        return Err(Refusal { reason: "rate-limited", retry_after: Some(wait) });
+                    }
+                    return Ok(Resolved { room: e.room, ends_at: e.ends_at, hash: e.hash });
+                }
+                // ended: said so while its tombstone lasts (the address knew the code)
+                let t = self.t();
+                if self.dead.get(h).is_some_and(|d| t < d.until) {
+                    return Err(refusal("ended"));
+                }
+                self.known.remove(k);
+            }
+        }
         // over the wrong-code budget: refused before any comparison
         let blocked = self.over(&format!("fail:{ip_key}"), self.caps.fail_per_ip);
         if blocked > 0 {
@@ -578,9 +613,15 @@ impl DisplayCodes {
         if retry > 0 {
             return Err(Refusal { reason: "rate-limited", retry_after: Some(retry) });
         }
-        let c = normalize_code_value(code);
-        let hash = c.as_deref().map(code_key);
         if let Some(e) = hash.as_deref().and_then(|h| self.live(h)) {
+            if self.known.len() >= self.caps.known {
+                if let Some(first) = self.known.first_key() {
+                    self.known.remove(&first);
+                }
+            }
+            if let Some(k) = known_key {
+                self.known.insert(k, ());
+            }
             return Ok(Resolved { room: e.room, ends_at: e.ends_at, hash: e.hash });
         }
         self.limited(format!("fail:{ip_key}"), self.caps.fail_per_ip);
@@ -742,6 +783,8 @@ mod tests {
                     "total" => caps.total = n as usize,
                     "failPerIp" => caps.fail_per_ip = n as u32,
                     "lookupPerIp" => caps.lookup_per_ip = n as u32,
+                    "hitPerIp" => caps.hit_per_ip = n as u32,
+                    "known" => caps.known = n as usize,
                     "setPerOwner" => caps.set_per_owner = n as u32,
                     "tombstones" => caps.tombstones = n as usize,
                     other => panic!("unknown cap {other}"),

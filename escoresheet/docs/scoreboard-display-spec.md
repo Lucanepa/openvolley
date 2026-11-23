@@ -37,6 +37,7 @@ The device label was chosen as `display`, not `scoreboard`, on purpose. In the r
 
 - This message goes **only to the room's scoreboard sockets**, the ones that proved the match with an accepted sync. Referee, bench, livescore and display sockets never get it.
 - `present` is true while at least one open display socket follows the room, whether it is in the room or waiting for it.
+- On the **cloud relay** a display counts (and its page is passed on) only for a room it proved: it follows the room by its scoreboard code, or it subscribed with a PIN or match token of the match that the relay accepted, or it connects from the same public address as one of the room's scoreboard sockets (the hall's NAT: Point Hub with "OpenVolley online" follows the hall's cloud match this way, with no PIN or code, the same rule `/api/match/list` lists a hall's own matches by). Room keys are public on the cloud, so any socket could otherwise name itself a display and set the scorer's settings page. The LAN relays count every display in the room. The confirm dialog below is the guard against a device on the hall's own network.
 - `settingsUrl` is the kept page of the display that subscribed most recently with a usable page. It is `null` otherwise, and always `null` when `present` is false.
 - When the message is sent:
   - to a socket right after its first accepted sync of the room, with the current state (`present: false` included);
@@ -53,7 +54,7 @@ Older relays send nothing. The scorer then shows no row, which is the same as ha
 
 The page is checked again before it is offered, and nothing from the relay is trusted as it came. The scorer accepts the same private-LAN rule, plus one more case: the URL's host is the host the scorer page itself was loaded from (never `localhost` or loopback).
 
-The menu row (`components/matchMenu.jsx`, key `scoreboard-settings`) opens the page through `openAppWindow`:
+The menu row (`components/matchMenu.jsx`, key `scoreboard-settings`) first asks "Open the scoreboard settings?" and shows the page's host (`useScoreboardDisplay`, the app's own dialog). Only then does it open the page through `openAppWindow`:
 - **Browser:** a new tab, with `noopener`.
 - **Desktop app:** the system browser.
 - **Android app:** Android's browser.

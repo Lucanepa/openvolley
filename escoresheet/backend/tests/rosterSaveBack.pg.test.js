@@ -3,7 +3,14 @@
  * rosters fill the teams' saved teams and the club's lists; the latest
  * official match's numbers win; nobody is removed; the sides are mapped by
  * name; a player of the other gender, a test match and game 0 are left
- * alone. Made-up clubs and people only.
+ * alone. Owner decision 2026-11-23 no. 2 (PERM-04), which this file pinned
+ * the other way before: only a CLOSED match saves back, the writer's own
+ * club's team at once (the writer the actor); another club's team a
+ * suggestion only (tests/rosterSaveBack.closedOnly.pg.test.js has the rest).
+ * The other team here is of NO club: review CR-2 (a suggestion before, that
+ * nobody could open): its saved team gets the people add-only, no number
+ * changes (tests/rosterSaveBack.noClub.pg.test.js has the rest). Made-up
+ * clubs and people only.
  *
  * Needs PG_TEST_URL (see tests/helpers/pgTestDb.js).
  */
@@ -26,18 +33,21 @@ const p = (number, first, last, dob = null, extra = {}) => ({ number, first_name
 const b = (role, first, last, dob = null) => ({ role, first_name: first, last_name: last, dob })
 
 describe('rosterSaveBack: official rosters to saved teams and club lists', { skip: SKIP_PG }, () => {
-  let tdb, pool, raw, saveBack, savedTeams, licencesOf, club, logger
+  let tdb, pool, raw, saveBack, savedTeams, licencesOf, club, logger, writer
   const season = seasonOf(new Date())
   const label = seasonLabel(season)
 
-  async function match (gameN, { status = 'live', test = false, home, away, playersHome = [], playersAway = [], benchHome = [], benchAway = [] } = {}) {
+  // a closed match (db/007 closes approved / final) made by the writer, a scorer of VBC Musterdorf
+  async function match (gameN, { status = 'final', test = false, home, away, playersHome = [], playersAway = [], benchHome = [], benchAway = [] } = {}) {
     const { rows: [m] } = await raw.query(
-      `INSERT INTO public.matches (external_id, game_n, status, test, home_team, away_team, players_home, players_away, bench_home, bench_away)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, official_season`,
+      `INSERT INTO public.matches (external_id, game_n, status, test, home_team, away_team, players_home, players_away, bench_home, bench_away, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, official_season`,
       [`match_sb_${gameN}_${Math.random().toString(36).slice(2, 8)}`, gameN, status, test, JSON.stringify({ name: home }), JSON.stringify({ name: away }),
-        JSON.stringify(playersHome), JSON.stringify(playersAway), JSON.stringify(benchHome), JSON.stringify(benchAway)])
+        JSON.stringify(playersHome), JSON.stringify(playersAway), JSON.stringify(benchHome), JSON.stringify(benchAway), writer])
     return m.id
   }
+  const suggestionsOf = async (matchId) => (await raw.query(
+    'SELECT side, team_name, club_id, status, actor_id, payload FROM public.roster_suggestions WHERE match_id = $1 ORDER BY side', [matchId])).rows
   async function squadOf (name) {
     const { rows: [t] } = await raw.query(
       `SELECT t.id, t.club, c.season FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
@@ -54,11 +64,15 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     tdb = await createTestDatabase('save_back')
     raw = new pg.Client({ connectionString: tdb.url })
     await raw.connect()
+    // the test's own edits of closed matches below (db/007 freezes them)
+    await raw.query("SET ov.allow_closed = 'on'")
     pool = new pg.Pool({ connectionString: tdb.url })
     logger = quietLogger()
     const { rows: [c] } = await raw.query("INSERT INTO public.clubs (name) VALUES ('VBC Musterdorf') RETURNING id")
     club = c.id
     await raw.query('INSERT INTO public.club_teams (club_id, team_name) VALUES ($1, $2)', [club, H1])
+    writer = (await raw.query("INSERT INTO auth.users (id, email) VALUES (gen_random_uuid(), 'writer-sb@example.ch') RETURNING id")).rows[0].id
+    await raw.query('INSERT INTO public.account_clubs (user_id, club_id) VALUES ($1, $2)', [writer, club])
     // 960001: H1 at home; 960002 later the same day, H2 at home (the scorer keeps H1 on the left);
     // 960003 a test; 960004 a team of the other gender's game
     await raw.query(`INSERT INTO public.svrz_games (game_number, team_home, team_away, league, gender, datetime) VALUES
@@ -85,7 +99,7 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
   })
 
   let first
-  it('an official match past its coin toss: both teams get their saved team, the club its lists', async () => {
+  it('a closed official match: the writer\'s club\'s team gets its saved team and lists, the team of no club its people add-only', async () => {
     first = await match(960001, {
       home: H1,
       away: H2,
@@ -100,8 +114,8 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     })
     const r = await saveBack.run(first)
     // (960002 is later the same day, but nobody has scored it yet: this match is the latest)
-    assert.deepEqual(r.sides.map((s) => [s.side, s.team, s.created, s.latest, s.changed]), [['home', H1, true, true, true], ['away', H2, true, true, true]],
-      JSON.stringify(r))
+    assert.deepEqual(r.sides.map((s) => [s.side, s.team, s.own, s.add_only, s.created, s.latest, s.changed, s.suggested]),
+      [['home', H1, true, undefined, true, true, true, undefined], ['away', H2, false, true, true, false, true, undefined]], JSON.stringify(r))
     const h1 = await squadOf(H1)
     assert.deepEqual(numbers(h1), { Muster: 7, Beispiel: 10, Ohnelizenz: 3, Datum: 5 })
     assert.deepEqual(h1.players.map((x) => [x.last_name, x.license_number, x.is_captain, x.is_libero, x.active]), [
@@ -109,11 +123,12 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     ])
     assert.equal(h1.club, 'VBC Musterdorf')
     assert.deepEqual(h1.staff.map((s) => [s.role, s.last_name, s.license_number]), [['Coach', 'Trainer', '5001'], ['Medic', 'Medic', '5002']])
-    // the other team is no club's: a saved team all the same, no club name, no list
+    // the other team is of no club (CR-2): a saved team all the same, add-only, no club name, no list, no suggestion
     const h2 = await squadOf(H2)
     assert.deepEqual(Object.fromEntries(h2.players.map((x) => [x.first_name, x.number])), { Eva: 1, Finn: 2 })
     assert.deepEqual(h2.staff.map((s) => s.last_name), ['Gastcoach'])
     assert.equal(h2.club, null)
+    assert.deepEqual(await suggestionsOf(first), [])
     // the club's lists: the licences it lacked, as 'match' rows without a gender; the
     // upload's row stays as it was; the medic is no coach; nobody without a licence
     assert.deepEqual(await clubRows(), [
@@ -122,9 +137,11 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
       { list: 'players', sv_number: '100002', last_name: 'Upload', first_name: 'Name', gender: 'm', source: 'import' },
       { list: 'players', sv_number: '700001', last_name: 'Andere', first_name: 'Frida', gender: 'f', source: 'import' }
     ])
-    // audited: counts and ids, never a name or a licence
-    const { rows: audit } = await raw.query("SELECT match_id, details FROM public.audit_log WHERE action = 'team.squad.match' ORDER BY at, id")
+    // audited: the writer, counts and ids, never a name or a licence
+    const { rows: audit } = await raw.query("SELECT actor_id, match_id, details FROM public.audit_log WHERE action IN ('team.squad.match', 'team.squad.suggestion') ORDER BY at, id")
+    assert.deepEqual(audit.map((a) => a.actor_id), [writer, writer])
     assert.equal(audit.length, 2)
+    assert.deepEqual(audit.map((a) => [a.details.side, a.details.add_only]), [['home', undefined], ['away', true]])
     assert.equal(audit[0].match_id, first)
     assert.equal(audit[0].details.game_number, '960001')
     assert.equal(audit[0].details.side, 'home')
@@ -138,7 +155,8 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
   it('the same match again: nothing changes, nothing is audited', async () => {
     const r = await saveBack.run(first)
     assert.deepEqual(r.sides.map((s) => s.changed), [false, false])
-    assert.equal((await raw.query("SELECT count(*)::int AS n FROM public.audit_log WHERE action = 'team.squad.match'")).rows[0].n, 2)
+    assert.equal((await raw.query("SELECT count(*)::int AS n FROM public.audit_log WHERE action IN ('team.squad.match', 'team.squad.suggestion')")).rows[0].n, 2)
+    assert.equal((await suggestionsOf(first)).length, 0)
   })
 
   let second
@@ -151,14 +169,19 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
       playersAway: [p(9, 'Eva', 'Gast', '200001')]
     })
     const r = await saveBack.run(second)
-    assert.deepEqual(r.sides.map((s) => [s.side, s.team, s.latest]), [['home', H1, true], ['away', H2, true]])
+    assert.deepEqual(r.sides.map((s) => [s.side, s.team, s.latest]), [['home', H1, true], ['away', H2, false]])
     const h1 = await squadOf(H1)
     assert.deepEqual(numbers(h1), { Muster: 10, Beispiel: null, Ohnelizenz: 3, Datum: 5, Neu: 4 })
     assert.equal(h1.players.length, 5, 'nobody is removed')
     assert.equal(h1.staff.length, 2)
+    // the team of no club, add-only (CR-2): the match's 9 does not renumber Eva
     const h2 = await squadOf(H2)
-    assert.deepEqual(Object.fromEntries(h2.players.map((x) => [x.first_name, x.number])), { Eva: 9, Finn: 2 })
-    assert.ok((await clubRows()).some((x) => x.sv_number === '100004' && x.source === 'match'))
+    assert.deepEqual(Object.fromEntries(h2.players.map((x) => [x.first_name, x.number])), { Eva: 1, Finn: 2 })
+    assert.deepEqual(await suggestionsOf(second), [])
+    const row = (await clubRows()).find((x) => x.sv_number === '100004')
+    assert.equal(row?.source, 'match')
+    const { rows: [imp] } = await raw.query("SELECT imported_by FROM public.club_licences WHERE club_id = $1 AND sv_number = '100004'", [club])
+    assert.equal(imp.imported_by, writer, 'the writer as imported_by')
   })
 
   it('the earlier match written again later: its numbers do not come back', async () => {
@@ -199,10 +222,12 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     assert.ok(!(await clubRows()).some((x) => ['100099', '100098', '100097'].includes(x.sv_number)))
   })
 
-  it('before the coin toss: nothing yet', async () => {
-    await raw.query("UPDATE public.matches SET status = 'setup' WHERE id = $1", [second])
-    assert.deepEqual(await saveBack.run(second), { skipped: 'no_coin_toss' })
-    await raw.query("UPDATE public.matches SET status = 'ended' WHERE id = $1", [second])
+  it('not closed: nothing (before the coin toss, and after it too)', async () => {
+    for (const status of ['setup', 'live', 'ended']) {
+      await raw.query('UPDATE public.matches SET status = $2 WHERE id = $1', [second, status])
+      assert.deepEqual(await saveBack.run(second), { skipped: 'not_closed' }, status)
+    }
+    await raw.query("UPDATE public.matches SET status = 'final' WHERE id = $1", [second])
   })
 
   it('a team the names do not point to is left alone', async () => {
@@ -233,8 +258,9 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     assert.ok(!(await clubRows()).some((x) => x.sv_number === '100021'))
   })
 
-  it('note(): a write of an official match waits for its run; one of a test match does not', async () => {
-    saveBack.note([{ table: 'matches', eventType: 'UPDATE', row: { id: second, test: false, game_n: 960002, status: 'ended' } }])
+  it('note(): a write of a closed official match waits for its run; one of a test match does not', async () => {
+    saveBack.note([{ table: 'matches', eventType: 'UPDATE', row: { id: first, test: false, game_n: 960001, status: 'ended' } }])
+    saveBack.note([{ table: 'matches', eventType: 'UPDATE', row: { id: second, test: false, game_n: 960002, status: 'final' } }])
     saveBack.note([{ table: 'matches', eventType: 'UPDATE', row: { id: first, test: true, game_n: 960001, status: 'live' } }])
     assert.deepEqual(saveBack.pending(), [second])
     await saveBack.flush()

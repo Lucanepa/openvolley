@@ -128,11 +128,18 @@ export function matchAccessHeaders(matchId) {
  * Validate PIN and get match data from server.
  * `matchId` (its seed key) or `gameNumber`: the match the tablet picked; the
  * relay compares the PIN with that match only (a PIN two matches share is
- * refused with 409 'game-number-required' when none is named). Relays from
- * before 2026-11 ignore both and take the first match with the PIN.
+ * refused with 409 'game-number-required' when none is named). With only a
+ * game number, the one match the relay listed under it (listAvailableMatches,
+ * listedMatchKey) is named by its key: the relay then checks the PIN in that
+ * match's own brute-force scope, not among every match it holds (audit
+ * 2026-11, SEC-06). Relays from before 2026-11 ignore both and take the
+ * first match with the PIN.
  */
 export async function validatePin(pin, type = 'referee', { matchId = null, gameNumber = null } = {}) {
   const serverUrl = getServerUrl()
+  const named = matchId != null && matchId !== ''
+    ? String(matchId)
+    : (gameNumber != null && gameNumber !== '' ? listedMatchKey('relay', gameNumber) : null)
 
   try {
     const response = await fetch(`${serverUrl}/api/match/validate-pin`, {
@@ -143,8 +150,8 @@ export async function validatePin(pin, type = 'referee', { matchId = null, gameN
       body: JSON.stringify({
         pin: String(pin).trim(),
         type,
-        ...(matchId != null && matchId !== '' ? { matchId: String(matchId) } : {}),
-        ...(matchId == null && gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {})
+        ...(named ? { matchId: named } : {}),
+        ...(!named && gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {})
       })
     })
 
@@ -1570,6 +1577,48 @@ export async function updateMatchData(matchId, updates, { pin = null } = {}) {
   }
 }
 
+// The match keys the tablet pickers listed last (listAvailableMatches*), by
+// game number: a PIN check that knows only the game picked (two listed rows
+// share the number, a numeric LAN id) names its match from them when exactly
+// one listed match carries that number, so the backend and the relay compare
+// the PIN with that match only, in its own brute-force scope, and do not look
+// it up among every live match (audit 2026-11, SEC-06). 'cloud': the cloud
+// rows' external_ids; 'relay': the relay's room keys (indoor). Kept
+// PICKER_KEYS_TTL_MS after the list was read.
+const PICKER_KEYS_TTL_MS = 15 * 60 * 1000
+const pickerKeys = { cloud: new Map(), relay: new Map() } // game number -> { keys: Set, at }
+const gameKeyOf = (n) => (n === undefined || n === null ? '' : String(n).trim())
+
+/** Remember the match keys of a picker list (replaces what that source listed before). */
+function rememberPickerKeys(source, rows, now = Date.now()) {
+  const map = pickerKeys[source]
+  if (!map || !Array.isArray(rows)) return
+  map.clear()
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || (source === 'relay' && row.sportType === 'beach')) continue
+    const game = gameKeyOf(row.gameNumber)
+    const key = source === 'cloud' ? row.external_id : row.id
+    // a numeric id is a LAN relay's own: no cloud match and no seed key
+    if (!game || typeof key !== 'string' || !key.trim() || /^\d+$/.test(key.trim())) continue
+    const e = map.get(game) || { keys: new Set(), at: now }
+    e.keys.add(key.trim())
+    map.set(game, e)
+  }
+}
+
+/** The one match key `source` listed under `gameNumber` (fresh), else null. */
+export function listedMatchKey(source, gameNumber, now = Date.now()) {
+  const e = pickerKeys[source]?.get(gameKeyOf(gameNumber))
+  if (!e || now - e.at > PICKER_KEYS_TTL_MS || e.keys.size !== 1) return null
+  return e.keys.values().next().value
+}
+
+/** Forget the listed match keys (tests, leaving the picker). */
+export function forgetListedMatches() {
+  pickerKeys.cloud.clear()
+  pickerKeys.relay.clear()
+}
+
 /**
  * List available matches from server (for game number dropdown)
  */
@@ -1590,6 +1639,7 @@ export async function listAvailableMatches({ test = false } = {}) {
     }
 
     const result = await response.json()
+    if (result?.success !== false && Array.isArray(result?.matches)) rememberPickerKeys('relay', result.matches)
     return result
   } catch (error) {
     console.error('[listAvailableMatches] Error:', error.message)
@@ -1675,6 +1725,7 @@ export async function listAvailableMatchesSupabase({ now = Date.now() } = {}) {
     }
 
     const matches = data.map((m) => ({ ...cloudPickerRow(m), refereeConnectionEnabled: true }))
+    rememberPickerKeys('cloud', matches)
     return { success: true, matches }
   } catch (error) {
     console.error('[listAvailableMatchesSupabase] Exception:', error)
@@ -1705,6 +1756,7 @@ export async function listAvailableMatchesForBenchSupabase({ now = Date.now() } 
         awayBenchEnabled: connections.away_bench_enabled
       }
     })
+    rememberPickerKeys('cloud', matches)
     return { success: true, matches }
   } catch (error) {
     console.error('[listAvailableMatchesForBenchSupabase] Exception:', error)
@@ -1717,14 +1769,19 @@ export async function listAvailableMatchesForBenchSupabase({ now = Date.now() } 
  * Returns match data if PIN is valid
  * With matchExternalId the PIN is checked against that match only: a tablet
  * re-checking its stored PIN after a reload, whose check the backend then
- * counts apart from other tablets' typos behind the same address.
+ * counts apart from other tablets' typos behind the same address. With only
+ * `gameNumber` (the game picked, when its row named no cloud match: two
+ * listed rows share the number, a numeric LAN id), the one cloud match the
+ * picker listed under that number is named (listedMatchKey); else the
+ * backend looks the PIN up among every live match, as before (audit
+ * 2026-11, SEC-06: such a lookup tests a guess against every match).
  * A refusal without comparing (too many wrong PINs from this address) comes
  * back with rateLimited: true, never as a wrong PIN. A failed check says what
  * the backend answered (status) or, when it did not answer at all (network
  * error, timed out), unreachable: true: a tablet re-checking its stored PIN
  * keeps it when nothing was compared.
  */
-export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000, matchExternalId } = {}) {
+export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000, matchExternalId, gameNumber = null } = {}) {
   // Bounded: on a venue network that drops packets to the internet this check
   // must fail fast so the caller can fall back to the LAN relay.
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
@@ -1741,11 +1798,12 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
     // live match into the browser, defeating the PIN gate).
     const apiUrl = getCloudApiUrl('/api/match/validate-connection-pin')
     if (!apiUrl) return { success: false, error: 'Backend not available' }
+    const named = matchExternalId || (gameNumber != null && gameNumber !== '' ? listedMatchKey('cloud', gameNumber) : null)
 
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: pinStr, type, ...(matchExternalId ? { matchExternalId: String(matchExternalId) } : {}) }),
+      body: JSON.stringify({ pin: pinStr, type, ...(named ? { matchExternalId: String(named) } : {}) }),
       ...(controller ? { signal: controller.signal } : {})
     })
 
@@ -1981,8 +2039,11 @@ export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
 // scoreboard role, the connection PINs let the relay check referee/bench PINs
 // itself (LAN). Nothing else secret goes over the relay.
 const RELAY_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
-// globalKey: the only access to a Global match's backup store (utils/globalCloud)
-const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins', 'globalKey']
+// globalKey: the only access to a Global match's backup store (utils/globalCloud);
+// globalOrganizer: the tournament code that lists and adds to its matches and
+// PDFs, cloudShareToken: the match's read-only share link (utils/globalCloudDb,
+// audit SEC-28); liveSecret: the live screen's court (utils/globalLive)
+const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins', 'globalKey', 'globalOrganizer', 'cloudShareToken', 'liveSecret']
 
 // What no relay hands a tablet stays on the device too (the same lists as
 // backend/lib/publicColumns.js): a person's date of birth, nationality and

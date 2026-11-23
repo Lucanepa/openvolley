@@ -67,6 +67,7 @@ Flatpak it must not: `flatpak update` does that. Two switches:
 | `--talk-name=org.kde.StatusNotifierWatcher` | the tray icon (libayatana-appindicator, built in the manifest) |
 | `--system-talk-name=org.freedesktop.NetworkManager` | the tablet Wi-Fi (hotspot) and the Bluetooth network the app can start (`netshare/linux.rs`) |
 | `--system-talk-name=org.bluez` | Bluetooth adapter state for the Bluetooth network |
+| `--system-talk-name=org.fedoraproject.FirewallD1` | read only (getZones, getPorts): is the tablets' firewalld zone there and does it open the relay's ports? The network goes only into that zone, never into `trusted`; when it is missing the app shows the root command that adds it (`netshare/nm_settings.rs`) |
 | `--filesystem=xdg-download` | the scoresheet PDF and exports go to Downloads |
 | `--filesystem=/run/media`, `--filesystem=/media` | the match backups copied to a USB stick (Options, "Copy to stick now"; `src-tauri/src/stick.rs`): the app finds the sticks the desktop mounts there and writes only into its own folder on them (`OpenVolley/`, OpenBeach `OpenBeach/`). The FileChooser portal cannot do this: the copy needs no dialog, and later versions copy every backup while a match is scored. Without these the app finds no stick. |
 
@@ -88,7 +89,11 @@ which Flatpak allows without a permission. File pickers (restore a backup) use
   there): test once on a real laptop before relying on it.
 - **Host firewall.** As with the `.deb`, a host firewall (ufw, firewalld) must
   let the tablets reach the ports above; the app does not open them on Linux.
-  (The Windows firewall rule is Windows only.)
+  With firewalld the tablets' network asks for the zone `openvolley-tablets`
+  (OpenBeach `openbeach-tablets`): a Flatpak cannot install it on the host, so
+  the app refuses to start the network until it is added and shows the one
+  root command that adds it (the zone file is in the Flatpak under
+  `/app/lib/firewalld/zones/` too). (The Windows firewall rule is Windows only.)
 - **Tray icon.** Needs a StatusNotifier host, as for the `.deb` (GNOME: the
   AppIndicator extension). Without one, closing the window minimises it.
 - **"Open backup folder"** goes through the OpenURI portal (`xdg-open` in the

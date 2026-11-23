@@ -25,7 +25,14 @@ vi.mock('../../db/db', () => {
       teams: table([]),
       players: table([]),
       sets: table(store.sets),
-      events: table(store.events)
+      events: table(store.events),
+      // the Set 1 an import makes for a cloud copy without sets is queued
+      // (audit LOG-17); no unsent scoresheet upload to supersede
+      sync_queue: {
+        ...table([]),
+        where: () => ({ equals: () => ({ toArray: async () => [] }), anyOf: () => ({ toArray: async () => [] }) }),
+        update: vi.fn(async () => 1)
+      }
     }
   }
 })

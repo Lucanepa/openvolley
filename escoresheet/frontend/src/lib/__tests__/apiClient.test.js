@@ -5,7 +5,7 @@ vi.mock('../../utils/backendConfig', () => ({
   getCloudApiUrl: (path) => `http://backend.test${path}`
 }))
 
-import { apiRequest, apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64, BACKEND_REACHED_EVENT, DB_REQUEST_TIMEOUT_MS } from '../apiClient'
+import { apiRequest, apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiMatchKnown, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64, BACKEND_REACHED_EVENT, DB_REQUEST_TIMEOUT_MS } from '../apiClient'
 
 function jsonResponse(body, status = 200) {
   return {
@@ -388,6 +388,14 @@ describe('self-hosted backend contract', () => {
     await apiPostEventRevisions('m1', [{ rev_uid: 'r', device_id: 'old-id' }])
     expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/event-revisions')
     expect(sentBody()).toEqual({ match_external_id: 'm1', revisions: [{ rev_uid: 'r', device_id: 'old-id' }], device: { id: expect.stringMatching(UUID_RE), platform: 'web' } })
+  })
+
+  // 2611 review, SR-1: a match deleted on the server is 'deleted' to a device
+  // that scored it, whoever is signed in on it; the question names the device
+  it('apiMatchKnown names this device', async () => {
+    await apiMatchKnown('m1')
+    expect(globalThis.fetch.mock.calls[0][0]).toMatch(/\/api\/match\/known$/)
+    expect(sentBody()).toEqual({ external_id: 'm1', device: { id: expect.stringMatching(UUID_RE), platform: 'web' } })
   })
 
   it('apiMatchScorer claims or asks for this device', async () => {

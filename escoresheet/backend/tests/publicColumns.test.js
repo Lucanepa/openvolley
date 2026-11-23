@@ -16,6 +16,7 @@ import {
   projectRow,
   projectRows,
   projectLiveRow,
+  projectLiveGrantedRow,
   projectLiveSummaryRow,
   hasAnonPolicy,
   anonSelectCheck,
@@ -95,7 +96,10 @@ describe('publicColumns: live projection', () => {
     assert.equal(live.coin_toss.team_a, 'home')
   })
 
-  it('keeps every match_live_state column the referee and livescore read', () => {
+  // Audit 2611 PERM-03: a live socket proves nothing, so the hub's own
+  // projection is the public one; the line-up and the scorer's alarm go to a
+  // granted channel only (projectLiveGrantedRow, server.js liveRowGranted)
+  it('keeps every public match_live_state column the referee and livescore read; the private ones only when granted', () => {
     const row = {
       id: 'x', match_id: MATCH, sport_type: 'indoor', current_set: 5, best_of: 3, match_status: 'in_progress',
       points_a: 8, points_b: 5, sets_won_a: 1, sets_won_b: 1, side_a: 'left', serving_team: 'right',
@@ -103,8 +107,11 @@ describe('publicColumns: live projection', () => {
       set_interval_active: false, timeout_active: false, updated_at: '2026-10-05T16:00:00Z', game_pin: '864201'
     }
     const live = projectLiveRow('match_live_state', redactSecrets('match_live_state', row))
-    const { game_pin: _pin, ...expected } = row
+    const { game_pin: _pin, lineup_a: _lineup, scorer_attention_trigger: _alarm, ...expected } = row
     assert.deepEqual(live, expected)
+    const granted = projectLiveGrantedRow('match_live_state', redactSecrets('match_live_state', row))
+    const { game_pin: _pin2, ...all } = row
+    assert.deepEqual(granted, all)
   })
 
   it('keeps the beach live-state columns (server, challenges, technical timeout)', () => {
@@ -482,7 +489,9 @@ describe('realtimeHub: one frame per scorer state', () => {
   })
 
   it('a same-timestamp row that changes something still goes out', () => {
-    const { hub, subscriber } = liveHub()
+    // the referee's channel of its match, granted the private columns as
+    // server.js grants it (liveRowGranted): the alarm is one of them (PERM-03)
+    const { hub, subscriber } = liveHub({ privateRows: { project: projectLiveGrantedRow, grants: () => true } })
     const viewer = subscriber([{ table: 'match_live_state', event: '*', column: 'match_id', value: MATCH }])
     hub.broadcastDbChange('match_live_state', 'UPDATE', [relayCopy()])
     // the scorer-attention alarm does not bump updated_at

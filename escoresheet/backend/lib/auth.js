@@ -22,7 +22,7 @@
  *     auth.verifyAccessToken(token)    -> { user, session } | null (throws on DB failure)
  *     auth.requireUser(req, res)       -> user | null   (writes 401/503 itself)
  *     auth.setPassword(emailOrId, pw)  -> { userId, email, revokedSessions }
- *     auth.verifyPassword(userId, pw)  -> { ok } | { locked, retryAfterSec } (throws AUTH_BUSY)
+ *     auth.verifyPassword(userId, pw, { ip }?) -> { ok } | { locked, retryAfterSec } (throws AUTH_BUSY)
  *     auth.findUserId(emailOrId)       -> { id, email } (throws if not exactly one)
  *     auth.revokeUserSessions(userId)  -> number
  *     auth.eraseAccount(userId, { inTransaction }) -> { deleted } (delete-account's
@@ -32,10 +32,14 @@
  *     auth.settle()                    -> resolves when the background mail jobs are done (tests)
  *     auth.sweep()                     -> clears stale in-memory counters
  *     auth.limits / auth.lockout       -> the counters (inspect, reset, replace)
- *     auth.bcryptGate                  -> { active, queued, peak } of the bcrypt limiter
+ *     auth.bcryptGate                  -> { active, queued, peak, rejected, lanes } of the bcrypt limiter
+ *     auth.bcryptStats()               -> the worker threads' state, or null (main thread)
+ *     auth.close()                     -> stops the bcrypt worker threads
+ *     auth.sweepSignInFailures()       -> number (db/057 rows past their window; also run by sweepExpiredSessions)
  *   sendAuthResult(res, result), createRateLimiter(opts), createLockout(opts),
- *   createConcurrencyGate(opts), ipBucketKey(ip), hashToken(token),
- *   generateToken(), isWellFormedToken(token), AUTH_ACTIONS
+ *   createConcurrencyGate(opts), createFairGate(opts), ipBucketKey(ip),
+ *   ipLaneKey(ip), hashToken(token), generateToken(), isWellFormedToken(token),
+ *   AUTH_ACTIONS
  *
  * Email links (db/010_auth_tokens.sql, lib/mailer.js; README "Account emails"):
  * with a mailer (SMTP configured) reset-password mails a one-time link
@@ -71,26 +75,39 @@
  * account gets, and the owner is mailed a reset link instead; without mail,
  * 422 user_already_exists (as before). The confirmation of an account created
  * with a link keeps the password, sessions and passkeys of whoever signed up
- * only when the clicker gives that password (confirmEmailLink).
+ * only when the clicker gives that password (confirmEmailLink). Otherwise,
+ * and whenever a reset link's new password confirms an address, the owner
+ * keeps or drops each detail the sign-up gave (name, licence number,
+ * requests: reset-password/details, reset-password/confirm `keep`), and the
+ * approvers are told after that (audit 2611 SEC-15).
  *
- * CPU guard: bcryptjs is pure JS and runs on the main event loop, which also
- * serves the live-scoring relay. Every bcrypt call goes through a small
- * concurrency gate (bcryptMaxConcurrent, bcryptMaxQueue); when the queue is
- * full the request gets 503 "auth_busy" at once instead of queueing. Sign-in
- * also has a global bucket (limits.signInGlobal) next to the per-IP one,
- * charged only to sources that failed lately, and per-IP buckets key IPv6
- * clients on their /64 (ipBucketKey). The lockout is per account and source
- * (DEFAULTS.lockout), with an account-wide ceiling that a source which signed
- * in before passes (DEFAULTS.accountLockout).
+ * CPU guard: bcryptjs is pure JS. With bcryptWorkers (server.js) it runs in
+ * worker threads (lib/bcryptPool.js), off the event loop that also serves the
+ * live-scoring relay; otherwise on the main thread as before. Every bcrypt
+ * call goes through a gate that is fair between clients (createFairGate,
+ * audit 2611 SEC-03): one job at a time per client lane (an IPv6 /48 or an
+ * IPv4 address, ipLaneKey), the lane served least recently first, a source
+ * that signed in to the account before ahead of the rest (one waiting job
+ * per lane and per account, so priority cannot be stacked), a short wait
+ * (bcryptMaxWaitMs), and 503 "auth_busy" at once when there is no place; an
+ * ops alert when that goes on (onGateSaturated). Sign-in also has a global
+ * bucket (limits.signInGlobal) next to the per-IP one, charged only to
+ * sources that failed lately, and per-IP buckets key IPv6 clients on their
+ * /64 (ipBucketKey). The lockout is per account and source (DEFAULTS.lockout),
+ * with an account-wide ceiling that a source which signed in before passes
+ * (DEFAULTS.accountLockout), and a ceiling per address in the database that
+ * survives a restart (db/057, DEFAULTS.accountCeiling, audit 2611 SEC-13).
  */
 
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createHmac, hkdfSync, randomBytes, randomUUID } from 'node:crypto'
 import { isIPv4, isIPv6 } from 'node:net'
 import bcryptjs from 'bcryptjs'
 import { authLink, describeMailError, disabledMailer, inboxKey, mailApp, maskEmail, MAIL_BRANDS, pickLang } from './mailer.js'
 import { cleanTransports, createPasskeyCeremonies, passkeyConfig, passkeyDeviceLabel, PasskeyError, PASSKEYS_PER_USER_MAX } from './passkeys.js'
 import { connectClient } from './pgClient.js'
 import { EMAIL_RE } from './emailAddress.js'
+import { accessFromRoles } from './access.js'
+import { createBcryptPool } from './bcryptPool.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -101,7 +118,7 @@ const DAY = 24 * 60 * 60
 export const AUTH_ACTIONS = Object.freeze([
   'sign-in', 'sign-up', 'sign-out', 'get-user', 'update-user',
   'delete-account', 'profile', 'reset-password', 'reset-password/confirm',
-  'confirm-email', 'resend-confirmation',
+  'reset-password/details', 'confirm-email', 'resend-confirmation',
   // passkeys (lib/passkeys.js): sign-in with the device's fingerprint or face
   'passkey/login-options', 'passkey/login', 'passkey/register-options',
   'passkey/register', 'passkey/list', 'passkey/delete',
@@ -166,7 +183,9 @@ const DEFAULTS = Object.freeze({
     { table: 'public.event_revisions', column: 'actor_id' },
     // db/016: match activity stays (club record) without the account
     { table: 'public.activity_log', column: 'account_id' },
-    { table: 'public.activity_log', column: 'uploader_id' }
+    { table: 'public.activity_log', column: 'uploader_id' },
+    // db/056: a referee the account added stays in the directory
+    { table: 'public.referee_database', column: 'created_by' }
   ],
   // Rows of a table that go with the account under a condition (the table's
   // other rows stay, detached above). db/016: the account's device and app
@@ -189,9 +208,12 @@ const DEFAULTS = Object.freeze({
   // db/025 (lib/accountRequests.js): what a new account asks for at sign-up
   // (the body's `requests`: scorer, referee, team or club manager, with the
   // club and team), stored in the sign-up's transaction; nothing is granted.
-  // { parse(raw, { app }) -> { rows } | { error }, store(client, userId, rows) }
+  // { parse(raw, { app }) -> { rows } | { error }, store(client, userId, rows),
+  // list?(client, userId) -> [{ id, kind, club_id, club_name, team_id, team_name }] }
   // (store throws an error with `signUpRequests` set for a club or team that
-  // is gone: the sign-up answers 422). null: `requests` is ignored.
+  // is gone: the sign-up answers 422; list names the parts for
+  // reset-password/details, else they come without names). null: `requests`
+  // is ignored.
   signUpRequests: null,
   // Mirrors handle_new_user() from frontend/src/db/migrations/001_auth_profiles.sql.
   // `roles` is never taken from the client: it always gets defaultRoles.
@@ -225,10 +247,30 @@ const DEFAULTS = Object.freeze({
   adminMinPasswordLength: 14,
   bcryptCost: 10,
   maxBcryptCost: 15, // stored hashes above this are treated as invalid (DoS guard)
-  // At most this many bcrypt operations run (interleaved) at once; up to
-  // bcryptMaxQueue more wait, anything beyond gets 503 auth_busy.
+  // Worker threads for bcrypt (lib/bcryptPool.js, audit 2611 SEC-03): 0 runs
+  // it on the main thread (bcryptjs's async API, as before); server.js sets
+  // OV_BCRYPT_WORKERS (default 1). Without bcryptjs on disk (the bundled hall
+  // server) it stays on the main thread.
+  bcryptWorkers: 0,
+  // At most this many bcrypt operations run at once (default: 2 on the main
+  // thread, one per worker thread), at most bcryptLaneConcurrent of one
+  // client (ipLaneKey: an IPv6 /48 or an IPv4 address); up to bcryptMaxQueue
+  // more wait (fairly: createFairGate), at most bcryptMaxWaitMs, anything
+  // beyond gets 503 auth_busy at once.
   bcryptMaxConcurrent: 2,
   bcryptMaxQueue: 16,
+  bcryptMaxWaitMs: 3000,
+  bcryptLaneConcurrent: 1,
+  // A source that signed in to the account before goes ahead of the rest,
+  // but a lane (or an account) at most once per bcryptPriorityGapMs, with at
+  // most one such job waiting (createFairGate): known sources of an
+  // attacker's own accounts cannot keep everyone else waiting (SEC-03).
+  bcryptPriorityGapMs: 5000,
+  // Ops alert (options.onGateSaturated, server.js: the error tracker) when
+  // sign-ins keep being turned away (auth_busy, the gate at capacity) for
+  // bcryptSaturatedMs; at most once per bcryptAlertCooldownMs.
+  bcryptSaturatedMs: 30 * 1000,
+  bcryptAlertCooldownMs: 15 * 60 * 1000,
 
   // Refuse sign-in for users whose email_confirmed_at is NULL (when the column
   // exists): GoTrue refused them too, and an unconfirmed row may belong to
@@ -287,11 +329,44 @@ const DEFAULTS = Object.freeze({
   // gets newSourceTries tries per window (so the owner on a new network, or
   // after a restart, can still type the password).
   lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 },
-  accountLockout: { maxFailures: 100, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000, newSourceTries: 3 }
+  accountLockout: { maxFailures: 100, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000, newSourceTries: 3 },
+  // db/057 (audit 2611 SEC-13): the failed sign-ins of each address, in the
+  // database (a restart forgets nothing; signInFailuresTable, null = off).
+  // Past maxFailures within windowMs, a source that signed in to the account
+  // before still gets in as usual; all other sources together get one try per
+  // newSourceIntervalMs, doubling with each further maxFailures failures, at
+  // most maxIntervalMs (429 account_locked meanwhile). The account is mailed
+  // and the admins told (options.onSignInAttack) once per window.
+  // slots: 'account' = all new sources of the address share that one try
+  // (a botnet guesses no faster than one source; the owner on a new network
+  // waits with the guessers); 'lane' = one try per client lane (ipLaneKey:
+  // an IPv6 /48, an IPv4 address) and interval, so the owner's network keeps
+  // its own while a botnet guesses once per lane (review I-2: the owner
+  // decides; 'account' until then, server.js OV_SIGN_IN_CEILING_SLOTS,
+  // ceilingSlotsFromEnv). With either, a source that opens one of the
+  // address's reset or confirmation links proves it holds the mailbox and
+  // becomes a known source too, as does a passkey sign-in (2611 review,
+  // SIGNIN-CEILING-OWNER-LOCKOUT).
+  accountCeiling: { maxFailures: 100, windowMs: 24 * 60 * 60 * 1000, newSourceIntervalMs: 60 * 1000, maxIntervalMs: 60 * 60 * 1000, slots: 'account' },
+  signInFailuresTable: 'auth.sign_in_failures',
+  // db/057: the sources that signed in to an address, so the way past the
+  // ceiling for the owner's own survives a restart (review I-2). Written
+  // only with signInSourceSecret (server.js: OV_PIN_SECRET, at least 32
+  // characters): the rows are HMACs keyed with a key derived from it.
+  signInSourcesTable: 'auth.sign_in_sources',
+  signInSourceSecret: null,
+  // db/025: what an account asked for at sign-up (when a reset link's new
+  // password confirms the address, only the parts its owner keeps stay)
+  accountRequestsTable: 'public.account_requests'
 })
 const FAILED_SOURCE_MS = 15 * 60 * 1000
 const KNOWN_SOURCE_MS = 60 * DAY * 1000
 const KNOWN_SOURCES_MAX = 50_000
+const KNOWN_SOURCES_PER_ADDRESS = 20
+// createFairGate: how many lanes it remembers the last start of (idle ones too)
+const SERVED_LANES_MAX = 10_000
+// accountCeiling.slots 'lane': how many address and lane slots are kept
+const LANE_SLOTS_MAX = 100_000
 
 const TOKEN_BYTES = 32
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/ // base64url of 32 bytes, no padding
@@ -501,6 +576,269 @@ export function createConcurrencyGate({ maxConcurrent, maxQueue = 0, maxWaitMs =
 }
 
 /**
+ * The fairness lane of a client (the bcrypt gate, createFairGate): IPv4 as is,
+ * IPv4-mapped IPv6 as the IPv4 address, any other IPv6 address as its /48. A
+ * /48 is what one site (and one free tunnel account) gets: rotating through
+ * its 65536 /64s gives a fresh per-IP bucket each time (ipBucketKey), but one
+ * lane (audit 2611 SEC-03).
+ */
+export function ipLaneKey(ip) {
+  const k = ipBucketKey(ip)
+  if (!k.endsWith('::/64')) return k
+  return k.split(':').slice(0, 3).join(':') + '::/48'
+}
+
+/**
+ * OV_SIGN_IN_CEILING_SLOTS (server.js -> createAuth accountCeiling.slots):
+ * how the sources that never signed in to an address share its tries once
+ * the address is past its ceiling of failed sign-ins (DEFAULTS.accountCeiling).
+ * `account` (empty, the default): one try per interval for all of them
+ * together; `lane`: one per client lane (ipLaneKey) and interval. The owner's
+ * choice (audit 2611 review, SIGNIN-CEILING-OWNER-LOCKOUT); anything else
+ * keeps the default and says so in `warning`. Either way a source that signed
+ * in to the account before, or opened one of its reset or confirmation links
+ * (it holds the mailbox), goes on as usual.
+ * @returns {{ slots: 'account'|'lane', warning: string|null }}
+ */
+export function ceilingSlotsFromEnv(env = process.env) {
+  const raw = String(env?.OV_SIGN_IN_CEILING_SLOTS ?? '').trim().toLowerCase()
+  if (raw === '' || raw === 'account') return { slots: 'account', warning: null }
+  if (raw === 'lane') return { slots: 'lane', warning: null }
+  return { slots: 'account', warning: `OV_SIGN_IN_CEILING_SLOTS is not "account" or "lane" (${raw.slice(0, 20)}): account, the default` }
+}
+
+/**
+ * A concurrency gate that is fair between clients (audit 2611 SEC-03), for the
+ * bcrypt work of sign-in. run(fn, { lane, priority, account, abandoned }):
+ *   - at most maxConcurrent jobs run; at most laneConcurrent of one lane (a
+ *     client, ipLaneKey); a job without a lane (scripts, the dummy hash) has
+ *     no lane limit;
+ *   - waiting jobs start priority first, then the lane served least recently
+ *     (remembered for the last SERVED_LANES_MAX lanes, also once a lane is
+ *     idle), then in arrival order: a flood from one lane cannot keep another
+ *     client's job waiting behind it;
+ *   - priority (a source that signed in to the account before) is fair too:
+ *     at most one waiting job per lane and one per `account` keeps it, and a
+ *     lane or an account that started a waiting priority job less than
+ *     priorityGapMs ago gets none; any further one waits as a normal job (one
+ *     lane, or one account from many lanes, can neither fill the queue with
+ *     jobs nobody may push out nor keep the other lanes' jobs waiting);
+ *   - when the queue (maxQueue) is full, a newcomer whose lane waits with at
+ *     least two jobs fewer than the longest lane (all its jobs counted) takes
+ *     the place of that lane's newest normal job, and a priority newcomer
+ *     the place of a normal job of the longest lane; otherwise a newcomer
+ *     takes the place of a job (a priority newcomer: also a priority job)
+ *     whose lane waits with more jobs than its own and was served more
+ *     recently (victimFor); the job pushed out, or a newcomer that finds no
+ *     place, rejects at once with err.code === 'AUTH_BUSY';
+ *   - a job that waited maxWaitMs rejects with 'AUTH_BUSY' (a quick 503
+ *     instead of a long wait);
+ *   - `abandoned` as in createConcurrencyGate.
+ * onReject(reason): 'full' | 'evicted' | 'timeout', for the saturation alert.
+ */
+export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, laneConcurrent = 1, priorityGapMs = 0, onReject = null } = {}) {
+  if (!(maxConcurrent > 0) || !(maxQueue >= 0) || !(laneConcurrent > 0)) {
+    throw new Error('createFairGate: maxConcurrent (> 0), laneConcurrent (> 0) and maxQueue (>= 0) are required')
+  }
+  let active = 0
+  let peak = 0
+  let rejected = 0
+  let served = 0
+  const lanes = new Map() // lane -> { active, queued, prio }
+  const accountPrio = new Map() // account -> its waiting priority jobs (0 or 1)
+  const lastServed = new Map() // lane -> number of its last start, most recent last
+  const prioStarted = new Map() // lane or account -> when it last started a waiting priority job
+  const waiting = [] // { lane, account, priority, resolve, reject, timer }
+  const busy = () => Object.assign(new Error('auth: bcrypt queue is full'), { code: 'AUTH_BUSY' })
+  const laneOf = (lane) => {
+    let s = lanes.get(lane)
+    if (!s) { s = { active: 0, queued: 0, prio: 0 }; lanes.set(lane, s) }
+    return s
+  }
+  const tidy = (lane) => {
+    const s = lanes.get(lane)
+    if (s && !s.active && !s.queued) lanes.delete(lane)
+  }
+  const canStart = (lane) => lane == null || (lanes.get(lane)?.active || 0) < laneConcurrent
+  const servedOf = (lane) => (lane == null ? 0 : lastServed.get(lane) || 0)
+  const refuse = (reason) => {
+    rejected++
+    try { onReject?.(reason) } catch { /* an alert must never fail a sign-in */ }
+    return busy()
+  }
+  function start(lane) {
+    active++
+    if (active > peak) peak = active
+    if (lane != null) {
+      laneOf(lane).active++
+      lastServed.delete(lane) // re-inserted: most recent last
+      lastServed.set(lane, ++served)
+      if (lastServed.size > SERVED_LANES_MAX) lastServed.delete(lastServed.keys().next().value)
+    }
+  }
+  const prioKey = (kind, k) => `${kind}\u0000${k}`
+  const recentPrio = (kind, k, t) => k != null && priorityGapMs > 0 && t - (prioStarted.get(prioKey(kind, k)) ?? -Infinity) < priorityGapMs
+  function notePrio(kind, k, t) {
+    if (k == null || !(priorityGapMs > 0)) return
+    const key = prioKey(kind, k)
+    prioStarted.delete(key) // re-inserted: most recent last
+    prioStarted.set(key, t)
+    if (prioStarted.size > 2 * SERVED_LANES_MAX) prioStarted.delete(prioStarted.keys().next().value)
+  }
+  /** May a priority job of `lane` and `account` wait as one now? */
+  function keepsPriority(lane, account) {
+    if (lane != null && (lanes.get(lane)?.prio || 0) > 0) return false
+    if (account != null && (accountPrio.get(account) || 0) > 0) return false
+    const t = Date.now()
+    if (recentPrio('lane', lane, t) || recentPrio('account', account, t)) return false
+    return true
+  }
+  function enqueue(e) {
+    if (e.lane != null) {
+      const s = laneOf(e.lane)
+      s.queued++
+      if (e.priority) s.prio++
+    }
+    if (e.priority && e.account != null) accountPrio.set(e.account, (accountPrio.get(e.account) || 0) + 1)
+    waiting.push(e)
+  }
+  function unqueue(e) {
+    clearTimeout(e.timer)
+    if (e.lane != null) {
+      const s = lanes.get(e.lane)
+      if (s) { s.queued--; if (e.priority) s.prio-- }
+    }
+    if (e.priority && e.account != null) {
+      const n = (accountPrio.get(e.account) || 0) - 1
+      if (n > 0) accountPrio.set(e.account, n)
+      else accountPrio.delete(e.account)
+    }
+  }
+  function pick() {
+    let best = -1
+    for (let i = 0; i < waiting.length; i++) {
+      const e = waiting[i]
+      if (!canStart(e.lane)) continue
+      if (best === -1) { best = i; continue }
+      const b = waiting[best]
+      if (e.priority !== b.priority) { if (e.priority) best = i; continue }
+      if (servedOf(e.lane) < servedOf(b.lane)) best = i
+    }
+    return best
+  }
+  function pump() {
+    while (active < maxConcurrent) {
+      const i = pick()
+      if (i === -1) return
+      const [e] = waiting.splice(i, 1)
+      unqueue(e)
+      start(e.lane)
+      if (e.priority) {
+        const t = Date.now()
+        notePrio('lane', e.lane, t)
+        notePrio('account', e.account, t)
+      }
+      e.resolve()
+    }
+  }
+  function release(lane) {
+    active--
+    if (lane != null) {
+      const s = lanes.get(lane)
+      if (s) s.active--
+      tidy(lane)
+    }
+    pump()
+  }
+  /**
+   * Index of the waiting job a newcomer of `lane` may push out, or -1. The
+   * candidate: a normal job before a priority one (which only a priority
+   * newcomer may push out), then the lane waiting with the most jobs (all its
+   * jobs counted), then the lane served most recently, then the newest; never
+   * one of the newcomer's own lane. It gives way when its lane waits with at
+   * least two jobs more than the newcomer's (to a priority newcomer: any
+   * normal job), or when its lane waits with more jobs than the newcomer's and
+   * was served more recently (lanes that one client keeps busy make room for
+   * one it has not served lately).
+   */
+  function victimFor(lane, priority) {
+    const keyOf = (e) => e.lane ?? e // a job without a lane is a lane of its own
+    const counts = new Map()
+    for (const e of waiting) counts.set(keyOf(e), (counts.get(keyOf(e)) || 0) + 1)
+    const mine = lane == null ? 0 : (counts.get(lane) || 0)
+    let best = -1
+    for (let i = waiting.length - 1; i >= 0; i--) {
+      const e = waiting[i]
+      if (e.priority && !priority) continue
+      if (lane != null && e.lane === lane) continue
+      if (best === -1) { best = i; continue }
+      const b = waiting[best]
+      if (e.priority !== b.priority) { if (!e.priority) best = i; continue }
+      const ce = counts.get(keyOf(e))
+      const cb = counts.get(keyOf(b))
+      if (ce !== cb) { if (ce > cb) best = i; continue }
+      if (servedOf(e.lane) > servedOf(b.lane)) best = i
+    }
+    if (best === -1) return -1
+    const v = waiting[best]
+    const n = counts.get(keyOf(v))
+    if (!v.priority && (priority || n > mine + 1)) return best
+    if (n > mine && servedOf(v.lane) > servedOf(lane)) return best
+    return -1
+  }
+  return {
+    maxConcurrent,
+    maxQueue,
+    laneConcurrent,
+    async run(fn, { lane = null, priority = false, account = null, abandoned } = {}) {
+      if (active < maxConcurrent && canStart(lane)) {
+        start(lane)
+      } else {
+        const prio = !!priority && keepsPriority(lane, account)
+        if (waiting.length >= maxQueue) {
+          const v = maxQueue > 0 ? victimFor(lane, prio) : -1
+          if (v === -1) throw refuse('full')
+          const [out] = waiting.splice(v, 1)
+          unqueue(out)
+          tidy(out.lane)
+          out.reject(refuse('evicted'))
+        }
+        await new Promise((resolve, reject) => {
+          const entry = { lane, account, priority: prio, resolve, reject, timer: null }
+          if (maxWaitMs > 0) {
+            entry.timer = setTimeout(() => {
+              const i = waiting.indexOf(entry)
+              if (i === -1) return
+              waiting.splice(i, 1)
+              unqueue(entry)
+              tidy(lane)
+              reject(refuse('timeout'))
+            }, maxWaitMs)
+            entry.timer.unref?.()
+          }
+          enqueue(entry)
+        })
+      }
+      if (typeof abandoned === 'function' && abandoned()) {
+        release(lane)
+        throw Object.assign(new Error('gate: the caller left while queued'), { code: 'GATE_ABANDONED' })
+      }
+      try {
+        return await fn()
+      } finally {
+        release(lane)
+      }
+    },
+    get active() { return active },
+    get queued() { return waiting.length },
+    get peak() { return peak },
+    get rejected() { return rejected },
+    get lanes() { return lanes.size },
+    resetPeak() { peak = active }
+  }
+}
+
+/**
  * Per-account lockout: maxFailures failed attempts within windowMs lock the key
  * for lockMs. Keyed by normalized email, so unknown emails lock exactly like
  * real ones and the lockout cannot be used to probe for accounts.
@@ -641,18 +979,61 @@ export function createAuth(options = {}) {
     limits: { ...DEFAULTS.limits, ...(options.limits || {}) },
     lockout: options.lockout && typeof options.lockout.check === 'function'
       ? options.lockout
-      : { ...DEFAULTS.lockout, ...(options.lockout || {}) }
+      : { ...DEFAULTS.lockout, ...(options.lockout || {}) },
+    accountCeiling: options.accountCeiling === null || options.accountCeiling === false
+      ? null
+      : { ...DEFAULTS.accountCeiling, ...(options.accountCeiling || {}) }
   }
   if (cfg.sessionTtlSec > cfg.absoluteTtlSec) throw new Error('createAuth: sessionTtlSec exceeds absoluteTtlSec')
   cfg.contactEmail = cfg.contactEmail || process.env.CONTACT_EMAIL || 'support@openvolley.app'
   const ipKey = typeof cfg.ipKey === 'function' ? cfg.ipKey : ipBucketKey
-  const rawBcrypt = options.bcrypt || { compare: bcryptjs.compare, hash: bcryptjs.hash }
-  const bcryptGate = createConcurrencyGate({ maxConcurrent: cfg.bcryptMaxConcurrent, maxQueue: cfg.bcryptMaxQueue })
-  const bcrypt = {
-    compare: (password, hash) => bcryptGate.run(() => rawBcrypt.compare(password, hash)),
-    hash: (password, cost) => bcryptGate.run(() => rawBcrypt.hash(password, cost))
-  }
+  const laneKey = typeof cfg.laneKey === 'function' ? cfg.laneKey : ipLaneKey
   const log = options.logger || console
+  // bcrypt off the main thread when the server asks for worker threads
+  // (lib/bcryptPool.js; null without bcryptjs on disk). An injected
+  // options.bcrypt (tests) is used as it is.
+  const bcryptPool = !options.bcrypt && cfg.bcryptWorkers > 0 ? createBcryptPool({ size: cfg.bcryptWorkers, logger: log }) : null
+  const rawBcrypt = options.bcrypt || bcryptPool || { compare: bcryptjs.compare, hash: bcryptjs.hash }
+  const gateWatch = { streakStart: 0, last: 0, rejected: 0, alertedAt: 0 }
+  const bcryptGate = createFairGate({
+    maxConcurrent: options.bcryptMaxConcurrent ?? (bcryptPool ? bcryptPool.size : DEFAULTS.bcryptMaxConcurrent),
+    maxQueue: cfg.bcryptMaxQueue,
+    maxWaitMs: cfg.bcryptMaxWaitMs,
+    laneConcurrent: cfg.bcryptLaneConcurrent,
+    priorityGapMs: cfg.bcryptPriorityGapMs,
+    onReject: () => noteGateBusy()
+  })
+  // o: { lane, priority } of the request (createFairGate)
+  const bcrypt = {
+    compare: (password, hash, o) => bcryptGate.run(() => rawBcrypt.compare(password, hash), o),
+    hash: (password, cost, o) => bcryptGate.run(() => rawBcrypt.hash(password, cost), o)
+  }
+  /**
+   * The gate turned a job away. Turn-aways that keep coming (gaps under 5 s)
+   * for bcryptSaturatedMs are a flood, or a server too small for its load:
+   * the ops alert, at most once per bcryptAlertCooldownMs.
+   */
+  function noteGateBusy() {
+    const t = Date.now()
+    if (!gateWatch.last || t - gateWatch.last > 5000) { gateWatch.streakStart = t; gateWatch.rejected = 0 }
+    gateWatch.last = t
+    gateWatch.rejected++
+    if (t - gateWatch.streakStart < cfg.bcryptSaturatedMs) return
+    if (gateWatch.alertedAt && t - gateWatch.alertedAt < cfg.bcryptAlertCooldownMs) return
+    gateWatch.alertedAt = t
+    const info = {
+      seconds: Math.round((t - gateWatch.streakStart) / 1000),
+      rejected: gateWatch.rejected,
+      active: bcryptGate.active,
+      queued: bcryptGate.queued,
+      lanes: bcryptGate.lanes,
+      maxConcurrent: bcryptGate.maxConcurrent
+    }
+    log.error(`[auth] sign-in gate at capacity for ${info.seconds} s: ${info.rejected} requests answered auth_busy (${info.active} running, ${info.queued} waiting, ${info.lanes} clients)`)
+    if (typeof cfg.onGateSaturated === 'function') {
+      try { cfg.onGateSaturated(info) } catch { /* an alert must never fail a request */ }
+    }
+  }
   const mailer = cfg.mailer && typeof cfg.mailer.send === 'function' ? cfg.mailer : disabledMailer()
 
   const T = {
@@ -662,7 +1043,10 @@ export function createAuth(options = {}) {
     tokens: cfg.tokensTable ? qualify(cfg.tokensTable) : null,
     audit: cfg.auditTable ? qualify(cfg.auditTable) : null,
     passkeys: cfg.passkeysTable ? qualify(cfg.passkeysTable) : null,
-    memberships: cfg.membershipsTable ? qualify(cfg.membershipsTable) : null
+    memberships: cfg.membershipsTable ? qualify(cfg.membershipsTable) : null,
+    failures: cfg.signInFailuresTable ? qualify(cfg.signInFailuresTable) : null,
+    sources: cfg.signInSourcesTable ? qualify(cfg.signInSourcesTable) : null,
+    requests: cfg.accountRequestsTable ? qualify(cfg.accountRequestsTable) : null
   }
 
   const limits = {
@@ -701,20 +1085,83 @@ export function createAuth(options = {}) {
     accountLockout?.reset(email)
     newSourceLockout?.resetPrefix(`${email}|`)
     limits.signInEmail?.resetPrefix?.(`${email}|`)
+    for (const k of laneSlots.keys()) if (k.startsWith(`${email}|`)) laneSlots.delete(k)
   }
-  function rememberSource(email, bucket) {
+  /** -> the time this source was remembered before, or undefined. */
+  function rememberSource(email, bucket, at = Date.now()) {
     let m = knownSources.get(email)
     if (m) knownSources.delete(email) // re-inserted: most recent last
     else m = new Map()
-    m.set(bucket, Date.now())
-    if (m.size > 20) m.delete(m.keys().next().value)
+    const before = m.get(bucket)
+    m.delete(bucket)
+    m.set(bucket, at)
+    if (m.size > KNOWN_SOURCES_PER_ADDRESS) m.delete(m.keys().next().value)
     knownSources.set(email, m)
     while (knownSources.size > KNOWN_SOURCES_MAX) knownSources.delete(knownSources.keys().next().value)
+    return before
   }
   function knownSource(email, bucket) {
     const t = knownSources.get(email)?.get(bucket)
     return t != null && Date.now() - t < KNOWN_SOURCE_MS
   }
+  // db/057 auth.sign_in_sources: the known sources in the database too, so a
+  // restart (a deploy) does not lock the owner out with the guessers past
+  // the ceiling (review I-2). Keyed HMAC of the address and the source.
+  const sourceSecret = typeof cfg.signInSourceSecret === 'string' && cfg.signInSourceSecret.length >= 32 ? cfg.signInSourceSecret : null
+  const sourceMacKey = sourceSecret
+    ? Buffer.from(hkdfSync('sha256', Buffer.from(sourceSecret, 'utf8'), Buffer.alloc(0), Buffer.from('ov-sign-in-source-v1', 'utf8'), 32))
+    : null
+  const sourceKey = (email, bucket) => createHmac('sha256', sourceMacKey).update(`${email}\u0000${bucket}`, 'utf8').digest()
+  let sourcesCheckedAt = 0
+  async function sourcesAvailable(client = pool) {
+    if (!sourceMacKey || !T.sources) return false
+    if (catalog.has(cfg.signInSourcesTable)) return true
+    // absent (db/057 not run yet): looked up again at most once a minute
+    if (Date.now() - sourcesCheckedAt < 60 * 1000) return false
+    sourcesCheckedAt = Date.now()
+    return (await columnsOf(cfg.signInSourcesTable, client)).size > 0
+  }
+  /** A sign-in succeeded from `bucket`: remembered, and written at most once a day per source. */
+  async function noteKnownSource(email, bucket) {
+    const before = rememberSource(email, bucket)
+    if (before != null && Date.now() - before < DAY * 1000) return
+    try {
+      if (!(await sourcesAvailable())) return
+      const ek = failureKey(email)
+      const { rows } = await pool.query(
+        `INSERT INTO ${T.sources} AS s (email_key, source_key, last_ok_at) VALUES ($1, $2, now())
+         ON CONFLICT (email_key, source_key) DO UPDATE SET last_ok_at = now()
+         RETURNING (xmax = 0) AS inserted`,
+        [ek, sourceKey(email, bucket)])
+      if (rows[0]?.inserted) {
+        await pool.query(
+          `DELETE FROM ${T.sources} WHERE email_key = $1 AND source_key IN (
+             SELECT source_key FROM ${T.sources} WHERE email_key = $1 ORDER BY last_ok_at DESC OFFSET $2)`,
+          [ek, KNOWN_SOURCES_PER_ADDRESS])
+      }
+    } catch (err) {
+      failuresTrouble('remember source', err)
+    }
+  }
+  /** Past the ceiling: did `bucket` sign in to `email` before (memory, else the database)? */
+  async function knownSourceStored(email, bucket) {
+    if (knownSource(email, bucket)) return true
+    try {
+      if (!(await sourcesAvailable())) return false
+      const { rows } = await pool.query(
+        `SELECT extract(epoch FROM last_ok_at) * 1000 AS at FROM ${T.sources}
+          WHERE email_key = $1 AND source_key = $2 AND last_ok_at > now() - make_interval(secs => $3)`,
+        [failureKey(email), sourceKey(email, bucket), KNOWN_SOURCE_MS / 1000])
+      if (!rows[0]) return false
+      rememberSource(email, bucket, Number(rows[0].at))
+      return true
+    } catch (err) {
+      failuresTrouble('known source', err)
+      return false
+    }
+  }
+  // accountCeiling.slots 'lane': `${email}|${lane}` -> when that lane may try again
+  const laneSlots = new Map()
 
   // --- catalog (lazy, cached only once a table is found) --------------------
   const catalog = new Map()
@@ -773,12 +1220,12 @@ export function createAuth(options = {}) {
    * usable and against a same-cost dummy hash otherwise (unknown email, user
    * without password, malformed hash), so response time does not tell them apart.
    */
-  async function checkPassword(password, storedHash) {
+  async function checkPassword(password, storedHash, gateOptions) {
     const real = usableHash(storedHash)
     const target = real || await dummyHash()
     let match = false
     try {
-      match = await bcrypt.compare(password, target)
+      match = await bcrypt.compare(password, target, gateOptions)
     } catch (err) {
       if (err?.code === 'AUTH_BUSY') throw err // overload, not a wrong password
       match = false
@@ -794,22 +1241,34 @@ export function createAuth(options = {}) {
     return null
   }
 
-  /** The shortest new password one account may set: longer for an admin. */
+  /**
+   * The shortest new password one account may set: longer for an admin, the
+   * super admin included (lib/access.js accessFromRoles isAdmin, audit 2611
+   * SEC-36). Existing passwords keep working: sign-in checks no length.
+   */
   async function minPasswordFor(userId, client = pool) {
     if (!T.profiles || !userId) return cfg.minPasswordLength
     try {
       const { rows } = await client.query(
-        `SELECT 1 FROM ${T.profiles} p WHERE p.${quoteIdent(cfg.profileUserIdColumn)} = $1 AND 'admin' = ANY (p.roles)`, [userId])
-      return rows.length ? Math.max(cfg.minPasswordLength, cfg.adminMinPasswordLength || 0) : cfg.minPasswordLength
+        `SELECT p.roles FROM ${T.profiles} p WHERE p.${quoteIdent(cfg.profileUserIdColumn)} = $1`, [userId])
+      const admin = rows.some((r) => accessFromRoles(r.roles).isAdmin)
+      return admin ? Math.max(cfg.minPasswordLength, cfg.adminMinPasswordLength || 0) : cfg.minPasswordLength
     } catch (err) {
       if (err.code === '42P01' || err.code === '42703') return cfg.minPasswordLength // no profiles table / roles column
       throw err
     }
   }
 
-  function hashPassword(password) {
-    return bcrypt.hash(password, cfg.bcryptCost)
+  /** gateOptions: the request's { lane } for the bcrypt gate (createFairGate). */
+  function hashPassword(password, gateOptions) {
+    return bcrypt.hash(password, cfg.bcryptCost, gateOptions)
   }
+
+  /**
+   * The bcrypt gate's options of a request from `ip`; `account` (the address
+   * signing in) for the gate's one waiting priority job per account.
+   */
+  const gateFor = (ip, priority = false, account = null) => ({ lane: laneKey(ip), priority, account })
 
   // --- users -------------------------------------------------------------------
   function isUserBlocked(u) {
@@ -992,7 +1451,35 @@ export function createAuth(options = {}) {
         WHERE expires_at <= now() OR created_at + make_interval(secs => $1) <= now()`,
       [cfg.absoluteTtlSec]
     )
+    await sweepSignInFailures()
     return rowCount
+  }
+
+  /**
+   * db/057: an address's failures go once their window is over, its known
+   * sources after KNOWN_SOURCE_MS without a sign-in (with the hourly session
+   * sweep). -> the failure rows removed.
+   */
+  async function sweepSignInFailures() {
+    let removed = 0
+    try {
+      if (await failuresAvailable()) {
+        const { rowCount } = await pool.query(
+          `DELETE FROM ${T.failures} WHERE window_start <= now() - make_interval(secs => $1)`,
+          [cfg.accountCeiling.windowMs / 1000])
+        removed = rowCount
+      }
+    } catch (err) {
+      failuresTrouble('sweep', err)
+    }
+    try {
+      if (await sourcesAvailable()) {
+        await pool.query(`DELETE FROM ${T.sources} WHERE last_ok_at <= now() - make_interval(secs => $1)`, [KNOWN_SOURCE_MS / 1000])
+      }
+    } catch (err) {
+      failuresTrouble('sweep sources', err)
+    }
+    return removed
   }
 
   async function withTransaction(fn) {
@@ -1038,7 +1525,7 @@ export function createAuth(options = {}) {
     }
     const hash = await hashPassword(newPassword)
     const out = await withTransaction((client) => setPasswordIn(client, emailOrId, hash, { confirmEmail }))
-    clearLocks(out.email)
+    await clearAllLocks(out.email)
     return out
   }
 
@@ -1086,7 +1573,7 @@ export function createAuth(options = {}) {
    * -> { ok: true } | { ok: false } | { locked: true, retryAfterSec }.
    * Throws AUTH_BUSY when the bcrypt queue is full, and on a database error.
    */
-  async function verifyPassword(userId, password) {
+  async function verifyPassword(userId, password, { ip } = {}) {
     await usersColumns()
     const byId = typeof userId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
     const { rows } = byId
@@ -1098,7 +1585,7 @@ export function createAuth(options = {}) {
     if (attempt.locked) return { locked: true, retryAfterSec: attempt.retryAfterSec }
     try {
       const pw = typeof password === 'string' && password.length <= 1024 ? password : ''
-      const match = await checkPassword(pw, user?.encrypted_password)
+      const match = await checkPassword(pw, user?.encrypted_password, ip ? gateFor(ip) : undefined)
       if (!match || isUserBlocked(user)) {
         lockout.fail(key)
         return { ok: false }
@@ -1119,6 +1606,183 @@ export function createAuth(options = {}) {
   async function tokensAvailable(client = pool) {
     if (!cfg.tokensTable) return false
     return (await columnsOf(cfg.tokensTable, client)).size > 0
+  }
+
+  // --- the account-wide sign-in ceiling (db/057, audit 2611 SEC-13) ----------
+  // One row per address with failed sign-ins (known or not, so the answers
+  // never tell whether an account exists): the failures of its window, the
+  // next try a new source may have past the ceiling, and when the account
+  // was told. The key is a SHA-256 of the address: the table holds none.
+  const failureKey = (email) => createHash('sha256').update(`ov-sign-in-failures:${email}`, 'utf8').digest()
+  let failuresCheckedAt = 0
+  let failuresWarnedAt = 0
+  async function failuresAvailable(client = pool) {
+    if (!T.failures || !cfg.accountCeiling) return false
+    if (catalog.has(cfg.signInFailuresTable)) return true
+    // absent (db/057 not run yet): looked up again at most once a minute
+    if (Date.now() - failuresCheckedAt < 60 * 1000) return false
+    failuresCheckedAt = Date.now()
+    return (await columnsOf(cfg.signInFailuresTable, client)).size > 0
+  }
+  /** The ceiling never fails a sign-in: the in-memory lockouts still hold. */
+  function failuresTrouble(what, err) {
+    const t = Date.now()
+    if (t - failuresWarnedAt < 60 * 1000) return
+    failuresWarnedAt = t
+    log.warn?.(`[auth] sign-in ceiling (db/057) ${what} failed: ${err?.code || err?.message}`)
+  }
+
+  /**
+   * Before the password check: null to go on, { claim } to go on with the
+   * try it took (returnClaim gives it back when the check does not run), or
+   * { retryAfterSec } when the address is past its ceiling and no try is
+   * free for this source now. A source that signed in to the account before
+   * (`known`, in memory or in db/057 auth.sign_in_sources) always goes on.
+   * slots 'account': all other sources share one try per interval; 'lane':
+   * one per client lane (`lane`, ipLaneKey) and interval.
+   */
+  async function ceilingCheck(email, known, { bucket, lane } = {}) {
+    const c = cfg.accountCeiling
+    try {
+      if (!(await failuresAvailable())) return null
+      const key = failureKey(email)
+      const perLane = c.slots === 'lane'
+      const { rows } = await pool.query(
+        `SELECT failures, greatest(0, ceil(extract(epoch FROM next_try_at - now())))::int AS wait
+           FROM ${T.failures}
+          WHERE email_key = $1 AND window_start > now() - make_interval(secs => $2)`,
+        [key, c.windowMs / 1000])
+      const r = rows[0]
+      if (!r || r.failures < c.maxFailures || known) return null
+      if (bucket != null && await knownSourceStored(email, bucket)) return null
+      const steps = Math.min(20, Math.floor((r.failures - c.maxFailures) / c.maxFailures))
+      const intervalSec = Math.max(1, Math.ceil(Math.min(c.maxIntervalMs, c.newSourceIntervalMs * 2 ** steps) / 1000))
+      if (perLane) {
+        const slot = `${email}|${lane}`
+        const t = Date.now()
+        const until = laneSlots.get(slot)
+        if (until != null && until > t) return { retryAfterSec: Math.max(1, Math.ceil((until - t) / 1000)) }
+        laneSlots.delete(slot) // re-inserted: most recent last
+        laneSlots.set(slot, t + intervalSec * 1000)
+        while (laneSlots.size > LANE_SLOTS_MAX) laneSlots.delete(laneSlots.keys().next().value)
+        return { claim: { lane: slot, until: t + intervalSec * 1000 } }
+      }
+      if (r.wait > 0) return { retryAfterSec: r.wait }
+      // one new source takes the try; the others wait for the next one
+      const claim = await pool.query(
+        `UPDATE ${T.failures} SET next_try_at = now() + make_interval(secs => $2)
+          WHERE email_key = $1 AND (next_try_at IS NULL OR next_try_at <= now())
+          RETURNING next_try_at::text AS at`,
+        [key, intervalSec])
+      return claim.rows.length ? { claim: { key, at: claim.rows[0].at } } : { retryAfterSec: intervalSec }
+    } catch (err) {
+      failuresTrouble('check', err)
+      return null
+    }
+  }
+
+  /**
+   * The try a sign-in took past the ceiling, given back because its password
+   * was never checked (the bcrypt gate answered auth_busy, the database
+   * failed): the next request may have it (review I-2). Best effort.
+   */
+  async function returnClaim(claim) {
+    if (!claim) return
+    if (claim.lane) {
+      if (laneSlots.get(claim.lane) === claim.until) laneSlots.delete(claim.lane)
+      return
+    }
+    try {
+      await pool.query(
+        `UPDATE ${T.failures} SET next_try_at = NULL WHERE email_key = $1 AND next_try_at = $2::timestamptz`,
+        [claim.key, claim.at])
+    } catch (err) {
+      failuresTrouble('return a try', err)
+    }
+  }
+
+  /** A failed sign-in of `email`: counted; the first one past the ceiling tells the account. */
+  async function recordFailure(email) {
+    const c = cfg.accountCeiling
+    try {
+      if (!(await failuresAvailable())) return
+      const key = failureKey(email)
+      const { rows } = await pool.query(
+        `INSERT INTO ${T.failures} AS f (email_key, window_start, failures, updated_at)
+         VALUES ($1, now(), 1, now())
+         ON CONFLICT (email_key) DO UPDATE SET
+           failures = CASE WHEN f.window_start > now() - make_interval(secs => $2) THEN f.failures + 1 ELSE 1 END,
+           next_try_at = CASE WHEN f.window_start > now() - make_interval(secs => $2) THEN f.next_try_at END,
+           window_start = CASE WHEN f.window_start > now() - make_interval(secs => $2) THEN f.window_start ELSE now() END,
+           updated_at = now()
+         RETURNING failures, (alerted_at IS NOT NULL AND alerted_at >= window_start) AS alerted`,
+        [key, c.windowMs / 1000])
+      const r = rows[0]
+      if (!r || r.failures < c.maxFailures || r.alerted) return
+      const claim = await pool.query(
+        `UPDATE ${T.failures} SET alerted_at = now()
+          WHERE email_key = $1 AND (alerted_at IS NULL OR alerted_at < window_start)
+          RETURNING failures`, [key])
+      if (claim.rows[0]) background('sign-in attempts notice', () => tellOfAttempts(email, claim.rows[0].failures))
+    } catch (err) {
+      failuresTrouble('count', err)
+    }
+  }
+
+  /**
+   * Forgets the failures of an address (a new password, the account deleted):
+   * after the commit, best effort (a database without db/057, or without its
+   * grant yet, still sets the password).
+   */
+  async function forgetFailures(email) {
+    if (!email) return
+    try {
+      if (!(await failuresAvailable())) return
+      await pool.query(`DELETE FROM ${T.failures} WHERE email_key = $1`, [failureKey(normalizeEmail(email))])
+    } catch (err) {
+      failuresTrouble('reset', err)
+    }
+  }
+  /** The account is gone: its known sources too (memory and db/057). Best effort. */
+  async function forgetSources(email) {
+    if (!email) return
+    knownSources.delete(email)
+    for (const k of laneSlots.keys()) if (k.startsWith(`${email}|`)) laneSlots.delete(k)
+    try {
+      if (!sourceMacKey || !T.sources || !(await columnsOf(cfg.signInSourcesTable)).size) return
+      await pool.query(`DELETE FROM ${T.sources} WHERE email_key = $1`, [failureKey(email)])
+    } catch (err) {
+      failuresTrouble('forget sources', err)
+    }
+  }
+  /** clearLocks and the database counter: every lock of the address goes. */
+  async function clearAllLocks(email) {
+    clearLocks(email)
+    await forgetFailures(email)
+  }
+
+  /**
+   * The address is past its ceiling: its account (if there is one) is mailed
+   * and the admins are told (options.onSignInAttack: server.js, the error
+   * tracker), once per window. An address without an account tells nobody.
+   */
+  async function tellOfAttempts(email, failures) {
+    const user = await findUserByEmail(email)
+    if (!user || isUserBlocked(user)) return
+    const hours = Math.round(cfg.accountCeiling.windowMs / 3600000)
+    log.warn?.(`[auth] ${failures} failed sign-ins for ${maskEmail(user.email)} within ${hours} h: new sources are slowed down, the account and the admins are told`)
+    if (typeof cfg.onSignInAttack === 'function') {
+      try { await cfg.onSignInAttack({ userId: user.id, failures, windowHours: hours }) } catch (err) { log.error(`[auth] sign-in attempts alert failed: ${err?.message}`) }
+    }
+    if (!mailer.enabled) return
+    // the brand of its memberships, as audit() does: OpenBeach only gives 'beach'
+    let app = 'indoor'
+    if (T.memberships && (await columnsOf(cfg.membershipsTable)).size) {
+      const { rows } = await pool.query(`SELECT app FROM ${T.memberships} WHERE user_id = $1`, [user.id])
+      if (rows.length && rows.every((m) => m.app === 'beach')) app = 'beach'
+    }
+    const lang = pickLang(isPlainObject(user.raw_user_meta_data) ? user.raw_user_meta_data.mail_lang : null)
+    await mailer.send('sign_in_attempts', { to: user.email, lang, app, vars: { count: failures } })
   }
 
   /** New link token for userId; older open tokens of the same purpose are spent. */
@@ -1274,11 +1938,12 @@ export function createAuth(options = {}) {
     if (newSourceTry?.locked) return locked(ceiling.retryAfterSec)
     const attempt = typeof lockout.begin === 'function' ? lockout.begin(key) : lockout.check(key)
     if (attempt.locked) { newSourceTry?.release?.(); return locked(attempt.retryAfterSec) }
-    const failed = () => {
+    const failed = async () => {
       lockout.fail(key)
       if (newSourceTry) newSourceLockout.fail(key)
       accountLockout?.fail(email)
       failedSources.set(source, Date.now())
+      await recordFailure(email) // db/057: counted for the address, known or not
       return INVALID_CREDENTIALS()
     }
     try {
@@ -1287,16 +1952,34 @@ export function createAuth(options = {}) {
       // Last, so requests refused above never use up the global budget; and
       // only for sources that failed lately (see DEFAULTS.limits.signInGlobal).
       const lastFail = failedSources.get(source)
-      if (lastFail != null && Date.now() - lastFail < FAILED_SOURCE_MS && limits.signInGlobal?.hit('*').limited) return BUSY()
+      const failedLately = lastFail != null && Date.now() - lastFail < FAILED_SOURCE_MS
+      if (failedLately && limits.signInGlobal?.hit('*').limited) return BUSY()
+      // db/057: past the address's ceiling only a source that signed in to it
+      // before goes on as usual (SEC-13)
+      const known = knownSource(email, source)
+      const ceilingLock = await ceilingCheck(email, known, { bucket: source, lane: laneKey(ctx.ip) })
+      if (ceilingLock?.retryAfterSec) return locked(ceilingLock.retryAfterSec)
 
-      const cols = await usersColumns()
-      const user = await findUserByEmail(email)
-      const passwordOk = await checkPassword(password, user?.encrypted_password)
-      if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) return failed()
+      let cols, user, passwordOk
+      try {
+        cols = await usersColumns()
+        user = await findUserByEmail(email)
+        // The bcrypt gate is fair between clients, and a source that signed in
+        // to this account before (and did not fail since) goes first: a flood
+        // of made-up sign-ins cannot turn its owner away (SEC-03). Known also
+        // when the ceiling check found it in db/057 just now (after a restart)
+        const prio = (known || knownSource(email, source)) && !failedLately
+        passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, prio, email))
+      } catch (err) {
+        // the password was not checked (auth_busy, the database): the try goes back
+        await returnClaim(ceilingLock?.claim)
+        throw err
+      }
+      if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) return await failed()
       const session = await createSession(user.id, user.encrypted_password)
-      if (!session) return failed() // password changed or account deleted while we were checking
+      if (!session) return await failed() // password changed or account deleted while we were checking
       lockout.succeed(key)
-      rememberSource(email, source)
+      await noteKnownSource(email, source)
       return await finishSignIn(user, cols, session)
     } finally {
       attempt.release?.()
@@ -1374,7 +2057,7 @@ export function createAuth(options = {}) {
     // scoresheet, lib/finalMail.js) go out in it, as the confirmation does
     meta.mail_lang = mailLang(body, ctx)
 
-    const hash = await hashPassword(body.password)
+    const hash = await hashPassword(body.password, gateFor(ctx.ip))
     const id = randomUUID()
     // With a mailer and db/010 the address stays unconfirmed and gets a link;
     // otherwise the account is confirmed at once (as before).
@@ -1454,7 +2137,7 @@ export function createAuth(options = {}) {
         if (byLink) confirmToken = await issueToken(client, id, 'confirm')
         return ins.rows[0].u
       })
-      if (!user) return alreadyRegistered(email, body, ctx, { linkPossible, meta })
+      if (!user) return await alreadyRegistered(email, body, ctx, { linkPossible, meta })
       if (confirmToken) {
         const lang = mailLang(body, ctx)
         const link = authLink(managerUrlFor(app), 'confirm', confirmToken, lang)
@@ -1478,7 +2161,7 @@ export function createAuth(options = {}) {
     } catch (err) {
       // db/025: a club or team asked for is gone (the form was loaded before)
       if (err?.signUpRequests) return fail(422, err.message, 'validation_failed')
-      if (err.code === '23505') return alreadyRegistered(email, body, ctx, { linkPossible, meta })
+      if (err.code === '23505') return await alreadyRegistered(email, body, ctx, { linkPossible, meta })
       // invalid_text_representation / datetime / invalid enum label etc. in metadata
       if (err.code === '22007' || err.code === '22008' || err.code === '22P02' || err.code === '22023') {
         return fail(422, 'Invalid profile data', 'validation_failed')
@@ -1494,7 +2177,7 @@ export function createAuth(options = {}) {
    * user_already_exists as before (the account would be confirmed at once,
    * so a uniform answer would hide nothing).
    */
-  function alreadyRegistered(email, body, ctx, { linkPossible, meta }) {
+  async function alreadyRegistered(email, body, ctx, { linkPossible, meta }) {
     if (!linkPossible) return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
     const app = requestApp(body)
     const lang = mailLang(body, ctx)
@@ -1507,9 +2190,27 @@ export function createAuth(options = {}) {
         await mailer.send('reset', { to: user.email, lang, app, link: authLink(managerUrlFor(app), 'reset', token, lang) })
       })
     }
-    const nowIso = new Date().toISOString()
-    const shadow = { id: randomUUID(), email, created_at: nowIso, updated_at: nowIso, raw_user_meta_data: meta, raw_app_meta_data: { provider: 'email', providers: ['email'] } }
-    return ok({ user: publicUser(shadow), email_confirmation: confirmBudgetFull() ? 'queued' : 'sent' })
+    // The user object a new account gets, to the byte (audit 2611 SEC-14):
+    // the row createAccount would insert, as Postgres gives it back (to_jsonb:
+    // timestamps with microseconds and the offset, metadata in jsonb's key
+    // order) and with the same app metadata (the link mark), without
+    // inserting it. Old apps read the user object, so it stays.
+    const ucols = await usersColumns()
+    const byLink = writable(ucols, 'email_confirmed_at') && writable(ucols, 'raw_app_meta_data')
+    const values = { id: randomUUID(), email }
+    if (writable(ucols, 'raw_user_meta_data')) values.raw_user_meta_data = meta
+    if (writable(ucols, 'raw_app_meta_data')) {
+      values.raw_app_meta_data = { provider: 'email', providers: ['email'] }
+      if (byLink) values.raw_app_meta_data[EMAIL_CONFIRMATION_MARK.key] = EMAIL_CONFIRMATION_MARK.value
+    }
+    if (writable(ucols, 'aud')) values.aud = 'authenticated'
+    if (writable(ucols, 'role')) values.role = 'authenticated'
+    const nowCols = [...(byLink ? [] : ['email_confirmed_at']), 'created_at', 'updated_at'].filter(c => writable(ucols, c))
+    const nowJson = nowCols.length ? ` || jsonb_build_object(${nowCols.map(c => `'${c}', now()`).join(', ')})` : ''
+    const { rows } = await pool.query(
+      `SELECT to_jsonb(r) AS u FROM jsonb_populate_record(NULL::${T.users}, $1::jsonb${nowJson}) r`,
+      [JSON.stringify(values)])
+    return ok({ user: publicUser(rows[0].u), email_confirmation: confirmBudgetFull() ? 'queued' : 'sent' })
   }
 
   // Confirmation mails the hourly budget held back: sent when the window
@@ -1587,7 +2288,7 @@ export function createAuth(options = {}) {
     const v = await sessionFromBody(body, ctx)
     if (v.error) return v.error
     const token = bearerOf(body, ctx)
-    const denied = await confirmIdentity(body, token, v.user.id)
+    const denied = await confirmIdentity(body, token, v.user.id, ctx)
     if (denied) return denied
     const userId = v.user.id
     try {
@@ -1640,7 +2341,10 @@ export function createAuth(options = {}) {
       const { rows } = await client.query(`DELETE FROM ${T.users} WHERE id = $1 RETURNING email`, [userId])
       return rows.length ? (rows[0].email ?? '') : null
     })
-    if (email) clearLocks(normalizeEmail(email))
+    if (email) {
+      await clearAllLocks(normalizeEmail(email))
+      await forgetSources(normalizeEmail(email))
+    }
     // Second pass: an upload that passed its session check before the
     // sessions were revoked may have landed in between. Best effort.
     if (typeof cfg.onAccountDeleted === 'function') {
@@ -1740,15 +2444,30 @@ export function createAuth(options = {}) {
     if (!pre.rows.length) return INVALID_LINK()
     const adminProblem = validateNewPassword(body.password, await minPasswordFor(pre.rows[0].user_id))
     if (adminProblem) return fail(422, adminProblem, 'weak_password')
-    const hash = await hashPassword(body.password)
+    const hash = await hashPassword(body.password, gateFor(ctx.ip))
     const out = await withTransaction(async (client) => {
       const t = await consumeToken(client, token, 'reset')
       if (t.state !== 'ok') return null
-      return setPasswordIn(client, t.userId, hash, { confirmEmail: true })
+      // An address nobody confirmed yet (a sign-up, maybe with someone else's
+      // address, SEC-15): this password confirms it, and of what the sign-up
+      // gave only what the body keeps stays (`keep`; none without it)
+      const unconfirmed = await addressUnconfirmedIn(client, t.userId, { forUpdate: true })
+      const kept = unconfirmed ? await keepSignUpDetailsIn(client, t.userId, keptDetails(body.keep)) : null
+      const r = await setPasswordIn(client, t.userId, hash, { confirmEmail: true })
+      return { ...r, confirmedNow: unconfirmed && r.emailConfirmed, kept }
     })
     if (!out) return INVALID_LINK()
-    clearLocks(out.email)
+    await clearAllLocks(out.email)
+    // the link proves the mailbox: this source passes the account-wide
+    // ceiling from now on, even once a guesser starts over after the reset
+    // (SIGNIN-CEILING-OWNER-LOCKOUT)
+    await noteKnownSource(normalizeEmail(out.email), ipKey(ctx.ip))
     await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
+    if (out.confirmedNow) {
+      // the approvers hear of the sign-up now, of what its owner kept
+      await audit('account.email_confirmed', out.userId, { with_password_reset: true, ...out.kept }, requestApp(body))
+      accountConfirmed(out.userId)
+    }
     if (mailer.enabled) {
       const lang = mailLang(body, ctx)
       const app = requestApp(body)
@@ -1757,14 +2476,118 @@ export function createAuth(options = {}) {
     return ok({ password_updated: true })
   }
 
+  /** Is the address of `userId` unconfirmed (the users table tracks it, and it is NULL)? */
+  async function addressUnconfirmedIn(client, userId, { forUpdate = false } = {}) {
+    const cols = await usersColumns(client)
+    if (!cols.has('email_confirmed_at')) return false
+    const { rows } = await client.query(
+      `SELECT email_confirmed_at IS NULL AS open FROM ${T.users} WHERE id = $1${forUpdate ? ' FOR UPDATE' : ''}`, [userId])
+    return rows[0]?.open === true
+  }
+
+  /**
+   * What the sign-up of an address nobody confirmed yet gave (audit 2611
+   * SEC-15, review I-3): the profile's name and licence number and the open
+   * requests (db/025, also those a team manager proposed since). Whoever
+   * signed up may not own the address: the owner keeps or drops each part
+   * with the password that confirms it (reset-password/confirm `keep`).
+   * -> null (confirmed, or nothing given) or { first_name, last_name,
+   * license_number, requests: [{ id, kind, club_id, club_name, team_id, team_name }] }.
+   */
+  async function signUpDetailsIn(client, userId) {
+    if (!(await addressUnconfirmedIn(client, userId))) return null
+    const text = (v) => (typeof v === 'string' && v.trim() ? v : null)
+    const out = { first_name: null, last_name: null, license_number: null, requests: [] }
+    if (T.profiles) {
+      const pcols = await columnsOf(cfg.profilesTable, client)
+      const want = ['first_name', 'last_name', 'license_number'].filter((c) => pcols.has(c))
+      if (want.length) {
+        const { rows } = await client.query(
+          `SELECT ${want.map(quoteIdent).join(', ')} FROM ${T.profiles} WHERE ${quoteIdent(cfg.profileUserIdColumn)} = $1 LIMIT 1`, [userId])
+        for (const c of want) out[c] = text(rows[0]?.[c] == null ? null : String(rows[0][c]))
+      }
+    }
+    let parts = []
+    if (typeof cfg.signUpRequests?.list === 'function') {
+      parts = await cfg.signUpRequests.list(client, userId)
+    } else if (T.requests && (await columnsOf(cfg.accountRequestsTable, client)).has('user_id')) {
+      parts = (await client.query(`SELECT id, kind, club_id, team_id FROM ${T.requests} WHERE user_id = $1 ORDER BY created_at, id`, [userId])).rows
+    }
+    out.requests = (parts || []).map((r) => ({
+      id: r.id, kind: r.kind, club_id: r.club_id ?? null, club_name: r.club_name ?? null, team_id: r.team_id ?? null, team_name: r.team_name ?? null
+    }))
+    if (!out.first_name && !out.last_name && !out.license_number && !out.requests.length) return null
+    return out
+  }
+
+  /** The `keep` of a reset-password/confirm body; absent or malformed: keep nothing. */
+  function keptDetails(keep) {
+    if (!isPlainObject(keep)) return { name: false, licence: false, requests: [] }
+    const ids = Array.isArray(keep.requests)
+      ? [...new Set(keep.requests.filter((id) => typeof id === 'string' && UUID_RE.test(id)).map((id) => id.toLowerCase()))].slice(0, 100)
+      : []
+    return { name: keep.name === true, licence: keep.licence === true, requests: ids }
+  }
+
+  /**
+   * In the caller's transaction: of what the sign-up gave only `keep`
+   * (keptDetails) stays; the name, the licence number and every request not
+   * kept go. -> { name, licence, requests_kept, requests_dropped }
+   */
+  async function keepSignUpDetailsIn(client, userId, keep) {
+    const out = { name: keep.name, licence: keep.licence, requests_kept: 0, requests_dropped: 0 }
+    if (T.profiles) {
+      const pcols = await columnsOf(cfg.profilesTable, client)
+      const clear = [...(keep.name ? [] : ['first_name', 'last_name']), ...(keep.licence ? [] : ['license_number'])].filter((c) => writable(pcols, c))
+      if (clear.length) {
+        const set = clear.map((c) => `${quoteIdent(c)} = NULL`)
+        if (writable(pcols, 'updated_at')) set.push('updated_at = now()')
+        await client.query(`UPDATE ${T.profiles} SET ${set.join(', ')} WHERE ${quoteIdent(cfg.profileUserIdColumn)} = $1`, [userId])
+      }
+    }
+    const rcols = T.requests ? await columnsOf(cfg.accountRequestsTable, client) : new Map()
+    if (rcols.has('user_id') && rcols.has('id')) {
+      const { rowCount } = await client.query(
+        `DELETE FROM ${T.requests} WHERE user_id = $1 AND NOT (id = ANY($2::uuid[]))`, [userId, keep.requests])
+      out.requests_dropped = rowCount
+      const { rows } = await client.query(`SELECT count(*)::int AS n FROM ${T.requests} WHERE user_id = $1`, [userId])
+      out.requests_kept = rows[0].n
+    }
+    return out
+  }
+
+  /**
+   * POST reset-password/details { token }: what the sign-up of a not yet
+   * confirmed address gave, for the reset link's page (the link proves the
+   * inbox, as it does for the new password). Spends nothing.
+   * 200 { signup_details: null | {...} } (signUpDetailsIn); 400 invalid_link.
+   */
+  async function resetLinkDetails(body, ctx) {
+    const blocked = limit('tokenIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const token = body.token
+    if (!isWellFormedToken(token)) return INVALID_LINK()
+    if (!(await tokensAvailable())) return RESET_UNAVAILABLE()
+    const { rows } = await pool.query(
+      `SELECT user_id FROM ${T.tokens} WHERE hash = $1 AND purpose = 'reset' AND used_at IS NULL AND expires_at > now()`,
+      [hashToken(token)])
+    if (!rows.length) return INVALID_LINK()
+    return ok({ signup_details: await signUpDetailsIn(pool, rows[0].user_id) })
+  }
+
   /**
    * POST confirm-email { token, password? } (an `app` is ignored): marks the
    * address confirmed. An account created with a link may have been made by
    * someone else with this address: unless the clicker gives the account's
-   * password, the confirmation keeps nothing of whoever signed up (password,
-   * sessions and passkeys go) and answers set_password_token, a reset link
+   * password, whoever signed up loses the account (password, sessions and
+   * passkeys go) and the answer carries set_password_token, a reset link
    * token for the clicker to choose a password (the click proved the inbox,
-   * as a reset link does).
+   * as a reset link does). That password confirms the address
+   * (confirmPasswordReset): the clicker sees what the sign-up gave (the
+   * name, the licence number, the requests: reset-password/details) and
+   * keeps what is theirs, and only then are the approvers told (SEC-15,
+   * review I-3). Until then the address stays unconfirmed, so nothing of it
+   * can be approved.
    */
   async function confirmEmailLink(body, ctx) {
     const blocked = limit('tokenIp', ipKey(ctx.ip))
@@ -1778,7 +2601,7 @@ export function createAuth(options = {}) {
       const { rows } = await pool.query(
         `SELECT u.encrypted_password FROM ${T.tokens} t JOIN ${T.users} u ON u.id = t.user_id
           WHERE t.hash = $1 AND t.purpose = 'confirm' AND t.used_at IS NULL AND t.expires_at > now()`, [hashToken(token)])
-      if (rows[0]) passwordOk = await checkPassword(body.password, rows[0].encrypted_password)
+      if (rows[0]) passwordOk = await checkPassword(body.password, rows[0].encrypted_password, gateFor(ctx.ip))
     }
     let setPasswordToken = null
     const out = await withTransaction(async (client) => {
@@ -1794,10 +2617,13 @@ export function createAuth(options = {}) {
       }
       const { rows: urows } = await client.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1 FOR UPDATE`, [t.userId])
       if (confirmsByLink(urows[0]?.u) && urows[0].u.email_confirmed_at == null && !passwordOk) {
-        // Not shown to be the one who signed up: nothing of theirs stays
-        await setPasswordIn(client, t.userId, `!unset:${generateToken()}`, { confirmEmail: true })
+        // Not shown to be the one who signed up: their password, sessions
+        // and passkeys go; the address is confirmed with the clicker's new
+        // password, which keeps what the clicker keeps of the details
+        // (confirmPasswordReset, SEC-15)
+        const r = await setPasswordIn(client, t.userId, `!unset:${generateToken()}`)
         setPasswordToken = await issueToken(client, t.userId, 'reset')
-        return { userId: t.userId, already: false, reset: true }
+        return { userId: t.userId, already: false, reset: true, revokedSessions: r.revokedSessions }
       }
       let set = 'email_confirmed_at = coalesce(email_confirmed_at, now())'
       if (writable(cols, 'updated_at')) set += ', updated_at = now()'
@@ -1809,11 +2635,22 @@ export function createAuth(options = {}) {
       return { userId: t.userId, already: false }
     })
     if (!out) return INVALID_LINK()
-    if (!out.already) {
-      await audit('account.email_confirmed', out.userId, out.reset ? { password_cleared: true } : {})
+    if (out.reset) {
+      // confirmed (and the approvers told) with the clicker's new password
+      await audit('account.password_reset', out.userId, { password_cleared: true, sessions_revoked: out.revokedSessions })
+    } else if (!out.already) {
+      await audit('account.email_confirmed', out.userId, {})
       accountConfirmed(out.userId)
+      // a fresh link opened from here: the mailbox's holder, a known source
+      // past the account-wide ceiling (SIGNIN-CEILING-OWNER-LOCKOUT; a link
+      // that clears the password makes its source known with the new one)
+      try {
+        await noteKnownSource(normalizeEmail((await findUserId(out.userId)).email), ipKey(ctx.ip))
+      } catch (err) {
+        failuresTrouble('remember source', err)
+      }
     }
-    if (setPasswordToken) clearLocks(normalizeEmail((await findUserId(out.userId)).email))
+    if (setPasswordToken) await clearAllLocks(normalizeEmail((await findUserId(out.userId)).email))
     return ok({ confirmed: true, already_confirmed: out.already, ...(setPasswordToken ? { set_password_token: setPasswordToken } : {}) })
   }
 
@@ -1928,6 +2765,9 @@ export function createAuth(options = {}) {
     await pool.query(`UPDATE ${T.passkeys} SET counter = $2, last_used_at = now() WHERE id = $1`, [passkey.id, newCounter])
     const session = await createPasskeySession(user.id, passkey.id)
     if (!session) return PASSKEY_UNKNOWN() // removed (or a new password set) while we were checking
+    // a passkey sign-in is the owner's as much as a password one: its source
+    // passes the account-wide ceiling of password tries (SIGNIN-CEILING-OWNER-LOCKOUT)
+    if (typeof user.email === 'string' && user.email) await noteKnownSource(normalizeEmail(user.email), ipKey(ctx.ip))
     return await finishSignIn(user, cols, session)
   }
 
@@ -1942,7 +2782,7 @@ export function createAuth(options = {}) {
     if (blockedUser) return blockedUser
     const password = typeof body.password === 'string' ? body.password : ''
     if (!password || password.length > 1024) return fail(400, 'Your password is needed to add a passkey.', 'password_required')
-    const check = await verifyPassword(userId, password)
+    const check = await verifyPassword(userId, password, ctx)
     if (check.locked) {
       const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
       return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
@@ -2042,7 +2882,7 @@ export function createAuth(options = {}) {
     const id = typeof body.id === 'string' ? body.id : ''
     if (!UUID_RE.test(id)) return fail(400, 'Invalid passkey id', 'validation_failed')
     const token = bearerOf(body, ctx)
-    const denied = await confirmIdentity(body, token, v.user.id)
+    const denied = await confirmIdentity(body, token, v.user.id, ctx)
     if (denied) return denied
     const out = await withTransaction(async (client) => {
       // The account filter is the ownership check.
@@ -2091,7 +2931,7 @@ export function createAuth(options = {}) {
    * fresh. Returns null when confirmed, else the answer (403 reauth_required,
    * 401 invalid_password, 429 account_locked, 401 passkey_*).
    */
-  async function confirmIdentity(body, token, userId) {
+  async function confirmIdentity(body, token, userId, ctx = {}) {
     const password = typeof body.password === 'string' ? body.password : ''
     if (isPlainObject(body.passkey)) {
       if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
@@ -2115,7 +2955,7 @@ export function createAuth(options = {}) {
       await pool.query(`UPDATE ${T.passkeys} SET counter = $2, last_used_at = now() WHERE id = $1`, [verified.passkey.id, verified.newCounter])
     } else if (password) {
       if (password.length > 1024) return fail(401, 'Wrong password.', 'invalid_password')
-      const check = await verifyPassword(userId, password)
+      const check = await verifyPassword(userId, password, ctx)
       if (check.locked) {
         const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
         return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
@@ -2138,7 +2978,7 @@ export function createAuth(options = {}) {
     if (v.error) return v.error
     if (!isPlainObject(body.passkey) && !(typeof body.password === 'string' && body.password)) return REAUTH_REQUIRED()
     const token = bearerOf(body, ctx)
-    const denied = await confirmIdentity(body, token, v.user.id)
+    const denied = await confirmIdentity(body, token, v.user.id, ctx)
     if (denied) return denied
     return ok({ fresh_until: freshSessions.get(freshKey(token)) })
   }
@@ -2160,20 +3000,20 @@ export function createAuth(options = {}) {
     const next = typeof body.new_password === 'string' ? body.new_password : ''
     const pwProblem = validateNewPassword(next) || validateNewPassword(next, await minPasswordFor(userId))
     if (pwProblem) return fail(422, pwProblem, 'weak_password')
-    const check = await verifyPassword(userId, current)
+    const check = await verifyPassword(userId, current, ctx)
     if (check.locked) {
       const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
       return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
     }
     if (!check.ok) return fail(401, 'Wrong password.', 'invalid_password')
-    const hash = await hashPassword(next)
+    const hash = await hashPassword(next, gateFor(ctx.ip))
     const out = await withTransaction(async (client) => {
       const r = await setPasswordIn(client, userId, hash)
       const session = await createSession(userId, hash, client)
       const { rows } = await client.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1`, [userId])
       return { ...r, session, user: rows[0]?.u }
     })
-    clearLocks(out.email)
+    await clearAllLocks(out.email)
     if (!out.session || !out.user) return INVALID_TOKEN()
     await audit('account.password_changed', userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
     return await finishSignIn(out.user, await usersColumns(), out.session)
@@ -2217,7 +3057,7 @@ export function createAuth(options = {}) {
     const token = bearerOf(body, ctx)
     const removePasskeys = body.remove_passkeys === true
     if (removePasskeys) {
-      const denied = await confirmIdentity(body, token, v.user.id)
+      const denied = await confirmIdentity(body, token, v.user.id, ctx)
       if (denied) return denied
     }
     const out = await withTransaction(async (client) => {
@@ -2263,6 +3103,7 @@ export function createAuth(options = {}) {
           return fail(501, 'Email change is not available yet.', 'not_implemented')
         case 'reset-password': return await requestPasswordReset(b, c)
         case 'reset-password/confirm': return await confirmPasswordReset(b, c)
+        case 'reset-password/details': return await resetLinkDetails(b, c)
         case 'confirm-email': return await confirmEmailLink(b, c)
         case 'resend-confirmation': return await resendConfirmation(b, c)
         case 'passkey/login-options': return await passkeyLoginOptions(b, c)
@@ -2293,6 +3134,7 @@ export function createAuth(options = {}) {
     for (const [k, at] of failedSources) if (t - at >= FAILED_SOURCE_MS) failedSources.delete(k)
     ceremonies.sweep()
     for (const [k, until] of freshSessions) if (until <= t) freshSessions.delete(k)
+    for (const [k, until] of laneSlots) if (until <= t) laneSlots.delete(k)
   }
 
   return {
@@ -2316,6 +3158,11 @@ export function createAuth(options = {}) {
     lockout,
     accountLockout,
     bcryptGate,
+    /** The worker threads' state (null: bcrypt on the main thread). */
+    bcryptStats: () => bcryptPool?.stats() ?? null,
+    /** Stops the bcrypt worker threads (shutdown, tests); later jobs run on the main thread. */
+    close: async () => { await bcryptPool?.close() },
+    sweepSignInFailures,
     config: Object.freeze(Object.fromEntries(Object.entries(cfg).filter(
       ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted', 'selfDelete', 'mailer'].includes(k)))),
     /** Drops the cached column lists (after a restore or migration). */

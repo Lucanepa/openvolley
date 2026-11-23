@@ -4,9 +4,11 @@ import assert from 'node:assert/strict'
 import pg from 'pg'
 import { SKIP_PG, createTestDatabase } from './helpers/pgTestDb.js'
 import { createGlobalMatches, keyHash } from '../lib/globalMatches.js'
+import { minimalPdf } from './helpers/pdfFixture.js'
 
 const KEY = 'K'.repeat(22)
-const PDF = Buffer.from('%PDF-1.7 scoresheet').toString('base64')
+// a complete PDF (PERM-15: a %PDF prefix alone is refused since 2026-11-23)
+const PDF = minimalPdf().toString('base64')
 const summary = { home: { name: 'Bergtal IS' }, away: { name: 'Seeblick IS' }, setsWon: { home: 3, away: 1 }, status: 'final' }
 
 describe('Global cloud on Postgres', { skip: SKIP_PG }, () => {

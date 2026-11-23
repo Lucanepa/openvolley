@@ -45,9 +45,12 @@ the relay its scorer is connected to.
   send it in a WebSocket frame or a POST body. OpenVolley's own page reads it
   from the fragment (`#ABCD2345`), which browsers never send.
 - Wrong codes count per address: 20 per 5 minutes on the cloud, 60 on a hall
-  relay. Beyond that every lookup from that address is refused with
-  `rate-limited` and a wait in seconds. All lookups count too (600 / 1200 per
-  5 minutes), so poll at most every 2 s.
+  relay. Beyond that every lookup from that address of a code it has not
+  resolved before is refused with `rate-limited` and a wait in seconds. A code
+  your address resolved keeps resolving while it is live (6,000 / 12,000
+  lookups per 5 minutes for those); all other lookups count too (600 / 1200
+  per 5 minutes), so poll at most every 2 s. A web page of another site counts
+  on its own bucket per address.
 
 ## 3. WebSocket (recommended: pushes every change)
 
@@ -170,8 +173,10 @@ ignore them.
 An official league game's live score is public by its game number (1–7
 digits), without a code: `GET /api/global/live/game/<number>` on the cloud
 (from the published live score) or on a hall relay (its own room of that
-number). CORS `*`, poll every 5 s. The answer is the TV page's court summary
+number). Indoor games only: OpenBeach numbers its games per tournament. CORS
+`*`, poll every 5 s. The answer is the TV page's court summary
 (`data.courts[0]`: `home` / `away` `{ name, short, color }`, `setsWon`,
-`points`, `sets`, `currentSet`, `bestOf`, `serving` `home`/`away`, `ended`,
-`timeout`, `interval`), with no time-out counts or substitutions. OpenVolley's
+`points`, `sets`, `currentSet` (a best-of-3 decider is 3), `bestOf`,
+`serving` `home`/`away`, `ended`, `timeout`, `interval`), with no time-out
+counts or substitutions. OpenVolley's
 board page takes a game number in its code field.

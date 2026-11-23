@@ -34,7 +34,7 @@ import { TIMEOUTS_PER_SET } from './timeouts'
 import { resolveSanction, teamSanctionCounts, sanctionedPlayerNumber } from './sanctions'
 import { playerReplacedByLibero } from './liberos'
 import { isBookkeepingEvent } from './rally'
-import { getFirstServeForSet } from './rules'
+import { serveBeforePoint } from './rules'
 
 const setOf = (e) => e?.setIndex ?? 1
 const seqOf = (e) => e?.seq || 0
@@ -503,7 +503,9 @@ export function decisionChangeTakeBack(events, setIndex, match = null) {
   const lastPointSeq = lastCompletedRallySeq(events, setIndex)
   if (lastPointSeq === -Infinity) return null
   const point = inSet.find(e => e.type === 'point' && seqOf(e) === lastPointSeq)
-  if (!point) return null
+  // the decision is about a rally: never a penalty's point (its sanction is
+  // taken back first, with Undo; domain/decisionChange decisionChangeBlock)
+  if (!point || point.payload?.penaltySeq != null) return null
   const after = inSet.filter(e => baseSeqOf(e) > baseSeqOf(point) && !isBookkeepingEvent(e))
   if (after.length === 0) return null
   const heads = after.filter(e => seqOf(e) === baseSeqOf(e))
@@ -519,11 +521,11 @@ export function decisionChangeTakeBack(events, setIndex, match = null) {
   }
   if (!after.every(e => headOf.get(baseSeqOf(e)) === e || ownRow(e))) return null
 
-  // who served before the point, and which team the point rotated
-  const pointsBefore = inSet.filter(e => e.type === 'point' && seqOf(e) < seqOf(point))
-  const serveBefore = pointsBefore.length
-    ? pointsBefore[pointsBefore.length - 1].payload?.team
-    : getFirstServeForSet(setIndex, match || {})
+  // who served the rally, and which team the point rotated: the app's serve
+  // rule (rules serveBeforePoint), not the previous point's team (after a
+  // going back the serve is the rectification's, a point set by hand passes
+  // none)
+  const serveBefore = serveBeforePoint(inSet, point, setIndex, match || {})
   const winner = point.payload?.team
   const rotatedNow = { home: false, away: false }
   if (winner === 'home' || winner === 'away') rotatedNow[winner] = serveBefore !== winner

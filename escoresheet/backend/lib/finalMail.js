@@ -30,7 +30,9 @@
  * others), at most MAX_RECIPIENTS. An account's mail is in the language picked
  * at its sign-up (user metadata mail_lang, lib/auth.js); a typed address or a
  * club's contact in English (FINAL_MAIL_LANG overrides). Only while the
- * switch is on, and only matches closed after it was turned on (never the backlog).
+ * switch is on, and only matches closed after it was turned on (never the
+ * backlog). "Turned on" is the last change from off to on: saving the switch
+ * again, or off and on, never drops a close already on its way (SEC-12).
  *
  * The PDF is the one of the close's approval: the newest PDF stored for the
  * match (lib/scoresheets.js latestPdf: the files recorded for it, db/033),
@@ -82,12 +84,29 @@
  * bench injury, in the rules' words), oldest first, with the time in Zurich.
  * Plain text, the dates of a date-of-birth correction taken out, at most
  * MAX_TECHNICAL_LINES. An older match prints them on its sheet: none listed.
+ *
+ * Typed addresses (owner decision 4 on SEC-11, audit 26.11): an address that
+ * comes only from the match setup (a typed referee or team contact address)
+ * and is neither an account of the close (the scorer, an approver), a
+ * confirmed active account, nor a club's contact gets the official mail and
+ * the PDF with a fixed text: no technical remarks (the scorer's free text),
+ * the schedule's team names (a game outside the schedule: the typed names
+ * without anything that reads as a link or an address) and the result only
+ * as a score. The accounts and the clubs' contacts get it as before. The
+ * sweep mails at most MAX_TYPED_PER_CLOSER_DAY typed addresses per closing
+ * account (closed_by, else the creator) and day; the rest of a close wait:
+ * the others get the mail at once, the close's round stays open (deferred)
+ * until the closing account's day ends, and the next sweep after it mails
+ * them, within that day's cap again, up to LATE_PDF_DAYS after the close
+ * (2611 review, SR-2: they were left out of the close for good). The audit
+ * entry comes when the round ends. An admin's closes and an admin's Send now
+ * are not capped.
  */
 
 import { createHash } from 'node:crypto'
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { ADMIN_ROLES } from './access.js'
-import { MAIL_BUDGET_OF, pickLang } from './mailer.js'
+import { MAIL_BUDGET_OF, pickLang, withoutLinks } from './mailer.js'
 import { connectClient } from './pgClient.js'
 import { EMAIL_RE } from './emailAddress.js'
 import { redactRemarkDobs } from './publicColumns.js'
@@ -112,6 +131,9 @@ const retryMs = (attempts) => Math.min(60, 2 ** attempts) * MINUTE_MS
 // A close the sweep has not looked at yet: closed within this
 const LOOKBACK_MS = DAY_MS
 const MAX_RECIPIENTS = 12
+// Typed addresses (see the header) one closing account's closes mail per day
+// in the sweep: a club's busiest home day is about 10 games of 4 typed addresses
+export const MAX_TYPED_PER_CLOSER_DAY = 40
 // Technical remarks in a final mail: at most this many lines (and one "+n"
 // line) of at most this many characters (the mail's list takes 40 lines of
 // 200 characters, lib/mailer.js cleanVar)
@@ -137,7 +159,7 @@ const ACTIVE_SQL = `coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz <= no
 // One close of a match as the mail reads it (dueCloses, closeOf): the match,
 // its row in match_final_mails, whether an earlier close was mailed
 // (corrected) and the last admin reopen before it
-const CLOSE_COLUMNS = `m.id, m.external_id, m.game_n, m.closed_at, m.closed_at::text AS closed_at_exact, m.closed_by, m.scheduled_at, m.updated_at, m.created_at,
+const CLOSE_COLUMNS = `m.id, m.external_id, m.game_n, m.closed_at, m.closed_at::text AS closed_at_exact, m.closed_by, m.created_by, m.scheduled_at, m.updated_at, m.created_at,
               m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name, m.match_info->>'league' AS league,
               m.officials, to_jsonb(m) ->> 'final_score' AS final_score,
               m.manual_changes, m.match_info->>'remarks_model' AS remarks_model,
@@ -232,6 +254,21 @@ export function refereeAddresses (officials) {
   return ['1st referee', '2nd referee'].map((role) => list.find((o) => o && o.role === role)?.email).filter(Boolean)
 }
 
+/**
+ * A match's typed team name as a typed address's mail shows it (see the
+ * header): one line, no control or bidi characters, nothing that reads as a
+ * link or an address, at most 80 characters. Pure.
+ */
+export function linkFreeText (raw, max = 80) {
+  return withoutLinks(raw).replace(/\s+/g, ' ').trim().slice(0, max)
+}
+
+/** A final score as a typed address's mail shows it ("3-1", "3:1"); '' for anything else. */
+export function plainResult (raw) {
+  const s = String(raw ?? '').trim()
+  return /^[0-9]{1,2} ?[-:] ?[0-9]{1,2}$/.test(s) ? s : ''
+}
+
 /** A file the final mail attaches: a PDF ('%PDF-', '%%EOF' at its end) of at most MAIL_PDF_MAX_BYTES. */
 export function isMailablePdf (data) {
   if (!Buffer.isBuffer(data) || data.length < 16 || data.length > MAIL_PDF_MAX_BYTES) return false
@@ -275,15 +312,23 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     }
   }
 
-  /** PUT /api/settings { send_final_email } */
+  /**
+   * PUT /api/settings { send_final_email }. changed_at is when the switch was
+   * turned on: it moves only when it goes from off to on (SEC-12). Saving the
+   * same value again (a stale tab) or turning it off leaves it, so the closes
+   * after it that are still on their way (waiting for the PDF, deferred, the
+   * PDF to follow) are not left out by a later save.
+   */
   async function setSettings ({ actorId, body } = {}) {
     if (!body || typeof body.send_final_email !== 'boolean') return invalid('send_final_email: true or false')
     const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       await client.query(
-        `INSERT INTO public.app_settings (id, send_final_email, changed_by, changed_at) VALUES (true, $1, $2, now())
-         ON CONFLICT (id) DO UPDATE SET send_final_email = EXCLUDED.send_final_email, changed_by = EXCLUDED.changed_by, changed_at = EXCLUDED.changed_at`,
+        `INSERT INTO public.app_settings (id, send_final_email, changed_by, changed_at) VALUES (true, $1, $2, CASE WHEN $1 THEN now() END)
+         ON CONFLICT (id) DO UPDATE SET send_final_email = EXCLUDED.send_final_email, changed_by = EXCLUDED.changed_by,
+           changed_at = CASE WHEN EXCLUDED.send_final_email AND (app_settings.send_final_email IS NOT TRUE OR app_settings.changed_at IS NULL)
+                             THEN now() ELSE app_settings.changed_at END`,
         [body.send_final_email, isUuid(actorId) ? actorId : null])
       await audit(client, { actorId, action: 'settings.final_email', details: { send_final_email: body.send_final_email } })
       await client.query('COMMIT')
@@ -318,7 +363,11 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     return to.map((address) => ({ address, lang: langs.get(address) || lang }))
   }
 
-  /** The addresses of one close (see the header), with the accounts' languages. `game`: scheduleOf. */
+  /**
+   * The addresses of one close (see the header), with the accounts'
+   * languages: [{ address, lang, typed }]. typed: an address of the match
+   * setup only, of no account (the header's typed addresses). `game`: scheduleOf.
+   */
   async function recipientsOf (m, game) {
     const { rows: accounts } = await pool.query(
       `SELECT lower(u.email) AS email, u.raw_user_meta_data->>'mail_lang' AS lang FROM auth.users u
@@ -329,6 +378,8 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
         ORDER BY u.id = $2 DESC, u.id`,
       [m.id, isUuid(m.closed_by) ? m.closed_by : null, m.corrected === true])
     let others = []
+    let clubContacts = []
+    const typedRaw = []
     if (game) {
       // the clubs of the schedule's two teams: the club each team name is
       // recorded for (a team plays for one club, db/018), by its id
@@ -337,11 +388,67 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
           WHERE c.contact_email IS NOT NULL
             AND c.id IN (SELECT ct.club_id FROM public.club_teams ct WHERE lower(btrim(ct.team_name)) = ANY($1::text[]))
           ORDER BY c.id`, [[game.home, game.away].map((n) => n.toLowerCase())])
-      others = [...refereeAddresses(m.officials), ...clubs.map((r) => r.email)]
+      clubContacts = clubs.map((r) => r.email)
+      typedRaw.push(...refereeAddresses(m.officials))
+      others = [...refereeAddresses(m.officials), ...clubContacts]
     }
     // the teams' own contacts: every official match (not only schedule games)
+    typedRaw.push(...teamContactAddresses(m.officials))
     others = [...others, ...teamContactAddresses(m.officials)]
-    return withLangs(accounts, others)
+    const to = withLangs(accounts, others)
+    // typed: only from the match setup, and no account of the close nor a club's contact
+    const known = new Set(recipientList([...accounts.map((r) => r.email), ...clubContacts]))
+    const typed = new Set(recipientList(typedRaw).filter((a) => !known.has(a) && to.some((x) => x.address === a)))
+    if (typed.size) {
+      // a confirmed, active account's address is no stranger's (SEC-11)
+      const { rows } = await pool.query(
+        `SELECT lower(u.email) AS email FROM auth.users u
+          WHERE lower(u.email) = ANY($1::text[]) AND NOT ${UNCONFIRMED_SQL} AND ${ACTIVE_SQL}
+            AND (to_jsonb(u) ->> 'deleted_at') IS NULL`, [[...typed]])
+      for (const r of rows) typed.delete(r.email)
+    }
+    return to.map((x) => ({ ...x, typed: typed.has(x.address) }))
+  }
+
+  // Typed addresses mailed per closing account in the sweep (MAX_TYPED_PER_CLOSER_DAY): id -> { start, n }
+  const typedSent = new Map()
+  const typedUsed = (key) => {
+    const e = typedSent.get(key)
+    return e && now() - e.start < DAY_MS ? e.n : 0
+  }
+  // when the closing account's day of typed addresses ends (now, when none is counted)
+  const typedResetAt = (key) => {
+    const e = typedSent.get(key)
+    return e && now() - e.start < DAY_MS ? e.start + DAY_MS : now()
+  }
+  function useTyped (key, n) {
+    if (!n) return
+    const t = now()
+    if (typedSent.size >= 10_000) for (const [k, e] of typedSent) if (t - e.start >= DAY_MS) typedSent.delete(k)
+    const e = typedSent.get(key)
+    if (e && t - e.start < DAY_MS) e.n += n
+    else typedSent.set(key, { start: t, n })
+  }
+
+  /**
+   * The sweep's cap on typed addresses (see the header): `to` without the
+   * typed addresses over the closing account's daily allowance that this
+   * close has not reached yet ({ to, capped, closer, retryAt }: retryAt, when
+   * the held ones may go, the end of the closing account's day). An admin's
+   * close is not capped.
+   */
+  async function withinTypedCap (m, to, reachedBefore) {
+    const fresh = to.filter((x) => x.typed && !reachedBefore(x))
+    const closer = isUuid(m.closed_by) ? m.closed_by : isUuid(m.created_by) ? m.created_by : `match:${m.id}`
+    if (!fresh.length) return { to, capped: 0, closer }
+    const left = Math.max(0, MAX_TYPED_PER_CLOSER_DAY - typedUsed(closer))
+    if (fresh.length <= left) return { to, capped: 0, closer }
+    if (isUuid(closer)) {
+      const { rows: [p] } = await pool.query('SELECT p.roles && $2::text[] AS admin FROM public.profiles p WHERE p.user_id = $1 LIMIT 1', [closer, [...ADMIN_ROLES]])
+      if (p?.admin === true) return { to, capped: 0, closer }
+    }
+    const hold = new Set(fresh.slice(left).map((x) => x.address))
+    return { to: to.filter((x) => !hold.has(x.address)), capped: hold.size, closer, retryAt: typedResetAt(closer) }
   }
 
   /** The PDF of the close's approval (see the header): { data, filename, mtimeMs }, or null. */
@@ -465,10 +572,26 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
       return 'later'
     }
     const game = await scheduleOf(m.game_n)
-    const to = await recipientsOf(m, game)
+    // Each address gets the mail with the PDF once ('pdf'); while there is
+    // none, the mail without it once ('nopdf'), and then the PDF on its own
+    const done = new Set(m.delivered)
+    const has = (round, x) => done.has(reachedKey(round, m, x.address))
+    const reachedOne = (x) => has('pdf', x) || has('nopdf', x)
+    let to = await recipientsOf(m, game)
+    // the sweep: typed addresses within the closing account's daily cap (SEC-11)
+    const cap = manual ? { to, capped: 0, closer: null } : await withinTypedCap(m, to, reachedOne)
+    to = cap.to
+    // held ones wait for the closing account's next day (SR-2), up to LATE_PDF_DAYS after the close
+    const holding = cap.capped > 0 && t - new Date(m.closed_at).getTime() < LATE_PDF_DAYS * DAY_MS
+    const holdUntil = holding ? Math.max(cap.retryAt ?? t, t + DEFER_MS) : null
+    if (cap.capped) log.warn?.(`[final-mail] match ${m.id}: ${cap.capped} typed address(es) ${holding ? `held until ${new Date(holdUntil).toISOString()}` : 'left out'}, the closing account's ${MAX_TYPED_PER_CLOSER_DAY} a day are used up`)
     info.recipients = to.length
     info.reached = 0
     if (!to.length) {
+      if (holding) {
+        await save(m, { outcome: 'deferred', recipients: m.mailed ?? 0, attempts: m.attempts, delivered: m.delivered, nextTryAt: holdUntil })
+        return 'deferred'
+      }
       await save(m, { outcome: 'no_recipients', recipients: 0 })
       return 'no_recipients'
     }
@@ -482,20 +605,26 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
       // a list of one-line texts (lib/mailer.js cleanVar)
       technical: (await technicalOf(m)).map((line) => ({ line }))
     }
-    // Each address gets the mail with the PDF once ('pdf'); while there is
-    // none, the mail without it once ('nopdf'), and then the PDF on its own
-    const done = new Set(m.delivered)
-    const has = (round, x) => done.has(reachedKey(round, m, x.address))
+    // A typed address (see the header): the fixed text, none of the scorer's own
+    const typedVars = {
+      ...vars,
+      teams: game ? vars.teams : `${linkFreeText(m.home_name) || '?'} – ${linkFreeText(m.away_name) || '?'}`,
+      result: plainResult(m.final_score),
+      technical: []
+    }
+    const typedBefore = new Set(to.filter((x) => x.typed && reachedOne(x)).map((x) => x.address))
     const r = await deliver('scoresheet', to, (x) => {
       if (has('pdf', x) || (!pdf && has('nopdf', x))) return null
+      const v = x.typed ? typedVars : vars
       return pdf
-        ? { key: reachedKey('pdf', m, x.address), vars: { ...vars, late: has('nopdf', x) }, attachments: [{ filename: pdf.filename, content: pdf.data }] }
-        : { key: reachedKey('nopdf', m, x.address), vars }
+        ? { key: reachedKey('pdf', m, x.address), vars: { ...v, late: has('nopdf', x) }, attachments: [{ filename: pdf.filename, content: pdf.data }] }
+        : { key: reachedKey('nopdf', m, x.address), vars: v }
     }, done, ctx)
-    const reached = to.filter((x) => has('pdf', x) || has('nopdf', x)).length
+    if (!manual) useTyped(cap.closer, to.filter((x) => x.typed && reachedOne(x) && !typedBefore.has(x.address)).length)
+    const reached = to.filter(reachedOne).length
     info.reached = reached
     const recipients = late ? Math.max(m.mailed ?? 0, reached) : reached
-    const auditMail = (details) => manual ? null : audit(pool, { actorId: null, action: 'match.final_mail', matchId: m.id, details: { ...details, corrected: m.corrected === true, game_n: m.game_n ?? null } })
+    const auditMail = (details) => manual ? null : audit(pool, { actorId: null, action: 'match.final_mail', matchId: m.id, details: { ...details, corrected: m.corrected === true, game_n: m.game_n ?? null, ...(cap.capped ? { capped: cap.capped } : {}) } })
     if (!to.every((x) => has('pdf', x) || (!pdf && has('nopdf', x)))) {
       const attempts = m.attempts + (r.failed ? 1 : 0)
       if (r.failed && attempts >= MAX_TRIES && !pdf && !late && reached) {
@@ -517,6 +646,11 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
       return r.held ? 'deferred' : 'later'
     }
     if (pdf) {
+      if (holding) {
+        // everyone within the cap has it; the round stays open for the held ones
+        await save(m, { outcome: 'deferred', recipients, attempts: m.attempts, delivered: [...done], nextTryAt: holdUntil })
+        return 'deferred'
+      }
       await save(m, { outcome: 'sent', recipients })
       await auditMail({ recipients: to.length, pdf: true, ...(late ? { late_pdf: true } : {}) })
       return 'sent'
@@ -527,7 +661,13 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     return 'sent_no_pdf'
   }
 
-  /** The closes due now, the longest due first, without the matches `seen`. */
+  /**
+   * The closes due now, the longest due first, without the matches `seen`.
+   * Only a close the sweep has not started (no match_final_mails row) must
+   * be after the switch was turned on (never the backlog); one already on
+   * its way (waiting for the PDF, deferred, the PDF to follow) is finished
+   * whatever the switch did since, up to LATE_PDF_DAYS (SEC-12).
+   */
   async function dueCloses (changedAt, seen) {
     const t = now()
     const { rows } = await pool.query(
@@ -535,7 +675,8 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
          ${CLOSE_FROM}
         WHERE m.closed_at IS NOT NULL
           AND m.closed_at <= $3::timestamptz
-          AND (m.closed_at >= greatest($1::timestamptz, $2::timestamptz)
+          AND ((f.match_id IS NULL AND m.closed_at >= greatest($1::timestamptz, $2::timestamptz))
+               OR (f.match_id IS NOT NULL AND m.closed_at >= $2::timestamptz)
                -- a close an admin mailed by hand (sendNow): finished whenever it closed
                OR (f.match_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.audit_log a
                     WHERE a.action = 'match.final_mail_manual' AND a.match_id = m.id AND a.at >= m.closed_at AND a.at >= $2::timestamptz)))
@@ -566,9 +707,12 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
   /**
    * The officials who signed a mailed close that an admin reopened since:
    * the accounts of its approvals the reopen voided (made before the close,
-   * voided as match_reopened after it). Once per close.
+   * voided as match_reopened after it). Once per close. Every such close was
+   * mailed (a match_final_mails row with recipients), so, as dueCloses does
+   * for a close on its way, when the switch was turned on does not matter:
+   * a reopen within LATE_PDF_DAYS is told (SEC-12).
    */
-  async function reopenNotices (changedAt, ctx) {
+  async function reopenNotices (ctx) {
     const t = now()
     const { rows } = await pool.query(
       `SELECT f.match_id AS id, f.closed_at::text AS closed_at_exact, f.delivered, m.game_n, m.scheduled_at,
@@ -578,9 +722,9 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
          JOIN LATERAL (SELECT a.at, a.details FROM public.audit_log a
                         WHERE a.action = 'match.reopen' AND a.match_id = f.match_id AND a.at > f.closed_at
                         ORDER BY a.at LIMIT 1) r ON true
-        WHERE f.reopen_notice IS NULL AND f.recipients > 0 AND r.at >= greatest($1::timestamptz, $2::timestamptz)
+        WHERE f.reopen_notice IS NULL AND f.recipients > 0 AND r.at >= $1::timestamptz
         ORDER BY r.at, f.match_id
-        LIMIT ${BATCH}`, [changedAt, iso(t - LATE_PDF_DAYS * DAY_MS)])
+        LIMIT ${BATCH}`, [iso(t - LATE_PDF_DAYS * DAY_MS)])
     const out = []
     for (const f of rows) {
       const mark = (notice, delivered = []) => pool.query(
@@ -653,7 +797,7 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
         }
         if (rows.length < BATCH) break
       }
-      for (const r of await reopenNotices(settings.changed_at, ctx)) count(r)
+      for (const r of await reopenNotices(ctx)) count(r)
       return out
     } catch (err) {
       log.error?.(`[final-mail] sweep failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)

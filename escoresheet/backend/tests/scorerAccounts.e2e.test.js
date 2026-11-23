@@ -147,9 +147,10 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     const blocked = await call(brute, 'POST', '/api/account/redeem-invite', { code: (await mk({})).code }, ip)
     expectCode(blocked, 429, 'OV_TOO_MANY_ATTEMPTS')
     assert.equal(blocked.headers.get('retry-after'), '600')
-    // the IP bucket blocks another account on the same address, not one elsewhere
+    // PERM-14: one account's failures do not lock another account on the same
+    // address (the address has its own, higher ceiling: tests/accounts.redeemRate.e2e.test.js)
     const other = await account('other-ip')
-    expectCode(await call(other, 'POST', '/api/account/redeem-invite', { code: 'ZZZZ-ZZZZ-ZZZZ' }, ip), 429, 'OV_TOO_MANY_ATTEMPTS')
+    expectCode(await call(other, 'POST', '/api/account/redeem-invite', { code: 'ZZZZ-ZZZZ-ZZZZ' }, ip), 404, 'OV_INVITE_INVALID')
     expectCode(await call(other, 'POST', '/api/account/redeem-invite', { code: 'ZZZZ-ZZZZ-ZZZZ' }, { 'cf-connecting-ip': '198.18.0.78' }), 404, 'OV_INVITE_INVALID')
     // a success does not count
     const fresh = await account('fresh-ok')
@@ -419,7 +420,11 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.equal(beachBundle.status, 200, beachBundle.text)
     assert.equal(beachBundle.json.data.sport, 'beach')
     assert.ok(beachBundle.json.data.competitions.every((x) => x.sport === 'beach'))
-    assert.ok(!('dob' in beachBundle.json.data.teams.find((x) => x.id === bt.json.data.team.id).players[0]), 'no date of birth (db/048)')
+    // owner decision 5 (PERM-09): a beach scorer reads the pairs of its own tournaments only (none here);
+    // the beach competition managers read every pair
+    assert.equal(beachBundle.json.data.teams.some((x) => x.id === bt.json.data.team.id), false)
+    const beachCmBundle = await call(beachCm, 'GET', '/api/saved-teams?sport=beach')
+    assert.ok(!('dob' in beachCmBundle.json.data.teams.find((x) => x.id === bt.json.data.team.id).players[0]), 'no date of birth (db/048)')
     // a 2.1.0 client (no ?sport=) never sees a beach row
     const plain = await call(users.anna, 'GET', '/api/saved-teams')
     assert.equal(plain.json.data.competitions.some((x) => x.sport === 'beach' || x.id === bc.json.data.competition.id), false)

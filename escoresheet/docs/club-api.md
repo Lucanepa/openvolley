@@ -18,7 +18,9 @@ A club manager makes tokens in the manager: **My club → API**. A token
 - can be revoked at any time (software using it stops at once). At most 20 active tokens per club.
 
 Scopes: `read` · `rosters:write` · `teams:write` · `licences:write` (a write scope brings `read`).
-`read` reaches **no personal data**: the club, its teams, their games and the matches. Rosters, squads
+`read` reaches **no personal data**: the club, its teams, their games and the matches (a game's roster
+summary has its counts and times, never the name of the team manager who sent it or the scorer who
+accepted it). Rosters, squads
 and licence lists (names, licence numbers, signatures; no dates of birth since db/048) are read with
 the write scope of that data, which needs the manager's password to make. Expired tokens do not count against the 20.
 
@@ -37,14 +39,14 @@ revoked or expired) that address gets 429 for the rest of the minute, whatever t
 | `GET /club` | read | The club: id, name, teams, contact address (not its managers) |
 | `GET /teams` | read | `{ id, name }` of the club's teams |
 | `GET /games` | read | The club's games from today, all teams (from the VolleyManager schedule) |
-| `GET /teams/:team/games` | read | One team's games, each with its roster summary |
+| `GET /teams/:team/games` | read | One team's games, each with its roster summary (counts and times; `updated_by_name` / `used_by_name` are always `null` here: who sent or accepted a roster is personal data) |
 | `GET /teams/:team/games/:game/roster` | rosters:write | The roster sent for a game, or `null` |
 | `PUT /teams/:team/games/:game/roster` | rosters:write | `{ players, staff, coach_signature?, captain_signature? }` |
 | `DELETE /teams/:team/games/:game/roster` | rosters:write | Remove it |
 | `GET` / `PUT /teams/:team/squad` | teams:write | The team's saved team (`{ players, staff }`) |
 | `GET /licences` | licences:write | The club's licence lists and people |
 | `PUT /licences/players` `scorers` `coaches` | licences:write | `{ people: [{ sv_number, last_name, first_name, gender }] }` replaces that list (a `dob` an older client still sends is accepted and dropped) |
-| `GET /matches?from&to&status&limit` | read | The club's matches (home or away), as the public API shows them |
+| `GET /matches?from&to&status&limit` | read | The club's matches (home or away), as the public API shows them: a match is the club's when its home or away team carries one of the club's team names, or a name the schedule sync renamed one from (a Romandie or Ticino team's German name; older matches keep it) |
 | `GET /matches/:id`, `/live`, `/stats` | read | One of the club's matches |
 
 **Games are read-only.** Official games come from the VolleyManager schedule; a club cannot create or

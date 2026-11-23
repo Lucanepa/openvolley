@@ -164,4 +164,35 @@ describe('importMatchFromSupabase: the line-up of the set in progress', () => {
     expect(asText(current(events, 'away').lineup)).toEqual(AWAY_NOW)
     expect(await lineupJobs()).toHaveLength(0)
   })
+
+  // Audit LOG-18: the automatic libero exit of a rotation is a sub-row too.
+  // A log that lost it (the undo of an offline decision change put it back
+  // on the scoring device only, before the fix) left the libero on court on
+  // the device that continued.
+  it('the automatic libero exit a log lacks is rebuilt and sent like the line-ups', async () => {
+    // 13 point home: side-out, home rotates, libero #11 V -> IV (front row):
+    // he goes off, #6 comes back at IV. The server has the rotation's line-up
+    // row, not the libero exit
+    const rows = serverAnswer({ withSubRows: true }).data.events
+    rows.push(
+      { external_id: `${seed}:e:301`, seq: 13, set_index: 1, type: 'point', payload: { team: 'home', score: { home: 3, away: 3 } }, ts: ts(13), created_at: ts(13) },
+      { external_id: `${seed}:e:302`, seq: 13.1, set_index: 1, type: 'lineup', payload: { team: 'home', lineup: lineupOf([7, 4, 5, 6, 1, 2]), liberoSubstitution: null }, ts: ts(13.1), created_at: ts(13.1) }
+    )
+    byPin.result = serverAnswer({ events: rows })
+    const { events } = await continueOnFreshDevice()
+
+    const exits = events.filter(e => e.type === 'libero_exit')
+    expect(exits).toHaveLength(1)
+    expect(exits[0].seq).toBeGreaterThan(13)
+    expect(exits[0].seq).toBeLessThan(14)
+    expect(exits[0].payload).toMatchObject({ team: 'home', position: 'IV', reason: 'rotation_to_front_row' })
+    expect(String(exits[0].payload.liberoOut)).toBe('11')
+    expect(String(exits[0].payload.playerIn)).toBe('6')
+    // no line-up row added: the log has them all
+    expect(events.filter(e => e.type === 'lineup')).toHaveLength(2 + SUB_ROWS.length + 1)
+    // sent, so the server's log has it for the next device
+    const jobs = (await db.sync_queue.toArray()).filter(j => j.resource === 'event' && j.action === 'insert')
+    expect(jobs.map(j => j.payload.type)).toEqual(['libero_exit'])
+    expect(jobs[0].payload).toMatchObject({ external_id: `${seed}:e:${exits[0].id}`, match_id: seed, seq: exits[0].seq, set_index: 1 })
+  })
 })

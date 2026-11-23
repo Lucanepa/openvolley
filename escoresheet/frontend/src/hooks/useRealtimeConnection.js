@@ -15,7 +15,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
-import { subscribeToMatchData, getMatchData, fetchRelayConnections, summarizeRelayTablets, createLiveStateTracker } from '../utils/serverDataSync'
+import { subscribeToMatchData, getMatchData, fetchRelayConnections, summarizeRelayTablets, createLiveStateTracker, matchAccessFor } from '../utils/serverDataSync'
 import { setDiagnosticsInfo } from '../utils/diagnosticsInfo'
 
 // Connection types
@@ -178,7 +178,8 @@ export function useRealtimeConnection({
   // Helper: build a Supabase channel with all subscriptions
   const buildChannel = useCallback((supabaseMatchUuid) => {
     const channelId = `match-${matchId}-${Date.now()}`
-    const channel = supabase.channel(channelId)
+    // the match token of the PIN check: the live state whole (line-ups, sanctions)
+    const channel = supabase.channel(channelId, { token: () => matchAccessFor(matchId)?.token || null })
 
     // Subscribe to events, sets, and match_live_state using UUID
     if (supabaseMatchUuid) {

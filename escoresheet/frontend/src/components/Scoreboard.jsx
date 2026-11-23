@@ -55,7 +55,7 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
-import { liveCodeForMatch, cachedCourtToken, getLiveCourt, liveListedForMatch } from '../utils/globalLive'
+import { liveScreenFieldsFor } from '../utils/globalLive'
 import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
 import ToolbarClock from './scoreboard/ToolbarClock'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
@@ -85,11 +85,11 @@ import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice
 import HoldToConfirmButton from './scoreboard/HoldToConfirmButton.jsx'
 import { POINT_HOLD_MS, cancelActiveHold } from '../hooks/useHoldToConfirm'
 import { readRallyMode } from '../utils/rallyMode'
-import { decisionChangeOutcomes, replayToDecide, replayDecisionOutcomes, REPLAY_POINT_OPTIONS, teamOfReplayOption, replacedReplayRecord, rallyStartGoesWithPoint } from '../domain/decisionChange'
+import { decisionChangeOutcomes, replayToDecide, replayDecisionOutcomes, REPLAY_POINT_OPTIONS, teamOfReplayOption, replacedReplayRecord, rallyStartGoesWithPoint, decisionPointOf, decisionChangeBlock, isPenaltyPoint } from '../domain/decisionChange'
 import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
-import { playerReplacedByLibero, playersForLiberoRedesignation, liberoPlayState, liberoToReplaceByRedesignation, LIBERO_RECOVERED } from '../domain/liberos'
+import { playerReplacedByLibero, playersForLiberoRedesignation, liberoPlayState, liberoToReplaceByRedesignation, liberoUnableReason, LIBERO_RECOVERED } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, countAllSubstitutions, MAX_SUBSTITUTIONS_PER_SET, substitutionBarsForMatch } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
@@ -105,15 +105,15 @@ import HistoryModal from './history/HistoryModal.jsx'
 import CorrectionBoard, { readCorrectionView, saveCorrectionView, boardFits } from './corrections/CorrectionBoard.jsx'
 import RectifyPanel from './rectify/RectifyPanel.jsx'
 import { planRectificationReversal, rectifyErrorText } from '../domain/rectify'
-import { servingTeamFromLog } from '../domain/rules'
-import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal, restoredSetWrites, matchForfeitOf } from '../domain/matchEnd'
+import { servingTeamFromLog, serveBeforePoint } from '../domain/rules'
+import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, automaticForfeitScope, planForfeitReversal, restoredSetWrites, matchForfeitOf } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { missingPreMatchSignatures, beforeFirstServe } from '../domain/preMatchSignatures'
 import PreMatchSignDialog, { SignaturesMissingModal, MissingSignatureButton } from './signature/PreMatchSignDialog.jsx'
 import { savedSidesOfRegularSets } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot, correctionAfter } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
-import { livePublicFields } from '../domain/livePublicFields'
+import { livePublicFields, liveSetCounters } from '../domain/livePublicFields'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
@@ -131,7 +131,7 @@ import CountdownSeconds from './scoreboard/CountdownSeconds'
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
 import { useBenchRequestBridge, lineupAcceptBlock } from './scoreboard/useBenchRequestBridge'
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
-import { coveredLineupTeams, coveredLineupTeamsOf, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
+import { coveredLineupTeams, coveredLineupTeamsOf, startsSet, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
 import GameCaptainDialog from './scoreboard/GameCaptainDialog.jsx'
 import { actingCourtCaptains, automaticGameCaptain, automaticDesignation, chosenGameCaptain, courtCaptainsCleared, courtCaptainsRestored, keepCourtCaptainField, keepsGameCaptain, keptGameCaptain, keepEdit } from '../domain/gameCaptainKeep'
@@ -2872,10 +2872,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // (domain/lineupPrivacy.js, FIVB 7.3): it goes out as null, and its
       // server's number with it. This row reaches every member of the relay
       // room, the livescore and the database, none of them with a PIN. Only
-      // a set at 0:0 can have one: its events are read then.
-      const coveredTeams = (snapshot.pointsA || 0) + (snapshot.pointsB || 0) === 0 && (snapshot.lineupA || snapshot.lineupB)
-        ? coveredLineupTeamsOf(await db.events.where('[matchId+setIndex]').equals([matchId, snapshot.currentSetIndex]).toArray(), snapshot.currentSetIndex)
-        : []
+      // a set that has not started can have one (startsSet): at 0:0, or after
+      // penalty points only (a sanction before the first serve, audit
+      // LOG-19); its events are read then. Mid-set the first starting event
+      // is found among the set's first records.
+      const setEvents = () => db.events.where('[matchId+setIndex]').equals([matchId, snapshot.currentSetIndex])
+      const mayBeCovered = !!(snapshot.lineupA || snapshot.lineupB) &&
+        ((snapshot.pointsA || 0) + (snapshot.pointsB || 0) === 0 || !(await setEvents().filter(startsSet).first()))
+      const coveredTeams = mayBeCovered ? coveredLineupTeamsOf(await setEvents().toArray(), snapshot.currentSetIndex) : []
 
       // Map directly from snapshot to Supabase table
       const liveStateData = withCoveredLiveLineups({
@@ -2900,11 +2904,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Rich lineups with all position data
         lineup_a: snapshot.lineupA,
         lineup_b: snapshot.lineupB,
-        // Timeouts and subs (send full array for referee to see substitution details)
-        timeouts_a: snapshot.timeoutsA,
-        timeouts_b: snapshot.timeoutsB,
-        subs_a: snapshot.subsA?.length > 0 ? snapshot.subsA : null,
-        subs_b: snapshot.subsB?.length > 0 ? snapshot.subsB : null,
+        // Timeouts and subs (send full array for referee to see substitution
+        // details), of the set current_set names: none yet in the next set
+        // the set end's push names (domain/livePublicFields)
+        ...liveSetCounters({ snapshot, pushedSetIndex: finalSetIndex }),
         // For every viewer, PIN or not (subs_a / subs_b are PIN-only): the
         // regular substitutions of the set current_set names, and the
         // finished sets' scores (domain/livePublicFields)
@@ -2940,6 +2943,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       if (eventType === 'set_end') intervalStartedAtRef.current = breakStartedAt
 
+      // The live screen for TVs (utils/globalLive.js): on a device that opted
+      // in, the code and this match's court token, worked out before the push
+      // (the first push of a page load went without the token: a second,
+      // frozen court on every TV, audit LOG-11)
+      const { fields: liveScreen, match: liveMatch } = await liveScreenFieldsFor({ match, db, matchId })
+
       // Also push the computed live-state over the LAN relay so offline consumers
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
       // Never an older state after a newer one: on a side-out the 'point' push
@@ -2953,21 +2962,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         targets: routeOf(),
         toRelay: () => {
           if (!liveOrder.shouldPush(liveSeq)) return
-          // a Global match on a device that opted in to the live page for
-          // TVs: the tournament code (utils/globalLive.js)
-          const liveCode = liveCodeForMatch(match)
-          const liveCourt = liveCode ? cachedCourtToken(match) : null
           sendRelayMessage({
             type: 'live-state-update',
             matchId: relayKeyRef.current,
             liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session },
-            ...(liveCode ? { globalLive: liveCode } : {}),
-            ...(liveCourt ? { globalLiveCourt: liveCourt } : {}),
-            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {}),
-            ...(liveCode && liveListedForMatch(match) ? { globalLiveListed: true } : {})
+            ...liveScreen
           })
           // the desktop app's relay feeds no cloud page: it sends the court itself
-          if (liveCode && pushesGlobalLive()) pushGlobalLive({ code: liveCode, match, liveState: liveStateData, db, matchId })
+          if (liveScreen.globalLive && pushesGlobalLive()) pushGlobalLive({ code: liveScreen.globalLive, match: liveMatch, liveState: liveStateData, db, matchId })
         },
         toCloud: async () => {
           // The cloud wants a sign-in (the sync queue got a 401): no lookup and no
@@ -3584,54 +3586,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     !!data?.set && isReplayPending(data?.events, data.set.index)
   ), [data?.events, data?.set])
 
-  // Check if the last event was a point (can replay rally). A remark or a
-  // bench injury recorded since does not count (domain/rally isBookkeepingEvent)
-  const canReplayRally = useMemo(() => {
-    if (!data?.events || !data?.set || data.events.length === 0) {
-      return false
-    }
-
-    // Get events for current set only and sort by sequence number (most recent first)
-    const currentSetEvents = data.events
-      .filter(e => e.setIndex === data.set.index && !isBookkeepingEvent(e))
-      .sort((a, b) => {
-        const aSeq = a.seq || 0
-        const bSeq = b.seq || 0
-        if (aSeq !== 0 || bSeq !== 0) {
-          return bSeq - aSeq
-        }
-        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-        return bTime - aTime
-      })
-
-    if (currentSetEvents.length === 0) {
-      return false
-    }
-
-    const lastEvent = currentSetEvents[0]
-
-    // Can replay rally if the last event was a point
-    // OR if the last event is a rotation lineup that followed a point (same base seq)
-    if (lastEvent.type === 'point') {
-      return true
-    }
-
-    // Check if last event is a sub-event following a point (decimal seq like 5.1 or 5.2)
-    // This covers rotation lineups, libero_exit, etc. that happen automatically after a point
-    const lastSeq = lastEvent.seq || 0
-    const isSubEvent = lastSeq !== Math.floor(lastSeq)
-    if (isSubEvent) {
-      // This is a sub-event - check if parent event was a point
-      const baseSeq = Math.floor(lastSeq)
-      const parentEvent = currentSetEvents.find(e => Math.floor(e.seq || 0) === baseSeq && e.type === 'point')
-      if (parentEvent) {
-        return true
-      }
-    }
-
-    return false
-  }, [data?.events, data?.set])
+  // The point "Decision change" changes: the set's last event is a rally
+  // point or a row it wrote (N.x). A remark or a bench injury recorded since
+  // does not count (domain/rally isBookkeepingEvent); a penalty's point is no
+  // rally (domain/decisionChange decisionPointOf, audit LOG-06)
+  const decisionPoint = useMemo(() => (
+    data?.set ? decisionPointOf(data.events, data.set.index) : null
+  ), [data?.events, data?.set])
+  const canReplayRally = !!decisionPoint
 
   // A decision change on the last point after time-outs or substitutions
   // that followed it (row 19): they are taken back with it, as one action
@@ -3649,6 +3611,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     data?.set ? replayToDecide(data.events, data.set.index) : null
   ), [data?.events, data?.set])
   const canChangeDecision = canReplayRally || !!decisionTakeBack || !!replayDecision
+  // A sanction or a penalty's point recorded after the set's last rally: the
+  // decision change on that rally waits until it is taken back with Undo
+  // (domain/decisionChange decisionChangeBlock). Shown, not offered
+  const decisionBlock = useMemo(() => (
+    !canChangeDecision && data?.set ? decisionChangeBlock(data.events, data.set.index) : null
+  ), [canChangeDecision, data?.events, data?.set])
 
   // "Start set" vs "Start rally": the set's first rally is not started yet
   // (no set_start, no rally_start: domain/rally isFirstRallyOf). A penalty
@@ -6864,46 +6832,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       setReplayConfirm(true)
       return
     }
-    // After point: show confirmation modal to undo point
-    if (rallyStatus === 'idle' && canReplayRally && data?.events) {
-      // Find the last event by sequence number (highest seq), past a remark
-      // or a bench injury recorded since (as canReplayRally)
-      const allEvents = data.events.filter(e => !isBookkeepingEvent(e)).sort((a, b) => {
-        const aSeq = a.seq || 0
-        const bSeq = b.seq || 0
-        if (aSeq !== 0 || bSeq !== 0) {
-          return bSeq - aSeq // Descending
-        }
-        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-        return bTime - aTime
-      })
-
-      const lastEvent = allEvents[0]
-      let pointEvent = null
-
-      if (lastEvent && lastEvent.type === 'point') {
-        // Last event is the point itself
-        pointEvent = lastEvent
-      } else if (lastEvent) {
-        // Last event might be a sub-event (decimal seq) following a point
-        const lastSeq = lastEvent.seq || 0
-        const isSubEvent = lastSeq !== Math.floor(lastSeq)
-        if (isSubEvent) {
-          // Find the parent point event
-          const baseSeq = Math.floor(lastSeq)
-          pointEvent = allEvents.find(e => Math.floor(e.seq || 0) === baseSeq && e.type === 'point')
-        }
-      }
-
-      if (pointEvent) {
-        // Simple description for decision change confirmation
-        const teamName = pointEvent.payload?.team === 'home'
-          ? (data?.homeTeam?.name || t('common.home'))
-          : (data?.awayTeam?.name || t('common.away'))
-        const description = `Point for ${teamName}`
-        setReplayRallyConfirm(decisionDialog({ event: pointEvent, description, selectedOption: 'swap' })) // Default to swap (continuous play: none)
-      }
+    // After point: show confirmation modal to undo point. The set's last
+    // rally point, past a remark or a bench injury recorded since and never
+    // a penalty's point (decisionPoint, domain/decisionChange decisionPointOf)
+    if (rallyStatus === 'idle' && canReplayRally && decisionPoint) {
+      const pointEvent = decisionPoint
+      // Simple description for decision change confirmation
+      const teamName = pointEvent.payload?.team === 'home'
+        ? (data?.homeTeam?.name || t('common.home'))
+        : (data?.awayTeam?.name || t('common.away'))
+      const description = `Point for ${teamName}`
+      setReplayRallyConfirm(decisionDialog({ event: pointEvent, description, selectedOption: 'swap' })) // Default to swap (continuous play: none)
       return
     }
     // After the point, time-outs or substitutions were recorded (row 19):
@@ -6936,10 +6875,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
     // Continuous play, between rallies with no last point to change (none
-    // yet since Start set): the rally just played was replayed. Asked as the
-    // in-play Replay is (confirmReplay)
-    if (continuousPlay && rallyStatus === 'idle' && !isFirstRally) setReplayConfirm(true)
-  }, [rallyStatus, canReplayRally, decisionTakeBack, replayDecision, mapSideToTeamKey, data?.events, data?.homeTeam?.name, data?.awayTeam?.name, decisionDialog, continuousPlay, isFirstRally])
+    // yet since Start set, or a sanction since the last rally): the rally
+    // just played was replayed. Asked as the in-play Replay is (confirmReplay)
+    if (continuousPlay && rallyStatus === 'idle' && !isFirstRally) {
+      setReplayConfirm(true)
+      return
+    }
+    // A sanction or a penalty's point since the last rally (a stale screen
+    // still offered the button): it is taken back first, with Undo
+    if (rallyStatus === 'idle' && decisionBlock) showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+  }, [rallyStatus, canReplayRally, decisionPoint, decisionTakeBack, replayDecision, decisionBlock, mapSideToTeamKey, data?.homeTeam?.name, data?.awayTeam?.name, decisionDialog, continuousPlay, isFirstRally, showAlert, t])
 
   // Continuous play: a replayed rally recorded between rallies, on its own
   // (no rally_start: there was no Start rally). Score and serve stay; until
@@ -7960,9 +7905,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return describeEventText(event, data.events || [], { t, match: data.match, homeTeam: data.homeTeam, awayTeam: data.awayTeam, short: true, noSet: true }) || getActionDescription(event)
   }, [data, t, getActionDescription])
 
-  // Show undo confirmation
-  const showUndoConfirm = useCallback(() => {
-    if (!data?.events || data.events.length === 0 || !data?.set) return
+  // Show undo confirmation. `fromDialog`: asked from the set-end or the
+  // change-of-courts dialog, which closed for it (its Decision change, when
+  // a penalty's point brought it up); the undo dialog's note says why, and
+  // cancelled, that dialog comes back (cancelUndo). Called as a click
+  // handler too: an event object is no option. True when it asked
+  const showUndoConfirm = useCallback((options) => {
+    if (!data?.events || data.events.length === 0 || !data?.set) return false
+    const fromDialog = typeof options?.fromDialog === 'string' ? options.fromDialog : null
 
     // IMPORTANT: Only consider events from the CURRENT SET
     // Undo should NEVER affect other sets - use "Reopen set" in manual changes for that
@@ -7981,7 +7931,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     if (currentSetEvents.length === 0) {
       console.log('[UNDO] No events in current set')
-      return
+      return false
     }
 
     // Find the last event by sequence number (highest seq)
@@ -8065,7 +8015,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         eventsChecked: sortedEvents.length,
         allEventsInSet: currentSetEvents.map(e => ({ id: e.id, seq: e.seq, type: e.type }))
       })
-      return
+      return false
     }
 
     // A penalty's point is undone with its penalty: the dialog names the
@@ -8093,7 +8043,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       allEventsInSet: currentSetEvents.map(e => ({ id: e.id, seq: e.seq, type: e.type }))
     })
 
-    setUndoConfirm({ event: lastUndoableEvent, description: displayDescription })
+    setUndoConfirm({ event: lastUndoableEvent, description: displayDescription, ...(fromDialog ? { fromDialog } : {}) })
+    return true
   }, [data?.events, data?.set, getActionDescription])
 
   // Check if there's anything that can be undone (mirrors showUndoConfirm logic)
@@ -8620,6 +8571,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [data?.set, data?.match, data?.homeTeam, data?.awayTeam, data?.homePlayers, data?.awayPlayers, t, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, set5IntervalAfterUndo, showAlert, syncToReferee, sendActionToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, deferUi, deferEffect, timeoutModal])
 
+  // The set-end or change-of-courts dialog a decision change or an undo was
+  // asked from (which closed for it), asked again when the set's score still
+  // calls for it: the change of courts is mandatory, and the set-end check
+  // skips a set whose dialog was closed that way (setEndModalDismissedRef).
+  // Dexie reads only; inside the caller's action, or not in one
+  const reaskDialogAfter = useCallback(async (fromDialog, teamKey = null) => {
+    if (!fromDialog || !data?.set) return
+    if (fromDialog === 'setEnd') deferUi(() => { setEndModalDismissedRef.current = null })
+    const setRow = (await db.sets.get(data.set.id)) || data.set
+    await afterPointScored({
+      set: setRow,
+      homePoints: setRow.homePoints || 0,
+      awayPoints: setRow.awayPoints || 0,
+      teamKey
+    })
+  }, [data?.set, afterPointScored, deferUi])
+
   const runUndoConfirm = useConfirmAction(onConfirmFailed)
   // One action: every write of the undo, its event history (the voids and
   // their sync jobs, reason 'undo') and the dialog closing appear together
@@ -8635,7 +8603,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // useConfirmAction and the 'undo' key, never undoing the event twice
     deferUi(() => setUndoConfirm(null))
     await undoEventTx(lastEvent)
-  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, undoEventTx, runAction, deferUi])
+    // Asked from the set-end or the change-of-courts dialog (a penalty's
+    // point brought it up): the score it leaves decides whether that dialog
+    // is due again (24:22 after the penalty's point: no set end)
+    if (undoConfirm.fromDialog) await reaskDialogAfter(undoConfirm.fromDialog)
+  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, undoEventTx, reaskDialogAfter, runAction, deferUi])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -8644,9 +8616,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // - substitution, timeout, sanction, set_end, rally_start, etc.
   // Now all handled by simply restoring the previous event's stateSnapshot.
 
-  const cancelUndo = useCallback(() => {
+  // Cancelled: nothing changed. Asked from the set-end or the
+  // change-of-courts dialog (which closed for it), that dialog comes back
+  const cancelUndo = useCallback(async () => {
+    const pending = undoConfirm
     setUndoConfirm(null)
-  }, [])
+    if (!pending?.fromDialog) return
+    try {
+      await reaskDialogAfter(pending.fromDialog, pending.event?.payload?.team)
+    } catch (error) {
+      console.error('[cancelUndo] Could not open the dialog again:', error)
+    }
+  }, [undoConfirm, reaskDialogAfter])
 
   // Handle replay rally - undo last point (go back to state before the point, no rally restart)
   // One action: the point taken back (voided in the event history: the
@@ -8736,20 +8717,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const cancelReplayRally = useCallback(async () => {
     const pending = replayRallyConfirm
     setReplayRallyConfirm(null)
-    if (!pending?.fromDialog || !data?.set) return
-    if (pending.fromDialog === 'setEnd') setEndModalDismissedRef.current = null
+    if (!pending?.fromDialog) return
     try {
-      const setRow = (await db.sets.get(data.set.id)) || data.set
-      await afterPointScored({
-        set: setRow,
-        homePoints: setRow.homePoints || 0,
-        awayPoints: setRow.awayPoints || 0,
-        teamKey: pending.event?.payload?.team
-      })
+      await reaskDialogAfter(pending.fromDialog, pending.event?.payload?.team)
     } catch (error) {
       console.error('[cancelReplayRally] Could not open the dialog again:', error)
     }
-  }, [replayRallyConfirm, data?.set, afterPointScored])
+  }, [replayRallyConfirm, reaskDialogAfter])
 
   // The decision change on a replay (owner 23.11.2026): the rally that was
   // replayed is given to `team` after all. Inside the decision change's
@@ -8804,6 +8778,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (selectedOption === 'record_replay') {
       deferUi(() => setReplayRallyConfirm(null))
       await recordContinuousReplay()
+      return
+    }
+
+    // A penalty's point is no rally to change (a dialog opened on it from a
+    // stale screen): nothing is written, the sanction is taken back first
+    // with Undo (audit LOG-06). Asked from the set-end or change-of-courts
+    // dialog, that dialog comes back (it closed for this one)
+    if (replayRallyConfirm.kind !== 'replay' && isPenaltyPoint(lastEvent)) {
+      deferUi(() => {
+        setReplayRallyConfirm(null)
+        showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+      })
+      if (replayRallyConfirm.fromDialog) await reaskDialogAfter(replayRallyConfirm.fromDialog, lastEvent.payload?.team)
       return
     }
 
@@ -8904,31 +8891,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const deletedSubEventIds = new Set(oldTeamPointSubEvents.map(e => e.id))
         const createdSubEventIds = []
 
-        // Determine who had serve BEFORE the original point was awarded
-        // This is needed to know if the new team should rotate (if they were receiving)
-        const pointEventsBefore = events
-          .filter(e => e.type === 'point' && e.setIndex === data.set.index && (e.seq || 0) < lastEventSeq)
-          .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-
-        // Calculate first serve for current set
-        const setIndex = data.set.index
-        const set1FirstServe = data?.match?.firstServe || 'home'
-        let currentSetFirstServe
-        if (setIndex === 5 && data.match?.set5FirstServe) {
-          const teamAKey = data.match.coinTossTeamA || 'home'
-          const teamBKey = data.match.coinTossTeamB || 'away'
-          currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
-        } else {
-          currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
-        }
-
-        let serveBeforePoint = currentSetFirstServe
-        if (pointEventsBefore.length > 0) {
-          serveBeforePoint = pointEventsBefore[0].payload?.team || serveBeforePoint
-        }
+        // Who served the rally (the app's serve rule, domain/rules
+        // serveBeforePoint): the new team rotates if it was receiving. Not the
+        // previous point's team: after a going back the serve is the
+        // rectification's and a point set by hand passes none (audit LOG-03)
+        const serveBefore = serveBeforePoint(events, lastEvent, data.set.index, data?.match)
 
         // If the new team was receiving (didn't have serve), they need to rotate now
-        const newTeamHadServe = serveBeforePoint === newTeam
+        const newTeamHadServe = serveBefore === newTeam
         if (!newTeamHadServe) {
           // Query the new team's current lineup (latest by seq, as the engine orders)
           const newTeamLineupEvents = events
@@ -9036,7 +9006,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 console.log('[handleDecisionChange] Applied rotation to new team:', {
                   newTeam,
-                  serveBeforePoint,
+                  serveBeforePoint: serveBefore,
                   rotatedLineup,
                   liberoSubstitution: rotatedLiberoSubstitution
                 })
@@ -9086,7 +9056,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleReplayRally()
       return // handleReplayRally closes the modal and syncs
     }
-  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx, recordContinuousReplay, replaceReplayByPoint])
+  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx, recordContinuousReplay, replaceReplayByPoint, reaskDialogAfter, showAlert, t])
 
 
 
@@ -10217,12 +10187,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const isLiberoUnable = useCallback((teamKey, liberoNumber) => liberoStateOf(teamKey, liberoNumber).unable, [liberoStateOf])
 
-  // An injured libero no re-designation replaced: the scorer may bring him back
+  // An injured libero the scorer may bring back: no re-designation replaced
+  // him and, for an original libero, his team re-designated nobody (Q84)
   const canLiberoReturn = useCallback((teamKey, liberoNumber) => liberoStateOf(teamKey, liberoNumber).mayReturn, [liberoStateOf])
 
   // The unable libero a re-designation replaces (and puts out for the match):
-  // one who may not come back anyway before an injured one who may, else the
-  // latest to become unable (domain/liberos liberoToReplaceByRedesignation)
+  // the latest to become unable among those not replaced, whose
+  // unavailability triggered it (owner 23.11.2026, Swiss exam Q84;
+  // domain/liberos liberoToReplaceByRedesignation)
   const redesignationTargetOf = useCallback((teamKey) => {
     const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
     return liberoToReplaceByRedesignation(teamPlayers, data?.events, teamKey, { setIndex: data?.set?.index ?? null })
@@ -11608,14 +11580,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Check if libero re-designation is needed and trigger modal
   // Called after a libero is marked as unable - we know they're unable so skip that check
-  const checkLiberoRedesignation = useCallback((teamKey, liberoNumber, liberoType, reason = 'declared') => {
+  // `reason`: why he is unable, when the caller knows it; else the
+  // confirmation takes it from his events (liberoUnableReason)
+  const checkLiberoRedesignation = useCallback((teamKey, liberoNumber, liberoType, reason = null) => {
     if (!data?.set) return
 
-    // Check if already re-designated
+    // Check if already re-designated (a number from a court disc is a string)
     const alreadyRedesignated = data?.events?.some(e =>
       e.type === 'libero_redesignation' &&
       e.payload?.team === teamKey &&
-      e.payload?.unableLiberoNumber === liberoNumber
+      String(e.payload?.unableLiberoNumber) === String(liberoNumber)
     )
     if (alreadyRedesignated) return
 
@@ -11649,27 +11623,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Show re-designation modal. The libero it replaces is out for the
-    // match: one who may not come back anyway before an injured one who may
-    // (owner 22.11.2026; redesignationTargetOf)
-    const target = redesignationTargetOf(teamKey)
+    // Show re-designation modal. It replaces the libero whose unavailability
+    // triggered it, the one who just became unable, out for the match (owner
+    // 23.11.2026, FIVB 19.4.2, Swiss exam Q84: L1 disqualified, then L2
+    // injured: L2), never an earlier one already out
     setLiberoRedesignationModal({
       team: teamKey,
-      unableLiberoNumber: target?.number ?? liberoNumber,
-      unableLiberoType: target?.libero ?? liberoType,
-      reason: reason
+      unableLiberoNumber: liberoNumber,
+      unableLiberoType: liberoType ?? teamPlayers.find(p => String(p.number) === String(liberoNumber))?.libero,
+      ...(reason ? { reason } : {})
     })
-  }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation, redesignationTargetOf])
+  }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation])
 
   // Handle forfait (FIVB 6.4, 7.3.1, 15.8; domain/matchEnd, tested).
-  //  scope 'set'   - the team is INCOMPLETE for the SET (injured / expelled
-  //                  player, or a disqualified one while six can still play
-  //                  next set, with no legal or exceptional substitute): the
+  //  scope 'set'   - the team is INCOMPLETE for the SET (an expelled
+  //                  player, or an injured or disqualified one while six can
+  //                  still play without him for the rest of the match, with
+  //                  no legal or exceptional substitute): the
   //                  opponent gets the points to win the set in progress, then
   //                  the normal set-end confirmation finishes the set and starts
   //                  the next one, or ends the match if that set decides it.
   //  scope 'match' - incomplete for the MATCH (fewer than six players for
-  //                  next set, or the manual "A team is incomplete"): the
+  //                  the rest of the match, Swiss exam Q226, or the manual
+  //                  "A team is incomplete"): the
   //                  opponent gets the points and the sets needed, the match
   //                  ends and Match End opens. With inDefault (the manual
   //                  "A team forfeits": refused to play, did not appear,
@@ -11840,15 +11816,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.set, data?.match, matchId, logEvent, syncToReferee, onTriggerEventBackup, onFinishSet, showAlert, t])
 
   // Scope of an automatic forfait: the SET, unless the team cannot field six
-  // players for the next set (then the MATCH). `outNumber` is the player being
-  // disqualified right now, if any (domain/matchEnd, tested).
+  // players for the rest of the match (then the MATCH). `outNumber` is the
+  // player who causes it: an injured or disqualified one does not count
+  // (Swiss exam Q226, owner 23.11.2026), an expelled one does (back next
+  // set). domain/matchEnd automaticForfeitScope, tested.
   const getForfaitScope = useCallback((teamKey, reason, outNumber = null) => {
     // Easy match: the team has no roster, new numbers can always come: the set
     if (data?.match?.easy === true) return forfeitScope(reason)
     const players = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-    const exclude = reason === 'disqualification' && outNumber != null ? [outNumber] : []
-    const available = playersAvailableForNextSet(players, data?.events, teamKey, { exclude }).length
-    return forfeitScope(reason, { playersAvailableNextSet: available })
+    return automaticForfeitScope(players, data?.events, teamKey, reason, outNumber)
   }, [data?.homePlayers, data?.awayPlayers, data?.events, data?.match?.easy])
 
   // An automatic forfait never fires on its own: it asks for confirmation
@@ -12779,14 +12755,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Special rule for warning: can only be given if team hasn't been warned (player can have other sanctions)
       if (check.reason === 'teamAlreadyWarned') {
-        deferUi(() => showAlert(t('scoreboard.dialogs.teamAlreadyWarned', 'Warning cannot be given because the team has already been warned.'), 'warning'))
+        deferUi(() => showAlert(t('scoreboard.dialogs.teamAlreadyWarned', 'Warning cannot be given because the team has already been warned (one per team per match): the next minor misconduct is a penalty.'), 'warning'))
         deferUi(() => setSanctionConfirmModal(null))
         return
       }
     }
     // Easy match, a sanction for the team: one formal warning per team too
     if (type === 'team' && sanctionType === 'warning' && teamHasFormalWarning(team)) {
-      deferUi(() => showAlert(t('scoreboard.dialogs.teamAlreadyWarned', 'Warning cannot be given because the team has already been warned.'), 'warning'))
+      deferUi(() => showAlert(t('scoreboard.dialogs.teamAlreadyWarned', 'Warning cannot be given because the team has already been warned (one per team per match): the next minor misconduct is a penalty.'), 'warning'))
       deferUi(() => setSanctionConfirmModal(null))
       return
     }
@@ -13915,14 +13891,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const confirmLiberoRedesignation = useCallback((newLiberoNumber) => runLiberoRedesignation(() => runAction('liberoRedesignation', async () => {
     if (!liberoRedesignationModal || !data?.set) return
 
-    const { team, unableLiberoNumber, unableLiberoType, reason = 'declared' } = liberoRedesignationModal
+    const { team, unableLiberoNumber, unableLiberoType } = liberoRedesignationModal
+    // Why the replaced libero is unable: as the prompt after his
+    // libero_unable says, else (the Redesignate buttons, the prompt after a
+    // sanction or an injury substitution) as his latest libero_unable or
+    // sanction records it. After an injury, an expulsion or a
+    // disqualification the new libero may come in at once (Swiss exam Q143,
+    // Q204; hasPointSinceLastLiberoExchange); 'declared' only for a
+    // declaration or when nothing says otherwise.
+    const reason = liberoRedesignationModal.reason || liberoUnableReason(data?.events, team, unableLiberoNumber)
     // Only a player the list offers: never one who may no longer play
     if (!getAvailablePlayersForRedesignation(team, unableLiberoNumber).some(p => String(p.number) === String(newLiberoNumber))) return
     // Closed with the written change (deferUi, one render): the candidate list
     // is live and never redraws without the chosen player
     deferUi(() => setLiberoRedesignationModal(null))
 
-    // Log the libero_unable event if not already logged (with reason='declared' if not specified)
+    // Log the libero_unable event if not already logged (with the reason above:
+    // 'declared' when nothing else is recorded)
     const hasUnableEvent = data?.events?.some(e =>
       e.type === 'libero_unable' &&
       e.payload?.team === team &&
@@ -13934,7 +13919,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         team,
         liberoNumber: unableLiberoNumber,
         liberoType: unableLiberoType,
-        reason: 'declared' // Default to declared if not specified
+        reason
       })
     }
 
@@ -14001,6 +13986,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!liberoUnableModal || !data?.set) return
 
     const { team, liberoNumber, liberoType, reason = 'declared', isOnCourt } = liberoUnableModal
+    // A libero on court is never declared unable (Swiss exam Q11): only an
+    // injury or illness takes him off here, at once. The court menu offers
+    // no declaration; this keeps any other way in from writing one.
+    if (reason === 'declared' && (isOnCourt || String(getLiberoOnCourt(team)?.liberoNumber) === String(liberoNumber))) {
+      deferUi(() => setLiberoUnableModal(null))
+      return
+    }
 
     try {
       // If libero is on court, force them out first
@@ -19080,8 +19072,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.buttons.decisionChange')}
                         </button>
                       )}
+                      {/* a sanction or a penalty's point after the last rally:
+                          shown, not offered, and why (decisionBlock) */}
+                      {!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && decisionBlock && (
+                        <button
+                          data-testid="decision-change-blocked"
+                          className="secondary"
+                          disabled
+                          title={t('scoreboard.dialogs.decisionAfterSanction')}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', lineHeight: 1.15 }}
+                        >
+                          <span>{t('scoreboard.buttons.decisionChange')}</span>
+                          <span style={{ fontSize: '0.7em', fontWeight: 500 }}>{t('scoreboard.dialogs.undoSanctionFirst')}</span>
+                        </button>
+                      )}
                       {/* Keep Undo in its half even when the left button is absent */}
-                      {!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden="true" />}
+                      {!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && !decisionBlock && <span aria-hidden="true" />}
                       <button
                         data-help-id="scoreboard-undo"
                         className="danger tap-hint"
@@ -21640,7 +21646,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.playerMenu.exchangeLibero')}
                         </SbMenuItem>
                       )}
-                      {/* Unable to play - expandable (not while the rally is in play) */}
+                      {/* Unable to play - expandable (not while the rally is in play).
+                          Injury / illness only: a libero on court cannot be
+                          declared unable (Swiss exam Q11); the coach replaces
+                          him first, then declares him from the bench menu. */}
                       {!playerActionMenu.liberoOnly && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <SbMenuItem tone="danger" expanded={courtLiberoUnableExpanded} onClick={() => setCourtLiberoUnableExpanded(!courtLiberoUnableExpanded)}>
@@ -21648,26 +21657,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </SbMenuItem>
                         {courtLiberoUnableExpanded && (
                           <div className={SB_MENU_SUB}>
-                            <SbMenuItem
-                              tone="declared"
-                              icon={<SpeechIcon size={16} />}
-                              onClick={() => {
-                                setPlayerActionMenu(null)
-                                setCourtSubExpanded(false)
-                                setCourtLiberoExpanded(false)
-                                setCourtSanctionExpanded(false)
-                                setCourtLiberoUnableExpanded(false)
-                                setLiberoUnableModal({
-                                  team,
-                                  liberoNumber: liberoOnCourt.liberoNumber,
-                                  liberoType: liberoOnCourt.liberoType,
-                                  reason: 'declared',
-                                  isOnCourt: true
-                                })
-                              }}
-                            >
-                              {t('scoreboard.playerMenu.declaredUnable')}
-                            </SbMenuItem>
                             <SbMenuItem
                               tone="danger"
                               icon={SB_INJURY_ICON}
@@ -24101,24 +24090,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           awayColor={data?.awayTeam?.color || data?.match?.awayColor || '#3b82f6'}
           onConfirm={confirmSetEndTime}
           onDecisionChange={async () => {
+            // Find the last POINT event (ignoring set_end, sanctions, etc that might be after it)
+            // We need to find the actual point that caused the set end condition
+            const pointEvent = (data?.events && data?.set)
+              ? data.events
+                .filter(e => e.setIndex === data.set.index)
+                .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+                .find(e => e.type === 'point')
+              : null
+
+            // A penalty's point ended the set: the decision change works on
+            // a rally, the penalty is taken back first with its point. The
+            // screen's Undo, asked from here (the dialog's Modal keeps the
+            // screen's Undo out of reach): the set-end dialog closes for it
+            // and, cancelled or with the set still won, comes back
+            // (cancelUndo, handleUndo). Nothing else to take back: it says so
+            // and stays
+            if (isPenaltyPoint(pointEvent)) {
+              if (!showUndoConfirm({ fromDialog: 'setEnd' })) {
+                showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+                return
+              }
+              setEndModalDismissedRef.current = setEndTimeModal.setIndex
+              setSetEndTimeModal(null)
+              return
+            }
+
             // Track that user dismissed via undo to prevent re-showing
             setEndModalDismissedRef.current = setEndTimeModal.setIndex
 
-            // Find the last point event directly and open decision modal
-            if (data?.events && data?.set) {
-              const currentSetEvents = data.events
-                .filter(e => e.setIndex === data.set.index)
-                .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-
-              // Find the last POINT event (ignoring set_end, sanctions, etc that might be after it)
-              // We need to find the actual point that caused the set end condition
-              const pointEvent = currentSetEvents.find(e => e.type === 'point')
-
-              if (pointEvent) {
-                // Open decision modal (no selectedOption forces choice);
-                // cancelled, the set end comes back
-                setReplayRallyConfirm({ event: pointEvent, description: 'Decision Change', selectedOption: null, fromDialog: 'setEnd' })
-              }
+            if (pointEvent) {
+              // Open decision modal (no selectedOption forces choice);
+              // cancelled, the set end comes back
+              setReplayRallyConfirm({ event: pointEvent, description: 'Decision Change', selectedOption: null, fromDialog: 'setEnd' })
             }
 
             // Close the set end modal
@@ -24338,6 +24342,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       .sort((a, b) => (b.seq || 0) - (a.seq || 0))
 
                     const pointEvent = currentSetEvents.find(e => e.type === 'point')
+                    // A penalty's point took the team to 8: the decision
+                    // change works on a rally, the penalty is taken back
+                    // first with its point, the screen's Undo asked from
+                    // here (as the set-end dialog does); cancelled, or a
+                    // team still on 8, the change of courts comes back
+                    if (isPenaltyPoint(pointEvent)) {
+                      if (!showUndoConfirm({ fromDialog: 'courtSwitch' })) {
+                        showAlert(t('scoreboard.dialogs.decisionAfterSanction'), 'warning')
+                        return
+                      }
+                      setCourtSwitchModal(null)
+                      return
+                    }
                     if (pointEvent) {
                       // Cancelled, or confirmed with a team still at 8,
                       // the change of courts comes back
@@ -24365,7 +24382,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Easy match: a new number can always come in exceptionally
         const exceptionalPossible = exceptionalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerOut, true)
         // FIVB 6.4.3 / 7.3.1: incomplete for the SET unless the team cannot
-        // field six players next set (then the MATCH)
+        // field six players next set (then the MATCH); an injured or
+        // disqualified player does not count (Swiss exam Q226; getForfaitScope)
         const forfaitScopeNow = getForfaitScope(team, reason, playerOut)
         const forfaitText = forfaitScopeNow === 'match'
           ? t('scoreboard.dialogs.forfaitMatchText', { defaultValue: 'Team {{team}} cannot field six players for the next set: it is declared incomplete for the MATCH. The opponent wins this set and all remaining sets, and the match ends.', team: teamLabel })
@@ -24880,6 +24898,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={400}
         >
           <div style={{ padding: '4px 0', textAlign: 'center' }}>
+            {/* asked from the set-end or change-of-courts dialog's
+                Decision change: why the penalty goes first */}
+            {undoConfirm.fromDialog && (
+              <p className="text-sm text-stone-600" style={{ marginBottom: '12px' }}>
+                {t('scoreboard.dialogs.decisionAfterSanction')}
+              </p>
+            )}
             <p style={{ marginBottom: '16px', fontSize: '16px' }}>
               {t('scoreboard.modals.undoQuestion')}
             </p>

@@ -2,11 +2,14 @@
 # restore-test.sh [path/to/db-<UTC>.dump.gpg]
 #
 # Weekly on lenovoserver (openvolley-restore-test.timer), which holds the
-# openvolley-backup PRIVATE key. Proves the newest backup is restorable AND
-# that the backend image boots against it:
+# openvolley-backup PRIVATE key. Proves the newest OFF-SITE backup is
+# restorable AND that the backend image boots against it with the secrets
+# the off-site copy holds for it:
 #
-#   1. pick the newest db-*.dump.gpg (+ .counts) from RT_SOURCE (NAS share via
-#      ssh, or a local dir); refuse if it is older than RT_MAX_AGE_H
+#   1. pick the newest db-*.dump.gpg, its .counts and the secrets-*.env.gpg
+#      it needs (the newest one not newer than the dump, else the oldest)
+#      from RT_SOURCE (the NAS copy via ssh, or a local dir); refuse if the
+#      dump is older than RT_MAX_AGE_H, or its .counts or the secrets are missing
 #   2. decrypt into a private dir under /dev/shm
 #   0. one run at a time (flock); removes leftovers of a run that was killed
 #      (containers/networks labelled openvolley.restore-test=1, ${RT_WORK_BASE}/ov-rt.*)
@@ -15,16 +18,27 @@
 #   4. row-count floors: restored counts within RT_SLACK_PCT of the dump's
 #      .counts file, and not below RT_FLOOR_FILE (last passing run) minus
 #      RT_FLOOR_SLACK_PCT
-#   5. boot the backend image (read-only rootfs, same env shape as production)
-#      against it, require /health/live 200 and /health 200 with db ok,
-#      catalog ok, floor ok (when the image reports them)
+#   5. boot the backend image (read-only rootfs, same env shape as production:
+#      IS_CLOUD=1, TRUST_PROXY=cloudflare with TRUST_PROXY_FROM, the dump's
+#      OV_PIN_SECRET and OV_MATCH_TOKEN_SECRET, all in an env file, none on
+#      the command line) against it, require /health/live 200 and /health 200
+#      with db ok, catalog ok, floor ok (when the image reports them)
 #   6. tear everything down, update the floor file, push to Kuma
+#   A failure posts to RT_NTFY_URL (and Kuma down); no run at all shows as a
+#   missed Kuma heartbeat.
 #
 # Settings (env or ${RT_CONF:-~/.config/openvolley/restore-test.env}):
-#   RT_SOURCE            /data/openvolley/backups (default: the production
-#                        host's own backups; that is lenovoserver since
-#                        16.10.2026, readable with group ovbackup) | /local/dir
-#                        | nas:/path (ssh)
+#   RT_SOURCE            nas-ts:/volume1/backups/openvolley/infomaniak (default:
+#                        the NAS copy ov-backup-pull.sh makes of the VPS's
+#                        backups, read with ssh + cat: DSM refuses rsync over ssh
+#                        for this user) | host:/path (ssh) | /local/dir
+#   RT_BACKEND_ENV_FILE  optional KEY=VALUE file of more backend settings, e.g.
+#                        OV_PIN_SECRET / OV_MATCH_TOKEN_SECRET from the club vault
+#                        when no secrets-*.env.gpg is there (the dump's secrets
+#                        file wins), or another TRUST_PROXY_FROM (default
+#                        127.0.0.1/32). DATABASE_URL, STORAGE_ROOT, STATUS_DIR,
+#                        PUBLIC_ORIGINS, TRUST_PROXY, IS_CLOUD, OV_MIN_MATCHES are
+#                        the script's and cannot be changed there.
 #   RT_BACKEND_IMAGE     default: the tag in RT_TAG_FILE (written by
 #                        `build-image.sh --ship local`); *-dirty / *-prewiring
 #                        tags are refused unless RT_ALLOW_DEV_IMAGE=1
@@ -39,7 +53,8 @@
 #   RT_FLOOR_FILE        ~/ov-ops/restore-floor
 #   RT_MAX_AGE_H (30)  RT_SLACK_PCT (1)  RT_FLOOR_SLACK_PCT (1)
 #   RT_REQUIRE_DB_HEALTH (1; 0 only for images that predate the self-host wiring)
-#   RT_KUMA_PUSH_URL     optional Uptime Kuma push URL
+#   RT_KUMA_PUSH_URL     optional Uptime Kuma push URL (heartbeat about 8 days)
+#   RT_NTFY_URL          optional ntfy topic URL: every failure is posted there
 #   RT_KEEP=1            leave containers running for inspection (debug)
 set -euo pipefail
 umask 077
@@ -51,7 +66,8 @@ if [[ -f "$RT_CONF" ]]; then
 fi
 
 KIT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-RT_SOURCE=${RT_SOURCE:-/data/openvolley/backups}
+RT_SOURCE=${RT_SOURCE:-nas-ts:/volume1/backups/openvolley/infomaniak}
+RT_BACKEND_ENV_FILE=${RT_BACKEND_ENV_FILE:-}
 RT_PG_IMAGE=${RT_PG_IMAGE:-postgres:17.12-alpine}
 RT_BACKEND_IMAGE=${RT_BACKEND_IMAGE:-}
 RT_GNUPGHOME=${RT_GNUPGHOME:-${GNUPGHOME:-$HOME/.gnupg}}
@@ -72,6 +88,7 @@ RT_SLACK_PCT=${RT_SLACK_PCT:-1}
 RT_FLOOR_SLACK_PCT=${RT_FLOOR_SLACK_PCT:-1}
 RT_REQUIRE_DB_HEALTH=${RT_REQUIRE_DB_HEALTH:-1}
 RT_KUMA_PUSH_URL=${RT_KUMA_PUSH_URL:-}
+RT_NTFY_URL=${RT_NTFY_URL:-}
 RT_KEEP=${RT_KEEP:-0}
 RT_WORK_BASE=${RT_WORK_BASE:-/dev/shm}
 RT_HEALTH_TIMEOUT=${RT_HEALTH_TIMEOUT:-120}
@@ -87,10 +104,21 @@ kuma() {
   [[ -n "$RT_KUMA_PUSH_URL" ]] || return 0
   curl -fsS -m 10 -G --data-urlencode "status=$1" --data-urlencode "msg=$2" "$RT_KUMA_PUSH_URL" >/dev/null || true
 }
-fail() { printf '[restore-test] FAILED: %s\n' "$1" >&2; kuma down "$1"; exit 1; }
+ALERTED=
+alert() {  # one post per run, to the owner's ntfy topic
+  [[ -z "$ALERTED" ]] || return 0
+  ALERTED=1
+  kuma down "$1"
+  [[ -n "$RT_NTFY_URL" ]] || return 0
+  curl -fsS -m 10 -H "Title: OpenVolley restore test FAILED" -H "Priority: high" -H "Tags: rotating_light" \
+    -d "$1 (journalctl -u openvolley-restore-test)" "$RT_NTFY_URL" >/dev/null || true
+}
+fail() { printf '[restore-test] FAILED: %s\n' "$1" >&2; alert "$1"; exit 1; }
 
 cleanup() {
   local rc=$?
+  # an error set -e stopped on, or a kill (timeout): alerted like a failure
+  (( rc == 0 )) || alert "stopped with exit ${rc} (see the log)"
   if [[ "$RT_KEEP" == 1 ]]; then
     log "RT_KEEP=1: leaving ${PG} ${BE} ${NET} ${WORK} in place"
     return "$rc"
@@ -138,31 +166,58 @@ log "backend image ${RT_BACKEND_IMAGE}, postgres image ${RT_PG_IMAGE}"
 WORK=$(mktemp -d "${RT_WORK_BASE%/}/ov-rt.XXXXXX")
 chmod 0700 "$WORK"
 
-# --- 1. fetch newest dump ----------------------------------------------------------
+# --- 1. fetch newest dump, its counts and its secrets ----------------------------
+# A dump given on the command line: its own directory is the source.
 if [[ $# -ge 1 ]]; then
-  SRC_FILE=$1
-  [[ -f "$SRC_FILE" ]] || fail "no such file: $SRC_FILE"
-  cp -p -- "$SRC_FILE" "$WORK/"
-  [[ -f "${SRC_FILE%.dump.gpg}.counts" ]] && cp -p -- "${SRC_FILE%.dump.gpg}.counts" "$WORK/"
-  DUMP_NAME=$(basename "$SRC_FILE")
-elif [[ "$RT_SOURCE" == /* ]]; then
-  DUMP_NAME=$(find "$RT_SOURCE" -maxdepth 1 -type f -name 'db-*.dump.gpg' -printf '%f\n' | sort | tail -n1)
-  [[ -n "$DUMP_NAME" ]] || fail "no db-*.dump.gpg in ${RT_SOURCE}"
-  cp -p -- "$RT_SOURCE/$DUMP_NAME" "$WORK/"
-  [[ -f "$RT_SOURCE/${DUMP_NAME%.dump.gpg}.counts" ]] && cp -p -- "$RT_SOURCE/${DUMP_NAME%.dump.gpg}.counts" "$WORK/"
+  [[ -f "$1" ]] || fail "no such file: $1"
+  RT_SOURCE=$(cd "$(dirname "$1")" && pwd -P)
+  DUMP_NAME=$(basename "$1")
+fi
+if [[ "$RT_SOURCE" == /* ]]; then
+  src_list() { find "$RT_SOURCE" -maxdepth 1 -type f -name "$1" -printf '%f\n' | sort; }
+  src_get() { [[ -f "$RT_SOURCE/$1" ]] && cp -p -- "$RT_SOURCE/$1" "$WORK/$1"; }
 else
   RHOST=${RT_SOURCE%%:*}; RPATH=${RT_SOURCE#*:}
+  [[ "$RHOST" != "$RT_SOURCE" && -n "$RHOST" && "$RPATH" == /* ]] || fail "RT_SOURCE ${RT_SOURCE}: expected /dir or host:/dir"
+  SSH=(ssh -o BatchMode=yes -o ConnectTimeout=20 "$RHOST")
+  # shellcheck disable=SC2029  # RPATH and the pattern are expanded locally on purpose
+  src_list() { "${SSH[@]}" "cd '$RPATH' && find . -maxdepth 1 -type f -name '$1' | sed 's#^[.]/##' | sort"; }
+  # shellcheck disable=SC2029
+  src_get() {
+    "${SSH[@]}" "test -f '$RPATH/$1' && cat '$RPATH/$1'" >"$WORK/.$1.part" && mv -f -- "$WORK/.$1.part" "$WORK/$1"
+  }
+fi
+NAME_RE='^db-[0-9]{8}T[0-9]{4}Z[.]dump[.]gpg$'
+SECRETS_RE='^secrets-[0-9]{8}T[0-9]{4}Z[.]env[.]gpg$'
+if [[ -z "${DUMP_NAME:-}" ]]; then
   # Names are db-YYYYmmddTHHMMZ.dump.gpg, so a lexical sort is chronological.
-  # shellcheck disable=SC2029  # RPATH is expanded locally on purpose
-  DUMP_NAME=$(ssh -o BatchMode=yes "$RHOST" "cd '$RPATH' && ls -1 db-*.dump.gpg | sort | tail -n1") \
-    || fail "cannot list ${RT_SOURCE}"
-  [[ "$DUMP_NAME" =~ ^db-[0-9]{8}T[0-9]{4}Z\.dump\.gpg$ ]] || fail "unexpected dump name '${DUMP_NAME}'"
-  rsync -t -e 'ssh -o BatchMode=yes' "$RHOST:$RPATH/$DUMP_NAME" "$RHOST:$RPATH/${DUMP_NAME%.dump.gpg}.counts" "$WORK/" \
-    || fail "rsync from ${RT_SOURCE}"
+  listing=$(src_list 'db-*.dump.gpg') || fail "cannot list ${RT_SOURCE}"
+  DUMP_NAME=$(grep -E "$NAME_RE" <<<"$listing" | tail -n1 || true)
+  [[ -n "$DUMP_NAME" ]] || fail "no db-*.dump.gpg in ${RT_SOURCE}"
+fi
+[[ "$DUMP_NAME" =~ $NAME_RE ]] || fail "unexpected dump name '${DUMP_NAME}'"
+src_get "$DUMP_NAME" || fail "cannot copy ${DUMP_NAME} from ${RT_SOURCE}"
+COUNTS_NAME=${DUMP_NAME%.dump.gpg}.counts
+src_get "$COUNTS_NAME" || fail "no ${COUNTS_NAME} next to ${DUMP_NAME} in ${RT_SOURCE} (the off-site pull must carry db-*.counts)"
+# The secrets the dump's PIN hashes and match tokens were made with: the
+# newest secrets file not newer than the dump, else the oldest one there.
+listing=$(src_list 'secrets-*.env.gpg') || fail "cannot list ${RT_SOURCE}"
+SECRETS_NAME=
+first=
+while read -r n; do
+  [[ "$n" =~ $SECRETS_RE ]] || continue
+  [[ -n "$first" ]] || first=$n
+  # compare the stamps only (secrets-<14>, db-<14>)
+  [[ ! "${n:8:14}" > "${DUMP_NAME:3:14}" ]] || continue
+  SECRETS_NAME=$n
+done <<<"$listing"
+SECRETS_NAME=${SECRETS_NAME:-$first}
+if [[ -n "$SECRETS_NAME" ]]; then
+  src_get "$SECRETS_NAME" || fail "cannot copy ${SECRETS_NAME} from ${RT_SOURCE}"
 fi
 DUMP="$WORK/$DUMP_NAME"
-COUNTS_FILE="$WORK/${DUMP_NAME%.dump.gpg}.counts"
-log "dump ${DUMP_NAME} ($(stat -c %s "$DUMP") bytes)"
+COUNTS_FILE="$WORK/$COUNTS_NAME"
+log "dump ${DUMP_NAME} ($(stat -c %s "$DUMP") bytes), secrets ${SECRETS_NAME:-none}"
 
 # Age from the UTC timestamp in the name (mtime may be rewritten by copies).
 stamp=${DUMP_NAME#db-}; stamp=${stamp%Z.dump.gpg}
@@ -177,6 +232,41 @@ if [[ -n "$RT_GPG_PASSPHRASE_FILE" ]]; then
 fi
 "${GPG[@]}" -o "$WORK/db.dump" -d "$DUMP" || fail "gpg decrypt (key or passphrase)"
 rm -f -- "$DUMP"
+
+# The backend's settings beyond the fixed ones (step 5): defaults, then
+# RT_BACKEND_ENV_FILE, then the dump's own secrets. KEY=VALUE lines only; one
+# pair of quotes around a value is dropped, as docker compose reads .env.
+declare -A BE_ENV=([TRUST_PROXY_FROM]=127.0.0.1/32 [VM_SYNC]=off)
+FIXED_KEYS=" DATABASE_URL STORAGE_ROOT STATUS_DIR PUBLIC_ORIGINS TRUST_PROXY IS_CLOUD OV_MIN_MATCHES PORT "
+read_env() {  # file [key ...]: KEY=VALUE lines of file into BE_ENV (only the keys named, if any)
+  local file=$1 line k v n=0
+  shift
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    n=$((n + 1))
+    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+    # never print the line: it may hold a secret
+    [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]] || fail "$file: line $n is not KEY=VALUE"
+    k=${BASH_REMATCH[1]}; v=${BASH_REMATCH[2]}
+    if [[ "$v" =~ ^\"(.*)\"$ || "$v" =~ ^\'(.*)\'$ ]]; then v=${BASH_REMATCH[1]}; fi
+    (( $# == 0 )) || [[ " $* " == *" $k "* ]] || continue
+    [[ "$FIXED_KEYS" != *" $k "* ]] || { log "WARNING: ${k} in ${file} ignored (set by this script)"; continue; }
+    BE_ENV[$k]=$v
+  done <"$file"
+}
+if [[ -n "$RT_BACKEND_ENV_FILE" ]]; then
+  [[ -r "$RT_BACKEND_ENV_FILE" ]] || fail "RT_BACKEND_ENV_FILE ${RT_BACKEND_ENV_FILE} not readable"
+  read_env "$RT_BACKEND_ENV_FILE"
+fi
+if [[ -n "$SECRETS_NAME" ]]; then
+  "${GPG[@]}" -o "$WORK/secrets.env" -d "$WORK/$SECRETS_NAME" || fail "gpg decrypt of ${SECRETS_NAME} (key or passphrase)"
+  rm -f -- "$WORK/$SECRETS_NAME"
+  read_env "$WORK/secrets.env" OV_PIN_SECRET OV_MATCH_TOKEN_SECRET
+  rm -f -- "$WORK/secrets.env"
+fi
+# The backend refuses to start without it, and only the secret the dump was
+# written with makes its stored PINs and match tokens check.
+[[ -n "${BE_ENV[OV_PIN_SECRET]:-}" ]] ||
+  fail "no OV_PIN_SECRET for ${DUMP_NAME}: no secrets-*.env.gpg in ${RT_SOURCE} (the off-site pull must carry them) and none in RT_BACKEND_ENV_FILE"
 
 # --- 3. throwaway postgres + restore ------------------------------------------------
 OWNER_PW=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
@@ -266,17 +356,29 @@ chmod 0644 "$WORK/storage/.ovdata" "$WORK/status/last_backup"
 chmod 0770 "$WORK/storage"
 if [[ $EUID -eq 0 ]]; then chown -R 1000:1000 "$WORK/storage"; fi
 
+# Every setting in one env file (mode 600, removed once the container is
+# created): the secrets and the database password never appear in a command line.
+ENV_FILE="$WORK/backend.env"
+(
+  umask 077
+  for k in "${!BE_ENV[@]}"; do printf '%s=%s\n' "$k" "${BE_ENV[$k]}"; done | sort
+  printf '%s\n' "DATABASE_URL=postgres://ov_app:${APP_PW}@ov-postgres:5432/openvolley" \
+    STORAGE_ROOT=/data/storage STATUS_DIR=/var/lib/openvolley-status \
+    PUBLIC_ORIGINS=https://restore-test.invalid TRUST_PROXY=cloudflare IS_CLOUD=1 \
+    "OV_MIN_MATCHES=$(( M * 9 / 10 ))"
+) >"$ENV_FILE"
+chmod 0600 "$ENV_FILE"
+be_rc=0
 docker run -d --name "$BE" --network "$NET" \
   --read-only --tmpfs /tmp:size=64m --cap-drop ALL --security-opt no-new-privileges:true \
   --memory 256m --memory-swap 256m --cpus 1 --pids-limit 256 --user node \
-  -e DATABASE_URL="postgres://ov_app:${APP_PW}@ov-postgres:5432/openvolley" \
-  -e STORAGE_ROOT=/data/storage -e STATUS_DIR=/var/lib/openvolley-status \
-  -e PUBLIC_ORIGINS=https://restore-test.invalid -e TRUST_PROXY=cloudflare -e IS_CLOUD=1 \
-  -e OV_MIN_MATCHES=$(( M * 9 / 10 )) \
+  --env-file "$ENV_FILE" \
   --mount "type=bind,source=$WORK/storage,target=/data/storage" \
   --mount "type=bind,source=$WORK/status,target=/var/lib/openvolley-status,readonly" \
   --label openvolley.restore-test=1 \
-  "$RT_BACKEND_IMAGE" >/dev/null
+  "$RT_BACKEND_IMAGE" >/dev/null || be_rc=$?
+rm -f -- "$ENV_FILE"
+(( be_rc == 0 )) || fail "docker run of the backend (exit ${be_rc})"
 
 # The check runs inside the backend container with its own node (no ports).
 HEALTH_JS='

@@ -4,7 +4,10 @@
 #   - the Scoop manifests: `scoop install` / `scoop update` run the installer
 #     they name, with administrator rights, straight from main;
 #   - the workflows and their scripts: they build every installer and release;
-#   - the publish and channel scripts and the keys they trust.
+#   - the publish and channel scripts and the keys they trust;
+#   - the leak scan's scanner, hooks, rules and allowlists: an allowlist entry
+#     decides what personal data may enter this public history (leak-scan.yml
+#     scans with the base branch's copy and fails a change to the allowlists).
 #
 # GitHub never counts the author's own approval. A PR opened from the owner's
 # account (as the agent PRs are) therefore needs a second account that is a
@@ -20,3 +23,6 @@
 /escoresheet/frontend/src-tauri/tauri.conf.json @Lucanepa
 /escoresheet/frontend/src-tauri/tauri.beach.conf.json @Lucanepa
 /.github/ @Lucanepa
+/.githooks/ @Lucanepa
+/.gitleaks.toml @Lucanepa
+/.gitleaksignore @Lucanepa

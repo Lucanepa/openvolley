@@ -48,7 +48,7 @@ import { useBackupUnlock } from './hooks/useBackupUnlock'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import { publishEndedLiveStates } from './utils/matchEndLiveState'
 import ballFallback from './ball_fallback.png'
-import { isLocalOnly } from './domain/matchKind'
+import { isLocalOnly, usesKeyStore } from './domain/matchKind'
 
 // The scoring screen renders on its own state, data and contexts only: App's
 // renders while scoring (its live queries, the sync status) stop here. Its
@@ -104,6 +104,7 @@ import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import ToolModeChooser from './components/ToolModeChooser'
 import { newGlobalKey, loadGlobal, isGlobalKey, markGlobalMatch, globalRestoreData, upgradeGlobalMatches } from './utils/globalCloud'
+import { startGlobalPendingRetry } from './utils/globalPending'
 import { useToolMode, getToolMode, setToolMode, toolModeLocked, impliedToolMode } from './utils/toolMode'
 import { Button, cn, FormError, Input, ScreenLoading } from './ui'
 import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isNativeApp, isStaticHost } from './utils/backendConfig'
@@ -215,6 +216,8 @@ export default function App() {
   // Global: the match's backup code (utils/globalCloud) to restore from
   const [globalRestoreCode, setGlobalRestoreCode] = useState('')
   const [globalRestoreBusy, setGlobalRestoreBusy] = useState(false)
+  // what the restore by backup code says, under its own field (restoreByCodeSection)
+  const [globalRestoreError, setGlobalRestoreError] = useState('')
   const [cloudBackupLoading, setCloudBackupLoading] = useState(false)
   const [cloudBackupError, setCloudBackupError] = useState('')
   const [restorePreviewData, setRestorePreviewData] = useState(null) // { data, source: 'database'|'cloud'|'local' }
@@ -1349,6 +1352,11 @@ export default function App() {
   // (utils/globalCloud upgradeGlobalMatches), once at start-up
   useEffect(() => { upgradeGlobalMatches(db).catch(() => {}) }, [])
 
+  // The final uploads of a Global match the server refused for now (a hall's
+  // daily share spent, a busy server): sent again after its Retry-After
+  // (utils/globalPending, 2611 review SR-4)
+  useEffect(() => startGlobalPendingRetry(), [])
+
   // Match End's live-state repair (utils/matchEndLiveState, fbf159bf) at
   // start-up, for every official match this device holds as ended. An app
   // killed between the last rally and the scoreboard's 'match_end' push used
@@ -2115,10 +2123,17 @@ export default function App() {
     })
   }
 
+  // The practice matches of this device (test and easy matches) with their
+  // events, sets and test teams. Never a Global or guest match
+  // (domain/matchKind usesKeyStore): a real match whose only full copy is on
+  // this device, kept with the test-match slot's external id. It goes only by
+  // Close match or by Delete match, which asks for its game PIN and names
+  // what it loses (audit LOG-01: Test match, Easy match and a new Global or
+  // guest match wiped it without a question)
   async function clearLocalTestData() {
     await db.transaction('rw', db.events, db.event_history, db.sets, db.matches, db.players, db.teams, async () => {
       const testMatches = await db.matches
-        .filter(m => isLocalOnly(m) || m.externalId === TEST_MATCH_EXTERNAL_ID)
+        .filter(m => !usesKeyStore(m) && (m.test === true || m.externalId === TEST_MATCH_EXTERNAL_ID))
         .toArray()
       for (const match of testMatches) {
         // a wipe, not an undo: no event history (db/eventHistory)
@@ -2127,12 +2142,16 @@ export default function App() {
         await db.matches.delete(match.id)
       }
 
+      // (a team row a kept match still uses stays with its players)
+      const keptTeamIds = new Set()
+      await db.matches.each(m => { keptTeamIds.add(m.homeTeamId); keptTeamIds.add(m.awayTeamId) })
       const testTeams = await db.teams
         .filter(
           t =>
-            t.externalId === TEST_HOME_TEAM_EXTERNAL_ID ||
-            t.externalId === TEST_AWAY_TEAM_EXTERNAL_ID ||
-            (t.seedKey && t.seedKey.startsWith('test-'))
+            !keptTeamIds.has(t.id) && (
+              t.externalId === TEST_HOME_TEAM_EXTERNAL_ID ||
+              t.externalId === TEST_AWAY_TEAM_EXTERNAL_ID ||
+              (t.seedKey && t.seedKey.startsWith('test-')))
         )
         .toArray()
 
@@ -3213,8 +3232,9 @@ export default function App() {
     let createdMatchId = null
 
     await db.transaction('rw', db.matches, db.sets, db.events, db.sync_queue, async () => {
+      // (never a Global or guest match: it keeps its own row, clearLocalTestData)
       let existingMatch =
-        (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) ||
+        (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey) && !usesKeyStore(m)).first()) ||
         (await db.matches.filter(m => m.test === true && !m.seedKey).first())
 
       // This device's own relay room (testMatchSeedKeyFor), kept across restarts
@@ -3286,8 +3306,27 @@ export default function App() {
     }
   }
 
+  /**
+   * A Global or guest match of this device that is not final (domain/
+   * matchKind usesKeyStore): a real match, kept on this device only, in the
+   * test-match slot. No new match of that slot (Test match, Easy match, a
+   * Global "Match", the signed-out "New match") replaces it: the scorer is
+   * told to continue it, or to delete it with Delete match, which asks for
+   * its game PIN and names what it loses (audit LOG-01). true when the
+   * scorer was told.
+   */
+  async function keyStoreMatchBlocks() {
+    const open = await db.matches.filter(m => usesKeyStore(m) && m.status !== 'final').first()
+    if (!open) return false
+    setAlertModal(open.global === true
+      ? t('home.modals.globalMatchStillOpen', 'A Global match is still open on this device. Continue it, or delete it with "Delete match" (with its game PIN), before starting another match.')
+      : t('home.modals.guestMatchStillOpen', 'A match without an account is still open on this device. Continue it, or delete it with "Delete match" (with its game PIN), before starting another match.'))
+    return true
+  }
+
   async function createNewTestMatch() {
     if (testMatchLoading) return
+    if (await keyStoreMatchBlocks()) return
 
     // (a copy another device scores is not recorded here)
     const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
@@ -3363,8 +3402,11 @@ export default function App() {
       setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
       return
     }
+    if (await keyStoreMatchBlocks()) return
     try {
-      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
+      // (the slot's relay room of a test or easy match; a final Global or
+      // guest match left on the device keeps its own)
+      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey) && !usesKeyStore(m)).first()) || null
       const seedKey = testMatchSeedKeyFor(previous?.seedKey)
       const refereePin = previous?.refereePin || generateSecurePin()
       await clearLocalTestData()
@@ -3537,8 +3579,10 @@ export default function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** "Easy match" in the New match menu: the form (the warnings come when it is started) */
-  function openEasyMatch(prefill = null) {
+  async function openEasyMatch(prefill = null) {
     if (testMatchLoading || easyMatchLoading) return
+    // (an open Global or guest match first: no form typed in for nothing)
+    if (await keyStoreMatchBlocks()) return
     setEasyMatchForm({ prefill })
   }
 
@@ -3549,6 +3593,12 @@ export default function App() {
    */
   async function startEasyMatch(form) {
     if (easyMatchLoading) return
+    // A Global or guest match is never replaced (keyStoreMatchBlocks): the
+    // form goes (a page address opened it), Home shows that match
+    if (await keyStoreMatchBlocks()) {
+      setEasyMatchForm(null)
+      return
+    }
     const previous = (await db.matches.filter(m => isLocalOnly(m) && m.status !== 'final').first()) || null
     const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
     const replacing = previous && ['live', 'ended'].includes(previous.status)
@@ -3576,9 +3626,13 @@ export default function App() {
    */
   async function createEasyMatch(form) {
     if (easyMatchLoading) return
+    if (await keyStoreMatchBlocks()) {
+      setEasyMatchForm(null)
+      return
+    }
     setEasyMatchLoading(true)
     try {
-      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
+      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey) && !usesKeyStore(m)).first()) || null
       const seedKey = testMatchSeedKeyFor(previous?.seedKey)
       const refereePin = previous?.refereePin || generateSecurePin()
       await clearLocalTestData()
@@ -3873,6 +3927,64 @@ export default function App() {
   // "Connecting..."); it stops at its next step when that changes. Its
   // recommendation is the card on Home (DeviceCheckCard), under the same rule.
   const firstStartDialog = (showStartupConnectivity && !offlineMode) || (toolMode === null && matchesLoaded && !matchId && !homeOptionsModal)
+
+  // Restore match by the match's backup code (no account, no game PIN): a
+  // Global or guest match, whose backup is kept under its code
+  // (utils/globalCloud). First in the Global tool and in the Swiss tool
+  // signed out, after the search by game PIN in the Swiss tool signed in
+  // (audit LOG-07: a guest match's backup could not be restored at all)
+  function restoreByCodeSection() {
+    return (
+      <div className="mb-6 flex flex-col" data-testid="restore-global">
+        <h3 className="text-sm font-semibold text-stone-800">{globalTool ? t('restoreGlobal.title', 'Restore from the online backup') : t('restoreGlobal.titleCode', 'Restore with the backup code')}</h3>
+        <p className="mt-1 mb-3 text-xs text-stone-500">{globalTool
+          ? t('restoreGlobal.desc', 'Enter the backup code of the match (Match Setup, Backups). The app then asks for its referee PIN.')
+          : t('restoreGlobal.descGuest', 'A match without an account (New match while signed out): enter its backup code (Match Setup, Backups). The app then asks for its referee PIN.')}</p>
+        <input
+          type="text"
+          value={globalRestoreCode}
+          onChange={(e) => { setGlobalRestoreCode(e.target.value.trim()); setGlobalRestoreError('') }}
+          placeholder="AbCdEfGhIjKlMnOpQrStUv"
+          aria-label={t('restoreGlobal.code', 'Backup code')}
+          data-testid="restore-global-code"
+          autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          className="mb-3 w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
+        />
+        <button
+          type="button"
+          data-testid="restore-global-button"
+          disabled={globalRestoreBusy || !isGlobalKey(globalRestoreCode)}
+          onClick={async () => {
+            setGlobalRestoreBusy(true)
+            setGlobalRestoreError('')
+            try {
+              const text = await loadGlobal(globalRestoreCode, 'backup')
+              if (!text) { setGlobalRestoreError(t('restoreGlobal.notFound', 'No backup found for this code.')); return }
+              // a backup file like any other (utils/backupFile): an
+              // encrypted one asks for the match's referee PIN first
+              const unlocked = await unlockBackup(matchBackupFromFile(parseBackupText(text)))
+              if (!unlocked) return // cancelled
+              // only a Global or guest match, kept as the kind it is and
+              // local only: never an official match into this device
+              // (utils/globalCloud)
+              const data = globalRestoreData(unlocked)
+              if (!data) { setGlobalRestoreError(t('restoreGlobal.notGlobal', 'This code holds no Global match and no match without an account.')); return }
+              setRestorePreviewData({ data, source: 'cloud', backupName: 'global' })
+            } catch (err) {
+              setGlobalRestoreError(restoreErrorText(err, t))
+            } finally {
+              setGlobalRestoreBusy(false)
+            }
+          }}
+          className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+        >
+          {globalRestoreBusy ? t('common.loading') : t('restoreGlobal.button', 'Find backup')}
+        </button>
+        {globalRestoreError && <FormError className="mt-2">{globalRestoreError}</FormError>}
+      </div>
+    )
+  }
+
   // Home's own match set-up while no match id is set yet: the Easy match
   // form, today's games, the new-match / replace and other confirms, the
   // restore and delete dialogs, a test or easy match being prepared
@@ -4340,6 +4452,7 @@ export default function App() {
                   setRestoreMatchIdInput('')
                   setRestorePin('')
                   setRestoreError('')
+                  setGlobalRestoreError('')
                   setCloudBackups([])
                   setCloudBackupPin('')
                   setCloudBackupGameN('')
@@ -4352,53 +4465,8 @@ export default function App() {
                 panelStyle={{ display: 'flex', flexDirection: 'column' }}
               >
                 <div className="ov-kit flex min-h-0 flex-1 flex-col">
-                  {/* Global: restore by the match's backup code (no account, no game PIN) */}
-                  {!offlineMode && globalTool && (
-                    <div className="mb-6 flex flex-col" data-testid="restore-global">
-                      <h3 className="text-sm font-semibold text-stone-800">{t('restoreGlobal.title', 'Restore from the online backup')}</h3>
-                      <p className="mt-1 mb-3 text-xs text-stone-500">{t('restoreGlobal.desc', 'Enter the backup code of the match (Match Setup, Backups). The app then asks for its referee PIN.')}</p>
-                      <input
-                        type="text"
-                        value={globalRestoreCode}
-                        onChange={(e) => { setGlobalRestoreCode(e.target.value.trim()); setRestoreError('') }}
-                        placeholder="AbCdEfGhIjKlMnOpQrStUv"
-                        aria-label={t('restoreGlobal.code', 'Backup code')}
-                        data-testid="restore-global-code"
-                        autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                        className="mb-3 w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
-                      />
-                      <button
-                        type="button"
-                        data-testid="restore-global-button"
-                        disabled={globalRestoreBusy || !isGlobalKey(globalRestoreCode)}
-                        onClick={async () => {
-                          setGlobalRestoreBusy(true)
-                          setRestoreError('')
-                          try {
-                            const text = await loadGlobal(globalRestoreCode, 'backup')
-                            if (!text) { setRestoreError(t('restoreGlobal.notFound', 'No backup found for this code.')); return }
-                            // a backup file like any other (utils/backupFile): an
-                            // encrypted one asks for the match's referee PIN first
-                            const unlocked = await unlockBackup(matchBackupFromFile(parseBackupText(text)))
-                            if (!unlocked) return // cancelled
-                            // only a Global match, kept test-flagged: never an
-                            // official match into this device (utils/globalCloud)
-                            const data = globalRestoreData(unlocked)
-                            if (!data) { setRestoreError(t('restoreGlobal.notGlobal', 'This code holds no match of the Global tool.')); return }
-                            setRestorePreviewData({ data, source: 'cloud', backupName: 'global' })
-                          } catch (err) {
-                            setRestoreError(restoreErrorText(err, t))
-                          } finally {
-                            setGlobalRestoreBusy(false)
-                          }
-                        }}
-                        className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
-                      >
-                        {globalRestoreBusy ? t('common.loading') : t('restoreGlobal.button', 'Find backup')}
-                      </button>
-                      {restoreError && <FormError className="mt-2">{restoreError}</FormError>}
-                    </div>
-                  )}
+                  {/* Restore by the match's backup code: the Global tool, and the Swiss tool's guest matches */}
+                  {!offlineMode && (globalTool || !signedInUser) && restoreByCodeSection()}
                   {/* Restore from Cloud Backup */}
                   {!offlineMode && !globalTool && (
                     <div className="mb-6 flex min-h-0 flex-col">
@@ -4547,6 +4615,9 @@ export default function App() {
                       )}
                     </div>
                   )}
+
+                  {/* Signed in, the Swiss tool's restore by game PIN first; a guest match's backup code after it */}
+                  {!offlineMode && !globalTool && !!signedInUser && restoreByCodeSection()}
 
                   {/* Divider before local backup (only after the cloud part) */}
                   {!offlineMode && (

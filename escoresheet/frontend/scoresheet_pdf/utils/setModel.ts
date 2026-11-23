@@ -9,7 +9,7 @@
  * put B on the left).
  */
 import { formatTimeLocal } from '../../src/utils/timeUtils';
-import { awardsPoint as sanctionAwardsPoint } from '../../src/domain/sanctions.js';
+import { awardsPoint as sanctionAwardsPoint, penaltyOfPoint } from '../../src/domain/sanctions.js';
 import { assignSubsToColumns, compareEventsBySeq, getFirstServeTeamKey, getStartingLineup, rectificationServerColumn } from './scoresheetModel';
 import { courtChangeIndex, trackServiceRounds, type ServiceRound, type TrackedRound } from './serviceRounds';
 import { isoOf, setEndMs, setStartMs } from './matchTimes';
@@ -222,16 +222,20 @@ export function buildSetData(ctx: SetContext, setNumber: number, isSwapped: bool
         }
       } else if (sanctionAwardsPoint(sanctionType)) {
         // Find the next point event scored by the opponent after this sanction
-        // We need to calculate what the score will be when that point is scored
+        // We need to calculate what the score will be when that point is scored.
+        // Not another penalty's point (it names its own sanction and is
+        // circled for it): the same rule as the corrections
+        // (domain/sanctions pointOfPenalty, audit LOG-05)
         let futureHomeCount = homePointCount;
         let futureAwayCount = awayPointCount;
 
         for (let j = i + 1; j < allEventsWithSanctions.length; j++) {
           const nextEvent = allEventsWithSanctions[j];
           if (nextEvent.type === 'point') {
+            const ownPenaltyPoint = !!penaltyOfPoint(setEvents, nextEvent);
             if (nextEvent.payload?.team === 'home') {
               futureHomeCount++;
-              if (opponentTeam === 'home') {
+              if (opponentTeam === 'home' && !ownPenaltyPoint) {
                 // This is the point we're looking for - circle it
                 if (!homeCircledPoints.includes(futureHomeCount)) {
                   homeCircledPoints.push(futureHomeCount);
@@ -240,7 +244,7 @@ export function buildSetData(ctx: SetContext, setNumber: number, isSwapped: bool
               }
             } else if (nextEvent.payload?.team === 'away') {
               futureAwayCount++;
-              if (opponentTeam === 'away') {
+              if (opponentTeam === 'away' && !ownPenaltyPoint) {
                 // This is the point we're looking for - circle it
                 if (!awayCircledPoints.includes(futureAwayCount)) {
                   awayCircledPoints.push(futureAwayCount);

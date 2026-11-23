@@ -50,7 +50,11 @@
  *     googlemail.com = gmail.com) for reset and confirm mails, so one inbox
  *     cannot be flooded through spelling variants of its address; sendUser
  *     counts its own mails per inbox apart from those, so asking for a game
- *     PIN never uses up the inbox's password resets.
+ *     PIN never uses up the inbox's password resets;
+ *   - the approval notices: "your PIN was used" ("security") and a locked or
+ *     blocked PIN ("pin_lock") have budgets of their own, so wrong PINs
+ *     cannot silence the first; each kind is capped per inbox (KIND_INBOX_MAX).
+ *   mailName(raw): a self-chosen person name as a mail shows it.
  * A mail over a limit is dropped (the request still succeeds, so the answer
  * never tells whether a mail went out), logged, and counted in stats(), which
  * the internal /health body shows. sendUser leaves the answer to its caller:
@@ -63,7 +67,7 @@
  *   mailer.enabled / mailer.reason / mailer.managerUrl / mailer.from (OpenVolley's)
  *   mailer.managerUrlFor(app) / mailer.fromFor(app)   per brand ('indoor' | 'beach')
  *   mailer.send(kind, { to, lang, link, app, vars, attachments }) -> Promise<{ sent, skipped? }>
- *                                            kind: reset | confirm | password_changed | approval | approval_pin_locked
+ *                                            kind: reset | confirm | password_changed | sign_in_attempts | approval | approval_pin_locked
  *                                            | scoresheet | scoresheet_test (the final scoresheet, lib/finalMail.js:
  *                                            attachments [{ filename, content: Buffer }], PDFs only)
  *                                            | scoresheet_no_pdf | scoresheet_reopened (its notices)
@@ -92,7 +96,7 @@ import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
-export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened', 'signup', 'club_manager_invite', 'team_manager_proposal'])
+export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'sign_in_attempts', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened', 'signup', 'club_manager_invite', 'team_manager_proposal'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
@@ -120,7 +124,7 @@ export function mailApp(raw) {
 // app's profile sets).
 // The sign-up notice (lib/signupNotices.js) takes the brand of the app the
 // account signed up in.
-const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'signup'])
+const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'sign_in_attempts', 'signup'])
 
 /** The brand of one mail: mailApp(app) for the account mails, 'indoor' for the approval notices. */
 export function mailBrandOf(kind, app) {
@@ -132,24 +136,30 @@ export function mailBrandOf(kind, app) {
 // (100 per hour in total, as before the split). "account" carries the reset
 // and password-changed mails, "confirm" the confirmation links: a burst of
 // sign-ups uses up only the latter (whose holders can resend later).
-// "security" is reserved for the approval notices of lib/approvals.js (an
-// approval made with an official's PIN, a locked PIN): nothing else draws
-// from it, so no amount of sign-ups can silence them. "signup" carries the
+// "security" is reserved for the "your approval PIN was used" notices of
+// lib/approvals.js: nothing else draws from it, so no amount of sign-ups, and
+// no amount of wrong PINs, can silence them. The notices of a locked or
+// blocked PIN, which anyone who types wrong PINs causes, have their own
+// "pin_lock" (SEC-32, audit 26.11). The "someone keeps trying your
+// password" notices (sign_in_attempts, lib/auth.js tellOfAttempts), which a
+// guesser causes for any address it knows, have their own "sign_in" too, so
+// they never use up the reset mails' (2611 review,
+// SIGNIN-NOTICE-SHARES-RESET-BUDGET). "signup" carries the
 // sign-up notices to admins and approvers (lib/signupNotices.js), "notify"
 // the club-manager invitations, the team-manager proposals and the final
 // mail's notices (a missing PDF, a reopened match): none can starve the
 // account mails. email_changed (a changed login address) is an account mail too.
 // "user" carries the mails a signed-in user asks for to its own address
 // (sendUser: the game PIN, the match information), which have no kind.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', confirm: 'confirm', approval: 'security', approval_pin_locked: 'security', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', sign_in_attempts: 'sign_in', confirm: 'confirm', approval: 'security', approval_pin_locked: 'pin_lock', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them; scoresheet_test: test mails
 // (any scorer, any time) must not use up the final scoresheets' budget
-export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 150, notify: 100, signup: 100, security: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
+export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 150, notify: 100, signup: 100, security: 50, pin_lock: 50, sign_in: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
 // The budgets an operator sizes (deploy/env.example), each by its variable:
 // a whole number above 0 per hour; anything else keeps the default, with a
 // warning at startup. A size given to createMailer wins (tests).
-export const BUDGET_ENV = Object.freeze({ account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
+export const BUDGET_ENV = Object.freeze({ account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', pin_lock: 'MAIL_BUDGET_PIN_LOCK', sign_in: 'MAIL_BUDGET_SIGN_IN', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
 
 /** The hourly budgets the environment sets (BUDGET_ENV): { budgets: { name: n }, warnings: [line] }. */
 export function budgetsFromEnv(env = process.env) {
@@ -174,6 +184,12 @@ export const DEFAULT_MAX_PER_INBOX = 5
 // club_manager_invite: an admin types the address, so one inbox is capped like a confirmation
 // (sendUser: its own count per inbox, the same maximum)
 const INBOX_CAPPED = new Set(['reset', 'confirm', 'scoresheet_test', 'club_manager_invite'])
+// Kinds with a per-inbox hourly cap of their own (a counter per kind, not the
+// one above), so one inbox cannot use up their budget (SEC-32): an official
+// approves a handful of matches an hour, and hears of a locked PIN once an
+// hour at most (lib/approvals.js also sends a lock notice once an hour per
+// approver; a blocked PIN's notice is once per PIN)
+export const KIND_INBOX_MAX = Object.freeze({ approval: 10, approval_pin_locked: 2 })
 const ATTACHING = new Set(['scoresheet', 'scoresheet_test'])
 const HOUR_MS = 60 * 60 * 1000
 
@@ -296,6 +312,41 @@ const SLOT_LABELS = Object.freeze({
   it: { referee1: '1° arbitro', referee2: '2° arbitro', scorer: 'segnapunti' }
 })
 
+// The dots a link can be written with (full stop, ideographic and fullwidth ones, one dot leader)
+const LINK_DOT = '[.\\u3002\\uff0e\\uff61\\u2024]'
+const LINKISH = [
+  /\b[a-z][a-z0-9+.-]*:\/\/\S*/gi, // a scheme
+  /\S*[@\uff20]\S*/g, // an address
+  new RegExp(`\\bwww${LINK_DOT}\\S*`, 'giu'),
+  new RegExp(`\\S+${LINK_DOT}\\p{L}{2,}\\S*`, 'gu') // a dotted host
+]
+
+/**
+ * Text without control or bidi characters and without anything that reads as
+ * a link or an address (LINKISH), each replaced by a space. Not trimmed.
+ */
+export function withoutLinks(raw) {
+  let s = String(raw ?? '').normalize('NFC').replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g, ' ')
+  for (const re of LINKISH) s = s.replace(re, ' ')
+  return s
+}
+
+/**
+ * A self-chosen person name as a mail shows it (SEC-34, audit 26.11: the
+ * sign-up notices, a team manager's proposal, the sender of an approval):
+ * without anything that reads as a link or an address (a scheme, www., a
+ * dotted host, also with another dot), then letters, spaces, hyphens and
+ * apostrophes only (anything else becomes a space: no number or sentence
+ * punctuation), at most 60 characters. '' when nothing is left.
+ */
+export function mailName(raw, max = 60) {
+  return withoutLinks(raw)
+    .replace(/[^\p{L}\p{M} '\u2019-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s'\u2019-]+|[\s'\u2019-]+$/g, '')
+    .slice(0, max).trim()
+}
+
 /** A template value: text on one line (no header or line injection), at most 200 chars. */
 const cleanText = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
 // A list (the sign-up notice's parts): at most 40 items, each a flat object of texts
@@ -312,7 +363,8 @@ const SIGNUP_KINDS = Object.freeze({
   fr: { scorer: 'Marqueur', referee: 'Arbitre', team_manager: 'Responsable d’équipe / entraîneur', club_manager: 'Responsable du club', asks: 'Demande :', none: 'Le compte ne demande encore aucun rôle : donne-lui-en un, ou supprime-le, sous Comptes.' },
   it: { scorer: 'Segnapunti', referee: 'Arbitro', team_manager: 'Responsabile della squadra / allenatore', club_manager: 'Responsabile della società', asks: 'Richiesta:', none: 'L’account non chiede ancora nessun ruolo: dagliene uno, o eliminalo, in Account.' }
 })
-const signupWho = (v) => (v.name ? `${v.name} (${v.email})` : v.email)
+// The self-chosen name: letters, spaces, hyphens and apostrophes only (mailName, SEC-34)
+const signupWho = (v) => (mailName(v.name) ? `${mailName(v.name)} (${v.email})` : v.email)
 function signupParts(v, lang) {
   const L = SIGNUP_KINDS[lang]
   const parts = Array.isArray(v.parts) ? v.parts : []
@@ -468,6 +520,35 @@ const T = {
   // Approval notices (lib/approvals.js). vars: slot, game, result, id, time,
   // sender (may be ''). The link opens OpenVolley, where Profile -> Approval
   // PIN lists the official's approvals with an undo.
+  // Many wrong passwords for one account (lib/auth.js, db/057, audit 2611
+  // SEC-13), once per 24-hour window. vars: count. Links nothing, like the
+  // password notice: the way out is in the app.
+  sign_in_attempts: {
+    en: (v) => ({
+      subject: 'Many wrong passwords for your OpenVolley account',
+      before: ['Hello,', `a wrong password was typed for your OpenVolley account ${v.count} times in the last 24 hours. For now, sign-ins from devices and networks that never signed in to it are slowed down; your devices that are signed in stay signed in.`],
+      button: null,
+      after: ['If that was not you, someone may be trying to guess your password. If it is short or you use it elsewhere too, change it now (Profile → Change password, or "Forgot password?" when you sign in) and tell your club admin.']
+    }),
+    de: (v) => ({
+      subject: 'Viele falsche Passwörter für dein OpenVolley-Konto',
+      before: ['Hallo', `Für dein OpenVolley-Konto wurde in den letzten 24 Stunden ${v.count}-mal ein falsches Passwort eingegeben. Anmeldungen von Geräten und Netzwerken, die sich noch nie angemeldet haben, werden vorerst gebremst; deine angemeldeten Geräte bleiben angemeldet.`],
+      button: null,
+      after: ['Wenn du das nicht warst, versucht vielleicht jemand, dein Passwort zu erraten. Ist es kurz oder verwendest du es auch anderswo, ändere es jetzt (Profil → Passwort ändern, oder «Passwort vergessen?» bei der Anmeldung) und informiere den Admin deines Vereins.']
+    }),
+    fr: (v) => ({
+      subject: 'Beaucoup de mots de passe erronés pour ton compte OpenVolley',
+      before: ['Bonjour,', `un mot de passe erroné a été saisi ${v.count} fois pour ton compte OpenVolley au cours des dernières 24 heures. Pour l’instant, les connexions depuis des appareils et des réseaux qui ne s’y sont jamais connectés sont ralenties ; tes appareils connectés restent connectés.`],
+      button: null,
+      after: ['Si ce n’était pas toi, quelqu’un essaie peut-être de deviner ton mot de passe. S’il est court ou que tu l’utilises aussi ailleurs, change-le maintenant (Profil → Changer le mot de passe, ou « Mot de passe oublié ? » à la connexion) et préviens l’admin de ton club.']
+    }),
+    it: (v) => ({
+      subject: 'Molte password errate per il tuo account OpenVolley',
+      before: ['Buongiorno,', `per il tuo account OpenVolley è stata digitata una password errata ${v.count} volte nelle ultime 24 ore. Per ora gli accessi da dispositivi e reti che non vi hanno mai effettuato l’accesso sono rallentati; i tuoi dispositivi connessi restano connessi.`],
+      button: null,
+      after: ['Se non sei stato tu, forse qualcuno sta cercando di indovinare la tua password. Se è corta o la usi anche altrove, cambiala subito (Profilo → Cambia password, oppure «Password dimenticata?» all’accesso) e avvisa l’admin del tuo club.']
+    })
+  },
   // A new account confirmed its address (lib/signupNotices.js), to the admins
   // and the approvers of its requests. vars: name, email, parts [{ kind, club,
   // team }] (the parts this recipient decides; admins: all), admin (true for
@@ -518,7 +599,7 @@ const T = {
   team_manager_proposal: {
     en: (v) => ({
       subject: `Confirm a team manager`,
-      before: ['Hello,', `${v.proposer || 'A team manager'} proposes ${signupWho(v)} as team manager of ${v.team} (${v.club}).`,
+      before: ['Hello,', `${mailName(v.proposer) || 'A team manager'} proposes ${signupWho(v)} as team manager of ${v.team} (${v.club}).`,
         'The account gets the team only when a manager of the club or an admin approves the request.'],
       button: 'Open in the manager',
       after: [v.admin
@@ -527,7 +608,7 @@ const T = {
     }),
     de: (v) => ({
       subject: `Teamverantwortliche/n bestätigen`,
-      before: ['Hallo', `${v.proposer || 'Ein/e Teamverantwortliche/r'} schlägt ${signupWho(v)} als Teamverantwortliche/n von ${v.team} (${v.club}) vor.`,
+      before: ['Hallo', `${mailName(v.proposer) || 'Ein/e Teamverantwortliche/r'} schlägt ${signupWho(v)} als Teamverantwortliche/n von ${v.team} (${v.club}) vor.`,
         'Das Konto bekommt das Team erst, wenn eine vereinsverantwortliche Person oder ein Admin die Anfrage freigibt.'],
       button: 'Im Manager öffnen',
       after: [v.admin
@@ -536,7 +617,7 @@ const T = {
     }),
     fr: (v) => ({
       subject: `Confirmer un responsable d’équipe`,
-      before: ['Bonjour,', `${v.proposer || 'Un responsable d’équipe'} propose ${signupWho(v)} comme responsable d’équipe de ${v.team} (${v.club}).`,
+      before: ['Bonjour,', `${mailName(v.proposer) || 'Un responsable d’équipe'} propose ${signupWho(v)} comme responsable d’équipe de ${v.team} (${v.club}).`,
         'Le compte ne reçoit l’équipe qu’après l’approbation de la demande par un responsable du club ou un admin.'],
       button: 'Ouvrir dans le manager',
       after: [v.admin
@@ -545,7 +626,7 @@ const T = {
     }),
     it: (v) => ({
       subject: `Confermare un responsabile della squadra`,
-      before: ['Buongiorno,', `${v.proposer || 'Un responsabile della squadra'} propone ${signupWho(v)} come responsabile della squadra ${v.team} (${v.club}).`,
+      before: ['Buongiorno,', `${mailName(v.proposer) || 'Un responsabile della squadra'} propone ${signupWho(v)} come responsabile della squadra ${v.team} (${v.club}).`,
         'L’account riceve la squadra solo dopo che un responsabile della società o un admin ha approvato la richiesta.'],
       button: 'Aprire nel manager',
       after: [v.admin
@@ -590,28 +671,28 @@ const T = {
     en: (v) => ({
       subject: `Your approval PIN was used: ${v.game}`,
       before: ['Hello,', `your OpenVolley approval PIN was just used to approve a match result as ${SLOT_LABELS.en[v.slot] || v.slot}.`,
-        `Game: ${v.game}`, `Result: ${v.result}`, `Approved: ${v.time} · ID ${v.id}`, ...(v.sender ? [`Sent by the account of ${v.sender}.`] : [])],
+        `Game: ${v.game}`, `Result: ${v.result}`, `Approved: ${v.time} · ID ${v.id}`, ...(mailName(v.sender) ? [`Sent by the account of ${mailName(v.sender)}.`] : [])],
       button: 'Open OpenVolley',
       after: ['If that was not you: in OpenVolley, open your profile, Approval PIN, and undo the approval while the match is open. Then change your PIN and tell your club admin.']
     }),
     de: (v) => ({
       subject: `Deine Genehmigungs-PIN wurde verwendet: ${v.game}`,
       before: ['Hallo', `Mit deiner OpenVolley-Genehmigungs-PIN wurde soeben ein Spielresultat als ${SLOT_LABELS.de[v.slot] || v.slot} genehmigt.`,
-        `Spiel: ${v.game}`, `Resultat: ${v.result}`, `Genehmigt: ${v.time} · ID ${v.id}`, ...(v.sender ? [`Gesendet vom Konto von ${v.sender}.`] : [])],
+        `Spiel: ${v.game}`, `Resultat: ${v.result}`, `Genehmigt: ${v.time} · ID ${v.id}`, ...(mailName(v.sender) ? [`Gesendet vom Konto von ${mailName(v.sender)}.`] : [])],
       button: 'OpenVolley öffnen',
       after: ['Wenn du das nicht warst: Öffne in OpenVolley dein Profil, Genehmigungs-PIN, und mache die Genehmigung rückgängig, solange das Spiel offen ist. Ändere danach deine PIN und informiere den Admin deines Vereins.']
     }),
     fr: (v) => ({
       subject: `Ton PIN d’approbation a été utilisé : ${v.game}`,
       before: ['Bonjour,', `ton PIN d’approbation OpenVolley vient d’être utilisé pour approuver un résultat en tant que ${SLOT_LABELS.fr[v.slot] || v.slot}.`,
-        `Match : ${v.game}`, `Résultat : ${v.result}`, `Approuvé : ${v.time} · ID ${v.id}`, ...(v.sender ? [`Envoyé depuis le compte de ${v.sender}.`] : [])],
+        `Match : ${v.game}`, `Résultat : ${v.result}`, `Approuvé : ${v.time} · ID ${v.id}`, ...(mailName(v.sender) ? [`Envoyé depuis le compte de ${mailName(v.sender)}.`] : [])],
       button: 'Ouvrir OpenVolley',
       after: ['Si ce n’était pas toi : dans OpenVolley, ouvre ton profil, PIN d’approbation, et annule l’approbation tant que le match est ouvert. Change ensuite ton PIN et préviens l’admin de ton club.']
     }),
     it: (v) => ({
       subject: `Il tuo PIN di approvazione è stato usato: ${v.game}`,
       before: ['Buongiorno,', `il tuo PIN di approvazione OpenVolley è appena stato usato per approvare un risultato come ${SLOT_LABELS.it[v.slot] || v.slot}.`,
-        `Partita: ${v.game}`, `Risultato: ${v.result}`, `Approvato: ${v.time} · ID ${v.id}`, ...(v.sender ? [`Inviato dall’account di ${v.sender}.`] : [])],
+        `Partita: ${v.game}`, `Risultato: ${v.result}`, `Approvato: ${v.time} · ID ${v.id}`, ...(mailName(v.sender) ? [`Inviato dall’account di ${mailName(v.sender)}.`] : [])],
       button: 'Aprire OpenVolley',
       after: ['Se non sei stato tu: in OpenVolley apri il tuo profilo, PIN di approvazione, e annulla l’approvazione finché la partita è aperta. Poi cambia il PIN e avvisa l’admin del tuo club.']
     })
@@ -816,6 +897,12 @@ const SHARED_PASSWORD_NOTE = {
     de: 'Dein Konto gilt für OpenVolley und OpenBeach: Das neue Passwort gilt für beide Apps.',
     fr: 'Ton compte est valable pour OpenVolley et OpenBeach : le nouveau mot de passe vaut pour les deux applications.',
     it: 'Il tuo account vale per OpenVolley e OpenBeach: la nuova password vale per entrambe le app.'
+  },
+  sign_in_attempts: {
+    en: 'Your account works for OpenVolley and OpenBeach: the password is the one of both apps.',
+    de: 'Dein Konto gilt für OpenVolley und OpenBeach: Das Passwort gilt für beide Apps.',
+    fr: 'Ton compte est valable pour OpenVolley et OpenBeach : le mot de passe vaut pour les deux applications.',
+    it: 'Il tuo account vale per OpenVolley e OpenBeach: la password vale per entrambe le app.'
   },
   email_changed: {
     en: 'Your account works for OpenVolley and OpenBeach: the change applies to both apps.',
@@ -1079,6 +1166,7 @@ export function createMailer(o = {}) {
   const perInbox = inboxCounter(maxPerInbox, o.now)
   // sendUser's mails per inbox: apart from the reset and confirmation mails
   const userInbox = inboxCounter(maxPerInbox, o.now)
+  const kindInbox = Object.fromEntries(Object.entries(KIND_INBOX_MAX).map(([kind, max]) => [kind, inboxCounter(max, o.now)]))
   // The operator's own mails (sendOps): their own small budget, never one of the users'
   const opsBudget = hourlyBudget(Number.isInteger(o.opsPerHour) && o.opsPerHour > 0 ? o.opsPerHour : OPS_PER_HOUR, o.now)
   const counters = { sent: 0, failed: 0, inboxDropped: 0, lastDropAt: null, lastFailureAt: null }
@@ -1115,6 +1203,13 @@ export function createMailer(o = {}) {
       counters.inboxDropped++
       counters.lastDropAt = new Date().toISOString()
       log.warn(`[mail] ${perInbox.max} mails per hour to one inbox reached; ${kind} mail to ${maskEmail(to)} dropped`)
+      return { sent: false, skipped: 'inbox' }
+    }
+    if (kindInbox[kind] && !kindInbox[kind].take(inboxKey(to))) {
+      budget.refund()
+      counters.inboxDropped++
+      counters.lastDropAt = new Date().toISOString()
+      log.warn(`[mail] ${kindInbox[kind].max} ${kind} mails per hour to one inbox reached; mail to ${maskEmail(to)} dropped`)
       return { sent: false, skipped: 'inbox' }
     }
     const brand = mailBrandOf(kind, app)

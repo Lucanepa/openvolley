@@ -308,6 +308,19 @@ export const teamApi = {
   addClubPeople(teamId, people) {
     return apiRequest('POST', `/api/team/${enc(teamId)}/club-people`, { people })
   },
+  /**
+   * db/058 (PERM-04): another club's closed official match's roster of the
+   * team, waiting for a yes -> { team, suggestions: [{ id, game_number,
+   * kickoff, team_home, team_away, latest, changed, counts, club_new,
+   * players, staff }] }
+   */
+  rosterSuggestions(teamId) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}/roster-suggestions`)
+  },
+  /** 'confirm' | 'reject' -> { suggestion: { id, status }, result? } */
+  decideRosterSuggestion(teamId, id, decision) {
+    return apiRequest('POST', `/api/team/${enc(teamId)}/roster-suggestions/${enc(id)}`, { decision })
+  },
   /** db/025: the team manager requests of the team (the shape of clubApi.requests) */
   requests(teamId) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/requests`)
@@ -366,9 +379,13 @@ export const admin = {
   updateError(id, body) {
     return apiRequest('PATCH', `/api/admin/errors/${enc(id)}`, body)
   },
-  /** Delete on request: a device's or an account's reports (audited). */
-  deleteErrorEvents({ device, account } = {}) {
-    return apiRequest('DELETE', `/api/admin/errors/events${query({ device, account, confirm: 'yes' })}`)
+  /**
+   * Delete on request: a device's or an account's reports (audited). With
+   * `anonymous`: every error only reports without an account fed (not those
+   * marked important), with its reports: { deleted, groups }.
+   */
+  deleteErrorEvents({ device, account, anonymous = false } = {}) {
+    return apiRequest('DELETE', `/api/admin/errors/events${query({ device, account, anonymous: anonymous ? '1' : undefined, confirm: 'yes' })}`)
   },
   /** The activity log (db/016): filters match (game no. or external id), account (id), kind (prefix), level, from, to, app, before, limit. */
   listActivity({ match, account, kind, level, from, to, app, before, limit } = {}) {

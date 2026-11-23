@@ -31,7 +31,10 @@
  * are exactly those of one saved beach pair (db/009) is linked to it.
  * Once a draw's bracket is drawn, only names, players and wildcards change
  * (as PATCH /api/beach/entries/:id); a new, withdrawn or re-seeded pair is
- * an error, and a pair missing from the file stays (a warning).
+ * an error, and a pair missing from the file stays (a warning). The bounds
+ * of a draw and a tournament (lib/beachTournaments.js ENTRIES_PER_DRAW_MAX,
+ * TOURNAMENT_ENTRIES_MAX) count what the tournament already holds: a new
+ * pair past one is an error on its row (draw_full, tournament_full).
  *
  * Matches (optional, an organiser's own plan): a row finds its game by the
  * game number (Draw and Gender, when given, must be that game's draw) and
@@ -360,6 +363,9 @@ const isoOf = (v) => (v == null ? null : new Date(v).toISOString())
  * @param {Array<{ id, draw_id, game_n, code, phase, source1, source2, entry1_id, entry2_id, court_id, scheduled_at,
  *   duration_min, status, match_id, referee, scorer }>} state.matches  by game_n
  * @param {Array<{ id, name, season, licences: string[] }>} state.savedPairs  saved beach pairs with two licensed players
+ * @param {number} [state.maxDraws]  the tournament's bound of draws (new draws past it: row errors)
+ * @param {number} [state.maxEntriesPerDraw]  registered pairs per draw (new ones past it: draw_full)
+ * @param {number} [state.maxEntries]  entries of any status per tournament (new ones past it: tournament_full)
  * @param {{ entries: object[], matches: object[] }} input  normalizeImport()
  */
 export function planImport (state, input) {
@@ -632,6 +638,41 @@ export function planImport (state, input) {
       }
     }
     finalEntries.set(p.key, final)
+  }
+  // ---- the bounds of lib/beachTournaments.js (PERM-02): registered pairs
+  // per draw (state.maxEntriesPerDraw) and entries of any status per
+  // tournament (state.maxEntries), against what the tournament already
+  // holds, so that imports one after the other cannot pass them either.
+  // A pair the draw already has stays; a new pair (or one registered again)
+  // past a bound is an error on its row, in the file's order.
+  const perDraw = state.maxEntriesPerDraw ?? Infinity
+  const perTournament = state.maxEntries ?? Infinity
+  if (perDraw !== Infinity || perTournament !== Infinity) {
+    const rowOfOp = new Map([...rowOps].map(([r, op]) => [op, r]))
+    const wasRegistered = (x) => x.id != null && entryById.get(x.id)?.status === 'registered'
+    let rowsLeft = perTournament - state.entries.length
+    for (const p of plannedDraws) {
+      const final = finalEntries.get(p.key)
+      if (!final) continue
+      let registered = final.filter(wasRegistered).length
+      for (const x of final) {
+        if (wasRegistered(x)) continue
+        const r = x.op ? rowOfOp.get(x.op) : null
+        if (!r || isError(r)) continue
+        if (registered >= perDraw) {
+          r.msgs.push({ level: 'error', code: 'draw_full', category: p.category, gender: p.gender, max: perDraw })
+          continue
+        }
+        if (x.op.op === 'new') {
+          if (rowsLeft <= 0) {
+            r.msgs.push({ level: 'error', code: 'tournament_full', max: perTournament })
+            continue
+          }
+          rowsLeft--
+        }
+        registered++
+      }
+    }
   }
   // draws not in the Entries sheet keep their registered pairs
   const registeredOf = (p) => {

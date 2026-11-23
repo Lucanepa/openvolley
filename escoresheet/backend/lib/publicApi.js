@@ -160,6 +160,15 @@ const lineupNumbers = (l) => {
   return Object.keys(out).length ? out : null
 }
 
+/** The serving team "A" / "B" of a live row, or null. */
+function servingTeamOf(row) {
+  const serving = str(row.serving_team, 10)
+  if (serving === 'A' || serving === 'B') return serving
+  const sideA = str(row.side_a, 10)
+  if ((serving !== 'left' && serving !== 'right') || (sideA !== 'left' && sideA !== 'right')) return null
+  return serving === sideA ? 'A' : 'B'
+}
+
 function homeSide(row) {
   const home = str(isObj(jsonOf(row.home_team)) ? jsonOf(row.home_team).name : null)
   if (home && str(row.team_b_name) === home && str(row.team_a_name) !== home) return 'B'
@@ -193,7 +202,9 @@ export function publicLive(input) {
     // the scoresheet's A / B are not always home / away: homeIs says which one is the home team
     homeIs: homeSide(row),
     sideA: str(row.side_a, 10),
-    serving: str(row.serving_team, 10),
+    // "A" / "B" (docs/public-api.md): the live row names the serving side
+    // (left / right), side_a where Team A stands (audit LOG-23)
+    serving: servingTeamOf(row),
     serverNumber: num(row.server_number),
     // The scorer's live state writes { set, home, away, a, b } (frontend
     // domain/livePublicFields: a / b by Team A / B); older rows { index,
@@ -334,6 +345,32 @@ const fail = (status, error) => ({ status, body: { error } , headers: { 'Cache-C
 const MISSING = new Set(['42P01', '42703'])
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/**
+ * The names a club's matches carry as home / away (what list({ teams }) and
+ * involves() match): its teams' names and, LOG-24 (audit 26.11), the names
+ * the schedule sync renamed them from (club_teams.former_names, db/059), so
+ * the matches stored before a rename stay the club's. A former name another
+ * club's team has today is that club's, not this one's. `teamId`: one team
+ * only. On a database without db/059 the teams' names alone (as before).
+ */
+export async function clubTeamNames(db, clubId, teamId = null) {
+  const where = `ct.club_id = $1${teamId ? ' AND ct.id = $2' : ''}`
+  const args = teamId ? [clubId, teamId] : [clubId]
+  try {
+    const { rows } = await db.query(
+      `SELECT ct.team_name AS name FROM public.club_teams ct WHERE ${where}
+       UNION
+       SELECT f.name FROM public.club_teams ct CROSS JOIN LATERAL unnest(ct.former_names) AS f(name)
+        WHERE ${where}
+          AND NOT EXISTS (SELECT 1 FROM public.club_teams o WHERE lower(btrim(o.team_name)) = lower(btrim(f.name)))`, args)
+    return rows.map((r) => r.name)
+  } catch (err) {
+    if (err?.code !== '42703') throw err
+    const { rows } = await db.query(`SELECT ct.team_name AS name FROM public.club_teams ct WHERE ${where}`, args)
+    return rows.map((r) => r.name)
+  }
+}
+
 export function createPublicApi({ pool, logger = console } = {}) {
   const statsCache = new Map() // `${id}|${updated_at}` -> body
   async function guarded(what, fn) {
@@ -369,11 +406,12 @@ export function createPublicApi({ pool, logger = console } = {}) {
         args.push(list.flatMap((x) => (x === 'finished' ? FINISHED_DB : [x])))
         statusSql = ` AND m.status = ANY($${args.length})`
       }
-      // one club's matches: its team names (the club API) or a club id (the public ?club=)
+      // one club's matches: its team names (the club API) or a club id (the
+      // public ?club=), former names included (clubTeamNames, LOG-24)
       let names = Array.isArray(teams) ? teams : null
       if (!names && club) {
         if (!UUID_RE.test(club)) return fail(400, 'bad club id')
-        names = (await pool.query('SELECT team_name FROM public.club_teams WHERE club_id = $1', [club])).rows.map((r) => r.team_name)
+        names = await clubTeamNames(pool, club)
       }
       let clubSql = ''
       if (names) {
@@ -412,7 +450,9 @@ export function createPublicApi({ pool, logger = console } = {}) {
   /**
    * The live row of the official match with game number `n` closest to now
    * (the TV page's /tv/<game number>, lib/globalLive.js gameSummary), or null.
-   * Test rows never: a game number is public league data only.
+   * Test rows never: a game number is public league data only. Indoor only:
+   * OpenBeach numbers its games per tournament, so two tournaments' game 7
+   * are different games (audit LOG-22).
    */
   async function gameLiveRow(n) {
     if (!/^[0-9]{1,7}$/.test(String(n))) return null
@@ -420,7 +460,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
       `SELECT l.*, m.external_id, m.home_team, m.away_team, m.team1_data, m.team2_data, m.sport_type AS match_sport,
               m.status, m.game_n, m.scheduled_at, m.match_info
          FROM public.matches m LEFT JOIN public.match_live_state l ON l.match_id = m.id
-        WHERE m.game_n::text = $1 AND coalesce(m.test, false) = false
+        WHERE m.game_n::text = $1 AND coalesce(m.test, false) = false AND coalesce(m.sport_type, 'indoor') <> 'beach'
         ORDER BY abs(extract(epoch FROM (coalesce(m.scheduled_at, now()) - now()))) LIMIT 1`, [String(n)])
     return rows[0] || null
   }

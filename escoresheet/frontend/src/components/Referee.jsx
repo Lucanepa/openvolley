@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
-import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker, isLiveStateNewerThanBundle } from '../utils/serverDataSync'
+import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker, isLiveStateNewerThanBundle, matchAccessFor } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import { useScorerAway } from '../hooks/useScorerAway'
 import { useScaledLayout } from '../hooks/useScaledLayout'
@@ -982,7 +982,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // Add unique ID to prevent StrictMode double-mount conflicts
     const channelId = `match_live_state:${supabaseMatchUuid}-${Date.now()}`
     const channel = supabase
-      .channel(channelId)
+      // the match token of the PIN check: the live state whole (the scorer's
+      // alarm, the last action's numbers)
+      .channel(channelId, { token: () => matchAccessFor(matchId)?.token || null })
       .on(
         'postgres_changes',
         {

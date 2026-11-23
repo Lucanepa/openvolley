@@ -4,7 +4,7 @@ import { renderHook, act } from '@testing-library/react'
 vi.mock('../relayPublisher', () => ({ scorerRelay: { listen: () => () => {}, socket: null } }))
 
 import { scoreboardSettingsUrl, isPrivateLanHost, displayFromMessage, createScoreboardDisplays } from '../scoreboardDisplay'
-import { useScoreboardDisplay } from '../../components/scoreboard/useScoreboardDisplay'
+import { useScoreboardDisplay, askOpenSettings, settingsHostOf } from '../../components/scoreboard/useScoreboardDisplay'
 import { SETTINGS_URL_CASES, BOARD_URL } from '../../../../backend/tests/helpers/displayPresenceContract.js'
 
 /** A scorer relay to drive by hand: its socket, and messages on it. */
@@ -68,20 +68,49 @@ describe('display-presence on the scorer', () => {
 })
 
 describe('useScoreboardDisplay', () => {
-  it('offers "open" while a display with a page follows, and opens that page', () => {
+  // "open" asks first with the page's host (audit 2611 SEC-45): it opened the
+  // page at once, whatever display announced it
+  it('offers "open" while a display with a page follows, asks with its host, then opens that page', async () => {
     const relay = fakeRelay()
     const store = createScoreboardDisplays({ relay, win: win('app.openvolley.app') })
     const openWindow = vi.fn(() => ({ ok: true }))
-    const { result } = renderHook(() => useScoreboardDisplay('seed-1', { store, openWindow }))
+    const askBeforeOpen = vi.fn(async () => true)
+    const { result } = renderHook(() => useScoreboardDisplay('seed-1', { store, openWindow, askBeforeOpen }))
     expect(result.current.open).toBeUndefined()
     act(() => relay.emit({ type: 'display-presence', matchId: 'seed-1', present: true, settingsUrl: BOARD_URL }))
     expect(result.current.settingsUrl).toBe(BOARD_URL)
-    act(() => result.current.open())
+    expect(result.current.host).toBe('172.24.1.1:8890')
+    await act(() => result.current.open())
+    expect(askBeforeOpen).toHaveBeenCalledWith({ url: BOARD_URL, host: '172.24.1.1:8890' })
     expect(openWindow).toHaveBeenCalledWith(BOARD_URL)
     act(() => relay.emit({ type: 'display-presence', matchId: 'seed-1', present: false, settingsUrl: null }))
     expect(result.current.open).toBeUndefined()
+    expect(result.current.host).toBeNull()
     // no match (no relay key): never
-    const none = renderHook(() => useScoreboardDisplay(null, { store, openWindow }))
+    const none = renderHook(() => useScoreboardDisplay(null, { store, openWindow, askBeforeOpen }))
     expect(none.result.current.open).toBeUndefined()
+  })
+
+  it('opens nothing when the scorer says no', async () => {
+    const relay = fakeRelay()
+    const store = createScoreboardDisplays({ relay, win: win('app.openvolley.app') })
+    const openWindow = vi.fn(() => ({ ok: true }))
+    const askBeforeOpen = vi.fn(async () => false)
+    const { result } = renderHook(() => useScoreboardDisplay('seed-1', { store, openWindow, askBeforeOpen }))
+    act(() => relay.emit({ type: 'display-presence', matchId: 'seed-1', present: true, settingsUrl: 'http://192.168.1.1/cgi-bin/luci' }))
+    await act(() => result.current.open())
+    expect(askBeforeOpen).toHaveBeenCalledWith({ url: 'http://192.168.1.1/cgi-bin/luci', host: '192.168.1.1' })
+    expect(openWindow).not.toHaveBeenCalled()
+  })
+
+  it('the question names the host, in the app\'s dialog', async () => {
+    const ask = vi.fn(async () => true)
+    expect(await askOpenSettings({ host: '172.24.1.1:8890' }, { ask })).toBe(true)
+    const [opts] = ask.mock.calls[0]
+    expect(opts.title).toBeTruthy()
+    expect(opts.message).toContain('172.24.1.1:8890')
+    expect(opts.confirmLabel).toBeTruthy()
+    expect(settingsHostOf('not a url')).toBeNull()
+    expect(settingsHostOf(null)).toBeNull()
   })
 })

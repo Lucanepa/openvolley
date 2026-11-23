@@ -27,7 +27,6 @@ import {
 } from '@simplewebauthn/server'
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers'
 import { randomBytes } from 'node:crypto'
-import { ALLOWED_ORIGINS } from './cors.js'
 
 /** How long the device's sheet may stay open. */
 export const PASSKEY_CEREMONY_MS = 2 * 60 * 1000
@@ -50,16 +49,43 @@ const TRANSPORTS = new Set(['ble', 'cable', 'hybrid', 'internal', 'nfc', 'smart-
 const CREDENTIAL_ID_RE = /^[A-Za-z0-9_-]{1,1024}$/
 
 /**
+ * The sites that sign in, and so may run a ceremony (SEC-65): the apps, the
+ * manage consoles and OpenBeach's sites, each named. Not the website
+ * (openvolley.app and www.: the support form, built in another repository
+ * with its own headers): a script on it could turn one passkey prompt of a
+ * visitor into a session. Every entry is also a site of lib/cors.js
+ * (ALLOWED_ORIGINS; tests/passkeys.origins.test.js).
+ */
+export const PASSKEY_SITES = Object.freeze([
+  'https://app.openvolley.app',
+  'https://referee.openvolley.app',
+  'https://bench.openvolley.app',
+  'https://livescore.openvolley.app',
+  'https://roster.openvolley.app',
+  'https://scoresheet.openvolley.app',
+  'https://manager.openvolley.app',
+  'https://manager-beach.openvolley.app',
+  'https://beach.openvolley.app',
+  'https://beach-referee.openvolley.app',
+  'https://beach-livescore.openvolley.app',
+  'https://beach-scoresheet.openvolley.app',
+  'https://beach-roster.openvolley.app',
+  'https://referee-beach.openvolley.app',
+  'https://livescore-beach.openvolley.app',
+  'https://scoresheet-beach.openvolley.app',
+  'https://roster-beach.openvolley.app'
+])
+
+/**
  * The relying party and who may ask. `WEBAUTHN_RP_ID` defaults to
  * openvolley.app; a page may run a ceremony when its origin is one of the
- * app's own https sites under that host, the exact list of lib/cors.js
- * (ALLOWED_ORIGINS: the apps, the manage consoles, OpenBeach's sites), or one
- * of `WEBAUTHN_ORIGINS` when set (replaces the list; a local test: RP
+ * sign-in sites under that host (PASSKEY_SITES), or one of
+ * `WEBAUTHN_ORIGINS` when set (replaces the list; a local test: RP
  * `localhost`, origin http://localhost:5173). No wildcard: another page under
- * openvolley.app (the support desk, the download host, a dev build, another
- * app) may hold a script that turns one passkey prompt into a session, so it
- * never asks. The apps' own schemes (capacitor, tauri, a local relay) never
- * match: their pages cannot hold a passkey for a web host.
+ * openvolley.app (the website, the support desk, the download host, a dev
+ * build, another app) may hold a script that turns one passkey prompt into a
+ * session, so it never asks. The apps' own schemes (capacitor, tauri, a local
+ * relay) never match: their pages cannot hold a passkey for a web host.
  */
 export function passkeyConfig(env = process.env) {
   const rpId = String(env.WEBAUTHN_RP_ID || 'openvolley.app').trim().toLowerCase()
@@ -67,9 +93,9 @@ export function passkeyConfig(env = process.env) {
   return { rpId, rpName: 'OpenVolley', explicitOrigins: explicit, origins: explicit.length ? explicit : appOrigins(rpId) }
 }
 
-/** The https sites of ALLOWED_ORIGINS on `rpId` or under it. */
+/** The sign-in sites (PASSKEY_SITES, https) on `rpId` or under it. */
 export function appOrigins(rpId) {
-  return ALLOWED_ORIGINS.filter((o) => {
+  return PASSKEY_SITES.filter((o) => {
     let url
     try { url = new URL(o) } catch { return false }
     return url.protocol === 'https:' && (url.hostname === rpId || url.hostname.endsWith(`.${rpId}`))

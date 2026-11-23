@@ -13,6 +13,7 @@
     "--talk-name=org.kde.StatusNotifierWatcher",
     "--system-talk-name=org.freedesktop.NetworkManager",
     "--system-talk-name=org.bluez",
+    "--system-talk-name=org.fedoraproject.FirewallD1",
     "--filesystem=xdg-download",
     "--filesystem=/run/media",
     "--filesystem=/media"
@@ -57,6 +58,7 @@
         "tar -xf data.tar.*",
         "python3 unstamp-bundle-type.py usr/bin/openvolley-escoresheet",
         "install -Dm755 usr/bin/openvolley-escoresheet ${FLATPAK_DEST}/bin/openvolley-escoresheet",
+        "if [ -f usr/lib/firewalld/zones/openvolley-tablets.xml ]; then install -Dm644 usr/lib/firewalld/zones/openvolley-tablets.xml ${FLATPAK_DEST}/lib/firewalld/zones/openvolley-tablets.xml; fi",
         "install -Dm644 usr/share/icons/hicolor/32x32/apps/openvolley-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png",
         "install -Dm644 usr/share/icons/hicolor/128x128/apps/openvolley-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png",
         "install -Dm644 usr/share/icons/hicolor/256x256@2/apps/openvolley-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png",

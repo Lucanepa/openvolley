@@ -306,6 +306,30 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     }
   })
 
+  it('OV_BEACH_REFEREE_ADDRESS=required: a beach referee slot needs its stored address; the default keeps the older rule (PERM08-NO-SWITCH)', async () => {
+    const bea = await account('beaSwitch', { first: 'Bea', last: 'Switch', roles: ['beach:scorer'] })
+    const bref = await account('brefSwitch', { first: 'Rita', last: 'Switch', roles: ['beach:referee'] })
+    assert.equal((await call(bref, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '418265' })).status, 200)
+    const body = (m) => ({ external_id: m.ext, slot: 'referee1', email: bref.email, pin: '418265', result: { sets: BEACH_SETS } })
+    // the default backend (no switch): a beach slot without a stored address keeps the older rule
+    const older = await endedBeachMatch(bea)
+    assert.equal((await call(bea, 'POST', '/api/approvals', body(older))).status, 200)
+    // a backend with the switch on (the same database and sessions)
+    const strict = await bootServer({ ...env(), OV_PIN_SECRET: PIN_SECRET, OV_BEACH_REFEREE_ADDRESS: 'required' })
+    try {
+      const callStrict = (user, b) => api(strict.base, '/api/approvals', { method: 'POST', token: user.token, body: b, proto: null, headers: { 'cf-connecting-ip': user.ip } })
+      const m = await endedBeachMatch(bea)
+      expectCode(await callStrict(bea, body(m)), 409, 'OV_APPROVAL_OFFICIAL_EMAIL_MISSING')
+      // with the address the match setup stored, the appointed referee approves
+      await nameOfficials(m, bref)
+      const ok = await callStrict(bea, body(m))
+      assert.equal(ok.status, 200, ok.text)
+      assert.match(strict.output.join(''), /\[Config\] OV_BEACH_REFEREE_ADDRESS=required/)
+    } finally {
+      await strict.stop()
+    }
+  })
+
   it('without OV_PIN_SECRET the database backend does not start (no plaintext PINs, no approvals off)', async () => {
     await assert.rejects(bootServer({ ...env(), OV_PIN_SECRET: '' }), /OV_PIN_SECRET is required/)
   })

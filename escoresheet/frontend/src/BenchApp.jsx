@@ -112,7 +112,11 @@ export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_
   let lanRefused = false
   const checkSupabase = async () => {
     const type = team === 'home' ? 'bench_home' : 'bench_away'
-    const r = matchExternalId ? await validatePinSupabase(pin, type, { matchExternalId }) : await validatePinSupabase(pin, type)
+    // Only a game number picked: the cloud check names the one cloud match
+    // the picker listed under it, if any (serverDataSync listedMatchKey, SEC-06)
+    const r = matchExternalId
+      ? await validatePinSupabase(pin, type, { matchExternalId })
+      : (gameNumber != null && gameNumber !== '' ? await validatePinSupabase(pin, type, { gameNumber: String(gameNumber) }) : await validatePinSupabase(pin, type))
     if (r?.rateLimited) rateLimited = true
     if (isRefusal(r?.status) || (r?.status >= 200 && r?.status < 300 && !r.success)) cloudRefused = true
     if (r?.status >= 500) cloudFailed = true

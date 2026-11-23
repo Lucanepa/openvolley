@@ -137,6 +137,18 @@ describe('accountApi endpoints', () => {
     expect(calls[12].body).toBeUndefined()
     expect(calls[16].body).toEqual({ name: 'Tour', season: '2026', sport: 'beach', vm_leagues: [] })
   })
+
+  it('the Errors tab deletes a device\'s, an account\'s or only the guests\' errors (audit SEC-02)', async () => {
+    await admin.deleteErrorEvents({ device: 'dev-1' })
+    await admin.deleteErrorEvents({ account: 'u-1' })
+    await admin.deleteErrorEvents({ anonymous: true })
+    const calls = globalThis.fetch.mock.calls.map((_, i) => call(i))
+    expect(calls.map(c => `${c.method} ${c.url.replace('http://backend.test', '')}`)).toEqual([
+      'DELETE /api/admin/errors/events?device=dev-1&confirm=yes',
+      'DELETE /api/admin/errors/events?account=u-1&confirm=yes',
+      'DELETE /api/admin/errors/events?anonymous=1&confirm=yes'
+    ])
+  })
 })
 
 describe('approval endpoints (account-approval spec 3)', () => {

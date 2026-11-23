@@ -17,6 +17,12 @@
           "/usr/lib/firewalld/zones/openvolley-tablets.xml": null,
           "/usr/lib/firewalld/zones/openbeach-tablets.xml": "linux/beach/openbeach-tablets.xml"
         }
+      },
+      "appimage": {
+        "files": {
+          "/usr/lib/firewalld/zones/openvolley-tablets.xml": null,
+          "/usr/lib/firewalld/zones/openbeach-tablets.xml": "linux/beach/openbeach-tablets.xml"
+        }
       }
     }
   }

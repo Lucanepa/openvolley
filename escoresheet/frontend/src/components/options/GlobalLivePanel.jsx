@@ -72,6 +72,8 @@ export default function GlobalLivePanel({ bare = false }) {
               />
               <span>{t('globalLive.listedLabel')}</span>
             </label>
+            {/* owner decision 8 (23.11.2026): a listed code shows its listed courts only */}
+            <p className="mt-1 text-xs text-stone-500" data-testid="global-live-listed-hint">{t('globalLive.listedHint')}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button variant="secondary" size="md" onClick={async () => { setCopied((await copyToClipboard(url))?.success === true) }}>
                 {copied ? t('globalLive.copied') : t('globalLive.copyLink')}

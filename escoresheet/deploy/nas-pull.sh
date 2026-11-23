@@ -23,7 +23,7 @@
 #   NP_KNOWN_HOSTS     /volume1/backups/openvolley/.ssh/known_hosts
 #   NP_DEST            /volume1/backups/openvolley/hetzner
 #   NP_KEEP_DB_DAYS    30   hourly dumps kept on the NAS
-#   NP_KEEP_FILES_DAYS 90   nightly storage tars kept on the NAS
+#   NP_KEEP_FILES_DAYS 90   nightly storage tars and secrets files kept on the NAS
 #   NP_MAX_AGE_H       3    newest db dump on the NAS must be younger than this
 #   NP_PUSH_URL        optional Uptime Kuma push URL (status=up/down)
 set -euo pipefail
@@ -66,6 +66,7 @@ rsync -rt --partial-dir=.rsync-partial --timeout=600 \
   --include='db-*.dump.gpg' --include='db-*.counts' \
   --include='scoresheets-*.tar.gpg' --include='global-*.tar.gpg' --include='snapshots-*.tar.gpg' \
   --include='quarantine-db-*' --include='base-*.tar.gpg' \
+  --include='secrets-*.env.gpg' \
   --include='wal/' --include='wal/*.gpg' \
   --exclude='*' \
   -e "$SSH" "${NP_REMOTE}:./" "$NP_DEST/" \
@@ -74,7 +75,8 @@ rsync -rt --partial-dir=.rsync-partial --timeout=600 \
 # NAS-side retention (independent of the server's).
 find "$NP_DEST" -maxdepth 1 -type f \( -name 'db-*.dump.gpg' -o -name 'db-*.counts' \) \
   -mtime +"$NP_KEEP_DB_DAYS" -exec rm -f {} \;
-find "$NP_DEST" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'global-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' -o -name 'base-*.tar.gpg' -o -name 'quarantine-db-*' \) \
+# secrets-*.env.gpg: OV_PIN_SECRET / OV_MATCH_TOKEN_SECRET, which a restored dump needs
+find "$NP_DEST" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'global-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' -o -name 'base-*.tar.gpg' -o -name 'quarantine-db-*' -o -name 'secrets-*.env.gpg' \) \
   -mtime +"$NP_KEEP_FILES_DAYS" -exec rm -f {} \;
 # WAL segments (point-in-time recovery): kept a day longer than the base backups they replay on
 [ ! -d "$NP_DEST/wal" ] || find "$NP_DEST/wal" -maxdepth 1 -type f -name '*.gpg' -mtime +"$((NP_KEEP_FILES_DAYS + 1))" -exec rm -f {} \;

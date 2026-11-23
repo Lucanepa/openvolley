@@ -12,7 +12,9 @@
  *            listed for scorers.
  *   create   beach:competition_manager or the global admin
  *   edit     the global admin, or a beach:competition_manager who created
- *            the tournament or is one of its co-managers
+ *            the tournament or is one of its co-managers (a co-manager is
+ *            invited by address and accepts: POST tournaments/:id/managers,
+ *            GET invites, POST invites/:id/accept; PERM-18)
  * The public projection (publicTournament) shows names and countries only,
  * never licence numbers, dates of birth, emails or account ids (decision D9),
  * and only for tournaments marked public and no longer in draft.
@@ -45,6 +47,10 @@ import { daysBetween, minutesOf, scheduleMatches, slotIssues } from './beachSche
 import { CONTROL_RE, fold, importHash, normalizeImport, planImport } from './beachImport.js'
 import { connectClient } from './pgClient.js'
 import { createAttemptLimiter } from './matchRestore.js'
+import { gzip } from 'node:zlib'
+import { promisify } from 'node:util'
+
+const gzipAsync = promisify(gzip)
 
 export const TOURNAMENT_STATUSES = Object.freeze(['draft', 'published', 'live', 'finished', 'archived'])
 export const DRAW_GENDERS = Object.freeze(['men', 'women', 'mixed'])
@@ -61,6 +67,34 @@ const LISTED_FOR_READERS = ['published', 'live', 'finished']
 // matches. Nothing capped them, and one schedule run of a tournament built
 // far beyond any real one held the shared backend for seconds.
 export const MAX_DRAWS = 40
+// The pairs of a tournament (PERM-02): nothing capped them, and the import
+// (600 rows a call) filled one with 24000 that the anonymous public page
+// serialised on every request until the shared backend ran out of memory.
+// A draw holds at most ENTRIES_PER_DRAW_MAX registered pairs (a bracket
+// takes 32, a seed goes to 128) and a tournament at most
+// TOURNAMENT_ENTRIES_MAX entries of any status (withdrawn rows stay, and the
+// editors' read and the import load them too): by hand (409 OV_DRAW_FULL /
+// OV_TOURNAMENT_ENTRIES_FULL) and by the import (row errors draw_full /
+// tournament_full). A tournament already beyond them stays readable; only
+// new pairs are refused.
+export const ENTRIES_PER_DRAW_MAX = 256
+export const TOURNAMENT_ENTRIES_MAX = 1024
+// The editors' read of a tournament answers at most this many entries
+// (entries_truncated: true beyond; only a tournament from before the caps)
+export const ENTRIES_READ_MAX = 4 * TOURNAMENT_ENTRIES_MAX
+// The anonymous public page (publicTournament): its answer is serialised and
+// gzipped once per tournament and cache period, never per request, and is
+// at most PUBLIC_MAX_BYTES (beyond: the players' names go, then the lists;
+// truncated: true). The cache holds at most PUBLIC_CACHE_MAX_BYTES.
+export const PUBLIC_MAX_BYTES = 1024 * 1024
+export const PUBLIC_CACHE_MAX_BYTES = 32 * 1024 * 1024
+const PUBLIC_CACHE_MAX_SLUGS = 500
+// Co-managers (PERM-18): an invitation by address, the same for every
+// address; the invited beach competition manager accepts it (GET
+// /api/beach/invites, POST /api/beach/invites/:id/accept) and only then is a
+// co-manager. Open invitations per tournament, and how long one stays open.
+export const MAX_OPEN_INVITES = 50
+export const INVITE_TTL_DAYS = 30
 // Per account and minute: schedule runs and imports (dry runs too), and
 // co-manager additions
 export const HEAVY_CALLS_PER_MINUTE = 30
@@ -85,6 +119,8 @@ const STARTED = () => fail(409, 'OV_DRAW_STARTED', 'Matches of this draw have al
 // the bracket was drawn again (or reset) while the request waited for the draw: its matches have new ids
 const REPLACED = () => notFound('This match was replaced (the bracket was drawn again); reload')
 const FULL = () => fail(409, 'OV_TOURNAMENT_FULL', `A tournament has at most ${MAX_DRAWS} draws`, { max_draws: MAX_DRAWS })
+const DRAW_FULL = () => fail(409, 'OV_DRAW_FULL', `A draw has at most ${ENTRIES_PER_DRAW_MAX} registered pairs`, { max_entries: ENTRIES_PER_DRAW_MAX })
+const ENTRIES_FULL = () => fail(409, 'OV_TOURNAMENT_ENTRIES_FULL', `A tournament has at most ${TOURNAMENT_ENTRIES_MAX} entries`, { max_entries: TOURNAMENT_ENTRIES_MAX })
 const TOO_MANY = () => fail(429, 'OV_TOO_MANY_ATTEMPTS', 'Too many requests. Please wait a minute.')
 
 function validDay (s) {
@@ -207,17 +243,24 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   const heavyCalls = createAttemptLimiter({ max: HEAVY_CALLS_PER_MINUTE, windowMs: 60000, maxKeys: 10000 })
   const managerAdds = createAttemptLimiter({ max: MANAGER_ADDS_PER_MINUTE, windowMs: 60000, maxKeys: 10000 })
 
+  // the tournaments a transaction wrote (its audit entries name them): their
+  // public answers are built again once it has committed
+  const txTouched = new WeakMap()
   async function withTx (fn) {
     const client = await connectClient(pool, log)
+    const touched = new Set()
+    txTouched.set(client, touched)
     try {
       await client.query('BEGIN')
       const out = await fn(client)
       await client.query('COMMIT')
+      for (const id of touched) invalidatePublic(id)
       return out
     } catch (err) {
       try { await client.query('ROLLBACK') } catch { /* connection already gone */ }
       throw err
     } finally {
+      txTouched.delete(client)
       client.release()
     }
   }
@@ -240,7 +283,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     }
   }
   const abort = (result) => Object.assign(new Error('abort'), { __result: result })
-  const audit = (client, actorId, action, details) => accounts.audit(client, { actorId, action, details, app: 'beach' })
+  const audit = (client, actorId, action, details) => {
+    if (details?.tournament_id) txTouched.get(client)?.add(details.tournament_id)
+    return accounts.audit(client, { actorId, action, details, app: 'beach' })
+  }
 
   // ------------------------------------------------------------------ access
   const flagsOf = (access) => accessForSport(access, 'beach')
@@ -461,11 +507,12 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   async function getTournament ({ user, access, id }) {
     return guarded('get', async () => {
       const t = await requireTournament(pool, id, user, access)
-      const [courts, draws, entries, tmatches, managers] = await Promise.all([
+      const [courts, draws, entries, tmatches, managers, invited] = await Promise.all([
         pool.query('SELECT * FROM public.beach_courts WHERE tournament_id = $1 ORDER BY number', [t.id]),
         pool.query('SELECT * FROM public.beach_draws WHERE tournament_id = $1 ORDER BY created_at, id', [t.id]),
+        // bounded (PERM-02): a tournament from before the caps may hold more
         pool.query(`SELECT e.* FROM public.beach_entries e JOIN public.beach_draws d ON d.id = e.draw_id
-                     WHERE d.tournament_id = $1 ORDER BY e.draw_id, e.seed NULLS LAST, e.created_at, e.id`, [t.id]),
+                     WHERE d.tournament_id = $1 ORDER BY e.draw_id, e.seed NULLS LAST, e.created_at, e.id LIMIT $2`, [t.id, ENTRIES_READ_MAX + 1]),
         pool.query('SELECT * FROM public.beach_tmatches WHERE tournament_id = $1 ORDER BY game_n', [t.id]),
         t.can_edit
           ? pool.query(`SELECT u.id, u.email, nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS name,
@@ -473,15 +520,21 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
                           FROM auth.users u LEFT JOIN public.profiles p ON p.user_id = u.id
                          WHERE u.id = $2 OR u.id IN (SELECT user_id FROM public.beach_tournament_managers WHERE tournament_id = $1)
                          ORDER BY (u.id = $2) DESC, u.email`, [t.id, t.created_by])
-          : { rows: [] }
+          : { rows: [] },
+        // the open invitations: the addresses the editors typed, the same for an
+        // account and for none (PERM-18); a co-manager is listed once accepted
+        t.can_edit ? openInvites(pool, t.id) : []
       ])
+      const truncated = entries.rows.length > ENTRIES_READ_MAX
       return ok({
         tournament: tournamentOut(t),
         managers: managers.rows.map((m) => ({ id: m.id, email: m.email, name: m.name ?? null, creator: m.creator === true })),
+        invited: invited.map((i) => ({ id: i.id, email: i.email, invited_at: iso(i.invited_at) })),
         courts: courts.rows.map((c) => ({ id: c.id, number: c.number, name: c.name ?? null, active: c.active, flex: c.flex })),
         draws: draws.rows.map(drawOut),
         // licences only for editors (section 2: "ranking with licences: editors")
-        entries: entries.rows.map((e) => (t.can_edit ? entryOut(e) : withoutLicences(entryOut(e)))),
+        entries: entries.rows.slice(0, ENTRIES_READ_MAX).map((e) => (t.can_edit ? entryOut(e) : withoutLicences(entryOut(e)))),
+        ...(truncated ? { entries_truncated: true } : {}),
         matches: tmatches.rows.map(tmatchOut)
       })
     })
@@ -519,13 +572,33 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     }))
   }
 
+  // ------------------------------------------------------------------ co-managers (PERM-18)
+  const INVITES_SQL = 'public.beach_tournament_invites'
+  const INVITE_OPEN = `invited_at > now() - interval '${INVITE_TTL_DAYS} days'`
   /**
-   * POST managers { email }: the beach competition manager with this address
-   * becomes a co-manager. The answer is the same for every address, with no
-   * account id: it tells the caller nothing about other accounts (a 404 and
-   * an id told which addresses belonged to admins and beach managers). The
-   * managers list shows the co-managers. The global admin edits every
-   * tournament anyway and is no co-manager.
+   * Expired invitations go (every tournament's: a small table; privacy
+   * section 10). Run by an invitation and by an invitee's list, which every
+   * beach competition manager's Tournaments tab asks for.
+   */
+  const sweepInvites = (db) => db.query(`DELETE FROM ${INVITES_SQL} WHERE NOT (${INVITE_OPEN})`)
+  /** The open invitations of a tournament (db/055), oldest first. */
+  async function openInvites (db, tournamentId) {
+    const { rows } = await db.query(
+      `SELECT id, email, invited_at FROM ${INVITES_SQL} WHERE tournament_id = $1 AND ${INVITE_OPEN} ORDER BY invited_at, email`, [tournamentId])
+    return rows
+  }
+
+  /**
+   * POST managers { email }: an invitation to co-manage the tournament,
+   * kept by address (db/055 beach_tournament_invites, open
+   * INVITE_TTL_DAYS days). The answer, the audit entry and the invitations
+   * list (getTournament `invited`) are the same for every address: no
+   * account is looked up here. Before, only a beach competition manager's
+   * address was added at once and listed, so the managers list told which
+   * addresses held such an account (PERM-18). The invited beach competition
+   * manager accepts (acceptInvite) and is a co-manager only then. An address
+   * that already manages the tournament gets no invitation. The global admin
+   * edits every tournament anyway and is no co-manager.
    */
   async function addManager ({ user, access, id, body }) {
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
@@ -533,18 +606,96 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     if (managerAdds.isLimited(user.id)) return TOO_MANY()
     return guarded('add-manager', () => withTx(async (client) => {
       const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
-      const { rows: [u] } = await client.query(
-        `SELECT u.id FROM auth.users u JOIN public.profiles p ON p.user_id = u.id
-          WHERE lower(u.email) = $1
-            AND EXISTS (SELECT 1 FROM unnest(coalesce(p.roles, '{}'::text[])) r(role)
-                         WHERE lower(trim(r.role)) = 'beach:competition_manager')`, [email])
-      if (u && u.id !== t.created_by) {
+      await sweepInvites(client)
+      // one of its managers already (the creator or a co-manager; the editors see them listed anyway)
+      const { rows: managing } = await client.query(
+        `SELECT 1 FROM auth.users u
+          WHERE lower(u.email) = $1 AND (u.id = $2 OR u.id IN (SELECT user_id FROM public.beach_tournament_managers WHERE tournament_id = $3))`,
+        [email, t.created_by, t.id])
+      if (!managing.length) {
+        const { rows: [{ n }] } = await client.query(`SELECT count(*)::int AS n FROM ${INVITES_SQL} WHERE tournament_id = $1 AND email <> $2`, [t.id, email])
+        if (n >= MAX_OPEN_INVITES) throw abort(fail(409, 'OV_TOO_MANY_INVITES', `A tournament has at most ${MAX_OPEN_INVITES} open invitations`, { max_invites: MAX_OPEN_INVITES }))
+        // invited again: the invitation is open for the full time again
+        await client.query(
+          `INSERT INTO ${INVITES_SQL} (tournament_id, email, invited_by) VALUES ($1, $2, $3)
+           ON CONFLICT (tournament_id, email) DO UPDATE SET invited_at = now(), invited_by = EXCLUDED.invited_by`, [t.id, email, user.id])
+      }
+      await audit(client, user.id, 'tournament.managers', { tournament_id: t.id, op: 'invite' })
+      return ok({ requested: true })
+    }))
+  }
+
+  /** DELETE tournaments/:id/invites/:inviteId: an editor withdraws an open invitation. */
+  async function removeInvite ({ user, access, id, inviteId }) {
+    return guarded('remove-invite', () => withTx(async (client) => {
+      const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
+      const r = await client.query(`DELETE FROM ${INVITES_SQL} WHERE tournament_id = $1 AND id = $2`, [t.id, inviteId])
+      if (!r.rowCount) throw abort(notFound())
+      await audit(client, user.id, 'tournament.managers', { tournament_id: t.id, op: 'invite_withdrawn' })
+      return ok({ id: inviteId })
+    }))
+  }
+
+  /** The caller's address (lower case) and whether it is a beach competition manager (the role, not the admin's rights). */
+  async function inviteeOf (db, user, access) {
+    const { rows: [u] } = await db.query('SELECT lower(email) AS email FROM auth.users WHERE id = $1', [user.id])
+    const manager = (flagsOf(access).roles || []).includes('beach:competition_manager')
+    return { email: u?.email ?? null, manager }
+  }
+
+  /**
+   * GET /api/beach/invites: the open invitations to the caller's own address
+   * (a beach competition manager's; none for anyone else), with the
+   * tournament and who invited.
+   */
+  async function listInvites ({ user, access }) {
+    return guarded('list-invites', async () => {
+      await sweepInvites(pool)
+      const me = await inviteeOf(pool, user, access)
+      if (!me.email || !me.manager) return ok({ invites: [] })
+      const { rows } = await pool.query(
+        `SELECT i.id, i.invited_at, t.id AS tournament_id, t.slug, t.title, t.starts_on, t.ends_on, t.status,
+                nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS invited_by_name
+           FROM ${INVITES_SQL} i JOIN public.beach_tournaments t ON t.id = i.tournament_id
+           LEFT JOIN public.profiles p ON p.user_id = i.invited_by
+          WHERE i.email = $1 AND i.${INVITE_OPEN}
+          ORDER BY i.invited_at DESC, i.id
+          LIMIT 100`, [me.email])
+      return ok({
+        invites: rows.map((r) => ({
+          id: r.id,
+          invited_at: iso(r.invited_at),
+          invited_by: r.invited_by_name ?? null,
+          tournament: { id: r.tournament_id, slug: r.slug, title: r.title, starts_on: day(r.starts_on), ends_on: day(r.ends_on), status: r.status }
+        }))
+      })
+    })
+  }
+
+  /**
+   * POST /api/beach/invites/:id/accept: the invited beach competition manager
+   * becomes a co-manager (404 for an invitation that is not open, not to the
+   * caller's address, or a caller without the role). The invitation goes.
+   * POST /api/beach/invites/:id/decline: it goes, and nothing else.
+   */
+  async function answerInvite ({ user, access, id, accept }) {
+    return guarded(accept ? 'accept-invite' : 'decline-invite', () => withTx(async (client) => {
+      const me = await inviteeOf(client, user, access)
+      if (!me.email || (accept && !me.manager)) throw abort(notFound())
+      const { rows: [inv] } = await client.query(
+        `SELECT i.id, i.tournament_id, i.invited_by FROM ${INVITES_SQL} i
+          WHERE i.id = $1 AND i.email = $2 AND i.${INVITE_OPEN} FOR UPDATE`, [id, me.email])
+      if (!inv) throw abort(notFound())
+      const { rows: [t] } = await client.query('SELECT * FROM public.beach_tournaments WHERE id = $1 FOR UPDATE', [inv.tournament_id])
+      if (!t) throw abort(notFound())
+      await client.query(`DELETE FROM ${INVITES_SQL} WHERE id = $1`, [inv.id])
+      if (accept && t.created_by !== user.id) {
         await client.query(
           'INSERT INTO public.beach_tournament_managers (tournament_id, user_id, added_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-          [t.id, u.id, user.id])
+          [t.id, user.id, inv.invited_by])
       }
-      await audit(client, user.id, 'tournament.managers', { tournament_id: t.id, added: u?.id ?? null })
-      return ok({ requested: true })
+      await audit(client, user.id, 'tournament.managers', { tournament_id: t.id, op: accept ? 'accept' : 'decline', ...(accept ? { added: user.id } : {}) })
+      return accept ? ok({ tournament: tournamentOut({ ...t, can_edit: true }) }) : ok({ id: inv.id })
     }))
   }
 
@@ -735,13 +886,25 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return { out: f.out }
   }
 
+  /** The registered pairs of a draw and the entries of its tournament (the caller holds the tournament and the draw locked). */
+  async function entryCounts (client, tournamentId, drawId) {
+    const { rows: [n] } = await client.query(
+      `SELECT count(*) FILTER (WHERE e.draw_id = $2 AND e.status = 'registered')::int AS draw, count(*)::int AS total
+         FROM public.beach_entries e JOIN public.beach_draws d ON d.id = e.draw_id WHERE d.tournament_id = $1`, [tournamentId, drawId])
+    return n
+  }
+
   async function createEntry ({ user, access, id, body }) {
     const { out, error } = entryFields(body, { partial: false })
     if (error) return error
     return guarded('create-entry', () => withTx(async (client) => {
-      await requireVia(client, 'draw', id, user, access, { edit: true })
+      // the tournament row first (as generate and the import): its entries are counted
+      const t = await requireVia(client, 'draw', id, user, access, { edit: true, forUpdate: true })
       const d = await lockDraw(client, id)
       if (!['entries', 'seeded'].includes(d.status)) throw abort(fail(409, 'OV_DRAW_DRAWN', 'Reset the bracket first'))
+      const counts = await entryCounts(client, t.id, id)
+      if (counts.draw >= ENTRIES_PER_DRAW_MAX) throw abort(DRAW_FULL())
+      if (counts.total >= TOURNAMENT_ENTRIES_MAX) throw abort(ENTRIES_FULL())
       const row = { ...out }
       if (out.team_id) {
         const pair = await savedPair(client, out.team_id)
@@ -785,6 +948,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       if (out.seed != null) {
         const taken = await client.query('SELECT 1 FROM public.beach_entries WHERE draw_id = $1 AND seed = $2 AND id <> $3', [cur.draw_id, out.seed, id])
         if (taken.rows.length) throw abort(invalid('seed: already taken'))
+      }
+      // a withdrawn pair registered again counts like a new one (the draw is locked)
+      if (out.status === 'registered' && cur.status !== 'registered' && (await entryCounts(client, d.tournament_id, d.id)).draw >= ENTRIES_PER_DRAW_MAX) {
+        throw abort(DRAW_FULL())
       }
       // a pair that is no longer registered gives up its seed
       if (out.status && out.status !== 'registered' && !keys.includes('seed')) {
@@ -997,7 +1164,17 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
           ORDER BY ct.id`, [licences])
       savedPairs = rows
     }
-    return { tournament: { id: t.id, ...tournamentClock(t) }, draws, entries, courts, matches, savedPairs, maxDraws: MAX_DRAWS }
+    return {
+      tournament: { id: t.id, ...tournamentClock(t) },
+      draws,
+      entries,
+      courts,
+      matches,
+      savedPairs,
+      maxDraws: MAX_DRAWS,
+      maxEntriesPerDraw: ENTRIES_PER_DRAW_MAX,
+      maxEntries: TOURNAMENT_ENTRIES_MAX
+    }
   }
 
   /** Applies a plan of planImport() (inside the caller's transaction, the tournament locked). */
@@ -1492,18 +1669,88 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   }
 
   // ------------------------------------------------------------------ public (decision D9)
-  const publicCache = new Map() // slug -> { at, result }
+  // PERM-02: the answer is kept as its JSON bytes and their gzip (built once
+  // per tournament and cache period, PUBLIC_MAX_BYTES at most), never as the
+  // object that every request serialised again (60 parallel reads of a
+  // 7 MB page ran the shared backend out of memory). One build per address
+  // at a time: the requests that come meanwhile wait for it. A write of the
+  // tournament (withTx, after its commit) drops its entry; a build that a
+  // write overtook is answered but not kept.
+  const publicCache = new Map() // slug -> { at, tournamentId, result, bytes }
+  const publicBuilds = new Map() // slug -> the promise of the answer being built
+  let publicGen = 0
+  let publicBytes = 0
   const PUBLIC_TTL_MS = 15000
+  const dropPublic = (slug) => {
+    const e = publicCache.get(slug)
+    if (!e) return
+    publicBytes -= e.bytes
+    publicCache.delete(slug)
+  }
+  /** The public answers of this tournament, and every "not found" (an address may have become public), are built again. */
+  function invalidatePublic (tournamentId) {
+    publicGen++
+    for (const [slug, e] of publicCache) if (e.tournamentId === null || e.tournamentId === tournamentId) dropPublic(slug)
+  }
+  function keepPublic (slug, entry) {
+    dropPublic(slug)
+    // the oldest go first (a Map keeps the order of insertion)
+    for (const k of publicCache.keys()) {
+      if (publicCache.size < PUBLIC_CACHE_MAX_SLUGS && publicBytes + entry.bytes <= PUBLIC_CACHE_MAX_BYTES) break
+      dropPublic(k)
+    }
+    publicCache.set(slug, entry)
+    publicBytes += entry.bytes
+  }
+  /**
+   * The answer as the server sends it: `raw` { text, gzip } (Buffers; gzip
+   * null for a small one) and `body`, the same JSON parsed again when read
+   * (tests; server.js sends `raw`).
+   */
+  async function preparedAnswer (status, text) {
+    const bytes = Buffer.from(text)
+    const gz = bytes.length >= 1024 ? await gzipAsync(bytes, { level: 6 }).catch(() => null) : null
+    return {
+      status,
+      raw: { text: bytes, gzip: gz },
+      get body () { return JSON.parse(text) }
+    }
+  }
+  /** The public data as JSON text of at most PUBLIC_MAX_BYTES: beyond, the players' names go, then the entries and matches (truncated: true). */
+  function boundedPublicText (slug, data) {
+    const fits = (text) => Buffer.byteLength(text) <= PUBLIC_MAX_BYTES
+    const full = JSON.stringify({ data, error: null })
+    if (fits(full)) return full
+    log.warn?.(`[beach] public page ${slug}: ${Buffer.byteLength(full)} bytes, above ${PUBLIC_MAX_BYTES}; answered truncated`)
+    const slim = JSON.stringify({ data: { ...data, entries: data.entries.map((e) => ({ ...e, players: [] })), truncated: true }, error: null })
+    if (fits(slim)) return slim
+    return JSON.stringify({ data: { ...data, entries: [], matches: [], truncated: true }, error: null })
+  }
+
   /** GET /api/public/beach/t/:slug: names and countries only; public tournaments that are not drafts. */
   async function publicTournament ({ slug }) {
     const s = typeof slug === 'string' ? slug.toLowerCase() : ''
     if (!SLUG_RE.test(s) || s.length > 80) return notFound()
     const hit = publicCache.get(s)
     if (hit && now() - hit.at < PUBLIC_TTL_MS) return hit.result
+    const building = publicBuilds.get(s)
+    if (building) return building
+    const gen = publicGen
+    const build = buildPublic(s).then((out) => {
+      if (out.cacheable && gen === publicGen) keepPublic(s, { at: now(), tournamentId: out.tournamentId, result: out.result, bytes: out.bytes })
+      return out.result
+    }).finally(() => publicBuilds.delete(s))
+    publicBuilds.set(s, build)
+    return build
+  }
+
+  async function buildPublic (s) {
+    let tournamentId = null
     const result = await guarded('public', async () => {
       const { rows: [t] } = await pool.query(
         'SELECT * FROM public.beach_tournaments WHERE slug = $1 AND public AND status = ANY($2::text[])', [s, PUBLIC_STATUSES])
       if (!t) return notFound()
+      tournamentId = t.id
       const [courts, draws, entries, tmatches] = await Promise.all([
         pool.query('SELECT id, number, name, active FROM public.beach_courts WHERE tournament_id = $1 ORDER BY number', [t.id]),
         pool.query('SELECT * FROM public.beach_draws WHERE tournament_id = $1 ORDER BY created_at, id', [t.id]),
@@ -1534,11 +1781,40 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         }))
       })
     })
-    if (result.status === 200 || result.status === 404) {
-      if (publicCache.size > 500) publicCache.clear()
-      publicCache.set(s, { at: now(), result })
+    // a database error is answered as it is and not kept
+    if (result.status !== 200 && result.status !== 404) return { result, cacheable: false }
+    const text = result.status === 200 ? boundedPublicText(s, result.body.data) : JSON.stringify(result.body)
+    const answer = await preparedAnswer(result.status, text)
+    return { result: answer, cacheable: true, tournamentId: result.status === 200 ? tournamentId : null, bytes: answer.raw.text.length + (answer.raw.gzip?.length ?? 0) }
+  }
+
+  // ------------------------------------------------------------------ matches a manager manages (PERM-09)
+  /**
+   * Owner decision 5 (PERM-09): a beach competition manager reopens only a
+   * beach match it manages: one of a tournament it edits (created or
+   * co-manages; the scored match linked by db/014, beach_tmatches.match_id or
+   * matches.tournament_match_id), or one it recorded or edits itself. The
+   * global admin reopens every match (lib/manageApi.js asks this for the
+   * other accounts only). { sport, manages } of the match, null when there
+   * is no such match, or { error } (503). Never throws.
+   */
+  async function managesMatch ({ userId, matchId } = {}) {
+    if (!isUuid(matchId) || !isUuid(userId)) return null
+    try {
+      const { rows: [m] } = await pool.query(
+        `SELECT to_jsonb(m) ->> 'sport_type' AS sport,
+                (m.created_by = $2
+                 OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2)
+                 OR EXISTS (SELECT 1 FROM public.beach_tmatches tm JOIN public.beach_tournaments t ON t.id = tm.tournament_id
+                             WHERE (tm.match_id = m.id OR tm.id = m.tournament_match_id)
+                               AND (t.created_by = $2 OR EXISTS (SELECT 1 FROM public.beach_tournament_managers bm
+                                                                  WHERE bm.tournament_id = t.id AND bm.user_id = $2)))) AS manages
+           FROM public.matches m WHERE m.id = $1`, [matchId, userId])
+      return m ? { sport: m.sport === 'beach' ? 'beach' : 'indoor', manages: m.manages === true } : null
+    } catch (err) {
+      log.error?.(`[beach] manages-match failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return { error: unavailable() }
     }
-    return result
   }
 
   // ------------------------------------------------------------------ routing
@@ -1551,6 +1827,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     ['DELETE', new RegExp(`^/api/beach/tournaments/${ID}$`), (m, c) => deleteTournament({ ...c, id: m[1] })],
     ['POST', new RegExp(`^/api/beach/tournaments/${ID}/managers$`), (m, c) => addManager({ ...c, id: m[1] })],
     ['DELETE', new RegExp(`^/api/beach/tournaments/${ID}/managers/${ID}$`), (m, c) => removeManager({ ...c, id: m[1], userId: m[2] })],
+    ['DELETE', new RegExp(`^/api/beach/tournaments/${ID}/invites/${ID}$`), (m, c) => removeInvite({ ...c, id: m[1], inviteId: m[2] })],
+    ['GET', /^\/api\/beach\/invites$/, (m, c) => listInvites(c)],
+    ['POST', new RegExp(`^/api/beach/invites/${ID}/accept$`), (m, c) => answerInvite({ ...c, id: m[1], accept: true })],
+    ['POST', new RegExp(`^/api/beach/invites/${ID}/decline$`), (m, c) => answerInvite({ ...c, id: m[1], accept: false })],
     ['PUT', new RegExp(`^/api/beach/tournaments/${ID}/courts$`), (m, c) => putCourts({ ...c, id: m[1] })],
     ['POST', new RegExp(`^/api/beach/tournaments/${ID}/draws$`), (m, c) => createDraw({ ...c, id: m[1] })],
     ['POST', new RegExp(`^/api/beach/tournaments/${ID}/schedule$`), (m, c) => schedule({ ...c, id: m[1] })],
@@ -1591,6 +1871,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   return {
     route,
     publicTournament,
+    managesMatch,
+    listInvites,
+    addManager,
+    answerInvite,
     listTournaments,
     createTournament,
     getTournament,

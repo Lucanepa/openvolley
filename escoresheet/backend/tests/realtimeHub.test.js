@@ -574,10 +574,13 @@ describe('realtimeHub limits', () => {
     } finally { await srv.stop() }
   })
 
+  // Audit 2611 SEC-08: the holder must hold a channel; a socket without one
+  // makes room (realtimeHub.caps.test.js)
   it('caps live sockets in total with 1013', async () => {
     const srv = await startServer({ maxTotal: 1 })
     try {
       const a = await liveClient(srv.url, { ip: '10.0.0.1' })
+      assert.equal((await subscribe(a, 'ch', [{ table: 'matches', column: 'external_id', value: 'x' }])).type, 'subscribe-db-ack')
       const b = connect(srv.url, { ip: '10.0.0.2' })
       assert.equal((await b.closed).code, 1013)
       a.close(); await a.closed

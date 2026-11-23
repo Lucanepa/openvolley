@@ -173,10 +173,19 @@ class RelayChannel {
     }
   }
 
-  /** The subscribe-db message of this channel. */
+  /**
+   * The subscribe-db message of this channel. `params.token` (a match token,
+   * or a function giving the current one): the server sends this channel the
+   * match's live state whole, its line-ups, substitutions and sanctions
+   * included, only with the token of that match (audit 2611 PERM-03). Read
+   * at every (re)subscribe, so a renewed token goes with the next one.
+   */
   _subscribeMessage() {
     const msg = { type: 'subscribe-db', id: this._wireId, subs: this._subsForWire() }
     if (this.params.summary === true) msg.summary = true
+    let token = null
+    try { token = typeof this.params.token === 'function' ? this.params.token() : this.params.token } catch { token = null }
+    if (typeof token === 'string' && token) msg.token = token
     return msg
   }
 

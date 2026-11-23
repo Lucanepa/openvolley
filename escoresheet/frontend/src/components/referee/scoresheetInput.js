@@ -13,7 +13,7 @@
  * boxes for them empty.
  */
 
-import { lineupHiddenUntilBoth } from '../../domain/lineupPrivacy'
+import { lineupHiddenUntilBoth, startsSet } from '../../domain/lineupPrivacy'
 import { eventsBySeq, normalizeMatchData, setsByIndex } from '../../../scoresheet_pdf/utils/matchData'
 
 /** Only a 'full' bundle (the referee PIN proved) has rosters and events. */
@@ -40,7 +40,8 @@ export function withoutLoneLineups(events) {
   for (const e of events) {
     const i = Number(e.setIndex ?? 1)
     const s = bySet.get(i) || { started: false, teams: new Set() }
-    if (e.type === 'point') s.started = true
+    // (a penalty point before the first serve starts nothing: domain/lineupPrivacy startsSet)
+    if (startsSet(e)) s.started = true
     if (e.type === 'lineup' && (e.payload?.team === 'home' || e.payload?.team === 'away')) s.teams.add(e.payload.team)
     bySet.set(i, s)
   }

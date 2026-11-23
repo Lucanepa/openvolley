@@ -129,14 +129,38 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     const b = okData(await get(users.admin, `/api/beach/tournaments/${ids.t}`))
     assert.equal(b.tournament.can_edit, true)
     assert.deepEqual(b.courts.map((c) => c.number), [1, 2])
-    // co-managers: beach competition managers only; one answer for every address (it tells nothing about accounts)
+    // co-managers (PERM-18): an invitation by address, with one answer and one
+    // list for every address (it tells nothing about accounts); the invited
+    // beach competition manager accepts and only then is a co-manager
     const asked = [users.ivan.email, users.admin.email, 'nobody@nowhere.example', users.max.email.toUpperCase()]
     for (const email of asked) {
       assert.deepEqual(okData(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/managers`, { email })), { requested: true })
     }
+    const invitedNow = await bundle()
+    assert.deepEqual(invitedNow.managers.map((m) => [m.email, m.creator]), [[users.mia.email, true]], 'nobody is a co-manager before accepting')
+    assert.deepEqual(invitedNow.invited.map((i) => i.email).sort(), asked.map((e) => e.toLowerCase()).sort())
+    assert.ok(invitedNow.invited.every((i) => Object.keys(i).sort().join() === 'email,id,invited_at'), 'an address, never an account')
+    expectCode(await call(users.max, 'PATCH', `/api/beach/tournaments/${ids.t}`, { venue: 'x' }), 404)
+    // the invitation is shown to its address only, and accepted by a beach competition manager only
+    const forMax = okData(await get(users.max, '/api/beach/invites')).invites
+    assert.deepEqual(forMax.map((i) => [i.tournament.id, i.tournament.title, i.invited_by]), [[ids.t, 'Züri Open', 'mia Test']])
+    assert.deepEqual(okData(await get(users.bea, '/api/beach/invites')).invites, [])
+    assert.deepEqual(okData(await get(users.admin, '/api/beach/invites')).invites, [], 'the admin is no co-manager')
+    expectCode(await call(users.bea, 'POST', `/api/beach/invites/${forMax[0].id}/accept`, {}), 404, 'OV_NOT_FOUND')
+    expectCode(await call(users.ivan, 'POST', `/api/beach/invites/${forMax[0].id}/accept`, {}), 403, 'OV_FORBIDDEN')
+    assert.equal(okData(await call(users.max, 'POST', `/api/beach/invites/${forMax[0].id}/accept`, {})).tournament.can_edit, true)
+    expectCode(await call(users.max, 'POST', `/api/beach/invites/${forMax[0].id}/accept`, {}), 404, 'OV_NOT_FOUND')
     okData(await call(users.max, 'PATCH', `/api/beach/tournaments/${ids.t}`, { venue: 'Strandbad Mythenquai', city: 'Zürich' }))
-    const managers = (await bundle()).managers
+    const afterAccept = await bundle()
+    const managers = afterAccept.managers
     assert.deepEqual(managers.map((m) => [m.email, m.creator]), [[users.mia.email, true], [users.max.email, false]])
+    assert.equal(afterAccept.invited.some((i) => i.email === users.max.email.toLowerCase()), false)
+    // an editor withdraws an open invitation; inviting a manager again adds no invitation
+    const nobody = afterAccept.invited.find((i) => i.email === 'nobody@nowhere.example')
+    okData(await call(users.mia, 'DELETE', `/api/beach/tournaments/${ids.t}/invites/${nobody.id}`))
+    expectCode(await call(users.mia, 'DELETE', `/api/beach/tournaments/${ids.t}/invites/${nobody.id}`), 404)
+    assert.deepEqual(okData(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/managers`, { email: users.max.email })), { requested: true })
+    assert.deepEqual((await bundle()).invited.map((i) => i.email).sort(), [users.admin.email, users.ivan.email].map((e) => e.toLowerCase()).sort())
     okData(await call(users.mia, 'DELETE', `/api/beach/tournaments/${ids.t}/managers/${users.max.id}`))
     expectCode(await call(users.max, 'PATCH', `/api/beach/tournaments/${ids.t}`, { venue: 'x' }), 404)
     // published: scorers read it, but cannot change it
@@ -396,6 +420,15 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     for (const secret of ['LIC-1001', 'licence', users.mia.email, users.mia.id, 'created_by', 'match_id', 'claimed_by', 'referee']) {
       assert.equal(r.text.includes(secret), false, secret)
     }
+    // PERM-02: the bytes built once, gzipped for a client that takes it, the same JSON either way
+    const gz = await fetch(`${srv.base}/api/public/beach/t/zuri-open-live`, { headers: { 'accept-encoding': 'gzip' } })
+    assert.equal(gz.headers.get('content-encoding'), 'gzip')
+    assert.equal(gz.headers.get('vary'), 'Accept-Encoding')
+    assert.match(gz.headers.get('cache-control'), /public, max-age=15/)
+    assert.deepEqual(await gz.json(), r.json)
+    const plain = await fetch(`${srv.base}/api/public/beach/t/zuri-open-live`, { headers: { 'accept-encoding': 'identity' } })
+    assert.equal(plain.headers.get('content-encoding'), null)
+    assert.equal(await plain.text(), r.text)
     expectCode(await pub('Not-A-Slug'), 404)
     expectCode(await api(srv.base, '/api/public/beach/t/zuri-open-live', { method: 'POST', proto: null, body: {} }), 404)
   })

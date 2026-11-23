@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
-import { detectBackupPlatform, isNativeBackupPlatform, createPlatformStore } from './platform'
+import { detectBackupPlatform, isNativeBackupPlatform, createPlatformStore, capacitorOs } from './platform'
 import { createNativeBackupEngine } from './engine'
 import { isContinuedElsewhere } from '../matchReopen'
 
@@ -112,25 +112,18 @@ export async function flushNativeBackups(timeoutMs = QUIT_BACKUP_WAIT_MS) {
 // After the start's own work (the database, the first screen)
 export const HOUSEKEEPING_DELAY_MS = 5000
 
-// The Capacitor app's OS: 'android', 'ios', or null when it cannot tell
-function capacitorOs(win) {
-  try {
-    return win?.Capacitor?.getPlatform?.() || null
-  } catch {
-    return null
-  }
-}
-
 /**
- * At app start (main.jsx), a few seconds in: on Android the files older
- * versions left in the public Documents folder are moved into the app's own
- * folder (once per install, androidFiles.moveLegacyFiles) and the saved
- * scoresheet PDFs older than the backups' 30 days are deleted; on both apps
- * the rotation of the backup folders runs (it waited for the first backup of
- * a session, so a tablet that was only switched on kept every old file).
- * Nothing in a browser. Never throws.
- * Android only, not every Capacitor app: on iOS the Documents, Data and
- * External folders are one folder, which a move would empty.
+ * At app start (main.jsx), a few seconds in: in the Android and iOS apps the
+ * files older versions left in the Documents folder are moved into the app's
+ * own folder (once per install, androidFiles.moveLegacyFiles; iOS:
+ * Library/NoCloud, owner decision 9) and the saved scoresheet PDFs older
+ * than the backups' 30 days are deleted; on every app the rotation of the
+ * backup folders runs (it waited for the first backup of a session, so a
+ * tablet that was only switched on kept every old file). Nothing in a
+ * browser. Never throws.
+ * Only in an app that says which OS it runs on: on iOS Documents, Data and
+ * External are one folder, so the move needs the iOS app folder
+ * (platform.appFilesDirectories) as its target.
  */
 export async function startNativeFileHousekeeping({
   delayMs = HOUSEKEEPING_DELAY_MS,
@@ -140,13 +133,14 @@ export async function startNativeFileHousekeeping({
   if (!isNativeBackupPlatform(platform)) return
   await new Promise(resolve => setTimeout(resolve, delayMs))
   try {
-    if (platform === 'capacitor' && capacitorOs(win) === 'android') {
+    const os = platform === 'capacitor' ? capacitorOs(win) : null
+    if (os === 'android' || os === 'ios') {
       const [fs, { moveLegacyFiles, pruneScoresheetPdfs }] = await Promise.all([
         import('@capacitor/filesystem'),
         import('./androidFiles')
       ])
-      await moveLegacyFiles(fs).catch(e => console.warn('[AndroidFiles] moving the old files:', e?.message || e))
-      await pruneScoresheetPdfs(fs).catch(e => console.warn('[AndroidFiles] PDF clean-up:', e?.message || e))
+      await moveLegacyFiles(fs, { os }).catch(e => console.warn('[AndroidFiles] moving the old files:', e?.message || e))
+      await pruneScoresheetPdfs(fs, { os }).catch(e => console.warn('[AndroidFiles] PDF clean-up:', e?.message || e))
     }
     const engine = await getNativeBackupEngine()
     await engine?.cleanup()

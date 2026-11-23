@@ -37,6 +37,7 @@ export const {
   createRateLimiter,
   createLocalAddressCheck,
   createMainInstanceGate,
+  MAIN_INSTANCE_PAGE_CSP,
   OTHER_COURT_COOKIE,
   MAX_OWNED_PER_IP,
   isTrustedRelayOrigin,

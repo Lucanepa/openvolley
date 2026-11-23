@@ -21,6 +21,7 @@ import { getCloudApiUrl } from './backendConfig'
 import { redactMatch } from './nativeBackup/redact'
 import { isGlobalKey } from './globalCloud'
 import { LIVE_CODE_ALPHABET } from './globalLive'
+import { isRetryableRefusal, keepGlobalPending, retryAfterOf } from './globalPending'
 
 const ORG_RE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/
 export const isOrganizerCode = (c) => typeof c === 'string' && ORG_RE.test(c)
@@ -122,7 +123,7 @@ async function call(path, { method = 'POST', body, fetchImpl = (...a) => fetch(.
       ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
     })
     const json = await res.json().catch(() => null)
-    if (!res.ok || json?.error) return { ok: false, reason: json?.error?.code || `HTTP ${res.status}`, status: res.status }
+    if (!res.ok || json?.error) return { ok: false, reason: json?.error?.code || `HTTP ${res.status}`, status: res.status, retryAfter: retryAfterOf(res) }
     return { ok: true, data: json?.data ?? null }
   } catch (err) {
     return { ok: false, reason: err?.message || 'network' }
@@ -141,8 +142,10 @@ const auth = (match) => ({ key: match.globalKey, pin: String(match.refereePin) }
 /**
  * Save the match's readable copy (with its PDF when given). Returns
  * { ok, shareToken } and keeps the share token the server answers on the match.
+ * `keepIfRefused` (the closed match's copy): a refusal for now (429, 5xx, no
+ * connection) is kept and sent again later (utils/globalPending, SR-4).
  */
-export async function saveGlobalCloud(data, { pdfBlob = null, fetchImpl, database = null } = {}) {
+export async function saveGlobalCloud(data, { pdfBlob = null, fetchImpl, database = null, keepIfRefused = false } = {}) {
   const match = data?.match
   if (!savesToGlobalCloud(match)) return { ok: false, reason: 'off' }
   const body = {
@@ -157,6 +160,10 @@ export async function saveGlobalCloud(data, { pdfBlob = null, fetchImpl, databas
     try { await database.matches.update(match.id, { cloudShareToken: r.data?.shareToken ?? null }) } catch { /* the next save tries again */ }
   }
   if (!r.ok && r.reason !== 'offline') console.warn('[Global cloud] Not saved:', r.reason)
+  if (!r.ok && keepIfRefused && isRetryableRefusal(r.status)) {
+    const kept = await keepGlobalPending({ id: `${match.globalKey}|cloud`, path: '/api/global/cloud/save', body, retryAfterSec: r.retryAfter, ...(database ? { database } : {}) })
+    return { ...r, pending: kept }
+  }
   return r.ok ? { ok: true, shareToken: r.data?.shareToken ?? null } : r
 }
 

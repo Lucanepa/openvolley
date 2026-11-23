@@ -43,6 +43,7 @@ vi.mock('../../lib/apiClient', () => ({
 }))
 
 import ManageConsole, { manageTabsFor } from '../manage/ManageConsole'
+import { ManagerBrandProvider } from '../../managerBrand'
 import InvitesPanel from '../manage/InvitesPanel'
 import { accessFromRoles } from '../../lib/access'
 
@@ -106,6 +107,25 @@ describe('ManageConsole', () => {
     expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.matches.filterAll', 'manage.matches.filterClosed', 'manage.matches.filterOpen', 'manage.tabs.teams', 'manage.tabs.settings'])
     await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
     expect(api.admin.listAccounts).not.toHaveBeenCalled()
+  })
+
+  it('the OpenBeach console offers its admins no "Rebuild PDF" (LOG-02: the beach sheet is OpenBeach\'s own); OpenVolley\'s does', async () => {
+    asUser(['admin'])
+    // a closed row the panel would offer it for, so only the console's canRebuild decides
+    const rows = [{ id: 'm-1', game_n: 7, status: 'final', sport: 'indoor', home_name: 'Home', away_name: 'Away', pdf: true, pdf_updated_at: '2026-11-23T16:40:00Z', closed_at: '2026-11-23T16:40:00Z' }]
+    api.scoresheetsApi.list.mockImplementation(async () => ({ data: { matches: rows }, error: null, status: 200 }))
+    try {
+      const { unmount } = render(<ManageConsole tab="scoresheets" onTab={() => {}} onClose={() => {}} />)
+      await screen.findByText('Home vs Away')
+      expect(screen.getByTestId('scoresheet-rebuild')).toBeInTheDocument()
+      unmount()
+      render(<ManagerBrandProvider app="beach"><ManageConsole tab="scoresheets" onTab={() => {}} onClose={() => {}} /></ManagerBrandProvider>)
+      await screen.findByText('Home vs Away')
+      await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ app: 'beach' })))
+      expect(screen.queryByTestId('scoresheet-rebuild')).toBeNull()
+    } finally {
+      api.scoresheetsApi.list.mockImplementation(async () => ({ data: { matches: [] }, error: null, status: 200 }))
+    }
   })
 
   it('a list tab is a tree by its filter: the child sits in the URL and drives the list', async () => {

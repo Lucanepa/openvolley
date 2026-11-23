@@ -18,7 +18,7 @@ const V18_STORES = {
   interaction_logs: 'id,ts,gameNumber,category,sessionId'
 }
 
-describe('Dexie v19 + v20 + v21 + v22 + v23 upgrade', () => {
+describe('Dexie v19 + v20 + v21 + v22 + v23 + v24 upgrade', () => {
   it('keeps the v18 data and adds the saved-team and logging tables', async () => {
     const old = new Dexie('escoresheet')
     old.version(18).stores(V18_STORES)
@@ -29,7 +29,10 @@ describe('Dexie v19 + v20 + v21 + v22 + v23 upgrade', () => {
 
     const { db } = await import('../db')
     await db.open()
-    expect(db.verno).toBe(23)
+    expect(db.verno).toBe(24)
+    // v24: the refused final uploads of a Global match, by when they are due (utils/globalPending)
+    await db.global_pending.put({ id: 'k|backup', path: '/api/global/save', body: { key: 'k' }, notBefore: 5, attempts: 0, createdAt: 1 })
+    expect((await db.global_pending.where('notBefore').belowOrEqual(5).first()).id).toBe('k|backup')
     // v23: the scoreboard codes, by match and by relay key
     await db.scoreboard_codes.put({ matchId, relayKey: 'match_1_a', code: 'ABCD2345', issuedAt: 1 })
     expect((await db.scoreboard_codes.where('relayKey').equals('match_1_a').first()).code).toBe('ABCD2345')

@@ -30,7 +30,11 @@ const api = vi.hoisted(() => ({
   updateMatch: vi.fn(),
   schedule: vi.fn(),
   ranking: vi.fn(),
-  addEntry: vi.fn()
+  addEntry: vi.fn(),
+  invites: vi.fn(),
+  acceptInvite: vi.fn(),
+  declineInvite: vi.fn(),
+  removeInvite: vi.fn()
 }))
 vi.mock('../lib/tournamentApi', async (orig) => ({ ...(await orig()), tournamentApi: api }))
 const teams = vi.hoisted(() => ({ fetchBundle: vi.fn() }))
@@ -61,6 +65,7 @@ beforeEach(() => {
   setAuth(['beach:competition_manager'])
   api.list.mockResolvedValue(ok({ tournaments: [{ ...TOUR, draws: 1 }] }))
   api.get.mockResolvedValue(ok(bundle()))
+  api.invites.mockResolvedValue(ok({ invites: [] }))
   teams.fetchBundle.mockResolvedValue(ok({ competitions: [], teams: [] }))
 })
 
@@ -324,25 +329,59 @@ describe('Tournaments tab', () => {
     expect(screen.getByRole('button', { name: 'tournaments.save' })).toBeInTheDocument()
   })
 
-  it('a co-manager: the server answers the same for every address, the reloaded list says whether one was added', async () => {
+  it('a co-manager is invited (PERM-18): the same answer and list row for every address, withdrawn from the list', async () => {
     api.addManager = vi.fn(async () => ok({ requested: true }))
     const success = vi.spyOn(toast, 'success')
     const failure = vi.spyOn(toast, 'error')
     ask.askText.mockResolvedValueOnce(' Max@Club.ch ')
-    const max = { id: 'u-2', email: 'max@club.ch', name: 'Max', creator: false }
     await openTournament()
     fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.details' }))
-    api.get.mockResolvedValueOnce(ok(bundle({ managers: [...bundle().managers, max] })))
+    api.get.mockResolvedValue(ok(bundle({ invited: [{ id: 'i-1', email: 'max@club.ch', invited_at: '2026-11-23T10:00:00Z' }] })))
     fireEvent.click(await screen.findByRole('button', { name: 'tournaments.addManager' }))
-    await waitFor(() => expect(success).toHaveBeenCalledWith('tournaments.managerAdded'))
+    await waitFor(() => expect(success).toHaveBeenCalledWith('tournaments.managerInvited'))
     expect(api.addManager).toHaveBeenCalledWith('t1', 'Max@Club.ch')
-    // an address without a beach competition manager: the list stays as it was
+    // the reloaded list shows the address as invited, never whether it has an account
+    expect(await screen.findByText('max@club.ch')).toBeInTheDocument()
+    expect(screen.getByText('tournaments.invitedChip')).toBeInTheDocument()
+    // another address: the very same answer
     ask.askText.mockResolvedValueOnce('nobody@club.ch')
     fireEvent.click(await screen.findByRole('button', { name: 'tournaments.addManager' }))
-    await waitFor(() => expect(failure).toHaveBeenCalledWith('tournaments.errors.noManager'))
-    expect(success).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(2))
+    expect(success).toHaveBeenLastCalledWith('tournaments.managerInvited')
+    expect(failure).not.toHaveBeenCalled()
+    // withdrawn
+    api.removeInvite.mockResolvedValue(ok({ id: 'i-1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.removeInvite' }))
+    await waitFor(() => expect(api.removeInvite).toHaveBeenCalledWith('t1', 'i-1'))
     success.mockRestore()
     failure.mockRestore()
+  })
+
+  it('an invitation to co-manage: accepted, the tournament opens; declined, it goes; none, no card', async () => {
+    const INV = { id: 'i-9', invited_at: '2026-11-23T10:00:00Z', invited_by: 'Mia', tournament: { id: 't1', slug: TOUR.slug, title: 'Züri Open', starts_on: TOUR.starts_on, ends_on: TOUR.ends_on, status: 'draft' } }
+    api.invites.mockResolvedValue(ok({ invites: [INV, { ...INV, id: 'i-8', tournament: { ...INV.tournament, id: 't8', title: 'Other Cup' } }] }))
+    api.acceptInvite.mockResolvedValue(ok({ tournament: { ...TOUR, can_edit: true } }))
+    api.declineInvite.mockResolvedValue(ok({ id: 'i-8' }))
+    render(<TournamentsPanel />)
+    const card = await screen.findByTestId('tournament-invites')
+    expect(within(card).getByText('Other Cup')).toBeInTheDocument()
+    expect(within(card).getAllByText('tournaments.invitedBy')).toHaveLength(2)
+    // the rows in the server's order: the second is Other Cup
+    api.invites.mockResolvedValue(ok({ invites: [INV] }))
+    fireEvent.click(within(card).getAllByRole('button', { name: 'tournaments.decline' })[1])
+    await waitFor(() => expect(api.declineInvite).toHaveBeenCalledWith('i-8'))
+    await waitFor(() => expect(screen.queryByText('Other Cup')).toBeNull())
+    fireEvent.click(within(await screen.findByTestId('tournament-invites')).getByRole('button', { name: 'tournaments.accept' }))
+    await waitFor(() => expect(api.acceptInvite).toHaveBeenCalledWith('i-9'))
+    await screen.findByRole('heading', { name: 'Züri Open' })
+  })
+
+  it('a beach scorer is shown no invitations', async () => {
+    setAuth(['beach:scorer'])
+    render(<TournamentsPanel />)
+    await screen.findByRole('button', { name: 'Züri Open' })
+    expect(api.invites).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('tournament-invites')).toBeNull()
   })
 
   it('the ranking: a table and the CSV for MyBeach', async () => {

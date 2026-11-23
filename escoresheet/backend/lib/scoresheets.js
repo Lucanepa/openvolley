@@ -16,14 +16,18 @@
  *                                            record (match, sets, events, live state) to
  *                                            draw the sheet from; audited (scoresheet.read)
  *   rebuildPdf({ actorId, matchId, reason,   the PDF drawn from it stored as the match's
- *               fileBase64 })                newest, also for a closed match (no reopen);
- *                                            the older PDFs stay; audited (scoresheet.rebuild)
+ *               fileBase64 })                newest, for a closed match (no reopen; not
+ *                                            while it is open: 409 OV_NOT_CLOSED); the older
+ *                                            PDFs stay; audited (scoresheet.rebuild). Never
+ *                                            a beach match (409 OV_BEACH_SHEET: OpenBeach's
+ *                                            own sheet, under the device's own file name)
  *   readPdf({ actorId, matchId, download })  the newest stored PDF of a match,
  *                                            as { status, file }; audited first
  *                                            (scoresheet.read): no entry, no file
  *   sportOf(matchId)                         { sport } | { sport: null } | { error }
  *   createViewLink({ actorId, matchId })     reads the PDF as readPdf (same check before,
- *                                            same audit entry) and keeps it for
+ *                                            same audit entry) and keeps where it is (its
+ *                                            storage key and digest, not the file) for
  *                                            VIEW_LINK_TTL_MS under a random token:
  *                                            { path: /api/scoresheet-view/<token>/<file name>,
  *                                            expires_at }
@@ -31,8 +35,9 @@
  *                                            trusted server code (the final scoresheet
  *                                            mail, lib/finalMail.js): { data, filename,
  *                                            mtimeMs }, null (none), or { unknown: true }
- *   readViewLink({ token, name })            that PDF, inline, by its link: { status, file }
- *                                            or 404. The browser's own PDF viewer opens
+ *   readViewLink({ token, name })            that PDF (read again, the same bytes), inline,
+ *                                            by its link: { status, file } or 404 (async).
+ *                                            The browser's own PDF viewer opens
  *                                            the link in a tab (no Authorization header
  *                                            there), shows the file name and saves under
  *                                            it (owner 2026-10-13: a blob: URL saved as
@@ -330,6 +335,25 @@ export function beachJsonPathParts (p) {
 export const isMatchScoresheetFile = (p) => isScoresheetPdf(p) || beachJsonPathParts(p) !== null
 
 const MATCH_CLOSED = () => fail(409, 'OV_MATCH_CLOSED', 'This match is closed: its scoresheet stays as it was stored')
+// Rebuild PDF (LOG-02, LOG-10): a beach match's sheet is OpenBeach's own (the
+// server and the manager draw the indoor sheet only, and the beach name has no
+// random part, so a rebuild would write over the device's approval PDF); a
+// match not closed is rebuilt once it is closed again (a rebuild in between
+// would be served instead of the re-approval's PDF)
+const BEACH_SHEET = () => fail(409, 'OV_BEACH_SHEET', "A beach match's scoresheet is OpenBeach's own: it is not rebuilt here")
+const NOT_CLOSED = () => fail(409, 'OV_NOT_CLOSED', 'This match is not closed: rebuild its scoresheet once it is closed again')
+const REOPENED = () => fail(409, 'OV_MATCH_REOPENED', 'This match was reopened since: its new approval brings the new scoresheet')
+/** null when the match row's (readWhole's) sheet may be rebuilt, else the refusal. */
+const rebuildRefusal = (match) => (String(match?.sport_type ?? '') === 'beach' ? BEACH_SHEET() : match?.closed_at == null ? NOT_CLOSED() : null)
+/**
+ * SQL: the match_scoresheets row `o` was stored by a rebuild or by the
+ * server's vector copy (storeRebuiltPdf writes its audit entry, scoresheet.rebuild
+ * or scoresheet.vector, in the same transaction: the entry's time is the row's
+ * stored_at). Such a row is no approval's file (LOG-10): it never keeps the
+ * device's PDF of the approval out (storePdf), whatever app sends that.
+ */
+const SERVER_MADE_SQL = (o) => `EXISTS (SELECT 1 FROM public.audit_log ra WHERE ra.action IN ('scoresheet.rebuild', 'scoresheet.vector') ` +
+  `AND ra.at = ${o}.stored_at AND ra.match_id = ${o}.match_id)`
 // An upload that names no match (older apps, OpenBeach) whose path fits no
 // match: the match's insert may still be on its way (it goes in the score's
 // lane). 503, retryable: those apps park a refusal (4xx) for an hour, and
@@ -374,26 +398,84 @@ export const VECTOR_MAX_TRIES = 3
 /** and given up after this long (the device's raster PDF stays). */
 export const VECTOR_MAX_WAIT_MS = 60 * 60 * 1000
 
-/**
- * The record ends as its close says: every finished set's score on the sheet
- * is the score the server's sets hold (the close's result is built from
- * them), and the match has a finished set at all. A record still missing the
- * last points (the device's events still on their way) fails this.
- */
-export function setsMatchClose (record) {
-  const sets = Array.isArray(record?.sets) ? record.sets : []
-  const finished = sets.filter((x) => x && x.finished === true)
-  if (!finished.length) return false
-  const events = Array.isArray(record?.events) ? record.events : []
-  for (const set of finished) {
-    const pts = events.filter((e) => e && e.set_index === set.index && e.type === 'point')
-    if (!pts.length) continue
-    const last = pts.reduce((a, b) => (Number(b.seq) > Number(a.seq) ? b : a))
-    const sc = last.payload?.score
-    if (sc && (Number(sc.home) !== Number(set.home_points) || Number(sc.away) !== Number(set.away_points))) return false
-  }
-  return true
+const jsonOf = (v) => {
+  if (typeof v !== 'string') return v
+  try { return JSON.parse(v) } catch { return null }
 }
+const FINAL_SCORE_RE = /^\s*(\d{1,2})\s*[-:]\s*(\d{1,2})\s*$/
+
+/**
+ * The server's record ends as its close says (owner decision 3, LOG-09): only
+ * then may the server's vector copy replace the device's signed PDF as the
+ * match's official sheet. A FULL check of the record (match row, sets,
+ * events) against the result the close wrote (matches.set_results [{ set,
+ * home, away }], final_score "home-away", winner 'home' | 'away', as the
+ * scorer apps send them at the match end and after a correction):
+ *   - every set row is finished (a closed match with an unfinished set: the
+ *     device's set end, or its delete, never reached the server);
+ *   - as many finished sets as set_results lists, each at the score it lists;
+ *   - final_score is the sets each side won, and winner the side that won more;
+ *   - every finished set has point events, and its last point is at the set's
+ *     score (a point without the running score: the points counted by team),
+ *     except a set the forfeit ended (set_end reason 'forfait') and every set
+ *     of a match forfeited in default (all of them rewritten 0:25).
+ * { ok: true } or { ok: false, reason } (a code for the ops log, never data):
+ * no_finished_set, unfinished_set, no_set_results, set_results_count,
+ * set_score, final_score, winner, no_points, points_score.
+ */
+export function recordGate (record) {
+  const no = (reason) => ({ ok: false, reason })
+  const sets = (Array.isArray(record?.sets) ? record.sets : []).filter((x) => x && typeof x === 'object')
+  const finished = sets.filter((x) => x.finished === true)
+  if (!finished.length) return no('no_finished_set')
+  if (finished.length !== sets.length) return no('unfinished_set')
+  const match = record?.match && typeof record.match === 'object' ? record.match : {}
+  const results = jsonOf(match.set_results)
+  if (!Array.isArray(results) || !results.length) return no('no_set_results')
+  if (results.length !== finished.length) return no('set_results_count')
+  const byIndex = new Map(finished.map((s) => [Number(s.index), s]))
+  if (byIndex.size !== finished.length) return no('set_results_count')
+  const seen = new Set()
+  for (const r of results) {
+    const idx = Number(r?.set ?? r?.index)
+    const s = byIndex.get(idx)
+    if (!s || seen.has(idx)) return no('set_results_count')
+    seen.add(idx)
+    if (Number(r.home ?? r.home_points) !== Number(s.home_points) || Number(r.away ?? r.away_points) !== Number(s.away_points)) return no('set_score')
+  }
+  const won = { home: 0, away: 0 }
+  for (const s of finished) {
+    if (Number(s.home_points) > Number(s.away_points)) won.home++
+    else if (Number(s.away_points) > Number(s.home_points)) won.away++
+  }
+  const fs = FINAL_SCORE_RE.exec(String(match.final_score ?? ''))
+  if (!fs || Number(fs[1]) !== won.home || Number(fs[2]) !== won.away) return no('final_score')
+  const leader = won.home > won.away ? 'home' : won.away > won.home ? 'away' : null
+  if (!leader || match.winner !== leader) return no('winner')
+  const events = (Array.isArray(record?.events) ? record.events : []).filter((e) => e && typeof e === 'object')
+  const payloadOf = (e) => jsonOf(e.payload) || {}
+  const inDefault = events.some((e) => e.type === 'forfait' && payloadOf(e).scope === 'match' && payloadOf(e).inDefault === true)
+  const seqOf = (e) => (Number.isFinite(Number(e.seq)) && e.seq !== null ? Number(e.seq) : -Infinity)
+  for (const s of finished) {
+    const idx = Number(s.index)
+    const ofSet = events.filter((e) => Number(e.set_index) === idx)
+    if (inDefault || ofSet.some((e) => e.type === 'set_end' && payloadOf(e).reason === 'forfait')) continue
+    const pts = ofSet.filter((e) => e.type === 'point')
+    if (!pts.length) return no('no_points')
+    // the newest point (the record comes ordered by seq, ts, id: ties keep that order)
+    let last = pts[0]
+    for (const e of pts) if (seqOf(e) >= seqOf(last)) last = e
+    const sc = payloadOf(last).score
+    const score = sc && Number.isFinite(Number(sc.home)) && Number.isFinite(Number(sc.away))
+      ? { home: Number(sc.home), away: Number(sc.away) }
+      : { home: pts.filter((e) => payloadOf(e).team === 'home').length, away: pts.filter((e) => payloadOf(e).team === 'away').length }
+    if (score.home !== Number(s.home_points) || score.away !== Number(s.away_points)) return no('points_score')
+  }
+  return { ok: true }
+}
+
+/** recordGate's verdict alone: the record ends as its close says. */
+export const setsMatchClose = (record) => recordGate(record).ok
 
 /** An answer for the caller, thrown out of a transaction (which then rolls back). */
 class Refused extends Error {
@@ -412,9 +494,13 @@ class Refused extends Error {
  * @param {(matchId: string) => Promise<object|null>} [o.readMatch]  the match's whole
  *   record (lib/matchRestore.js readWhole), for matchForRebuild
  */
-export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, readApprovals = null, vector = null, vectorTimes = null, logger = console, now = () => Date.now(), setTimer = setTimeout } = {}) {
+export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, readApprovals = null, vector = null, vectorTimes = null, captureError = null, logger = console, now = () => Date.now(), setTimer = setTimeout } = {}) {
   const log = logger
-  /** token -> { file, expires } (insertion order = age) */
+  /**
+   * token -> { key, sha256, filename, expires } (insertion order = age): which
+   * stored file the link opens, never the file itself (SEC-39: 50 PDFs of up
+   * to 5 MiB were held in memory for the TTL). readViewLink reads it again.
+   */
   const viewLinks = new Map()
   const pruneViewLinks = () => {
     const t = now()
@@ -683,7 +769,8 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
           pdf: located[i].files.length ? true : located[i].unknown ? null : false,
           pdf_updated_at: located[i].files.length ? new Date(located[i].files[0].mtimeMs).toISOString() : null,
           data_changed_at: iso(r.data_changed_at),
-          pdf_stale: located[i].files.length ? pdfStale(located[i].files[0].mtimeMs, r.data_changed_at, r.closed_at) : false
+          // never for a beach match: its sheet is OpenBeach's, not rebuilt here (LOG-02)
+          pdf_stale: located[i].files.length && r.is_beach !== true ? pdfStale(located[i].files[0].mtimeMs, r.data_changed_at, r.closed_at) : false
         }))
       })
     } catch (err) {
@@ -709,7 +796,13 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
    * contentType, filename, disposition } }, or an error result (404
    * OV_SCORESHEET_NOT_FOUND when no PDF is stored).
    */
-  async function readPdf ({ actorId, matchId, download = false } = {}) {
+  async function readPdf (o = {}) {
+    const r = await readStoredPdf(o)
+    return r.key ? { status: r.status, file: r.file } : r
+  }
+
+  /** readPdf, plus the storage key of the file it read (`key`, for the view link). */
+  async function readStoredPdf ({ actorId, matchId, download = false } = {}) {
     if (!isUuid(matchId)) return notFound()
     let m
     let located
@@ -754,6 +847,7 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     }
     return {
       status: 200,
+      key: `${file.folder}/${file.name}`,
       file: {
         data,
         contentType: 'application/pdf',
@@ -882,7 +976,7 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
       const { rows } = await client.query(
         `SELECT ${ROW_COLUMNS}, m.closed_by::text AS closed_by, ${own} AS own, ${ofDay} AS of_day, r.at AS reopened_at,
                 (m.closed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.match_scoresheets o
-                   WHERE o.match_id = m.id AND (r.at IS NULL OR o.stored_at > r.at))) AS none_recorded
+                   WHERE o.match_id = m.id AND (r.at IS NULL OR o.stored_at > r.at) AND NOT ${SERVER_MADE_SQL('o')})) AS none_recorded
            FROM public.matches m
            LEFT JOIN LATERAL (SELECT max(a.at) AS at FROM public.audit_log a
                                WHERE a.action = 'match.reopen' AND a.match_id = m.id) r ON true
@@ -1019,16 +1113,18 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ov.scoresheet:${m.id}`])
         // The approval's PDFs: the match's files stored since its last reopen
         // (audit_log match.reopen; all of them when it was never reopened),
-        // before the close or after it
+        // before the close or after it; never a rebuild's or the server's
+        // vector copy (SERVER_MADE_SQL, LOG-10)
         const { rows: [s] } = await client.query(
           `SELECT m.closed_at IS NOT NULL AS closed, m.closed_by::text AS closed_by, r.at AS reopened_at,
                   x.match_id::text AS path_match, x.stored_by::text AS path_stored_by,
-                  coalesce(x.match_id = m.id AND (r.at IS NULL OR x.stored_at > r.at), false) AS path_of_approval,
+                  coalesce(x.match_id = m.id AND (r.at IS NULL OR x.stored_at > r.at) AND NOT ${SERVER_MADE_SQL('x')}, false) AS path_of_approval,
                   coalesce(x.sha256 = $3, false) AS same_bytes,
                   coalesce(greatest(m.closed_at, x.first_stored_at) > now() - make_interval(secs => $4), false) AS in_grace,
                   coalesce(m.closed_at > now() - make_interval(secs => $5), false) AS in_late_window,
                   EXISTS (SELECT 1 FROM public.match_scoresheets o
-                           WHERE o.match_id = m.id AND (r.at IS NULL OR o.stored_at > r.at) AND o.path <> $2) AS other_of_approval
+                           WHERE o.match_id = m.id AND (r.at IS NULL OR o.stored_at > r.at) AND o.path <> $2
+                             AND NOT ${SERVER_MADE_SQL('o')}) AS other_of_approval
              FROM public.matches m
              LEFT JOIN public.match_scoresheets x ON x.path = $2
              LEFT JOIN LATERAL (SELECT max(a.at) AS at FROM public.audit_log a
@@ -1284,7 +1380,9 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
    * whole record for "Rebuild PDF" (lib/matchRestore.js readWhole: the
    * match without its PINs, its sets, its events without the voided ones,
    * its live state). Personal data past the uploader-only rule: on record
-   * first (scoresheet.read, purpose 'rebuild'), no entry, no record.
+   * first (scoresheet.read, purpose 'rebuild'), no entry, no record. 409
+   * OV_BEACH_SHEET for a beach match, OV_NOT_CLOSED for one not closed
+   * (rebuildRefusal): neither is rebuilt.
    */
   async function matchForRebuild ({ actorId, matchId } = {}) {
     if (!isUuid(matchId)) return notFound()
@@ -1297,6 +1395,9 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
       return unavailable()
     }
     if (!whole?.match) return notFound()
+    // a beach match, or one not closed: no rebuild, so no read for one (LOG-02, LOG-10)
+    const refused = rebuildRefusal(whole.match)
+    if (refused) return refused
     try {
       await accounts.audit(null, {
         actorId,
@@ -1337,6 +1438,8 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
    * stay. The signatures are the match's own, as stored: the sheet keeps
    * them and says "Rebuilt after the match" in its remarks. On record
    * (scoresheet.rebuild: who, why, when; the file's random part stays out).
+   * Closed indoor matches only (storeRebuiltPdf: 409 OV_BEACH_SHEET,
+   * OV_NOT_CLOSED).
    */
   async function rebuildPdf ({ actorId, matchId, reason, fileBase64 } = {}) {
     if (!isUuid(matchId)) return notFound()
@@ -1366,9 +1469,15 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
    * 'vector' (an admin's rebuild printed by the render service), 'approval'
    * (the vector copy the server made after the approval's upload: no actor,
    * `ownerId` is the uploader, who owns the file like their own upload, and
-   * the entry is scoresheet.vector instead of scoresheet.rebuild).
+   * the entry is scoresheet.vector instead of scoresheet.rebuild). Under the
+   * match row's lock: only a closed match (409 OV_NOT_CLOSED), never a beach
+   * match's sheet but by the approval (409 OV_BEACH_SHEET: the beach name is
+   * the device's own file, LOG-02), and the vector copy only when the match
+   * was not reopened since `since` (ms, the approval's PDF it follows: 409
+   * OV_MATCH_REOPENED, LOG-10). The audit entry is written in this
+   * transaction: SERVER_MADE_SQL tells the row by it.
    */
-  async function storeRebuiltPdf ({ actorId = null, ownerId = null, matchId, data, why = null, mode, extra = {} }) {
+  async function storeRebuiltPdf ({ actorId = null, ownerId = null, matchId, data, why = null, mode, extra = {}, since = null }) {
     if (!db?.withTransaction) return unavailable()
     const sha256 = createHash('sha256').update(data).digest('hex')
     const fileBase64 = data.toString('base64')
@@ -1376,10 +1485,15 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     try {
       return await db.withTransaction(async (client) => {
         const { rows: [m] } = await client.query(
-          `SELECT ${ROW_COLUMNS} FROM public.matches m WHERE m.id = $1 AND m.test IS NOT TRUE FOR SHARE`, [matchId])
+          `SELECT ${ROW_COLUMNS},
+                  (SELECT max(a.at) FROM public.audit_log a WHERE a.action = 'match.reopen' AND a.match_id = m.id) AS reopened_at
+             FROM public.matches m WHERE m.id = $1 AND m.test IS NOT TRUE FOR SHARE`, [matchId])
         if (!m) throw new Refused(notFound())
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ov.scoresheet:${m.id}`])
         const row = { ...m, sport: sportOut(m.is_beach) }
+        if (row.sport === 'beach' && mode !== 'approval') throw new Refused(BEACH_SHEET())
+        if (!m.closed_at) throw new Refused(NOT_CLOSED())
+        if (mode === 'approval' && since != null && m.reopened_at && new Date(m.reopened_at).getTime() > since) throw new Refused(REOPENED())
         const path = rebuildPath(row)
         if (!path) throw new Refused(invalid('match: no game number or external id to name its scoresheet'))
         const { rows: [prev] } = await client.query(
@@ -1455,6 +1569,9 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     }
     if (!record) return notFound()
     if (record.match.test === true) return notFound()
+    // before the read is on record and anything is drawn (LOG-02, LOG-10)
+    const refused = rebuildRefusal(record.match)
+    if (refused) return refused
     try {
       await accounts.audit(null, {
         actorId,
@@ -1562,12 +1679,21 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
    * quiet for VECTOR_QUIET_MS (the events the device still sends after the
    * PDF), and only after CLOSED_REPLACE_GRACE_MS from the approval's PDF (a
    * corrected approval PDF still queued on the device must find no other
-   * file, storePdf). A record whose sets do not end as the close says is
-   * left alone (the raster stays). Gives up after VECTOR_MAX_WAIT_MS.
+   * file, storePdf). A record that does not end as the close says
+   * (recordGate, owner decision 3), or whose print misses a picture (a
+   * signature), is left alone: the device's PDF stays the official sheet and
+   * an ops error says so (vectorRefused). A reopen after the approval's PDF
+   * cancels the copy (the new approval queues its own). Gives up after
+   * VECTOR_MAX_WAIT_MS.
    */
   function queueVectorCopy ({ matchId, ownerId }) {
     if (!vector?.enabled || !isUuid(matchId) || typeof readMatch !== 'function') return
-    if (vectorJobs.has(matchId)) return
+    const queued = vectorJobs.get(matchId)
+    if (queued) {
+      // one job per match: the newest approval PDF's uploader owns the copy
+      if (isUuid(ownerId)) queued.ownerId = ownerId
+      return
+    }
     const job = { since: now(), ownerId, timer: null, tries: 0 }
     vectorJobs.set(matchId, job)
     const plan = (ms) => {
@@ -1578,8 +1704,10 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     async function run () {
       job.tries++
       if (now() - job.since > VT.maxWaitMs) { log.warn?.(`[scoresheets] vector copy of ${matchId}: gave up waiting`); return done() }
+      const REOPENED_AT = "(SELECT max(a.at) FROM public.audit_log a WHERE a.action = 'match.reopen' AND a.match_id = m.id) AS reopened_at, " +
+        `(SELECT max(d.stored_at) FROM public.match_scoresheets d WHERE d.match_id = m.id AND NOT ${SERVER_MADE_SQL('d')}) AS newest_device_pdf`
       const { rows: [st] } = await pool.query(
-        `SELECT m.closed_at, m.test, (m.sport_type::text = 'beach') AS is_beach,
+        `SELECT m.closed_at, m.test, (m.sport_type::text = 'beach') AS is_beach, ${REOPENED_AT},
                 (SELECT max(x.stored_at) FROM public.match_scoresheets x WHERE x.match_id = m.id) AS newest_pdf,
                 greatest(m.updated_at,
                          (SELECT max(e.created_at) FROM public.events e WHERE e.match_id = m.id),
@@ -1587,11 +1715,20 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
            FROM public.matches m WHERE m.id = $1`, [matchId]).catch(async () =>
         // an older schema without sets.updated_at
         pool.query(
-          `SELECT m.closed_at, m.test, (m.sport_type::text = 'beach') AS is_beach,
+          `SELECT m.closed_at, m.test, (m.sport_type::text = 'beach') AS is_beach, ${REOPENED_AT},
                   (SELECT max(x.stored_at) FROM public.match_scoresheets x WHERE x.match_id = m.id) AS newest_pdf,
                   greatest(m.updated_at, (SELECT max(e.created_at) FROM public.events e WHERE e.match_id = m.id)) AS changed_at
              FROM public.matches m WHERE m.id = $1`, [matchId]))
       if (!st || st.test === true || st.is_beach === true) return done()
+      // reopened after the approval's PDF: that approval is over (LOG-10); the
+      // next one's PDF queues its own copy
+      if (st.reopened_at && new Date(st.reopened_at).getTime() > job.since) {
+        done()
+        // the new approval's PDF came while this job waited: a copy of its own
+        if (st.newest_device_pdf && new Date(st.newest_device_pdf).getTime() > new Date(st.reopened_at).getTime()) return queueVectorCopy({ matchId, ownerId: job.ownerId })
+        log.log?.(`[scoresheets] vector copy of ${matchId}: the match was reopened, cancelled`)
+        return
+      }
       const t = now()
       const quietFor = st.changed_at ? t - new Date(st.changed_at).getTime() : Infinity
       const sincePdf = st.newest_pdf ? t - new Date(st.newest_pdf).getTime() : Infinity
@@ -1600,8 +1737,9 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
       }
       const record = await renderRecord(matchId)
       if (!record) return done()
-      if (!setsMatchClose(record)) {
-        log.warn?.(`[scoresheets] vector copy of ${matchId}: the sets do not end as the close says, the device's PDF stays`)
+      const gate = recordGate(record)
+      if (!gate.ok) {
+        vectorRefused(record.match, gate.reason)
         return done()
       }
       const out = await vector.render({ record })
@@ -1610,15 +1748,35 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
         log.warn?.(`[scoresheets] vector copy of ${matchId}: ${out.code}, the device's PDF stays`)
         return done()
       }
+      // a picture (a signature) the print could not show: not the signed sheet
+      if (Number(out.missingPictures) > 0) {
+        vectorRefused(record.match, 'missing_pictures')
+        return done()
+      }
       // the newest PDF is still the one the job waited behind (none came since)
       const { rows: [again] } = await pool.query(
         'SELECT max(stored_at) AS newest_pdf FROM public.match_scoresheets WHERE match_id = $1', [matchId])
-      if (String(again?.newest_pdf ?? '') !== String(st.newest_pdf ?? '')) { done(); return queueVectorCopy({ matchId, ownerId }) }
-      const r = await storeRebuiltPdf({ ownerId: job.ownerId, matchId, data: out.pdf, mode: 'approval', extra: { render_ms: out.ms } })
+      if (String(again?.newest_pdf ?? '') !== String(st.newest_pdf ?? '')) { done(); return queueVectorCopy({ matchId, ownerId: job.ownerId }) }
+      const r = await storeRebuiltPdf({ ownerId: job.ownerId, matchId, data: out.pdf, mode: 'approval', since: job.since, extra: { render_ms: out.ms } })
       if (r.status !== 200) log.warn?.(`[scoresheets] vector copy of ${matchId}: not stored (${r.body?.code || r.status})`)
       done()
     }
     plan(Math.max(VT.recheckMs, VT.graceMs))
+  }
+
+  /**
+   * The vector copy of match row `m` is refused (`reason`: recordGate's, or
+   * missing_pictures): the device's signed PDF stays the official sheet, and
+   * the ops see it in the error tracker (server.js captureServerError, kind
+   * job.failed; the game number, as ids are masked there), not only in a log
+   * line. Never throws.
+   */
+  function vectorRefused (m, reason) {
+    const message = `vector copy refused (${reason}): the device's PDF stays the official scoresheet`
+    log.error?.(`[scoresheets] ${message} (match ${m?.id}, game ${m?.game_n ?? '-'})`)
+    try {
+      captureError?.(new Error(message), { kind: 'job.failed', view: 'scoresheet vector copy', data: { game_n: Number.isInteger(m?.game_n) ? m.game_n : null, reason } })
+    } catch { /* an ops note never fails the job */ }
   }
 
   /** A vector copy of match `matchId` is still to come: the final mail waits for it (lib/finalMail.js). */
@@ -1627,14 +1785,16 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
   /**
    * POST /api/scoresheets/:id/view: the PDF behind a short-lived link for the
    * browser's viewer. The read is checked and audited exactly as GET .../pdf.
+   * The link keeps the file's place and digest only (SEC-39); it opens those
+   * same bytes, read again (readViewLink).
    */
   async function createViewLink ({ actorId, matchId } = {}) {
-    const r = await readPdf({ actorId, matchId, download: false })
+    const r = await readStoredPdf({ actorId, matchId, download: false })
     if (r.status !== 200 || !r.file) return r
     pruneViewLinks()
     const token = randomBytes(32).toString('base64url')
     const expires = now() + VIEW_LINK_TTL_MS
-    viewLinks.set(token, { file: r.file, expires })
+    viewLinks.set(token, { key: r.key, sha256: createHash('sha256').update(r.file.data).digest('hex'), filename: r.file.filename, expires })
     return ok({
       path: `/api/scoresheet-view/${token}/${encodeURIComponent(r.file.filename)}`,
       filename: r.file.filename,
@@ -1642,8 +1802,13 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     })
   }
 
-  /** GET /api/scoresheet-view/:token/:name: the PDF of a live link, inline; else 404. */
-  function readViewLink ({ token, name } = {}) {
+  /**
+   * GET /api/scoresheet-view/:token/:name: the PDF of a live link, inline;
+   * else 404. Read from storage again: the file the link was made for, as it
+   * was then (another file there since, or none: 404, the manager opens it
+   * again, which is checked and audited anew). Never throws.
+   */
+  async function readViewLink ({ token, name } = {}) {
     if (typeof token !== 'string' || !VIEW_TOKEN_RE.test(token)) return notFound()
     const v = viewLinks.get(token)
     if (!v) return notFound()
@@ -1652,8 +1817,16 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
       return notFound()
     }
     // the name is part of the link: a link with another name is not this file's
-    if (name !== v.file.filename) return notFound()
-    return { status: 200, file: { ...v.file, disposition: 'inline' } }
+    if (name !== v.filename) return notFound()
+    let data
+    try {
+      data = await storage.readTrusted({ bucket: SCORESHEETS_BUCKET, path: v.key })
+    } catch (err) {
+      if (err?.code !== 'OV_STORAGE_NOT_FOUND') log.warn?.(`[scoresheets] view link read failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 120)}`)
+      return notFound()
+    }
+    if (createHash('sha256').update(data).digest('hex') !== v.sha256) return notFound()
+    return { status: 200, file: { data, contentType: 'application/pdf', filename: v.filename, disposition: 'inline' } }
   }
 
   return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles, recordOldPdfs, matchForRebuild, rebuildPdf, rebuildVector, rewriteRecordedWithVector, queueVectorCopy, vectorPending }

@@ -570,7 +570,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     ? async (q) => {
       const r = await clubPlayers.search(q)
       const d = r?.data ?? r
-      return { people: (Array.isArray(d?.people) ? d.people : []).filter((c) => !c.manual), more: d?.more === true }
+      return { people: (Array.isArray(d?.people) ? d.people : []).filter((c) => !c.manual), more: d?.more === true, limited: d?.limited === true }
     }
     : null
   const cols = clubPlayers ? 'club' : 'plain'

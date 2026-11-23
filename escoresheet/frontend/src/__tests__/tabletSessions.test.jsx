@@ -67,6 +67,14 @@ describe('bench session (survives a reload)', () => {
     expect((await validateBenchPin('372449', 'home', { gameNumber: 12 })).match.id).toBe(SEED)
   })
 
+  // audit 2026-11, SEC-06: the cloud check gets the game number too, so it
+  // can name the one cloud match listed under it (serverDataSync listedMatchKey)
+  it('with only a game number picked, the cloud check is told the game number', async () => {
+    sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12, homeTeamConnectionEnabled: true } })
+    expect((await validateBenchPin('372449', 'home', { gameNumber: 12 })).match.id).toBe(SEED)
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith('372449', 'bench_home', { gameNumber: '12' })
+  })
+
   it('fills in the enabled flag an older cloud backend does not echo', async () => {
     sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: SEED } })
     const r = await validateBenchPin('372449', 'away')

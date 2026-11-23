@@ -19,10 +19,68 @@
  *  - record_replay:           continuous play, the rally played since the
  *                             replay was replayed too: nothing changes.
  */
-import { servingTeamFromLog } from './rules'
+import { servingTeamFromLog, serveBeforePoint } from './rules'
 import { isBookkeepingEvent } from './rally'
 
 const otherTeam = (team) => (team === 'home' ? 'away' : 'home')
+
+/**
+ * The point a misconduct penalty or a delay penalty gave (it carries the
+ * sanction's seq, payload.penaltySeq; domain/sanctions penaltyOfPoint), not
+ * a rally's.
+ */
+export function isPenaltyPoint(e) {
+  return e?.type === 'point' && e.payload?.penaltySeq != null
+}
+const isRallyPoint = (e) => e?.type === 'point' && e.payload?.penaltySeq == null
+
+// The set's events the decision change reads: a remark or a bench injury
+// recorded beside the play is not in the way (domain/rally isBookkeepingEvent)
+const playOfSet = (events, setIndex) => (events || []).filter(e => e && e.setIndex === setIndex && !isBookkeepingEvent(e))
+
+/**
+ * The point "Decision change" changes when it is the set's last entry: the
+ * set's last event is a rally point, or a row that point wrote (its side-out
+ * rotation, an automatic libero exit: N.x). null when anything else came
+ * after it, and for a penalty's point: the decision is about a rally, and
+ * swapping or replaying the penalty point gave the sanctioned team the point
+ * and the serve, or left the penalty without its point (audit LOG-06).
+ * @param {Array} events the match's events
+ * @param {number} setIndex
+ * @returns {object|null} the point event
+ */
+export function decisionPointOf(events, setIndex) {
+  if (setIndex == null) return null
+  const inSet = playOfSet(events, setIndex)
+  let last = null
+  for (const e of inSet) if (!last || compareEvents(e, last) > 0) last = e
+  if (!last) return null
+  if (last.type === 'point') return isRallyPoint(last) ? last : null
+  const seq = last.seq || 0
+  if (seq === Math.floor(seq)) return null
+  const parent = inSet.find(e => e.type === 'point' && Math.floor(e.seq || 0) === Math.floor(seq))
+  return isRallyPoint(parent) ? parent : null
+}
+
+/**
+ * Why the scoring screen shows "Decision change" but does not offer it:
+ * 'sanction' when a sanction or a penalty's point was recorded after the
+ * set's last rally point. The decision change works on the last rally; the
+ * sanction is taken back first, with Undo (a penalty and its point go
+ * together). null when the set has no rally point or nothing of the kind
+ * came after it.
+ * @param {Array} events the match's events
+ * @param {number} setIndex
+ * @returns {'sanction'|null}
+ */
+export function decisionChangeBlock(events, setIndex) {
+  if (setIndex == null) return null
+  const inSet = playOfSet(events, setIndex)
+  let rally = null
+  for (const e of inSet) if (isRallyPoint(e) && (!rally || compareEvents(e, rally) > 0)) rally = e
+  if (!rally) return null
+  return inSet.some(e => compareEvents(e, rally) > 0 && (e.type === 'sanction' || isPenaltyPoint(e))) ? 'sanction' : null
+}
 
 /**
  * @param {{ events: Array, point: object, score: { home: number, away: number }, match?: object }} args
@@ -37,10 +95,9 @@ export function decisionChangeOutcomes({ events, point, score, match = null }) {
   const setIndex = point?.setIndex ?? 1
   const home = Number(score?.home) || 0
   const away = Number(score?.away) || 0
-  const base = Math.floor(point?.seq || 0)
-  // the log before the point and the rows it wrote (N.x)
-  const before = (events || []).filter(e => e && e !== point && Math.floor(e.seq || 0) < base)
-  const serveBefore = servingTeamFromLog(before, setIndex, match || {})
+  // who served the rally: the log before the point and the rows it wrote
+  // (N.x), as the decision change itself reads it (rules serveBeforePoint)
+  const serveBefore = serveBeforePoint(events, point, setIndex, match || {})
   const serveNow = servingTeamFromLog(events, setIndex, match || {})
   const minus = (n) => Math.max(0, n - 1)
   return {

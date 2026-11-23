@@ -11,7 +11,11 @@
 #   DMARC   p=quarantine or p=reject, with rua (the aggregate reports)
 #   TLS     TLS 1.0 and 1.1 refused, TLS 1.2 accepted (backend., app., get.);
 #           a client that cannot offer TLS 1.0/1.1 fails the check
-#   HTTPS   http:// redirects to https://; https:// sends Strict-Transport-Security
+#   HTTPS   http:// redirects to https:// (and http://get./install.sh, the
+#           one-line installer); https:// sends Strict-Transport-Security
+#           (backend., app., get., the website and the other app sites);
+#           an older app's CORS preflight to http://backend./api/ is answered,
+#           not redirected (a zone-wide Always Use HTTPS would cut those apps off)
 set -uo pipefail
 
 # tls_probe host port version -> prints accepted | refused | cannot-test | no-answer
@@ -37,7 +41,8 @@ tls_probe() {
 if [[ "${1:-}" == --tls-probe ]]; then tls_probe "$2" "$3" "$4"; exit 0; fi
 
 DOMAIN=${1:-openvolley.app}
-HOSTS=("backend.$DOMAIN" "app.$DOMAIN" "get.$DOMAIN")
+# The website (apex) and the Pages sites too (SEC-61: they sent no HSTS)
+HOSTS=("backend.$DOMAIN" "app.$DOMAIN" "get.$DOMAIN" "$DOMAIN" "beach.$DOMAIN" "manager.$DOMAIN")
 ALLOWED_CAS='^(pki\.goog|letsencrypt\.org|ssl\.com)$'
 for t in dig openssl curl; do
   command -v "$t" >/dev/null || { echo "check-edge: needs $t" >&2; exit 2; }
@@ -86,6 +91,19 @@ for h in "${HOSTS[@]}"; do
 
   loc=$(curl -sS -o /dev/null -m 15 -w '%{http_code} %{redirect_url}' "http://$h/" 2>/dev/null)
   if [[ "$loc" =~ ^30[1278]\ https:// ]]; then pass "HTTP $h: redirects to https"; else fail "HTTP $h: http:// answers '${loc:-no answer}' instead of a redirect to https:// (Always Use HTTPS)"; fi
+
+  # the installer is piped to sudo sh: never over plain http (SEC-61)
+  if [[ "$h" == get.* ]]; then
+    loc=$(curl -sS -o /dev/null -m 15 -w '%{http_code} %{redirect_url}' "http://$h/install.sh" 2>/dev/null)
+    if [[ "$loc" =~ ^30[1278]\ https:// ]]; then pass "HTTP $h/install.sh: redirects to https"; else fail "HTTP $h/install.sh: answers '${loc:-no answer}' over http:// instead of a redirect to https://"; fi
+  fi
+
+  # Older apps set to http://backend. (3.x) need their preflights answered:
+  # a redirect fails them (SEC-61 fix-up; RUNBOOK, Always Use HTTPS)
+  if [[ "$h" == backend.* ]]; then
+    pre=$(curl -sS -o /dev/null -m 15 -X OPTIONS -H 'Origin: https://localhost' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type' -w '%{http_code}' "http://$h/api/match/validate-pin" 2>/dev/null)
+    if [[ "$pre" =~ ^2[0-9][0-9]$ ]]; then pass "HTTP $h/api: an older app's preflight is answered ($pre)"; else fail "HTTP $h/api: an older app's preflight over http:// gets '${pre:-no answer}', not a 2xx: apps set to http://$h lose the cloud (Always Use HTTPS on backend.?)"; fi
+  fi
 
   path=/; [[ "$h" == backend.* ]] && path=/health
   hsts=$(curl -sS -o /dev/null -D - -m 15 "https://$h$path" 2>/dev/null | tr -d '\r' | awk 'tolower($1) == "strict-transport-security:" { $1 = ""; print substr($0, 2) }')

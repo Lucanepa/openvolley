@@ -166,6 +166,12 @@ hetzner# cd /opt/openvolley && install -m 600 env.example .env && editor .env
   `docker exec ov-backend node scripts/hash-pins.mjs --apply` once after the first start. A restored
   dump needs the secret it was written with (the nightly backup keeps an encrypted copy,
   `secrets-<UTC>.env.gpg`).
+- `OV_PIN_SECRET` and `OV_MATCH_TOKEN_SECRET` (if set) are kept in the club vault (Vaultwarden,
+  entry "OpenVolley PIN and match token secrets", both values): store them there when you set or
+  move them, and check the entry matches `.env` after every move. They have two off-site copies:
+  that entry, and the `secrets-<UTC>.env.gpg` files the hourly pull carries to the NAS
+  (`ov-backup-pull.sh`, 90 days, next to the dumps, their `.counts` and `wal/`). Without either,
+  a server lost for good leaves every stored PIN and match token unverifiable.
 - `TUNNEL_TOKEN` from step 2.
 - `RESEND_*`, `CONTACT_EMAIL` from the old backend's settings. (No `REOPEN_PASSWORD_HASH`:
   it was replaced by the admin reopen of db/007.) `SMTP_*`, `MAIL_FROM`, `MANAGER_URL`: leave
@@ -595,8 +601,19 @@ Target values (owner, Cloudflare dashboard and DNS; nothing in this kit sets the
 with `escoresheet/deploy/check-edge.sh` (read-only) before go-live and after every change here;
 it exits 0 only when all of them hold.
 
-- SSL/TLS, Edge Certificates: **Always Use HTTPS** on (http:// answers a redirect, also for
-  `backend.` and `get.`); **Minimum TLS Version 1.2** (TLS 1.0/1.1 refused).
+- SSL/TLS, Edge Certificates: http:// answers a redirect to https:// on every host but the
+  backend's API; **Minimum TLS Version 1.2** (TLS 1.0/1.1 refused). Older apps (3.x before
+  13.11.2026 turned a typed bare address into `http://`) still call `http://backend.openvolley.app`:
+  a redirect fails their CORS preflights (a preflight never follows one), a call that follows it
+  arrives with `Origin: null` (refused), and a ws:// socket cannot follow it. So while such apps
+  are in the field, no zone-wide **Always Use HTTPS**: a Single Redirect rule
+  `(not ssl and http.host ne "backend.<domain>")` to `concat("https://", http.host, http.request.uri.path)`,
+  301, query string kept. The backend redirects its own pages and every address opened in a
+  browser (cf-visitor, `lib/plainHttp.js`), and answers API calls, preflights and ws:// as before,
+  with one `[HTTP] plain http answered (SEC-61)` line a minute per kind and app origin and the
+  counts under `plainHttp` in the internal /health. When those lines stop (or the owner accepts
+  that these apps lose the cloud), Always Use HTTPS may cover `backend.` too. `get.` redirects
+  its pages and the installer itself (pkgs/Caddyfile).
 - HSTS: `max-age=31536000; includeSubDomains`, no preload until every subdomain is HTTPS-only
   (then `preload` and the hstspreload.org submission). The backend (cloud mode) and
   `ov-pkgs` (pkgs/Caddyfile) send it themselves; Cloudflare's HSTS setting covers the Pages sites.

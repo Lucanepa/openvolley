@@ -423,11 +423,14 @@ export function apiMatchRestoreByPin(gameN, pin, { claim = false, externalId = n
 
 /**
  * Whether the server stores, deleted or never saw a match (POST
- * /api/match/known). Needs a session.
+ * /api/match/known). Needs a session. Names this device: a match deleted
+ * on the server is 'deleted' to a device that scored it, whoever is signed
+ * in on it (another account on the club tablet: 2611 review, SR-1), so it is
+ * never sent back.
  * @returns {Promise<{data: {state: 'stored'|'deleted'|'unknown'}|null, error: object|null, status: number}>}
  */
 export function apiMatchKnown(externalId) {
-  return postJson('/api/match/known', { external_id: externalId }, { fallbackError: 'Match lookup failed' })
+  return postJson('/api/match/known', { external_id: externalId, ...deviceField() }, { fallbackError: 'Match lookup failed' })
 }
 
 /**
@@ -1038,8 +1041,18 @@ export const apiAuth = {
 
   // The links of the account emails (utils/authLinks.js). The token goes
   // nowhere else and is never logged.
-  async confirmPasswordReset(token, password, lang, app) {
-    return authRequest('reset-password/confirm', { token, password, ...(lang ? { lang } : {}), ...(app ? { app } : {}) })
+  // keep: { name, licence, requests: [id] }, what to keep of the details a
+  // sign-up gave when this password confirms the address (signUpDetails);
+  // without it the server keeps none of them for an unconfirmed address
+  async confirmPasswordReset(token, password, lang, app, keep) {
+    return authRequest('reset-password/confirm', { token, password, ...(lang ? { lang } : {}), ...(app ? { app } : {}), ...(keep ? { keep } : {}) })
+  },
+
+  // What the sign-up of a not yet confirmed address gave (name, licence
+  // number, requests), for the reset link's page to keep or drop:
+  // { data: { signup_details: null | { first_name, last_name, license_number, requests } } }
+  async signUpDetails(token) {
+    return authRequest('reset-password/details', { token })
   },
 
   // password: the one chosen at sign-up; without it (or wrong) the server

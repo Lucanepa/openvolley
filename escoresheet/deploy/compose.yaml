@@ -203,6 +203,9 @@ services:
       STORAGE_ROOT: /data/storage
       STATUS_DIR: /var/lib/openvolley-status
       PUBLIC_ORIGINS: ${PUBLIC_ORIGINS:?set PUBLIC_ORIGINS in .env}
+      # 1 on the test backend only: it trusts the dev sites in PUBLIC_ORIGINS,
+      # which production drops (SEC-60, env.example)
+      OV_ALLOW_DEV_ORIGINS: ${OV_ALLOW_DEV_ORIGINS:-}
       TRUST_PROXY: cloudflare
       # cf-connecting-ip only from the tunnel (its fixed address on ov-edge):
       # the other containers on ov-edge cannot set their own client address
@@ -239,10 +242,26 @@ services:
       # app's own sites only (lib/cors.js ALLOWED_ORIGINS)
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
       WEBAUTHN_ORIGINS: ${WEBAUTHN_ORIGINS:-}
-      # Hourly budgets of the final and the test scoresheet mails (lib/mailer.js
-      # BUDGET_ENV; empty: 300 and 50)
+      # Hourly budgets of the final and the test scoresheet mails and of the
+      # account mails (lib/mailer.js BUDGET_ENV; empty: the defaults in
+      # env.example). All of them, so a budget changed in .env during a mail
+      # incident reaches the backend (tests/compose-env.test.sh)
       MAIL_BUDGET_FINAL: ${MAIL_BUDGET_FINAL:-}
       MAIL_BUDGET_TEST: ${MAIL_BUDGET_TEST:-}
+      MAIL_BUDGET_ACCOUNT: ${MAIL_BUDGET_ACCOUNT:-}
+      MAIL_BUDGET_CONFIRM: ${MAIL_BUDGET_CONFIRM:-}
+      MAIL_BUDGET_NOTIFY: ${MAIL_BUDGET_NOTIFY:-}
+      MAIL_BUDGET_SIGNUP: ${MAIL_BUDGET_SIGNUP:-}
+      MAIL_BUDGET_SECURITY: ${MAIL_BUDGET_SECURITY:-}
+      # The locked / blocked approval-PIN notices' own hourly budget (empty: 50)
+      MAIL_BUDGET_PIN_LOCK: ${MAIL_BUDGET_PIN_LOCK:-}
+      # The game PIN / match information mails a scorer asks for to its own
+      # address (lib/mailer.js sendUser; empty: 100)
+      MAIL_BUDGET_USER: ${MAIL_BUDGET_USER:-}
+      # The "someone keeps trying your password" notices' own hourly budget (empty: 50)
+      MAIL_BUDGET_SIGN_IN: ${MAIL_BUDGET_SIGN_IN:-}
+      # sign-up needs a licence number unless `optional` (empty in production)
+      OV_SIGNUP_LICENCE: ${OV_SIGNUP_LICENCE:-}
       VM_USERNAME: ${VM_USERNAME:-}
       VM_PASSWORD: ${VM_PASSWORD:-}
       VM_SYNC: ${VM_SYNC:-on}
@@ -254,10 +273,25 @@ services:
       # Phase 7 (backend README "Security model"): PINs at rest and match tokens
       OV_PIN_SECRET: ${OV_PIN_SECRET:?set OV_PIN_SECRET in .env}
       OV_MATCH_TOKEN_SECRET: ${OV_MATCH_TOKEN_SECRET:-}
-      # Wrong PINs across all callers before a match's PIN type (30), or the
-      # lookups that name no match (100), are refused for 10 min; empty = default
+      # Wrong PINs per address range (20 for an address or IPv6 /64, 30 for a
+      # /56, 40 for an IPv4 /24 or IPv6 /48) before that range is refused a
+      # match's PIN type or the lookups that name no match for 10 min; across
+      # all callers 30 per match (100 per lookup without a match) raise an ops
+      # alert, nobody is refused for it (backend README); empty = default
+      OV_PIN_RANGE_FAILURES: ${OV_PIN_RANGE_FAILURES:-}
       OV_PIN_MATCH_FAILURES: ${OV_PIN_MATCH_FAILURES:-}
       OV_PIN_SEARCH_FAILURES: ${OV_PIN_SEARCH_FAILURES:-}
+      # Referee / bench PIN checks that name no match: on (empty) | beach | off
+      # (env.example, the post-release checklist in deploy/README.md)
+      OV_PIN_ONLY_LOOKUP: ${OV_PIN_ONLY_LOOKUP:-}
+      # A beach referee approval needs the address stored with its match:
+      # required | optional (empty; env.example, the post-release checklist)
+      OV_BEACH_REFEREE_ADDRESS: ${OV_BEACH_REFEREE_ADDRESS:-}
+      # Past an address's ceiling of failed sign-ins, the new sources' tries:
+      # account (empty: one for all) | lane (one per network; env.example)
+      OV_SIGN_IN_CEILING_SLOTS: ${OV_SIGN_IN_CEILING_SLOTS:-}
+      # Password hashing in worker threads (lib/bcryptPool.js); empty = 1, 0 = main thread
+      OV_BCRYPT_WORKERS: ${OV_BCRYPT_WORKERS:-}
       # V8's heap limit, below mem_limit (change them together). Node sizes
       # the heap from the cgroup, so V8 never collected hard before the kernel
       # OOM-killed the container: the national peak load test (2026-10-26)
@@ -284,6 +318,8 @@ services:
       NTFY_TOPIC: ${NTFY_TOPIC:-}
       NTFY_TOKEN: ${NTFY_TOKEN:-}
       NTFY_ADDRESS: ${NTFY_ADDRESS:-}
+      # what the error tables may hold (empty: 512 MB; 0: no ceiling)
+      OV_ERRORS_MAX_BYTES: ${OV_ERRORS_MAX_BYTES:-}
     volumes:
       - type: bind
         source: ${OV_STORAGE_HOST_DIR:?set OV_STORAGE_HOST_DIR in .env}

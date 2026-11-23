@@ -673,6 +673,7 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     const raw = body && Array.isArray(body.user_ids) ? body.user_ids : undefined
     const ids = raw && raw.every(isUuid) ? [...new Set(raw.map((x) => x.toLowerCase()))] : undefined
     if (!ids || ids.length > MAX_MANAGERS) return invalid(`user_ids: at most ${MAX_MANAGERS} account ids`)
+    const removed = []
     return guarded('managers', () => withTx(async (client) => {
       const { rows: [cur] } = await client.query('SELECT id FROM public.clubs WHERE id = $1 FOR UPDATE', [id])
       if (!cur) throw abort(notFound())
@@ -690,11 +691,14 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
           [id, ids, isUuid(actorId) ? actorId : null])
       }
       await audit(client, { actorId, action: 'club.managers', details: { club_id: id, before: before.map((r) => r.user_id), after: ids } })
+      // those taken off: their manager role goes, and (db/058, PERM-12) the
+      // club membership the manager row alone gave them
+      for (const r of before) if (!ids.includes(r.user_id)) removed.push(r.user_id)
       const [club] = await readClubs(client, 'WHERE c.id = $1', [id])
       return ok({ club })
     })).finally(() => {
       // the managed clubs come with /api/me (lib/access.js)
-      for (const x of ids || []) access?.invalidate?.(x)
+      for (const x of [...(ids || []), ...removed]) access?.invalidate?.(x)
     })
   }
 
@@ -833,13 +837,16 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     const held = CLUB_INVITE_ROLES.filter((r) => before.includes(r))
     if (!held.length) return []
     // a role any club gave (a club's code or a club's approval) and nothing
-    // else gave: with no club left, no club explains it any more
+    // else gave: with no club left, no club explains it any more. A referee
+    // role only when THIS club's code gave it: since PERM-20 a club's referee
+    // code joins no club, so leaving another club says nothing about it
     const { rows } = await client.query(
       `SELECT r.role FROM unnest($2::text[]) AS r(role)
         WHERE EXISTS (SELECT 1 FROM public.audit_log a
                        WHERE a.target_user_id = $1
                          AND ((a.action = 'invite.redeem' AND a.details ->> 'role' = r.role
-                               AND EXISTS (SELECT 1 FROM public.invite_codes i WHERE i.id::text = a.details ->> 'invite_id' AND i.club_id IS NOT NULL))
+                               AND EXISTS (SELECT 1 FROM public.invite_codes i WHERE i.id::text = a.details ->> 'invite_id' AND i.club_id IS NOT NULL
+                                              AND (r.role <> 'referee' OR i.club_id = $3::uuid)))
                            OR (a.action = 'account.request_approve' AND a.details ->> 'kind' = r.role AND a.details ->> 'club_id' IS NOT NULL)))
           AND NOT EXISTS (SELECT 1 FROM public.audit_log a
                            WHERE a.target_user_id = $1
@@ -851,7 +858,7 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
                                    AND NOT EXISTS (SELECT 1 FROM public.audit_log q
                                                     WHERE q.action = 'account.request_approve' AND q.target_user_id = $1 AND q.at = a.at
                                                       AND q.details ->> 'kind' = r.role AND q.details ->> 'club_id' IS NOT NULL))))`,
-      [userId, held])
+      [userId, held, clubId])
     const removed = rows.map((r) => r.role)
     if (!removed.length) return []
     const after = before.filter((r) => !removed.includes(r))

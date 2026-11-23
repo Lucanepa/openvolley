@@ -42,6 +42,8 @@ expect ignored OpenVolley/game3-match_1/a1b2c3d4-latest.json
 expect ignored OpenVolley/game3-match_1/a1b2c3d4-manual-20261112T101500Z.json
 # Logs, diagnostics and activity exports; browser network exports.
 expect ignored tools/debug_logs/notes.md
+expect ignored debug_logs_2026-11-23T10-00-00-000Z.json
+expect ignored escoresheet/frontend/debug_logs_2026-11-23T10-00-00-000Z.json
 expect ignored escoresheet/frontend/logs_match_3_2026-11-12T10-15-00-000Z.txt
 expect ignored logs/game3/logs_20261112T101500Z_1a.txt
 expect ignored diagnostic_log_game3_2026-11-12T10-15-00-000Z.ndjson

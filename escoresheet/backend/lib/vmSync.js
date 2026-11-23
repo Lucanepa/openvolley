@@ -874,6 +874,112 @@ export function teamName(team) {
 }
 
 /**
+ * LOG-24 (audit 26.11): the teams whose name the sync now writes in their
+ * region's language (teamName) but whose German name club_teams, saved teams
+ * and older schedule rows may still hold (they were kept German before):
+ * Map lower(German name) -> the region's name, from the fetched items. Left
+ * out when it is not clear: a German name with two region names, a region
+ * name two German names share, or a region name that is another team's
+ * German name. Pure.
+ */
+export function teamNameRenames(items) {
+  const byDe = new Map()
+  const unclear = new Set()
+  const germanNames = new Set()
+  for (const it of Array.isArray(items) ? items : []) {
+    const enc = it?.game?.encounter ?? {}
+    for (const team of [enc.teamHome, enc.teamAway]) {
+      if (!team || typeof team !== 'object') continue
+      const de = String(translatedText(team, 'de') ?? '').replace(/\s+/g, ' ').trim()
+      const shown = String(teamName(team) ?? '').replace(/\s+/g, ' ').trim()
+      if (de) germanNames.add(de.toLowerCase())
+      if (!de || !shown || de.toLowerCase() === shown.toLowerCase()) continue
+      const k = de.toLowerCase()
+      if (byDe.has(k) && byDe.get(k) !== shown) unclear.add(k)
+      else byDe.set(k, shown)
+    }
+  }
+  const shownOf = new Map()
+  for (const [k, v] of byDe) {
+    if (unclear.has(k)) continue
+    const key = v.toLowerCase()
+    shownOf.set(key, (shownOf.get(key) || 0) + 1)
+  }
+  const out = new Map()
+  for (const [k, v] of byDe) {
+    if (unclear.has(k) || shownOf.get(v.toLowerCase()) > 1 || germanNames.has(v.toLowerCase())) continue
+    out.set(k, v)
+  }
+  return out
+}
+
+/**
+ * LOG-24: the names the club rule (db/018 club_teams), the clubs' contacts
+ * (lib/finalMail.js), the take-over of a held game (lib/accounts.js), the
+ * saved teams (competition_teams.svrz_team_name) and every other match by
+ * name read follow the schedule's: each German name of `renames`
+ * (teamNameRenames) becomes the region's name in club_teams (unless that
+ * name is there already), in the svrz names of the saved teams of indoor
+ * competitions not archived (and as the svrz name of one without it whose
+ * name is the German one), and in the schedule's older rows. Idempotent.
+ * A table that does not exist is left out. { clubTeams, savedTeams, games }
+ *
+ * LOG-24 R1: a club team keeps the name it is renamed from in former_names
+ * (db/059, oldest first, at most 10): the matches its scorers stored before
+ * carry that name, and the club API and the public ?club= list pick a club's
+ * matches by name (lib/publicApi.js clubTeamNames). Each renamed club team
+ * is one audit row in the same statement (club.update, no actor account,
+ * details { club_id, team_id, renamed: { from, to }, by: 'vm-sync' }). On a
+ * database without db/059 nothing is renamed (as before this fix): a club
+ * team is never renamed without keeping its former name.
+ */
+export async function followTeamRenames(client, renames) {
+  const out = { clubTeams: 0, savedTeams: 0, games: 0 }
+  if (!(renames instanceof Map) || !renames.size) return out
+  const params = [[...renames.keys()], [...renames.values()]]
+  const X = 'unnest($1::text[], $2::text[]) AS x(de, shown)'
+  const run = async (key, sql) => {
+    try {
+      const { rowCount } = await client.query(sql, params)
+      out[key] += rowCount ?? 0
+    } catch (err) {
+      if (!['42P01', '42703'].includes(err?.code)) throw err
+    }
+  }
+  try {
+    const { rows: [r] } = await client.query(`WITH old AS (
+         SELECT ct.id, ct.team_name AS was, x.shown FROM public.club_teams ct JOIN ${X} ON lower(btrim(ct.team_name)) = x.de
+          WHERE NOT EXISTS (SELECT 1 FROM public.club_teams o WHERE lower(btrim(o.team_name)) = lower(x.shown))),
+       renamed AS (
+         UPDATE public.club_teams ct
+            SET team_name = old.shown,
+                former_names = CASE WHEN old.was = ANY(ct.former_names) THEN ct.former_names
+                                    ELSE (ct.former_names || old.was)[greatest(1, cardinality(ct.former_names) - 8):] END
+           FROM old WHERE ct.id = old.id
+         RETURNING ct.id, ct.club_id, old.was, ct.team_name),
+       logged AS (
+         INSERT INTO public.audit_log (actor_id, action, details)
+         SELECT NULL, 'club.update', jsonb_build_object('club_id', club_id, 'team_id', id,
+                  'renamed', jsonb_build_object('from', was, 'to', team_name), 'by', 'vm-sync')
+           FROM renamed)
+       SELECT count(*)::int AS n FROM renamed`, params)
+    out.clubTeams += r?.n ?? 0
+  } catch (err) {
+    // no former_names (db/059 not run): rename nothing, the schedule's older rows included
+    if (err?.code === '42703') return out
+    if (err?.code !== '42P01') throw err
+  }
+  const indoorOpen = 't.competition_id IN (SELECT c.id FROM public.competitions c WHERE c.sport = \'indoor\' AND NOT c.archived)'
+  await run('savedTeams', `UPDATE public.competition_teams t SET svrz_team_name = x.shown FROM ${X}
+     WHERE lower(btrim(t.svrz_team_name)) = x.de AND ${indoorOpen}`)
+  await run('savedTeams', `UPDATE public.competition_teams t SET svrz_team_name = x.shown FROM ${X}
+     WHERE coalesce(btrim(t.svrz_team_name), '') = '' AND lower(btrim(t.name)) = x.de AND ${indoorOpen}`)
+  await run('games', `UPDATE public.svrz_games g SET team_home = x.shown FROM ${X} WHERE lower(btrim(g.team_home)) = x.de`)
+  await run('games', `UPDATE public.svrz_games g SET team_away = x.shown FROM ${X} WHERE lower(btrim(g.team_away)) = x.de`)
+  return out
+}
+
+/**
  * A referee's licence number (db/051) of VolleyManager's person: its
  * `associationId`, the Swiss Volley number (SV-Nr.), else `externalId`, which
  * holds the same number (svrz_rc's games sync reads the same field of the same
@@ -1340,6 +1446,20 @@ export async function runVmSync({
     }
     result.written = result.created + result.updated + result.unchanged
 
+    // LOG-24: club_teams, saved teams and older schedule rows follow the
+    // region's names the run wrote; never fails the run
+    if (!dryRun) {
+      try {
+        const renamed = await followTeamRenames(client, teamNameRenames(fetched.items))
+        result.renamedTeams = renamed
+        if (renamed.clubTeams || renamed.savedTeams || renamed.games) {
+          log.log(`vm-sync: team names in their region's language: ${renamed.clubTeams} club team(s), ${renamed.savedTeams} saved team(s), ${renamed.games} older schedule row(s)`)
+        }
+      } catch (err) {
+        log.warn(`vm-sync: the region's team names could not be applied to the clubs and saved teams: ${redact(err)}`)
+      }
+    }
+
     // Offset paging sorts on the kick-off alone: when VolleyManager breaks a tie
     // differently between two page requests, a page can repeat one game and
     // skip another while the count still adds up. Fewer distinct games than
@@ -1369,6 +1489,7 @@ export async function runVmSync({
     if (!dryRun) parts.push(`(${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged, ${result.errors} errors)`)
     if (result.withoutFormat) parts.push(`${result.withoutFormat} without a format`)
     if (result.withheld) parts.push(`${result.withheld} referee / line judge place(s) left empty (erased on request)`)
+    if (result.renamedTeams?.clubTeams || result.renamedTeams?.savedTeams) parts.push(`${result.renamedTeams.clubTeams} club and ${result.renamedTeams.savedTeams} saved team name(s) now in their region's language`)
     if (prepared.excluded) parts.push(`${prepared.excluded} NL excluded (${prepared.excludedLeagues.slice(0, 10).join(', ')})`)
     if (result.removed) parts.push(`${result.removed} no longer in VolleyManager (${result.removedGames.slice(0, 20).join(', ')})`)
     if (suspicious) parts.push(`SUSPICIOUS: ${suspicious}`)

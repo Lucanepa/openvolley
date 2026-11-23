@@ -470,5 +470,92 @@
       "scheduledAt": null,
       "gameNumber": null
     }
+  },
+  {
+    "name": "a best-of-3 decider (stored as set 5) is set 3",
+    "liveState": {
+      "team_a_name": "Bergtal IS",
+      "team_b_name": "Seeblick IS",
+      "sets_won_a": 1,
+      "sets_won_b": 1,
+      "points_a": 6,
+      "points_b": 4,
+      "current_set": 5,
+      "best_of": 3,
+      "side_a": "right",
+      "serving_team": "right",
+      "match_status": "live"
+    },
+    "entry": {
+      "match": {
+        "coinTossTeamA": "home"
+      },
+      "homeTeam": {
+        "name": "Bergtal IS"
+      },
+      "awayTeam": {
+        "name": "Seeblick IS"
+      },
+      "sets": [
+        {
+          "index": 1,
+          "homePoints": 25,
+          "awayPoints": 20,
+          "finished": true
+        },
+        {
+          "index": 2,
+          "homePoints": 19,
+          "awayPoints": 25,
+          "finished": true
+        },
+        {
+          "index": 5,
+          "homePoints": 6,
+          "awayPoints": 4,
+          "finished": false
+        }
+      ]
+    },
+    "expected": {
+      "home": {
+        "name": "Bergtal IS",
+        "short": null,
+        "color": null
+      },
+      "away": {
+        "name": "Seeblick IS",
+        "short": null,
+        "color": null
+      },
+      "setsWon": {
+        "home": 1,
+        "away": 1
+      },
+      "points": {
+        "home": 6,
+        "away": 4
+      },
+      "sets": [
+        {
+          "home": 25,
+          "away": 20
+        },
+        {
+          "home": 19,
+          "away": 25
+        }
+      ],
+      "currentSet": 3,
+      "bestOf": 3,
+      "serving": "home",
+      "status": "live",
+      "ended": false,
+      "timeout": false,
+      "interval": false,
+      "hall": null,
+      "scheduledAt": null,
+      "gameNumber": null
+    }
   }
 ]

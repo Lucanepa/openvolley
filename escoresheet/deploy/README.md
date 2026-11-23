@@ -11,7 +11,8 @@ Postgres on one Linux VM, reachable only through a Cloudflare Tunnel.
   0750): `ssh ov-vps sudo docker compose --project-directory /opt/openvolley ...`. Images are
   still built on lenovoserver: `build-image.sh --ship ov-vps` (sudo on the host). Releases publish
   there (`publish-pkgs.sh`, default `OV_PKGS_DEST=ov-vps:/data/openvolley/pkgs/`). lenovoserver
-  copies the VPS's encrypted backups to the NAS every hour (`~/stacks/ov-backup-pull`).
+  copies the VPS's encrypted backups to the NAS every hour (`ov-backup-pull.sh`, installed as
+  `~/stacks/ov-backup-pull`): dumps with their `.counts`, tars, `secrets-*.env.gpg` and `wal/`.
   Operations: [RUNBOOK-hetzner.md](RUNBOOK-hetzner.md), from "Match-day rules" on (run the
   commands on `ov-vps`). Moved with [RUNBOOK-move-to-own-vm.md](RUNBOOK-move-to-own-vm.md).
 - **16.10.–09.11.2026: lenovoserver**, the owner's home server, still the build machine. Its
@@ -52,10 +53,12 @@ network, and carries `traefik.enable=false`.
      ov-vps since 18.11.2026: both on LUKS2 volumes, see "Encryption at rest"
    /data/openvolley/backups  hourly db dumps + nightly storage tars, GPG-encrypted (public key only)
    /var/lib/openvolley-status/last_backup   (mounted read-only into ov-backend)
-        |  lenovoserver's nightly borg backup (the loop images are excluded)
+        |  hourly pull by lenovoserver (ov-backup-pull.sh: ssh ov-vps -> ssh nas-ts)
         v
-   NAS (borg)            weekly restore test: restore-test.sh on lenovoserver (holds the private key)
-   (nas-pull.sh, a pull of the encrypted files over Tailscale, was never configured)
+   NAS /volume1/backups/openvolley/infomaniak   dumps + .counts, tars, secrets-*.env.gpg, wal/
+        weekly restore test of the newest dump there: restore-test.sh on lenovoserver
+        (holds the private key)
+   (nas-pull.sh, the same pull run on the NAS over rsync, was never configured)
 ```
 
 ## Files
@@ -83,9 +86,10 @@ network, and carries `traefik.enable=false`.
 | `restore-db.sh` | VM, root | Restores a decrypted dump into a **fresh** database, all-or-nothing (`--single-transaction`), count check, rolls back on any failure, resets the backup count guard |
 | `host-prep.sh` | VM, as root (not on ov-vps since its volumes are encrypted, see Encryption at rest) | Idempotent host setup: loop filesystems, sentinels, `chattr +i`, fstab (`nofail`), dirs, `ovbackup` user, backup units. `--check` is read-only |
 | `backup-openvolley.sh` + `systemd/openvolley-backup*.{service,timer}` | VM, root | Hourly `pg_dump -Fc` + nightly storage tars, GPG to the public key, count-drop guard, rotation, `last_backup` |
-| `nas-pull.sh` | NAS (DSM Task Scheduler) | Pulls the encrypted files over Tailscale with a restricted read-only key, NAS-side retention, freshness check. Not set up (never was): lenovoserver's borg backup covers `/data/openvolley/backups` |
-| `publish-pkgs.sh --resign` + `systemd/openvolley-pkgs-resign.{service,timer}` | lenovoserver, weekly, from its own clean checkout of main (`~/ov-ops/pkgs-resign`) | Signs the APT index of get.openvolley.app anew (its `Release` is valid 30 days, `Valid-Until`), so a host that replays an old index cannot keep clients on an old version for longer, and the index never expires between releases. Re-signs and syncs `apt/dists/` only, refuses when the index would change. Install the timer **before** the first publish with `Valid-Until`: without it APT users get "Release file is expired" 30 days after the last publish. `OV_PKGS_KUMA_PUSH_URL` (push monitor, heartbeat ~8 days) alerts on a failed or missing run |
-| `restore-test.sh` + `systemd/openvolley-restore-test.{service,timer}` | lenovoserver, weekly | Decrypts the newest dump (default: `/data/openvolley/backups`, read through group `ovbackup`), restores into a throwaway Postgres, boots the backend image against it (default: the tag `build-image.sh --ship local` recorded), checks `/health` and row-count floors, tears down |
+| `ov-backup-pull.sh` | lenovoserver, hourly (`ov-backup-pull.timer`; live copy in `~/stacks/ov-backup-pull`) | Copies the VPS's encrypted backups to the NAS (ssh + cat, sizes compared, mtimes kept, NAS-side retention): dumps and `.counts` 30 days, tars and `secrets-*.env.gpg` 90, `wal/` 91; FreeScout's dumps. A failure posts to ntfy. Tested by `tests/ov-backup-pull.test.sh`, which also fails when `backup-openvolley.sh` writes a file that is neither pulled nor named as staying on the VPS |
+| `nas-pull.sh` | NAS (DSM Task Scheduler) | The same pull run on the NAS over rsync with a restricted read-only key, NAS-side retention, freshness check. Not set up (never was): `ov-backup-pull.sh` does it from lenovoserver |
+| `publish-pkgs.sh --resign` + `systemd/openvolley-pkgs-resign.{service,timer}` | lenovoserver, weekly, from its own clean checkout of main (`~/ov-ops/pkgs-resign`) | Signs the APT index of get.openvolley.app anew (its `Release` is valid 30 days, `Valid-Until`), so a host that replays an old index cannot keep clients on an old version for longer, and the index never expires between releases. Re-signs and syncs `apt/dists/` only, refuses when the index would change. Install the timer **before** the first publish with `Valid-Until`: without it APT users get "Release file is expired" 30 days after the last publish. Every run that synced writes `resign-heartbeat`; a publish refuses while the timer is not enabled or the newest successful re-sign on record (that heartbeat, or systemd's record of the service's last run until the next boot, which also covers a checkout from before the heartbeat) is older than 9 days (`--without-resign-timer` overrides; `tests/publish-resign-timer.test.sh`). When the heartbeat reaches main: move `~/ov-ops/pkgs-resign` to `origin/main`, re-install the unit, start it once (steps in the unit's header). A failed run posts to ntfy (`OV_PKGS_NTFY_URL`, set in the unit); `OV_PKGS_KUMA_PUSH_URL` (push monitor, heartbeat ~8 days) alerts on a missing run |
+| `restore-test.sh` + `systemd/openvolley-restore-test.{service,timer}` | lenovoserver, weekly, from its own clean checkout of main (`~/ov-ops/restore-test`) | Takes the newest dump of the NAS copy (default `nas-ts:/volume1/backups/openvolley/infomaniak`, ssh + cat), its `.counts` and the `secrets-*.env.gpg` it needs, restores into a throwaway Postgres, boots the backend image against it (default: the tag `build-image.sh --ship local` recorded) as production does (`IS_CLOUD=1`, `TRUST_PROXY_FROM`, the dump's `OV_PIN_SECRET` / `OV_MATCH_TOKEN_SECRET`, all in an env file; `RT_BACKEND_ENV_FILE` adds settings), checks `/health` and row-count floors, tears down. A failure posts to ntfy (`RT_NTFY_URL`); `RT_KUMA_PUSH_URL` catches a run that never happens. Tested by `tests/restore-test.test.sh` (with `PG_TEST_URL` it boots `server.js` with the env file it makes) |
 
 ## Encryption at rest (ov-vps, since 18.11.2026)
 
@@ -157,6 +161,51 @@ refuses to `initdb` when a cluster has existed on the filesystem (`state/initial
 
 **Never `source` `.env`** into a shell: Compose prefers exported shell variables over `.env`,
 so later `up`/rollback commands in that shell would silently use the old values.
+
+## Pre-deploy checklist: the backend of the 2026-11 audit fixes
+
+Read-only, on the production host, before `deploy.sh` (the release session, with the owner's go):
+
+1. **Settings that compose now passes.** Before, `compose.yaml` passed only some of these to
+   the backend, and a value in `.env` was silently ignored; from this deploy on it takes
+   effect (2611 review, COMPOSE-ENV-NOW-EFFECTIVE). Read them, and remove a value that is
+   left from a test or an incident:
+   ```bash
+   sudo grep -nE '^(OV_SIGNUP_LICENCE|MAIL_BUDGET_[A-Z_]+|OV_ALLOW_DEV_ORIGINS|OV_PIN_ONLY_LOOKUP|OV_BEACH_REFEREE_ADDRESS|OV_SIGN_IN_CEILING_SLOTS)=' /opt/openvolley/.env
+   ```
+   Expected in production: `OV_SIGNUP_LICENCE` empty (a licence number is required at
+   sign-up; `optional` turns that off), every `MAIL_BUDGET_*` empty or sized on purpose (the
+   defaults are in env.example; a small one drops account mails), `OV_ALLOW_DEV_ORIGINS`
+   unset or empty (1 only on the test backend), and the three switches below empty unless
+   the owner decided otherwise.
+2. **The Global cloud's write budget.** Measure what a match really writes and size
+   `OV_GLOBAL_CLOUD_WRITE_MB_DAY` (default 1024; a venue network gets a quarter of it) before
+   a weekend of tournaments (2611 review, GLOBAL-CLOUD-WRITE-BUDGET-SIZING):
+   ```bash
+   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/global-cloud-usage.mjs
+   ```
+   It prints the estimated charge of a match, the matches a day the budget serves in all and
+   per network, and `suggestedWriteMbDay` (the busiest day of the last 30 twice over). A
+   larger budget writes more WAL into the backups (8 days kept): check the backup volume's
+   room before raising it.
+
+## Post-release checklist: switches that wait for the old apps
+
+Some checks of the 2026-11 audit stay lenient on purpose, because app builds still in the halls
+send the older form. Each has a switch in `.env` (env.example); turn it on when the builds that
+need the lenient form are gone, with `docker compose up -d ov-backend` (the backend logs the
+setting at start). Record the date planned for each in the release notes.
+
+| Switch | Now | Turn on when |
+|---|---|---|
+| `OV_PIN_ONLY_LOOKUP` | `on` (empty): referee / bench PIN checks without their match, both sports | `beach` once the OpenVolley apps that name no match are gone (3.x; 26.11.x sends none only when two picker rows share a game number); `off` once the OpenBeach release that names its match has replaced the current one (SEC-06) |
+| `OV_BEACH_REFEREE_ADDRESS` | `optional` (empty): a beach referee slot without a stored address keeps the older rule | `required` once the OpenBeach release that stores `officials[].email` has replaced the older builds (PERM-08, owner decision 6) |
+
+Settings that wait for the owner's choice (the default is the stricter or the older one):
+
+| Setting | Default | The other choice |
+|---|---|---|
+| `OV_SIGN_IN_CEILING_SLOTS` | `account`: past an address's 100 failed sign-ins in 24 h, every source that never signed in to it (nor opened one of its reset or confirmation links) shares one try per interval; a botnet guesses no faster than one source, the owner's new networks wait | `lane`: one try per network (an IPv6 /48, an IPv4 address) and interval; the owner's network keeps its own, a botnet gets one try per network |
 
 ## What touches the other tenant (isolation on the shared VM)
 
@@ -256,14 +305,25 @@ the font in the file, not the device's 3100 x 2170 picture of the sheet.
 - **Where the backend uses it** (`lib/vectorPdf.js`, `lib/scoresheets.js`):
   - Rebuild PDF in the manager: `POST /api/scoresheets/:id/rebuild-vector`
     (admins). Without the service (503) the manager captures the sheet itself.
+    Closed indoor matches only: a beach match (409 `OV_BEACH_SHEET`, its sheet
+    is OpenBeach's own) and a match not closed (409 `OV_NOT_CLOSED`, it gets
+    its PDF from the new approval) are not rebuilt, by either route.
   - After the approval's PDF of an indoor match: once the match is closed, its
     data quiet for 60 s and 10 min have passed since that PDF (a corrected
     approval PDF may still come within them), the server prints its own copy
     and stores it as the newest (`scoresheet.vector` in the audit log). The
-    device's PDF stays. A record whose finished sets do not end on their last
-    point's score is left alone. The final mail waits for the copy (at most
-    25 min after the close). The jobs live in the backend's memory: a restart
-    drops the pending ones (those matches keep the device's PDF).
+    device's PDF stays. Only a record that ends as its close says may replace
+    it (owner decision 3, `recordGate`): every set finished, as many finished
+    sets as `set_results` lists, each at its score, `final_score` and `winner`
+    as the sets give them, and every finished set's last point at its score
+    (forfeit excepted); a print that misses a picture (a signature) is refused
+    too. Otherwise the device's PDF stays the official one and the Errors tab
+    gets a `job.failed` "vector copy refused (<reason>)" with the game number.
+    A reopen cancels the pending copy (the new approval's PDF brings its own).
+    Rebuild and vector-copy rows never count as the approval's PDF (storePdf).
+    The final mail waits for the copy (at most 25 min after the close). The
+    jobs live in the backend's memory: a restart drops the pending ones (those
+    matches keep the device's PDF).
   - The device's own offline "Save PDF" is unchanged (raster).
 - **Isolation:** `ov-render-net` is internal (no egress); only the backend is
   on it; no published port. Every request of the page outside its own made-up

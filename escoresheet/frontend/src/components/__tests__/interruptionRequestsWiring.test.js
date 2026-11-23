@@ -107,7 +107,10 @@ describe('row 19: decision change after a substitution or time-out', () => {
     expect(memo).toContain('const canChangeDecision = canReplayRally || !!decisionTakeBack')
     // (rallies; continuous play has its one "Decision change / Replay" button)
     expect(sb).toContain("{!continuousPlay && rallyStatus === 'idle' && canChangeDecision && (")
-    expect(sb).toContain("{!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden=\"true\" />}")
+    // nothing to offer: an empty half, or (a sanction or a penalty point after
+    // the last rally, audit LOG-06) the button shown disabled with why
+    expect(sb).toContain("{!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && decisionBlock && (")
+    expect(sb).toContain("{!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && !decisionBlock && <span aria-hidden=\"true\" />}")
     expect(sb).toMatch(/canReplayRally,\n(\s+\/\/[^\n]*\n)+\s+canChangeDecision,/)
     expect(phone).toContain('(rally.canChangeDecision ?? rally.canReplayRally)')
   })

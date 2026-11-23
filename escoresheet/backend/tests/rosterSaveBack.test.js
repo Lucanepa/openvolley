@@ -267,7 +267,8 @@ describe('createRosterSaveBack: waiting per match', () => {
       }
     }
   }
-  const row = (extra = {}) => ({ table: 'matches', eventType: 'UPDATE', row: { id: MATCH, test: false, game_n: 4711, status: 'live', ...extra } })
+  // owner decision 2026-11-23 no. 2 (PERM-04): a write of a closed match waits for its run
+  const row = (extra = {}) => ({ table: 'matches', eventType: 'UPDATE', row: { id: MATCH, test: false, game_n: 4711, status: 'final', ...extra } })
   const MATCH = randomUUID()
 
   function saveBackWith (timers, runs) {
@@ -303,11 +304,13 @@ describe('createRosterSaveBack: waiting per match', () => {
     assert.deepEqual(runs, [MATCH])
   })
 
-  it('no run for a test, a match without a game number, a beach match, before the coin toss, other tables', async () => {
+  it('no run for a test, a match without a game number, a beach match, before the close, other tables', async () => {
     const timers = fakeTimers()
     const runs = []
     const sb = saveBackWith(timers, runs)
+    // PERM-04: live and ended (coin toss done, not closed) no longer save back
     sb.note([row({ test: true }), row({ game_n: null }), row({ game_n: 0 }), row({ sport_type: 'beach' }), row({ status: 'setup' }),
+      row({ status: 'live' }), row({ status: 'ended' }),
       { table: 'events', eventType: 'INSERT', row: { id: MATCH } }, { table: 'matches', eventType: 'DELETE', row: { id: MATCH } }, null])
     sb.note('nonsense')
     assert.deepEqual(sb.pending(), [])
@@ -315,20 +318,26 @@ describe('createRosterSaveBack: waiting per match', () => {
     assert.deepEqual(runs, [])
   })
 
-  it('run(): a test match, game 0 or a match before its coin toss is never touched', async () => {
+  it('run(): a test match, game 0 or a match not closed is never touched', async () => {
+    const closed = new Date()
     const rows = {
-      test: { id: MATCH, test: true, game_n: 4711, status: 'live' },
-      zero: { id: MATCH, test: false, game_n: 0, status: 'live' },
-      beach: { id: MATCH, test: false, game_n: 4711, status: 'live', sport_type: 'beach' },
-      exempt: { id: MATCH, test: false, game_n: 4711, status: 'live', exempt: true },
-      setup: { id: MATCH, test: false, game_n: 4711, status: 'setup' }
+      test: { id: MATCH, test: true, game_n: 4711, status: 'final', closed_at: closed },
+      zero: { id: MATCH, test: false, game_n: 0, status: 'final', closed_at: closed },
+      beach: { id: MATCH, test: false, game_n: 4711, status: 'final', closed_at: closed, sport_type: 'beach' },
+      exempt: { id: MATCH, test: false, game_n: 4711, status: 'final', closed_at: closed, exempt: true },
+      setup: { id: MATCH, test: false, game_n: 4711, status: 'setup' },
+      // PERM-04 (owner decision 2026-11-23 no. 2): past the coin toss is not enough
+      live: { id: MATCH, test: false, game_n: 4711, status: 'live' },
+      ended: { id: MATCH, test: false, game_n: 4711, status: 'ended' },
+      // a status the client wrote without the server's close
+      unclosed: { id: MATCH, test: false, game_n: 4711, status: 'final', closed_at: null }
     }
     for (const [k, m] of Object.entries(rows)) {
       const reads = []
       const pool = { query: async (sql) => { reads.push(sql); return { rows: reads.length === 1 ? [m] : [] } }, connect: async () => { throw new Error('no transaction may start') } }
       const sb = createRosterSaveBack({ pool, teams: {}, savedTeams: {}, audit: async () => { throw new Error('no audit') } })
       const r = await sb.run(MATCH)
-      assert.equal(r.skipped, k === 'setup' ? 'no_coin_toss' : 'not_official', k)
+      assert.equal(r.skipped, ['setup', 'live', 'ended', 'unclosed'].includes(k) ? 'not_closed' : 'not_official', k)
       assert.equal(reads.length, 1, `${k}: only the match is read`)
     }
   })

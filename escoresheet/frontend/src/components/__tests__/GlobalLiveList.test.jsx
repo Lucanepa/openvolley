@@ -29,6 +29,13 @@ describe('GlobalLiveList (cloud livescore)', () => {
     expect(screen.getByRole('link').getAttribute('href')).toBe('?t=ABCD2345')
     expect(screen.getAllByText('Bergtal IS')).toHaveLength(2)
   })
+  it('a best-of-3 decider (stored as set 5) is Set 3 (audit LOG-20)', async () => {
+    const fetchImpl = answer({ updatedAt: 'x', events: [{ code: 'ABCD2345', updatedAt: 'x', courts: [court({ currentSet: 5, bestOf: 3 }), court({ id: 'c2', currentSet: 5, bestOf: 5 })] }] })
+    render(<GlobalLiveList fetchImpl={fetchImpl} pollMs={60000} />)
+    await waitFor(() => expect(screen.getAllByTestId('global-live-court-row')).toHaveLength(2))
+    expect(screen.getByText('Set 3')).toBeTruthy()
+    expect(screen.getByText('Set 5')).toBeTruthy()
+  })
   it('shows nothing while no event is listed, or when the backend fails', async () => {
     const fetchImpl = answer({ updatedAt: null, events: [] })
     const { container } = render(<GlobalLiveList fetchImpl={fetchImpl} pollMs={60000} />)

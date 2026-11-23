@@ -74,10 +74,26 @@ pub fn court_token_of(room_key: &str) -> String {
     hex(&d)[..32].to_string()
 }
 
-/// The room key never leaves the relay: a court's id is a short hash of it.
-fn court_id_of(code: &str, room_key: &str) -> String {
-    let d = Sha256::digest(format!("{code}\0{room_key}").as_bytes());
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(d)[..10].to_string()
+/// A court's id on the page: a short hash of the code and the court token,
+/// keyed with `key` (random per app start, `GlobalLive::new`), as the Node
+/// relay keys its own (globalLive.js courtIdOf). Unkeyed, the id on the TV
+/// page let anyone on the Wi-Fi who knows the code and the match's public id
+/// test every game PIN offline against a court token made from it (2611
+/// review, SR-3: the token comes from the game PIN now).
+fn court_id_of(key: &[u8; 32], code: &str, token: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(b"ov-tv-court-id:v1\0");
+    h.update(key);
+    h.update(format!("\0{code}\0{token}").as_bytes());
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(h.finalize())[..10].to_string()
+}
+
+/// 32 random bytes from the OS (the court ids' key).
+fn random_key() -> [u8; 32] {
+    use rand::TryRng; // rand 0.10: was TryRngCore (try_fill_bytes)
+    let mut key = [0u8; 32];
+    rand::rngs::SysRng.try_fill_bytes(&mut key).expect("the OS random source");
+    key
 }
 
 /// Now as an ISO time (the updatedAt of a summary made outside the store).
@@ -393,7 +409,12 @@ pub fn court_summary(live: &Value, entry: &Value, now_iso: &str) -> Value {
         .collect();
     let status = text(ls("match_status"), 20);
     let ended = matches!(status.as_deref(), Some("final" | "ended" | "approved"));
-    let current_set = int(ls("current_set"));
+    let best_of = if int(ls("best_of")) == 3 { 3 } else { 5 };
+    // a best-of-3 decider is stored as set 5 (frontend domain/describe.js): it is set 3
+    let current_set = match int(ls("current_set")) {
+        5 if best_of == 3 => 3,
+        n => n,
+    };
     let game_n = m("gameN").filter(|v| !v.is_null()).map(|v| Value::String(js_text(v)));
     // the hall or venue, and the court when there is one (OpenBeach: the
     // same venue on every court, the court number tells them apart)
@@ -409,7 +430,7 @@ pub fn court_summary(live: &Value, entry: &Value, now_iso: &str) -> Value {
         "points": pair("points_a", "points_b"),
         "sets": sets,
         "currentSet": if current_set == 0 { Value::Null } else { json!(current_set) },
-        "bestOf": if int(ls("best_of")) == 3 { 3 } else { 5 },
+        "bestOf": best_of,
         "serving": serving,
         "status": status,
         "ended": ended,
@@ -451,10 +472,14 @@ struct Court {
 pub struct GlobalLive {
     /// code -> its courts, in the order they first came (a JS Map's order)
     codes: HashMap<String, Vec<Court>>,
+    /// relay room (match key) -> (code, court id) of its court: one court per room
+    rooms: HashMap<String, (String, String)>,
     max_codes: usize,
     max_courts_per_code: usize,
     idle_ms: u64,
     ended_keep_ms: u64,
+    /// the court ids' key (court_id_of), random per app start
+    id_key: [u8; 32],
 }
 
 impl Default for GlobalLive {
@@ -465,7 +490,42 @@ impl Default for GlobalLive {
 
 impl GlobalLive {
     pub fn new(max_codes: usize, max_courts_per_code: usize, idle_ms: u64, ended_keep_ms: u64) -> Self {
-        Self { codes: HashMap::new(), max_codes, max_courts_per_code, idle_ms, ended_keep_ms }
+        Self { codes: HashMap::new(), rooms: HashMap::new(), max_codes, max_courts_per_code, idle_ms, ended_keep_ms, id_key: random_key() }
+    }
+
+    /// A court's id as this store names it on the page (court_id_of).
+    pub fn court_id(&self, code: &str, token: &str) -> String {
+        court_id_of(&self.id_key, code, token)
+    }
+
+    /// `update`, bound to the relay room (the match key) the state comes
+    /// from: one court per room and code. A room whose court token changes
+    /// (another scoring device of a build that made its token per device, a
+    /// restore, an older app's room token and then the match's own) moves
+    /// its court instead of leaving a second, frozen one on every TV until
+    /// IDLE_MS (2611 review, SR-3; LOG-11's symptom).
+    pub fn update_room(&mut self, code: &str, room: &str, token: &str, live: &Value, entry: &Value, now: u64, screen: Option<u64>) -> bool {
+        let id = self.court_id(code, token);
+        if let Some((was_code, was_id)) = self.rooms.get(room).cloned() {
+            if was_code == code && was_id != id {
+                if let Some(courts) = self.codes.get_mut(code) {
+                    courts.retain(|c| c.id != was_id);
+                }
+            }
+        }
+        let ok = self.update(code, token, live, entry, now, screen);
+        if ok && !room.is_empty() {
+            if self.rooms.len() >= self.max_codes.saturating_mul(self.max_courts_per_code).max(1) {
+                // the rooms whose court is gone first, then any
+                let codes = &self.codes;
+                self.rooms.retain(|_, (c, i)| codes.get(c.as_str()).is_some_and(|v| v.iter().any(|x| &x.id == i)));
+                if self.rooms.len() >= self.max_codes.saturating_mul(self.max_courts_per_code).max(1) {
+                    self.rooms.clear();
+                }
+            }
+            self.rooms.insert(room.to_string(), (code.to_string(), id));
+        }
+        ok
     }
 
     pub fn sweep(&mut self, now: u64) {
@@ -495,7 +555,7 @@ impl GlobalLive {
         }
         let max_courts = self.max_courts_per_code;
         let courts = self.codes.get_mut(code).expect("just inserted");
-        let id = court_id_of(code, room_key);
+        let id = court_id_of(&self.id_key, code, room_key);
         let mut summary = court_summary(live, entry, &iso_of_ms(now));
         summary["id"] = json!(id);
         summary["screen"] = json!(screen);
@@ -657,10 +717,46 @@ mod tests {
 
     #[test]
     fn hashes_are_the_node_relay_s() {
-        // what globalLive.js courtTokenOf('r1') and its court id of ('ABCD2345', 'r1') print
+        // what globalLive.js courtTokenOf('r1') prints
         assert_eq!(court_token_of("r1"), "d38309fa8aa4d1dbb4e2d075db4d8960");
-        assert_eq!(court_id_of(CODE, "r1"), "VbTkCNMYRe");
-        assert_ne!(court_id_of(CODE, "r1"), court_id_of("ZZZZ2345", "r1"));
+        // court ids: keyed per store (as the Node relay's idKey), per code
+        let (a, b) = (GlobalLive::default(), GlobalLive::default());
+        assert_eq!(a.court_id(CODE, "r1"), a.court_id(CODE, "r1"));
+        assert_eq!(a.court_id(CODE, "r1").len(), 10);
+        assert_ne!(a.court_id(CODE, "r1"), a.court_id("ZZZZ2345", "r1"));
+        assert_ne!(a.court_id(CODE, "r1"), b.court_id(CODE, "r1"), "another app start, another key");
+    }
+
+    #[test]
+    fn a_court_id_does_not_test_a_token_without_the_store_s_key() {
+        // 2611 review, SR-3: the unkeyed SHA-256(code, token)[..10] the page
+        // showed let a Wi-Fi guest test game PINs offline against the token
+        let store = GlobalLive::default();
+        let unkeyed = {
+            let d = Sha256::digest(format!("{CODE}\0r1").as_bytes());
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(d)[..10].to_string()
+        };
+        assert_ne!(store.court_id(CODE, "r1"), unkeyed);
+        assert_ne!(store.court_id(CODE, "r1"), "VbTkCNMYRe");
+    }
+
+    #[test]
+    fn one_court_per_room_when_its_token_changes() {
+        let mut store = GlobalLive::default();
+        let a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        assert!(store.update_room(CODE, "match_1_x", a, &live(json!({ "points_a": 3 })), &entry(json!({})), 1, None));
+        assert!(store.update_room(CODE, "match_2_y", b, &live(json!({ "points_a": 9 })), &entry(json!({})), 1, None));
+        // the second tablet of match 1 (another token): its court moves, no frozen one stays
+        let c = "cccccccccccccccccccccccccccccccc";
+        assert!(store.update_room(CODE, "match_1_x", c, &live(json!({ "points_a": 4 })), &entry(json!({})), 2, None));
+        let page = store.get(CODE, 3, None).unwrap();
+        let courts = page["courts"].as_array().unwrap();
+        assert_eq!(courts.len(), 2, "one court per match");
+        let ids: Vec<&str> = courts.iter().map(|x| x["id"].as_str().unwrap()).collect();
+        assert!(ids.contains(&store.court_id(CODE, c).as_str()));
+        assert!(!ids.contains(&store.court_id(CODE, a).as_str()));
+        assert!(ids.contains(&store.court_id(CODE, b).as_str()), "the other match keeps its court");
     }
 
     #[test]
@@ -771,7 +867,7 @@ mod tests {
         let ids: Vec<&str> = page["courts"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
         // the court updated longest ago ("r") gave way
         assert_eq!(ids.len(), 2);
-        assert!(!ids.contains(&court_id_of("AAAA2345", "r").as_str()));
+        assert!(!ids.contains(&store.court_id("AAAA2345", "r").as_str()));
     }
 
     #[test]

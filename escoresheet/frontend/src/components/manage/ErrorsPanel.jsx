@@ -16,7 +16,9 @@ import {
  * hit it (name, address, roles, clubs; reading them is audited) or "guest".
  * Resolve (now, or "in version x": an older version reporting it stays
  * quiet), mute (a day, a week, for good), important, a note and a commit.
- * A device's or an account's reports can be deleted on request.
+ * A device's or an account's reports can be deleted on request, and after a
+ * flood of junk reports the errors only guests reported (not those marked
+ * important).
  * The mail and the push name no member: this page is where names are.
  */
 const STATUS_OPTIONS = ['open', 'resolved', 'muted', 'all']
@@ -83,11 +85,29 @@ function GroupList({ onOpen }) {
     // the status switch applies at once
     setApplied((a) => ({ ...a, status: form.status }))
   }, [form.status])
+  // after a flood of junk reports without an account: the errors only they fed go (audit SEC-02)
+  const removeGuestErrors = async () => {
+    const ok = await confirmDialog({
+      title: t('manage.errorsTab.deleteGuestTitle'),
+      message: t('manage.errorsTab.deleteGuestBody'),
+      confirmLabel: t('manage.errorsTab.delete'),
+      tone: 'danger'
+    })
+    if (!ok) return
+    const res = await admin.deleteErrorEvents({ anonymous: true })
+    if (res.error) {
+      toast.error(errorText(res.error))
+      return
+    }
+    toast.success(t('manage.errorsTab.deletedGuest', { count: res.data?.groups ?? 0, reports: res.data?.deleted ?? 0 }))
+    reload()
+  }
 
   return (
     <section>
       <PanelHead title={t('manage.tabs.errors')}>
         <Button variant="ghost" size="sm" icon={RefreshCw} disabled={!online || loading} onClick={() => reload()}>{t('manage.errorsTab.refresh')}</Button>
+        <Button variant="danger-outline" size="sm" icon={Trash2} disabled={!online} onClick={removeGuestErrors}>{t('manage.errorsTab.deleteGuestEllipsis')}</Button>
       </PanelHead>
       <OfflineBanner online={online} />
       <p className="mb-3 text-sm text-stone-600">{t('manage.errorsTab.intro')}</p>

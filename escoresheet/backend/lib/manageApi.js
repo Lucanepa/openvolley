@@ -13,15 +13,23 @@
  *   POST   /api/match/official-check                  canScore in body.sport_type (else 403 OV_SCORER_REQUIRED)
  *   *      /api/admin/*[?app=indoor|beach]            isAdmin  (else 403 OV_FORBIDDEN), except:
  *   POST   /api/admin/matches/:id/reopen             isAdmin, or beach canManageTeams for a BEACH
- *                                                    match (beach:competition_manager; the sport of
- *                                                    the match row, lib/accounts.js reopenMatch)
+ *                                                    match it manages (beach:competition_manager;
+ *                                                    owner decision 5: a match of a tournament it
+ *                                                    edits, or one it recorded or edits,
+ *                                                    lib/beachTournaments.js managesMatch; the sport
+ *                                                    of the match row, lib/accounts.js reopenMatch)
  *   GET    /api/saved-teams[?sport=indoor|beach|all]  canReadTeams of that sport (no sport = indoor;
  *                                                     all = the sports the account may read); without
  *                                                     indoor canManageTeams the indoor teams of the
  *                                                     account's own matches this season only (owner
- *                                                     decision 1, lib/savedTeams.js getBundle scope)
+ *                                                     decision 1), without beach canManageTeams the
+ *                                                     pairs of its own tournaments only (owner
+ *                                                     decision 5; lib/savedTeams.js getBundle scope)
  *   POST/PATCH/DELETE/PUT /api/saved-teams/*         canManageTeams of the competition's sport (a
- *                                                     DELETE of one with content: ?confirm=<its name>)
+ *                                                     DELETE of one with content: ?confirm=<its name>);
+ *                                                     a beach competition (its teams too) only by its
+ *                                                     owner or an admin (owner decision 5,
+ *                                                     lib/savedTeams.js mayManageCompetition)
  *   *      /api/beach/*                               beach canReadTeams (beach:scorer, beach:competition_manager,
  *                                                     admin); lib/beachTournaments.js decides the rest (T1)
  *   GET/POST /api/account/approval-pin[/remove]      any signed-in account (lib/approvals.js)
@@ -90,6 +98,10 @@
  *                                                    name or licence number (an official)
  *   POST   /api/team/:id/club-people { people }      the same: as POST /api/club/:id/licences/people,
  *                                                    to the team's club (db/026)
+ *   GET    /api/team/:id/roster-suggestions          the same: the team's open suggestions (db/058, PERM-04):
+ *                                                    another club's closed official match's roster of the
+ *                                                    team, with what confirming would change
+ *   POST   /api/team/:id/roster-suggestions/:sid     the same: { decision: confirm | reject }
  *   GET    /api/club-licences                        indoor canReadTeams: the players lists and every
  *                                                    person of the lists of the caller's clubs, for the
  *                                                    scoring tablet (offline first)
@@ -149,6 +161,7 @@ import { clubInviteBody } from './clubs.js'
 import { teamInviteBody } from './teams.js'
 import { LICENCE_LISTS } from './licences.js'
 import { SPORTS, accessForSport, sportsWith } from './access.js'
+import { mayManageCompetition } from './savedTeams.js'
 
 // Before lib/approvals.js is wired (or on a server built without it)
 const APPROVALS_OFF = () => fail(503, 'OV_APPROVAL_UNAVAILABLE', 'Approval with an account is not available on this server')
@@ -195,7 +208,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null, sqlWorkspace = null, errors = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null, sqlWorkspace = null, errors = null, saveBack = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -209,11 +222,15 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
   // bad body) is left to the handler (404 / 400).
   const scoreInBodySport = (m, c) =>
     accessForSport(c.access, c.body?.sport_type === 'beach' ? 'beach' : 'indoor').canScore ? null : SCORER_REQUIRED()
+  // A saved-teams target also names its competition's owner (`owner`): a beach
+  // competition is changed only by its owner or an admin (owner decision 5)
   const manageTeamsOf = (resolve) => async (m, c) => {
     const r = await resolve(m, c)
     if (r?.error) return r.error
     if (!r?.sport) return null
-    return accessForSport(c.access, r.sport).canManageTeams ? null : FORBIDDEN()
+    if (!accessForSport(c.access, r.sport).canManageTeams) return FORBIDDEN()
+    if (r.owner !== undefined && !mayManageCompetition({ sport: r.sport, owner: r.owner, userId: c.user?.id, isAdmin: c.access?.isAdmin === true })) return FORBIDDEN()
+    return null
   }
   const competitionSport = (id) => savedTeams.sportOf({ competitionId: id })
   const teamSport = (id) => savedTeams.sportOf({ teamId: id })
@@ -230,6 +247,18 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     if (sport === 'all') return sportsWith(c.access, 'canReadTeams').length ? null : FORBIDDEN()
     if (!SPORTS.includes(sport)) return null // the handler answers 400
     return accessForSport(c.access, sport).canReadTeams ? null : FORBIDDEN()
+  }
+  // POST /api/admin/matches/:id/reopen: an admin any match; a beach competition
+  // manager a beach match it manages (owner decision 5, PERM-09). An unknown
+  // match is the handler's 404; reopenMatch checks the sport again under the
+  // match's row lock.
+  const reopenAllowed = async (m, c) => {
+    if (c.access?.isAdmin) return null
+    if (!beachManager(c.access) || typeof beach?.managesMatch !== 'function') return FORBIDDEN()
+    const r = await beach.managesMatch({ userId: c.user.id, matchId: m[1] })
+    if (r?.error) return r.error
+    if (!r) return null
+    return r.sport === 'beach' && r.manages ? null : FORBIDDEN()
   }
   // GET /api/scoresheets?app=: that sport's competition managers (admins count)
   const manageSheetsOfApp = (m, c) => {
@@ -267,6 +296,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
   const readIndoorTeams = (m, c) => (accessForSport(c.access, 'indoor').canReadTeams ? null : FORBIDDEN())
   // db/024: a club's licence lists (lib/licences.js); 404 on a server built without it
   const lic = (fn) => (licences ? fn(licences) : notFound())
+  // db/058 (PERM-04): another club's official match's roster for the team, to confirm or reject
+  const sug = (fn) => (saveBack?.listSuggestions ? fn(saveBack) : notFound())
   // the list is part of the path, one route each (an enum, never a uuid)
   const licenceListRoutes = LICENCE_LISTS.map((list) => ['PUT', new RegExp(`^/api/club/${ID}/licences/${list}$`), clubManagerOf,
     (m, c) => lic((l) => l.putList({ clubId: m[1], list, people: isPlainObject(c.body) ? c.body.people : undefined, userId: c.user.id }))])
@@ -361,9 +392,14 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     // db/024: the players of the team's gender and age class and the people of its saved team, for "Add from club"
     ['GET', new RegExp(`^/api/team/${ID}/club-players$`), teamManagerOf, (m) => lic((l) => l.teamClubPlayers({ teamId: m[1] }))],
     // an official: a few people of the club's lists by name (owner decision 2: never the whole lists)
-    ['GET', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.searchPeople({ teamId: m[1], q: q(c.query, 'q') }))],
+    // (owner decision 7, PERM-19: a name's start or a licence, a budget of people a day, audited)
+    ['GET', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.searchPeople({ teamId: m[1], q: q(c.query, 'q'), userId: c.user.id, unlimited: c.access?.isAdmin === true }))],
     // db/026: after a squad is saved, the people typed in by hand go to the team's club if the manager wants
     ['POST', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.addPeople({ teamId: m[1], body: c.body, userId: c.user.id }))],
+    // db/058 (PERM-04, owner decision 2026-11-23 no. 2): another club's closed official match's
+    // roster of this team, a suggestion: what it would change, then confirm or reject
+    ['GET', new RegExp(`^/api/team/${ID}/roster-suggestions$`), teamManagerOf, (m) => sug((sb) => sb.listSuggestions({ teamId: m[1] }))],
+    ['POST', new RegExp(`^/api/team/${ID}/roster-suggestions/${ID}$`), teamManagerOf, (m, c) => sug((sb) => sb.decideSuggestion({ actorId: c.user.id, teamId: m[1], id: m[2], body: c.body }))],
     // db/025: the team manager requests of the team
     ['GET', new RegExp(`^/api/team/${ID}/requests$`), teamManagerOf, (m) => req((r) => r.listForTeam({ teamId: m[1] }))],
     ['POST', new RegExp(`^/api/team/${ID}/requests/${ID}$`), teamManagerOf, (m, c) => req(async (r) => {
@@ -388,7 +424,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['POST', new RegExp(`^/api/admin/invites/${ID}/revoke$`), 'admin', (m, c) => accounts.revokeInvite({ actorId: c.user.id, id: m[1] })],
     ['GET', /^\/api\/admin\/official-games$/, 'admin', (m, c) => accounts.listOfficialGames({ from: q(c.query, 'from'), to: q(c.query, 'to'), q: q(c.query, 'q') ?? '' })],
     ['GET', /^\/api\/admin\/matches$/, 'admin', (m, c) => accounts.listMatches({ state: q(c.query, 'state') || 'closed', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit'), app: q(c.query, 'app') })],
-    ['POST', new RegExp(`^/api/admin/matches/${ID}/reopen$`), (m, c) => (c.access?.isAdmin || beachManager(c.access) ? null : FORBIDDEN()),
+    ['POST', new RegExp(`^/api/admin/matches/${ID}/reopen$`), reopenAllowed,
       (m, c) => accounts.reopenMatch({ actorId: c.user.id, matchId: m[1], body: c.body, access: c.access })],
     // db/039: the record of each reopened close, before and after
     ['GET', new RegExp(`^/api/admin/matches/${ID}/closures$`), 'admin', (m, c) => accounts.listMatchClosures({ matchId: m[1] })],
@@ -422,11 +458,12 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
 
     // the saved team editor's VolleyManager team names (svrz_games), each with its club
     ['GET', /^\/api\/saved-teams\/vm-teams$/, manageIndoorTeams, (m, c) => club((cl) => cl.vmTeams({ q: q(c.query, 'q') ?? '' }))],
-    // owner decision 1: without the indoor write right (a scorer), the indoor teams of the account's own matches this season
+    // owner decision 1: without the indoor write right (a scorer), the indoor teams of the account's own matches this season;
+    // owner decision 5: without the beach write right (a beach scorer), the pairs of its own tournaments
     ['GET', /^\/api\/saved-teams$/, readTeams, (m, c) => savedTeams.getBundle({
       sport: q(c.query, 'sport'),
       sports: sportsWith(c.access, 'canReadTeams'),
-      scope: { userId: c.user.id, sports: accessForSport(c.access, 'indoor').canManageTeams ? [] : ['indoor'] }
+      scope: { userId: c.user.id, sports: SPORTS.filter((s) => !accessForSport(c.access, s).canManageTeams) }
     })],
     ['POST', /^\/api\/saved-teams\/competitions$/, manageTeamsOf(newCompetitionSport), (m, c) => savedTeams.createCompetition({ actorId: c.user.id, body: c.body })],
     ['PATCH', new RegExp(`^/api/saved-teams/competitions/${ID}$`), manageTeamsOf((m) => competitionSport(m[1])), (m, c) => savedTeams.updateCompetition({ id: m[1], body: c.body })],

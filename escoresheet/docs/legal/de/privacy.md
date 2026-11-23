@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.27 · Stand: 23. November 2026
+**OpenVolley und OpenBeach** · Version 1.28 · Stand: 23. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -358,11 +358,25 @@ nutzt, verwaltet dieses Team (Abschnitt 10).
 dem Server liegt nur ein Hash davon. Eine Sitzung gilt 30 Tage ab der letzten
 Nutzung, höchstens 90 Tage, und endet beim Abmelden, beim Ändern des Passworts
 und beim Löschen des Kontos. Zum Schutz vor Angriffen zählt der Server
-Fehlversuche pro IP-Adresse und pro E-Mail-Adresse, nur im Arbeitsspeicher.
+Fehlversuche pro IP-Adresse und pro E-Mail-Adresse in seinem Arbeitsspeicher.
+Seine Datenbank hält zudem für eine E-Mail-Adresse mit Fehlversuchen fest, wie
+viele es in den letzten 24 Stunden waren, unter einem Einweg-Hash der Adresse
+(nicht der Adresse selbst), und für jedes Konto bis zu 20 Netze, aus denen es
+genutzt wurde (eine IPv4-Adresse oder die erste Hälfte einer IPv6-Adresse):
+einen Hash der E-Mail-Adresse und des Netzes mit einem Schlüssel, der ohne den
+geheimen Schlüssel des Servers nichts verrät. Er entsteht, wenn du dich dort
+mit deinem Passwort oder einem Passkey anmeldest oder einen Link aus einer
+E-Mail des Kontos öffnest. Nach 100 Fehlversuchen innerhalb von 24 Stunden
+geht es aus diesen Netzen wie gewohnt weiter, jedes andere darf es nur ab und
+zu versuchen, und das Konto erhält einen Hinweis per E-Mail (einmal in dieser
+Zeit). Die Zahl wird nach ihren 24 Stunden, mit einem neuen Passwort und mit
+dem Konto gelöscht, ein Netz 60 Tage nach seiner letzten Nutzung und mit dem
+Konto.
 
 **E-Mails:** Ich sende nur E-Mails, die zum Konto gehören: Bestätigung der
 E-Mail-Adresse, Link zum Zurücksetzen des Passworts, Hinweis auf eine
-Passwortänderung, Hinweis, dass ein Resultat mit deinem Freigabe-PIN
+Passwortänderung, Hinweis, dass jemand immer wieder versucht, sich in dein
+Konto anzumelden (oben), Hinweis, dass ein Resultat mit deinem Freigabe-PIN
 freigegeben wurde, und Hinweis, dass dein PIN gesperrt wurde. Sie enthalten
 keine Zählpixel und keine nachgeladenen Bilder. Ein Bestätigungslink gilt
 24 Stunden, ein Link zum Zurücksetzen 60 Minuten.
@@ -551,7 +565,11 @@ Wiederherstellungsschlüssel des Verbands, den dieser offline aufbewahrt. Wer
 den Code und diese PIN kennt, kann das Spiel wiederherstellen; bewahre
 beide daher wie ein Passwort auf. Eine neue Sicherung ersetzt die vorherige. Die Dateien werden
 180 Tage nach der letzten Änderung gelöscht; die Serversicherungen
-(Abschnitt 18) behalten noch eine Weile eine Kopie. Die Turnierveranstalterin
+(Abschnitt 18) behalten noch eine Weile eine Kopie. Lehnt der Server die
+letzte Sicherung und das PDF vorerst ab (der Tagesanteil deines Netzes ist
+aufgebraucht, der Server ist ausgelastet, keine Verbindung), bleiben sie auf
+deinem Gerät und werden später erneut gesendet, höchstens 7 Tage lang; ebenso
+die letzte Kopie von «In der Cloud speichern» (unten). Die Turnierveranstalterin
 oder der Turnierveranstalter ist dafür verantwortlich, dass die Daten erfasst
 werden dürfen und dass die Spielerinnen und Spieler und ihre Eltern informiert
 sind (Abschnitt 17).
@@ -622,17 +640,24 @@ PINs werden nicht gesendet; in OpenBeach ist der Name eines Teams aber meist
 der Name seiner Spielerinnen oder Spieler, und er erscheint dann auf dem
 Bildschirm. Die Zusammenfassung liegt nur im Arbeitsspeicher des Servers, nie
 in einer Datenbank oder Datei, und wird 45 Minuten nach Spielende, nach 3
-Stunden ohne Aktualisierung oder beim Neustart des Servers entfernt. Wer den
-Code kennt, kann die Zusammenfassungen seiner Spiele auf openvolley.app/tv und
-livescore.openvolley.app sehen oder über die Schnittstelle des Servers
-abrufen; ein Hallen-Relais zeigt sie auch in seinem eigenen Netz. Ein
-Schreibergerät mit Live-Bildschirm-Code listet die Zusammenfassungen seiner
-Global-Spiele zudem auf livescore.openvolley.app, für alle und ohne den Code,
-ausser «Global-Spiele auf livescore.openvolley.app zeigen» ist auf ihm in
-Optionen, Live-Bildschirm ausgeschaltet (standardmässig ist es eingeschaltet).
-Meisterschaftsspiele sind ohnehin im Livescore; Test- und Einfach-Spiele werden
-nie gelistet. Schalte den Live-Bildschirm in den Optionen aus, um das Senden zu
-beenden.
+Stunden ohne Aktualisierung (15 Minuten bei einer Zusammenfassung, die nur
+einmal und nicht über das Relais kam) oder beim Neustart des Servers entfernt.
+Wer den Code kennt, kann die Zusammenfassungen seiner Spiele auf
+openvolley.app/tv und livescore.openvolley.app sehen oder über die
+Schnittstelle des Servers abrufen; ein Hallen-Relais zeigt sie auch in seinem
+eigenen Netz. Die Bildschirme sind kein offizielles Dokument: Eine
+Zusammenfassung, die den Server nur über die Desktop-App oder ein
+Hallen-Relais erreicht, von OpenBeach bis 3.1.1 oder OpenVolley bis 26.11.5,
+kann überschreiben, wer den Code und die öffentliche Kennung des Spiels kennt.
+Ein Schreibergerät mit Live-Bildschirm-Code listet die
+Zusammenfassungen seiner Global-Spiele zudem auf livescore.openvolley.app, für
+alle und ohne den Code, ausser «Global-Spiele auf livescore.openvolley.app
+zeigen» ist auf ihm in Optionen, Live-Bildschirm ausgeschaltet (standardmässig
+ist es eingeschaltet). Ein Code mit einer Zusammenfassung auf dieser Liste
+zeigt nur seine gelisteten Zusammenfassungen, auch auf den TVs; ein Spiel, das
+nicht gelistet werden soll, braucht einen eigenen Code. Meisterschaftsspiele
+sind ohnehin im Livescore; Test- und Einfach-Spiele werden nie gelistet.
+Schalte den Live-Bildschirm in den Optionen aus, um das Senden zu beenden.
 
 **Freigabe mit PIN:** Offizielle können das Resultat zusätzlich zur
 Unterschrift mit einem persönlichen Freigabe-PIN bestätigen. Gespeichert
@@ -993,7 +1018,8 @@ ich frühere Antworten nachschlagen kann; auf Anfrage früher.
   der Server Anfragen und Verbindungen pro IP-Adresse, und das Live-Relay
   erkennt daran Geräte derselben Halle. Er hält IP-Adressen dafür nur im
   Arbeitsspeicher und speichert oder protokolliert sie nicht (ausser als
-  pseudonymisierten Hash bei einer Freigabe, Abschnitt 7).
+  pseudonymisierten Hash bei einer Freigabe, Abschnitt 7, und als Hashes mit
+  Schlüssel der Netze, aus denen ein Konto genutzt wurde, Abschnitt 6).
 - **Änderungsprotokoll:** Für die Nachvollziehbarkeit hält der Server fest,
   wer wann Rollen geändert, Spiele freigegeben, abgeschlossen oder wieder
   geöffnet, Mitbearbeitende hinzugefügt oder Turniereinträge geändert hat.
@@ -1062,6 +1088,8 @@ Anfrage erhältst du eine Kopie dieser Garantien.
 |---|---|
 | Konto und Profil | Bis du das Konto löschst oder die Administration es löscht (auf deinen Wunsch oder bei einem abgelehnten neuen Konto) |
 | Sitzung | 30 Tage ab letzter Nutzung, höchstens 90 Tage |
+| Fehlversuche bei der Anmeldung einer E-Mail-Adresse (eine Zahl, unter einem Hash der Adresse) | 24 Stunden; früher gelöscht mit einem neuen Passwort oder dem Konto |
+| Netze, aus denen ein Konto genutzt wurde (Hashes mit Schlüssel, höchstens 20) | 60 Tage nach der letzten Nutzung von dort; gelöscht mit dem Konto |
 | Links in E-Mails | 60 Minuten bzw. 24 Stunden gültig, 7 Tage danach gelöscht |
 | Freigabe-PIN | Bis du ihn entfernst oder dein Konto löschst |
 | Spielberichte, Spielereignisse, Ereignisgeschichte, Unterschriften, Freigaben, Bemerkungen (auch Gesundheitsdaten), Spielbericht-Dateien | Als offizielle Spielaufzeichnung: die Saison des Spiels und die 2 folgenden Saisons (eine Saison dauert vom 1. Juli bis 30. Juni), danach von einem täglichen Lauf gelöscht; zum Beispiel gehen die Aufzeichnungen der Saison 2024/25 am 1. Juli 2027. Früher auf Anfrage, soweit die Daten für die Aufzeichnung nicht nötig sind (Abschnitt 19) |

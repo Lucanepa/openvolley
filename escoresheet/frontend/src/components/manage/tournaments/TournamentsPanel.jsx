@@ -6,7 +6,7 @@ import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, Pan
 import { tournamentApi, tournamentErrorKey } from '../../../lib/tournamentApi'
 import { useAuth } from '../../../contexts/AuthContext'
 import { accessForApp } from '../../../lib/access'
-import { Button, DateField, Field, Input, RowList, Row, Chip, EmptyInset, SkeletonRows, Notice, SegmentedControl, toast } from '../../../ui'
+import { Button, Card, CardHeading, DateField, Field, Input, RowList, Row, SimpleRow, Chip, EmptyInset, SkeletonRows, Notice, SegmentedControl, toast } from '../../../ui'
 import TournamentView from './TournamentView'
 import { TournamentStatus, datesLabel } from './shared'
 
@@ -91,6 +91,54 @@ function NewTournamentModal({ open, onClose, onCreated }) {
 }
 
 /**
+ * The open invitations to co-manage a tournament, sent to the signed-in beach
+ * competition manager's own address (PERM-18): accepted, the tournament is
+ * its to edit and opens; declined, it goes. Nothing shown without one.
+ */
+function InvitesCard({ online, onAccepted }) {
+  const { t } = useTranslation()
+  const errorText = (error) => t(tournamentErrorKey(error))
+  const { data, reload } = usePanelData(() => tournamentApi.invites(), [], { enabled: online })
+  const [busy, setBusy] = useState(null)
+  const invites = data?.invites || []
+  if (!invites.length) return null
+  const answer = async (inv, accept) => {
+    if (busy) return
+    setBusy(inv.id)
+    const res = accept ? await tournamentApi.acceptInvite(inv.id) : await tournamentApi.declineInvite(inv.id)
+    setBusy(null)
+    if (res.error) {
+      toast.error(errorText(res.error))
+      return reload()
+    }
+    toast.success(t(accept ? 'tournaments.inviteAccepted' : 'tournaments.inviteDeclined'))
+    reload()
+    if (accept) onAccepted(inv.tournament.id)
+  }
+  return (
+    <Card className="mb-3" data-testid="tournament-invites">
+      <CardHeading title={t('tournaments.invitations')} />
+      <RowList className="mt-2">
+        {invites.map(inv => (
+          <SimpleRow
+            key={inv.id}
+            title={inv.tournament.title}
+            meta={<>
+              <span className="tabular-nums">{datesLabel(inv.tournament.starts_on, inv.tournament.ends_on)}</span>
+              {inv.invited_by && <span>{t('tournaments.invitedBy', { name: inv.invited_by })}</span>}
+            </>}
+            trailing={<div className="flex gap-1.5">
+              <Button size="sm" variant="secondary" onClick={() => answer(inv, false)} disabled={!online || !!busy}>{t('tournaments.decline')}</Button>
+              <Button size="sm" variant="dark" onClick={() => answer(inv, true)} loading={busy === inv.id} disabled={!online || !!busy}>{t('tournaments.accept')}</Button>
+            </div>}
+          />
+        ))}
+      </RowList>
+    </Card>
+  )
+}
+
+/**
  * OpenBeach tournaments (manager-beach, plan phases T1 and T2): the list, a
  * new tournament (typed in, or from an Excel/CSV file), and the tournament
  * itself (TournamentView). Beach competition
@@ -138,6 +186,7 @@ export default function TournamentsPanel({ route = '', onRoute = null }) {
         )}
       </PanelHead>
       <OfflineBanner online={online} />
+      {canCreate && <InvitesCard online={online} onAccepted={(id) => { reload(); setCreated({ id, importNext: false }); go([id]) }} />}
       {error && <Notice tone="error" className="mb-3">{t(tournamentErrorKey(error))}</Notice>}
       {error && !data ? null : loading && !data ? <SkeletonRows rows={4} /> : list.length === 0 ? (
         <EmptyInset>{t('tournaments.empty')}</EmptyInset>

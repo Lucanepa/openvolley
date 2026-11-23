@@ -6,9 +6,11 @@ import { VIDEO_BASE } from './src/components/help/helpSections.js'
 /**
  * Content-Security-Policy of the app's pages (fe-shell-pwa-6, android-7).
  * Shared by scripts/build-subdomains.js (a _headers rule for every web
- * build) and vite.config.js (a <meta> in the Android app's build, which has
- * no server to send a header). The desktop app serves the same build from
- * its relay without it.
+ * build), vite.config.js (a <meta> in the Android app's build, which has
+ * no server to send a header), the LAN relays that hand the build out
+ * (relayPageCsp: the desktop app's relay, src-tauri relay.rs, through
+ * shared/relayPageCsp.txt; frontend/server.js; SEC-47) and the backend
+ * (backend/lib/pageCsp.js, a copy: its image has no frontend/).
  *
  * What the pages need, and nothing more where that is known:
  *   - scripts: the bundle ('self'), the colour theme boot script and the
@@ -65,12 +67,28 @@ const DIRECTIVES = [
 
 /**
  * The policy as one header / meta value.
- * @param {{ frameAncestors?: string|null }} [opts] null: no frame-ancestors (a <meta>, or a page any site may frame)
+ * @param {{ frameAncestors?: string|null, connectExtra?: string[] }} [opts]
+ *   frameAncestors null: no frame-ancestors (a <meta>, or a page any site may
+ *   frame); connectExtra: more connect-src sources (relayPageCsp)
  */
-export function contentSecurityPolicy({ frameAncestors = "'self'" } = {}) {
-  const parts = DIRECTIVES.map(([name, value]) => `${name} ${value}`)
+export function contentSecurityPolicy({ frameAncestors = "'self'", connectExtra = [] } = {}) {
+  const parts = DIRECTIVES.map(([name, value]) => `${name} ${name === 'connect-src' && connectExtra.length ? `${value} ${connectExtra.join(' ')}` : value}`)
   if (frameAncestors) parts.push(`frame-ancestors ${frameAncestors}`)
   return parts.join('; ')
+}
+
+/**
+ * The policy of the pages the LAN relays hand out (SEC-47): the desktop app's
+ * built-in server (src-tauri relay.rs, to its own scoretable window and to
+ * the venue tablets) and frontend/server.js. The app's policy, plus Tauri's
+ * IPC scheme (ipc:, the desktop window's native commands; http://ipc.localhost
+ * on Windows is in http: already). No frame-ancestors: the relays send
+ * X-Frame-Options SAMEORIGIN, as before. relay.rs reads it from
+ * shared/relayPageCsp.txt (it cannot hash the scripts itself);
+ * nativeShellHardening.test.js keeps the file equal to this.
+ */
+export function relayPageCsp() {
+  return contentSecurityPolicy({ frameAncestors: null, connectExtra: ['ipc:'] })
 }
 
 /** Subdomain builds whose pages any site may frame (no frame-ancestors, no X-Frame-Options). */

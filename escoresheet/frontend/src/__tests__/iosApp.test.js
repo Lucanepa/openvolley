@@ -43,15 +43,17 @@ describe('iOS app', () => {
     expect(plistValue(plist, 'CFBundleDisplayName')).toBe('OpenVolley')
   })
 
-  it('Info.plist: camera, local network, Files, no export documents, plain http on the LAN only', () => {
+  it('Info.plist: camera, local network, no Files sharing, no export documents, plain http on the LAN only', () => {
     expect(plistValue(plist, 'NSCameraUsageDescription')).toMatch(/QR/)
     expect(plistValue(plist, 'NSLocalNetworkUsageDescription')).toMatch(/local network/)
     expect(plistValue(plist, 'NSAllowsLocalNetworking')).toBe(true)
     expect(plistValue(plist, 'NSAllowsArbitraryLoadsInWebContent')).toBe(true)
     // never the app-wide exception (App Review asks why)
     expect(plist).not.toMatch(/<key>NSAllowsArbitraryLoads<\/key>/)
-    expect(plistValue(plist, 'UIFileSharingEnabled')).toBe(true)
-    expect(plistValue(plist, 'LSSupportsOpeningDocumentsInPlace')).toBe(true)
+    // owner decision 9 (SEC-51): the app's folder is not shown in the Files
+    // app or over USB (this test pinned both keys on before)
+    expect(plist).not.toMatch(/<key>UIFileSharingEnabled<\/key>/)
+    expect(plist).not.toMatch(/<key>LSSupportsOpeningDocumentsInPlace<\/key>/)
     expect(plistValue(plist, 'ITSAppUsesNonExemptEncryption')).toBe(false)
   })
 
@@ -71,6 +73,9 @@ describe('iOS app', () => {
       expect(main).toContain(`registerPluginInstance(${file.replace('.swift', '')}())`)
     }
     expect(read('App/Base.lproj/Main.storyboard')).toContain('customClass="MainViewController" customModule="App"')
+    // the scene's window is the one that registers them (not a bare CAPBridgeViewController)
+    expect(read('App/SceneDelegate.swift')).toContain('window?.rootViewController = MainViewController()')
+    expect(read('App/SceneDelegate.swift')).not.toMatch(/rootViewController = CAPBridgeViewController\(\)/)
     // the bars: Capacitor's own SystemBars on iOS (it owns the home indicator)
     expect(src('utils/nativeSystemBars.js')).toContain("getPlatform?.() === 'ios' ? 'SystemBars' : 'OpenVolleyBars'")
   })

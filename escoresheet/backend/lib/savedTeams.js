@@ -12,6 +12,13 @@
  * its own matches in the current season (getBundle `scope`): its clubs'
  * teams, the teams they meet at home in the schedule, and the teams of the
  * matches it created or edits; never an archived competition.
+ * Owner decision 5 (PERM-09), beach: a beach scorer reads only the saved
+ * pairs of its own tournaments (ownBeachTeams: the pairs entered in a
+ * published or live tournament of which it claimed a match, or whose scored
+ * match it recorded or edits), and a beach competition manager changes or
+ * deletes only the beach competitions it owns (competitions.created_by,
+ * db/055; mayManageCompetition, checked by lib/manageApi.js), their teams
+ * and rosters included. The admins keep everything; indoor stays as it is.
  *
  * Deleting a competition or a team, and replacing a team's roster, write an
  * audit entry (who, the ids, the name, the counts; never a person). A
@@ -317,6 +324,23 @@ const ROSTER_SQL = (alias) => `
             'last_name', s.last_name, 'license_number', s.license_number, 'sort_order', s.sort_order) ORDER BY s.sort_order, s.id)
        FROM public.competition_staff s WHERE s.team_id = ${alias}.id), '[]'::json) AS staff`
 
+/**
+ * Owner decision 5 (PERM-09): whether an account may change or delete a
+ * competition of `sport` owned by `owner` (competitions.created_by) when it
+ * has that sport's write right (the caller checks the right). Indoor: every
+ * competition manager, as before. Beach: the admins, and the beach
+ * competition manager who owns it. A beach competition without an owner
+ * (its creator's account deleted, none found by db/055) stays open to every
+ * beach competition manager (ORPHAN_BEACH_COMPETITIONS_OPEN) until the owner
+ * decides otherwise (then false: the admins only).
+ */
+export const ORPHAN_BEACH_COMPETITIONS_OPEN = true
+export function mayManageCompetition ({ sport, owner, userId, isAdmin = false } = {}) {
+  if (sport !== 'beach' || isAdmin) return true
+  if (owner == null) return ORPHAN_BEACH_COMPETITIONS_OPEN
+  return isUuid(userId) && owner === userId
+}
+
 // A delete of a competition with teams or a team with people: its name typed as ?confirm=
 export const CONFIRM_NAME = (what) => fail(400, 'OV_CONFIRM_NAME', `Type the ${what}'s name to delete it with everything in it`)
 const sameName = (a, b) => typeof a === 'string' && typeof b === 'string' &&
@@ -436,20 +460,58 @@ export function createSavedTeams ({ pool, audit = null, logger = console, clock 
   }
 
   /**
+   * The saved beach pairs of `userId`'s own tournaments (owner decision 5,
+   * PERM-09), with their rosters: the pairs entered (registered) in a
+   * published or live tournament of which it claimed a match (db/014
+   * claimed_by, the court tablets of phase T3) or whose scored match
+   * (beach_tmatches.match_id, matches.tournament_match_id) it recorded or
+   * edits; of beach competitions that are not archived.
+   */
+  async function ownBeachTeams (userId) {
+    if (!isUuid(userId)) return []
+    const { rows } = await pool.query(
+      `WITH own_matches AS (
+         SELECT m.id, m.tournament_match_id FROM public.matches m
+          WHERE m.created_by = $1
+         UNION
+         SELECT m.id, m.tournament_match_id FROM public.match_editors e JOIN public.matches m ON m.id = e.match_id
+          WHERE e.user_id = $1),
+       own_tournaments AS (
+         SELECT tm.tournament_id FROM public.beach_tmatches tm WHERE tm.claimed_by = $1
+         UNION
+         SELECT tm.tournament_id FROM public.beach_tmatches tm JOIN own_matches o ON o.id = tm.match_id
+         UNION
+         SELECT tm.tournament_id FROM public.beach_tmatches tm JOIN own_matches o ON o.tournament_match_id = tm.id),
+       pairs AS (
+         SELECT DISTINCT e.team_id FROM public.beach_entries e
+           JOIN public.beach_draws d ON d.id = e.draw_id
+           JOIN public.beach_tournaments bt ON bt.id = d.tournament_id
+          WHERE bt.id IN (SELECT tournament_id FROM own_tournaments) AND bt.status IN ('published', 'live')
+            AND e.team_id IS NOT NULL AND e.status = 'registered')
+       SELECT ${TEAM_SELECT}, ${ROSTER_SQL('t')}
+         FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
+        WHERE c.sport = 'beach' AND NOT c.archived AND t.id IN (SELECT team_id FROM pairs)
+        ORDER BY lower(t.name), t.id`,
+      [userId])
+    return rows
+  }
+
+  /**
    * GET /api/saved-teams?sport=indoor|beach|all (absent or '' = indoor, for 2.1.0 clients).
    * `sports`: what 'all' covers (the sports the caller may read; default both).
    * `scope` { userId, sports }: the sports in which the caller only reads (an
-   * indoor scorer, owner decision 1): there the teams of its own matches in
-   * the current season (ownTeams; indoor only) and their competitions. The
-   * other sports answer every competition and team. `version`: the newest
-   * updated_at of what the answer holds ('0' for nothing).
+   * indoor scorer, owner decision 1; a beach scorer, owner decision 5): there
+   * the teams of its own matches in the current season (ownTeams, indoor) or
+   * the pairs of its own tournaments (ownBeachTeams, beach) and their
+   * competitions. The other sports answer every competition and team.
+   * `version`: the newest updated_at of what the answer holds ('0' for nothing).
    */
   async function getBundle ({ sport, sports = SPORTS, scope = null } = {}) {
     if (sport === undefined || sport === null || sport === '') sport = 'indoor'
     if (sport !== 'all' && !SPORTS.includes(sport)) return invalid('sport: indoor, beach or all')
     const readable = SPORTS.filter((s) => Array.isArray(sports) && sports.includes(s))
     const wanted = sport === 'all' ? readable : [sport]
-    const scoped = (s) => s === 'indoor' && Array.isArray(scope?.sports) && scope.sports.includes(s)
+    const scoped = (s) => Array.isArray(scope?.sports) && scope.sports.includes(s)
     const full = wanted.filter((s) => !scoped(s))
     return guarded('bundle', async () => {
       const { rows: comps } = full.length
@@ -462,15 +524,18 @@ export function createSavedTeams ({ pool, audit = null, logger = console, clock 
            WHERE c.sport = ANY($1::text[]) ORDER BY lower(t.name), t.id`, [full])
         : { rows: [] }
       if (wanted.some(scoped)) {
-        const own = await ownTeams(scope.userId)
+        const own = [
+          ...(wanted.includes('indoor') && scoped('indoor') ? await ownTeams(scope.userId) : []),
+          ...(wanted.includes('beach') && scoped('beach') ? await ownBeachTeams(scope.userId) : [])
+        ]
         const ids = [...new Set(own.map((t) => t.competition_id))]
         if (ids.length) {
           comps.push(...(await pool.query(`SELECT ${COMPETITION_COLS} FROM public.competitions WHERE id = ANY($1::uuid[])
             ORDER BY season DESC, lower(name), id`, [ids])).rows)
         }
         teams.push(...own)
-        if (full.length) {
-          // 'all' with one sport of each kind: one order again
+        if (full.length || wanted.filter(scoped).length > 1) {
+          // 'all' with one sport of each kind (or both scoped): one order again
           const text = (v) => String(v ?? '').toLowerCase()
           comps.sort((a, b) => text(b.season).localeCompare(text(a.season)) || text(a.name).localeCompare(text(b.name)) || text(a.id).localeCompare(text(b.id)))
           teams.sort((a, b) => text(a.name).localeCompare(text(b.name)) || text(a.id).localeCompare(text(b.id)))
@@ -704,18 +769,19 @@ export function createSavedTeams ({ pool, audit = null, logger = console, clock 
 
   /**
    * The sport of a competition or of a team's competition (server.js checks
-   * the role of that sport before a write): { sport } ('indoor' | 'beach'),
-   * { sport: null } when there is no such row (the write answers 404), or
-   * { error } (503). Never throws.
+   * the role of that sport before a write): { sport, owner } ('indoor' |
+   * 'beach'; owner = the competition's created_by or null, for
+   * mayManageCompetition), { sport: null } when there is no such row (the
+   * write answers 404), or { error } (503). Never throws.
    */
   async function sportOf ({ competitionId, teamId } = {}) {
     const id = competitionId ?? teamId
     if (!isUuid(id)) return { sport: null }
     try {
       const { rows: [r] } = competitionId
-        ? await pool.query('SELECT sport FROM public.competitions WHERE id = $1', [id])
-        : await pool.query('SELECT c.sport FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id WHERE t.id = $1', [id])
-      return { sport: r ? sportOut(r.sport) : null }
+        ? await pool.query('SELECT sport, created_by FROM public.competitions WHERE id = $1', [id])
+        : await pool.query('SELECT c.sport, c.created_by FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id WHERE t.id = $1', [id])
+      return r ? { sport: sportOut(r.sport), owner: r.created_by ?? null } : { sport: null }
     } catch (err) {
       log.error?.(`[savedTeams] sport-of failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
       return { error: unavailable() }

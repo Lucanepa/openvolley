@@ -86,7 +86,12 @@ export const DEFAULTS = Object.freeze({
   // that scores several matches every weekend (STORAGE_BACKUP_ACCOUNT_MAX_MB
   // sets it from the measured folders). The free-space floor is shared by
   // every account, so one account must never reach it.
-  maxOwnerBytes: Object.freeze({ backup: 6 * GiB }),
+  // scoresheets/ (an uploader-only bucket, no folder per account): what the
+  // objects whose owner record names the account first hold (audit
+  // 2026-11-23 SEC-16; STORAGE_SCORESHEETS_ACCOUNT_MAX_MB). A match leaves a
+  // PDF and a final JSON of a few MB; 4 GiB holds the retention's seasons of
+  // a club account that scores some 250 matches a season.
+  maxOwnerBytes: Object.freeze({ backup: 6 * GiB, scoresheets: 4 * GiB }),
   // Bytes written to a bucket in one hour above which the operator is alerted
   // (an error line in the log, and health().alerts)
   growthAlertBytes: Object.freeze({ backup: 2 * GiB, scoresheets: 1 * GiB }),
@@ -152,7 +157,8 @@ const err = {
   quota: (msg) => new StorageError(429, 'OV_STORAGE_QUOTA', msg || 'Storage quota exceeded'),
   unavailable: () => new StorageError(503, 'OV_STORAGE_UNAVAILABLE', 'Storage is not available'),
   lowSpace: () => new StorageError(507, 'OV_STORAGE_LOW_SPACE', 'Not enough free storage space'),
-  ownerFull: () => new StorageError(507, 'OV_STORAGE_ACCOUNT_FULL', 'Your cloud storage is full; files older than 30 days are removed every day')
+  ownerFull: () => new StorageError(507, 'OV_STORAGE_ACCOUNT_FULL', 'Your cloud storage is full; files older than 30 days are removed every day'),
+  uploaderFull: () => new StorageError(507, 'OV_STORAGE_ACCOUNT_FULL', 'Your account holds too many scoresheet files; ask an administrator')
 }
 
 // ==================== Pure helpers (exported for tests and server.js) ====================
@@ -202,12 +208,41 @@ export function normalizeContentType(contentType, fileName = '') {
 /**
  * Approved-match scoresheets ({YYYY-MM-DD}/game{n}_final.json, exactly the
  * shape scoresheetUploader writes) are exempt from the write *count*; their
- * bytes are still counted (see createWriteQuota).
+ * bytes are still counted (see createWriteQuota), in a budget of their own
+ * that is much smaller than the ordinary one (DEFAULT_EXEMPT_MAX_BYTES).
  */
 const FINAL_SCORESHEET_RE = /^\d{4}-\d{2}-\d{2}\/game[^/]+_final\.json$/
 export function isRateLimitExempt({ bucket, path: p } = {}) {
   return bucket === 'scoresheets' && typeof p === 'string' && FINAL_SCORESHEET_RE.test(p)
 }
+
+/**
+ * The day folders of the 'scoresheets' bucket ({day}/… and beach/{day}/…)
+ * are the match's scheduled UTC date (frontend utils/scoresheetUploader). An
+ * upload into a day further ahead than SCORESHEET_MAX_FUTURE_DAYS is refused
+ * (server.js): such a folder escaped the retention (lib/retention.js sweeps
+ * the days before its cutoff), so 2099-12-31/ was a place to fill the volume
+ * for good (audit 2026-11-23 SEC-16). A week covers a match played early and
+ * the time zones.
+ */
+export const SCORESHEET_MAX_FUTURE_DAYS = 7
+const SCORESHEET_DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+/** The day folder ('YYYY-MM-DD') of a 'scoresheets' path, or null. */
+export function scoresheetDayOf(p) {
+  const segs = typeof p === 'string' ? parseStoragePath(p) : null
+  if (!segs || segs.length < 2) return null
+  const day = segs[0] === 'beach' ? segs[1] : segs[0]
+  return SCORESHEET_DAY_RE.test(day ?? '') ? day : null
+}
+/** Is a day folder name not a real date, or later than `maxDays` days after `now` (UTC)? */
+export function isFarFutureDay(day, { now = Date.now(), maxDays = SCORESHEET_MAX_FUTURE_DAYS } = {}) {
+  if (typeof day !== 'string' || !SCORESHEET_DAY_RE.test(day)) return false
+  const t = Date.parse(`${day}T00:00:00Z`)
+  if (!Number.isFinite(t) || new Date(t).toISOString().slice(0, 10) !== day) return true
+  return day > new Date(now + maxDays * DAY_MS).toISOString().slice(0, 10)
+}
+/** A 'scoresheets' upload path whose day folder is too far ahead (isFarFutureDay). */
+export const scoresheetDayTooFar = (p, opts) => isFarFutureDay(scoresheetDayOf(p), opts)
 
 /** Stable UUID-shaped id for an object key (supabase returned a uuid). */
 export function objectId(bucket, key) {
@@ -234,13 +269,22 @@ function isCode(e, ...codes) {
 }
 
 /**
+ * What one account may write as exempt (final) scoresheets a minute: a few
+ * of them (a final JSON is the match's events, a few MB at most). It was
+ * maxBytes (200 MiB), so one account wrote 400 MiB a minute (audit
+ * 2026-11-23 SEC-16).
+ */
+export const DEFAULT_EXEMPT_MAX_BYTES = 32 * MiB
+
+/**
  * Ready-made per-user write quota for the checkQuota hook: a fixed window of
  * maxWrites uploads and maxBytes per user. Exempt paths (default: approved
  * scoresheets, see isRateLimitExempt) skip the write count but are charged to
- * their own byte budget (exemptMaxBytes, default = maxBytes), so ordinary
- * writes cannot starve them and they cannot be used to bypass the byte cap.
+ * their own byte budget (exemptMaxBytes, default DEFAULT_EXEMPT_MAX_BYTES or
+ * maxBytes when that is smaller), so ordinary writes cannot starve them and
+ * they cannot be used to bypass the byte cap.
  */
-export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes = 200 * MiB, exemptMaxBytes = maxBytes, exempt = isRateLimitExempt, now = Date.now } = {}) {
+export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes = 200 * MiB, exemptMaxBytes = Math.min(maxBytes, DEFAULT_EXEMPT_MAX_BYTES), exempt = isRateLimitExempt, now = Date.now } = {}) {
   const usage = new Map()
   let lastPrune = now()
   const refuse = { ok: false, message: 'Storage write quota exceeded, try again later' }
@@ -276,6 +320,8 @@ export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes 
  *   STORAGE_SCORESHEETS_MIN_FREE_MB  free-space floor for scoresheets/ writes (default 256)
  *   STORAGE_MAX_FILE_MB              per-object size cap (default 5)
  *   STORAGE_BACKUP_ACCOUNT_MAX_MB    what one account may hold in backup/ (default 6144; 0: no cap)
+ *   STORAGE_SCORESHEETS_ACCOUNT_MAX_MB what the objects one account created hold in scoresheets/
+ *                                    (its owner records; default 4096; 0: no cap)
  *   STORAGE_OWNER_SCOPE              off | require | prefix (default prefix since the Phase 7
  *                                    security release)
  *   STORAGE_OWNER_SCOPE_BUCKETS      buckets the owner scope applies to: a comma list or 'all'
@@ -306,7 +352,13 @@ export function storageOptionsFromEnv(env = process.env) {
   if (maxFile !== undefined) opts.maxFileBytes = maxFile
   // 0 turns the per-account total off
   const backupAccount = megabytes('STORAGE_BACKUP_ACCOUNT_MAX_MB', { allowZero: true })
-  if (backupAccount !== undefined) opts.maxOwnerBytes = { backup: backupAccount }
+  const sheetsAccount = megabytes('STORAGE_SCORESHEETS_ACCOUNT_MAX_MB', { allowZero: true })
+  if (backupAccount !== undefined || sheetsAccount !== undefined) {
+    opts.maxOwnerBytes = {
+      ...(backupAccount !== undefined ? { backup: backupAccount } : {}),
+      ...(sheetsAccount !== undefined ? { scoresheets: sheetsAccount } : {})
+    }
+  }
   const rawScope = env.STORAGE_OWNER_SCOPE
   const scope = rawScope === undefined || String(rawScope).trim() === '' ? 'prefix' : String(rawScope).trim().toLowerCase()
   if (scope === 'require' || scope === 'prefix') {
@@ -345,8 +397,9 @@ export function storageOptionsFromEnv(env = process.env) {
  * @param {number}   [options.maxDownloadBytes=64 MiB]
  * @param {string[]} [options.allowedContentTypes] media types accepted on upload
  * @param {Object<string,number>} [options.minFreeBytes={scoresheets: 256 MiB, backup: 2 GiB}] per-bucket free-space floor
- * @param {Object<string,number>} [options.maxOwnerBytes={backup: 6 GiB}] what one account may hold in a
- *        'prefix' owner-scoped bucket, counted on disk (0: no cap); 507 OV_STORAGE_ACCOUNT_FULL above it
+ * @param {Object<string,number>} [options.maxOwnerBytes={backup: 6 GiB, scoresheets: 4 GiB}] what one account may hold in a
+ *        'prefix' owner-scoped bucket, counted on disk, and in an uploader-only bucket, counted from
+ *        its owner records (the first owner of each object; 0: no cap); 507 OV_STORAGE_ACCOUNT_FULL above it
  * @param {Object<string,number>} [options.growthAlertBytes] bytes written to a bucket in an hour that alert the operator
  * @param {(ctx:{userId,bucket,path,size,contentType}) => (boolean|{ok:boolean,message?:string}|Promise)} [options.checkQuota]
  *        per-user write quota hook, called once the write is otherwise known to
@@ -603,6 +656,69 @@ export function createStorage(options = {}) {
 
   function forgetOwner(owner) {
     for (const b of buckets) ownerUsage.delete(`${b}/${owner}`)
+    for (const u of uploaderUsage.values()) u.owners?.delete(owner)
+  }
+
+  // ---------- per-account totals of the uploader-only buckets (SEC-16) ----------
+
+  // bucket -> { at, owners: Map(account -> bytes) | null, counting: Promise | null }:
+  // the size of every object, charged to the first account of its owner
+  // record (its creator, or the account that adopted it last), counted by
+  // walking the owner records at most every UPLOADER_USAGE_TTL_MS and kept
+  // up to date by the writes and removals in between
+  const uploaderUsage = new Map()
+  const UPLOADER_USAGE_TTL_MS = 6 * HOUR_MS
+
+  /** The quota per account of an uploader-only bucket in bytes, or 0 (none). */
+  function uploaderQuotaOf(bucket) {
+    if (!uploaderReadBuckets.has(bucket)) return 0
+    const q = Number(maxOwnerBytes[bucket])
+    return Number.isFinite(q) && q > 0 ? q : 0
+  }
+
+  async function countUploaders(rr, bucket) {
+    const owners = new Map()
+    const dir = path.join(rr, OWNERS_DIR_NAME, bucket)
+    let names = []
+    try {
+      if ((await fsp.lstat(dir)).isDirectory()) names = (await fsp.readdir(dir)).filter((n) => /^[0-9a-f]{64}\.json$/.test(n))
+    } catch {
+      return owners
+    }
+    for (let i = 0; i < names.length; i += 64) {
+      await Promise.all(names.slice(i, i + 64).map(async (name) => {
+        const rec = await readRecordFile(path.join(dir, name))
+        const first = rec?.owners?.[0]
+        if (!first) return
+        try {
+          const st = await fsp.lstat(path.join(rr, bucket, ...rec.key.split('/')))
+          if (st.isFile()) owners.set(first, (owners.get(first) || 0) + st.size)
+        } catch { /* the object is gone: sweepOwners removes the record */ }
+      }))
+    }
+    return owners
+  }
+
+  /** What the objects of `owner` hold in an uploader-only bucket (counted, see uploaderUsage). */
+  async function uploaderBytes(rr, bucket, owner) {
+    let u = uploaderUsage.get(bucket)
+    if (!u || (!u.counting && (!u.owners || now() - u.at >= UPLOADER_USAGE_TTL_MS))) {
+      const counting = countUploaders(rr, bucket)
+        .then((owners) => { uploaderUsage.set(bucket, { at: now(), owners, counting: null }); return owners })
+        .catch((e) => { uploaderUsage.delete(bucket); throw e })
+      u = { at: 0, owners: null, counting }
+      uploaderUsage.set(bucket, u)
+    }
+    const owners = u.counting ? await u.counting : u.owners
+    return owners.get(owner) || 0
+  }
+
+  function addUploaderBytes(bucket, owner, delta) {
+    const owners = uploaderUsage.get(bucket)?.owners
+    if (!owners || !owner || !delta) return
+    const next = Math.max(0, (owners.get(owner) || 0) + delta)
+    if (next) owners.set(owner, next)
+    else owners.delete(owner)
   }
 
   /** Counts a write for the bucket's hourly growth and alerts the operator once an hour above the mark. */
@@ -793,15 +909,20 @@ export function createStorage(options = {}) {
       }
       if (st.isSymbolicLink()) throw err.symlink()
       if (!st.isFile()) return null
-      if (mayRemove && !(await mayRemove(uploaderOnly ? await readOwners(rr, bucket, key) : null))) throw err.forbidden()
+      const recOwners = uploaderOnly ? await readOwners(rr, bucket, key) : null
+      if (mayRemove && !(await mayRemove(recOwners))) throw err.forbidden()
       try {
         await fsp.unlink(r.target)
       } catch (e) {
         if (!isCode(e, 'ENOENT')) throw e
         return null
       }
-      // The record goes with the object (never left behind for sweep()).
-      if (uploaderOnly) await removeOwnersRecord(rr, bucket, key)
+      // The record goes with the object (never left behind for sweep()),
+      // and its bytes leave the first owner's total
+      if (uploaderOnly) {
+        await removeOwnersRecord(rr, bucket, key)
+        addUploaderBytes(bucket, recOwners?.[0], -st.size)
+      }
       return st.size
     }
     return uploaderOnly ? withOwnerLock(ownerLockId(bucket, key), run) : run()
@@ -1042,11 +1163,40 @@ export function createStorage(options = {}) {
       noteOwnerShare(bucket, owner, used + reserved, quota)
     }
 
+    // An uploader-only bucket's total per account (SEC-16): the object is the
+    // first owner's, the writer's once it adopts it (writeChecked). Reserved
+    // before the write as above; the account an adopted object leaves gets
+    // its bytes back after the write.
+    const upQuota = uploaderOnly ? uploaderQuotaOf(bucket) : 0
+    let upOwner = null
+    let upReserved = 0
+    let upReplaced = 0
+    let upPrevOwner = null
+    if (upQuota) {
+      if (existing) {
+        try { upReplaced = (await fsp.lstat(target)).size } catch { /* gone meanwhile */ }
+        upPrevOwner = owners?.[0] ?? null
+      }
+      upOwner = existing && !adopting ? (upPrevOwner ?? userId) : userId
+      const used = await uploaderBytes(rr, bucket, upOwner)
+      upReserved = buf.length - (upPrevOwner === upOwner ? upReplaced : 0)
+      if (upReserved > 0 && used + upReserved > upQuota) {
+        noteOwnerShare(bucket, upOwner, used, upQuota)
+        throw err.uploaderFull()
+      }
+      addUploaderBytes(bucket, upOwner, upReserved)
+      noteOwnerShare(bucket, upOwner, used + upReserved, upQuota)
+    }
+    const unreserve = () => {
+      if (owner) addOwnerBytes(bucket, owner, -reserved)
+      if (upOwner) addUploaderBytes(bucket, upOwner, -upReserved)
+    }
+
     // Charged only for a write that is otherwise going ahead (no quota spent on 4xx refusals).
     try {
       await runQuota({ userId: userId ?? null, bucket, path: segs.join('/'), size: buf.length, contentType: ct })
     } catch (e) {
-      if (owner) addOwnerBytes(bucket, owner, -reserved)
+      unreserve()
       throw e
     }
     try {
@@ -1054,8 +1204,10 @@ export function createStorage(options = {}) {
     } catch (e) {
       // Not written: the account's total is counted again on its next write
       if (owner) ownerUsage.delete(`${bucket}/${owner}`)
+      if (upOwner) addUploaderBytes(bucket, upOwner, -upReserved)
       throw e
     }
+    if (upPrevOwner && upPrevOwner !== upOwner) addUploaderBytes(bucket, upPrevOwner, -upReplaced)
     noteGrowth(bucket, buf.length)
   }
 

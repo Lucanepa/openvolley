@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.27 · As of 23 November 2026
+**OpenVolley and OpenBeach** · Version 1.28 · As of 23 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -324,11 +324,23 @@ club's teams, who then manages that team (section 10).
 server holds only a hash of it. A session lasts 30 days from last use, at most
 90 days, and ends when you sign out, change your password or delete the
 account. To protect against attacks, the server counts failed attempts per IP
-address and per email address, in memory only.
+address and per email address in its memory. Its database also keeps, for an
+email address with failed sign-ins, how many there were in the last 24 hours,
+under a one-way hash of the address (not the address itself), and, for each
+account, up to 20 networks it was used from (an IPv4 address, or the first
+half of an IPv6 address): a keyed hash of the email address and the network,
+which tells nothing without the server's secret key, written when you sign in
+with your password or a passkey or open a link from one of the account's
+emails there. After 100 failed attempts within 24 hours, those networks go on
+as usual, any other is let try only now and then, and the account gets an
+email notice (once in that time). The count is deleted after its 24 hours,
+with a new password and with the account; a network 60 days after its last
+use and with the account.
 
 **Emails:** I only send emails that belong to the account: confirming your
 email address, a link to reset your password, a notice that your password
-changed, a notice that a result was approved with your approval PIN, and a
+changed, a notice that someone keeps trying to sign in to your account
+(above), a notice that a result was approved with your approval PIN, and a
 notice that your PIN was locked. They contain no tracking pixels and no
 remote images. A confirmation link is valid for 24 hours, a reset link for
 60 minutes.
@@ -345,7 +357,8 @@ people I appoint). In addition, as far as their task needs it:
 - the managers of the club or team you asked for at sign-up (the approvers):
   your name, email address, sign-up date and whether your address is
   confirmed, until your request is decided;
-- the other managers of a beach tournament you manage: your email address;
+- the other managers of a beach tournament you manage, or to which you are
+  invited as co-manager: your email address;
 - the scorers who receive a roster you sent ahead: your name as its sender
   (section 10);
 - the other scorers of an official game you already score: your name, so
@@ -494,7 +507,11 @@ referee PIN of the match, or with the league's recovery key, which it keeps
 offline. Whoever knows the code and that PIN can restore the match, so keep
 both like a password. A new backup replaces the previous one. The
 files are deleted 180 days after the last change; the server backups
-(section 18) keep a copy for a while longer. The organiser of the tournament is
+(section 18) keep a copy for a while longer. If the server refuses the final
+backup and PDF for the moment (the day's share of your network is used up,
+the server is busy, no connection), they stay on your device and are sent
+again later, for at most 7 days; so does the final copy of "Save in the
+cloud" (below). The organiser of the tournament is
 responsible for being allowed to record the data and for informing the players
 and their parents (section 17).
 
@@ -552,16 +569,23 @@ officials, line-ups, sanctions, remarks, signatures and PINs are not sent; in
 OpenBeach, however, a team's name is usually its players' names, and it then
 appears on the screen. The summary is kept in the server's memory only, never
 in a database or a file, and is removed 45 minutes after the match has ended,
-after 3 hours without an update, or when the server restarts. Anyone who knows
-the code can see the summaries of its matches on openvolley.app/tv, on
+after 3 hours without an update (15 minutes for a summary that came only once
+and not through the relay), or when the server restarts. Anyone who knows the
+code can see the summaries of its matches on openvolley.app/tv, on
 livescore.openvolley.app or read them from the server's interface; a venue
-relay shows them on its own network too. A scorer device with a live screen
+relay shows them on its own network too. The screens are no official record:
+a summary that reaches the server only through the desktop app or a venue
+relay, from OpenBeach up to 3.1.1 or OpenVolley up to 26.11.5, can be
+overwritten by someone who knows the code and the match's public id. A scorer
+device with a live screen
 code also lists the summaries of its Global matches on
 livescore.openvolley.app, for anyone and without the code, unless "Show Global
 matches on livescore.openvolley.app" is switched off on it in Options, Live
-screen (it is on by default). League matches are on the livescore anyway; test
-and Easy matches are never listed. Switch the live screen off in Options to
-stop sending.
+screen (it is on by default). A code with a summary on that list shows only
+its listed summaries, on the TVs too; a match that is not to be listed needs a
+code of its own. League matches are on the livescore anyway; test and Easy
+matches are never listed. Switch the live screen off in Options to stop
+sending.
 
 **Approval with a PIN:** officials can confirm the result with a personal
 approval PIN in addition to their signature. Stored are: the PIN as a
@@ -667,7 +691,11 @@ managers and the administrators of that sport. In OpenVolley a scorer account
 sees only the saved teams of its own matches of the current season (the teams
 of its clubs and their opponents, and the games of the matches it recorded or
 edits); a scorer without a club only while the game is near and for a few
-games a week, each recorded in the change log. The scorer apps cache these
+games a week, each recorded in the change log. In OpenBeach a scorer account
+sees only the saved pairs entered in its own published or running
+tournaments (a tournament of which it scores a match on a court tablet, or
+whose match it recorded or edits). A beach competition manager changes or
+deletes only the competitions it created. The scorer apps cache these
 teams and delete them on sign-out.
 
 **Filled from official matches (OpenVolley):** after the coin toss of an
@@ -747,7 +775,13 @@ reads is the club's responsibility.
 last names, licence numbers and countries, schedule, results, names of
 referees and scorers. If a tournament is marked **public**, the public
 tournament page shows teams, names and countries, never licence numbers or
-dates of birth.
+dates of birth. **Co-managers** are invited by email address: the
+invitation keeps the address that was typed, who sent it and when, and the
+managers of the tournament see that address. A competition manager with that
+address sees the invitation in the manager and becomes a co-manager only by
+accepting it. An invitation is deleted when it is accepted, declined or
+withdrawn; one left open can no longer be used after 30 days and is then
+deleted.
 
 **Purpose:** re-using rosters, preparing a game's roster ahead, adding a club's players and team officials
 to a roster and checking the players' gender against the team's, running tournaments, matching players by
@@ -883,7 +917,8 @@ look up earlier answers; earlier on request.
   limits requests and connections per IP address, and the live relay uses it
   to recognise devices at the same venue. It keeps IP addresses in memory
   only and neither stores nor logs them (except as a pseudonymised hash of an
-  approval, section 7).
+  approval, section 7, and the keyed hashes of the networks an account was
+  used from, section 6).
 - **Change log:** for accountability the server records who changed roles,
   approved, closed or reopened matches, added co-editors or changed
   tournament entries, and when. The entries can contain co-editors' email
@@ -946,6 +981,8 @@ copy of these safeguards.
 |---|---|
 | Account and profile | Until you delete the account, or an administrator deletes it (on request, or a rejected sign-up) |
 | Session | 30 days from last use, at most 90 days |
+| Failed sign-ins of an email address (a count, under a hash of the address) | 24 hours; deleted earlier with a new password or the account |
+| Networks an account was used from (keyed hashes, at most 20) | 60 days after the last use from there; deleted with the account |
 | Links in emails | Valid 60 minutes or 24 hours, deleted 7 days later |
 | Approval PIN | Until you remove it or delete your account |
 | Scoresheets, match events, event history, signatures, approvals, remarks (health data included), scoresheet files | As the official match record: the season of the match and the 2 seasons after it (a season runs from 1 July to 30 June), then deleted by a daily sweep; for example the records of the season 2024/25 go on 1 July 2027. Earlier on request where the record does not need the data (section 19) |

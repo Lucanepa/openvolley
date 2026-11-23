@@ -15,9 +15,12 @@
  *      (the right PIN too, Retry-After 600), 60 across scopes lock the
  *      address; another address is not affected
  *
- * The limits across callers (per match and PIN type, per PIN-only lookup)
- * are raised here, so only the per-address budget is seen:
- * tests/pinMatchBudget.e2e.test.js covers them.
+ * The counts of all callers together (per match and PIN type, per PIN-only
+ * lookup: ops alerts only since owner decision 1, audit 2026-11) are raised
+ * here; the shares of the address ranges keep their production numbers (20
+ * for an address, the per-scope limit's), so the hall behind one address
+ * sees what it sees in production. tests/pinMatchBudget.e2e.test.js and
+ * tests/pinLock.scoped.e2e.test.js cover the ranges and the alerts.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'

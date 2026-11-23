@@ -186,7 +186,8 @@ export function installErrorReporter({ tool, product = 'openvolley', win = typeo
       if (kind === 'backup.error') reportError(String(data?.message || 'backup failed'), { kind: 'backup.error' })
       else if (kind === 'sync.dropped') {
         reportError(`sync dropped: ${[data?.resource, data?.action, data?.status, data?.code].filter((x) => x != null && x !== '').join(' ')}`, {
-          kind: 'sync.dropped', level: 'warn', requestId: typeof data?.requestId === 'string' ? data.requestId : undefined,
+          // a refused approval PDF is an error (useSyncQueue isRefusedApprovalPdf, LOG-10), any other drop a warning
+          kind: 'sync.dropped', level: opts?.level === 'error' ? 'error' : 'warn', requestId: typeof data?.requestId === 'string' ? data.requestId : undefined,
           data: { resource: data?.resource ?? null, action: data?.action ?? null, status: data?.status ?? null, code: data?.code ?? null, attempt: data?.attempt ?? null }
         })
       }

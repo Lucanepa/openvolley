@@ -8,6 +8,7 @@ import { STAFF_ROLES, savedNumberFinder } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import TeamEditor, { clubPeopleOf, clubPersonOffer } from './TeamEditor'
 import RequestsSection from './RequestsSection'
+import RosterSuggestionsPanel from './RosterSuggestionsPanel'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import ClubShield from './ClubShield'
 import SignaturePad from '../SignaturePad'
@@ -211,6 +212,9 @@ function TeamSections({ team, gameNumber = null, part = '', onOpenGame, onCloseG
 
       {/* db/025: who signed up as a manager or coach of this team */}
       {(!part || part === 'requests') && <RequestsSection team={team} />}
+
+      {/* db/058 (PERM-04): another club's match's roster of this team, for a yes or a no */}
+      {(!part || part === 'squad') && <RosterSuggestionsPanel team={team} onDecided={() => { squad.reload({ quiet: true }); club.reload({ quiet: true }) }} />}
 
       {(!part || part === 'squad') && <section>
         <PanelHead title={t('manage.myTeams.squad', { season: squad.data?.season || '' })} level={2} />

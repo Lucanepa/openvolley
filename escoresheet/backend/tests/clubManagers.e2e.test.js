@@ -260,10 +260,11 @@ describe('club managers end to end', { skip: SKIP }, () => {
     assert.equal((await call(users.admin, 'PUT', `/api/admin/clubs/${musterdorf.id}/managers`, { user_ids: [] })).status, 200)
     expectCode(await call(users.boss, 'GET', `/api/club/${musterdorf.id}`), 403, 'OV_FORBIDDEN')
     assert.deepEqual((await call(users.boss, 'GET', '/api/me')).json.data.managedClubs, [])
-    // db/030: the role goes with the last managed club; the club membership stays
+    // db/030: the role goes with the last managed club; db/058 (PERM-12): so
+    // does the club membership the manager row alone gave (it was no member before)
     const roles = (await sql.query('SELECT roles FROM public.profiles WHERE user_id = $1', [users.boss.id])).rows[0].roles
     assert.ok(!roles.includes('club_manager'), String(roles))
-    assert.equal(await count1(`SELECT count(*)::int AS n FROM public.account_clubs WHERE user_id = '${users.boss.id}' AND club_id = '${musterdorf.id}'`), 1)
+    assert.equal(await count1(`SELECT count(*)::int AS n FROM public.account_clubs WHERE user_id = '${users.boss.id}' AND club_id = '${musterdorf.id}'`), 0)
   })
 
   it('the audit list names the club of each club entry and of a club\'s invite code; a deleted club keeps the name in its details', async () => {

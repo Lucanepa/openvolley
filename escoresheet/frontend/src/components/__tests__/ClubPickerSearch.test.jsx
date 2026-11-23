@@ -33,6 +33,32 @@ describe('the club picker', () => {
     await waitFor(() => expect(onPick).toHaveBeenCalledWith([TINA], 'Coach'))
   })
 
+  // PERM-19, review CR-1: a team manager's answer names people only when it
+  // is whole, and the daily budget can hold someone back (`limited`)
+  it('nobody named but more match: says to type more, not that nobody matches', async () => {
+    const search = vi.fn(async () => ({ data: { people: [], more: true }, error: null }))
+    render(<ClubPlayerPickerModal open mode="officials" players={[NOAH]} roles={roles} onPick={vi.fn()} onClose={vi.fn()} search={search} />)
+    fireEvent.change(screen.getByTestId('club-picker-search'), { target: { value: 'Sch' } })
+    await waitFor(() => expect(screen.getByTestId('club-picker-search-more')).toHaveTextContent('clubPlayers.searchMore'))
+    expect(screen.queryByText('clubPlayers.noMatchPeople')).toBeNull()
+    expect(screen.queryAllByTestId('club-picker-row')).toEqual([])
+  })
+
+  it('the daily search limit: its own message, never "type more"', async () => {
+    const search = vi.fn(async () => ({ data: { people: [], more: false, limited: true }, error: null }))
+    render(<ClubPlayerPickerModal open mode="officials" players={[NOAH]} roles={roles} onPick={vi.fn()} onClose={vi.fn()} search={search} />)
+    fireEvent.change(screen.getByTestId('club-picker-search'), { target: { value: 'Weber Tom' } })
+    await waitFor(() => expect(screen.getByTestId('club-picker-search-limited')).toHaveTextContent('clubPlayers.searchLimited'))
+    expect(screen.queryByTestId('club-picker-search-more')).toBeNull()
+    expect(screen.queryByText('clubPlayers.noMatchPeople')).toBeNull()
+    // limited and more at once: the limit is what to say
+    search.mockResolvedValue({ data: { people: [TINA], more: true, limited: true }, error: null })
+    fireEvent.change(screen.getByTestId('club-picker-search'), { target: { value: 'Trainer' } })
+    await waitFor(() => expect(screen.getAllByTestId('club-picker-row').map((r) => r.textContent)).toEqual([expect.stringContaining('Trainer Tina')]))
+    expect(screen.getByTestId('club-picker-search-limited')).toHaveTextContent('clubPlayers.searchLimited')
+    expect(screen.queryByTestId('club-picker-search-more')).toBeNull()
+  })
+
   it('a failed search leaves the local ones', async () => {
     const search = vi.fn(async () => { throw new Error('offline') })
     render(<ClubPlayerPickerModal open mode="officials" players={[NOAH]} roles={roles} onPick={vi.fn()} onClose={vi.fn()} search={search} />)

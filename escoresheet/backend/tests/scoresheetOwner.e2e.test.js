@@ -865,7 +865,8 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     const run = async (...args) => (await execFileP(process.execPath, [PATHS_SCRIPT, ...args], { env: { ...process.env, STORAGE_ROOT: storageRoot } })).stdout
     const onDisk = (p) => existsSync(join(storageRoot, 'scoresheets', ...p.split('/')))
     const ownerRecord = (p) => existsSync(join(storageRoot, '.owners', 'scoresheets', `${createHash('sha256').update(p).digest('hex')}.json`))
-    const [day, beachDay] = ['2031-02-03', '2031-02-04']
+    // days of their own, in the past: a day folder more than a week ahead is refused since 2026-11-23 (SEC-16)
+    const [day, beachDay] = ['2021-02-03', '2021-02-04']
     const ext = `match_${Date.now()}_paths`
     const n = gameSeq++
     await insertMatch(users.ivan, { ext, gameN: n, scheduledAt: `${day}T10:00:00Z` })

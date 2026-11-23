@@ -95,6 +95,14 @@ describe('referee PIN check', () => {
     expect((await validateRefereePin('372449', { checkCloud: noNumber, checkLan: lanOther, gameNumber: '12' })).source).toBe('supabase')
   })
 
+  // audit 2026-11, SEC-06: the cloud check gets the game number too, so it
+  // can name the one cloud match listed under it (serverDataSync listedMatchKey)
+  it('with only a game number picked, the cloud check is told the game number', async () => {
+    const checkCloud = vi.fn().mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12 } })
+    expect((await validateRefereePin('372449', { checkCloud, checkLan: relayNoMatch, gameNumber: 12 })).source).toBe('supabase')
+    expect(checkCloud).toHaveBeenCalledWith('372449', 'referee', { gameNumber: '12' })
+  })
+
   it('a PIN the relay finds in more than one match asks for the game (409)', async () => {
     const checkCloud = vi.fn().mockResolvedValue({ success: false, error: 'Invalid PIN code' })
     const checkLan = vi.fn().mockRejectedValue(Object.assign(new Error('More than one match has this PIN.'), { status: 409 }))

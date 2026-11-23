@@ -5,6 +5,7 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { keyHash, pinHash, organizerHash, newShareToken, sanitizeSummary, decodePdf, isGlobalKey, isPin, isOrganizerCode, isShareToken, createGlobalMatches } from '../lib/globalMatches.js'
 import { bootServer } from './helpers/e2eServer.js'
+import { minimalPdf } from './helpers/pdfFixture.js'
 
 const KEY = 'k'.repeat(22)
 
@@ -59,7 +60,8 @@ describe('decodePdf', () => {
   it('takes a PDF, refuses anything else or too large', () => {
     assert.equal(decodePdf(undefined), null)
     assert.equal(decodePdf(null), null)
-    assert.ok(Buffer.isBuffer(decodePdf(Buffer.from('%PDF-1.7 x').toString('base64'))))
+    // a complete PDF (since 2026-11-23, PERM-15: a "%PDF-1.7 x" prefix alone is refused, see globalShare.pdf.test.js)
+    assert.ok(Buffer.isBuffer(decodePdf(minimalPdf().toString('base64'))))
     assert.equal(decodePdf(Buffer.from('<html>').toString('base64')), false)
     assert.equal(decodePdf('not base64!'), false)
     assert.equal(decodePdf(Buffer.concat([Buffer.from('%PDF'), Buffer.alloc(3 * 1024 * 1024)]).toString('base64')), false)

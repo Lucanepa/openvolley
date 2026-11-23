@@ -9,9 +9,19 @@
  * bundle (backend/lib/publicColumns.js relayBundleView).
  *
  * @param {{ setStarted: boolean, ownEntered: boolean, otherEntered: boolean }} args
- *   setStarted: a point was scored in the set (the scorer's isFirstRally is false)
+ *   setStarted: the set has started (startsSet: its first rally began, or a
+ *   point was scored in play; the scorer's isFirstRally is false)
  * @returns {boolean} true while this team's line-up is to be hidden
  */
+/**
+ * The event that starts a set, the one rule of every screen and data path
+ * (domain/rally isFirstRallyOf, backend/lib/publicColumns.js): the set's
+ * start or a rally's, or a point that is not a penalty. A set that opens with
+ * a penalty point (a sanction before the first serve) has not started: its
+ * first line-up stays covered (audit LOG-19).
+ */
+export const startsSet = (e) => !!e && (e.type === 'set_start' || e.type === 'rally_start' || (e.type === 'point' && e.payload?.penaltySeq == null))
+
 export function lineupHiddenUntilBoth({ setStarted, ownEntered, otherEntered }) {
   return !setStarted && !!ownEntered && !otherEntered
 }
@@ -39,7 +49,7 @@ export function withoutCoveredTeamEvents(events, coveredTeams, setIndex) {
 /**
  * The teams whose line-up of set `setIndex` is covered, from the recorded
  * events (the scorer's rule: a team's line-up is in with its initial
- * 'lineup' event, the set has started with its first point): [] or
+ * 'lineup' event, the set has started with startsSet): [] or
  * ['home'] / ['away'].
  * @param {Array<object>} events
  * @param {number} setIndex
@@ -47,7 +57,7 @@ export function withoutCoveredTeamEvents(events, coveredTeams, setIndex) {
 export function coveredLineupTeamsOf(events, setIndex) {
   const inSet = (Array.isArray(events) ? events : []).filter((e) => e && (e.setIndex ?? 1) === setIndex)
   const entered = (team) => inSet.some((e) => e.type === 'lineup' && e.payload?.team === team && e.payload?.isInitial)
-  return coveredLineupTeams({ setStarted: inSet.some((e) => e.type === 'point'), homeEntered: entered('home'), awayEntered: entered('away') })
+  return coveredLineupTeams({ setStarted: inSet.some(startsSet), homeEntered: entered('home'), awayEntered: entered('away') })
 }
 
 /**

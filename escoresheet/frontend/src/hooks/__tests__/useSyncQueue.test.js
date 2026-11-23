@@ -177,13 +177,16 @@ import {
   isServerBehindError,
   countServerBehindJobs,
   resyncMatch,
-  resetResyncAttempts
+  resetResyncAttempts,
+  isRefusedApprovalPdf,
+  DROP_JOB
 } from '../useSyncQueue'
 import { appUpdateNeeded, resetAppUpdateNeededForTests } from '../../utils/appUpdate'
 import { splitRefusedRestore, RESTORE_REFUSED } from '../../utils/refusedRestore'
 import { queueSetDeletes } from '../../utils/eventSync'
 import { queueAndWait, useSequentialSync } from '../useSequentialSync'
 import { scoresheetUploadJob, supersedeUnsentScoresheetUploads } from '../../utils/scoresheetUploader'
+import { setErrorTap } from '../../utils/activity/bus'
 
 const MATCH_UUID = '11111111-2222-4333-8444-555555555555'
 const ok = (data = null) => ({ data, error: null })
@@ -722,6 +725,35 @@ describe('scoresheet upload job', () => {
     await runUploadLane()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
     expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  // LOG-10 (audit 26.11): the device's approval PDF refused for a closed match
+  // was dropped without a trace. Still never sent again (a later reopen would
+  // take an old approval's file), but the refusal stays on the row and goes
+  // to the error tracker as an error, not a warning
+  it('a refused approval PDF (OV_MATCH_CLOSED) is dropped with its reason kept and reported as an error', async () => {
+    const taps = []
+    setErrorTap((kind, data, opts) => taps.push({ kind, data, level: opts?.level }))
+    try {
+      const pdfJob = { id: 1, resource: 'scoresheet', action: 'upload', status: 'queued', retry_count: 0, payload: { path: '2026-10-25/game903703_k1.pdf', file: new Blob(['%PDF-1.7']), contentType: 'application/pdf', match_external_id: 'match_100_aaa' } }
+      fakeDb.sync_queue.reset([pdfJob])
+      api.respond = (call) => call.table === '__storage'
+        ? { data: null, error: { message: 'This match is closed: its scoresheet stays as it was stored', code: 'OV_MATCH_CLOSED', status: 409 }, status: 409 }
+        : defaultRespond(call)
+      await runUploadLane()
+      const row = fakeDb.sync_queue.map.get(1)
+      expect(row.status).toBe('dropped')
+      expect(row.last_error).toMatchObject({ code: 'OV_MATCH_CLOSED', status: 409 })
+      expect(taps.filter(t => t.kind === 'sync.dropped')).toEqual([
+        { kind: 'sync.dropped', data: expect.objectContaining({ resource: 'scoresheet', action: 'upload', status: 409, code: 'OV_MATCH_CLOSED' }), level: 'error' }
+      ])
+      // any other drop stays a warning
+      expect(isRefusedApprovalPdf({ resource: 'scoresheet', payload: { path: 'a/game1_k1_final.json' } }, DROP_JOB, { code: 'OV_MATCH_CLOSED' })).toBe(false)
+      expect(isRefusedApprovalPdf({ resource: 'scoresheet', payload: { path: 'a/game1_k1.pdf' } }, DROP_JOB, { code: 'OV_MATCH_CLOSED' })).toBe(true)
+      expect(isRefusedApprovalPdf({ resource: 'event', payload: {} }, DROP_JOB, { code: 'OV_MATCH_CLOSED' })).toBe(false)
+    } finally {
+      setErrorTap(null)
+    }
   })
 
   // Approved (PDF 1 queued), the upload waits (hall Wi-Fi), an admin reopens,

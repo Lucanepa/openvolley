@@ -96,9 +96,28 @@ apps feed it too).
 
 - **When.** After every successful write of a `matches` row (`/api/db`, `/api/match/restore`),
   once the match has been quiet for 60 s (at most 10 min), and at start for the matches written in
-  the last 6 h. Only an official match past its coin toss: not a test, `game_n > 0`, indoor, not
-  exempt (released or a second match of the game), status live / ended / approved / final, of the
-  current season, its game in `svrz_games`.
+  the last 6 h. Only an official match that is **closed** (owner decision 2026-11-23 no. 2, audit
+  2611 PERM-04: approved / final with `closed_at`; the coin toss is not enough): not a test,
+  `game_n > 0`, indoor, not exempt (released or a second match of the game), of the current
+  season, its game in `svrz_games`.
+- **Whose team.** The writer is the account that closed the match (`closed_by`), else its
+  creator. The side whose team is of a club the writer is a member of is merged at once, as
+  below, with the writer as the actor (audit, `imported_by` of the club's new rows). **Another
+  club's team** gets a **suggestion** only (`roster_suggestions`, db/058; no personal data, the
+  roster stays the match's): nothing is written to its saved team or its club's lists. Whoever may
+  manage that team (its team managers, its club's managers, admins) sees it on the team's page
+  with what it would change (`GET /api/team/:id/roster-suggestions`) and confirms it (merged then,
+  the same way, the manager the actor) or rejects it (`POST /api/team/:id/roster-suggestions/:sid
+  { decision }`; audited `team.squad.suggestion`). A suggestion of a match an admin reopened waits
+  until it is closed again; a deleted match takes its suggestions with it.
+- **A team of no club** (not in `club_teams`: most opponents today; review CR-2 of PERM-04) has
+  nobody to confirm a suggestion, so it gets none. Its saved team is filled **add-only**, the
+  writer the actor (`team.squad.match` with `add_only`): new people are added and empty fields
+  filled (a shirt number nobody holds, a missing licence or first name), as an older match does;
+  nobody's number changes, nobody is set active again, no official's role moves, and it has no
+  club lists. A match without a writer leaves it alone. Its numbers therefore stay those of the
+  first match that gave them until a competition manager or an admin changes them in
+  Competitions, or the team's club comes to OpenVolley (then its managers keep the saved team).
 - **Which team.** Each side of the row by its team name against the schedule's home and away
   names (the same, accents and case aside, or one holding the other; straight or swapped: Match
   Setup's swap, a game played the other way round). A side no name points to is left alone.
@@ -107,8 +126,9 @@ apps feed it too).
   is no club's). The match's people: the same person by licence, else by name (accents, case,
   first and last name swapped). **The match's shirt number wins**; a player of the saved team who
   had it loses it. Only the team's **latest** official match sets numbers: an older one (another
-  official match of the team, past its coin toss, kicks off later) adds people and fills an empty
-  number nobody holds. A missing licence is filled in; another licence than the saved team's stays
+  closed official match of the team kicks off later and its roster reached the team: its writer
+  is of the team's club, or the team confirmed its suggestion; a deleted match is gone) adds
+  people and fills an empty number nobody holds. A missing licence is filled in; another licence than the saved team's stays
   the saved team's (counted). New people come without captain or libero; **nobody is removed**;
   the captain and libero flags stay; a player set inactive who played is active again. Officials
   are added or completed, never removed. **Their role follows the latest match** (owner
@@ -129,8 +149,9 @@ apps feed it too).
 - **The club's lists** (team in `club_teams`): its people with a licence (4 to 7 digits) as
   `match` rows (docs/club-licences-spec.md section 8): players to `players`, Coach and Assistant
   Coaches to `coaches`.
-- **Audit** `team.squad.match`: game number, season, side, ids, counts; no name, no licence.
-  Nothing changed: no write, no entry.
+- **Audit** `team.squad.match` (the writer's own side; the writer the actor) and
+  `team.squad.suggestion` (made, confirmed, rejected): game number, season, side, ids, counts; no
+  name, no licence. Nothing changed: no write, no entry, no suggestion.
 - **Numbers on the next import.** An Einsatzliste has no shirt numbers. Match Setup fills them from
   the side's saved team on the device (by licence, else name; never a number the roster has),
   for 14 players or fewer and for the player pool of more; "Add from club" too, and its picker

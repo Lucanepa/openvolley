@@ -1,0 +1,88 @@
+name: Workflow and deploy checks
+
+# - The static check of every workflow (.github/scripts/workflow-hygiene.sh:
+#   pinned actions, permissions, no token left behind, signing keys only in
+#   environment jobs without npm or third-party actions) and its own test.
+# - The offline tests of the deploy kit (escoresheet/deploy/tests): stubs for
+#   docker, ssh and curl, throwaway gpg keys, nothing leaves the runner. The
+#   restore test also boots server.js against a throwaway Postgres with the
+#   env file restore-test.sh makes, so a backend change that a restored
+#   production copy could not start with fails here. The publish-desktop and
+#   publish-svrz-rc tests need docker, fdroid and the Android build-tools and
+#   run on lenovoserver only.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/**'
+      - 'escoresheet/deploy/**'
+      - 'escoresheet/backend/server.js'
+      - 'escoresheet/backend/lib/**'
+      - 'escoresheet/backend/package-lock.json'
+  pull_request:
+    paths:
+      - '.github/**'
+      - 'escoresheet/deploy/**'
+      - 'escoresheet/backend/server.js'
+      - 'escoresheet/backend/lib/**'
+      - 'escoresheet/backend/package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Workflow hygiene
+        run: |
+          .github/scripts/workflow-hygiene.sh
+          .github/scripts/test-workflow-hygiene.sh
+
+  deploy-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG_TEST_URL: postgres://postgres:test@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/backend/package-lock.json
+
+      # server.js for the restore test's boot check
+      - name: Install backend dependencies
+        working-directory: escoresheet/backend
+        run: npm ci
+
+      - name: Deploy kit tests
+        run: |
+          set -euo pipefail
+          for t in archive-command backup bump-cask check-edge deploy compose-env restore-test ov-backup-pull publish-resign-timer; do
+            echo "::group::$t"
+            "escoresheet/deploy/tests/$t.test.sh"
+            echo "::endgroup::"
+          done

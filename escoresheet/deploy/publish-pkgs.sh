@@ -4,6 +4,7 @@
 #   escoresheet/deploy/publish-pkgs.sh [--no-sync] [FILE.deb | FILE.apk ...]
 #   escoresheet/deploy/publish-pkgs.sh --desktop VERSION [--app beach] [--staging] [--flatpak] [--pacman] [--no-sync] [FILE.apk ...]
 #   escoresheet/deploy/publish-pkgs.sh --resign [--no-sync]
+#   (any publish) [--without-resign-timer]
 #
 # Runs on lenovoserver (never on the VM: the signing keys live only here).
 #
@@ -127,6 +128,20 @@
 # of about 8 days the monitor also alerts when the timer is missing or never
 # runs, well before the 30-day Valid-Until runs out.
 #
+# Re-sign timer guard (SEC-54): a publish signs the index for 30 days and only
+# the weekly --resign keeps it valid after that, so a publish that syncs
+# refuses unless systemd/openvolley-pkgs-resign.timer is enabled here and the
+# newest successful re-sign on record is at most
+# ${OV_PKGS_RESIGN_MAX_AGE_DAYS:-9} days old: ${OV_PKGS_HOME}/resign-heartbeat
+# (written by every --resign that synced) or systemd's record of the
+# service's last run, if it succeeded (until the next boot; it also covers a
+# re-sign checkout from before the heartbeat). Right after installing the
+# timer, or when the refusal says no re-sign is on record: move
+# ~/ov-ops/pkgs-resign to origin/main (the unit's header), then
+# sudo systemctl start openvolley-pkgs-resign.service once.
+# --without-resign-timer publishes anyway (say why: APT clients get "Release
+# file is expired" 30 days later unless something re-signs before then).
+#
 # Layout under ${OV_PKGS_HOME} (default ~/.config/openvolley-pkgs, mode 700):
 #   gnupg/            APT signing key (GNUPGHOME). Vaultwarden: "OpenVolley APT signing key"
 #   gpg-passphrase    its passphrase (mode 600)
@@ -170,7 +185,15 @@ kuma() {  # status msg
   [[ -n "$KUMA_URL" ]] || return 0
   curl -fsS -m 10 -G --data-urlencode "status=$1" --data-urlencode "msg=$2" "$KUMA_URL" >/dev/null || true
 }
-die() { echo "publish-pkgs: $*" >&2; kuma down "$*"; exit 1; }
+# OV_PKGS_NTFY_URL (optional, an ntfy topic): a --resign that fails (unattended,
+# the timer) posts there; an interactive publish only prints.
+NTFY_URL=${OV_PKGS_NTFY_URL:-}
+resign_alert() {
+  [[ -n "$NTFY_URL" && "${RESIGN:-0}" == 1 ]] || return 0
+  curl -fsS -m 10 -H "Title: OpenVolley APT re-sign FAILED" -H "Priority: high" -H "Tags: rotating_light" \
+    -d "$1 (journalctl -u openvolley-pkgs-resign)" "$NTFY_URL" >/dev/null || true
+}
+die() { echo "publish-pkgs: $*" >&2; kuma down "$*"; resign_alert "$*"; exit 1; }
 # shellcheck source=SCRIPTDIR/lib/publish-lib.sh
 . "$KIT_DIR/lib/publish-lib.sh"
 # app id -> SHA-256 of its signing certificate, for the APKs given below.
@@ -184,6 +207,7 @@ APP=
 FLATPAK=0
 PACMAN=0
 RESIGN=0
+RESIGN_TIMER_GUARD=1
 while (( $# )); do
   case "$1" in
     --no-sync) SYNC=0 ;;
@@ -203,6 +227,7 @@ while (( $# )); do
     --flatpak) FLATPAK=1 ;;
     --pacman) PACMAN=1 ;;
     --resign) RESIGN=1 ;;
+    --without-resign-timer) RESIGN_TIMER_GUARD=0 ;;
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) FILES+=("$1") ;;
@@ -233,6 +258,53 @@ if (( PACMAN )); then
     die "--pacman: $pb is at $pb_ver, not $DESKTOP_V: run packaging/aur/bump.sh $([[ ${APP:-openvolley} == beach ]] && echo openbeach || echo openvolley) $DESKTOP_V and commit it first"
 fi
 [[ -z "$DESKTOP_RELEASE_DIR" ]] || (( ! SYNC )) || die "OV_DESKTOP_RELEASE_DIR is for tests: use it with --no-sync"
+
+# --- re-sign timer guard (see the header) -------------------------------------
+RESIGN_TIMER_UNIT=openvolley-pkgs-resign.timer
+RESIGN_SERVICE_UNIT=openvolley-pkgs-resign.service
+RESIGN_HEARTBEAT="$PKGS/resign-heartbeat"
+RESIGN_MAX_AGE_DAYS=${OV_PKGS_RESIGN_MAX_AGE_DAYS:-9}
+[[ "$RESIGN_MAX_AGE_DAYS" =~ ^[1-9][0-9]*$ ]] || die "OV_PKGS_RESIGN_MAX_AGE_DAYS must be a whole number of days"
+# the way to a first run on record (the unit's header has the install steps)
+RESIGN_FIRST_RUN="git -C ~/ov-ops/pkgs-resign checkout --detach origin/main (after reading what changed in escoresheet/deploy/), then sudo systemctl start $RESIGN_SERVICE_UNIT once"
+resign_timer_problem() {  # prints why the index would expire unattended, nothing when the timer is fine
+  local k v result='' status='' exit_ts='' last=0 failed='' age
+  if ! command -v systemctl >/dev/null 2>&1 || ! systemctl is-enabled --quiet "$RESIGN_TIMER_UNIT" 2>/dev/null; then
+    echo "the re-sign timer $RESIGN_TIMER_UNIT is not enabled here (install it: systemd/openvolley-pkgs-resign.service)"
+    return 0
+  fi
+  # The newest successful re-sign on record: the heartbeat (every --resign that
+  # synced writes it), or systemd's record of the service's last run (kept until
+  # the next boot), which also covers a re-sign checkout from before the
+  # heartbeat. The unit runs --resign without --no-sync, so a success synced.
+  [[ ! -f "$RESIGN_HEARTBEAT" ]] || last=$(stat -c %Y "$RESIGN_HEARTBEAT")
+  while IFS='=' read -r k v; do
+    case "$k" in Result) result=$v ;; ExecMainStatus) status=$v ;; ExecMainExitTimestamp) exit_ts=$v ;; esac
+  done < <(systemctl show --timestamp=unix -p Result,ExecMainStatus,ExecMainExitTimestamp "$RESIGN_SERVICE_UNIT" 2>/dev/null || true)
+  if [[ "$exit_ts" =~ ^@([0-9]+)$ ]]; then
+    if [[ "$result" == success && "$status" == 0 ]]; then
+      (( BASH_REMATCH[1] <= last )) || last=${BASH_REMATCH[1]}
+    else
+      failed="its last run failed (systemd: Result=$result, status $status)"
+    fi
+  fi
+  if (( last == 0 )); then
+    echo "no successful re-sign on record${failed:+ and $failed} (no $RESIGN_HEARTBEAT, no successful run of $RESIGN_SERVICE_UNIT since boot): $RESIGN_FIRST_RUN, and journalctl -u openvolley-pkgs-resign"
+    return 0
+  fi
+  age=$(( ($(date +%s) - last) / 86400 ))
+  (( age <= RESIGN_MAX_AGE_DAYS )) ||
+    echo "the last re-sign was $age days ago (more than $RESIGN_MAX_AGE_DAYS)${failed:+; $failed}: see journalctl -u openvolley-pkgs-resign; to run it again: $RESIGN_FIRST_RUN"
+}
+if (( SYNC && ! RESIGN )); then
+  problem=$(resign_timer_problem)
+  if [[ -n "$problem" ]]; then
+    if (( RESIGN_TIMER_GUARD )); then
+      die "refusing to publish: $problem. The APT index expires 30 days after a publish unless it is re-signed; --without-resign-timer publishes anyway"
+    fi
+    echo "publish-pkgs: WARNING (--without-resign-timer): $problem; the APT index expires 30 days after this publish unless it is re-signed" >&2
+  fi
+fi
 
 if (( RESIGN )); then tools=(dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv rsync python3)
 else tools=(dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3 node sha256sum); fi
@@ -468,6 +540,8 @@ if (( RESIGN )); then
     "${SUDO[@]}" rsync -rlt --delete-after --delay-updates --chmod=D755,F644 \
       --include='/dists/***' --exclude='*' "$APT/" "${DEST%/}/apt/"
     echo "synced $APT/dists/ to ${DEST%/}/apt/dists/"
+    # the heartbeat a publish checks (re-sign timer guard)
+    printf '%s %s\n' "$(date -u +%FT%TZ)" "$vu" >"$RESIGN_HEARTBEAT.tmp" && mv -f "$RESIGN_HEARTBEAT.tmp" "$RESIGN_HEARTBEAT"
     kuma up "APT index valid until $vu"
   else
     echo "not synced (--no-sync); tree: $PUB"
