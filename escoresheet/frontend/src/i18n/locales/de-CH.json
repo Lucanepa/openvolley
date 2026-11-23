@@ -3182,6 +3182,9 @@
       "q_importPdf": "Wie importier ich es Kader us emne PDF?",
       "a_importPdf": "Lah i «Kader bearbeite» «Lokal» uusgwählt und tipp uf «PDF ufelade». Wähl s Kader-PDF vom Team oder d Einsatzliste und tipp uf «PDF importiere». Das ersetzt d Spieler und d Bankoffizielli. Bi meh als 14 Spieler hakisch aa, wer spiilt. Prüef dänn d Geburtsdate, gib fehlendi Trikotnummere ii und leg de Captain und d Liberos fescht. Es Geburtsdatum am 1. Januar isch oft en Platzhalter (01.01.1900, wenn s Datum nöd bekannt isch) oder en Importfehler: De Kader lischtet die Persone über de Spieler uf. Korrigier d Date, wo du kennsch. D Usloosig fragt nöd dänach.",
       "tip_importPdf": "Tipp da, zum d Spieler us emne Kader-PDF importiere.",
+      "q_importPhoto": "Chan ich d Einsatzliste us emne Foto importiere?",
+      "a_importPhoto": "Ja. Lah i «Kader bearbeite» «Lokal» uusgwählt und tipp uf «Foto vo de Liste». Fotografier di usdruckti Liste oder wähl es Bild devo (au en Screenshot gaht; zoom ine, bis d Tabälle ihn füllt). Zieh di vier Egge uf d Siite und tipp uf «Liste läse»: S Foto wird uf dem Grät gläse, nöd gschickt und nöd gspeicheret. Prüef d Ziile: Es rots Fäld muesch korrigiere, es gääls prüefe. Trikotnummere, Captain (C, K oder e iichreisti Nummere) und Liberos (L), wo uf de Liste staht, gälted für das Spiil; leeri Nummere chömed us em gspeicherete Team. Erscht mit «Übernä» änderet sich öppis. Es PDF vo de Liste wird zueverlässiger gläse als es Foto.",
+      "tip_importPhoto": "Tipp da, zum d Einsatzliste us emne Foto läse.",
       "q_liberos": "Wie bestimm ich d Liberos?",
       "a_liberos": "Wähl im Kader i de Libero-Spalte «Libero 1» oder «Libero 2». Es Team hät höchstens 2 Liberos. Mit meh als 12 Spieler bruucht s 2.",
       "tip_liberos": "Wähl da «Libero 1» oder «Libero 2», zum dä Spieler zum Libero mache.",
@@ -7326,5 +7329,86 @@
     "scorerOffline": "Schriiber offline",
     "fullscreen": "Vollbild",
     "exitFullscreen": "Vollbild verlah"
+  },
+  "rosterPhoto": {
+    "button": "Foto vo de Liste",
+    "title": "Einsatzliste us emne Foto · {{team}}",
+    "loading": "Foto wird göffnet…",
+    "source": {
+      "description": "Fotografier di usdruckti Liste oder wähl es Bild devo uf dem Grät.",
+      "tipFlat": "Leg d Liste flach ane und heb s Grät grad drüber.",
+      "tipLight": "Guets Liecht, kei Schatte über de Näme.",
+      "tipWhole": "Di ganzi Siite im Bild, scharf.",
+      "take": "Foto mache",
+      "choose": "Bild wähle",
+      "private": "Wird uf dem Grät gläse: S Foto wird weder gschickt no gspeicheret."
+    },
+    "crop": {
+      "description": "Zieh di vier Egge uf d Egge vo de Siite. Di dick Kante isch obe: «Dräie» verschiebt si.",
+      "top": "Obe",
+      "turn": "Dräie",
+      "another": "Anders Foto",
+      "read": "Liste läse",
+      "cornerTopLeft": "Egge obe links",
+      "cornerTopRight": "Egge obe rächts",
+      "cornerBottomRight": "Egge unde rächts",
+      "cornerBottomLeft": "Egge unde links"
+    },
+    "reading": {
+      "prepare": "Texterkännig wird vorbereitet…",
+      "read": "Liste wird gläse… {{percent}} %"
+    },
+    "confirm": {
+      "description": "Prüef jedi Ziile und korrigier, was falsch gläse worde isch. Erscht mit «Übernä» änderet sich öppis.",
+      "method": "Uf dem Grät gläse (Texterkännig)",
+      "fromSaved_one": "{{count}} Name us em gspeicherete Team",
+      "fromSaved_other": "{{count}} Näme us em gspeicherete Team",
+      "toFix_one": "{{count}} Fäld korrigiere (rot)",
+      "toFix_other": "{{count}} Fälder korrigiere (rot)",
+      "toCheck_one": "{{count}} Fäld prüefe (gääl)",
+      "toCheck_other": "{{count}} Fälder prüefe (gääl)",
+      "players_one": "{{count}} Spieler",
+      "players_other": "{{count}} Spieler",
+      "officials": "Trainer und Assistänte",
+      "empty": "Kei Spielerziile meh.",
+      "add": "Ziile dezuefüege",
+      "remove": "Entferne",
+      "apply_one": "{{count}} Spieler übernä",
+      "apply_other": "{{count}} Spieler übernä"
+    },
+    "col": {
+      "number": "Nr.",
+      "lastName": "Name",
+      "firstName": "Vorname",
+      "licence": "Lizenz",
+      "captain": "C",
+      "captainLong": "Captain",
+      "libero": "L",
+      "liberoLong": "Libero"
+    },
+    "role": {
+      "coach": "Trainer",
+      "ac1": "Assistänt 1",
+      "ac2": "Assistänt 2"
+    },
+    "issue": {
+      "number": "E Trikotnummere isch 1 bis 99.",
+      "duplicateNumber": "Die Nummere staht zwöimal uf de Liste.",
+      "licence": "Prüef d Lizenznummere: nume Ziffere, wie uf de Liste.",
+      "missingLicence": "Kei Lizenznummere gläse.",
+      "missingName": "Es bruucht en Name.",
+      "odd": "Gseht falsch gläse us: prüef s.",
+      "unsure": "Im Foto schlächt läsbar: prüef s.",
+      "twoCaptains": "Nume ein Captain.",
+      "tooManyLiberos": "Höchstens zwei Liberos.",
+      "captainLibero": "En Libero cha nöd Captain sii."
+    },
+    "error": {
+      "photo-unreadable": "S Foto hät sich nöd la öffne. Probier es anders.",
+      "ocr-load": "D Texterkännig hät nöd chöne starte. Im Web bruucht si s erscht Mal e Verbindig (öppe 12 MB). Probier s nomal, importier s PDF oder erfass d Spieler vo Hand.",
+      "ocr-timeout": "S Läse hät uf dem Grät z lang duuret. Probier es scharfs Foto nume mit de Liste, importier s PDF oder erfass d Spieler vo Hand.",
+      "ocr-empty": "Kei Spielerziile gfunde. Prüef, öb di ganzi Liste scharf im Foto isch, und probier s nomal.",
+      "retry": "Nomal probiere"
+    }
   }
 }

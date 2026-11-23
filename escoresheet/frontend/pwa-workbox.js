@@ -30,8 +30,10 @@ export const PRECACHE_GLOB_PATTERNS = ['**/*.{js,mjs,css,html,ico,png,jpg,jpeg,s
 export const PRECACHE_MAX_FILE_BYTES = 8 * 1024 * 1024
 
 // assets/404.html: the page host's answer for a file of the build it no
-// longer has (public/assets/404.html, STATIC_ASSETS_ROUTE), not an app file
-export const PRECACHE_GLOB_IGNORES = ['**/node_modules/**/*', 'sw.js', 'workbox-*.js', 'sign/**', 'pair/**', 'assets/404.html']
+// longer has (public/assets/404.html, STATIC_ASSETS_ROUTE), not an app file.
+// ocr/: the photo import's text recognition (vite-plugin-ocr-assets.js),
+// about 12 MB: loaded on the first photo import only (OCR_FILES_ROUTE)
+export const PRECACHE_GLOB_IGNORES = ['**/node_modules/**/*', 'sw.js', 'workbox-*.js', 'sign/**', 'pair/**', 'assets/404.html', 'ocr/**']
 export const NAVIGATE_FALLBACK_DENYLIST = [/^\/api\//, /^\/sign(\/|$)/, /^\/pair(\/|$)/]
 
 // Logo files the pages' heads link to (rendered from brand/ by
@@ -70,6 +72,28 @@ export const IGNORE_URL_PARAMETERS = [/.*/]
 export const API_NETWORK_ONLY_ROUTE = {
   urlPattern: /^https?:\/\/.*\/api\/.*/i,
   handler: 'NetworkOnly'
+}
+
+/**
+ * The photo import's recognition files (ocr/<version>/, vite-plugin-ocr-assets.js):
+ * not precached, kept after the first photo import, so the next works offline.
+ * Their own cache: the build's 100 other assets never push them out. The
+ * folder carries tesseract.js's version, so a new one is a new address.
+ * Listed before STATIC_ASSETS_ROUTE (the first matching route wins).
+ */
+export const OCR_FILES_ROUTE = {
+  urlPattern: /\/ocr\/[^/]+\/(?:[^/]+\.js|lang\/[a-z]+\.traineddata)$/,
+  handler: 'CacheFirst',
+  options: {
+    cacheName: 'ocr-files',
+    expiration: { maxEntries: 12 },
+    plugins: [{
+      fetchDidSucceed: async ({ response }) =>
+        /^\s*text\/html/i.test(response.headers.get('content-type') || '')
+          ? new Response(null, { status: 404, statusText: 'Not Found' })
+          : response
+    }]
+  }
 }
 
 /**

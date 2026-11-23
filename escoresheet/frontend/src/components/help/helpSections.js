@@ -72,6 +72,7 @@ export const HELP_SECTIONS = [
     q('matchSetup', 'numbers'),
     q('matchSetup', 'choosePlayers'),
     q('matchSetup', 'importPdf', 'setup-pdf-import'),
+    q('matchSetup', 'importPhoto', 'setup-photo-import'),
     q('matchSetup', 'rosterUpload'),
     q('matchSetup', 'sentRoster'),
     q('matchSetup', 'liberos', 'setup-libero-toggle'),

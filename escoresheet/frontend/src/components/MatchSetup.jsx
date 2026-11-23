@@ -62,6 +62,7 @@ import { isShirtNumber, shirtNumberDigits, recordNumbersMissingFrom } from '../d
 import { playersWithoutNumber } from '../domain/coinTossChecks'
 import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
 import PlayerPoolModal from './PlayerPoolModal'
+import RosterPhotoImport from './rosterPhoto/RosterPhotoImport'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule, teamContactEmail, withTeamContacts } from '../domain/officials'
 import { rememberedRosters } from '../db/rememberedPlayers'
@@ -4956,6 +4957,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 )}
               </div>
               {/* Local upload - file selected */}
+              {/* An Einsatzliste from a photo, read on this device and checked
+                  by the scorer before it is taken (docs/roster-photo-spec.md) */}
+              {homeUploadMode === 'local' && (
+                <RosterPhotoImport side="home" teamLabel={home} savedTeam={savedTeamOf('home')} disabled={homePdfLoading} onApply={(roster) => applyImportedRoster('home', roster)} />
+              )}
               {homeUploadMode === 'local' && homePdfFile && (
                 <>
                   <span className="truncate text-xs text-stone-700">
@@ -6031,6 +6037,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 )}
               </div>
               {/* Local upload - file selected */}
+              {/* An Einsatzliste from a photo, read on this device and checked
+                  by the scorer before it is taken (docs/roster-photo-spec.md) */}
+              {awayUploadMode === 'local' && (
+                <RosterPhotoImport side="away" teamLabel={away} savedTeam={savedTeamOf('away')} disabled={awayPdfLoading} onApply={(roster) => applyImportedRoster('away', roster)} />
+              )}
               {awayUploadMode === 'local' && awayPdfFile && (
                 <>
                   <span className="truncate text-xs text-stone-700">

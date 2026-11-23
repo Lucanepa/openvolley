@@ -1,0 +1,563 @@
+/**
+ * A photo of a list made into a flat, even page for the text recognition
+ * (docs/roster-photo-spec.md, plan A): the page's four corners (a first
+ * guess the scorer moves), the page cut out and its perspective undone, the
+ * light evened out (shadows, a lamp on one side), the contrast stretched and
+ * the table's rules taken out. Grey, as the recognition reads it.
+ *
+ * No library (OpenCV.js is ~9 MB and slow on a Galaxy Tab A7 Lite): a
+ * homography and a few passes over the pixels. The pure functions take and
+ * give plain arrays, so they run in tests without a canvas.
+ */
+
+// The photo as it is worked on and shown: a camera's 12 MP would take ~50 MB
+// of pixels on a 3 GB tablet. 2400 px keeps an A4 list's small print readable.
+export const PHOTO_MAX_SIDE = 2400
+// The flat page handed to the recognition: about 260 dpi for an A4 page
+export const PAGE_MAX_SIDE = 2200
+// The corner guess works on a small copy
+const GUESS_SIDE = 320
+
+/** [tl, tr, br, bl] of four points, whatever their order. */
+export function orderCorners (points) {
+  const pts = points.map(([x, y]) => [x, y])
+  const bySum = [...pts].sort((a, b) => (a[0] + a[1]) - (b[0] + b[1]))
+  const byDiff = [...pts].sort((a, b) => (a[0] - a[1]) - (b[0] - b[1]))
+  return [bySum[0], byDiff[3], bySum[3], byDiff[0]]
+}
+
+/** The corners turned a quarter (steps 1..3): the page comes out turned 90° clockwise per step. */
+export function rotateCorners (corners, steps = 1) {
+  const n = ((steps % 4) + 4) % 4
+  return corners.map((_, i) => corners[(i + 4 - n) % 4])
+}
+
+/**
+ * The 3x3 matrix (row-major, 9 numbers) taking each src point to its dst
+ * point (four of each). Gaussian elimination of the 8 x 8 system; null when
+ * the points are degenerate (three on a line).
+ */
+export function homography (src, dst) {
+  const a = []
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = src[i]
+    const [u, v] = dst[i]
+    a.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u])
+    a.push([0, 0, 0, x, y, 1, -v * x, -v * y, v])
+  }
+  for (let c = 0; c < 8; c++) {
+    let pivot = c
+    for (let r = c + 1; r < 8; r++) if (Math.abs(a[r][c]) > Math.abs(a[pivot][c])) pivot = r
+    if (Math.abs(a[pivot][c]) < 1e-12) return null
+    ;[a[c], a[pivot]] = [a[pivot], a[c]]
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue
+      const f = a[r][c] / a[c][c]
+      for (let k = c; k < 9; k++) a[r][k] -= f * a[c][k]
+    }
+  }
+  const h = a.map((row, i) => row[8] / row[i])
+  return [...h, 1]
+}
+
+/** Where H takes the point (x, y). */
+export function project (h, x, y) {
+  const w = h[6] * x + h[7] * y + h[8]
+  return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w]
+}
+
+const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1])
+
+/**
+ * The flat page's size from its corners (the longer of each pair of edges),
+ * its longer side at most maxSide. A small page (a phone's screenshot of
+ * the list) is enlarged, up to twice: Tesseract reads letters about 20 px
+ * high best, a screenshot's are often 8.
+ */
+export function pageSize (corners, maxSide = PAGE_MAX_SIDE) {
+  const [tl, tr, br, bl] = corners
+  const w = Math.max(dist(tl, tr), dist(bl, br))
+  const h = Math.max(dist(tl, bl), dist(tr, br))
+  const f = Math.min(2, maxSide / Math.max(w, h, 1))
+  return { width: Math.max(1, Math.round(w * f)), height: Math.max(1, Math.round(h * f)) }
+}
+
+/** Grey (0..255) of RGBA pixels. */
+export function toGray (rgba, width, height) {
+  const out = new Uint8ClampedArray(width * height)
+  for (let i = 0, j = 0; i < out.length; i++, j += 4) out[i] = (rgba[j] * 77 + rgba[j + 1] * 150 + rgba[j + 2] * 29) >> 8
+  return out
+}
+
+/**
+ * The page inside `corners` of the RGBA source, flat and grey, width x height:
+ * each page pixel looked up through the homography, bilinear.
+ */
+export function warpGray (rgba, srcWidth, srcHeight, corners, width, height) {
+  const h = homography([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], corners)
+  const out = new Uint8ClampedArray(width * height)
+  if (!h) return out
+  const lum = (x, y) => {
+    const j = (y * srcWidth + x) * 4
+    return (rgba[j] * 77 + rgba[j + 1] * 150 + rgba[j + 2] * 29) >> 8
+  }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const [sx, sy] = project(h, x, y)
+      const x0 = Math.floor(sx)
+      const y0 = Math.floor(sy)
+      if (x0 < 0 || y0 < 0 || x0 >= srcWidth - 1 || y0 >= srcHeight - 1) { out[y * width + x] = 255; continue }
+      const fx = sx - x0
+      const fy = sy - y0
+      const top = lum(x0, y0) * (1 - fx) + lum(x0 + 1, y0) * fx
+      const bottom = lum(x0, y0 + 1) * (1 - fx) + lum(x0 + 1, y0 + 1) * fx
+      out[y * width + x] = top * (1 - fy) + bottom * fy
+    }
+  }
+  return out
+}
+
+/**
+ * The light made even: each pixel divided by the page's brightness around it
+ * (the brightest of 16 x 16 blocks, smoothed: paper, not ink), so a shadow
+ * or a lamp on one side no longer darkens a part of the page.
+ */
+export function evenLight (gray, width, height, block = 16) {
+  const bw = Math.ceil(width / block)
+  const bh = Math.ceil(height / block)
+  let bg = new Float32Array(bw * bh)
+  for (let by = 0; by < bh; by++) {
+    for (let bx = 0; bx < bw; bx++) {
+      let max = 0
+      const yEnd = Math.min(height, (by + 1) * block)
+      const xEnd = Math.min(width, (bx + 1) * block)
+      for (let y = by * block; y < yEnd; y++) for (let x = bx * block; x < xEnd; x++) if (gray[y * width + x] > max) max = gray[y * width + x]
+      bg[by * bw + bx] = max
+    }
+  }
+  // a block that is all ink (a heading, a dark logo) takes its neighbours' paper
+  for (let pass = 0; pass < 3; pass++) {
+    const next = new Float32Array(bg.length)
+    for (let by = 0; by < bh; by++) {
+      for (let bx = 0; bx < bw; bx++) {
+        let sum = 0
+        let n = 0
+        let max = 0
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const x = bx + dx
+            const y = by + dy
+            if (x < 0 || y < 0 || x >= bw || y >= bh) continue
+            const v = bg[y * bw + x]
+            sum += v
+            n++
+            if (v > max) max = v
+          }
+        }
+        next[by * bw + bx] = (sum / n + max) / 2
+      }
+    }
+    bg = next
+  }
+  const out = new Uint8ClampedArray(gray.length)
+  for (let y = 0; y < height; y++) {
+    const gy = Math.min(bh - 1, Math.max(0, (y + 0.5) / block - 0.5))
+    const y0 = Math.floor(gy)
+    const y1 = Math.min(bh - 1, y0 + 1)
+    const fy = gy - y0
+    for (let x = 0; x < width; x++) {
+      const gx = Math.min(bw - 1, Math.max(0, (x + 0.5) / block - 0.5))
+      const x0 = Math.floor(gx)
+      const x1 = Math.min(bw - 1, x0 + 1)
+      const fx = gx - x0
+      const b = (bg[y0 * bw + x0] * (1 - fx) + bg[y0 * bw + x1] * fx) * (1 - fy) +
+        (bg[y1 * bw + x0] * (1 - fx) + bg[y1 * bw + x1] * fx) * fy
+      out[y * width + x] = (gray[y * width + x] * 255) / Math.max(b, 24)
+    }
+  }
+  return out
+}
+
+/** The contrast stretched: the darkest 1 % black, the brightest 5 % (the paper) white. In place. */
+export function stretchContrast (gray) {
+  const hist = new Uint32Array(256)
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++
+  const at = (share) => {
+    let n = 0
+    for (let v = 0; v < 256; v++) { n += hist[v]; if (n >= share * gray.length) return v }
+    return 255
+  }
+  const lo = at(0.01)
+  const hi = Math.max(lo + 1, at(0.95))
+  const lut = new Uint8ClampedArray(256)
+  for (let v = 0; v < 256; v++) lut[v] = ((v - lo) * 255) / (hi - lo)
+  for (let i = 0; i < gray.length; i++) gray[i] = lut[gray[i]]
+  return gray
+}
+
+/**
+ * The table's rules taken out (in place): runs of ink longer than a letter
+ * could be, across (minShare of the width) or down (of the height), and the
+ * pixel beside them. Tesseract misreads every letter that touches a cell's
+ * border ("[223451" for 123451, "|tuca" for Luca); without the rules the
+ * cells read as plain text in columns.
+ */
+export function removeRules (gray, width, height, { minShareAcross = 0.04, minShareDown = 0.03, maxThickShare = 0.003 } = {}) {
+  const t = Math.min(200, otsuThreshold(gray) + 10)
+  const across = Math.max(20, Math.round(width * minShareAcross))
+  const down = Math.max(20, Math.round(height * minShareDown))
+  // a rule is thin; a word whose letters ran together (blur) is as thick as its letters
+  const thick = Math.max(3, Math.round(Math.max(width, height) * maxThickShare))
+  const ink = (x, y) => gray[y * width + x] < t
+  // paper (or the page's edge) at `o` across a run, `i` along it
+  const paper = (alongWidth, o, i) => {
+    const [x, y] = alongWidth ? [i, o] : [o, i]
+    return x < 0 || y < 0 || x >= width || y >= height || !ink(x, y)
+  }
+  // runs of ink of at least `min` along one direction, kept where at most `thick` deep across it
+  const runs = (alongWidth) => {
+    const mask = new Uint8Array(width * height)
+    const [outer, inner, min] = alongWidth ? [height, width, across] : [width, height, down]
+    const at = (o, i) => (alongWidth ? o * width + i : i * width + o)
+    for (let o = 0; o < outer; o++) {
+      let start = -1
+      for (let i = 0; i <= inner; i++) {
+        const on = i < inner && (alongWidth ? ink(i, o) : ink(o, i))
+        if (on && start < 0) start = i
+        if (!on && start >= 0) {
+          // a rule has paper on both sides along most of its length; letters
+          // that ran together have their strokes above and below
+          if (i - start >= min) {
+            let clear = 0
+            for (let k = start; k < i; k++) if (paper(alongWidth, o - thick - 1, k) && paper(alongWidth, o + thick + 1, k)) clear++
+            if (clear >= 0.6 * (i - start)) for (let k = start; k < i; k++) mask[at(o, k)] = 1
+          }
+          start = -1
+        }
+      }
+    }
+    // the depth across: consecutive marked pixels at a right angle
+    for (let i = 0; i < inner; i++) {
+      let start = -1
+      for (let o = 0; o <= outer; o++) {
+        const on = o < outer && mask[at(o, i)] === 1
+        if (on && start < 0) start = o
+        if (!on && start >= 0) {
+          if (o - start > thick) for (let k = start; k < o; k++) mask[at(k, i)] = 0
+          start = -1
+        }
+      }
+    }
+    return mask
+  }
+  const across_ = runs(true)
+  const down_ = runs(false)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x
+      if (!across_[i] && !down_[i]) continue
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy
+        if (yy < 0 || yy >= height) continue
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx
+          if (xx >= 0 && xx < width) gray[yy * width + xx] = 255
+        }
+      }
+    }
+  }
+  return gray
+}
+
+/** Otsu's threshold of grey values: the one that best splits paper from the rest. */
+export function otsuThreshold (gray) {
+  const hist = new Float64Array(256)
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++
+  let sumAll = 0
+  for (let v = 0; v < 256; v++) sumAll += v * hist[v]
+  let wB = 0
+  let sumB = 0
+  let best = 0
+  let threshold = 127
+  for (let v = 0; v < 256; v++) {
+    wB += hist[v]
+    if (!wB) continue
+    const wF = gray.length - wB
+    if (!wF) break
+    sumB += v * hist[v]
+    const between = wB * wF * (sumB / wB - (sumAll - sumB) / wF) ** 2
+    if (between > best) { best = between; threshold = v }
+  }
+  return threshold
+}
+
+/**
+ * The page's corners in a small grey copy (width x height): the largest
+ * bright region (paper is brighter than a table, a floor or a hand), and its
+ * four extreme points. null when no bright region covers a fifth of the photo
+ * (a close-up of the page: the scorer drags the corners).
+ */
+export function cornersFromGray (gray, width, height) {
+  const t = otsuThreshold(gray)
+  const label = new Int32Array(width * height).fill(-1)
+  let best = null
+  const stack = []
+  for (let start = 0; start < label.length; start++) {
+    if (label[start] !== -1 || gray[start] <= t) continue
+    const id = start
+    const region = { id, n: 0, tl: null, tr: null, br: null, bl: null }
+    label[start] = id
+    stack.push(start)
+    while (stack.length) {
+      const i = stack.pop()
+      const x = i % width
+      const y = (i - x) / width
+      region.n++
+      if (!region.tl || x + y < region.tl[0] + region.tl[1]) region.tl = [x, y]
+      if (!region.br || x + y > region.br[0] + region.br[1]) region.br = [x, y]
+      if (!region.tr || x - y > region.tr[0] - region.tr[1]) region.tr = [x, y]
+      if (!region.bl || x - y < region.bl[0] - region.bl[1]) region.bl = [x, y]
+      const next = [x > 0 ? i - 1 : -1, x < width - 1 ? i + 1 : -1, y > 0 ? i - width : -1, y < height - 1 ? i + width : -1]
+      for (const j of next) {
+        if (j >= 0 && label[j] === -1 && gray[j] > t) { label[j] = id; stack.push(j) }
+      }
+    }
+    if (!best || region.n > best.n) best = region
+  }
+  if (!best || best.n < 0.2 * width * height) return null
+  // the page fills the picture (a screenshot, a close-up): its edges are the page's
+  if (best.n > 0.85 * width * height) return [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]]
+  return [best.tl, best.tr, best.br, best.bl]
+}
+
+/**
+ * How much of a ring of ink lies around a word (a number circled by hand:
+ * the team's captain, owner 2026-11-23): 0..1, the share of 32 rays from the
+ * word's centre that meet ink outside its box, with each quarter counted on
+ * its own and the weakest quarter returned, so text beside the number (the
+ * SV number to its right) never makes a ring. (A circle the recognition took
+ * into the word's box is ringInRegion's.)
+ * @param {{ x0, y0, x1, y1 }} box in the page's pixels
+ */
+export function ringScore (gray, width, height, box, { ink = 128 } = {}) {
+  const cx = (box.x0 + box.x1) / 2
+  const cy = (box.y0 + box.y1) / 2
+  const hw = Math.max(1, (box.x1 - box.x0) / 2)
+  const hh = Math.max(1, (box.y1 - box.y0) / 2)
+  const reach = 2 * Math.max(hw, hh) + 4
+  const RAYS = 32
+  const quarters = [0, 0, 0, 0]
+  for (let k = 0; k < RAYS; k++) {
+    const a = ((k + 0.5) / RAYS) * 2 * Math.PI
+    const dx = Math.cos(a)
+    const dy = Math.sin(a)
+    // where the ray leaves the word's box
+    const edge = Math.min(Math.abs(dx) > 1e-9 ? hw / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-9 ? hh / Math.abs(dy) : Infinity)
+    for (let t = edge + 1; t <= edge + reach; t += 1) {
+      const x = Math.round(cx + dx * t)
+      const y = Math.round(cy + dy * t)
+      if (x < 0 || y < 0 || x >= width || y >= height) break
+      if (gray[y * width + x] < ink) { quarters[Math.floor((k / RAYS) * 4)]++; break }
+    }
+  }
+  return Math.min(...quarters) / (RAYS / 4)
+}
+
+/**
+ * A circle drawn by hand in a region of the page (left of a row's SV number,
+ * where a team writes the shirt number): a ring of ink between 1.3 and 5
+ * text lines across, roughly round, hollow, with other ink inside it (the
+ * number; a big handwritten 0 alone is no circle). The recognition often
+ * skips a circled number; this finds the circle, and the box inside it is
+ * read again for the digits. null when there is none.
+ * @param {{ x0, y0, x1, y1 }} region page pixels
+ * @param {number} line the height of a line of print, in pixels
+ * @returns {{ ring: {x0,y0,x1,y1}, inner: {x0,y0,x1,y1} } | null}
+ */
+export function ringInRegion (gray, width, height, region, line, { ink = 128 } = {}) {
+  const x0 = Math.max(0, Math.floor(region.x0))
+  const y0 = Math.max(0, Math.floor(region.y0))
+  const x1 = Math.min(width, Math.ceil(region.x1))
+  const y1 = Math.min(height, Math.ceil(region.y1))
+  const w = x1 - x0
+  const h = y1 - y0
+  if (w < 4 || h < 4) return null
+  const label = new Int32Array(w * h)
+  const parts = []
+  for (let start = 0; start < label.length; start++) {
+    if (label[start] || gray[(y0 + Math.floor(start / w)) * width + x0 + (start % w)] >= ink) continue
+    const id = parts.length + 1
+    const part = { n: 0, x0: Infinity, y0: Infinity, x1: -1, y1: -1 }
+    const stack = [start]
+    label[start] = id
+    while (stack.length) {
+      const i = stack.pop()
+      const x = i % w
+      const y = (i - x) / w
+      part.n++
+      if (x < part.x0) part.x0 = x
+      if (x > part.x1) part.x1 = x
+      if (y < part.y0) part.y0 = y
+      if (y > part.y1) part.y1 = y
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+        const nx = x + dx
+        const ny = y + dy
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+        const j = ny * w + nx
+        if (!label[j] && gray[(y0 + ny) * width + x0 + nx] < ink) { label[j] = id; stack.push(j) }
+      }
+    }
+    parts.push(part)
+  }
+  for (const r of parts) {
+    const rw = r.x1 - r.x0 + 1
+    const rh = r.y1 - r.y0 + 1
+    if (rw < 1.3 * line || rh < 1.3 * line || rw > 5 * line || rh > 5 * line) continue
+    if (rw / rh < 0.55 || rw / rh > 1.8) continue
+    // a ring: thin ink around the edge, not a filled blob
+    if (r.n > 0.4 * rw * rh) continue
+    const ringBox = { x0: x0 + r.x0, y0: y0 + r.y0, x1: x0 + r.x1, y1: y0 + r.y1 }
+    // the ink of other parts inside the ring's middle (the number)
+    const inside = parts.filter((q) => q !== r && q.x0 > r.x0 && q.x1 < r.x1 && q.y0 > r.y0 && q.y1 < r.y1)
+    if (!inside.length) continue
+    const inner = {
+      x0: x0 + Math.min(...inside.map((q) => q.x0)),
+      y0: y0 + Math.min(...inside.map((q) => q.y0)),
+      x1: x0 + Math.max(...inside.map((q) => q.x1)),
+      y1: y0 + Math.max(...inside.map((q) => q.y1))
+    }
+    // the ring goes all the way round its contents: its pixels, by their
+    // angle seen from the middle of the contents, in 32 sectors, each
+    // quarter at least three quarters full
+    const id = parts.indexOf(r) + 1
+    const cx = (inner.x0 + inner.x1) / 2 - x0
+    const cy = (inner.y0 + inner.y1) / 2 - y0
+    const sectors = new Uint8Array(32)
+    for (let y = r.y0; y <= r.y1; y++) {
+      for (let x = r.x0; x <= r.x1; x++) {
+        if (label[y * w + x] !== id) continue
+        const a = Math.atan2(y - cy, x - cx)
+        sectors[Math.min(31, Math.floor(((a + Math.PI) / (2 * Math.PI)) * 32))] = 1
+      }
+    }
+    const quarters = [0, 1, 2, 3].map((q) => sectors.slice(q * 8, q * 8 + 8).reduce((n, v) => n + v, 0))
+    if (Math.min(...quarters) < 6) continue
+    return { ring: ringBox, inner }
+  }
+  return null
+}
+
+/** The default corners: the photo less a 4 % margin. */
+export function insetCorners (width, height, margin = 0.04) {
+  const mx = width * margin
+  const my = height * margin
+  return [[mx, my], [width - mx, my], [width - mx, height - my], [mx, height - my]]
+}
+
+// ------------------------------------------------------------------ canvas
+
+function canvasOf (width, height) {
+  const c = document.createElement('canvas')
+  c.width = width
+  c.height = height
+  return c
+}
+
+/**
+ * The photo (a File or Blob from the camera or a file) on a canvas, its
+ * longer side at most maxSide, upright as the camera held it (EXIF).
+ */
+export async function loadPhoto (file, maxSide = PHOTO_MAX_SIDE) {
+  let source = null
+  let width = 0
+  let height = 0
+  if (typeof createImageBitmap === 'function') {
+    try {
+      source = await createImageBitmap(file, { imageOrientation: 'from-image' })
+      width = source.width
+      height = source.height
+    } catch { source = null }
+  }
+  if (!source) {
+    const url = URL.createObjectURL(file)
+    try {
+      source = await new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = () => reject(Object.assign(new Error('The photo could not be opened'), { code: 'photo-unreadable' }))
+        img.src = url
+      })
+      width = source.naturalWidth
+      height = source.naturalHeight
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+  if (!width || !height) throw Object.assign(new Error('The photo could not be opened'), { code: 'photo-unreadable' })
+  const f = Math.min(1, maxSide / Math.max(width, height))
+  const canvas = canvasOf(Math.round(width * f), Math.round(height * f))
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height)
+  source.close?.()
+  return canvas
+}
+
+/** The page's corners in the photo (canvas pixels): the guess, else the inset default. */
+export function guessCorners (canvas) {
+  const f = Math.min(1, GUESS_SIDE / Math.max(canvas.width, canvas.height))
+  const w = Math.max(1, Math.round(canvas.width * f))
+  const h = Math.max(1, Math.round(canvas.height * f))
+  const small = canvasOf(w, h)
+  const ctx = small.getContext('2d')
+  ctx.drawImage(canvas, 0, 0, w, h)
+  const gray = toGray(ctx.getImageData(0, 0, w, h).data, w, h)
+  const found = cornersFromGray(gray, w, h)
+  if (!found) return insetCorners(canvas.width, canvas.height)
+  const corners = orderCorners(found.map(([x, y]) => [
+    Math.min(canvas.width, Math.max(0, x === w - 1 ? canvas.width : (x + 0.5) / f)),
+    Math.min(canvas.height, Math.max(0, y === h - 1 ? canvas.height : (y + 0.5) / f))
+  ]))
+  // a page is a convex four-sided shape of some size; anything else (a
+  // bright sky, a lamp) is no guess: the default corners, for the scorer to drag
+  return plausiblePage(corners, canvas.width, canvas.height) ? corners : insetCorners(canvas.width, canvas.height)
+}
+
+/** Whether [tl, tr, br, bl] can be a page: convex, turning one way, at least a fifth of the photo. */
+export function plausiblePage (corners, width, height) {
+  let sign = 0
+  for (let i = 0; i < 4; i++) {
+    const [a, b, c] = [corners[i], corners[(i + 1) % 4], corners[(i + 2) % 4]]
+    const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])
+    if (Math.abs(cross) < 1e-6) return false
+    if (sign && Math.sign(cross) !== sign) return false
+    sign = Math.sign(cross)
+  }
+  let area = 0
+  for (let i = 0; i < 4; i++) {
+    const [a, b] = [corners[i], corners[(i + 1) % 4]]
+    area += a[0] * b[1] - b[0] * a[1]
+  }
+  return Math.abs(area) / 2 >= 0.2 * width * height
+}
+
+/** The flat, even, grey page inside `corners` of the photo canvas, as a new canvas. */
+export function scanPage (canvas, corners, { maxSide = PAGE_MAX_SIDE } = {}) {
+  const { width, height } = pageSize(corners, maxSide)
+  const src = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
+  const gray = removeRules(stretchContrast(evenLight(warpGray(src.data, canvas.width, canvas.height, corners, width, height), width, height)), width, height)
+  const out = canvasOf(width, height)
+  const ctx = out.getContext('2d')
+  const img = ctx.createImageData(width, height)
+  for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
+    img.data[j] = img.data[j + 1] = img.data[j + 2] = gray[i]
+    img.data[j + 3] = 255
+  }
+  ctx.putImageData(img, 0, 0)
+  return out
+}
+
+/** A canvas as a PNG Blob (lossless: the recognition reads it, nobody downloads it). */
+export function canvasBlob (canvas, type = 'image/png', quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('The page could not be made into an image'))), type, quality)
+  })
+}
