@@ -256,14 +256,25 @@ the font in the file, not the device's 3100 x 2170 picture of the sheet.
 - **Where the backend uses it** (`lib/vectorPdf.js`, `lib/scoresheets.js`):
   - Rebuild PDF in the manager: `POST /api/scoresheets/:id/rebuild-vector`
     (admins). Without the service (503) the manager captures the sheet itself.
+    Closed indoor matches only: a beach match (409 `OV_BEACH_SHEET`, its sheet
+    is OpenBeach's own) and a match not closed (409 `OV_NOT_CLOSED`, it gets
+    its PDF from the new approval) are not rebuilt, by either route.
   - After the approval's PDF of an indoor match: once the match is closed, its
     data quiet for 60 s and 10 min have passed since that PDF (a corrected
     approval PDF may still come within them), the server prints its own copy
     and stores it as the newest (`scoresheet.vector` in the audit log). The
-    device's PDF stays. A record whose finished sets do not end on their last
-    point's score is left alone. The final mail waits for the copy (at most
-    25 min after the close). The jobs live in the backend's memory: a restart
-    drops the pending ones (those matches keep the device's PDF).
+    device's PDF stays. Only a record that ends as its close says may replace
+    it (owner decision 3, `recordGate`): every set finished, as many finished
+    sets as `set_results` lists, each at its score, `final_score` and `winner`
+    as the sets give them, and every finished set's last point at its score
+    (forfeit excepted); a print that misses a picture (a signature) is refused
+    too. Otherwise the device's PDF stays the official one and the Errors tab
+    gets a `job.failed` "vector copy refused (<reason>)" with the game number.
+    A reopen cancels the pending copy (the new approval's PDF brings its own).
+    Rebuild and vector-copy rows never count as the approval's PDF (storePdf).
+    The final mail waits for the copy (at most 25 min after the close). The
+    jobs live in the backend's memory: a restart drops the pending ones (those
+    matches keep the device's PDF).
   - The device's own offline "Save PDF" is unchanged (raster).
 - **Isolation:** `ov-render-net` is internal (no egress); only the backend is
   on it; no published port. Every request of the page outside its own made-up
