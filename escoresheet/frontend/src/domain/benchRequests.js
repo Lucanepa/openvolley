@@ -110,12 +110,14 @@ export function benchTimeoutAvailability({ events, setIndex, team, intervalRunni
 /**
  * May the bench prepare a substitution now? no line-up yet, a replay
  * pending, after a delay warning, 6 used, a second request in this
- * interruption (FIVB 15.2.3, 15.6, 15.11.1.3).
+ * interruption (FIVB 15.2.3, 15.6, 15.11.1.3). The set interval does not
+ * close it once the team's line-up of the next set is in (owner 23.11.2026,
+ * as the scorer's own substitution): `intervalRunning` is kept for the
+ * callers, it no longer blocks.
  */
 export function benchSubstitutionAvailability({ events, setIndex, team, intervalRunning = false, matchOver = false }) {
   if (matchOver) return { allowed: false, reason: 'match_over' }
   if (!latestLineup(events, setIndex, team)) return { allowed: false, reason: 'no_lineup' }
-  if (intervalRunning) return { allowed: false, reason: 'set_interval' }
   const issue = substitutionRequestIssues(events, setIndex, team)[0]
   return issue ? { allowed: false, reason: issue.reason } : { allowed: true, reason: null }
 }

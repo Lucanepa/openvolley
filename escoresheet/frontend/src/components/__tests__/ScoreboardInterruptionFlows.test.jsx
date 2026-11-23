@@ -206,16 +206,14 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
     expect(view.getByTestId('phone-action-decision').disabled).toBe(false)
     await settle()
 
-    // ---- substitution B (#3 out, #7 in) ----
+    // ---- substitution B (#7 in, #3 out): the picker, then Confirm ----
     fireEvent.click(view.getByTestId('phone-sub-right'))
-    await waitFor(() => expect(screen.getByTestId('phone-sub-out-3')).toBeTruthy())
-    fireEvent.click(screen.getByTestId('phone-sub-out-3'))
-    await waitFor(() => expect(screen.getByTestId('phone-sub-in-7')).toBeTruthy())
-    fireEvent.click(screen.getByTestId('phone-sub-in-7'))
-    await waitFor(() => expect(button('Yes')).toBeTruthy())
-    await settle()
-    fireEvent.click(button('Yes'))
-    await waitFor(async () => expect((await ofType('substitution')).length).toBe(1))
+    await waitFor(() => expect(screen.getByTestId('sub-dialog-in-7')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('sub-dialog-in-7'))
+    await waitFor(() => expect(screen.getByTestId('sub-dialog-out-3')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('sub-dialog-out-3'))
+    fireEvent.click(screen.getByTestId('sub-dialog-confirm'))
+    await waitFor(async () => expect((await ofType('substitution')).length).toBe(1), { timeout: 8000 })
     await settle()
 
     // ---- time-out A ----

@@ -37,12 +37,25 @@ describe('PhoneScoreboard: counters at the limit', () => {
     expect(timeout).toHaveBeenCalledWith('left')
   })
 
-  it('SUB with all six used opens the substitution sheet', () => {
-    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { subs: 6 }))} />)
+  // owner 23.11.2026: the substitution picker (the tablet's dialog) says
+  // 6 of 6 and keeps "Injury / exceptional"
+  it('SUB with all six used opens the substitution picker at 6 of 6', () => {
+    const substitutionPicker = vi.fn((side) => ({
+      side, court: team('left', 'home', 'A').court, bench: [{ number: '7' }], legalIns: {}, made: 6, max: 6, recordedList: []
+    }))
+    render(<PhoneScoreboard {...props(team('left', 'home', 'A', { subs: 6 }), { substitutionPicker })} />)
     const tile = screen.getByTestId('phone-sub-left')
     expect(tile.disabled).toBe(false)
     fireEvent.click(tile)
-    expect(screen.getByTestId('phone-sub-sheet')).toBeTruthy()
+    expect(substitutionPicker).toHaveBeenCalledWith('left', expect.any(Function))
+    expect(screen.getByTestId('phone-sub-sheet').querySelector('[data-testid="sub-dialog-full-note"]')).toBeTruthy()
+    expect(screen.getByTestId('sub-dialog-injury').disabled).toBe(false)
+  })
+
+  it('SUB stays closed while the team\'s line-up is still hidden (the picker shows the court)', () => {
+    const p = props(team('left', 'home', 'A'))
+    render(<PhoneScoreboard {...p} teams={{ left: team('left', 'home', 'A'), right: team('right', 'away', 'B', { lineupSet: false }) }} rally={{ ...p.rally, isFirstRally: true }} />)
+    expect(screen.getByTestId('phone-sub-left').disabled).toBe(true)
   })
 
   // owner 22.11.2026: SUB counts exceptional substitutions; its colour stays

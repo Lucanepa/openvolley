@@ -47,6 +47,12 @@ describe('when the bench may send', () => {
     const closed = [lu, point(), ev('substitution', { playerOut: 1, playerIn: 8 }), ev('timeout', { team: 'away' })]
     expect(benchSubstitutionAvailability({ events: closed, setIndex: 1, team: 'home' }).reason).toBe('second_substitution_request')
   })
+  it('a substitution in the set interval once the line-up is in (owner 23.11.2026), no time-out', () => {
+    const lu = lineupEv()
+    expect(benchSubstitutionAvailability({ events: [lu], setIndex: 1, team: 'home', intervalRunning: true })).toEqual({ allowed: true, reason: null })
+    expect(benchSubstitutionAvailability({ events: [], setIndex: 1, team: 'home', intervalRunning: true }).reason).toBe('no_lineup')
+    expect(benchTimeoutAvailability({ events: [lu], setIndex: 1, team: 'home', intervalRunning: true }).reason).toBe('set_interval')
+  })
 })
 
 describe('the bench line-up editor', () => {

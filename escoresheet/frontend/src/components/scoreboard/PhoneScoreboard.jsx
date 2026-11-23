@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Undo2, Menu, Pin } from 'lucide-react'
 import { ActionSheet } from '../../ui/Modal.jsx'
 import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextPaint } from '../../utils/teamColours'
-import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, recentLinesFor, tintOf } from './phoneLayout'
+import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, officialRoleShort, recentLinesFor, tintOf } from './phoneLayout'
 import { captainRingStyle } from './captainRing'
 import RallyTapNotice from './RallyTapNotice'
 import HoldToConfirmButton from './HoldToConfirmButton.jsx'
@@ -12,6 +12,7 @@ import LineupSetOverlay from './LineupSetOverlay.jsx'
 import { lineupHiddenUntilBoth } from '../../domain/lineupPrivacy'
 import CountdownSeconds from './CountdownSeconds.jsx'
 import PhonePairDock from '../phonePair/PhonePairDock.jsx'
+import { SubstitutionPicker } from './SubstitutionPicker.jsx'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -82,7 +83,7 @@ import PhonePairDock from '../phonePair/PhonePairDock.jsx'
  */
 export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', limits = DEFAULT_LIMITS, actions }) {
   const { t } = useTranslation()
-  // The phone's own pickers: { kind: 'sub', side, out?: { position, number } } | { kind: 'sanction' } | { kind: 'libero' }
+  // The phone's own pickers: { kind: 'sub', side } | { kind: 'sanction' } | { kind: 'libero' }
   const [sheet, setSheet] = useState(null)
   const { left, right } = teams
   // The first line-up of a set stays hidden until the other is in (as on the tablet court)
@@ -304,7 +305,12 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // request is an improper request (FIVB 15.11.1.4), which the
   // scoreboard's handlers record
   const toDisabled = (team) => !idle || !!team.blocked?.timeout
-  const subDisabled = (team) => !idle || !team.lineupSet || !!team.blocked?.substitution
+  // closed while the team's line-up is still hidden (the picker shows its court)
+  const subDisabled = (team) => !idle || !team.lineupSet || !!team.blocked?.substitution || lineupHiddenUntilBoth({
+    setStarted: !rally.isFirstRally,
+    ownEntered: !!team.lineupSet,
+    otherEntered: !!(team.side === 'left' ? right : left)?.lineupSet
+  })
   // Only the count taken, as the desktop counters: red once the last one is
   // taken, amber at the substitution before the last (the 5th of 6)
   const countState = (taken, max, { warnBefore = false } = {}) => {
@@ -345,12 +351,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const teamActions = (team) => (
     <div key={team.side} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
       {counter(team, { label: t('scoreboard.phone.timeOut'), value: team.timeouts, state: countState(team.timeouts, limits.timeouts), disabled: toDisabled(team), onClick: () => actions.timeout(team.side), testId: `phone-timeout-${team.side}` })}
-      {counter(team, { label: t('scoreboard.labels.sub'), value: team.subs, state: countState(team.subsRegular ?? team.subs, limits.subs, { warnBefore: true }), disabled: subDisabled(team), onClick: () => {
-        // The Scoreboard may answer with its request warning instead (the
-        // 7th substitution): then no sheet
-        if (actions.requestSubstitution?.(team.side) === false) return
-        setSheet({ kind: 'sub', side: team.side })
-      }, testId: `phone-sub-${team.side}` })}
+      {/* SUB: the substitution picker (the tablet's dialog, owner 23.11.2026);
+          at 6 of 6 it says so and keeps "Injury / exceptional" */}
+      {counter(team, { label: t('scoreboard.labels.sub'), value: team.subs, state: countState(team.subsRegular ?? team.subs, limits.subs, { warnBefore: true }), disabled: subDisabled(team), onClick: () => setSheet({ kind: 'sub', side: team.side }), testId: `phone-sub-${team.side}` })}
     </div>
   )
 
@@ -626,21 +629,11 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       </section>
 
       {sheet?.kind === 'sub' && (
-        <SubstitutionSheet
-          team={teams[sheet.side]}
-          ink={paint[sheet.side].ink}
-          out={sheet.out}
-          onPickOut={(out) => {
-            // The player who just came in: the Scoreboard's request warning
-            // (no completed rally since, FIVB 15.2.3) instead of the next step
-            if (actions.pickSubOut?.(teams[sheet.side].teamKey, out) === false) { setSheet(null); return }
-            setSheet({ ...sheet, out })
-          }}
-          onBack={() => setSheet({ kind: 'sub', side: sheet.side })}
-          onClose={() => setSheet(null)}
-          actions={actions}
-          title={t('scoreboard.phone.subTitle', { team: teamTitle(teams[sheet.side]) })}
-        />
+        <ActionSheet open onClose={() => setSheet(null)} title={t('scoreboard.phone.subTitle', { team: teamTitle(teams[sheet.side]) })} closeLabel={t('common.close')} railOffset={false}>
+          <div data-testid="phone-sub-sheet" style={{ padding: '4px 8px 8px' }}>
+            <SubstitutionPicker {...actions.substitutionPicker(sheet.side, () => setSheet(null))} />
+          </div>
+        </ActionSheet>
       )}
       {sheet?.kind === 'sanction' && (
         <ActionSheet open onClose={() => setSheet(null)} title={t('scoreboard.sanction')} closeLabel={t('common.close')} railOffset={false}>
@@ -720,156 +713,9 @@ const captainRing = captainRingStyle({ size: CAPTAIN_RING_SIZE, pad: CAPTAIN_RIN
 // libero's L at its top, set where it is drawn): small
 const courtMark = { position: 'absolute', bottom: -3, fontSize: 10, lineHeight: 1, fontWeight: 800, letterSpacing: 0, whiteSpace: 'nowrap', pointerEvents: 'none' }
 
-/**
- * Easy match: a shirt number typed for the player coming in. A number that is
- * no player yet comes in as a new player; one already in the team only when
- * the list offers it (the substitution rules decided there).
- */
-function NewNumberField({ candidates, check, onPick }) {
-  const { t } = useTranslation()
-  const [value, setValue] = useState('')
-  const [error, setError] = useState('')
-  const submit = () => {
-    const code = check(value)
-    if (code === null) { onPick(Number(value), true); return }
-    if (code === 'existing') {
-      const listed = (candidates || []).find(c => String(c.number) === String(Number(value)))
-      if (listed) { onPick(listed.number, false); return }
-    }
-    setError(({
-      invalid: t('scoreboard.easySub.invalid', '1 to 99'),
-      onCourt: t('scoreboard.easySub.onCourt', 'On court'),
-      libero: t('scoreboard.easySub.libero', 'A libero')
-    })[code] || t('scoreboard.easySub.notAllowed', 'Cannot come in'))
-  }
-  return (
-    <form
-      data-testid="phone-sub-new"
-      style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}
-      onSubmit={(e) => { e.preventDefault(); submit() }}
-    >
-      <input
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        aria-label={t('scoreboard.easySub.label', 'New number')}
-        placeholder={t('scoreboard.easySub.label', 'New number')}
-        value={value}
-        onChange={(e) => { setValue(e.target.value.replace(/[^0-9]/g, '').slice(0, 2)); setError('') }}
-        style={{
-          minHeight: 44, flex: 1, minWidth: 0, padding: '0 10px', borderRadius: 10,
-          border: `1px solid ${error ? 'var(--ov-danger-text)' : 'var(--ov-hairline-strong)'}`,
-          background: 'var(--ov-card)', color: 'var(--ov-text)', fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums'
-        }}
-      />
-      <button
-        type="submit"
-        disabled={!value}
-        style={{ ...wideButton, width: 'auto', minWidth: 88, fontWeight: 700, background: value ? 'var(--ov-success-soft)' : 'var(--ov-sunken-strong)' }}
-      >
-        {t('scoreboard.easySub.ok', 'In')}
-      </button>
-      {error && <p role="alert" style={{ margin: 0, alignSelf: 'center', fontSize: 12, fontWeight: 600, color: 'var(--ov-danger-text)' }}>{error}</p>}
-    </form>
-  )
-}
 const sheetNote = { margin: 0, fontSize: 13, color: 'var(--ov-text-secondary)' }
 const sheetHead = (ink) => ({ margin: 0, fontSize: 13, fontWeight: 800, color: ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })
 const wideButton = { minHeight: 44, width: '100%', padding: '0 8px', borderRadius: 10, border: '1px solid var(--ov-hairline-strong)', background: 'var(--ov-card)', color: 'var(--ov-text)', fontSize: 13, fontWeight: 600, textAlign: 'center' }
-
-/**
- * Substitution, as the mockup draws it: the player going out (on court),
- * then the player coming in. The candidates are the Scoreboard's
- * getAvailableSubstitutes, and the choice opens the Scoreboard's own
- * substitution confirmation (the court action menu does the same).
- */
-function SubstitutionSheet({ team, ink, out, onPickOut, onBack, onClose, actions, title }) {
-  const { t } = useTranslation()
-  const court = POSITIONS.map(position => (team.court || []).find(pl => pl.position === position)).filter(pl => pl && pl.number !== '' && pl.number !== null && pl.number !== undefined)
-  const candidates = out ? actions.substituteCandidates(team.teamKey, out.number) : []
-  const illegal = out && actions.illegalCandidates ? actions.illegalCandidates(team.teamKey, out.number) : []
-  // Easy match (domain/easyMatch.js): a number that is no player yet can come in
-  const easyNew = !!out && !!actions.newSubstituteAllowed?.(team.teamKey, out.number)
-  return (
-    <ActionSheet open onClose={onClose} title={title} closeLabel={t('common.close')} railOffset={false}>
-      <div data-testid="phone-sub-sheet" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 8px 8px' }}>
-        {!out ? (
-          <>
-            <p style={sheetHead(ink)}>{t('scoreboard.phone.subOut')}</p>
-            <div style={chipGrid}>
-              {court.map(pl => (
-                <Chip
-                  key={pl.position}
-                  testId={`phone-sub-out-${pl.number}`}
-                  disabled={pl.isLibero || !actions.canSubstituteOut(team.teamKey, pl.number)}
-                  onClick={() => onPickOut({ position: pl.position, number: pl.number })}
-                >
-                  {pl.number}
-                </Chip>
-              ))}
-            </div>
-            <p style={sheetNote}>{t('scoreboard.phone.subHint')}</p>
-          </>
-        ) : (
-          <>
-            <p style={sheetHead(ink)}>{t('scoreboard.phone.subIn', { number: out.number })}</p>
-            {candidates.length === 0 && !easyNew ? (
-              <p style={sheetNote}>{t('scoreboard.phone.noSubstitutes')}</p>
-            ) : candidates.length === 0 ? null : (
-              <div style={chipGrid}>
-                {candidates.map(c => (
-                  <Chip
-                    key={c.number}
-                    tone="soft"
-                    testId={`phone-sub-in-${c.number}`}
-                    onClick={() => {
-                      onClose()
-                      actions.substitute({ teamKey: team.teamKey, position: out.position, playerOut: out.number, playerIn: c.number })
-                    }}
-                  >
-                    {c.number}
-                  </Chip>
-                ))}
-              </div>
-            )}
-            {/* Bench players who may not come in, greyed with why: a tap opens
-                the Scoreboard's "Illegal substitution requested" warning */}
-            {illegal.length > 0 && (
-              <>
-                <p style={sheetNote}>{t('scoreboard.requestWarning.notAllowed')}</p>
-                <div style={chipGrid}>
-                  {illegal.map(c => (
-                    <button
-                      key={c.number}
-                      type="button"
-                      data-testid={`phone-sub-illegal-${c.number}`}
-                      onClick={() => { onClose(); actions.illegalSubstitute(team.teamKey, out, c) }}
-                      style={{ minHeight: 44, minWidth: 0, padding: '2px 4px', borderRadius: 10, border: '1px dashed var(--ov-hairline-strong)', background: 'var(--ov-sunken)', color: 'var(--ov-text-faint)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, overflow: 'hidden' }}
-                    >
-                      <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{c.number}</span>
-                      <span style={{ maxWidth: '100%', fontSize: 10, fontWeight: 600, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(`scoreboard.requestWarning.illegalShort.${c.reason}`)}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-            {easyNew && (
-              <NewNumberField
-                candidates={candidates}
-                check={(value) => actions.checkNewSubstitute(team.teamKey, value)}
-                onPick={(number, newPlayer) => {
-                  onClose()
-                  actions.substitute({ teamKey: team.teamKey, position: out.position, playerOut: out.number, playerIn: number, newPlayer })
-                }}
-              />
-            )}
-            <button type="button" style={wideButton} onClick={onBack}>{t('common.back')}</button>
-          </>
-        )}
-      </div>
-    </ActionSheet>
-  )
-}
 
 /**
  * One team's sanctions: the team ones of the side column (improper request,

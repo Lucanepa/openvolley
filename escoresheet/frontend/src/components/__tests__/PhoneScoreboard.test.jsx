@@ -183,17 +183,15 @@ describe('Scoreboard: the phone layout', () => {
     await waitFor(() => expect(view.queryByTestId('phone-countdown')).toBeNull())
     await settle()
 
-    // ---- substitution B: out (on court), in (bench), the screen's confirmation ----
+    // ---- substitution B: the picker (owner 23.11.2026): in (bench), out (court), Confirm ----
     fireEvent.click(view.getByTestId('phone-sub-right'))
     await waitFor(() => expect(screen.getByTestId('phone-sub-sheet')).toBeTruthy())
-    fireEvent.click(screen.getByTestId('phone-sub-out-3'))
-    await waitFor(() => expect(screen.getByTestId('phone-sub-in-7')).toBeTruthy())
-    fireEvent.click(screen.getByTestId('phone-sub-in-7'))
+    fireEvent.click(screen.getByTestId('sub-dialog-in-7'))
+    await waitFor(() => expect(screen.getByTestId('sub-dialog-out-3')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('sub-dialog-out-3'))
+    fireEvent.click(screen.getByTestId('sub-dialog-confirm'))
     await waitFor(() => expect(screen.queryByTestId('phone-sub-sheet')).toBeNull())
-    await waitFor(() => expect(button('Yes')).toBeTruthy())
-    await settle()
-    fireEvent.click(button('Yes'))
-    await waitFor(async () => expect((await ofType('substitution')).length).toBe(1))
+    await waitFor(async () => expect((await ofType('substitution')).length).toBe(1), { timeout: 8000 })
     const sub = (await ofType('substitution'))[0].payload
     expect(sub.team).toBe('away')
     expect(String(sub.playerOut)).toBe('3')
