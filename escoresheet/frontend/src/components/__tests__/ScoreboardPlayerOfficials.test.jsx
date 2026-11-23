@@ -4,7 +4,9 @@
 //    "On court as #3"); a substitution brings him back on court as the player;
 //  - while he is on the bench, his number on the bench row is greyed: its
 //    menu offers the substitution only, his sanctions go to the official's
-//    chip; also while the libero is in his place (owner 2026-11-22: "coach
+//    chip; the team captain's circled number carries no "C" beside it (owner
+//    23.11.2026: "if the number is circled, no need to write C"), another
+//    role keeps its tag; also while the libero is in his place (owner 2026-11-22: "coach
 //    is not on court, so it is a coach not a player"), and the libero out
 //    makes him the player again; sent off as the coach then, #7 is
 //    substituted for the libero's return (FIVB Casebook);
@@ -231,6 +233,37 @@ describe('a playing coach on the bench: his number is greyed', () => {
     expect((await ofType('sanction'))[1].payload).toMatchObject({ team: 'home', type: 'expulsion', playerType: 'official', role: 'Coach', plays: 7 })
     await waitFor(() => expect(official('Coach').querySelector('[data-person-out="expelled"]')).toBeTruthy())
     await waitFor(() => expect([...benchPlayer(7).querySelectorAll('span')].some(s => s.textContent.trim() === '✕')).toBe(true))
+  }, 60000)
+
+  it('the team captain is the coach: his number is circled and greyed, with no "C" beside it (owner 23.11.2026)', async () => {
+    // #1, the team captain, is the coach (same licence); #7 came in for him
+    const matchId = await setUp({
+      bench: [{ role: 'Coach', firstName: 'Luca', lastName: 'Keller', dob: '100211' }],
+      before: (add) => { add.sub('I', 1, 7); add.rally() }
+    })
+    mount(matchId)
+    await waitFor(() => expect(court(7)).toBeTruthy(), { timeout: 10000 })
+    await waitFor(() => expect(benchPlayer(1)).toBeTruthy())
+    const chip = benchPlayer(1)
+    expect(chip.getAttribute('data-as-official')).toBe('Coach')
+    expect(chip.querySelector('[data-testid="bench-captain-ring"]')).toBeTruthy()
+    expect(chip.querySelector('[data-as-official-tag]')).toBeNull()
+    // the role is still named for hover and in his menu
+    expect(chip.getAttribute('title')).toBe('On the bench as C')
+  }, 60000)
+
+  it('the team captain is the assistant coach: his circled number keeps "AC1"', async () => {
+    const matchId = await setUp({
+      bench: [{ role: 'Assistant Coach 1', firstName: 'Luca', lastName: 'Keller', dob: '100211' }],
+      before: (add) => { add.sub('I', 1, 7); add.rally() }
+    })
+    mount(matchId)
+    await waitFor(() => expect(court(7)).toBeTruthy(), { timeout: 10000 })
+    await waitFor(() => expect(benchPlayer(1)).toBeTruthy())
+    const chip = benchPlayer(1)
+    expect(chip.getAttribute('data-as-official')).toBe('Assistant Coach 1')
+    expect(chip.querySelector('[data-testid="bench-captain-ring"]')).toBeTruthy()
+    expect(chip.querySelector('[data-as-official-tag]').textContent.trim()).toBe('AC1')
   }, 60000)
 
   it('the scorer\'s choice: plays false undoes the automatic link, plays 8 links another', async () => {

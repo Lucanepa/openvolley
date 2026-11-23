@@ -69,8 +69,6 @@
               "SUB"
             <div class="to-sub-value">
               "0"
-        <div data-testid="request-block-left">
-          "Replay pending: no time-out or substitution until the next rally is completed (only a forced substitution)."
         <div>
           <button class="tap-hint tap-hint-sm">
             "Improper request"
@@ -265,7 +263,8 @@
                 <button class="secondary start-rally-button tap-hint" data-help-id="scoreboard-start-rally">
                   "Start rally"
                 <div class="rally-secondary-row">
-                  <span aria-hidden="true">
+                  <button class="tap-hint">
+                    "Decision change"
                   <button class="danger tap-hint" data-help-id="scoreboard-undo">
                     "Undo"
                 <div>
@@ -329,8 +328,6 @@
               "SUB"
             <div class="to-sub-value">
               "0"
-        <div data-testid="request-block-right">
-          "Replay pending: no time-out or substitution until the next rally is completed (only a forced substitution)."
         <div>
           <button class="tap-hint tap-hint-sm">
             "Improper request"
