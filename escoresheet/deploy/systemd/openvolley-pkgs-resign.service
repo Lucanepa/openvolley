@@ -13,12 +13,21 @@
 # Move it to a newer main only after reading what changed in escoresheet/deploy/:
 #   git -C ~/ov-ops/pkgs-resign checkout --detach origin/main
 # Heartbeat: every run that synced writes ~/.config/openvolley-pkgs/resign-heartbeat,
-# and publish-pkgs.sh refuses to publish while this timer is not enabled or that
-# heartbeat is older than 9 days (--without-resign-timer overrides), so a
-# release never goes out on an index nothing will re-sign. A failed run posts to
-# the ntfy topic below (OV_PKGS_NTFY_URL). Set OV_PKGS_KUMA_PUSH_URL in
-# resign.env (an Uptime Kuma push monitor, heartbeat about 8 days) to be told
-# between releases when it does not run at all.
+# and publish-pkgs.sh refuses to publish while this timer is not enabled or the
+# newest successful re-sign on record (that heartbeat, or systemd's record of
+# this service's last run until the next boot) is older than 9 days
+# (--without-resign-timer overrides), so a release never goes out on an index
+# nothing will re-sign. A failed run posts to the ntfy topic below
+# (OV_PKGS_NTFY_URL). Set OV_PKGS_KUMA_PUSH_URL in resign.env (an Uptime Kuma
+# push monitor, heartbeat about 8 days) to be told between releases when it
+# does not run at all.
+# Once the heartbeat (SEC-54) is on main, on a host whose checkout predates it
+# (it writes no heartbeat and has no ntfy alert; its runs count only until the
+# next boot), in this order:
+#   git -C ~/ov-ops/pkgs-resign fetch && git -C ~/ov-ops/pkgs-resign checkout --detach origin/main
+#   sudo install -m 644 openvolley-pkgs-resign.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#   sudo systemctl start openvolley-pkgs-resign.service   # writes the heartbeat
+#   ls -l ~/.config/openvolley-pkgs/resign-heartbeat
 # Adjust User= and the paths below if the ops checkout lives elsewhere. The
 # sync needs the publish user's ssh key for ov-vps without a prompt.
 [Unit]

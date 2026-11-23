@@ -130,10 +130,15 @@
 #
 # Re-sign timer guard (SEC-54): a publish signs the index for 30 days and only
 # the weekly --resign keeps it valid after that, so a publish that syncs
-# refuses unless systemd/openvolley-pkgs-resign.timer is enabled here and
-# ${OV_PKGS_HOME}/resign-heartbeat (written by every --resign that synced) is
-# at most ${OV_PKGS_RESIGN_MAX_AGE_DAYS:-9} days old. Right after installing
-# the timer: sudo systemctl start openvolley-pkgs-resign.service once.
+# refuses unless systemd/openvolley-pkgs-resign.timer is enabled here and the
+# newest successful re-sign on record is at most
+# ${OV_PKGS_RESIGN_MAX_AGE_DAYS:-9} days old: ${OV_PKGS_HOME}/resign-heartbeat
+# (written by every --resign that synced) or systemd's record of the
+# service's last run, if it succeeded (until the next boot; it also covers a
+# re-sign checkout from before the heartbeat). Right after installing the
+# timer, or when the refusal says no re-sign is on record: move
+# ~/ov-ops/pkgs-resign to origin/main (the unit's header), then
+# sudo systemctl start openvolley-pkgs-resign.service once.
 # --without-resign-timer publishes anyway (say why: APT clients get "Release
 # file is expired" 30 days later unless something re-signs before then).
 #
@@ -256,20 +261,40 @@ fi
 
 # --- re-sign timer guard (see the header) -------------------------------------
 RESIGN_TIMER_UNIT=openvolley-pkgs-resign.timer
+RESIGN_SERVICE_UNIT=openvolley-pkgs-resign.service
 RESIGN_HEARTBEAT="$PKGS/resign-heartbeat"
 RESIGN_MAX_AGE_DAYS=${OV_PKGS_RESIGN_MAX_AGE_DAYS:-9}
 [[ "$RESIGN_MAX_AGE_DAYS" =~ ^[1-9][0-9]*$ ]] || die "OV_PKGS_RESIGN_MAX_AGE_DAYS must be a whole number of days"
+# the way to a first run on record (the unit's header has the install steps)
+RESIGN_FIRST_RUN="git -C ~/ov-ops/pkgs-resign checkout --detach origin/main (after reading what changed in escoresheet/deploy/), then sudo systemctl start $RESIGN_SERVICE_UNIT once"
 resign_timer_problem() {  # prints why the index would expire unattended, nothing when the timer is fine
-  local age
+  local k v result='' status='' exit_ts='' last=0 failed='' age
   if ! command -v systemctl >/dev/null 2>&1 || ! systemctl is-enabled --quiet "$RESIGN_TIMER_UNIT" 2>/dev/null; then
     echo "the re-sign timer $RESIGN_TIMER_UNIT is not enabled here (install it: systemd/openvolley-pkgs-resign.service)"
-  elif [[ ! -f "$RESIGN_HEARTBEAT" ]]; then
-    echo "the re-sign has not run since it was installed (no $RESIGN_HEARTBEAT): sudo systemctl start openvolley-pkgs-resign.service, then journalctl -u openvolley-pkgs-resign"
-  else
-    age=$(( ($(date +%s) - $(stat -c %Y "$RESIGN_HEARTBEAT")) / 86400 ))
-    (( age <= RESIGN_MAX_AGE_DAYS )) ||
-      echo "the last re-sign was $age days ago (more than $RESIGN_MAX_AGE_DAYS): journalctl -u openvolley-pkgs-resign"
+    return 0
   fi
+  # The newest successful re-sign on record: the heartbeat (every --resign that
+  # synced writes it), or systemd's record of the service's last run (kept until
+  # the next boot), which also covers a re-sign checkout from before the
+  # heartbeat. The unit runs --resign without --no-sync, so a success synced.
+  [[ ! -f "$RESIGN_HEARTBEAT" ]] || last=$(stat -c %Y "$RESIGN_HEARTBEAT")
+  while IFS='=' read -r k v; do
+    case "$k" in Result) result=$v ;; ExecMainStatus) status=$v ;; ExecMainExitTimestamp) exit_ts=$v ;; esac
+  done < <(systemctl show --timestamp=unix -p Result,ExecMainStatus,ExecMainExitTimestamp "$RESIGN_SERVICE_UNIT" 2>/dev/null || true)
+  if [[ "$exit_ts" =~ ^@([0-9]+)$ ]]; then
+    if [[ "$result" == success && "$status" == 0 ]]; then
+      (( BASH_REMATCH[1] <= last )) || last=${BASH_REMATCH[1]}
+    else
+      failed="its last run failed (systemd: Result=$result, status $status)"
+    fi
+  fi
+  if (( last == 0 )); then
+    echo "no successful re-sign on record${failed:+ and $failed} (no $RESIGN_HEARTBEAT, no successful run of $RESIGN_SERVICE_UNIT since boot): $RESIGN_FIRST_RUN, and journalctl -u openvolley-pkgs-resign"
+    return 0
+  fi
+  age=$(( ($(date +%s) - last) / 86400 ))
+  (( age <= RESIGN_MAX_AGE_DAYS )) ||
+    echo "the last re-sign was $age days ago (more than $RESIGN_MAX_AGE_DAYS)${failed:+; $failed}: see journalctl -u openvolley-pkgs-resign; to run it again: $RESIGN_FIRST_RUN"
 }
 if (( SYNC && ! RESIGN )); then
   problem=$(resign_timer_problem)
