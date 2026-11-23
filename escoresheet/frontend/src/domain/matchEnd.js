@@ -15,12 +15,15 @@
  *  - INCOMPLETE (6.4.3): a team declared incomplete for the SET loses the
  *    set, for the MATCH the match. The opponent is given the points (and the
  *    sets) needed to win; the incomplete team keeps its points and sets.
- *     - for the SET: an injured or expelled player who cannot be substituted
- *       legally or exceptionally (not replaced, the player may be back next
- *       set), or a disqualified player when the team can still field six
- *       next set;
- *     - for the MATCH: a team that cannot field six players for the next set,
- *       or the manual "Stop the match" > "A team is incomplete".
+ *     - for the SET: an expelled player who cannot be substituted legally
+ *       or exceptionally (he is back next set), or an injured or a
+ *       disqualified player who cannot be substituted when the team can
+ *       still field six without him for the rest of the match;
+ *     - for the MATCH: a team that cannot field six players for the rest of
+ *       the match, without the injured or disqualified player who caused it
+ *       (Swiss exam Q226: 7 players with one libero, one injured: the team
+ *       loses the match; owner decision 23.11.2026), or the manual "Stop the
+ *       match" > "A team is incomplete".
  * Sets are created lazily in this app, so the sets still needed for a match
  * forfeit must be CREATED, following the same index sequence as a played match
  * (best-of-3 at 1-1 jumps 2 -> 5, see matchFormat.getNextSetIndex).
@@ -357,6 +360,30 @@ export function playersAvailableForNextSet(players, events, teamKey, { exclude =
 export function forfeitScope(reason, { playersAvailableNextSet = Infinity } = {}) {
   if (reason === 'forfeit') return 'match'
   return playersAvailableNextSet < 6 ? 'match' : 'set'
+}
+
+// Reasons whose player is not counted for the rest of the match: a
+// disqualified one may not play again (21.3.3), an injured or ill one cannot
+// continue (15.7; Swiss exam Q226). An expelled one is back next set (21.3.2).
+const OUT_FOR_THE_REST = new Set(['disqualification', 'injury', 'illness'])
+
+/**
+ * Scope of an automatic forfait: a player who must leave the court (injured,
+ * expelled, disqualified) has no legal or exceptional substitute. The SET,
+ * unless the team cannot field six players for the rest of the match
+ * without him (an injured or disqualified one; an expelled one still counts),
+ * then the MATCH (see the header; owner decision 23.11.2026).
+ * @param {Array} players the team roster
+ * @param {Array} events
+ * @param {'home'|'away'} teamKey
+ * @param {'injury'|'illness'|'expulsion'|'disqualification'|'forfeit'|string} reason
+ * @param {number|string|null} [outNumber] the player who causes it
+ * @returns {'set'|'match'}
+ */
+export function automaticForfeitScope(players, events, teamKey, reason, outNumber = null) {
+  const exclude = OUT_FOR_THE_REST.has(reason) && outNumber != null && outNumber !== '' ? [outNumber] : []
+  const available = playersAvailableForNextSet(players, events, teamKey, { exclude }).length
+  return forfeitScope(reason, { playersAvailableNextSet: available })
 }
 
 // Reasons of an incomplete team (6.4.3), as the Scoreboard writes them; an

@@ -106,7 +106,7 @@ import CorrectionBoard, { readCorrectionView, saveCorrectionView, boardFits } fr
 import RectifyPanel from './rectify/RectifyPanel.jsx'
 import { planRectificationReversal, rectifyErrorText } from '../domain/rectify'
 import { servingTeamFromLog, serveBeforePoint } from '../domain/rules'
-import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal, restoredSetWrites, matchForfeitOf } from '../domain/matchEnd'
+import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, automaticForfeitScope, planForfeitReversal, restoredSetWrites, matchForfeitOf } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { missingPreMatchSignatures, beforeFirstServe } from '../domain/preMatchSignatures'
 import PreMatchSignDialog, { SignaturesMissingModal, MissingSignatureButton } from './signature/PreMatchSignDialog.jsx'
@@ -11636,14 +11636,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation])
 
   // Handle forfait (FIVB 6.4, 7.3.1, 15.8; domain/matchEnd, tested).
-  //  scope 'set'   - the team is INCOMPLETE for the SET (injured / expelled
-  //                  player, or a disqualified one while six can still play
-  //                  next set, with no legal or exceptional substitute): the
+  //  scope 'set'   - the team is INCOMPLETE for the SET (an expelled
+  //                  player, or an injured or disqualified one while six can
+  //                  still play without him for the rest of the match, with
+  //                  no legal or exceptional substitute): the
   //                  opponent gets the points to win the set in progress, then
   //                  the normal set-end confirmation finishes the set and starts
   //                  the next one, or ends the match if that set decides it.
   //  scope 'match' - incomplete for the MATCH (fewer than six players for
-  //                  next set, or the manual "A team is incomplete"): the
+  //                  the rest of the match, Swiss exam Q226, or the manual
+  //                  "A team is incomplete"): the
   //                  opponent gets the points and the sets needed, the match
   //                  ends and Match End opens. With inDefault (the manual
   //                  "A team forfeits": refused to play, did not appear,
@@ -11814,15 +11816,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.set, data?.match, matchId, logEvent, syncToReferee, onTriggerEventBackup, onFinishSet, showAlert, t])
 
   // Scope of an automatic forfait: the SET, unless the team cannot field six
-  // players for the next set (then the MATCH). `outNumber` is the player being
-  // disqualified right now, if any (domain/matchEnd, tested).
+  // players for the rest of the match (then the MATCH). `outNumber` is the
+  // player who causes it: an injured or disqualified one does not count
+  // (Swiss exam Q226, owner 23.11.2026), an expelled one does (back next
+  // set). domain/matchEnd automaticForfeitScope, tested.
   const getForfaitScope = useCallback((teamKey, reason, outNumber = null) => {
     // Easy match: the team has no roster, new numbers can always come: the set
     if (data?.match?.easy === true) return forfeitScope(reason)
     const players = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-    const exclude = reason === 'disqualification' && outNumber != null ? [outNumber] : []
-    const available = playersAvailableForNextSet(players, data?.events, teamKey, { exclude }).length
-    return forfeitScope(reason, { playersAvailableNextSet: available })
+    return automaticForfeitScope(players, data?.events, teamKey, reason, outNumber)
   }, [data?.homePlayers, data?.awayPlayers, data?.events, data?.match?.easy])
 
   // An automatic forfait never fires on its own: it asks for confirmation
@@ -24380,7 +24382,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Easy match: a new number can always come in exceptionally
         const exceptionalPossible = exceptionalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerOut, true)
         // FIVB 6.4.3 / 7.3.1: incomplete for the SET unless the team cannot
-        // field six players next set (then the MATCH)
+        // field six players next set (then the MATCH); an injured or
+        // disqualified player does not count (Swiss exam Q226; getForfaitScope)
         const forfaitScopeNow = getForfaitScope(team, reason, playerOut)
         const forfaitText = forfaitScopeNow === 'match'
           ? t('scoreboard.dialogs.forfaitMatchText', { defaultValue: 'Team {{team}} cannot field six players for the next set: it is declared incomplete for the MATCH. The opponent wins this set and all remaining sets, and the match ends.', team: teamLabel })

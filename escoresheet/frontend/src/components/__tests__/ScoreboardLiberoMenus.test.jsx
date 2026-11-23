@@ -6,6 +6,8 @@
 //    then the Redesignate libero button: the re-designation replaces L2 (Q84),
 //    records the injury as its reason, the new libero may come in at once
 //    (Q143, Q204), and neither original libero may come back.
+//  - LOG-15: an injured player nobody may replace, the team unable to field
+//    six without him (Q226): the forfait is for the MATCH.
 // Over the app's real Dexie database (fake IndexedDB), at tablet width.
 // Network is off: no relay socket, no fetch.
 import 'fake-indexeddb/auto'
@@ -253,4 +255,32 @@ describe('Q84 on the scoring screen: L1 disqualified, then L2 injured on court',
     const [redesignation] = await ofType('libero_redesignation')
     expect(redesignation.payload).toMatchObject({ unableLiberoNumber: 12, newLiberoNumber: 7, reason: 'injury' })
   }, 90000)
+})
+
+describe('LOG-15: an injured player nobody may replace (Swiss exam Q226)', () => {
+  it('7 players with one libero, one injured: the forfait is for the MATCH', async () => {
+    const { matchId } = await setUp({ home: [1, 2, 3, 4, 5, 6, 9], liberos: { 9: 'libero1' } })
+    await openScreen(matchId)
+    await openCourtMenu(3)
+    await tap(button('Injury', playerMenu()))
+    await waitFor(() => expect(dialog(/No legal substitution/)).toBeTruthy(), { timeout: 5000 })
+    const forfait = dialog(/No legal substitution/)
+    expect(forfait.textContent).toMatch(/incomplete for the MATCH/)
+    expect(button('Confirm forfait (match)', forfait)).toBeTruthy()
+    expect(button('Confirm forfait (set)', forfait)).toBeFalsy()
+  }, 60000)
+
+  it('eight players with one libero, the bench player expelled for this set: the forfait is for the SET', async () => {
+    const { matchId } = await setUp({
+      home: [1, 2, 3, 4, 5, 6, 7, 9],
+      liberos: { 9: 'libero1' },
+      before: (add) => add.event('sanction', { team: 'home', type: 'expulsion', playerType: 'bench', playerNumber: 7 })
+    })
+    await openScreen(matchId)
+    await openCourtMenu(3)
+    await tap(button('Injury', playerMenu()))
+    await waitFor(() => expect(dialog(/No legal substitution/)).toBeTruthy(), { timeout: 5000 })
+    const forfait = dialog(/No legal substitution/)
+    expect(button('Confirm forfait (set)', forfait)).toBeTruthy()
+  }, 60000)
 })
