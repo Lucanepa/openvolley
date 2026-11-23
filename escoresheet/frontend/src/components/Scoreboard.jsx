@@ -24759,7 +24759,7 @@ function ScoreboardToolbar({ children, collapsed, onToggle, clock }) {
           style={{ height: '16px' }}
         >
           {clock && (
-            <span data-testid="toolbar-strip-clock" className="tabular-nums text-stone-500" style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1 }}>{clock}</span>
+            <span data-testid="toolbar-strip-clock" className="tabular-nums text-stone-500" style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1, '--clock-lh': 1 }}>{clock}</span>
           )}
           <ToolbarChevron collapsed onToggle={onToggle} />
           {/* the "Phone keyboard" indicator, small, while the bar is folded */}

@@ -221,3 +221,137 @@ describe('ToolbarClock without seconds', () => {
     expect(msToNextMinute(Date.UTC(2026, 10, 22, 10, 0, 59, 999))).toBe(1)
   })
 })
+
+// The time sits in a box of its own (styles.css .toolbar-clock-time: fixed
+// size, strict containment), so a tick lays out that box alone; the date is
+// plain text before it. A time longer than the box (fr-CA) grows it, never
+// cuts it.
+describe('ToolbarClock box', () => {
+  /**
+   * Widths jsdom cannot lay out: the time's text (a Range over the box), the
+   * box itself (its inline em width at 16 px, else `widths.box`), its font
+   * size. A text width of 0 is a hidden box.
+   */
+  function fakeLayout (widths) {
+    const isBox = (el) => el?.classList?.contains('toolbar-clock-time')
+    const hadRange = Object.getOwnPropertyDescriptor(Range.prototype, 'getBoundingClientRect')
+    Range.prototype.getBoundingClientRect = function () { return { width: widths.text } }
+    const realRect = Element.prototype.getBoundingClientRect
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (!isBox(this)) return realRect.call(this)
+      const em = parseFloat(this.style.width)
+      return { width: widths.text === 0 ? 0 : (this.style.width ? em * 16 : widths.box) }
+    })
+    const real = window.getComputedStyle
+    const gcs = vi.spyOn(window, 'getComputedStyle').mockImplementation((el, ...rest) => (isBox(el) ? { fontSize: '16px' } : real(el, ...rest)))
+    return () => {
+      if (hadRange) Object.defineProperty(Range.prototype, 'getBoundingClientRect', hadRange)
+      else delete Range.prototype.getBoundingClientRect
+      rect.mockRestore()
+      gcs.mockRestore()
+    }
+  }
+  const box = () => document.querySelector('[data-testid="clock"] .toolbar-clock-time')
+
+  it('the date as plain text, the time in the box, marked when it has no seconds', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+    render(<span data-testid="clock"><ToolbarClock /></span>)
+    const [day, time] = formatTimestamp(new Date('2026-11-22T10:00:30')).split(' ')
+    expect(box().textContent).toBe(time)
+    expect(box().previousSibling.nodeType).toBe(Node.TEXT_NODE)
+    expect(screen.getByTestId('clock').textContent).toBe(`${day} ${time}`)
+    expect(box().hasAttribute('data-seconds')).toBe(false)
+    act(() => { setLook({ clockSeconds: false }) })
+    expect(box().getAttribute('data-seconds')).toBe('off')
+    expect(box().textContent).toBe('10:00')
+  })
+
+  it('a tick changes only the time\'s text node; the date\'s stays', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+    render(<span data-testid="clock"><ToolbarClock /></span>)
+    const shownBox = box()
+    const dayNodes = [...screen.getByTestId('clock').childNodes].filter((n) => n.nodeType === Node.TEXT_NODE)
+    const dayText = dayNodes.map((n) => n.textContent).join('')
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(box()).toBe(shownBox)
+    expect(box().textContent).toMatch(/^10:00:31$/)
+    const after = [...screen.getByTestId('clock').childNodes].filter((n) => n.nodeType === Node.TEXT_NODE)
+    expect(after).toEqual(dayNodes)
+    expect(after.map((n) => n.textContent).join('')).toBe(dayText)
+  })
+
+  it('the box takes the time\'s exact width, in em; a tick that keeps it writes nothing', () => {
+    const widths = { text: 109.3, box: 111.5 }
+    const restore = fakeLayout(widths)
+    try {
+      vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+      render(<span data-testid="clock"><ToolbarClock /></span>)
+      // 109.3 px rounded up to a 64th of a pixel (109.3125), over 16 px
+      expect(box().style.width).toMatch(/em$/)
+      expect(parseFloat(box().style.width) * 16).toBeGreaterThanOrEqual(109.3)
+      expect(parseFloat(box().style.width) * 16).toBeLessThan(109.33)
+      const fitted = box().style.width
+      const writes = vi.spyOn(box().style, 'width', 'set')
+      act(() => { vi.advanceTimersByTime(3000) })
+      expect(box().style.width).toBe(fitted)
+      expect(writes).not.toHaveBeenCalled()
+    } finally { restore() }
+  })
+
+  it('a longer time (fr-CA "23 h 58 min 48 s") widens the box; a shorter one narrows it', () => {
+    const widths = { text: 198.2, box: 111.5 }
+    const restore = fakeLayout(widths)
+    try {
+      vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+      render(<span data-testid="clock"><ToolbarClock /></span>)
+      expect(parseFloat(box().style.width) * 16).toBeGreaterThanOrEqual(198.2)
+      widths.text = 70.1
+      act(() => { vi.advanceTimersByTime(1000) })
+      expect(parseFloat(box().style.width) * 16).toBeGreaterThanOrEqual(70.1)
+      expect(parseFloat(box().style.width) * 16).toBeLessThan(70.2)
+    } finally { restore() }
+  })
+
+  it('hidden (the folded toolbar), it keeps its width; seconds changed while hidden: the stylesheet\'s', () => {
+    const widths = { text: 109.3, box: 111.5 }
+    const restore = fakeLayout(widths)
+    try {
+      vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+      render(<span data-testid="clock"><ToolbarClock /></span>)
+      const fitted = box().style.width
+      widths.text = 0
+      act(() => { vi.advanceTimersByTime(2000) })
+      expect(box().style.width).toBe(fitted)
+      act(() => { setLook({ clockSeconds: false }) })
+      expect(box().style.width).toBe('')
+      // shown again: fitted at the next tick
+      widths.text = 70.1
+      act(() => { vi.advanceTimersToNextTimer() })
+      expect(parseFloat(box().style.width) * 16).toBeGreaterThanOrEqual(70.1)
+    } finally { restore() }
+  })
+
+  it('a web font that arrives later: fitted again at once', () => {
+    const widths = { text: 100, box: 111.5 }
+    const restore = fakeLayout(widths)
+    const listeners = new Set()
+    const fonts = { addEventListener: (type, fn) => { if (type === 'loadingdone') listeners.add(fn) }, removeEventListener: (type, fn) => listeners.delete(fn) }
+    const had = Object.getOwnPropertyDescriptor(document, 'fonts')
+    Object.defineProperty(document, 'fonts', { configurable: true, value: fonts })
+    try {
+      vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+      localStorage.setItem(LOOK_KEYS.clockSeconds, 'false')
+      const { unmount } = render(<span data-testid="clock"><ToolbarClock /></span>)
+      expect(parseFloat(box().style.width) * 16).toBeLessThan(100.1)
+      widths.text = 104.6
+      act(() => { listeners.forEach((fn) => fn()) })
+      expect(parseFloat(box().style.width) * 16).toBeGreaterThanOrEqual(104.6)
+      unmount()
+      expect(listeners.size).toBe(0)
+    } finally {
+      if (had) Object.defineProperty(document, 'fonts', had)
+      else delete document.fonts
+      restore()
+    }
+  })
+})

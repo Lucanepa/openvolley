@@ -164,3 +164,43 @@ describe('Point and Start rally: a pressed look the moment the finger lands', ()
     }
   })
 })
+
+// The toolbar clock ticks every second. Its text with no box of a fixed size
+// laid out the whole page at each tick (44 ms on the emulated hall tablet,
+// with the toolbar's container queries styled again): the time in a box with
+// size and layout containment is a relayout boundary, and a tick lays out
+// that box alone (Chromium trace: 2 objects instead of 568, 26 ms -> 0.1 ms a
+// tick at CPU throttle 6).
+describe('Toolbar clock: a tick lays out the time alone', () => {
+  const box = () => rulesFor('.toolbar-clock-time').join('\n')
+
+  it('an inline box with strict containment, a fixed width and one line of height', () => {
+    expect(box()).toMatch(/contain: strict;/)
+    expect(box()).toMatch(/display: inline-block;/)
+    // contained, the box has no baseline: top-aligned in the line instead
+    expect(box()).toMatch(/vertical-align: top;/)
+    expect(box()).toMatch(/height: calc\(var\(--clock-lh, 1\.3\) \* 1em\);/)
+    expect(box()).toMatch(/line-height: var\(--clock-lh, 1\.3\);/)
+    expect(box()).toMatch(/white-space: nowrap;/)
+    expect(box()).toMatch(/overflow: hidden;/)
+    expect(box()).toMatch(/font-variant-numeric: tabular-nums;/)
+  })
+
+  // Measured in Chromium, Inter at 500 with tabular figures: "23:58:48"
+  // 6.8ch to 6.9ch and "23:58" 4.4ch to 4.45ch at the toolbar's and the
+  // strip's sizes, in every language but fr-CA. Tight, so a toolbar that was
+  // just wide enough for the clock on one line still is; a wider time (fr-CA,
+  // whole-pixel glyphs at some sizes) grows the box from ToolbarClock.
+  it('as wide as the time, with and without seconds', () => {
+    const width = (body) => Number(/width: ([\d.]+)ch;/.exec(body)?.[1])
+    expect(width(box())).toBeGreaterThanOrEqual(6.85)
+    expect(width(box())).toBeLessThanOrEqual(7)
+    const minutes = width(rulesFor(".toolbar-clock-time[data-seconds='off']").join('\n'))
+    expect(minutes).toBeGreaterThanOrEqual(4.45)
+    expect(minutes).toBeLessThanOrEqual(4.6)
+  })
+
+  it('the folded strip keeps its line height of 1', () => {
+    expect(scoreboard).toMatch(/data-testid="toolbar-strip-clock"[^>]*lineHeight: 1, '--clock-lh': 1 \}\}/)
+  })
+})

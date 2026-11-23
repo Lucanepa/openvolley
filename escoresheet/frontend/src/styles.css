@@ -1257,6 +1257,32 @@ button:disabled {
   color: var(--muted);
 }
 
+/* The ticking time of the toolbar clock (scoreboard/ToolbarClock), in the
+   toolbar and the folded strip: a box of its own fixed size, so a tick lays
+   out the box alone, not the page (a relayout boundary: size and layout
+   containment). The date before it is plain text: a tight toolbar wraps the
+   time under it as before. The width here is where the box starts: the
+   time in Inter's tabular figures ("23:58:48" 6.8ch to 6.9ch, "23:58" 4.4ch
+   to 4.45ch, in every language but fr-CA); ToolbarClock then sets the box
+   to the time's exact width, so the clock wraps where it did and nothing is
+   cut. Top-aligned (the box has no baseline), one line tall: the toolbar's
+   1.3, the strip's 1 (--clock-lh on its span). */
+.toolbar-clock-time {
+  display: inline-block;
+  vertical-align: top;
+  width: 6.9ch;
+  height: calc(var(--clock-lh, 1.3) * 1em);
+  line-height: var(--clock-lh, 1.3);
+  white-space: nowrap;
+  overflow: hidden;
+  contain: strict;
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar-clock-time[data-seconds='off'] {
+  width: 4.5ch;
+}
+
 .toolbar-center {
   display: flex;
   flex-direction: column;

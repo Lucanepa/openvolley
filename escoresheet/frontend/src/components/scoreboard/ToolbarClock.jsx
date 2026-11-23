@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useInAppViewOpen } from '../../hooks/useInAppViewOpen'
 import { useLook } from '../../utils/lookSettings'
 
@@ -35,8 +35,14 @@ function currentFormatters () {
  * seconds false: the time as HH:MM ("08/11/2026 09:51").
  */
 export function formatToolbarClock (date, { seconds = true } = {}) {
+  const { day, time } = toolbarClockParts(date, { seconds })
+  return `${day} ${time}`
+}
+
+/** The date and the time of formatToolbarClock, each on its own. */
+export function toolbarClockParts (date, { seconds = true } = {}) {
   const { day, time, minutes } = currentFormatters()
-  return `${day.format(date)} ${(seconds ? time : minutes).format(date)}`
+  return { day: day.format(date), time: (seconds ? time : minutes).format(date) }
 }
 
 export const MINUTE_MS = 60000
@@ -57,14 +63,28 @@ export function msToNextMinute (now) {
  * nobody sees it: it stops there and shows the time again at once when the
  * view closes. Without seconds (utils/lookSettings clockSeconds) it shows
  * HH:MM and ticks once a minute, on the minute: no redraw in between.
+ *
+ * The time sits in a box of a fixed size (styles.css .toolbar-clock-time,
+ * contain: strict): a relayout boundary, so a tick lays out that box alone.
+ * Without it every second laid out the whole page (44 ms a tick on the
+ * emulated hall tablet, the largest idle cost left). The date stays plain
+ * text before it, so a tight toolbar (large system font, the backup alert
+ * beside the chevron) still puts the time under the date, as before. The box
+ * is as wide as the time in any language (fr-CA writes "23 h 58 min 48 s"),
+ * never cutting it.
  */
 export default function ToolbarClock () {
   const covered = useInAppViewOpen()
   const { clockSeconds: seconds } = useLook()
-  const [text, setText] = useState(() => formatToolbarClock(new Date(), { seconds }))
+  const [parts, setParts] = useState(() => toolbarClockParts(new Date(), { seconds }))
+  const boxRef = useRef(null)
   useEffect(() => {
     if (covered) return undefined
-    const tick = () => setText(formatToolbarClock(new Date(), { seconds })) // the same text renders nothing
+    // the same text renders nothing
+    const tick = () => {
+      const next = toolbarClockParts(new Date(), { seconds })
+      setParts((shown) => (shown.day === next.day && shown.time === next.time ? shown : next))
+    }
     tick()
     if (seconds) {
       const timer = setInterval(tick, 1000)
@@ -79,5 +99,43 @@ export default function ToolbarClock () {
     next()
     return () => clearTimeout(timer)
   }, [covered, seconds])
-  return text
+  // The box takes the time's own width (in em, so it follows the font size):
+  // the clock is as wide as its text was without the box, and wraps where it
+  // did. With tabular figures that width only changes with the format or the
+  // font: then the box is resized once; every other tick only reads it, which
+  // lays out the box alone (the layout the frame makes anyway). A hidden box
+  // (the folded toolbar) measures 0 and keeps its width, or the stylesheet's
+  // after a change of seconds.
+  const fit = useCallback(() => {
+    const box = boxRef.current
+    if (!box?.firstChild) return
+    const range = document.createRange()
+    range.selectNodeContents(box)
+    if (typeof range.getBoundingClientRect !== 'function') return
+    const text = range.getBoundingClientRect().width
+    if (!(text > 0) || Math.abs(text - box.getBoundingClientRect().width) < 0.02) return
+    const px = parseFloat(getComputedStyle(box).fontSize)
+    if (px > 0) box.style.width = `${Math.ceil(text * 64) / 64 / px}em`
+  }, [])
+  const fittedSeconds = useRef(seconds)
+  useLayoutEffect(() => {
+    if (fittedSeconds.current !== seconds && boxRef.current) {
+      fittedSeconds.current = seconds
+      boxRef.current.style.width = ''
+    }
+    fit()
+  }, [parts.time, seconds, fit])
+  // a web font that arrives later changes the width: fit again
+  useEffect(() => {
+    const fonts = document.fonts
+    if (!fonts?.addEventListener) return undefined
+    fonts.addEventListener('loadingdone', fit)
+    return () => fonts.removeEventListener('loadingdone', fit)
+  }, [fit])
+  return (
+    <>
+      {parts.day}{' '}
+      <span ref={boxRef} className="toolbar-clock-time" data-seconds={seconds ? undefined : 'off'}>{parts.time}</span>
+    </>
+  )
 }
