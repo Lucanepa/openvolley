@@ -477,7 +477,7 @@ describe('the exceptional substitution after an injury can be cancelled (owner 2
 // Owner 22.11.2026: "SUB shall count exceptional substitutions": the SUB box
 // shows every substitution of the set; its colour follows the regular ones.
 describe('the SUB box counts exceptional substitutions (owner 22.11.2026)', () => {
-  const subBox = () => [...document.querySelectorAll('.to-sub-counter')].find(b => b.querySelector('.to-sub-label')?.textContent.trim() === 'SUB')
+  const subBox = () => [...document.querySelectorAll('.to-sub-counter')].find(b => b.querySelector('.to-sub-label')?.textContent.trim() === 'Substitution') // the full word, below the number (owner 23.11.2026)
 
   it('6 regular + 1 exceptional: 7, red; the details list marks the exceptional one', async () => {
     const matchId = await setUp('six')

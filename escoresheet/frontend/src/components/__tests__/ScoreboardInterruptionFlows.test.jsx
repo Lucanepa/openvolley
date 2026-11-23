@@ -4,7 +4,9 @@
 // screen's own dialogs, the ones the tablet uses):
 //  - row 10: a late request stopped the rally: "Replay" records the replay
 //    and the team's delay warning (no reason kept), and requests stay
-//    closed until the replayed rally is completed;
+//    closed until the replayed rally is completed, with no "Replay pending"
+//    line (owner 23.11.2026); the decision change stays: "Point A" gives the
+//    replayed rally to A after all;
 //  - row 11: the improper request asks no reason and keeps none (the owner,
 //    2026-11-09: "no reason, no need, same for delays");
 //  - row 19: a decision change after a substitution and a time-out takes
@@ -136,6 +138,38 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
     await waitFor(async () => expect((await ofType('replay')).length).toBe(1))
     expect(await ofType('sanction')).toHaveLength(0)
     expect(await ofType('point')).toHaveLength(2)
+
+    // the time-outs and substitutions stay closed, with no line saying so
+    await waitFor(() => expect(view.getByTestId('phone-timeout-left').disabled).toBe(true))
+    expect(view.getByTestId('phone-timeout-right').disabled).toBe(true)
+    expect(view.getByTestId('phone-sub-left').disabled).toBe(true)
+    expect(screen.queryByTestId('phone-request-block')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Replay pending/)
+
+    // the decision change stays: the replayed rally to A after all
+    await waitFor(() => expect(view.getByTestId('phone-action-decision').disabled).toBe(false))
+    await settle()
+    fireEvent.click(view.getByTestId('phone-action-decision'))
+    await waitFor(() => expect(screen.getByTestId('decision-last-replay')).toBeTruthy())
+    const option = (name) => screen.getAllByRole('radio').find(r => r.querySelector('[data-decision-label]').textContent.trim() === name)
+    expect(screen.getAllByRole('radio').map(r => r.querySelector('[data-decision-label]').textContent.trim())).toEqual(['Point A', 'Point B'])
+    // what each gives, before a choice
+    expect(screen.getByTestId('decision-outcome-point_home').getAttribute('data-serve')).toBe('home')
+    expect(screen.getByTestId('decision-outcome-point_home').textContent).toContain('2 : 1')
+    expect(screen.getByTestId('decision-outcome-point_away').textContent).toContain('1 : 2')
+    fireEvent.click(option('Point A'))
+    await waitFor(() => expect(option('Point A').getAttribute('aria-checked')).toBe('true'))
+    await settle()
+    fireEvent.click(button('Confirm'))
+    await waitFor(async () => expect((await ofType('point')).length).toBe(3))
+    expect(await ofType('replay')).toHaveLength(0)
+    expect((await ofType('point')).at(-1).payload.team).toBe('home')
+    await waitFor(() => expect(view.getByTestId('phone-score-left').textContent).toBe('2'))
+    expect(view.getByTestId('phone-score-right').textContent).toBe('1')
+    // the replay pending is over: A won B's serve and serves now
+    await waitFor(() => expect(view.getByTestId('phone-timeout-left').disabled).toBe(false))
+    await waitFor(() => expect(within(view.getByTestId('phone-court-left')).getByTestId('phone-serve-ball')).toBeTruthy())
+    expect(screen.queryByTestId('phone-request-block')).toBeNull()
   }, 60000)
 
   it('row 11: the improper request asks no reason and keeps none', async () => {
