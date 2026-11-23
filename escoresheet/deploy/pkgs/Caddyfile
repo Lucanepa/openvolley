@@ -29,6 +29,18 @@
 	@write not method GET HEAD
 	respond @write 405
 
+	# A visitor on plain http (Cloudflare's cf-visitor names the scheme the
+	# visitor used; the tunnel itself always speaks http to this port) gets
+	# the same address on https: the pages and the installer that is piped to
+	# sudo sh never travel in the clear (SEC-61). The signed repositories
+	# (APT, F-Droid, Flatpak, pacman) answer on both: their clients check the
+	# signatures, and an old sources.list on http keeps working.
+	@plainhttp {
+		header_regexp Cf-Visitor `"scheme"\s*:\s*"http"`
+		not path /apt/* /fdroid/* /flatpak/* /arch/*
+	}
+	redir @plainhttp https://{host}{uri} 301
+
 	# Content types file_server would otherwise guess or leave generic.
 	@deb path *.deb
 	@apk path *.apk

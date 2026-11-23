@@ -3592,6 +3592,27 @@ const server = createServer((req, res) => {
   }
 })
 
+/**
+ * The https address of a request the visitor sent to the cloud over plain
+ * http, else null (SEC-61). Cloudflare's cf-visitor names the visitor's
+ * scheme ({"scheme":"http"}); without it (a local caller, the tunnel's own
+ * checks) nothing changes, nor for the health checks.
+ */
+function plainHttpRedirect(req) {
+  const visitor = req.headers['cf-visitor']
+  if (typeof visitor !== 'string' || !visitor) return null
+  let scheme
+  try { scheme = JSON.parse(visitor)?.scheme } catch { return null }
+  if (scheme !== 'http') return null
+  const raw = String(req.url || '/')
+  const path = raw.startsWith('/') ? raw : '/'
+  const pathname = path.split('?')[0]
+  if (pathname === '/health' || pathname.startsWith('/health/')) return null
+  const host = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '')
+  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return null
+  return `https://${host}${path}`
+}
+
 function handleHttpRequest(req, res) {
   // Enable CORS with proper origin handling
   const cors = getCorsOrigin(req)
@@ -3621,6 +3642,20 @@ function handleHttpRequest(req, res) {
   // Content Security Policy — emitted in all modes so LAN/self-hosted
   // deployments are not left without a policy (PAGE_CSP, lib/pageCsp.js).
   res.setHeader('Content-Security-Policy', PAGE_CSP)
+
+  // The cloud over plain http (SEC-61): Cloudflare says which scheme the
+  // visitor used (cf-visitor). Such a request goes to https, never answered
+  // in the clear. The health checks (monitors, Docker), a venue server and a
+  // request without cf-visitor (the tunnel's own checks, local callers) are
+  // served as before.
+  const httpsLocation = IS_CLOUD ? plainHttpRedirect(req) : null
+  if (httpsLocation) {
+    req.resume()
+    // 308 keeps the method and body of an older app's write
+    res.writeHead(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, { Location: httpsLocation, 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end(req.method === 'HEAD' ? undefined : `Use ${httpsLocation}\n`)
+    return
+  }
 
   if (req.method === 'OPTIONS') {
     // the scoreboard codes: any site (CORS *, never with credentials)
