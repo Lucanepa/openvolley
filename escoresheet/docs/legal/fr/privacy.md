@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.27 · État au 23 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.28 · État au 23 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -378,12 +378,25 @@ connexion. Le serveur n'en garde qu'un hachage. Une session dure 30 jours
 après la dernière utilisation, 90 jours au plus, et se termine à la
 déconnexion, au changement de mot de passe et à la suppression du compte.
 Pour se protéger des attaques, le serveur compte les tentatives échouées par
-adresse IP et par adresse e-mail, uniquement en mémoire vive.
+adresse IP et par adresse e-mail dans sa mémoire vive. Sa base de données
+garde en outre, pour une adresse e-mail avec des tentatives échouées, leur
+nombre des dernières 24 heures, sous un hachage à sens unique de l'adresse
+(pas l'adresse elle-même), et, pour chaque compte, jusqu'à 20 réseaux depuis
+lesquels il a été utilisé (une adresse IPv4, ou la première moitié d'une
+adresse IPv6) : un hachage à clé de l'adresse e-mail et du réseau, qui ne dit
+rien sans la clé secrète du serveur. Il est écrit quand tu t'y connectes avec
+ton mot de passe ou une clé d'accès (passkey), ou que tu y ouvres un lien d'un
+e-mail du compte. Après 100 tentatives échouées en 24 heures, ces réseaux
+continuent comme d'habitude, tout autre ne peut essayer que de temps en temps,
+et le compte reçoit un avis par e-mail (une fois dans ce délai). Le nombre est
+supprimé après ses 24 heures, avec un nouveau mot de passe et avec le compte ;
+un réseau 60 jours après sa dernière utilisation et avec le compte.
 
 **E-mails :** je n'envoie que des e-mails liés au compte : confirmation de
 l'adresse e-mail, lien de réinitialisation du mot de passe, avis de
-changement du mot de passe, avis qu'un résultat a été validé avec ton NIP
-de validation et avis que ton NIP a été bloqué. Ils ne contiennent ni pixel
+changement du mot de passe, avis que quelqu'un essaie sans cesse de se
+connecter à ton compte (ci-dessus), avis qu'un résultat a été validé avec ton
+NIP de validation et avis que ton NIP a été bloqué. Ils ne contiennent ni pixel
 de suivi ni image chargée à distance. Un lien de confirmation est valable
 24 heures, un lien de réinitialisation 60 minutes.
 
@@ -574,7 +587,11 @@ match ; conserve-les donc comme un mot de passe. Une nouvelle sauvegarde
 remplace la précédente. Les
 fichiers sont supprimés 180 jours après la dernière modification ; les
 sauvegardes du serveur (section 18) en gardent encore une copie quelque temps.
-L'organisatrice ou l'organisateur du tournoi est responsable d'avoir le droit
+Si le serveur refuse pour le moment la dernière sauvegarde et le PDF (la part
+du jour de ton réseau est épuisée, le serveur est surchargé, pas de
+connexion), ils restent sur ton appareil et sont renvoyés plus tard, pendant
+7 jours au plus ; de même la dernière copie d'« Enregistrer dans le cloud »
+(ci-dessous). L'organisatrice ou l'organisateur du tournoi est responsable d'avoir le droit
 d'enregistrer les données et d'informer les joueuses et joueurs et leurs
 parents (section 17).
 
@@ -1026,7 +1043,8 @@ précédentes ; plus tôt sur demande.
   en direct s'en sert pour reconnaître les appareils d'une même salle. Il ne
   garde les adresses IP qu'en mémoire vive et ne les enregistre ni ne les
   journalise (sauf sous forme de hachage pseudonymisé d'une validation,
-  section 7).
+  section 7, et de hachages à clé des réseaux depuis lesquels un compte a été
+  utilisé, section 6).
 - **Journal des modifications :** pour la traçabilité, le serveur consigne qui
   a modifié des rôles, validé, clôturé ou rouvert des matchs, ajouté des
   co-éditeurs ou modifié des inscriptions à un tournoi, et quand. Les entrées
@@ -1094,6 +1112,8 @@ prestataires. Tu peux me demander une copie de ces garanties.
 |---|---|
 | Compte et profil | Jusqu'à ce que tu supprimes le compte ou qu'un administrateur le supprime (sur demande, ou un nouveau compte refusé) |
 | Session | 30 jours après la dernière utilisation, 90 jours au plus |
+| Tentatives de connexion échouées d'une adresse e-mail (un nombre, sous un hachage de l'adresse) | 24 heures ; supprimées plus tôt avec un nouveau mot de passe ou le compte |
+| Réseaux depuis lesquels un compte a été utilisé (hachages à clé, 20 au plus) | 60 jours après la dernière utilisation depuis là ; supprimés avec le compte |
 | Liens dans les e-mails | Valables 60 minutes ou 24 heures, effacés 7 jours plus tard |
 | NIP de validation | Jusqu'à ce que tu le supprimes ou supprimes ton compte |
 | Feuilles de match, événements, historique des événements, signatures, validations, remarques (données de santé comprises), fichiers des feuilles de match | Comme procès-verbal officiel : la saison du match et les 2 saisons suivantes (une saison va du 1er juillet au 30 juin), puis effacés par un passage quotidien ; par exemple, les procès-verbaux de la saison 2024/25 partent le 1er juillet 2027. Plus tôt sur demande dans la mesure où le procès-verbal n'a pas besoin des données (section 19) |
