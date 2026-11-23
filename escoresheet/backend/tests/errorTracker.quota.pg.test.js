@@ -223,7 +223,9 @@ describe('error tracker: the stored volume (SEC-02)', { skip: SKIP_PG }, () => {
     const known = await t.ingest({ body: { events: [report({ message: 'a guest bug' })] }, ipKey: '198.51.100.52' })
     assert.equal(known.status, 200)
     assert.equal(await count("SELECT event_count AS n FROM public.error_groups WHERE title = 'a guest bug'"), 2)
-    assert.equal(await events(), 1, 'counted, not stored')
+    // client events only: the owner's notice of the full share (a server
+    // event, setImmediate after `fresh`) may land before this count
+    assert.equal(await count("SELECT count(*) AS n FROM public.error_events WHERE source = 'client'"), 1, 'counted, not stored')
     // a signed-in scorer's new crash and the server's own error still go in
     const crash = await t.ingest({ body: { events: [report({ message: 'the scorer crashed in an official match' })] }, accountId: account, ipKey: '198.51.100.53' })
     assert.equal(crash.status, 200)
