@@ -930,8 +930,25 @@ const refereeEventsOf = storedOnce((events) => {
 })
 
 /**
+ * The event that starts a set (frontend/src/domain/lineupPrivacy.js startsSet,
+ * domain/rally isFirstRallyOf): the set's start or a rally's, or a point that
+ * is not a penalty. A set that opens with a penalty point (a sanction before
+ * the first serve) has not started (audit LOG-19).
+ */
+const startsSet = (e) => e.type === 'set_start' || e.type === 'rally_start' || (e.type === 'point' && e.payload?.penaltySeq == null)
+
+/** The sets that have started (startsSet): a Set of set indexes. */
+const startedSetsOf = storedOnce((events) => {
+  const started = new Set()
+  for (const e of Array.isArray(events) ? events : []) {
+    if (e && typeof e === 'object' && startsSet(e)) started.add(Number(e.setIndex ?? 1))
+  }
+  return started
+})
+
+/**
  * The sets in which one team's first line-up is covered (only that team's
- * line-up is in and no point has been scored): setIndex → 'home' / 'away'.
+ * line-up is in and the set has not started): setIndex → 'home' / 'away'.
  */
 const coveredLineupSets = storedOnce((events) => {
   const sets = new Map()
@@ -939,7 +956,7 @@ const coveredLineupSets = storedOnce((events) => {
     if (!e || typeof e !== 'object') continue
     const i = Number(e.setIndex ?? 1)
     const s = sets.get(i) || { started: false, home: false, away: false }
-    if (e.type === 'point') s.started = true
+    if (startsSet(e)) s.started = true
     if (e.type === 'lineup' && (e.payload?.team === 'home' || e.payload?.team === 'away')) s[e.payload.team] = true
     sets.set(i, s)
   }
@@ -1003,7 +1020,8 @@ export function relayMatchView(entry, view, covered = coveredLineupSets(entry?.e
   return match
 }
 
-// A covered line-up in the live state: the set at 0:0 and only one team's
+// A covered line-up in the live state: the set not started (at 0:0, or with
+// penalty points only, which the room's events tell) and only one team's
 // line-up in. The scorer app sends it as null (frontend/src/domain/
 // lineupPrivacy.js withCoveredLiveLineups); an older one sends it as it is,
 // and the relay covers it (relayLiveStateView).
@@ -1015,10 +1033,15 @@ const teamAOf = (match) => (match?.coinTossTeamA === 'away' ? 'away' : 'home')
  * it is covered, or null. Team A is the match's coinTossTeamA.
  * @param {object} liveState match_live_state shape (Team A / B)
  * @param {object} [match] the stored match
+ * @param {object[]} [events] the room's events: a set with points but no
+ *   start (penalty points only) has not started either
  */
-export function coveredLiveLineupTeam(liveState, match) {
+export function coveredLiveLineupTeam(liveState, match, events = null) {
   if (!liveState || typeof liveState !== 'object' || Array.isArray(liveState)) return null
-  if ((Number(liveState.points_a) || 0) + (Number(liveState.points_b) || 0) !== 0) return null
+  if ((Number(liveState.points_a) || 0) + (Number(liveState.points_b) || 0) !== 0) {
+    const set = Number(liveState.current_set)
+    if (!Array.isArray(events) || !Number.isFinite(set) || startedSetsOf(events).has(set)) return null
+  }
   const a = isLiveLineup(liveState.lineup_a)
   if (a === isLiveLineup(liveState.lineup_b)) return null
   const teamA = teamAOf(match)
@@ -1034,9 +1057,10 @@ export function coveredLiveLineupTeam(liveState, match) {
  * @param {object} liveState
  * @param {string|null} view
  * @param {object} [match] the stored match (Team A)
+ * @param {object[]} [events] the room's events (coveredLiveLineupTeam)
  */
-export function relayLiveStateView(liveState, view, match) {
-  const covered = coveredLiveLineupTeam(liveState, match)
+export function relayLiveStateView(liveState, view, match, events = null) {
+  const covered = coveredLiveLineupTeam(liveState, match, events)
   if (!covered || view === 'referee' || view === 'scorer' || view === covered) return liveState
   const out = { ...liveState }
   if (covered === teamAOf(match)) out.lineup_a = null
@@ -1076,6 +1100,6 @@ export function relayBundleView(entry, view) {
         ? officialEventsOf(entry?.events)
         : benchEvents(entry?.events, team, covered)
   }
-  if (entry?.liveState !== undefined) out.liveState = relayLiveStateView(entry.liveState, view, entry?.match)
+  if (entry?.liveState !== undefined) out.liveState = relayLiveStateView(entry.liveState, view, entry?.match, entry?.events)
   return out
 }

@@ -7243,7 +7243,7 @@ function handleSocketMessage(clientInfo, data) {
         if (liveTaken && liveStateRelay && !isTestRoom) {
           // the live subscribers prove no PIN: no covered line-up (relayLiveStateView)
           const liveKey = resolveMatchKey(clientInfo, message.matchId)
-          const liveState = relayLiveStateView(message.liveState, null, activeMatches.get(liveKey)?.match)
+          const liveState = relayLiveStateView(message.liveState, null, activeMatches.get(liveKey)?.match, activeMatches.get(liveKey)?.events)
           liveStateRelay.handle(clientInfo, { ...message, matchId: liveKey, liveState }).then((r) => {
             // pin_mismatch: the synced game PIN is not the row's (or the row has
             // none); expected for a forged room, so not logged per update
@@ -9156,7 +9156,7 @@ function broadcastLiveState(matchId, liveState, entry, excludeClientId) {
     const view = relayViewOfClient(clientInfo, matchId, entry) || ''
     let data = byView.get(view)
     if (data === undefined) {
-      const shown = view ? relayLiveStateView(liveState, view, entry?.match) : publicLiveState(relayLiveStateView(liveState, null, entry?.match))
+      const shown = view ? relayLiveStateView(liveState, view, entry?.match, entry?.events) : publicLiveState(relayLiveStateView(liveState, null, entry?.match, entry?.events))
       data = JSON.stringify({ type: 'live-state-update', matchId, liveState: shown })
       byView.set(view, data)
     }

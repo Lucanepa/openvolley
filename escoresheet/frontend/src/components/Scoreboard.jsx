@@ -131,7 +131,7 @@ import CountdownSeconds from './scoreboard/CountdownSeconds'
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
 import { useBenchRequestBridge, lineupAcceptBlock } from './scoreboard/useBenchRequestBridge'
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
-import { coveredLineupTeams, coveredLineupTeamsOf, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
+import { coveredLineupTeams, coveredLineupTeamsOf, startsSet, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
 import GameCaptainDialog from './scoreboard/GameCaptainDialog.jsx'
 import { actingCourtCaptains, automaticGameCaptain, automaticDesignation, chosenGameCaptain, courtCaptainsCleared, courtCaptainsRestored, keepCourtCaptainField, keepsGameCaptain, keptGameCaptain, keepEdit } from '../domain/gameCaptainKeep'
@@ -2872,10 +2872,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // (domain/lineupPrivacy.js, FIVB 7.3): it goes out as null, and its
       // server's number with it. This row reaches every member of the relay
       // room, the livescore and the database, none of them with a PIN. Only
-      // a set at 0:0 can have one: its events are read then.
-      const coveredTeams = (snapshot.pointsA || 0) + (snapshot.pointsB || 0) === 0 && (snapshot.lineupA || snapshot.lineupB)
-        ? coveredLineupTeamsOf(await db.events.where('[matchId+setIndex]').equals([matchId, snapshot.currentSetIndex]).toArray(), snapshot.currentSetIndex)
-        : []
+      // a set that has not started can have one (startsSet): at 0:0, or after
+      // penalty points only (a sanction before the first serve, audit
+      // LOG-19); its events are read then. Mid-set the first starting event
+      // is found among the set's first records.
+      const setEvents = () => db.events.where('[matchId+setIndex]').equals([matchId, snapshot.currentSetIndex])
+      const mayBeCovered = !!(snapshot.lineupA || snapshot.lineupB) &&
+        ((snapshot.pointsA || 0) + (snapshot.pointsB || 0) === 0 || !(await setEvents().filter(startsSet).first()))
+      const coveredTeams = mayBeCovered ? coveredLineupTeamsOf(await setEvents().toArray(), snapshot.currentSetIndex) : []
 
       // Map directly from snapshot to Supabase table
       const liveStateData = withCoveredLiveLineups({
