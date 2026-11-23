@@ -83,7 +83,8 @@
     if (c.ended) return T.fin;
     if (c.timeout) return T.to;
     if (c.interval) return T.br;
-    return c.currentSet ? T.set + c.currentSet : '';
+    // a best-of-3 decider is stored as set 5 (a server before 26.11.6 sent it so)
+    return c.currentSet ? T.set + (c.bestOf === 3 && c.currentSet === 5 ? 3 : c.currentSet) : '';
   }
 
   function render(courts) {

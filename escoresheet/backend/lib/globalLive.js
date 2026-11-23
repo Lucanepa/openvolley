@@ -121,14 +121,17 @@ export function courtSummary(liveState, entry = {}, nowIso = new Date().toISOStr
     .slice(0, 5)
     .map((s) => ({ home: int(s.homePoints), away: int(s.awayPoints) }))
   const status = str(ls.match_status, 20)
+  const bestOf = int(ls.best_of) === 3 ? 3 : 5
+  // a best-of-3 decider is stored as set 5 (frontend domain/describe.js): it is set 3
+  const currentSet = int(ls.current_set) || null
   return {
     home: teams.home,
     away: teams.away,
     setsWon,
     points,
     sets,
-    currentSet: int(ls.current_set) || null,
-    bestOf: int(ls.best_of) === 3 ? 3 : 5,
+    currentSet: bestOf === 3 && currentSet === 5 ? 3 : currentSet,
+    bestOf,
     serving,
     status,
     ended: status === 'final' || status === 'ended' || status === 'approved',

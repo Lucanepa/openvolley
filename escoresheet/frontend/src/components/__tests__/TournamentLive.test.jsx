@@ -33,6 +33,11 @@ describe('TournamentLive', () => {
     expect(screen.getByText('ABCD 2345')).toBeTruthy()
   })
 
+  it('a best-of-3 decider (stored as set 5) is Set 3 (audit LOG-20)', async () => {
+    render(<TournamentLive code="ABCD2345" fetchImpl={answer({ code: 'ABCD2345', updatedAt: 'x', courts: [court({ currentSet: 5, bestOf: 3, ended: false })] })} pollMs={60000} />)
+    expect(await screen.findByText('Set 3')).toBeTruthy()
+  })
+
   it('waits quietly while nothing is live', async () => {
     render(<TournamentLive code="ABCD2345" fetchImpl={answer({ code: 'ABCD2345', courts: [] })} pollMs={60000} />)
     expect(await screen.findByText(en.globalLive.page.empty)).toBeTruthy()

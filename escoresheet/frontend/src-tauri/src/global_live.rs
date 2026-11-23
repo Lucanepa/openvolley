@@ -393,7 +393,12 @@ pub fn court_summary(live: &Value, entry: &Value, now_iso: &str) -> Value {
         .collect();
     let status = text(ls("match_status"), 20);
     let ended = matches!(status.as_deref(), Some("final" | "ended" | "approved"));
-    let current_set = int(ls("current_set"));
+    let best_of = if int(ls("best_of")) == 3 { 3 } else { 5 };
+    // a best-of-3 decider is stored as set 5 (frontend domain/describe.js): it is set 3
+    let current_set = match int(ls("current_set")) {
+        5 if best_of == 3 => 3,
+        n => n,
+    };
     let game_n = m("gameN").filter(|v| !v.is_null()).map(|v| Value::String(js_text(v)));
     // the hall or venue, and the court when there is one (OpenBeach: the
     // same venue on every court, the court number tells them apart)
@@ -409,7 +414,7 @@ pub fn court_summary(live: &Value, entry: &Value, now_iso: &str) -> Value {
         "points": pair("points_a", "points_b"),
         "sets": sets,
         "currentSet": if current_set == 0 { Value::Null } else { json!(current_set) },
-        "bestOf": if int(ls("best_of")) == 3 { 3 } else { 5 },
+        "bestOf": best_of,
         "serving": serving,
         "status": status,
         "ended": ended,

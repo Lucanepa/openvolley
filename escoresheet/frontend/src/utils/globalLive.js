@@ -44,6 +44,13 @@ export function newLiveCode(cryptoImpl = globalThis.crypto) {
   return [...bytes].map((b) => LIVE_CODE_ALPHABET[b % LIVE_CODE_ALPHABET.length]).join('')
 }
 
+/**
+ * The set number a court of the live page shows: a best-of-3 decider is
+ * stored as set 5 (domain/describe.js), it is set 3 (audit LOG-20; the
+ * backend's courtSummary maps it too, a venue relay before 26.11.6 not).
+ */
+export const setNumberOf = (court) => (Number(court?.bestOf) === 3 && Number(court?.currentSet) === 5 ? 3 : court?.currentSet)
+
 /** "ABCD 2345": easier to read out and type */
 export const formatLiveCode = (code) => (isLiveCode(code) ? `${code.slice(0, 4)} ${code.slice(4)}` : '')
 
