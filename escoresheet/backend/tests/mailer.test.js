@@ -342,12 +342,15 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   }
   const link = 'https://x.test/#t?token=t'
 
-  it('defaults: 50 account and 150 confirmation mails per hour, 100 notices, 100 sign-up notices, 50 security notices of their own, 300 final and 50 test scoresheets, 100 user mails, 5 per inbox', () => {
-    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 150, notify: 100, signup: 100, security: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
+  // SEC-32 (audit 26.11): the lock notices used to share the security budget;
+  // they have their own now (pin_lock), so wrong PINs cannot use it up
+  it('defaults: 50 account and 150 confirmation mails per hour, 100 notices, 100 sign-up notices, 50 security notices of their own, 50 PIN-lock notices of their own, 300 final and 50 test scoresheets, 100 user mails, 5 per inbox', () => {
+    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 150, notify: 100, signup: 100, security: 50, pin_lock: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
     // the user mails (sendUser) have no kind: nothing else draws from their budget
     assert.equal(Object.values(MAIL_BUDGET_OF).includes('user'), false)
-    // nothing but the approval notices draws from the security budget
-    assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'security'), ['approval', 'approval_pin_locked'])
+    // nothing but the "your PIN was used" notices draws from the security budget
+    assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'security'), ['approval'])
+    assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'pin_lock'), ['approval_pin_locked'])
     assert.equal(MAIL_BUDGET_OF.signup, 'signup')
     assert.equal(MAIL_BUDGET_OF.scoresheet, 'scoresheet')
     assert.equal(MAIL_BUDGET_OF.scoresheet_test, 'scoresheet_test', 'test mails do not use the final scoresheets\' budget')
@@ -442,7 +445,7 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   })
 
   it('budgetsFromEnv: the operator sizes the final and the test scoresheet budgets; a bad value keeps the default, with a warning', () => {
-    assert.deepEqual({ ...BUDGET_ENV }, { account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
+    assert.deepEqual({ ...BUDGET_ENV }, { account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', pin_lock: 'MAIL_BUDGET_PIN_LOCK', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
     assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_CONFIRM: '400', MAIL_BUDGET_SECURITY: '80' }).budgets, { confirm: 400, security: 80 })
     assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_USER: '30' }).budgets, { user: 30 })
     assert.deepEqual(budgetsFromEnv({}), { budgets: {}, warnings: [] })

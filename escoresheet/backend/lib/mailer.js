@@ -50,7 +50,11 @@
  *     googlemail.com = gmail.com) for reset and confirm mails, so one inbox
  *     cannot be flooded through spelling variants of its address; sendUser
  *     counts its own mails per inbox apart from those, so asking for a game
- *     PIN never uses up the inbox's password resets.
+ *     PIN never uses up the inbox's password resets;
+ *   - the approval notices: "your PIN was used" ("security") and a locked or
+ *     blocked PIN ("pin_lock") have budgets of their own, so wrong PINs
+ *     cannot silence the first; each kind is capped per inbox (KIND_INBOX_MAX).
+ *   mailName(raw): a self-chosen person name as a mail shows it.
  * A mail over a limit is dropped (the request still succeeds, so the answer
  * never tells whether a mail went out), logged, and counted in stats(), which
  * the internal /health body shows. sendUser leaves the answer to its caller:
@@ -132,24 +136,26 @@ export function mailBrandOf(kind, app) {
 // (100 per hour in total, as before the split). "account" carries the reset
 // and password-changed mails, "confirm" the confirmation links: a burst of
 // sign-ups uses up only the latter (whose holders can resend later).
-// "security" is reserved for the approval notices of lib/approvals.js (an
-// approval made with an official's PIN, a locked PIN): nothing else draws
-// from it, so no amount of sign-ups can silence them. "signup" carries the
+// "security" is reserved for the "your approval PIN was used" notices of
+// lib/approvals.js: nothing else draws from it, so no amount of sign-ups, and
+// no amount of wrong PINs, can silence them. The notices of a locked or
+// blocked PIN, which anyone who types wrong PINs causes, have their own
+// "pin_lock" (SEC-32, audit 26.11). "signup" carries the
 // sign-up notices to admins and approvers (lib/signupNotices.js), "notify"
 // the club-manager invitations, the team-manager proposals and the final
 // mail's notices (a missing PDF, a reopened match): none can starve the
 // account mails. email_changed (a changed login address) is an account mail too.
 // "user" carries the mails a signed-in user asks for to its own address
 // (sendUser: the game PIN, the match information), which have no kind.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', sign_in_attempts: 'account', confirm: 'confirm', approval: 'security', approval_pin_locked: 'security', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', sign_in_attempts: 'account', confirm: 'confirm', approval: 'security', approval_pin_locked: 'pin_lock', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them; scoresheet_test: test mails
 // (any scorer, any time) must not use up the final scoresheets' budget
-export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 150, notify: 100, signup: 100, security: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
+export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 150, notify: 100, signup: 100, security: 50, pin_lock: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
 // The budgets an operator sizes (deploy/env.example), each by its variable:
 // a whole number above 0 per hour; anything else keeps the default, with a
 // warning at startup. A size given to createMailer wins (tests).
-export const BUDGET_ENV = Object.freeze({ account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
+export const BUDGET_ENV = Object.freeze({ account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', pin_lock: 'MAIL_BUDGET_PIN_LOCK', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
 
 /** The hourly budgets the environment sets (BUDGET_ENV): { budgets: { name: n }, warnings: [line] }. */
 export function budgetsFromEnv(env = process.env) {
@@ -174,6 +180,12 @@ export const DEFAULT_MAX_PER_INBOX = 5
 // club_manager_invite: an admin types the address, so one inbox is capped like a confirmation
 // (sendUser: its own count per inbox, the same maximum)
 const INBOX_CAPPED = new Set(['reset', 'confirm', 'scoresheet_test', 'club_manager_invite'])
+// Kinds with a per-inbox hourly cap of their own (a counter per kind, not the
+// one above), so one inbox cannot use up their budget (SEC-32): an official
+// approves a handful of matches an hour, and hears of a locked PIN once an
+// hour at most (lib/approvals.js also sends a lock notice once an hour per
+// approver; a blocked PIN's notice is once per PIN)
+export const KIND_INBOX_MAX = Object.freeze({ approval: 10, approval_pin_locked: 2 })
 const ATTACHING = new Set(['scoresheet', 'scoresheet_test'])
 const HOUR_MS = 60 * 60 * 1000
 
@@ -295,6 +307,21 @@ const SLOT_LABELS = Object.freeze({
   fr: { referee1: '1er arbitre', referee2: '2e arbitre', scorer: 'marqueur' },
   it: { referee1: '1° arbitro', referee2: '2° arbitro', scorer: 'segnapunti' }
 })
+
+/**
+ * A self-chosen person name as a mail shows it (SEC-34, audit 26.11: the
+ * sign-up notices, a team manager's proposal, the sender of an approval):
+ * letters, spaces, hyphens and apostrophes only (anything else becomes a
+ * space, so no link, address, number or sentence punctuation), at most 60
+ * characters. '' when nothing is left.
+ */
+export function mailName(raw, max = 60) {
+  return String(raw ?? '').normalize('NFC')
+    .replace(/[^\p{L}\p{M} '\u2019-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s'\u2019-]+|[\s'\u2019-]+$/g, '')
+    .slice(0, max).trim()
+}
 
 /** A template value: text on one line (no header or line injection), at most 200 chars. */
 const cleanText = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
@@ -1114,6 +1141,7 @@ export function createMailer(o = {}) {
   const perInbox = inboxCounter(maxPerInbox, o.now)
   // sendUser's mails per inbox: apart from the reset and confirmation mails
   const userInbox = inboxCounter(maxPerInbox, o.now)
+  const kindInbox = Object.fromEntries(Object.entries(KIND_INBOX_MAX).map(([kind, max]) => [kind, inboxCounter(max, o.now)]))
   // The operator's own mails (sendOps): their own small budget, never one of the users'
   const opsBudget = hourlyBudget(Number.isInteger(o.opsPerHour) && o.opsPerHour > 0 ? o.opsPerHour : OPS_PER_HOUR, o.now)
   const counters = { sent: 0, failed: 0, inboxDropped: 0, lastDropAt: null, lastFailureAt: null }
@@ -1150,6 +1178,13 @@ export function createMailer(o = {}) {
       counters.inboxDropped++
       counters.lastDropAt = new Date().toISOString()
       log.warn(`[mail] ${perInbox.max} mails per hour to one inbox reached; ${kind} mail to ${maskEmail(to)} dropped`)
+      return { sent: false, skipped: 'inbox' }
+    }
+    if (kindInbox[kind] && !kindInbox[kind].take(inboxKey(to))) {
+      budget.refund()
+      counters.inboxDropped++
+      counters.lastDropAt = new Date().toISOString()
+      log.warn(`[mail] ${kindInbox[kind].max} ${kind} mails per hour to one inbox reached; mail to ${maskEmail(to)} dropped`)
       return { sent: false, skipped: 'inbox' }
     }
     const brand = mailBrandOf(kind, app)

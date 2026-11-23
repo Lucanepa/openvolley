@@ -71,7 +71,7 @@
 import { randomBytes } from 'node:crypto'
 import { AUDIT_ACTIONS, fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { ipBucketKey } from './auth.js'
-import { describeMailError, maskEmail, pickLang } from './mailer.js'
+import { describeMailError, mailName, maskEmail, pickLang } from './mailer.js'
 import { roleFor, sportOf } from './access.js'
 import {
   KEY_ID, PIN_RE, RESULT_KEY_PREFIX, deriveKeys, deviceHash, ipHash, isCurrentPinRow, isWeakPin, macPin, resultHash,
@@ -92,6 +92,11 @@ export const PIN_CALLER_MAX = 10
 // Per approver, from at least two callers: the 20th disables the PIN
 export const PIN_DISABLE_AT = 20
 export const PIN_FAILURE_WINDOW_DAYS = 30
+// Per caller, across every approver (SEC-32): this many wrong PINs within a
+// day, and the caller sends no approval until the oldest of them is a day old
+export const PIN_CALLER_DAY_MAX = 30
+// A lock notice to one approver at most once an hour (a blocked PIN's notice always goes)
+export const LOCK_NOTICE_EVERY_MS = 60 * 60 * 1000
 // The match.officials entries of the referee slots (frontend
 // domain/officials.js OFFICIAL_ROLES; OpenBeach writes '1st referee' /
 // '2nd referee' too; `key`: the older object keyed by role)
@@ -224,7 +229,7 @@ const safeMessage = (err) => String(err?.message || err).replace(/"[^"]*"/g, '"�
  * @param {boolean} [o.beachOfficialAddressRequired]  a beach referee slot needs a stored
  *   address, as an indoor one does (once an OpenBeach release stores them)
  */
-export function createApprovals ({ pool, auth = null, secret = null, mailer = null, logger = console, beachApprovals = false, beachOfficialAddressRequired = false } = {}) {
+export function createApprovals ({ pool, auth = null, secret = null, mailer = null, logger = console, beachApprovals = false, beachOfficialAddressRequired = false, now = Date.now } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new Error('createApprovals: pool is required')
   const log = logger
   // Who may hold an approval PIN: a referee or scorer of a sport that is approved with an account
@@ -243,7 +248,9 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
     if (!mails || typeof to !== 'string' || !to.includes('@')) return
     const job = (async () => {
       try {
-        await mails.send(kind, { to, lang, vars, link: mails.managerUrl })
+        // vars: the values, or a function that reads them (after the answer)
+        const v = typeof vars === 'function' ? await vars() : vars
+        await mails.send(kind, { to, lang, vars: v, link: mails.managerUrl })
       } catch (err) {
         log.warn?.(`[approvals] ${kind} mail to ${maskEmail(to)} failed: ${describeMailError(err)}`)
       }
@@ -578,6 +585,49 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
     const teams = [m.home_name, m.away_name].map((n) => String(n || '').replace(/\s+/g, ' ').trim().slice(0, 80) || '–').join(' – ')
     return m.game_n != null ? `#${m.game_n} ${teams}` : teams
   }
+
+  /**
+   * The game of a lock or block notice (SEC-32): its number and the
+   * schedule's team names (svrz_games), never the names the scoring side
+   * typed (the caller of the wrong PINs); a beach match or a game outside the
+   * schedule: its number only. Read after the answer; never throws.
+   */
+  async function scheduledGameText (m) {
+    const number = m.game_n != null ? `#${m.game_n}` : '–'
+    if (m.game_n == null || sportOf(m.sport_type) === 'beach') return number
+    try {
+      const { rows: [g] } = await pool.query(
+        `SELECT btrim(team_home) AS home, btrim(team_away) AS away FROM public.svrz_games
+          WHERE game_number = $1 AND coalesce(btrim(team_home), '') <> '' AND coalesce(btrim(team_away), '') <> ''
+          ORDER BY id DESC LIMIT 1`, [String(m.game_n)])
+      return g ? `${number} ${g.home.slice(0, 80)} – ${g.away.slice(0, 80)}` : number
+    } catch {
+      return number // no schedule on this database
+    }
+  }
+
+  // approver id -> when its last lock notice went out (LOCK_NOTICE_EVERY_MS)
+  const lockNoticeAt = new Map()
+  function lockNoticeDue (approverId) {
+    const t = now()
+    if (lockNoticeAt.size >= 10_000) for (const [k, at] of lockNoticeAt) if (t - at >= LOCK_NOTICE_EVERY_MS) lockNoticeAt.delete(k)
+    const last = lockNoticeAt.get(approverId)
+    if (last !== undefined && t - last < LOCK_NOTICE_EVERY_MS) return false
+    lockNoticeAt.set(approverId, t)
+    return true
+  }
+
+  /**
+   * The caller's wrong PINs for any approver within the last day (SEC-32):
+   * { over, retryAfterSec } (over: PIN_CALLER_DAY_MAX reached; it may send
+   * no approval until the oldest of them is a day old).
+   */
+  async function callerDayFailures (client, callerId) {
+    const { rows: [r] } = await client.query(
+      `SELECT count(*)::int AS n, ceil(extract(epoch FROM min(at) + interval '1 day' - now()))::int AS retry
+         FROM public.audit_log WHERE action = 'approval_pin.failed' AND actor_id = $1 AND at > now() - interval '1 day'`, [callerId])
+    return { over: Number(r?.n || 0) >= PIN_CALLER_DAY_MAX, retryAfterSec: Math.max(1, Number(r?.retry) || 3600) }
+  }
   const resultText = (key) => triplesOf(key).map(([, h, a]) => `${h}:${a}`).join(', ')
 
   async function approve ({ callerId, access, body, ip, lang } = {}) {
@@ -626,6 +676,12 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
         }
       }
 
+      // 9b. A caller that typed PIN_CALLER_DAY_MAX wrong PINs within a day,
+      // whichever officials it named, sends none for now (SEC-32). Whatever
+      // the address: no oracle for who holds a PIN.
+      const day = await callerDayFailures(client, callerId)
+      if (day.over) return tooMany(day.retryAfterSec)
+
       // 10. Email and PIN. The lookups always run; verifyPin always MACs once.
       // The scorer slot is the match's creator or an editor (an unknown
       // address answers the same). A locked or disabled PIN, or one locked
@@ -649,11 +705,16 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
         if (row) {
           const locked = await countFailure(client, { approver, row, callerId, match: m, before })
           if (locked) {
-            after.push(() => sendLater('approval_pin_locked', approver.email, mailLang, {
-              game: gameText(m),
-              until: locked.disabled ? '' : formatZurich(locked.lockedUntil),
-              disabled: locked.disabled
-            }))
+            // SEC-32: the game by its number and the schedule's names (not the
+            // caller's typed ones), and a lock notice once an hour per approver
+            after.push(() => {
+              if (!locked.disabled && !lockNoticeDue(approver.id)) return
+              sendLater('approval_pin_locked', approver.email, mailLang, async () => ({
+                game: await scheduledGameText(m),
+                until: locked.disabled ? '' : formatZurich(locked.lockedUntil),
+                disabled: locked.disabled
+              }))
+            })
           }
         }
         return PIN_INVALID()
@@ -736,7 +797,8 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
         result: resultText(currentKey),
         id: record.short_id,
         time: formatZurich(inserted.approved_at),
-        sender: approver.id === callerId ? '' : String(sender?.name || '').slice(0, 160)
+        // the sender's self-chosen name: letters, spaces and hyphens only (SEC-34)
+        sender: approver.id === callerId ? '' : mailName(sender?.name)
       }))
       return ok({ approval: record, already: false })
     }))
