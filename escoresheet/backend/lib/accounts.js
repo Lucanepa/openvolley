@@ -40,6 +40,7 @@ import { findClaim, officialRowsOf, publicClaim, seasonOf, sportOf } from './off
 import { EMAIL_CONFIRMATION_MARK, LICENSE_RE } from './auth.js'
 import { connectClient } from './pgClient.js'
 import { createPinHasher, isHashedPin } from './pinHash.js'
+import { isEmailAddress } from './emailAddress.js'
 
 export const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 export const INVITE_ROLES = Object.freeze(['scorer', 'referee', 'competition_manager'])
@@ -735,7 +736,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     if (body.invited_email != null && body.invited_email !== '') {
       if (role !== 'club_manager') return invalid('invited_email: only for a club_manager code')
       const e = typeof body.invited_email === 'string' ? body.invited_email.trim().toLowerCase() : ''
-      if (e.length < 3 || e.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return invalid('invited_email: an email address')
+      // SEC-35: one plain address (lib/emailAddress.js), as sign-up: nodemailer
+      // reads 'x<a@b.ch>' or 'a@b.ch,c' as a list and would mail another inbox
+      if (e.length < 3 || !isEmailAddress(e)) return invalid('invited_email: an email address')
       invitedEmail = e
     }
     // db/018: the club whoever redeems the code joins (indoor codes only)
@@ -1037,7 +1040,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     }
     if (body.email !== undefined) {
       const e = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
-      if (!e || e.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return invalid('email: an email address')
+      // SEC-35: one plain address (lib/emailAddress.js), as sign-up and sign-in take it
+      if (!e || !isEmailAddress(e)) return invalid('email: an email address')
       want.email = e
     }
     if (body.license_number !== undefined) {

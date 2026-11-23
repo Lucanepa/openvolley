@@ -48,6 +48,7 @@ import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
 import { LIVESCORE_JS, embedPage } from './lib/publicEmbed.js'
 import { createLiveStreams, listParams, MATCH_ID_RE as PUBLIC_MATCH_ID_RE } from './lib/publicApi.js'
 import { createVectorPdf } from './lib/vectorPdf.js'
+import { isEmailAddress } from './lib/emailAddress.js'
 import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS, SLOTS as SIGN_SLOTS } from './lib/signSessions.js'
 import { signPageFile } from './lib/signPage.js'
 import { createPairSessions, pairEndpointOf, pairBodyLimit, pairError, isPairPagePath, PAIR_API_HEADERS } from './lib/pairSessions.js'
@@ -2141,9 +2142,11 @@ const VALID_ROLES = ['scoreboard', 'referee', 'bench', 'subscriber', 'livescore'
 const VALID_TEAMS = ['home', 'away']
 
 // --- Security helpers ---
+// SEC-35: one plain address (lib/emailAddress.js EMAIL_RE): a stored
+// 'x<a@b.ch>' or 'a@b.ch,c' (an admin's address change before the strict
+// check) is no address to mail, as nodemailer would read a list from it
 function isValidEmail(email) {
-  if (!email || typeof email !== 'string' || email.length > 254) return false
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  return isEmailAddress(email)
 }
 
 // Six digits, as text or a number. An object or array is none: String() of
