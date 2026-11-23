@@ -6671,22 +6671,47 @@ const roleHeartbeat = realtimeHub ? realtimeHub.heartbeat : createHeartbeat({ in
 // pings by itself: ten address buckets (one IPv6 /56, or ten IPv4 addresses)
 // held all MAX_CONNECTIONS slots, and every later scorer, referee and bench
 // socket was refused with 1013. Now:
-//   - a socket that proved something (a claim, a claim being checked, an
-//     accepted PIN or match token, a scoreboard code) is never pushed out;
-//   - at a cap (all sockets, one address bucket, or on the cloud one wider
-//     network) the oldest socket that proved nothing makes room, one in no
-//     room first: a proved socket is refused only when every socket under
-//     that cap proved something;
-//   - on the cloud, sockets that proved nothing count per IPv6 /56 and /48
-//     and per IPv4 /24 too (ROLE_NET_CAPS), as many as one address may hold
-//     per /56 and twice that per /48 and /24;
-//   - while the relay holds more than half its slots, a socket that has been
-//     in no room and proved nothing for ROLE_IDLE_MS is closed (a scorer
-//     with a match not on the relay yet, a test match, keeps its socket
-//     when the relay is not under load).
+//   - a protected socket is never pushed out (protectedSockets): on the cloud
+//     one that proved a room the DATABASE proved (isDbProvedRoom: its owner,
+//     a PIN or match token of the match, its scoreboard code), the first
+//     ROOM_PROTECTED_OWNERS owners and ROOM_PROTECTED_FOLLOWERS others of
+//     each such room. A room nobody's database row proved protects nobody:
+//     anyone may sync a made-up room with a game PIN of their choice, and
+//     every socket sending that PIN owned it (review of the SEC-04 fix: 2000
+//     sockets of one /56 "proved" their own room and held every slot). On a
+//     venue relay (no internet callers) any proof counts, as before;
+//   - at the total cap the socket that makes room is chosen fairly
+//     (roleVictim): among the sockets in no room the relay holds (waiting
+//     in a made-up or not yet synced room counts as none) the oldest of the
+//     network that holds the most of them, else among all unprotected ones
+//     the newest of the network that holds the most. A newcomer of that
+//     network itself is refused: a flood never pushes out another
+//     network's sockets, and a lone board or tablet of a hall that connected
+//     before it stays (review of the SEC-04 fix: the oldest PIN-less board
+//     went first). The network: the IPv6 /48, the IPv4 /24 (cloud), else
+//     the address bucket. (A hall's unprotected sockets are its PIN-less
+//     boards: its scorer, referee and benches proved the match. Only a
+//     flood from more networks than the cap holds per hall socket reaches
+//     them.);
+//   - at the cap of one address bucket or (cloud) one wider network, only a
+//     socket in no room the relay holds makes room, else the newcomer is
+//     refused, as before the fix;
+//   - on the cloud, unprotected sockets count per IPv6 /56 and /48 and per
+//     IPv4 /24 too (ROLE_NET_CAPS), as many as one address may hold per /56
+//     and twice that per /48 and /24;
+//   - while the relay holds more than half its slots, an unprotected socket
+//     in no room the relay holds for ROLE_IDLE_MS is closed (a scorer with a
+//     match not on the relay yet, a test match, keeps its socket when the
+//     relay is not under load).
 const ROLE_NET_CAPS = Object.freeze({ v6net56: MAX_CONNECTIONS_PER_IP, v6net48: 2 * MAX_CONNECTIONS_PER_IP, v4net24: 2 * MAX_CONNECTIONS_PER_IP })
 const ROLE_IDLE_MS = Number(process.env.OV_ROLE_IDLE_MS) > 0 ? Math.floor(Number(process.env.OV_ROLE_IDLE_MS)) : 60 * 1000
 const ROLE_IDLE_LOAD = 0.5
+// a socket in no room makes room only once it is this old: a newer one may still be joining
+const ROLE_EVICT_MIN_AGE_MS = Math.min(2000, Math.floor(ROLE_IDLE_MS / 4))
+// per room the database proved: the sockets its proof protects (a scorer and
+// its second device; referee, benches, line judges, boards and their reconnects)
+const ROOM_PROTECTED_OWNERS = 4
+const ROOM_PROTECTED_FOLLOWERS = 12
 let roleEvictions = 0
 let roleIdleClosed = 0
 
@@ -6702,62 +6727,156 @@ function roleNetsOf(ip, ipKey) {
   return v4 ? [['v4net24', `${v4[1]}.0/24`]] : []
 }
 
-/** Did this socket prove anything: a claim (or one being checked), an accepted PIN or token, a scoreboard code? */
+/** The network a socket makes room for (roleVictim): the widest of roleNetsOf, else its address bucket. */
+function roleGroupOf(ip, ipKey, nets) {
+  if (nets.length > 0) return nets[nets.length - 1].join(' ')
+  return IS_CLOUD ? ipKey : ip
+}
+
+/** Did this socket prove anything: a claim (or one being checked), an accepted PIN or token, a scoreboard code? (venue relay) */
 function socketProved(c) {
   if (c.ownedMatches.size > 0 || c.claimCheck || c.codeRooms.size > 0) return true
   for (const a of c.matchAccess.values()) if (a.verified === true || a.token) return true
   return false
 }
 
-/** The socket that makes room at a cap: the oldest that proved nothing, one in no room first; null when all proved something. */
-function evictableSocket(candidates) {
-  let unproved = null
-  for (const c of candidates) { // connections keeps arrival order: oldest first
-    if (c.gone || socketProved(c)) continue
-    if (c.rooms.size === 0) return c
-    if (!unproved) unproved = c
+/** A PIN or match token this socket offered for `matchId` that grants the room now (compared already: nothing counted here). */
+function accessProvedRoom(clientInfo, matchId, entry) {
+  const a = clientInfo.matchAccess.get(matchId)
+  if (!a || !entry?.match) return false
+  if (a.token && tokenGrantsRelay(a.token, matchId, entry.match)) return true
+  return a.verified === true && !!a.pin && pinGrantsAccess(entry.match, a.pin)
+}
+
+/** Is the socket in a room the relay holds (not only waiting for one, or for a made-up id)? */
+function inHeldRoom(c) {
+  for (const id of c.rooms) if (rooms.get(id)?.clients.has(c.id)) return true
+  return false
+}
+
+/**
+ * The sockets nothing pushes out (see above), as a Set of client ids. The
+ * first to prove a room keep its places (connections keeps arrival order).
+ */
+function protectedSockets() {
+  const ids = new Set()
+  if (!IS_CLOUD) {
+    for (const c of connections.values()) if (!c.gone && socketProved(c)) ids.add(c.id)
+    return ids
   }
-  return unproved
+  if (!DB_MODE) return ids
+  const taken = new Map() // matchId -> { owner, follower }
+  const take = (c, matchId, kind) => {
+    let n = taken.get(matchId)
+    if (!n) taken.set(matchId, (n = { owner: 0, follower: 0 }))
+    if (n[kind] >= (kind === 'owner' ? ROOM_PROTECTED_OWNERS : ROOM_PROTECTED_FOLLOWERS)) return false
+    n[kind]++
+    ids.add(c.id)
+    return true
+  }
+  for (const c of connections.values()) {
+    if (c.gone) continue
+    let done = false
+    for (const matchId of c.ownedMatches) {
+      if (isDbProvedRoom(activeMatches.get(matchId)) && take(c, matchId, 'owner')) { done = true; break }
+    }
+    if (done) continue
+    for (const matchId of c.codeRooms.keys()) {
+      if (isDbProvedRoom(activeMatches.get(matchId)) && take(c, matchId, 'follower')) { done = true; break }
+    }
+    if (done) continue
+    for (const matchId of c.matchAccess.keys()) {
+      const entry = activeMatches.get(matchId)
+      if (isDbProvedRoom(entry) && accessProvedRoom(c, matchId, entry) && take(c, matchId, 'follower')) break
+    }
+  }
+  return ids
+}
+
+/**
+ * The network of `pool` holding the most sockets, and its victim (`pick`:
+ * 'oldest' or 'newest'), or null when the newcomer's own network would then
+ * hold as many or more.
+ */
+function fairVictim(pool, newcomerGroup, pick) {
+  const groups = new Map()
+  for (const c of pool) {
+    let g = groups.get(c.roleGroup)
+    if (!g) groups.set(c.roleGroup, (g = { n: 0, oldest: c, newest: c }))
+    g.n++
+    g.newest = c // pool keeps arrival order
+  }
+  let most = null
+  for (const g of groups.values()) if (!most || g.n > most.n) most = g
+  if (!most) return null
+  const own = (groups.get(newcomerGroup)?.n || 0) + 1
+  if (own >= most.n) return null
+  return pick === 'oldest' ? most.oldest : most.newest
+}
+
+/**
+ * The socket that makes room for a newcomer of `newcomerGroup` among the
+ * unprotected `candidates` (arrival order), or null (the newcomer is
+ * refused). `fair` (the total cap): see above; else (one address or network)
+ * the oldest socket in no room the relay holds.
+ */
+function roleVictim(candidates, newcomerGroup, fair) {
+  const now = Date.now()
+  const idle = candidates.filter((c) => !inHeldRoom(c) && now - c.openedAt >= ROLE_EVICT_MIN_AGE_MS)
+  if (!fair) return idle[0] ?? null
+  // the idle ones first; when they leave nobody to pick (one parked socket
+  // per network), the network holding the most of all
+  return (idle.length > 0 ? fairVictim(idle, newcomerGroup, 'oldest') : null) ?? fairVictim(candidates, newcomerGroup, 'newest')
 }
 
 /** Close a socket that proved nothing to make room; it leaves the relay's books at once. */
 function evictSocket(c, reason) {
   roleEvictions++
-  relaySummary.count('pushed out (proved nothing, at a cap)')
+  relaySummary.count('pushed out (unprotected, at a cap)')
   try { c.ws.close(1013, reason) } catch { /* already gone */ }
   handleClientDisconnect(c)
 }
 
 /**
- * Make room for one more socket under each cap it falls under; false when
- * a cap is full of sockets that all proved something (the new one is refused).
+ * Make room for one more socket under each cap it falls under; a refusal
+ * ({ code, reason }) when no socket may make room (see above), else null.
  */
 function admitRoleSocket(ip, ipKey, nets) {
+  const group = roleGroupOf(ip, ipKey, nets)
+  let guarded = null
+  const unprotected = (list) => {
+    if (!guarded) guarded = protectedSockets()
+    return list.filter((c) => !c.gone && !guarded.has(c.id))
+  }
   if (connections.size >= MAX_CONNECTIONS) {
-    const victim = evictableSocket(connections.values())
+    const victim = roleVictim(unprotected([...connections.values()]), group, true)
     if (!victim) return { code: 1013, reason: 'Server connection limit reached' }
     evictSocket(victim, 'Server connection limit reached')
   }
   // a LAN relay counts per address: every tablet of a venue LAN shares one IPv6 /64
-  const sameAddress = [...connections.values()].filter((c) => (IS_CLOUD ? c.ipKey === ipKey : c.ip === ip))
+  const sameAddress = [...connections.values()].filter((c) => !c.gone && (IS_CLOUD ? c.ipKey === ipKey : c.ip === ip))
   if (sameAddress.length >= MAX_CONNECTIONS_PER_IP) {
-    const victim = evictableSocket(sameAddress)
+    const victim = roleVictim(unprotected(sameAddress), group, false)
     if (!victim) return { code: 1008, reason: 'Too many connections from this IP' }
     evictSocket(victim, 'Too many connections from this IP')
   }
   for (const [kind, key] of nets) {
-    const inNet = [...connections.values()].filter((c) => c.roleNets?.[kind] === key && !socketProved(c))
-    if (inNet.length >= ROLE_NET_CAPS[kind]) evictSocket(evictableSocket(inNet), 'Too many connections from this network')
+    const inNet = unprotected([...connections.values()].filter((c) => c.roleNets?.[kind] === key))
+    if (inNet.length < ROLE_NET_CAPS[kind]) continue
+    const victim = roleVictim(inNet, group, false)
+    if (!victim) return { code: 1008, reason: 'Too many connections from this network' }
+    evictSocket(victim, 'Too many connections from this network')
   }
   return null
 }
 
-// Sockets in no room that proved nothing, closed after ROLE_IDLE_MS while the
-// relay is under load (above ROLE_IDLE_LOAD of MAX_CONNECTIONS)
+// Unprotected sockets in no room the relay holds, closed after ROLE_IDLE_MS
+// while the relay is under load (above ROLE_IDLE_LOAD of MAX_CONNECTIONS)
 const roleIdleSweep = setInterval(() => {
   if (connections.size <= MAX_CONNECTIONS * ROLE_IDLE_LOAD) return
   const now = Date.now()
-  const idle = [...connections.values()].filter((c) => !c.gone && c.rooms.size === 0 && now - c.openedAt >= ROLE_IDLE_MS && !socketProved(c))
+  const guarded = protectedSockets()
+  const idle = [...connections.values()].filter((c) => !c.gone && !guarded.has(c.id) && now - c.openedAt >= ROLE_IDLE_MS && !inHeldRoom(c))
   for (const c of idle) {
     roleIdleClosed++
     relaySummary.count('closed (idle, under load)')
@@ -6828,8 +6947,10 @@ wss.on('connection', (ws, req) => {
     frames: {},
     // { matchId, moved } while a claim's database check runs (verifyRelayClaim)
     claimCheck: null,
-    // The wider networks ROLE_NET_CAPS count this socket in (cloud), by kind
+    // The wider networks ROLE_NET_CAPS count this socket in (cloud), by kind,
+    // and the one it makes room for at the total cap (roleVictim)
     roleNets: Object.fromEntries(nets),
+    roleGroup: roleGroupOf(ip, ipKey, nets),
     openedAt: Date.now(),
     // Left the relay's books (closed, or pushed out at a cap: handleClientDisconnect)
     gone: false,

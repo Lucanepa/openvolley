@@ -4,17 +4,24 @@
  * held all MAX_CONNECTIONS slots, and every later scorer, referee and bench
  * socket was refused with 1013.
  *
- *   - sockets that proved nothing count per IPv6 /56 (and /48, IPv4 /24): a
- *     /56 holds at most what one address may, a new one pushes its oldest out
- *   - at the cap, the oldest socket that proved nothing makes room (one in no
- *     room first): a scorer and a PIN-proved referee are admitted, and kept
- *     however many sockets come after them; only when every socket proved
- *     something is a new one refused
- *   - while the relay is under load, a socket in no room that proved nothing
- *     is closed after OV_ROLE_IDLE_MS; one in a room and a proved one stay
+ *   - unprotected sockets count per IPv6 /56 (and /48, IPv4 /24): a /56
+ *     holds at most what one address may, a new one pushes its oldest idle
+ *     one (in no room the relay holds) out, else it is refused
+ *   - at the total cap the network holding the most unprotected sockets
+ *     makes room (its oldest idle one, else its newest), never another
+ *     network's: a scorer and a referee of another network are admitted and
+ *     kept however many sockets come after them; a newcomer of the network
+ *     holding the most is refused
+ *   - a board that followed the hall's match before a flood from other
+ *     networks keeps its socket; sockets waiting in made-up rooms are no
+ *     room's (review of the SEC-04 fix: they escaped the idle sweep and the
+ *     board was pushed out first)
+ *   - while the relay is under load, a socket in no room the relay holds is
+ *     closed after OV_ROLE_IDLE_MS; one in a room stays
  *
  * Boots server.js as a cloud relay (IS_CLOUD, TRUST_PROXY, --local) with a
- * small OV_MAX_CONNECTIONS.
+ * small OV_MAX_CONNECTIONS. Without a database no room is proved: who is
+ * protected by a room the database proved is tests/relayConnCaps.db.relay.test.js.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -83,6 +90,8 @@ describe('role sockets: who may hold the relay\'s slots (cloud)', () => {
     const net = []
     for (let i = 0; i < 200; i++) net.push(await connect(v6In56(i)))
     assert.equal(net.filter(isOpen).length, 200)
+    // only a socket idle for a moment makes room (a newer one may still be joining)
+    await sleep(450)
     const more = await connect(v6In56(200))
     assert.equal(isOpen(more), true, 'the /56 newcomer is admitted')
     await waitUntil(() => net[0].closed, { timeoutMs: 3000, what: 'the oldest of the /56 pushed out' })
@@ -94,11 +103,12 @@ describe('role sockets: who may hold the relay\'s slots (cloud)', () => {
     await closeAll()
   })
 
-  it('at the cap a scorer and a PIN-proved referee get in, and keep their slots', async () => {
+  it('at the cap a scorer and a PIN-proved referee of another network get in, and keep their slots', async () => {
     // the cap (300) filled by idle sockets of two /56s and IPv4 addresses
     for (let i = 0; i < 200; i++) await connect(v6In56(i))
     for (let i = 0; i < 100; i++) await connect(`2001:db8:78:${(0x1000 + i).toString(16)}::1`)
     assert.equal(all.filter(isOpen).length, 300)
+    await sleep(450)
     const scorer = await connect('198.51.100.70')
     assert.equal(isOpen(scorer), true, 'the scorer at the cap')
     scorer.send(scorerSync('seed-caps'))
@@ -114,6 +124,39 @@ describe('role sockets: who may hold the relay\'s slots (cloud)', () => {
     assert.equal(isOpen(scorer), true, 'the scorer kept its slot')
     assert.equal(isOpen(referee), true, 'the referee kept its slot')
     assert.ok(all.filter(isOpen).length <= 300)
+    await closeAll()
+  })
+
+  it('a board that followed the hall\'s match before a flood of other networks stays; sockets waiting in made-up rooms are closed as idle', async () => {
+    const scorer = await connect('198.51.100.10')
+    scorer.send(scorerSync('seed-board'))
+    await until(scorer, (m) => m.type === 'display-presence', 'the scorer proved the match')
+    // Point Hub on "OpenVolley online": the hall's match, no PIN, no code
+    const board = await connect('198.51.100.11')
+    board.send({ type: 'subscribe-match', matchId: 'seed-board', device: 'display', settingsUrl: 'http://172.24.1.1:8890/#settings' })
+    await until(board, (m) => m.type === 'match-full-data', 'the board\'s summary')
+    // the flood: an IPv4 /24 and an IPv6 /56 of other networks, each socket
+    // parked in a made-up room, past the cap (one socket per network for
+    // many networks: tests/relayConnCaps.db.relay.test.js, where the scorer
+    // proved its match against the database)
+    const flood = []
+    for (let i = 0; i < 320; i++) {
+      const s = await connect(i % 2 ? `203.0.113.${1 + ((i >> 1) % 250)}` : `2001:db8:79:${(0x1000 + (i >> 1)).toString(16)}::1`)
+      if (isOpen(s)) s.send({ type: 'subscribe-match', matchId: `nope-${i}` })
+      flood.push(s)
+      if (i === 297) await sleep(450) // the parked ones are idle for a moment now
+    }
+    await sleep(300)
+    assert.equal(isOpen(board), true, 'the board kept its socket')
+    assert.equal(isOpen(scorer), true, 'the scorer kept its socket')
+    assert.ok(all.filter(isOpen).length <= 300)
+    assert.ok(flood.some((s) => s.closed?.code === 1013), 'the flood\'s newcomers were refused')
+    // the parked sockets are no room's: closed after OV_ROLE_IDLE_MS under load
+    await waitUntil(() => flood.every((s) => s.closed), { timeoutMs: 8000, what: 'the parked sockets closed as idle' })
+    assert.equal(isOpen(board), true)
+    assert.equal(isOpen(scorer), true)
+    const referee = await connect('198.51.100.12')
+    assert.equal(isOpen(referee), true, 'a new tablet of the hall gets in')
     await closeAll()
   })
 
