@@ -1374,6 +1374,7 @@
     "offline": "Offline",
     "switchToOnline": "In Online-Modus wächsle",
     "switchToOffline": "In Offline-Modus wächsle",
+    "onlineButNoConnection": "Online, aber kei Verbindig: D Änderige warted uf dem Grät und wärded gschickt, sobald si wider da isch",
     "dashboardConnectionInfo": "Dashboard-Verbindigsinfo",
     "serverStatus": "Serverstatus",
     "serverRunning": "Server lauft",

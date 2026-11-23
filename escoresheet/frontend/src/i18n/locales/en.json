@@ -1375,6 +1375,7 @@
     "offline": "Offline",
     "switchToOnline": "Switch to online mode",
     "switchToOffline": "Switch to offline mode",
+    "onlineButNoConnection": "Online, but no connection: the changes wait on this device and are sent once it's back",
     "dashboardConnectionInfo": "Dashboard connection info",
     "serverStatus": "Server status",
     "serverRunning": "Server running",

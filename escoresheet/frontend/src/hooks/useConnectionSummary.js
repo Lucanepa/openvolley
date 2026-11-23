@@ -148,6 +148,37 @@ function overallStatusOf(connectionStatuses) {
   return 'connected'
 }
 
+/** The browser's own view of the network: true while it says it is offline. */
+export function useBrowserOffline() {
+  const [browserOffline, setBrowserOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false)
+  useEffect(() => {
+    const update = () => setBrowserOffline(navigator.onLine === false)
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
+  return browserOffline
+}
+
+/** The browser is offline and no local server (LAN relay) carries the match. */
+function offlineWithoutLocalPath(browserOffline, connectionStatuses, lanBackend) {
+  return browserOffline && !(lanBackend && isServerWebsocketViable(connectionStatuses.server, connectionStatuses.websocket))
+}
+
+/**
+ * Nothing answers: neither the cloud nor a local server, whether the browser
+ * knows it is offline or the polls say so. The pill says Offline (unless a
+ * sync error or an update outranks it), and the header's Online switch,
+ * still on, turns grey: online wanted, not reachable (owner, 23.11.2026).
+ * No sync-queue query here, so the header can call it on every render.
+ */
+export function isConnectionDown({ connectionStatuses = {}, browserOffline = false, lanBackend = backendOnLocalNetwork() } = {}) {
+  return offlineWithoutLocalPath(browserOffline, connectionStatuses, lanBackend) || overallStatusOf(connectionStatuses) === 'offline'
+}
+
 /**
  * The header's connection state, for the pill and for anything else that
  * names it (the match chip's popover): one rule, one word.
@@ -176,16 +207,7 @@ export function useConnectionSummary({ connectionStatuses = {}, queueStats = nul
   const syncingLong = useHeldFor(pendingCount > 0, SYNCING_SHOW_AFTER_MS)
 
   // The browser's own view of the network (the 'Online' switch is offline mode)
-  const [browserOffline, setBrowserOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false)
-  useEffect(() => {
-    const update = () => setBrowserOffline(navigator.onLine === false)
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
-    return () => {
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
-    }
-  }, [])
+  const browserOffline = useBrowserOffline()
 
   // Offline as far as the browser knows. The server / WebSocket / cloud
   // statuses are polled (every 30-60 s), and a socket to the cloud relay can
@@ -206,7 +228,7 @@ export function useConnectionSummary({ connectionStatuses = {}, queueStats = nul
   // No network as far as the browser knows, but a local server (offline
   // desktop / LAN scoretable serving tablets) can still be connected: then the
   // match runs normally and only the cloud copy waits ('Local only' + count).
-  const baseStatus = browserOffline && !localPathViable
+  const baseStatus = offlineWithoutLocalPath(browserOffline, connectionStatuses, lanBackend)
     ? 'offline'
     : updateRequired
       ? 'update_required'
