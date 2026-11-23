@@ -10,6 +10,7 @@ import fr from '../../../i18n/locales/fr.json'
 import it_ from '../../../i18n/locales/it.json'
 import { listSourceFiles } from '../../../../scripts/check-i18n-keys.js'
 import { GHOST_CLICK_MS } from '../../../hooks/useConfirmAction'
+import { POINT_HOLD_MS } from '../../../hooks/useHoldToConfirm'
 import { BACKGROUND_HOME_MS } from '../../../utils/deviceSelfCheck'
 import {
   HELP_SCREENS, HELP_SECTIONS, SECTION_IDS, VIDEO_LANGUAGES, helpSection, screensForSection,
@@ -105,6 +106,14 @@ describe('help sections', () => {
     for (const [lng, messages] of Object.entries(LOCALES)) {
       expect(messages.contextHelp.scoring.a_doubleTap, lng).toContain(`${GHOST_CLICK_MS} ms`)
       expect(messages.contextHelp.home.a_backgroundHome, lng).toContain(minutes)
+    }
+  })
+
+  it('say the hold of continuous play\'s point (POINT_HOLD_MS) where they explain it', () => {
+    const seconds = String(POINT_HOLD_MS / 1000)
+    for (const [lng, messages] of Object.entries(LOCALES)) {
+      expect(messages.contextHelp.scoreboard.a_awardPoint, lng).toContain(`${seconds} `)
+      expect(messages.contextHelp.scoreboard.a_shortcuts, lng).toContain(`${seconds} `)
     }
   })
 })

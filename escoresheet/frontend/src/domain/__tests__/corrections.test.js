@@ -195,6 +195,22 @@ describe('planPointRemoval (taking back a point recorded in error)', () => {
     expect(plan.deleteEventIds.sort((a, b) => a - b)).toEqual([20, 195, 201, 202])
   })
 
+  it('with includeRallyStart, never an older rally\'s start when this point had none (a set scored on another device)', () => {
+    const withoutStart = events.filter(e => e.id !== 195)
+    const plan = planPointRemoval(withoutStart, pointEvent, { includeRallyStart: true })
+    expect(plan.deleteEventIds.sort((a, b) => a - b)).toEqual([20, 201, 202])
+  })
+
+  it('with includeRallyStart, continuous play\'s point and the rally_start it wrote right before it', () => {
+    const continuous = [
+      ...events,
+      { id: 21, seq: 21, setIndex: 5, type: 'rally_start', payload: { continuous: true } },
+      point(22, 22, 'home', 5)
+    ]
+    const plan = planPointRemoval(continuous, continuous.find(e => e.id === 22), { includeRallyStart: true })
+    expect(plan.deleteEventIds.sort((a, b) => a - b)).toEqual([21, 22])
+  })
+
   it('the queued cloud jobs of the removed point and its libero_exit are found, not the earlier ones', () => {
     const plan = planPointRemoval(events, pointEvent)
     const jobs = [

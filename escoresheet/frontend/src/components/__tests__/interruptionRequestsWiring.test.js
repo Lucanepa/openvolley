@@ -40,7 +40,8 @@ describe('the in-play Replay dialog is just a replay (owner 22.11.2026)', () => 
   it('confirmReplay records only the replay, never a sanction', () => {
     const body = handler('confirmReplay')
     expect(body).toMatch(/useCallback\(\(\) => runAction\('replay', async \(\) => \{/)
-    expect(body).toContain("if (rallyStatus !== 'in_play') return")
+    // between rallies only in continuous play, and then just the replay
+    expect(body).toContain("if (rallyStatus !== 'in_play') {\n      if (continuousPlay && !isFirstRally) await recordContinuousReplay()\n      return\n    }")
     expect(body).toContain("await logEvent('replay')")
     expect(body).not.toContain('recordTeamSanction')
     expect(body).not.toContain('lateRequestOutcome')
@@ -104,8 +105,9 @@ describe('row 19: decision change after a substitution or time-out', () => {
     const memo = between('const decisionTakeBack = useMemo(', 'const isFirstRally')
     expect(memo).toContain('!canReplayRally && data?.set ? decisionChangeTakeBack(data.events, data.set.index, data?.match) : null')
     expect(memo).toContain('const canChangeDecision = canReplayRally || !!decisionTakeBack')
-    expect(sb).toContain("{rallyStatus === 'idle' && canChangeDecision && (")
-    expect(sb).toContain("{rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden=\"true\" />}")
+    // (rallies; continuous play has its one "Decision change / Replay" button)
+    expect(sb).toContain("{!continuousPlay && rallyStatus === 'idle' && canChangeDecision && (")
+    expect(sb).toContain("{!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden=\"true\" />}")
     expect(sb).toMatch(/canReplayRally,\n(\s+\/\/[^\n]*\n)+\s+canChangeDecision,/)
     expect(phone).toContain('(rally.canChangeDecision ?? rally.canReplayRally)')
   })
@@ -113,7 +115,8 @@ describe('row 19: decision change after a substitution or time-out', () => {
   it('the dialog is the decision change\'s, with what it takes back', () => {
     const open = handler('handleReplay')
     // what goes depends on the option (a libero replacement that still fits stays)
-    expect(open).toContain("setReplayRallyConfirm({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests, takeBackByOption: decisionTakeBack.byOption })")
+    // (decisionDialog: continuous play adds its third option, nothing to take back)
+    expect(open).toContain("setReplayRallyConfirm(decisionDialog({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests, takeBackByOption: decisionTakeBack.byOption }))")
     const dialog = between('{replayRallyConfirm && (() => {', '</Modal>')
     expect(dialog).toContain('data-testid="decision-take-back"')
     expect(dialog).toContain("t('scoreboard.decisionTakeBack.substitution'")

@@ -3021,6 +3021,88 @@ button.start-rally-button {
   box-shadow: inset 0 0 0 1px var(--ov-hairline-strong), inset 0 0 0 999px rgba(0, 0, 0, 0.12);
 }
 
+/* A held point (continuous play) has its own pressed wash while it is held
+   (.hold-button[data-holding]::before): not twice as dark with :active, and
+   back to its colour once the point is given, the finger still down. */
+.rally-point-button.hold-button:not(:disabled):active {
+  box-shadow: none;
+}
+
+/* Continuous play (utils/rallyMode, owner 22.11.2026): Point A | Point B are
+   held, not tapped (HoldToConfirmButton, hooks/useHoldToConfirm). Held, the
+   button darkens as a pressed Point does (data-holding: the Android WebView
+   shows no :active once the hold has claimed the touch) and its fill grows
+   from the left over --hold-ms, a transform the compositor runs: nothing in
+   React, no layout. Let go, the fill is gone at once. The touch is the
+   hold's: no scrolling or zooming from it (touch-action), no callout, no
+   selection, no long-press menu, which in the Android WebView cancelled a
+   touch held about 500 ms. With the animations off the fill steps
+   (useHoldToConfirm sets its transform; the transition is stopped in
+   tailwind.css). */
+.hold-button {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* the pressed wash, under the fill: a layer of its own, not a box-shadow
+   (the phone's kit reset and a light team colour's inline ring set that) */
+.hold-button[data-holding]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
+
+.hold-fill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: currentColor;
+  opacity: 0.24;
+  transform: scaleX(0);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.hold-button[data-holding] > .hold-fill {
+  transform: scaleX(1);
+  transition: transform var(--hold-ms, 2000ms) linear;
+}
+
+.hold-content {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15em;
+  min-width: 0;
+  max-width: 100%;
+  pointer-events: none;
+}
+
+.hold-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "Hold": under the label, in its colour, small */
+.hold-caption {
+  font-size: 0.52em;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+}
+
 @media (max-width: 1400px) {
   .rally-controls {
     gap: calc(8px * var(--scale-factor));
@@ -4275,9 +4357,29 @@ body.ios-fullscreen {
   --tap-hint-size: clamp(7px, 0.6vw, 8px);
   --tap-hint-inset: 2px;
 }
+/* Hold hint: continuous play's point buttons are held, not tapped
+   (HoldToConfirmButton): a stopwatch (lucide Timer, ISC) in the corner where
+   the other buttons show the finger, beside the button's own "Hold"
+   caption. Hidden with the tap hints (the caption stays). */
+.hold-hint:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  top: var(--tap-hint-inset, 3px);
+  right: var(--tap-hint-inset, 3px);
+  width: var(--tap-hint-size, clamp(10px, 1.05vw, 15px));
+  height: var(--tap-hint-size, clamp(10px, 1.05vw, 15px));
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg opacity='0.6'%3E%3Cline x1='10' x2='14' y1='2' y2='2'/%3E%3Cline x1='12' x2='15' y1='14' y2='11'/%3E%3Ccircle cx='12' cy='14' r='8'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg opacity='0.6'%3E%3Cline x1='10' x2='14' y1='2' y2='2'/%3E%3Cline x1='12' x2='15' y1='14' y2='11'/%3E%3Ccircle cx='12' cy='14' r='8'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  pointer-events: none;
+}
 /* Options › Show tap hints off (utils/tapHints.js): no finger anywhere. */
 html[data-no-tap-hints] .tap-hint::after,
 html[data-no-tap-hints] [data-tap-hint]::after,
 html[data-no-tap-hints] [data-tap-hint-icon] {
+  display: none;
+}
+/* ... and no stopwatch on the held point buttons (their "Hold" stays). */
+html[data-no-tap-hints] .hold-hint::after {
   display: none;
 }

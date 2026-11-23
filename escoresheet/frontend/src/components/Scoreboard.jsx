@@ -78,10 +78,14 @@ import { playerOfficialLinks, officialChipState, benchNumberState, sanctionMembe
 import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
-import { rallyStatusOf, currentSetOf, isBookkeepingEvent, isFirstRallyOf, startingLineupsIn } from '../domain/rally'
+import { rallyStatusOf, currentSetOf, isBookkeepingEvent, isFirstRallyOf, startingLineupsIn, sentOffOnCourt, rallyStartOfPoint } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
 import { useRallyTapGuard } from '../hooks/useRallyTapGuard'
 import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice'
+import HoldToConfirmButton from './scoreboard/HoldToConfirmButton.jsx'
+import { POINT_HOLD_MS, cancelActiveHold } from '../hooks/useHoldToConfirm'
+import { readRallyMode } from '../utils/rallyMode'
+import { decisionChangeOutcomes } from '../domain/decisionChange'
 import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
@@ -560,6 +564,10 @@ export const preloadScoreboard = (matchId) => preload(scoreboardKey(matchId), ()
 // the change look older than the last one before it, and the serve and the
 // side-out rotations followed those (stress test 2026-10-25)
 const newestFirst = (a, b) => compareBySeq(b, a)
+// Continuous play's decision change / replay dialog: its options, in order,
+// and what its third one takes back (nothing: the last point stays)
+const CONTINUOUS_DECISION_OPTIONS = Object.freeze(['swap', 'replay', 'record_replay'])
+const NOTHING_TAKEN_BACK = Object.freeze({ requests: Object.freeze([]), reasons: Object.freeze({}) })
 
 // A match over opened here: how long after a failed try Match End is asked
 // for again (the "Check if match is already finished" effect)
@@ -627,6 +635,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const saved = localStorage.getItem('manageCaptainOnCourt')
     return saved !== 'false'
   })
+  // Rallies (Start rally, then the point) or continuous play (no Start
+  // rally, a point is held about 2 s): this device's Options › Point entry
+  // (utils/rallyMode, owner 22.11.2026). Switching it mid-match is safe: both
+  // write the same events
+  const [rallyMode, setRallyMode] = useState(() => readRallyMode())
+  const continuousPlay = rallyMode === 'continuous'
   const [checkAccidentalRallyStart, setCheckAccidentalRallyStart] = useState(() => {
     const saved = localStorage.getItem('checkAccidentalRallyStart')
     return saved === 'true' // default false
@@ -3620,6 +3634,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return isFirstRallyOf(data.events, data.set.index)
   }, [data?.events, data?.set])
 
+  // Point A | Point B are on screen: in a rally, or in continuous play once
+  // the set has started (no Start rally; its first rally still starts with
+  // Start set). There "Decision change / Replay" is offered from then on too
+  const pointsShown = continuousPlay ? !isFirstRally : rallyStatus === 'in_play'
+
   // The coach and captain signatures still missing before the first serve of
   // the match, per team: the coin toss no longer waits for them (owner
   // 2026-10-31), the teams sign during the warm-up. null: none missing, none
@@ -5989,9 +6008,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // once the live query has been waited for long enough, the old buttons
   // still showing) gave a second point for the same rally. A penalty point
   // or a correction is no tap.
+  // `opensRally`: continuous play's point (held Point A | Point B, its key):
+  // between rallies it opens its rally itself, with Start rally's gates, and
+  // writes the rally_start right before the point.
   const handlePoint = useCallback(
-    (side, skipConfirmation = false, { tap = false, penaltySeq = null } = {}) => runAction('point', async () => {
-      cLogger.logHandler('handlePoint', { side, skipConfirmation, tap })
+    (side, skipConfirmation = false, { tap = false, penaltySeq = null, opensRally = false } = {}) => runAction('point', async () => {
+      cLogger.logHandler('handlePoint', { side, skipConfirmation, tap, opensRally })
       if (!data?.set) return
       // A match over in the database (stopped, forfeited; opened here from
       // the cloud or a backup with its set unfinished) takes no point
@@ -6016,15 +6038,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // CRITICAL: the set being played from IndexedDB, not from the screen
       // (stale after set transitions): per index the newest row, as the live query
       const freshCurrentSet = currentSetOf(allSets)
-      // (as readRallyStatus: no set, no rally in play)
-      if (tap && (!freshCurrentSet || rallyStatusOf(allEventsBeforePoint, freshCurrentSet.index) !== 'in_play')) {
+      // (as readRallyStatus: no set, no rally in play). Continuous play's
+      // point comes between rallies too: it opens its rally (below)
+      const statusBeforePoint = freshCurrentSet ? rallyStatusOf(allEventsBeforePoint, freshCurrentSet.index) : 'idle'
+      if (tap && (!freshCurrentSet || (statusBeforePoint !== 'in_play' && !opensRally))) {
         console.warn('[Scoreboard] Point tap without a rally in play (the screen was behind): ignored')
         return
       }
+      // The rally it opens has Start rally's gates (handleStartRally), from
+      // the database: the set's first rally starts with Start set (line-ups,
+      // signatures, liberos, its start time), and no rally with a player on
+      // court who is expelled or disqualified (FIVB 21.3.2-21.3.3)
+      const opensItsRally = opensRally && !!freshCurrentSet && statusBeforePoint !== 'in_play'
+      if (opensItsRally) {
+        if (isFirstRallyOf(allEventsBeforePoint, freshCurrentSet.index)) {
+          console.warn('[Scoreboard] Continuous play: a point before Start set: ignored')
+          return
+        }
+        const sentOff = sentOffOnCourt(allEventsBeforePoint, freshCurrentSet.index)
+        if (sentOff) {
+          deferUi(() => showAlert(t('scoreboard.sentOffOnCourt', { number: sentOff.number }), 'warning'))
+          return
+        }
+      }
       const teamKey = mapSideToTeamKey(side)
 
-      // Check for accidental point award (if enabled and rally just started)
-      if (checkAccidentalPointAward && !skipConfirmation && rallyStartTimeRef.current) {
+      // Check for accidental point award (if enabled and rally just started).
+      // Not in continuous play: no Start rally before the point, and its hold
+      // is the check (the option is hidden there)
+      if (checkAccidentalPointAward && !continuousPlay && !skipConfirmation && rallyStartTimeRef.current) {
         const timeSinceRallyStart = (Date.now() - rallyStartTimeRef.current) / 1000
         if (timeSinceRallyStart < accidentalPointAwardDuration) {
           deferUi(() => setAccidentalPointConfirmModal({
@@ -6388,6 +6430,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
+      // Continuous play: the rally this point ends starts here, in the same
+      // action (one rally_start, then the point, as with Start rally): Undo
+      // takes the two back together, and the request rules, the bench
+      // line-up and the sheet times see the rally as they always did
+      if (opensItsRally) {
+        await logEvent('rally_start', { continuous: true }, { setIndexOverride: setIndex })
+        if (recentSubFlashTimeoutRef.current) clearTimeout(recentSubFlashTimeoutRef.current)
+        deferUi(() => {
+          setLiberoReminder(null)
+          setRecentlySubstitutedPlayers([])
+        })
+      }
+
       // Update score and log point FIRST (using fresh set ID)
       await db.sets.update(freshCurrentSet.id, {
         [field]: newPoints
@@ -6490,7 +6545,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // reaches. Awaited (Dexie reads only): its dialog opens with the point
       await afterPointScored({ set: freshCurrentSet, homePoints, awayPoints, teamKey })
     }),
-    [data?.set, data?.events, logEvent, mapSideToTeamKey, afterPointScored, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi]
+    [data?.set, data?.events, logEvent, mapSideToTeamKey, afterPointScored, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi, continuousPlay, showAlert, t]
   )
 
   // One action (runAction): a second tap while it is written is dropped
@@ -6536,25 +6591,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
     // Nor with a player on court who is expelled in this set or disqualified
-    // (FIVB 21.3.2-21.3.3): his substitution is recorded first
-    if (data?.set && data?.events) {
-      for (const team of ['home', 'away']) {
-        const lineup = data.events
-          .filter(e => e.type === 'lineup' && e.payload?.team === team && e.setIndex === data.set.index)
-          .sort(compareBySeq)
-          .pop()?.payload?.lineup
-        const sentOff = Object.values(lineup || {}).map(v => (v && typeof v === 'object' ? v.number : v)).find(n => n != null && data.events.some(e =>
-          e.type === 'sanction' && e.payload?.team === team &&
-          String(sanctionedPlayerNumber(e.payload)) === String(n) &&
-          (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === data.set.index))))
-        if (sentOff != null) {
-          deferUi(() => showAlert(t('scoreboard.sentOffOnCourt', { number: sentOff }), 'warning'))
-          return
-        }
-      }
+    // (FIVB 21.3.2-21.3.3): his substitution is recorded first (domain/rally,
+    // as continuous play's point that opens its rally)
+    const sentOff = data?.set && data?.events ? sentOffOnCourt(data.events, data.set.index) : null
+    if (sentOff) {
+      deferUi(() => showAlert(t('scoreboard.sentOffOnCourt', { number: sentOff.number }), 'warning'))
+      return
     }
-    // Check for accidental rally start (if enabled and point was just awarded)
-    if (checkAccidentalRallyStart && !skipCheck && lastPointAwardedTimeRef.current) {
+    // Check for accidental rally start (if enabled and point was just awarded).
+    // Not in continuous play (Start set only; the option is hidden there)
+    if (checkAccidentalRallyStart && !continuousPlay && !skipCheck && lastPointAwardedTimeRef.current) {
       const timeSinceLastPoint = (Date.now() - lastPointAwardedTimeRef.current) / 1000
       if (timeSinceLastPoint < accidentalRallyStartDuration) {
         deferUi(() => setAccidentalRallyConfirmModal({
@@ -6637,7 +6683,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       clearTimeout(recentSubFlashTimeoutRef.current)
     }
     deferUi(() => setRecentlySubstitutedPlayers([]))
-  }), [logEvent, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readSetEvents, showAlert, t])
+  }), [logEvent, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, continuousPlay, runAction, deferUi, readSetEvents, showAlert, t])
 
   // A tap on the rally buttons (Start rally, Point A | Point B), on every
   // layout, with its click event: none that is the end of the tap before it
@@ -6646,15 +6692,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Their keys call the handlers themselves (no bounce to drop), as do the
   // accidental-start and accidental-point questions' Yes.
   const [rallyTapNotice, setRallyTapNotice] = useState(0)
+  // its text when not "Not counted" (continuous play: "Hold to give the point")
+  const [rallyTapNoticeText, setRallyTapNoticeText] = useState(null)
   const rallyTapNoticeTimerRef = useRef(null)
   useEffect(() => () => clearTimeout(rallyTapNoticeTimerRef.current), [])
-  const ignoreRallyTap = useCallback((what, check) => {
-    console.warn(`[Scoreboard] ${what} tap ignored (${check.verdict}): ${check.sinceChangeMs ?? '-'} ms after the rally buttons changed, ${check.sincePreviousMs ?? '-'} ms and ${check.distancePx ?? '?'} px from the press before`)
-    diag('rally.tap_ignored', { what, ...check })
+  const showRallyTapNotice = useCallback((text = null) => {
+    setRallyTapNoticeText(text)
     setRallyTapNotice(n => n + 1)
     clearTimeout(rallyTapNoticeTimerRef.current)
     rallyTapNoticeTimerRef.current = setTimeout(() => setRallyTapNotice(0), RALLY_TAP_NOTICE_MS)
   }, [])
+  const ignoreRallyTap = useCallback((what, check) => {
+    console.warn(`[Scoreboard] ${what} tap ignored (${check.verdict}): ${check.sinceChangeMs ?? '-'} ms after the rally buttons changed, ${check.sincePreviousMs ?? '-'} ms and ${check.distancePx ?? '?'} px from the press before`)
+    diag('rally.tap_ignored', { what, ...check })
+    showRallyTapNotice()
+  }, [showRallyTapNotice])
   const tapStartRally = useCallback((event) => {
     const check = checkRallyTap(event)
     if (check.verdict) {
@@ -6672,6 +6724,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     settleTap(handlePoint(side, false, { tap: true }))
   }, [handlePoint, checkRallyTap, ignoreRallyTap])
+  // Continuous play: Point A | Point B held to the end (HoldToConfirmButton,
+  // their keys too). No double-tap guard: a point needs a whole hold, and a
+  // press gives it once. Let go earlier: nothing, and the screen says so
+  const holdPoint = useCallback((side) => {
+    settleTap(handlePoint(side, false, { tap: true, opensRally: true }))
+  }, [handlePoint])
+  const pointHeldTooShort = useCallback(() => {
+    showRallyTapNotice(t('scoreboard.holdNotice'))
+  }, [showRallyTapNotice, t])
+  // The scoring keys hold the point button they stand for (its fill shows)
+  const pointHoldLeftRef = useRef(null)
+  const pointHoldRightRef = useRef(null)
 
   // Write a team sanction (improper request, delay warning, delay penalty)
   // inside the running scorer action: the match flags, the sanction event and
@@ -6736,6 +6800,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [data?.match, data?.set, data?.events, matchId, logEvent, handlePoint, deferUi, showAlert])
 
+  // Continuous play: "Decision change / Replay". Its dialog has a third
+  // option, the rally played since the last point was replayed (nothing is
+  // taken back, only the replay is recorded), and pre-selects none
+  const decisionDialog = useCallback((state) => (continuousPlay
+    ? { ...state, selectedOption: null, options: CONTINUOUS_DECISION_OPTIONS, takeBackByOption: { ...(state.takeBackByOption || {}), record_replay: NOTHING_TAKEN_BACK } }
+    : state), [continuousPlay])
+
   const handleReplay = useCallback(async () => {
     // During rally: ask first, confirmReplay logs the replay event (no point to undo)
     if (rallyStatus === 'in_play') {
@@ -6780,7 +6851,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           ? (data?.homeTeam?.name || t('common.home'))
           : (data?.awayTeam?.name || t('common.away'))
         const description = `Point for ${teamName}`
-        setReplayRallyConfirm({ event: pointEvent, description, selectedOption: 'swap' }) // Default to swap
+        setReplayRallyConfirm(decisionDialog({ event: pointEvent, description, selectedOption: 'swap' })) // Default to swap (continuous play: none)
       }
       return
     }
@@ -6791,18 +6862,34 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const teamName = pointEvent.payload?.team === 'home'
         ? (data?.homeTeam?.name || t('common.home'))
         : (data?.awayTeam?.name || t('common.away'))
-      setReplayRallyConfirm({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests, takeBackByOption: decisionTakeBack.byOption })
+      setReplayRallyConfirm(decisionDialog({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests, takeBackByOption: decisionTakeBack.byOption }))
+      return
     }
-  }, [rallyStatus, canReplayRally, decisionTakeBack, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
+    // Continuous play, between rallies with no last point to change (none
+    // yet since Start set, or a replay recorded since): the rally just
+    // played was replayed. Asked as the in-play Replay is (confirmReplay)
+    if (continuousPlay && rallyStatus === 'idle' && !isFirstRally) setReplayConfirm(true)
+  }, [rallyStatus, canReplayRally, decisionTakeBack, data?.events, data?.homeTeam?.name, data?.awayTeam?.name, decisionDialog, continuousPlay, isFirstRally])
+
+  // Continuous play: a replayed rally recorded between rallies, on its own
+  // (no rally_start: there was no Start rally). Score and serve stay; until
+  // the next point no regular time-out or substitution (replay pending,
+  // domain/interruptionRequests); the last action reads "Rally replayed";
+  // Undo takes just it back. Inside the running action.
+  const recordContinuousReplay = useCallback(() => logEvent('replay', { reason: 'continuous' }), [logEvent])
 
   // Confirmed "Replay rally": only while the rally is still in play. Just the
   // replay (owner 22.11.2026: no sanction from this dialog; a delay sanction
   // is given with the team's Delay warning / Delay penalty button).
+  // Continuous play: also between rallies (recordContinuousReplay).
   const confirmReplay = useCallback(() => runAction('replay', async () => {
     deferUi(() => setReplayConfirm(false))
-    if (rallyStatus !== 'in_play') return
+    if (rallyStatus !== 'in_play') {
+      if (continuousPlay && !isFirstRally) await recordContinuousReplay()
+      return
+    }
     await logEvent('replay')
-  }), [logEvent, rallyStatus, runAction, deferUi])
+  }), [logEvent, rallyStatus, runAction, deferUi, continuousPlay, isFirstRally, recordContinuousReplay])
 
   const cancelReplay = useCallback(() => {
     setReplayConfirm(false)
@@ -8273,11 +8360,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         eventsToDelete.push(...allEvents.filter(e => Math.floor(e.seq || 0) === penaltyBaseSeq))
       }
 
-      // For point events, also delete the preceding rally_start
+      // For point events, also delete the rally_start that opened its rally
+      // (continuous play writes it right before the point); never an older
+      // rally's, when this point had none (domain/rally rallyStartOfPoint)
       if (lastEvent.type === 'point' && !penalty) {
-        const rallyStartEvent = allEvents
-          .filter(e => e.type === 'rally_start' && e.setIndex === data.set.index && (e.seq || 0) < lastEventSeq)
-          .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+        const rallyStartEvent = rallyStartOfPoint(allEvents, allEvents.find(e => e.id === lastEvent.id) || lastEvent)
         if (rallyStartEvent && !eventsToDelete.some(e => e.id === rallyStartEvent.id)) {
           eventsToDelete.push(rallyStartEvent)
         }
@@ -8597,9 +8684,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const { event: lastEvent } = replayRallyConfirm
+    // Continuous play's dialog pre-selects nothing: Confirm (Enter too) waits
+    // for a choice
+    if (replayRallyConfirm.options && !replayRallyConfirm.selectedOption) return
     // The dialog pre-selects "Assign to other team" when nothing was chosen;
     // record what it shows
     const selectedOption = replayRallyConfirm.selectedOption || 'swap'
+
+    // Continuous play: the rally played since the last point was replayed.
+    // The point stays, nothing is taken back: only the replay is recorded
+    if (selectedOption === 'record_replay') {
+      deferUi(() => setReplayRallyConfirm(null))
+      await recordContinuousReplay()
+      return
+    }
 
     // Row 19: the time-outs and substitutions recorded after the point go
     // first, as Undo takes them back (with their line-up rows; a running
@@ -8872,7 +8970,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleReplayRally()
       return // handleReplayRally closes the modal and syncs
     }
-  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx])
+  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx, recordContinuousReplay])
 
 
 
@@ -14026,8 +14124,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Confirm key (Enter)
       if (key === keyBindings.confirm) {
-        // Start rally if idle and no modals
-        if (!hasDecisionModal && rallyStatus === 'idle') {
+        // Start rally if idle and no modals (continuous play: Start set only,
+        // there is no Start rally)
+        if (!hasDecisionModal && rallyStatus === 'idle' && (!continuousPlay || isFirstRally)) {
           e.preventDefault()
           settleTap(handleStartRally())
           return
@@ -14074,6 +14173,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (key === keyBindings.cancel) {
         // a popover already closed by Escape (the listener below)
         if (e.defaultPrevented) return
+        // a point button being held (continuous play) lets go first
+        if (cancelActiveHold()) {
+          e.preventDefault()
+          return
+        }
         // Close dropdowns and menus
         if (playerActionMenu) {
           e.preventDefault()
@@ -14112,6 +14216,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Don't process other keys if a modal is open
       if (hasDecisionModal || timeoutModal || lineupModal || menuModal) return
+
+      // Continuous play: a point key holds its point button as a finger does
+      // (useHoldToConfirm: the point at the end of the hold, keyup lets go,
+      // Escape stops it); the repeats of a key held down are ignored
+      if (continuousPlay && (key === keyBindings.pointLeft || key === keyBindings.pointRight)) {
+        e.preventDefault()
+        if (e.repeat || !pointsShown) return
+        const hold = key === keyBindings.pointLeft ? pointHoldLeftRef.current : pointHoldRightRef.current
+        hold?.start(key)
+        return
+      }
 
       // Point keys
       // (a key, no tap: never held by the rally buttons' double-tap window;
@@ -14166,7 +14281,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
     keybindingsEnabled, duplicateTabError, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
-    rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo, canUndo, showUndoConfirm,
+    rallyStatus, continuousPlay, isFirstRally, pointsShown, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo, canUndo, showUndoConfirm,
     playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown, substitutionDropdown,
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
@@ -14174,6 +14289,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     courtSwitchModal, setEndTimeModal, setStartTimeModal, liberoReminder, set5SideServiceModal, exceptionalSubstitutionModal,
     confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
   ])
+
+  // Continuous play: the point key let go before the end of its hold gives
+  // no point (a hold started by a finger is not the key's)
+  useEffect(() => {
+    if (!keybindingsEnabled || !continuousPlay) return undefined
+    const handleKeyUp = (e) => {
+      if (e.key === keyBindings.pointLeft) pointHoldLeftRef.current?.release(e.key)
+      if (e.key === keyBindings.pointRight) pointHoldRightRef.current?.release(e.key)
+    }
+    window.addEventListener('keyup', handleKeyUp)
+    return () => window.removeEventListener('keyup', handleKeyUp)
+  }, [keybindingsEnabled, continuousPlay, keyBindings])
 
   // Escape closes the anchored popovers (the court and bench player menus,
   // the libero menus, the sanction menu, the substitution / libero / injury
@@ -14718,8 +14845,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Why the regular time-outs / substitutions are closed (replay
         // pending, set interval), one line for both teams
         requestBlockText: requestBlockLine('left') || requestBlockLine('right'),
-        // "Not counted" (RallyTapNotice): > 0 while shown
-        tapNotice: rallyTapNotice
+        // "Not counted" (RallyTapNotice): > 0 while shown; its text when
+        // another ("Hold to give the point")
+        tapNotice: rallyTapNotice,
+        tapNoticeText: rallyTapNoticeText,
+        // Continuous play: the point squares from the set's start, held about
+        // 2 s; one "Decision change / Replay" cell
+        continuous: continuousPlay,
+        holdSeconds: POINT_HOLD_MS / 1000
       },
       centre,
       recent: recentActions(withoutCoveredTeamEvents(data?.events, lineupCovered, data?.set?.index), data?.set?.index, getShortActionDescription, PHONE_RECENT_MAX_LINES),
@@ -14730,6 +14863,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         undo: showUndoConfirm,
         menu: () => setMenuModal(true),
         point: (side, event) => tapPoint(side, event),
+        holdPoint: (side) => holdPoint(side),
+        pointHeldTooShort: () => pointHeldTooShort(),
+        pointHoldRef: (side) => (side === 'left' ? pointHoldLeftRef : pointHoldRightRef),
         startRally: (event) => tapStartRally(event),
         timeout: (side) => handleTimeout(side),
         openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
@@ -15031,7 +15167,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         {/* Column 2: Left team OR Rally status (compact/laptop) */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {(isCompactMode || isLaptopMode) ? (
-            <div
+            // Continuous play has no rally to start: no "Rally: in play" either
+            continuousPlay ? <span aria-hidden="true" /> : <div
               onClick={() => setRallyStatusExpanded(!rallyStatusExpanded)}
               style={{
                 fontSize: 'calc(1.02cqw * var(--cqf, 1))',
@@ -18522,7 +18659,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   // and out of reach, so the box keeps their size: the countdown block is
                   // a few px shorter, and the court moved for the whole time-out
                   <div className="rally-stack">
-                    <RallyTapNotice id={rallyTapNotice} />
+                    <RallyTapNotice id={rallyTapNotice} message={rallyTapNoticeText} />
                     {timeoutModal?.started && (
                   <div className="rally-stack-layer">
                     {/* One line: a long team name on two made the countdown taller
@@ -18584,7 +18721,34 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                     )}
                   <div className="rally-stack-layer" aria-hidden={timeoutModal?.started || undefined} inert={timeoutModal?.started || undefined} style={timeoutModal?.started ? { visibility: 'hidden' } : undefined}>
-                    {rallyStatus === 'idle' ? (
+                    {continuousPlay && !isFirstRally ? (
+                      // Continuous play: Point A | Point B always, no Start
+                      // rally; a point is held about 2 s (HoldToConfirmButton:
+                      // its fill, "Hold" and the stopwatch hint), so a
+                      // misclick gives none
+                      <div className="rally-controls-row">
+                        <HoldToConfirmButton
+                          data-help-id="scoreboard-point-left"
+                          className="rally-point-button hold-hint"
+                          label={t('scoreboard.buttons.pointTeam', { team: teamALabel })}
+                          caption={t('scoreboard.holdCaption')}
+                          ariaLabel={t('scoreboard.holdPointLabel', { point: t('scoreboard.buttons.pointTeam', { team: teamALabel }), seconds: POINT_HOLD_MS / 1000 })}
+                          onConfirm={() => holdPoint('left')}
+                          onShortPress={pointHeldTooShort}
+                          apiRef={pointHoldLeftRef}
+                        />
+                        <HoldToConfirmButton
+                          data-help-id="scoreboard-point-right"
+                          className="rally-point-button hold-hint"
+                          label={t('scoreboard.buttons.pointTeam', { team: teamBLabel })}
+                          caption={t('scoreboard.holdCaption')}
+                          ariaLabel={t('scoreboard.holdPointLabel', { point: t('scoreboard.buttons.pointTeam', { team: teamBLabel }), seconds: POINT_HOLD_MS / 1000 })}
+                          onConfirm={() => holdPoint('right')}
+                          onShortPress={pointHeldTooShort}
+                          apiRef={pointHoldRightRef}
+                        />
+                      </div>
+                    ) : rallyStatus === 'idle' ? (
                       <button
                         data-help-id="scoreboard-start-rally"
                         className="secondary start-rally-button tap-hint"
@@ -18606,7 +18770,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </>
                     )}
                     <div className="rally-secondary-row">
-                      {rallyStatus === 'in_play' && (
+                      {/* Continuous play: one button for the decision change
+                          and the replay (handleReplay picks the dialog), from
+                          the set's start */}
+                      {continuousPlay && (
+                        <button
+                          data-testid="decision-replay-button"
+                          className={isFirstRally ? 'secondary' : 'tap-hint'}
+                          onClick={handleReplay}
+                          disabled={isFirstRally}
+                          style={isFirstRally ? undefined : {
+                            background: '#eab308',
+                            color: '#000',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t('scoreboard.buttons.decisionReplay')}
+                        </button>
+                      )}
+                      {!continuousPlay && rallyStatus === 'in_play' && (
                         <button
                           className="secondary tap-hint"
                           onClick={handleReplay}
@@ -18616,7 +18801,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       )}
                       {/* the last point, or the last point followed only by
                           time-outs / substitutions (taken back with it, row 19) */}
-                      {rallyStatus === 'idle' && canChangeDecision && (
+                      {!continuousPlay && rallyStatus === 'idle' && canChangeDecision && (
                         <button
                           className="tap-hint"
                           onClick={handleReplay}
@@ -18633,7 +18818,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </button>
                       )}
                       {/* Keep Undo in its half even when the left button is absent */}
-                      {rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden="true" />}
+                      {!continuousPlay && rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden="true" />}
                       <button
                         data-help-id="scoreboard-undo"
                         className="danger tap-hint"
@@ -20280,6 +20465,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onStopServer: handleStopServer
         }}
         matchOptions={{
+          rallyMode,
+          setRallyMode,
           checkAccidentalRallyStart,
           setCheckAccidentalRallyStart,
           accidentalRallyStartDuration,
@@ -24470,26 +24657,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {replayRallyConfirm && (() => {
         const lastEvent = replayRallyConfirm.event
         const oldTeam = lastEvent?.payload?.team
-        const newTeam = oldTeam === 'home' ? 'away' : 'home'
-        const selectedOption = replayRallyConfirm.selectedOption || 'swap'
+        // Continuous play's dialog: a third option (record_replay) and none
+        // pre-selected; the others pre-select "Assign to other team"
+        const options = replayRallyConfirm.options || ['swap', 'replay']
+        const selectedOption = replayRallyConfirm.options ? (replayRallyConfirm.selectedOption || null) : (replayRallyConfirm.selectedOption || 'swap')
 
         // Current scores
         const currentHomePoints = data?.set?.homePoints || 0
         const currentAwayPoints = data?.set?.awayPoints || 0
 
-        // Calculate new scores for swap option
-        const swapHomePoints = oldTeam === 'home' ? currentHomePoints - 1 : currentHomePoints + 1
-        const swapAwayPoints = oldTeam === 'away' ? currentAwayPoints - 1 : currentAwayPoints + 1
-
-        // Calculate new scores for replay option
-        const replayHomePoints = oldTeam === 'home' ? currentHomePoints - 1 : currentHomePoints
-        const replayAwayPoints = oldTeam === 'away' ? currentAwayPoints - 1 : currentAwayPoints
+        // The score and the serve each option leaves (domain/decisionChange):
+        // swap, the other team scores and serves; replay, the point is taken
+        // back and the team that served it serves again (after a side-out not
+        // the point's team: the preview said so); record_replay, unchanged
+        const outcomes = decisionChangeOutcomes({ events: data?.events, point: lastEvent, score: { home: currentHomePoints, away: currentAwayPoints }, match: data?.match })
+        const outcome = selectedOption ? outcomes[selectedOption] : null
 
         // Get team names for display
         const homeTeamName = data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')
         const awayTeamName = data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')
         const oldTeamName = oldTeam === 'home' ? homeTeamName : awayTeamName
-        const newTeamName = newTeam === 'home' ? homeTeamName : awayTeamName
 
         // A/B labels and team colors
         const homeLabel = teamAKey === 'home' ? 'A' : 'B'
@@ -24498,12 +24685,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const homeColor = data?.homeTeam?.color || '#ef4444'
         const awayColor = data?.awayTeam?.color || '#3b82f6'
         const oldTeamColor = oldTeam === 'home' ? homeColor : awayColor
-
-        // Determine which team has serve after each option
-        // For swap: the new team gets the point, so they get/keep serve
-        // For replay: no point scored, serve stays with who had it before this point
-        const swapServeTeam = newTeam
-        const replayServeTeam = oldTeam // The team that WAS going to have serve (sideout was reversed)
+        const optionLabels = {
+          swap: t('scoreboard.dialogs.assignToOtherTeam', 'Assign to other team'),
+          replay: t('scoreboard.dialogs.replayTheRally', 'Replay the rally'),
+          record_replay: t('scoreboard.dialogs.recordReplay', 'Rally replayed: no point')
+        }
 
         // Helper to render team with A/B badge
         const TeamWithLabel = ({ team, name }) => (
@@ -24522,10 +24708,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         return (
           <Modal
-            title={t('scoreboard.modals.decisionChange')}
+            title={replayRallyConfirm.options ? t('scoreboard.modals.decisionReplay') : t('scoreboard.modals.decisionChange')}
             open={true}
             onClose={cancelReplayRally}
-            width={500}
+            width={options.length > 2 ? 580 : 500}
           >
             <div style={{ padding: '4px 0' }}>
               <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
@@ -24535,7 +24721,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {/* Row 19: what came after the point is taken back first, in
                   the order it was recorded (handleDecisionChange) */}
               {(() => {
-                const option = replayRallyConfirm.selectedOption || 'swap'
+                // nothing chosen yet (continuous play): nothing listed
+                const option = selectedOption
+                if (!option) return null
                 const chosen = replayRallyConfirm.takeBackByOption?.[option]
                 const list = chosen?.requests ?? replayRallyConfirm.takeBack ?? []
                 if (list.length === 0) return null
@@ -24576,73 +24764,61 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )
               })()}
 
-              {/* Horizontal radio buttons */}
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                {/* Option 1: Swap */}
-                <div
-                  onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'swap' })}
-                  style={{
-                    flex: 1,
-                    padding: '12px 16px',
-                    background: selectedOption === 'swap' ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
-                    border: selectedOption === 'swap' ? '2px solid #eab308' : '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px'
-                  }}
-                >
-                  <div style={{
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '50%',
-                    border: selectedOption === 'swap' ? '5px solid #eab308' : '2px solid var(--border)',
-                    background: selectedOption === 'swap' ? '#eab308' : 'transparent',
-                    flexShrink: 0
-                  }} />
-                  <span style={{ fontSize: '13px', fontWeight: 600 }}>{t('scoreboard.dialogs.assignToOtherTeam', 'Assign to other team')}</span>
-                </div>
-
-                {/* Option 2: Replay */}
-                <div
-                  onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'replay' })}
-                  style={{
-                    flex: 1,
-                    padding: '12px 16px',
-                    background: selectedOption === 'replay' ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
-                    border: selectedOption === 'replay' ? '2px solid #eab308' : '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px'
-                  }}
-                >
-                  <div style={{
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '50%',
-                    border: selectedOption === 'replay' ? '5px solid #eab308' : '2px solid var(--border)',
-                    background: selectedOption === 'replay' ? '#eab308' : 'transparent',
-                    flexShrink: 0
-                  }} />
-                  <span style={{ fontSize: '13px', fontWeight: 600 }}>{t('scoreboard.dialogs.replayTheRally', 'Replay the rally')}</span>
-                </div>
+              {/* Horizontal radio buttons (continuous play: three, none
+                  chosen until one is tapped) */}
+              <div role="radiogroup" aria-label={replayRallyConfirm.options ? t('scoreboard.modals.decisionReplay') : t('scoreboard.modals.decisionChange')} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                {options.map(option => (
+                  <div
+                    key={option}
+                    role="radio"
+                    aria-checked={selectedOption === option}
+                    tabIndex={0}
+                    data-decision-option={option}
+                    onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: option })}
+                    onKeyDown={(e) => {
+                      if (e.key !== ' ') return
+                      e.preventDefault()
+                      setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: option })
+                    }}
+                    style={{
+                      flex: '1 1 0',
+                      minWidth: 0,
+                      padding: '12px 14px',
+                      background: selectedOption === option ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
+                      border: selectedOption === option ? '2px solid #eab308' : '1px solid var(--border)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px'
+                    }}
+                  >
+                    <div style={{
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '50%',
+                      border: selectedOption === option ? '5px solid #eab308' : '2px solid var(--border)',
+                      background: selectedOption === option ? '#eab308' : 'transparent',
+                      flexShrink: 0
+                    }} />
+                    <span style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.25 }}>{optionLabels[option]}</span>
+                  </div>
+                ))}
               </div>
 
-              {/* Expanded details panel */}
-              <div style={{
+              {/* Expanded details panel: what the chosen option leaves */}
+              <div data-testid="decision-preview" style={{
                 padding: '16px',
                 marginBottom: '20px',
                 background: 'rgba(234, 179, 8, 0.1)',
                 border: '1px solid rgba(234, 179, 8, 0.3)',
                 borderRadius: '8px'
               }}>
+                {!outcome ? (
+                  <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)', textAlign: 'center' }}>{t('scoreboard.dialogs.chooseDecision', 'Choose what the referee decided.')}</p>
+                ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', fontSize: '13px', color: 'var(--muted)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ minWidth: '55px', textAlign: 'right' }}>{t('scoreboard.dialogs.current', 'Current:')}</span>
@@ -24657,20 +24833,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <div style={{ background: 'rgba(34, 197, 94, 0.15)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(34, 197, 94, 0.4)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ ...teamBoxStyle(homeColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
                       <strong style={{ color: '#22c55e' }}>
-                        {homeTeamName} {selectedOption === 'swap' ? swapHomePoints : replayHomePoints} : {selectedOption === 'swap' ? swapAwayPoints : replayAwayPoints} {awayTeamName}
+                        {homeTeamName} {outcome.home} : {outcome.away} {awayTeamName}
                       </strong>
                       <span style={{ ...teamBoxStyle(awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div data-testid="decision-preview-serve" data-serve={outcome.serve} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ minWidth: '55px', textAlign: 'right' }}>{t('scoreboard.dialogs.serve', 'Serve:')}</span>
                     <VolleyballIcon size={16} />
-                    <span style={{ ...teamBoxStyle((selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeColor : awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
-                      {(selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeLabel : awayLabel}
+                    <span style={{ ...teamBoxStyle(outcome.serve === 'home' ? homeColor : awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
+                      {outcome.serve === 'home' ? homeLabel : awayLabel}
                     </span>
-                    <strong>{(selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeTeamName : awayTeamName}</strong>
+                    <strong>{outcome.serve === 'home' ? homeTeamName : awayTeamName}</strong>
                   </div>
                 </div>
+                )}
               </div>
 
               {/* Buttons */}
@@ -24678,6 +24855,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <SbButton
                   className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
                   onClick={handleDecisionChange}
+                  disabled={!selectedOption}
                 >
                   {t('common.confirm')}
                 </SbButton>

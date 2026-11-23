@@ -6,6 +6,8 @@
  * point for one rally or start a rally twice.
  */
 
+import { sanctionedPlayerNumber } from './sanctions'
+
 const timeOf = (e) => (typeof e.ts === 'number' ? e.ts : new Date(e.ts).getTime())
 
 // Recorded beside the play, not part of it: a remark and a bench member's
@@ -86,4 +88,57 @@ export function currentSetOf(sets) {
   }
   const ordered = [...byIndex.values()].sort((a, b) => a.index - b.index)
   return ordered.find(s => !s.finished) || ordered[ordered.length - 1] || null
+}
+
+// Event order of the log: seq, then the time when seq is missing
+const bySeq = (a, b) => ((a.seq || 0) - (b.seq || 0)) || (timeOf(a) - timeOf(b))
+
+/**
+ * A player on court who is expelled in this set or disqualified (FIVB
+ * 21.3.2-21.3.3): no rally starts until his substitution is recorded. One
+ * rule for Start rally and, in continuous play, for the point that opens
+ * the rally itself. The team's latest line-up of the set is the court.
+ * @param {Array} events the match's events (sanctions of earlier sets count: a disqualification)
+ * @param {number} setIndex
+ * @returns {null | { team: 'home'|'away', number: any }}
+ */
+export function sentOffOnCourt(events, setIndex) {
+  if (!events || setIndex == null) return null
+  for (const team of ['home', 'away']) {
+    const lineup = events
+      .filter(e => e && e.type === 'lineup' && e.payload?.team === team && e.setIndex === setIndex)
+      .sort(bySeq)
+      .pop()?.payload?.lineup
+    const number = Object.values(lineup || {}).map(v => (v && typeof v === 'object' ? v.number : v)).find(n => n != null && events.some(e =>
+      e && e.type === 'sanction' && e.payload?.team === team &&
+      String(sanctionedPlayerNumber(e.payload)) === String(n) &&
+      (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === setIndex))))
+    if (number != null) return { team, number }
+  }
+  return null
+}
+
+// A rally ends with a point (not a penalty's: one given during a rally
+// leaves it in play) or a replay
+const endsRally = (e) => (e.type === 'point' && e.payload?.penaltySeq == null) || e.type === 'replay'
+
+/**
+ * The rally_start that opened the rally a point ended (Undo takes the two
+ * back together): the set's newest rally_start before the point, unless a
+ * rally ended between them. Without that bound, a point with no rally_start
+ * of its own (a set scored on another device, whose rally starts stayed
+ * there) took an older rally's start with it. In continuous play the point
+ * writes its rally_start right before itself.
+ * @param {Array} events the match's events
+ * @param {object} point the point event
+ * @returns {object|null}
+ */
+export function rallyStartOfPoint(events, point) {
+  if (!point || point.type !== 'point') return null
+  const base = Math.floor(point.seq || 0)
+  const inSet = (events || []).filter(e => e && e !== point && e.setIndex === point.setIndex && Math.floor(e.seq || 0) < base)
+  const start = inSet.filter(e => e.type === 'rally_start').sort(bySeq).pop() || null
+  if (!start) return null
+  const ended = inSet.some(e => endsRally(e) && bySeq(e, start) > 0)
+  return ended ? null : start
 }

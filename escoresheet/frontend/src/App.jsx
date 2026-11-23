@@ -35,6 +35,7 @@ import ClosedOnServerModal from './components/ClosedOnServerModal'
 import SelfCheckNotice from './components/SelfCheckNotice'
 import DeviceCheckCard from './components/DeviceCheckCard'
 import { homeQuietForCheck, useAutoDeviceCheck } from './utils/deviceCheck'
+import { readRallyMode } from './utils/rallyMode'
 import { logState } from './utils/comprehensiveLogger'
 import { isKnownClosedOnServer, isStaleClosedCopy, wasClosedOnServer } from './utils/matchReopen'
 import { readHomeMatchStatus } from './utils/homeMatchStatus'
@@ -407,6 +408,8 @@ export default function App() {
     return saved || 'auto' // default to auto-detect
   })
   const [detectedDisplayMode, setDetectedDisplayMode] = useState('desktop') // What mode was auto-detected
+  // Options › Point entry: rallies or continuous play, this device (utils/rallyMode)
+  const [rallyMode, setRallyMode] = useState(() => readRallyMode())
   const [checkAccidentalRallyStart, setCheckAccidentalRallyStart] = useState(() => {
     const saved = localStorage.getItem('checkAccidentalRallyStart')
     return saved === 'true' // default false
@@ -4729,6 +4732,8 @@ export default function App() {
               onClose={() => setHomeOptionsModal(false)}
               onOpenConnectionSetup={() => setConnectionSetupModal(true)}
               matchOptions={{
+                rallyMode,
+                setRallyMode,
                 checkAccidentalRallyStart,
                 setCheckAccidentalRallyStart,
                 accidentalRallyStartDuration,

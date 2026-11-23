@@ -95,6 +95,17 @@ describe('isReplayPending (row 7)', () => {
     expect(isReplayPending(events, 1)).toBe(true)
   })
 
+  it('continuous play: a replay recorded between rallies (no rally_start) is pending until the next point', () => {
+    const events = [point('home'), ev('replay', { reason: 'continuous' })]
+    expect(isReplayPending(events, 1)).toBe(true)
+    expect(timeoutRequestIssues(events, 1, 'away').map(i => i.reason)).toEqual(['replay_pending'])
+    expect(substitutionRequestIssues(events, 1, 'away', { playerOut: 4, playerIn: 9 }).map(i => i.reason)).toEqual(['replay_pending'])
+    // the next point writes its rally_start right before it
+    const after = [...events, ev('rally_start', { continuous: true }), point('away')]
+    expect(isReplayPending(after, 1)).toBe(false)
+    expect(timeoutRequestIssues(after, 1, 'away')).toEqual([])
+  })
+
   it('a replay at 0:0 before any point is pending', () => {
     expect(isReplayPending([ev('set_start'), ev('rally_start'), ev('replay')], 1)).toBe(true)
   })

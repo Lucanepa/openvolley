@@ -19,6 +19,7 @@ import ActivityLogModal from '../ActivityLogModal'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
 import LookOptions from './LookOptions'
+import RallyModeOption from './RallyModeOption'
 import { exportNativeFilesToDocuments } from '../../utils/nativeBackup'
 import { configuredRecoveryKey } from '../../utils/backupCrypto/recovery'
 import { useToolMode } from '../../utils/toolMode'
@@ -402,6 +403,8 @@ export default function HomeOptionsModal({
   if (!open) return null
 
   const {
+    rallyMode,
+    setRallyMode,
     checkAccidentalRallyStart,
     setCheckAccidentalRallyStart,
     accidentalRallyStartDuration,
@@ -515,6 +518,11 @@ export default function HomeOptionsModal({
           </Row>
         </Section>
         <Section title={null}>
+          {/* Rallies or continuous play (this device): continuous play has
+              no Start rally and its point is held, so the two accidental-tap
+              checks are hidden there (their values are kept) */}
+          <RallyModeOption kit={{ Row, InfoDot }} value={rallyMode} onChange={setRallyMode} />
+          {rallyMode !== 'continuous' && (<>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
@@ -586,6 +594,7 @@ export default function HomeOptionsModal({
               }}
             />
           </Row>
+          </>)}
 
           <Row style={{ marginBottom: '12px' }}>
             <div className="flex items-center gap-1.5">

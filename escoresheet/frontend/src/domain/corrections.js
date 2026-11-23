@@ -14,6 +14,7 @@
  *   payload.createdSubEventIds  ids of the new team's sub-events the swap wrote
  */
 import { scoreFromPointEvents } from './rules'
+import { rallyStartOfPoint } from './rally'
 import { parseExtId, setExtId } from '../utils/syncIds'
 
 /**
@@ -90,7 +91,8 @@ export function planDecisionChangeReversal(decisionEvent, events) {
  * @param {Array} events all events of the match
  * @param {object|null} pointEvent the point; null takes the newest point of opts.setIndex
  * @param {{setIndex?:number, includeRallyStart?:boolean}} [opts]
- *   includeRallyStart: also remove the rally_start that opened that rally (Undo)
+ *   includeRallyStart: also remove the rally_start that opened that rally (Undo;
+ *   domain/rally rallyStartOfPoint: none when another rally ended since)
  * @returns {null | {pointEventId:any, setIndex:number, deleteEventIds:Array,
  *   score:{homePoints:number, awayPoints:number}}}
  */
@@ -106,9 +108,8 @@ export function planPointRemoval(events, pointEvent, { setIndex, includeRallySta
   const rows = all.filter(e => e.id === point.id || (pointSeq > 0 && Math.floor(e.seq || 0) === baseSeq))
 
   if (includeRallyStart) {
-    const rallyStart = all
-      .filter(e => e.type === 'rally_start' && e.setIndex === point.setIndex && (e.seq || 0) < baseSeq)
-      .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+    // its own rally's start only (domain/rally): an older rally's stays
+    const rallyStart = rallyStartOfPoint(all, point)
     if (rallyStart && !rows.includes(rallyStart)) rows.push(rallyStart)
   }
 

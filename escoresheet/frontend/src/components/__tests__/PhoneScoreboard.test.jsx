@@ -410,4 +410,46 @@ describe('Scoreboard: the phone layout', () => {
     mount(matchId)
     await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
   })
+
+  // Continuous play (Options › Point entry, owner 22.11.2026): the point
+  // squares between rallies too, held about 2 s; one "Decision change /
+  // Replay" cell (two columns) for the replay and decision cells
+  it('continuous play: the point squares between rallies, held; one Decision change / Replay cell', async () => {
+    localStorage.setItem('rallyMode', 'continuous')
+    try {
+      setViewport(390, 844)
+      const matchId = await setUpMatch()
+      mount(matchId)
+      await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+      const view = within(phone())
+      const pointA = () => view.getByRole('button', { name: 'Point A, hold for 2 seconds' })
+      await waitFor(() => expect(pointA()).toBeTruthy())
+      expect(view.queryByRole('button', { name: 'Start rally' })).toBeNull()
+      expect(pointA().classList.contains('phone-square')).toBe(true)
+      expect(pointA().classList.contains('hold-hint')).toBe(true)
+      expect(pointA().textContent).toBe('Point AHold')
+      expect(view.queryByTestId('phone-action-replay')).toBeNull()
+      expect(view.queryByTestId('phone-action-decision')).toBeNull()
+      const cell = view.getByTestId('phone-action-decision-replay')
+      expect(cell.textContent).toBe('Decision change / Replay')
+      expect(cell.style.gridColumn).toBe('span 2')
+      expect(cell.disabled).toBe(false)
+      await settle()
+      const at = pointA().getBoundingClientRect()
+      const where = { pointerId: 1, pointerType: 'touch', button: 0, clientX: at.left + 5, clientY: at.top + 5 }
+      fireEvent.pointerDown(pointA(), where)
+      await new Promise(r => setTimeout(r, 2200))
+      fireEvent.pointerUp(pointA(), where)
+      await waitFor(async () => expect((await ofType('point')).length).toBe(3))
+      expect((await ofType('point')).at(-1).payload.team).toBe('home')
+      expect((await ofType('rally_start')).at(-1).payload).toEqual({ continuous: true })
+      await waitFor(() => expect(view.getByTestId('phone-score-left').textContent).toBe('2'))
+      // the decision cell opens the three-option dialog
+      await settle()
+      fireEvent.click(view.getByTestId('phone-action-decision-replay'))
+      await waitFor(() => expect(document.querySelectorAll('[data-decision-option]')).toHaveLength(3))
+    } finally {
+      localStorage.removeItem('rallyMode')
+    }
+  }, 60000)
 })
