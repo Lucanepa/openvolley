@@ -7,7 +7,7 @@ import '../../../i18n'
 import { SubstitutionPicker } from '../SubstitutionPicker'
 import { SUB_DIALOG_COURT, subDialogModel } from '../subDialogModel'
 
-// Team B, set 1: #6 -> #10 and #4 -> #11 made, libero #12 in for #3 at I
+// Team B, set 1: #6 -> #10 and #4 -> #11 recorded, libero #12 in for #3 at I
 const COURT = [
   { position: 'I', number: '12', isLibero: true },
   { position: 'II', number: '10' },
@@ -33,7 +33,7 @@ function renderPicker(props = {}) {
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   const onInjury = vi.fn()
-  render(<SubstitutionPicker side="right" court={COURT} bench={BENCH} legalIns={LEGAL} made={2} max={6} madeList={[]} captainNumbers={['1']} onConfirm={onConfirm} onCancel={onCancel} onInjury={onInjury} {...props} />)
+  render(<SubstitutionPicker side="right" court={COURT} bench={BENCH} legalIns={LEGAL} made={2} max={6} recordedList={[]} captainNumbers={['1']} onConfirm={onConfirm} onCancel={onCancel} onInjury={onInjury} {...props} />)
   return { onConfirm, onCancel, onInjury }
 }
 
@@ -130,7 +130,7 @@ describe('SubstitutionPicker', () => {
     ])
   })
 
-  it('5 made: one pair, then the bench says 6 of 6 and the court locks', () => {
+  it('5 recorded: one pair, then the bench says 6 of 6 and the court locks', () => {
     renderPicker({ made: 5 })
     fireEvent.click(tid('sub-dialog-in-8'))
     fireEvent.click(tid('sub-dialog-out-7'))
@@ -162,11 +162,11 @@ describe('SubstitutionPicker', () => {
     expect(tid('sub-dialog-injury').disabled).toBe(false)
   })
 
-  it('Made: the substitutions of the set', () => {
-    renderPicker({ madeList: [{ index: 1, score: '4:9', position: 'II', playerOut: 6, playerIn: 10 }, { index: 2, score: '7:13', position: 'IV', playerOut: 4, playerIn: 11, exceptional: true }] })
-    fireEvent.click(screen.getByRole('button', { name: 'Made (2)' }))
-    expect(tid('sub-dialog-made').textContent).toMatch(/Substitution 1.*4:9.*Substitution 2/)
-    expect(tid('sub-dialog-made').querySelectorAll('[data-sub-exceptional]')).toHaveLength(1)
+  it('Recorded: the substitutions of the set', () => {
+    renderPicker({ recordedList: [{ index: 1, score: '4:9', position: 'II', playerOut: 6, playerIn: 10 }, { index: 2, score: '7:13', position: 'IV', playerOut: 4, playerIn: 11, exceptional: true }] })
+    fireEvent.click(screen.getByRole('button', { name: 'Recorded (2)' }))
+    expect(tid('sub-dialog-recorded').textContent).toMatch(/Substitution 1.*4:9.*Substitution 2/)
+    expect(tid('sub-dialog-recorded').querySelectorAll('[data-sub-exceptional]')).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: 'New' }))
     expect(tid('sub-dialog-step')).toBeTruthy()
   })

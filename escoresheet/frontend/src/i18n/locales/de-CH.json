@@ -1029,7 +1029,6 @@
       "set_interval": "Satzpause: kei Timeout (es würd im nächschte Satz zelle)."
     },
     "requestWarning": {
-      "notAllowed": "Nöd erlaubt",
       "illegalShort": {
         "libero": "Libero",
         "sent_off": "Gsperrt",
@@ -1171,10 +1170,6 @@
       "remarks": "Bemerkige",
       "scoresheet": "eScore\u00adsheet",
       "subTitle": "Wächsel {{team}}",
-      "subOut": "Spieler use (uf em Fäld)",
-      "subIn": "Spieler ine für {{number}}",
-      "subHint": "Verletzig oder usserordentliche Wächsel: Spieler uf em Fäld aatippe.",
-      "noSubstitutes": "Für dä Spieler gits kei Ersatz.",
       "sanctionPeople": "Spieler oder Offizielle",
       "noLibero": "Kei Libero",
       "onCourt": "uf em Fäld",
@@ -1197,7 +1192,7 @@
     "subDialog": {
       "view": "Aasicht",
       "tabNew": "Neu",
-      "tabMade": "Gmacht ({{n}})",
+      "tabRecorded": "Erfasst ({{n}})",
       "count": "{{made}} vo {{max}}",
       "toConfirm": "{{n}} z bestätige",
       "stepIn": "Tipp aa, wer inechunnt",
@@ -1211,7 +1206,7 @@
       "fullWithMore": "{{max}} vo {{max}} mit de Wächsel unde.",
       "fullNote": "{{max}} vo {{max}}: kei reguläre Wächsel meh i dem Satz. Für en verletzte oder usgschlossene/disqualifizierte Spieler: «Verletzig / usserordentlich».",
       "pair": "<in>#{{in}} ine</in> für <out>#{{out}} use</out>",
-      "captainAfter": "nach em Bestätige: Spiilcaptain wähle",
+      "captainAfter": "nach «Bestätige»: Spiilcaptain wähle",
       "remove": "Entferne",
       "another": "Für en wiitere Wächsel: tipp de nächscht Spieler aa, wo inechunnt.",
       "injury": "Verletzig / usserordentlich",

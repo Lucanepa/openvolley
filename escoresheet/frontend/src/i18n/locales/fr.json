@@ -1028,7 +1028,6 @@
       "set_interval": "Pause entre les sets : pas de temps mort (il compterait dans le set suivant)."
     },
     "requestWarning": {
-      "notAllowed": "Non autorisé",
       "illegalShort": {
         "libero": "Libéro",
         "sent_off": "Exclu",
@@ -1170,10 +1169,6 @@
       "remarks": "Remarques",
       "scoresheet": "eScore\u00adsheet",
       "subTitle": "Remplacement {{team}}",
-      "subOut": "Joueur sortant (sur le terrain)",
-      "subIn": "Joueur entrant pour le {{number}}",
-      "subHint": "Blessure ou remplacement exceptionnel : touche le joueur sur le terrain.",
-      "noSubstitutes": "Aucun remplaçant disponible pour ce joueur.",
       "sanctionPeople": "Joueur ou officiel",
       "noLibero": "Aucun libéro",
       "onCourt": "sur le terrain",
@@ -1196,7 +1191,7 @@
     "subDialog": {
       "view": "Vue",
       "tabNew": "Nouveau",
-      "tabMade": "Faits ({{n}})",
+      "tabRecorded": "Enregistrés ({{n}})",
       "count": "{{made}} sur {{max}}",
       "toConfirm": "{{n}} à confirmer",
       "stepIn": "Touche qui entre",
@@ -1210,7 +1205,7 @@
       "fullWithMore": "{{max}} sur {{max}} avec ceux ci-dessous.",
       "fullNote": "{{max}} sur {{max}} : plus de remplacement régulier dans ce set. Pour un joueur blessé ou expulsé/disqualifié, utilise « Blessure / exceptionnel ».",
       "pair": "<in>#{{in}} entre</in> pour <out>#{{out}} sort</out>",
-      "captainAfter": "après Confirmer : choisis le capitaine de jeu",
+      "captainAfter": "après « Confirmer » : choisis le capitaine de jeu",
       "remove": "Retirer",
       "another": "Pour un autre remplacement : touche le prochain joueur qui entre.",
       "injury": "Blessure / exceptionnel",

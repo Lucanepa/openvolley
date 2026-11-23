@@ -4510,7 +4510,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // The SUB box (owner 23.11.2026): the substitution dialog between rallies
   // (while a time-out runs and in the set interval too) once the team's
   // line-up is in and shown. Otherwise (a rally in play) it opens the list of
-  // the substitutions made, as before, when there are any.
+  // the substitutions recorded, as before, when there are any.
   const subBoxOpensDialog = (side) => rallyStatus === 'idle' && !!data?.set &&
     !!(side === 'left' ? leftTeamLineupSet : rightTeamLineupSet) && !sideCovered(side)
   // ... and it closes, nothing recorded, when that no longer holds (another
@@ -14921,6 +14921,81 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     stopMatch: () => setStopMatchModal('select')
   })
 
+  // The substitution picker's props for the team on `side` (owner 23.11.2026;
+  // components/scoreboard/SubstitutionPicker): the tablet's dialog and the
+  // phone's sheet alike. What may be chosen is the court menu's own list for
+  // each player on court (getAvailableSubstitutes); Confirm records the pairs
+  // through the substitution path (the queue, startSubQueue), "Injury /
+  // exceptional" runs the court menu's injury flow on the player tapped.
+  // Built only while the picker is shown. `close`: the caller's.
+  const subPickerFor = (side, close) => {
+    const teamKey = mapSideToTeamKey(side)
+    const team = side === 'left' ? leftTeam : rightTeam
+    const bench = side === 'left' ? leftTeamBench : rightTeamBench
+    const court = (team.playersOnCourt || []).map(pl => ({
+      position: pl.position,
+      number: pl.isPlaceholder ? '' : String(pl.number),
+      isLibero: !!pl.isLibero,
+      isCaptain: !pl.isPlaceholder && !!(pl.isCaptain || pl.isCourtCaptain)
+    }))
+    // a replay pending: no regular substitution, the injury one stays
+    const blockReason = requestBlockFor(teamKey, 'substitution')
+    const legalIns = {}
+    if (!blockReason) {
+      for (const c of court) {
+        if (c.number === '' || c.isLibero) continue
+        legalIns[c.number] = getAvailableSubstitutes(teamKey, c.number).map(p => String(p.number))
+      }
+    }
+    // a starter substituted out (and not back yet): his substitute's number, as the bench chip shows it
+    const history = getSubstitutionHistory(teamKey)
+    const benchList = (bench.benchPlayers || [])
+      .filter(p => !p.libero && p.number !== undefined && p.number !== null && p.number !== '')
+      .map(p => {
+        const out = [...history].reverse().find(s => String(s.payload?.playerOut) === String(p.number))
+        const back = out && history.some(s => String(s.payload?.playerIn) === String(p.number) && compareBySeq(s, out) > 0)
+        return { number: String(p.number), isCaptain: !!(p.isCaptain || p.captain), cameOutFor: out && !back ? out.payload?.playerIn ?? null : null }
+      })
+      .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
+    return {
+      teamLabel: side === 'left' ? teamALabel : teamBLabel,
+      teamName: team.name,
+      teamColor: team.color,
+      side,
+      court,
+      bench: benchList,
+      legalIns,
+      made: getSubstitutionsUsed(side),
+      max: MAX_SUBSTITUTIONS_PER_SET,
+      blockReason,
+      recordedList: getSubstitutionDetails(side),
+      captainNumbers: court.filter(c => c.isCaptain).map(c => c.number),
+      liberoPaint: getPlayerCircleColors(side, true),
+      onCancel: close,
+      onConfirm: (pairs) => {
+        close()
+        startSubQueue(teamKey, pairs)
+      },
+      onInjury: ({ position, number }) => {
+        close()
+        // as the court menu's "Injury" on that player (centred on a phone)
+        const element = document.querySelector(`.court-player[data-team="${teamKey}"][data-player-number="${number}"]`) ||
+          document.querySelector(`[data-testid="phone-court-${side}"] [data-court-cell="${position}"]`)
+        const rect = element?.getBoundingClientRect?.()
+        const offset = rect ? (side === 'right' ? -(rect.width / 2 + 30) : rect.width / 2 + 30) : 0
+        openInjuryFor({
+          team: teamKey,
+          position,
+          playerNumber: number,
+          element,
+          x: rect ? rect.left + rect.width / 2 + offset : undefined,
+          y: rect ? rect.top + rect.height / 2 : undefined,
+          side
+        })
+      }
+    }
+  }
+
   // The phone layout's props (PhoneScoreboard): what this screen already
   // computes, per court side, and its own handlers. Built only when shown.
   const buildPhoneView = () => {
@@ -15087,43 +15162,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         openSignatures: (side) => setPreMatchSignTeam(mapSideToTeamKey(side)),
         gameCaptain: (side) => setCaptainOnCourtModal({ team: mapSideToTeamKey(side) }),
         playerClick: handlePlayerClick,
-        // The player who came in with no completed rally since is offered
-        // too: picking him opens the request warning (pickSubOut)
-        canSubstituteOut: (teamKey, number) => canPlayerBeSubstituted(teamKey, number) ||
-          !!(data?.set && entryWithoutCompletedRally(data.events, data.set.index, teamKey, number)),
-        pickSubOut: (teamKey, out) => {
-          if (!data?.set) return true
-          const issues = substitutionRequestIssues(data.events, data.set.index, teamKey, { playerOut: out.number })
-          const entry = issues.find(i => i.reason === 'no_rally_since_entry')
-          if (!entry) return true
-          openRequestWarning('substitution', { team: teamKey, position: out.position, playerOut: out.number, playerIn: entry.playerIn }, issues, [])
-          return false
-        },
-        // SUB at 6: the 7th substitution opens the request warning (no sheet)
-        requestSubstitution: (side) => {
-          const teamKey = mapSideToTeamKey(side)
-          if (!data?.set || countRegularSubstitutions(data.events, teamKey, data.set.index) < MAX_SUBSTITUTIONS_PER_SET) return true
-          openRequestWarning('substitution', { team: teamKey }, substitutionRequestIssues(data.events, data.set.index, teamKey), [])
-          return false
-        },
-        substituteCandidates: (teamKey, number) => getAvailableSubstitutes(teamKey, number),
-        // Bench players who may not come in, with why; a tap: the request warning
-        illegalCandidates: (teamKey, number) => (data?.match?.easy === true ? [] : getIllegalSubstitutes(teamKey, number)),
-        illegalSubstitute: (teamKey, out, candidate) => openIllegalSubstitution(teamKey, out.position, out.number, candidate),
-        // Easy match: may a number that is no player yet come in, and is the
-        // typed number fine (domain/easyMatch.js)
-        newSubstituteAllowed: (teamKey, number) => data?.match?.easy === true && canPlayerBeSubstituted(teamKey, number) && newPlayerMayEnter({
-          substitutions: getSubstitutionHistory(teamKey),
-          playerOut: number,
-          regularSubstitutionsUsed: data?.set ? countRegularSubstitutions(data.events, teamKey, data.set.index) : 0
-        }),
-        checkNewSubstitute: (teamKey, value) => newPlayerError({
-          value,
-          players: (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || [],
-          onCourt: getTeamLineupState(teamKey).playersOnCourt || []
-        }),
-        // The court action menu's substitution: its confirmation dialog
-        substitute: ({ teamKey, position, playerOut, playerIn, newPlayer = false }) => setSubstitutionConfirm({ team: teamKey, position, playerOut, playerIn, ...(newPlayer ? { newPlayer: true } : {}) }),
+        // SUB: the substitution picker, the tablet dialog's (subPickerFor);
+        // `close` closes the phone's sheet
+        substitutionPicker: (side, close) => subPickerFor(side, close),
         improperRequest: handleImproperRequest,
         delayWarning: handleDelayWarning,
         delayPenalty: handleDelayPenalty,
@@ -15958,7 +15999,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 data-testid="sub-box-left"
                 onClick={() => {
                   // Between rallies: the substitution dialog (subBoxOpensDialog);
-                  // in a rally: the list of those made, as before
+                  // in a rally: the list of those recorded, as before
                   if (subBoxOpensDialog('left')) {
                     setSubDialog({ side: 'left' })
                     return
@@ -19443,7 +19484,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 data-testid="sub-box-right"
                 onClick={() => {
                   // Between rallies: the substitution dialog (subBoxOpensDialog);
-                  // in a rally: the list of those made, as before
+                  // in a rally: the list of those recorded, as before
                   if (subBoxOpensDialog('right')) {
                     setSubDialog({ side: 'right' })
                     return
@@ -24111,81 +24152,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       )}
 
       {/* The SUB box's substitution dialog (owner 23.11.2026): who comes in,
-          then who goes out, several pairs, one Confirm. What may be chosen
-          is the court menu's own list for each player on court
-          (getAvailableSubstitutes); Confirm records the pairs through the
-          substitution path (the queue above), Cancel nothing. */}
-      {subDialog && data?.set && (() => {
-        const side = subDialog.side
-        const teamKey = mapSideToTeamKey(side)
-        const team = side === 'left' ? leftTeam : rightTeam
-        const bench = side === 'left' ? leftTeamBench : rightTeamBench
-        const court = (team.playersOnCourt || []).map(pl => ({
-          position: pl.position,
-          number: pl.isPlaceholder ? '' : String(pl.number),
-          isLibero: !!pl.isLibero,
-          isCaptain: !pl.isPlaceholder && !!(pl.isCaptain || pl.isCourtCaptain)
-        }))
-        const made = getSubstitutionsUsed(side)
-        // a replay pending: no regular substitution, the injury one stays
-        const blockReason = requestBlockFor(teamKey, 'substitution')
-        const legalIns = {}
-        if (!blockReason) {
-          for (const c of court) {
-            if (c.number === '' || c.isLibero) continue
-            legalIns[c.number] = getAvailableSubstitutes(teamKey, c.number).map(p => String(p.number))
-          }
-        }
-        // a starter substituted out (and not back yet): his substitute's number, as the bench chip shows it
-        const history = getSubstitutionHistory(teamKey)
-        const benchList = (bench.benchPlayers || [])
-          .filter(p => !p.libero && p.number !== undefined && p.number !== null && p.number !== '')
-          .map(p => {
-            const out = [...history].reverse().find(s => String(s.payload?.playerOut) === String(p.number))
-            const back = out && history.some(s => String(s.payload?.playerIn) === String(p.number) && compareBySeq(s, out) > 0)
-            return { number: String(p.number), isCaptain: !!(p.isCaptain || p.captain), cameOutFor: out && !back ? out.payload?.playerIn ?? null : null }
-          })
-          .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
-        const close = () => setSubDialog(null)
-        return (
-          <SubstitutionDialog
-            teamLabel={side === 'left' ? teamALabel : teamBLabel}
-            teamName={team.name}
-            teamColor={team.color}
-            side={side}
-            court={court}
-            bench={benchList}
-            legalIns={legalIns}
-            made={made}
-            max={MAX_SUBSTITUTIONS_PER_SET}
-            blockReason={blockReason}
-            madeList={getSubstitutionDetails(side)}
-            captainNumbers={court.filter(c => c.isCaptain).map(c => c.number)}
-            liberoPaint={getPlayerCircleColors(side, true)}
-            onCancel={close}
-            onConfirm={(pairs) => {
-              close()
-              startSubQueue(teamKey, pairs)
-            }}
-            onInjury={({ position, number }) => {
-              close()
-              // as the court menu's "Injury" on that player
-              const element = document.querySelector(`.court-player[data-team="${teamKey}"][data-player-number="${number}"]`)
-              const rect = element?.getBoundingClientRect?.()
-              const offset = rect ? (side === 'right' ? -(rect.width / 2 + 30) : rect.width / 2 + 30) : 0
-              openInjuryFor({
-                team: teamKey,
-                position,
-                playerNumber: number,
-                element,
-                x: rect ? rect.left + rect.width / 2 + offset : undefined,
-                y: rect ? rect.top + rect.height / 2 : undefined,
-                side
-              })
-            }}
-          />
-        )
-      })()}
+          then who goes out, several pairs, one Confirm (subPickerFor) */}
+      {subDialog && data?.set && <SubstitutionDialog {...subPickerFor(subDialog.side, () => setSubDialog(null))} />}
 
       {requestWarning && (() => {
         // The request warning (domain/interruptionRequests.js): its first
@@ -26256,7 +26224,7 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
           </div>
         ) : (
           <div>
-            {/* the SUB box dialog's "Made" view shows the same list */}
+            {/* the SUB box dialog's "Recorded" view shows the same list */}
             <SubstitutionList details={substitutionDetails} />
           </div>
         )}

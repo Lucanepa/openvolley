@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next'
 
 /**
- * A team's substitutions of the set, as made: number, score, position, out
+ * A team's substitutions of the set, as recorded: number, score, position, out
  * and in, the exceptional ones marked. The SUB box's list (the details
- * dialog while a rally is in play, the substitution dialog's "Made" view).
+ * dialog while a rally is in play, the substitution dialog's "Recorded" view).
  * A VIEW only (Scoreboard getSubstitutionDetails).
  * @param {{ details: Array<{index:number, score:string, position:string, playerOut:any, playerIn:any, exceptional?:boolean}>|null }} props
  */
@@ -21,7 +21,7 @@ export default function SubstitutionList({ details }) {
       {details.map((detail, index) => (
         <div
           key={index}
-          data-sub-made={detail.index}
+          data-sub-recorded={detail.index}
           style={{
             padding: '12px',
             background: 'var(--panel-2)',

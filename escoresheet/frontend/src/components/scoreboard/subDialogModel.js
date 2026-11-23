@@ -6,7 +6,7 @@
  * The rules are NOT here. `legalIns` is the Scoreboard's own list for each
  * player on court (getAvailableSubstitutes, the court menu's and drag and
  * drop's: the libero, the forced starter-substitute pairs, completed
- * substitutions, a player with no rally since he came in, the 6 already made,
+ * substitutions, a player with no rally since he came in, the 6 already recorded,
  * FIVB 15.5-15.8, 19.3.1.3). This only adds what a dialog of several pairs
  * needs on top: a player is in one pair at most, and the set never goes past
  * the 6 (`max`) with the pairs that wait.

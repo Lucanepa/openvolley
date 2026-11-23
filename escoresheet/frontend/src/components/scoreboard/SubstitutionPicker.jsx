@@ -104,7 +104,10 @@ const Hint = ({ children, testId, className = 'self-center' }) => (
  *
  * A VIEW: the rules come in `legalIns` (the Scoreboard's
  * getAvailableSubstitutes per court player) and the Scoreboard records the
- * pairs (onConfirm), each through its substitution confirm path.
+ * pairs (onConfirm), each through its substitution confirm path. The props
+ * come from the Scoreboard's subPickerFor: the tablet shows it in its dialog
+ * (SubstitutionDialog below), the phone in its SUB sheet (PhoneScoreboard);
+ * on a narrow screen the bench stacks above the court.
  *
  * @param {object} props
  * @param {'left'|'right'} props.side the team's side on the scoring screen (the court's layout)
@@ -115,14 +118,14 @@ const Hint = ({ children, testId, className = 'self-center' }) => (
  * @param {number} props.made regular substitutions recorded in the set
  * @param {number} [props.max]
  * @param {string|null} [props.blockReason] 'replay_pending': no regular substitution now
- * @param {Array} [props.madeList] the "Made" view (Scoreboard getSubstitutionDetails)
+ * @param {Array} [props.recordedList] the "Recorded" view (Scoreboard getSubstitutionDetails)
  * @param {Array<any>} [props.captainNumbers] who leaving asks for a game captain after Confirm
  * @param {{bg:string, text:string, border?:string}|null} [props.liberoPaint] the libero's shirt on the scoreboard
  * @param {(pairs: Array<{in:string, out:string, position:string}>) => void} props.onConfirm
  * @param {() => void} props.onCancel
  * @param {(player: {position:string, number:string}) => void} props.onInjury the injured player tapped
  */
-export function SubstitutionPicker({ side = 'right', court = [], bench = [], legalIns = {}, made = 0, max = 6, blockReason = null, madeList = [], captainNumbers = [], liberoPaint = null, onConfirm, onCancel, onInjury }) {
+export function SubstitutionPicker({ side = 'right', court = [], bench = [], legalIns = {}, made = 0, max = 6, blockReason = null, recordedList = [], captainNumbers = [], liberoPaint = null, onConfirm, onCancel, onInjury }) {
   const { t } = useTranslation()
   const [view, setView] = useState('new')
   const [pending, setPending] = useState([])
@@ -250,7 +253,7 @@ export function SubstitutionPicker({ side = 'right', court = [], bench = [], leg
           className="[&>button]:h-10 [&>button]:text-sm"
           options={[
             { value: 'new', label: t('scoreboard.subDialog.tabNew', 'New') },
-            { value: 'made', label: t('scoreboard.subDialog.tabMade', { n: madeList.length, defaultValue: 'Made ({{n}})' }) }
+            { value: 'recorded', label: t('scoreboard.subDialog.tabRecorded', { n: recordedList.length, defaultValue: 'Recorded ({{n}})' }) }
           ]}
         />
         <span
@@ -262,8 +265,8 @@ export function SubstitutionPicker({ side = 'right', court = [], bench = [], leg
         </span>
       </div>
 
-      {view === 'made' ? (
-        <div data-testid="sub-dialog-made"><SubstitutionList details={madeList} /></div>
+      {view === 'recorded' ? (
+        <div data-testid="sub-dialog-recorded"><SubstitutionList details={recordedList} /></div>
       ) : (
         <div className="flex flex-col gap-3">
           {model.full && !blocked && (

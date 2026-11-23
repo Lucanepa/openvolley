@@ -1029,7 +1029,6 @@
       "set_interval": "Intervallo tra i set: nessun timeout (conterebbe nel set successivo)."
     },
     "requestWarning": {
-      "notAllowed": "Non consentito",
       "illegalShort": {
         "libero": "Libero",
         "sent_off": "Escluso",
@@ -1171,10 +1170,6 @@
       "remarks": "Osservazioni",
       "scoresheet": "eScore\u00adsheet",
       "subTitle": "Sostituzione {{team}}",
-      "subOut": "Giocatore in uscita (in campo)",
-      "subIn": "Giocatore in entrata per il {{number}}",
-      "subHint": "Infortunio o sostituzione eccezionale: tocca il giocatore in campo.",
-      "noSubstitutes": "Nessun sostituto disponibile per questo giocatore.",
       "sanctionPeople": "Giocatore o ufficiale",
       "noLibero": "Nessun libero",
       "onCourt": "in campo",
@@ -1197,7 +1192,7 @@
     "subDialog": {
       "view": "Vista",
       "tabNew": "Nuova",
-      "tabMade": "Fatte ({{n}})",
+      "tabRecorded": "Registrate ({{n}})",
       "count": "{{made}} di {{max}}",
       "toConfirm": "{{n}} da confermare",
       "stepIn": "Tocca chi entra",
@@ -1211,7 +1206,7 @@
       "fullWithMore": "{{max}} di {{max}} con quelle qui sotto.",
       "fullNote": "{{max}} di {{max}}: nessuna sostituzione regolare rimasta in questo set. Per un giocatore infortunato o espulso/squalificato usa «Infortunio / eccezionale».",
       "pair": "<in>#{{in}} entra</in> per <out>#{{out}} esce</out>",
-      "captainAfter": "dopo Conferma: scegli il capitano in gioco",
+      "captainAfter": "dopo «Conferma»: scegli il capitano in gioco",
       "remove": "Rimuovi",
       "another": "Per un'altra sostituzione: tocca il prossimo giocatore che entra.",
       "injury": "Infortunio / eccezionale",

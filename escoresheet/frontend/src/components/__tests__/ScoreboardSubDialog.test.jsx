@@ -8,9 +8,9 @@
 //  - several pairs recorded with one Confirm, each with its line-up row,
 //    one request (no "second request" warning), no confirmation dialog;
 //    Cancel records nothing; the captain going out: the game captain after;
-//  - never past 6: at 5 made, one pair and the court locks;
+//  - never past 6: at 5 recorded, one pair and the court locks;
 //  - opens while a time-out runs and in the set interval (line-up in), not
-//    while a rally is in play (the list of those made, as before); a replay
+//    while a rally is in play (the list of those recorded, as before); a replay
 //    pending: no regular substitution, the note and "Injury / exceptional".
 // On the real scoring screen over the app's Dexie database (fake
 // IndexedDB), at tablet width, network off.
@@ -236,8 +236,9 @@ describe('the SUB box dialog: several pairs, one Confirm (owner 23.11.2026)', ()
     // no confirmation dialog, no request warning (back to back: one request)
     expect(confirmModal()).toBeFalsy()
     expect(document.querySelector('[data-testid="request-warning"]')).toBeFalsy()
+    // both on the court once the screen shows the second write
     await waitFor(() => expect(court(7)).toBeTruthy())
-    expect(court(8)).toBeTruthy()
+    await waitFor(() => expect(court(8)).toBeTruthy())
     // #1 the captain left: the game captain dialog, once the pairs are in
     await waitFor(() => expect([...document.querySelectorAll('[role=dialog]')].find(d => d.querySelector('[data-testid="game-captain-keep"]'))).toBeTruthy(), { timeout: 5000 })
   }, 60000)
@@ -297,7 +298,7 @@ describe('the SUB box dialog: several pairs, one Confirm (owner 23.11.2026)', ()
 })
 
 describe('the SUB box dialog never goes past 6 (owner 23.11.2026)', () => {
-  it('5 made: one pair, then the bench says 6 of 6 and the court locks; Confirm records the 6th', async () => {
+  it('5 recorded: one pair, then the bench says 6 of 6 and the court locks; Confirm records the 6th', async () => {
     const matchId = await setUp('five')
     await openScreen(matchId, 7)
     await openDialog()
@@ -336,7 +337,7 @@ describe('the SUB box dialog: when it opens (owner 23.11.2026)', () => {
     expect(benchOffered()).toEqual(['3', '7', '8', '10', '11'])
   }, 60000)
 
-  it('not while a rally is in play: the list of those made, as before', async () => {
+  it('not while a rally is in play: the list of those recorded, as before', async () => {
     const matchId = await setUp('substitute')
     await openScreen(matchId, 9)
     fireEvent.click(button('Start rally'))

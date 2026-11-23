@@ -1022,7 +1022,6 @@
       "set_interval": "Satzpause: kein Timeout (es würde im nächsten Satz zählen)."
     },
     "requestWarning": {
-      "notAllowed": "Nicht erlaubt",
       "illegalShort": {
         "libero": "Libero",
         "sent_off": "Gesperrt",
@@ -1164,10 +1163,6 @@
       "remarks": "Bemerkungen",
       "scoresheet": "eScore\u00adsheet",
       "subTitle": "Auswechslung {{team}}",
-      "subOut": "Spieler raus (auf dem Feld)",
-      "subIn": "Spieler rein für {{number}}",
-      "subHint": "Verletzung oder aussergewöhnliche Auswechslung: Spieler auf dem Feld antippen.",
-      "noSubstitutes": "Für diesen Spieler ist kein Ersatz verfügbar.",
       "sanctionPeople": "Spieler oder Offizieller",
       "noLibero": "Kein Libero",
       "onCourt": "auf dem Feld",
@@ -1190,7 +1185,7 @@
     "subDialog": {
       "view": "Ansicht",
       "tabNew": "Neu",
-      "tabMade": "Erfolgt ({{n}})",
+      "tabRecorded": "Erfasst ({{n}})",
       "count": "{{made}} von {{max}}",
       "toConfirm": "{{n}} zu bestätigen",
       "stepIn": "Tippe an, wer reinkommt",
@@ -1204,7 +1199,7 @@
       "fullWithMore": "{{max}} von {{max}} mit den Wechseln unten.",
       "fullNote": "{{max}} von {{max}}: kein regulärer Wechsel mehr in diesem Satz. Für einen verletzten oder ausgeschlossenen/disqualifizierten Spieler: «Verletzung / ausserordentlich».",
       "pair": "<in>#{{in}} rein</in> für <out>#{{out}} raus</out>",
-      "captainAfter": "nach Bestätigen: Spielführer wählen",
+      "captainAfter": "nach «Bestätigen»: Spielkapitän wählen",
       "remove": "Entfernen",
       "another": "Für einen weiteren Wechsel: tippe den nächsten Spieler an, der reinkommt.",
       "injury": "Verletzung / ausserordentlich",

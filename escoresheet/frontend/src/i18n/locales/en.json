@@ -1030,7 +1030,6 @@
       "set_interval": "Set interval: no time-out (it would count in the next set)."
     },
     "requestWarning": {
-      "notAllowed": "Not allowed",
       "illegalShort": {
         "libero": "Libero",
         "sent_off": "Sent off",
@@ -1172,10 +1171,6 @@
       "remarks": "Remarks",
       "scoresheet": "Score\u00adsheet",
       "subTitle": "Substitution {{team}}",
-      "subOut": "Player out (on court)",
-      "subIn": "Player in for {{number}}",
-      "subHint": "Injury or exceptional substitution: tap the player on the court.",
-      "noSubstitutes": "No substitute available for this player.",
       "sanctionPeople": "Player or official",
       "noLibero": "No libero",
       "onCourt": "on court",
@@ -1198,7 +1193,7 @@
     "subDialog": {
       "view": "View",
       "tabNew": "New",
-      "tabMade": "Made ({{n}})",
+      "tabRecorded": "Recorded ({{n}})",
       "count": "{{made}} of {{max}}",
       "toConfirm": "{{n}} to confirm",
       "stepIn": "Tap who comes in",

@@ -308,7 +308,7 @@ async function phoneRally (page) {
 
 /**
  * A substitution while a time-out countdown runs, three ways:
- *   tap         court player -> Substitution -> bench player (phone: SUB sheet)
+ *   tap         court player -> Substitution -> bench player (phone: the SUB picker)
  *   mouse-drag  a bench player dragged onto a court player (HTML5 drag)
  *   touch-drag  the same with a finger: hold 0.7 s, move, lift (Chrome touch
  *               events); "Yes" is tapped with a finger too
@@ -355,13 +355,14 @@ async function runSubDuringTimeout (vp, method) {
     }
     let gestureEnd = Date.now()
     if (vp.phone) {
+      // the SUB picker (owner 23.11.2026): who comes in, who goes out, then
+      // its Confirm (no "Yes" after it)
       await page.locator('button:visible', { hasText: /^sub/i }).first().click()
       await sleep(600)
-      const out = page.locator('[role=dialog]:visible').last().getByRole('button', { name: /^\d{1,2}$/ }).first()
-      await out.click()
-      await sleep(600)
-      const into = page.locator('[role=dialog]:visible').last().getByRole('button', { name: /^\d{1,2}$/ }).first()
-      await into.click()
+      await page.locator('button[data-testid^="sub-dialog-in-"]:visible').first().click()
+      await sleep(300)
+      await page.locator('button[data-testid^="sub-dialog-out-"]:visible').first().click()
+      await sleep(300)
       gestureEnd = Date.now()
     } else {
       const team = (await sideOf(page, 'home')) === 'left' ? 'home' : 'away'
@@ -398,14 +399,15 @@ async function runSubDuringTimeout (vp, method) {
       }
       gestureEnd = Date.now()
     }
-    const yes = page.getByRole('button', { name: 'Yes', exact: true }).last()
+    const yesLabel = vp.phone ? 'Confirm' : 'Yes'
+    const yes = vp.phone ? page.getByTestId('sub-dialog-confirm') : page.getByRole('button', { name: 'Yes', exact: true }).last()
     await waitUntil(async () => visible(yes), { timeoutMs: 40000, intervalMs: 100, what: 'the substitution confirmation' })
     const dialogAfter = Date.now() - gestureEnd
     await shot(page, vp, `sub-during-timeout-${method}-confirm`)
     const box = await yes.boundingBox()
     const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
     const top = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.innerText?.trim() || null, centre)
-    if (top !== 'Yes') throw new Error(`"Yes" is covered by: ${top}`)
+    if (top !== yesLabel) throw new Error(`"${yesLabel}" is covered by: ${top}`)
     if (method === 'touch-drag') await fingerTap(centre)
     else await page.mouse.click(centre.x, centre.y)
     await waitUntil(async () => (await dbState(page)).substitutions >= 1, { timeoutMs: 40000, what: 'substitution written' })
@@ -430,7 +432,7 @@ for (const vp of VPS) {
   if (ONLY.has('menus')) await runMenus(vp)
   if (vp.menusOnly) continue
   if (ONLY.has('sub')) {
-    // the phone layout has no drag and drop (its SUB sheet)
+    // the phone layout has no drag and drop (its SUB picker)
     for (const method of vp.phone ? ['tap'] : ['tap', 'mouse-drag', 'touch-drag']) await runSubDuringTimeout(vp, method)
   }
   if (ONLY.has('sets')) await runSets(vp)
