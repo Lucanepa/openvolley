@@ -342,7 +342,11 @@ const DEFAULTS = Object.freeze({
   // waits with the guessers); 'lane' = one try per client lane (ipLaneKey:
   // an IPv6 /48, an IPv4 address) and interval, so the owner's network keeps
   // its own while a botnet guesses once per lane (review I-2: the owner
-  // decides; 'account' until then).
+  // decides; 'account' until then, server.js OV_SIGN_IN_CEILING_SLOTS,
+  // ceilingSlotsFromEnv). With either, a source that opens one of the
+  // address's reset or confirmation links proves it holds the mailbox and
+  // becomes a known source too, as does a passkey sign-in (2611 review,
+  // SIGNIN-CEILING-OWNER-LOCKOUT).
   accountCeiling: { maxFailures: 100, windowMs: 24 * 60 * 60 * 1000, newSourceIntervalMs: 60 * 1000, maxIntervalMs: 60 * 60 * 1000, slots: 'account' },
   signInFailuresTable: 'auth.sign_in_failures',
   // db/057: the sources that signed in to an address, so the way past the
@@ -582,6 +586,25 @@ export function ipLaneKey(ip) {
   const k = ipBucketKey(ip)
   if (!k.endsWith('::/64')) return k
   return k.split(':').slice(0, 3).join(':') + '::/48'
+}
+
+/**
+ * OV_SIGN_IN_CEILING_SLOTS (server.js -> createAuth accountCeiling.slots):
+ * how the sources that never signed in to an address share its tries once
+ * the address is past its ceiling of failed sign-ins (DEFAULTS.accountCeiling).
+ * `account` (empty, the default): one try per interval for all of them
+ * together; `lane`: one per client lane (ipLaneKey) and interval. The owner's
+ * choice (audit 2611 review, SIGNIN-CEILING-OWNER-LOCKOUT); anything else
+ * keeps the default and says so in `warning`. Either way a source that signed
+ * in to the account before, or opened one of its reset or confirmation links
+ * (it holds the mailbox), goes on as usual.
+ * @returns {{ slots: 'account'|'lane', warning: string|null }}
+ */
+export function ceilingSlotsFromEnv(env = process.env) {
+  const raw = String(env?.OV_SIGN_IN_CEILING_SLOTS ?? '').trim().toLowerCase()
+  if (raw === '' || raw === 'account') return { slots: 'account', warning: null }
+  if (raw === 'lane') return { slots: 'lane', warning: null }
+  return { slots: 'account', warning: `OV_SIGN_IN_CEILING_SLOTS is not "account" or "lane" (${raw.slice(0, 20)}): account, the default` }
 }
 
 /**
@@ -2435,6 +2458,10 @@ export function createAuth(options = {}) {
     })
     if (!out) return INVALID_LINK()
     await clearAllLocks(out.email)
+    // the link proves the mailbox: this source passes the account-wide
+    // ceiling from now on, even once a guesser starts over after the reset
+    // (SIGNIN-CEILING-OWNER-LOCKOUT)
+    await noteKnownSource(normalizeEmail(out.email), ipKey(ctx.ip))
     await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
     if (out.confirmedNow) {
       // the approvers hear of the sign-up now, of what its owner kept
@@ -2614,6 +2641,14 @@ export function createAuth(options = {}) {
     } else if (!out.already) {
       await audit('account.email_confirmed', out.userId, {})
       accountConfirmed(out.userId)
+      // a fresh link opened from here: the mailbox's holder, a known source
+      // past the account-wide ceiling (SIGNIN-CEILING-OWNER-LOCKOUT; a link
+      // that clears the password makes its source known with the new one)
+      try {
+        await noteKnownSource(normalizeEmail((await findUserId(out.userId)).email), ipKey(ctx.ip))
+      } catch (err) {
+        failuresTrouble('remember source', err)
+      }
     }
     if (setPasswordToken) await clearAllLocks(normalizeEmail((await findUserId(out.userId)).email))
     return ok({ confirmed: true, already_confirmed: out.already, ...(setPasswordToken ? { set_password_token: setPasswordToken } : {}) })
@@ -2730,6 +2765,9 @@ export function createAuth(options = {}) {
     await pool.query(`UPDATE ${T.passkeys} SET counter = $2, last_used_at = now() WHERE id = $1`, [passkey.id, newCounter])
     const session = await createPasskeySession(user.id, passkey.id)
     if (!session) return PASSKEY_UNKNOWN() // removed (or a new password set) while we were checking
+    // a passkey sign-in is the owner's as much as a password one: its source
+    // passes the account-wide ceiling of password tries (SIGNIN-CEILING-OWNER-LOCKOUT)
+    if (typeof user.email === 'string' && user.email) await noteKnownSource(normalizeEmail(user.email), ipKey(ctx.ip))
     return await finishSignIn(user, cols, session)
   }
 

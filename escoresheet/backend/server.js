@@ -723,6 +723,9 @@ function getDataLayer() {
     }
     // db/028: "a new account signed up", to its admins and approvers (mail and the manager's bell)
     const notices = sn.createSignupNotices({ pool: db.pool, mailer })
+    const ceilingSlots = au.ceilingSlotsFromEnv(process.env)
+    if (ceilingSlots.warning) console.warn(`⚠️  [Config] ${ceilingSlots.warning}`)
+    else if (ceilingSlots.slots !== 'account') console.log(`[Config] OV_SIGN_IN_CEILING_SLOTS=${ceilingSlots.slots}: past an address's ceiling every client lane gets its own try per interval`)
     const auth = au.createAuth({
       pool: db.pool,
       mailer,
@@ -750,6 +753,10 @@ function getDataLayer() {
       // account, so the owner's own still pass the ceiling after a restart;
       // HMACs keyed with a key derived from OV_PIN_SECRET (none written without it)
       signInSourceSecret: process.env.OV_PIN_SECRET || null,
+      // Past the ceiling, the tries of the sources that never signed in to
+      // the address: one for all of them (account, the default) or one per
+      // client lane (lane): OV_SIGN_IN_CEILING_SLOTS, the owner's choice
+      accountCeiling: { slots: ceilingSlots.slots },
       // db/025: what a new account asks for at sign-up (nothing is granted then)
       // (list: their names for the reset link's page, which keeps or drops
       // them when its new password confirms the address; `requests` is made below)

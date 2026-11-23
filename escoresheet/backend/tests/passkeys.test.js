@@ -433,6 +433,27 @@ describe('passkeys against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL
     assert.equal((await passkeySignIn(auth, device)).body.error.code, 'passkey_unknown')
   })
 
+  // 2611 review, SIGNIN-CEILING-OWNER-LOCKOUT: past an address's ceiling of
+  // failed sign-ins (db/057) only its known sources go on as usual; a passkey
+  // sign-in is the owner's, so its source is known for the password too
+  it('a passkey sign-in makes its source a known one past the account-wide ceiling', async () => {
+    const auth = makeAuth()
+    const email = 'pia@example.ch'
+    const { device } = await setUp(auth, email, 'pw-pia-123')
+    const tablet = { ip: '198.51.100.140', headers: ctx().headers }
+    const o = await auth.handleAuthRequest('passkey/login-options', {}, tablet)
+    const pk = await auth.handleAuthRequest('passkey/login', { challengeId: o.body.data.challengeId, response: device.get(o.body.data.options, APP) }, tablet)
+    assert.equal(pk.status, 200, JSON.stringify(pk.body))
+    // the address past its ceiling, and a guesser takes the shared try
+    const key = createHash('sha256').update(`ov-sign-in-failures:${email}`, 'utf8').digest()
+    await pool.query(
+      `INSERT INTO auth.sign_in_failures (email_key, window_start, failures) VALUES ($1, now(), 150)
+       ON CONFLICT (email_key) DO UPDATE SET failures = 150, window_start = now(), next_try_at = NULL`, [key])
+    assert.equal((await auth.handleAuthRequest('sign-in', { email, password: 'a-guess' }, { ip: '203.0.113.140' })).status, 400)
+    assert.equal((await auth.handleAuthRequest('sign-in', { email, password: 'pw-pia-123' }, { ip: '203.0.113.141' })).status, 429, 'a new source waits')
+    assert.equal((await auth.handleAuthRequest('sign-in', { email, password: 'pw-pia-123' }, tablet)).status, 200, 'the passkey\'s tablet types the password and gets in')
+  })
+
   it('without the table the passkey actions say so, and nothing else changes', async () => {
     const auth = createAuth({ pool, logger: silent, mailer, passkeysTable: 'auth.no_such_table', limits: { signInGlobal: false } })
     const r = await auth.handleAuthRequest('passkey/login-options', {}, ctx())

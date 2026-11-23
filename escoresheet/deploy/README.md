@@ -174,6 +174,12 @@ setting at start). Record the date planned for each in the release notes.
 | `OV_PIN_ONLY_LOOKUP` | `on` (empty): referee / bench PIN checks without their match, both sports | `beach` once the OpenVolley apps that name no match are gone (3.x; 26.11.x sends none only when two picker rows share a game number); `off` once the OpenBeach release that names its match has replaced the current one (SEC-06) |
 | `OV_BEACH_REFEREE_ADDRESS` | `optional` (empty): a beach referee slot without a stored address keeps the older rule | `required` once the OpenBeach release that stores `officials[].email` has replaced the older builds (PERM-08, owner decision 6) |
 
+Settings that wait for the owner's choice (the default is the stricter or the older one):
+
+| Setting | Default | The other choice |
+|---|---|---|
+| `OV_SIGN_IN_CEILING_SLOTS` | `account`: past an address's 100 failed sign-ins in 24 h, every source that never signed in to it (nor opened one of its reset or confirmation links) shares one try per interval; a botnet guesses no faster than one source, the owner's new networks wait | `lane`: one try per network (an IPv6 /48, an IPv4 address) and interval; the owner's network keeps its own, a botnet gets one try per network |
+
 ## What touches the other tenant (isolation on the shared VM)
 
 Written for the co-tenancy on `lucanepa-prod` (until 16.10.2026). The limits are the same on

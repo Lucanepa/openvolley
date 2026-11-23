@@ -224,6 +224,64 @@ describe('the account-wide sign-in ceiling in the database (db/057, SEC-13)', { 
     assert.equal((await signIn(auth, 'lanes@example.ch', 'guess', '198.51.100.250')).status, 429)
   })
 
+  // 2611 review, SIGNIN-CEILING-OWNER-LOCKOUT: past the ceiling the owner's
+  // new devices and networks waited with the guessers, and a reset only
+  // cleared the count until the guesser started again. A source that opens
+  // one of the address's links holds its mailbox: it is a known source now.
+  const linkToken = (mail) => /[?&]token=([A-Za-z0-9_-]{43})/.exec(mail?.link || '')?.[1]
+  it('a source that opens a reset link passes the ceiling from then on, a restart included', async () => {
+    await addUser('mailbox@example.ch')
+    const mailer = memoryMailer()
+    const auth = makeAuth({ mailer, signInSourceSecret: SECRET })
+    const phone = '198.51.100.77' // the owner's phone on a network it never signed in from
+    assert.deepEqual(await guess(auth, 'mailbox@example.ch', 0xd0d0, 4, 5), { '400:invalid_credentials': 20 })
+    assert.equal((await signIn(auth, 'mailbox@example.ch', 'guess', src(0xd0d0, 9))).status, 400, 'the guesser takes the try')
+    assert.equal((await signIn(auth, 'mailbox@example.ch', PW, phone)).status, 429, 'the owner on a new network waits with the guessers')
+    // the owner resets the password from the phone
+    assert.equal((await auth.handleAuthRequest('reset-password', { email: 'mailbox@example.ch' }, { ip: phone })).status, 200)
+    await auth.settle()
+    const token = linkToken(mailer.mails.find((m) => m.kind === 'reset' && m.to === 'mailbox@example.ch'))
+    assert.ok(token, 'the reset mail carries its link')
+    const rs = await auth.handleAuthRequest('reset-password/confirm', { token, password: 'a-new-password-3' }, { ip: phone })
+    assert.equal(rs.status, 200, JSON.stringify(rs.body))
+    assert.equal((await sourcesOf('mailbox@example.ch')).length, 1, 'the source of the link is written (db/057)')
+    // the guesser starts again within minutes
+    assert.deepEqual(await guess(auth, 'mailbox@example.ch', 0xd1d1, 4, 5), { '400:invalid_credentials': 20 })
+    assert.equal((await signIn(auth, 'mailbox@example.ch', 'guess', src(0xd1d1, 9))).status, 400)
+    assert.equal((await signIn(auth, 'mailbox@example.ch', 'a-new-password-3', '198.51.100.78')).status, 429, 'another new source still waits')
+    assert.equal((await signIn(auth, 'mailbox@example.ch', 'a-new-password-3', phone)).status, 200, 'the source that opened the link gets in')
+    const restarted = makeAuth({ signInSourceSecret: SECRET })
+    assert.equal((await signIn(restarted, 'mailbox@example.ch', 'a-new-password-3', phone)).status, 200, 'and after a restart')
+  })
+
+  it('a source that opens a confirmation link passes the ceiling too', async () => {
+    const mailer = memoryMailer()
+    const auth = makeAuth({ mailer, signInSourceSecret: SECRET })
+    const su = await auth.handleAuthRequest('sign-up', { email: 'confirm-me@example.ch', password: PW, metadata: { first_name: 'Cora', last_name: 'Confirm' } }, { ip: '198.51.100.90' })
+    assert.equal(su.status, 200, JSON.stringify(su.body))
+    await auth.settle()
+    const token = linkToken(mailer.mails.find((m) => m.kind === 'confirm' && m.to === 'confirm-me@example.ch'))
+    assert.ok(token, 'the confirmation mail carries its link')
+    assert.deepEqual(await guess(auth, 'confirm-me@example.ch', 0xd2d2, 4, 5), { '400:invalid_credentials': 20 })
+    assert.equal((await signIn(auth, 'confirm-me@example.ch', 'guess', src(0xd2d2, 9))).status, 400)
+    const laptop = '198.51.100.91'
+    const cf = await auth.handleAuthRequest('confirm-email', { token, password: PW }, { ip: laptop })
+    assert.equal(cf.status, 200, JSON.stringify(cf.body))
+    assert.equal(cf.body.data.confirmed, true)
+    assert.equal((await signIn(auth, 'confirm-me@example.ch', PW, '198.51.100.92')).status, 429, 'a new source waits')
+    assert.equal((await signIn(auth, 'confirm-me@example.ch', PW, laptop)).status, 200, 'the source that opened the link gets in')
+  })
+
+  it('OV_SIGN_IN_CEILING_SLOTS: account (default) or lane, anything else the default with a warning', async () => {
+    const { ceilingSlotsFromEnv } = await import('../lib/auth.js')
+    assert.deepEqual(ceilingSlotsFromEnv({}), { slots: 'account', warning: null })
+    assert.deepEqual(ceilingSlotsFromEnv({ OV_SIGN_IN_CEILING_SLOTS: ' Lane ' }), { slots: 'lane', warning: null })
+    assert.deepEqual(ceilingSlotsFromEnv({ OV_SIGN_IN_CEILING_SLOTS: 'account' }), { slots: 'account', warning: null })
+    const odd = ceilingSlotsFromEnv({ OV_SIGN_IN_CEILING_SLOTS: 'lanes' })
+    assert.equal(odd.slots, 'account')
+    assert.match(odd.warning, /OV_SIGN_IN_CEILING_SLOTS is not "account" or "lane"/)
+  })
+
   it('the interval grows with each further ceiling of failures, up to maxIntervalMs', async () => {
     await addUser('grow@example.ch')
     const auth = makeAuth()
