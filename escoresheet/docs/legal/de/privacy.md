@@ -477,7 +477,11 @@ Wettbewerbsmanagerinnen und -manager über gespeicherte Teams (Abschnitt 10),
 und die offiziellen Ansetzungen von Swiss Volley (Abschnitt 11).
 Spielerinnen und Spieler geben ihre Daten nicht selbst ein. Eine in der
 Spielvorbereitung importierte Einsatzliste füllt Namen, Rückennummern und
-Lizenznummern aus; die Geburtsdaten darauf werden nicht übernommen.
+Lizenznummern aus; die Geburtsdaten darauf werden nicht übernommen. Sie kann
+aus ihrem PDF oder aus einem Foto davon importiert werden: Das Foto wird auf
+dem Gerät gelesen (Texterkennung in der App), nirgendwohin gesendet und nicht
+aufbewahrt; die gelesenen Zeilen werden der Schreiberin oder dem Schreiber
+gezeigt, die sie korrigieren, bevor etwas übernommen wird.
 
 **Zweck:** ein elektronischer Spielbericht für offizielle Spiele: Erfassung
 während des Spiels, die offizielle Spielaufzeichnung, Kontrolle der

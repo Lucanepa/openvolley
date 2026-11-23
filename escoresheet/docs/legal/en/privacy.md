@@ -427,7 +427,11 @@ page (`roster.openvolley.app`) and in the manager (section 10), competition mana
 (section 10), and the official match assignments from Swiss Volley
 (section 11). Players do not enter their data themselves. An Einsatzliste
 imported in the match setup fills in names, shirt numbers and licence
-numbers; the dates of birth on it are not taken over.
+numbers; the dates of birth on it are not taken over. It can be imported
+from its PDF or from a photo of it: the photo is read on the device (text
+recognition in the app), is not sent anywhere and is not kept; the rows
+read are shown to the scorer, who corrects them before anything is taken
+over.
 
 **Purpose:** an electronic scoresheet for official matches: recording during
 the match, the official match record, checking eligibility (licence number),

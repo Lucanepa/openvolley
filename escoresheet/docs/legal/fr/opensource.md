@@ -43,6 +43,9 @@ PDF.js, pour le texte du PDF de la feuille de match).
 | Dexie, dexie-react-hooks | Apache-2.0 |
 | jsPDF | MIT |
 | PDF.js (pdfjs-dist) | Apache-2.0 |
+| Tesseract.js, tesseract.js-core (reconnaissance de texte de l'import par photo) | Apache-2.0 |
+| Données de langue Tesseract allemand, français, italien (@tesseract.js-data) | Apache-2.0 (paquet : MIT) |
+| wasm-feature-detect | Apache-2.0 |
 | JSZip | MIT (ou GPL-3.0-or-later) |
 | fflate | MIT |
 | html-to-image | MIT |

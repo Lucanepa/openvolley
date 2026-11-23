@@ -44,6 +44,9 @@ Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
 | Dexie, dexie-react-hooks | Apache-2.0 |
 | jsPDF | MIT |
 | PDF.js (pdfjs-dist) | Apache-2.0 |
+| Tesseract.js, tesseract.js-core (Texterkennung des Foto-Imports) | Apache-2.0 |
+| Tesseract-Sprachdaten Deutsch, Französisch, Italienisch (@tesseract.js-data) | Apache-2.0 (Paket: MIT) |
+| wasm-feature-detect | Apache-2.0 |
 | JSZip | MIT (oder GPL-3.0-or-later) |
 | fflate | MIT |
 | html-to-image | MIT |

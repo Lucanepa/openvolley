@@ -42,6 +42,9 @@ through PDF.js, for the text of the scoresheet PDF).
 | Dexie, dexie-react-hooks | Apache-2.0 |
 | jsPDF | MIT |
 | PDF.js (pdfjs-dist) | Apache-2.0 |
+| Tesseract.js, tesseract.js-core (text recognition of the photo import) | Apache-2.0 |
+| Tesseract language data, German, French, Italian (@tesseract.js-data) | Apache-2.0 (package: MIT) |
+| wasm-feature-detect | Apache-2.0 |
 | JSZip | MIT (or GPL-3.0-or-later) |
 | fflate | MIT |
 | html-to-image | MIT |
