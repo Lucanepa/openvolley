@@ -4,10 +4,12 @@
  * 3 hours, and every real tournament's new code then got 503.
  *
  *   - new codes and new courts per address (/64 bucket and its /56) and hour
- *     are capped;
+ *     are capped, and per relay room (a room that proved its game PIN per
+ *     room only: one such room made 1000 codes, fix-up LP-2);
  *   - an unproved court posted only once goes after minutes, not hours;
  *   - a full store gives a new code the place of a code with nothing live,
- *     and a relay court also the place of a code the relay never proved;
+ *     and a relay court also the place of a code whose courts are all
+ *     ended, stale or HTTP courts posted only once (fix-up LP-1);
  *   - what is refused is counted (stats, /health).
  *
  *   cd escoresheet/backend && node --test tests/globalLive.caps.test.js
@@ -53,6 +55,42 @@ describe('caps per address and hour', () => {
     let other = 0
     for (let i = 0; i < 20; i++) if (store.put(newCode(), null, live(), {}, { room: `match_test_${i}`, source: '198.51.100.50' }).ok) other++
     assert.equal(other, 12)
+  })
+
+  it('a room that proved its game PIN is capped per room: 4 new codes and 8 new courts an hour (fix-up LP-2)', () => {
+    let t = 1_000_000
+    const store = createGlobalLive({ now: () => t, secret: 's'.repeat(40) })
+    const room = 'match_one_official_room'
+    const results = []
+    // one room cycling through new codes (its binding moves to each)
+    for (let i = 0; i < 20; i++) { t += 50; results.push(store.put(newCode(), null, live(), {}, { room, official: true, source: '203.0.113.7', listed: true }).reason || 'ok') }
+    assert.equal(results.filter((r) => r === 'ok').length, 4)
+    assert.equal(results.filter((r) => r === 'rate').length, 16)
+    assert.equal(store.size(), 4)
+    // new courts in codes that exist: 8 in all (4 already made)
+    const others = []
+    for (let i = 0; i < 10; i++) { const c = newCode(); others.push(c); store.put(c, null, live(), {}, { room: `match_other_${i}`, source: `198.51.100.${60 + i}` }) }
+    let courts = 0
+    for (const c of others) if (store.put(c, hex(), live(), {}, { room, official: true, source: '203.0.113.7' }).ok) courts++
+    assert.equal(courts, 4)
+    // the other scorers of the same address are not held up by it
+    for (let i = 0; i < 5; i++) assert.equal(store.put(newCode(), null, live(), {}, { room: `match_official_hall_${i}`, official: true, source: '203.0.113.7' }).ok, true)
+    // a real tournament and a desktop push still get places
+    assert.equal(store.put(newCode(), null, live({ team_a_name: 'Real' }), {}, { room: 'match_real', source: '198.51.100.3' }).ok, true)
+    assert.equal(store.put(newCode(), hex(), live({ team_a_name: 'Real' }), {}, { source: '198.51.100.4' }).ok, true)
+    // an hour later the room's budget is back
+    t += 61 * 60 * 1000
+    assert.equal(store.put(newCode(), null, live(), {}, { room, official: true, source: '203.0.113.7' }).ok, true)
+  })
+
+  it('an older app\'s room (first push without a token, then its token) and a code typed wrong twice stay within a room\'s budget', () => {
+    const store = createGlobalLive()
+    const room = 'match_1763900000000_older'
+    for (const code of ['WRNG2345', 'WRNG6789', 'RGHT2345']) {
+      assert.equal(store.put(code, null, live(), {}, { room, source: '198.51.100.70' }).ok, true)
+      assert.equal(store.put(code, hex(), live(), {}, { room, source: '198.51.100.70' }).ok, true)
+    }
+    assert.equal(store.get('RGHT2345').courts.length, 1)
   })
 
   it('new courts: 120 per address and hour', () => {

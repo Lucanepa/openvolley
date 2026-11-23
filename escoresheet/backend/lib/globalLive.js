@@ -171,20 +171,26 @@ export function netOfBucket(bucket) {
  * - A court is locked to its room when the relay proved it: the room key's own
  *   court token (what an app up to 26.11.x makes of the seed key, which is the
  *   room key), the server's token of a room that sent none, or a room whose
- *   scorer proved the game PIN of the match's database row (`official`). A
- *   locked court takes no HTTP push and no other room, except a room that
- *   proves it the same way. Any other court is unproved: whoever has its
+ *   scorer proved the game PIN of the match's database row (`official`; it
+ *   proves a new court or one of its own room only, never another room's:
+ *   the game PIN of one match is no key to the others' courts). A locked
+ *   court takes no HTTP push and no other room, except the room whose key
+ *   the token is made of. Any other court is unproved: whoever has its
  *   token updates it, as before (a current app's token comes from a random
  *   secret of the match that never leaves the device: nobody can guess it;
  *   an older app's token of a league or OpenBeach match is a hash of the
- *   public seed key, but its scorer on the cloud relay locks it).
- * - Bounded without letting strangers push real courts out: a new court an
- *   HTTP push makes replaces only an ended or stale court of a full code,
- *   and a new code only a code with nothing live (a relay court also an
- *   HTTP-only court, and a code the relay never proved); an unproved court
- *   posted only once goes after onceMs; new codes and new courts per address
- *   (/64 bucket and its /56) and hour are capped. What is refused is counted
- *   (stats, /health).
+ *   public seed key, but its scorer on the cloud relay locks it; the courts
+ *   only HTTP pushes feed, from the desktop app or a venue relay's forward,
+ *   stay unproved).
+ * - Bounded without letting strangers push real courts out: a new court
+ *   replaces only an ended or stale court of a full code, and a new code
+ *   only a code with nothing live; a relay court also an HTTP court that
+ *   was posted only once (never a court being scored, whichever way it
+ *   comes); an unproved court posted only once goes after onceMs; new codes
+ *   and new courts per address (/64 bucket and its /56) and hour are capped,
+ *   and per relay room (a room that proved its game PIN per room only: many
+ *   scorers share a hall's address). What is refused is counted (stats,
+ *   /health).
  */
 export function createGlobalLive({
   maxCodes = 1000,
@@ -198,6 +204,10 @@ export function createGlobalLive({
   // new codes / new courts per hour: [per /64 bucket, per /56]
   newCodesPerHour = [12, 36],
   newCourtsPerHour = [120, 360],
+  // ... and per relay room (one court per code: a live screen code typed
+  // wrong, or changed, now and then)
+  newCodesPerRoom = 4,
+  newCourtsPerRoom = 8,
   maxSources = 20000,
   // the room courts' tokens: an HMAC under it (null: an unkeyed hash, as
   // before, on a venue relay without a secret)
@@ -247,20 +257,24 @@ export function createGlobalLive({
   }
 
   // The hour's budget of new codes or courts of an address (its /64 bucket
-  // and the /56 around it); no address: the relay host itself, a test
+  // and the /56 around it; no address: the relay host itself, a test) and of
+  // a relay room
+  function slotOf(key, limit, t) {
+    let s = sources.get(key)
+    if (s && t - s.start > HOUR_MS) { sources.delete(key); s = null }
+    return { key, s, limit }
+  }
   function budget(source, kind, t) {
     if (!source) return []
     const limits = kind === 'codes' ? newCodesPerHour : newCourtsPerHour
     const keys = [source]
     const net = netOfBucket(source)
     if (net !== source) keys.push(net)
-    return keys.map((k, i) => {
-      const key = `${kind}\0${i}\0${k}`
-      let s = sources.get(key)
-      if (s && t - s.start > HOUR_MS) { sources.delete(key); s = null }
-      return { key, s, limit: limits[i] ?? limits[0] }
-    })
+    return keys.map((k, i) => slotOf(`${kind}\0${i}\0${k}`, limits[i] ?? limits[0], t))
   }
+  const roomBudget = (room, kind, t) => (room == null
+    ? []
+    : [slotOf(`${kind}\0room\0${room}`, kind === 'codes' ? newCodesPerRoom : newCourtsPerRoom, t)])
   const allowed = (slots) => slots.every(({ s, limit }) => !s || s.n < limit)
   function charge(slots, t) {
     for (const { key, s } of slots) {
@@ -272,23 +286,32 @@ export function createGlobalLive({
   }
 
   const replaceable = (c, t) => c.endedAt != null || t - c.at > staleMs
+  // an HTTP court posted only once (nobody scores it yet, or a stranger's)
+  const postedOnce = (c) => c.room == null && c.n < 2
   // The court a new one may replace in a full code: the oldest ended or stale
-  // one; for a relay court also the oldest one only HTTP pushes feed
+  // one; for a relay court also the oldest HTTP court posted only once. Never
+  // one being scored: a stranger's relay rooms (anyone may own a test room)
+  // pushed out the courts of the desktop app and of a venue relay's forward
+  // for good (audit fix-up LP-1)
   function courtToReplace(entry, relay, t) {
     let pick = null
     for (const [id, c] of entry.courts) if (replaceable(c, t) && (!pick || c.at < pick.c.at)) pick = { id, c }
-    if (!pick && relay) for (const [id, c] of entry.courts) if (c.room == null && (!pick || c.at < pick.c.at)) pick = { id, c }
+    if (!pick && relay) for (const [id, c] of entry.courts) if (postedOnce(c) && (!pick || c.at < pick.c.at)) pick = { id, c }
     return pick?.id ?? null
   }
   // The code a new one may replace in a full store: the least recently updated
   // with nothing live (every court ended or stale); for a relay court also
-  // the least recently updated code the relay never proved
+  // one whose courts are all ended, stale or HTTP courts posted only once
   function codeToReplace(relay, t) {
     let pick = null
     for (const [code, e] of codes) {
       if ((!pick || e.at < pick.e.at) && [...e.courts.values()].every((c) => replaceable(c, t))) pick = { code, e }
     }
-    if (!pick && relay) for (const [code, e] of codes) if (!e.proved && (!pick || e.at < pick.e.at)) pick = { code, e }
+    if (!pick && relay) {
+      for (const [code, e] of codes) {
+        if ((!pick || e.at < pick.e.at) && [...e.courts.values()].every((c) => replaceable(c, t) || postedOnce(c))) pick = { code, e }
+      }
+    }
     return pick?.code ?? null
   }
 
@@ -322,21 +345,27 @@ export function createGlobalLive({
     }
     const derived = relay && token === roomTokenOf(room)
     // the relay proves this room's own court: the token is its key's, or the server's of it
-    const proves = relay && (derived || token === legacyCourtToken(room) || official === true)
+    const ownKey = relay && (derived || token === legacyCourtToken(room))
     const id = courtIdOf(code, token)
     let codeEntry = codes.get(code)
     const prev = codeEntry?.courts.get(id) || null
-    if (prev?.locked && !(relay && (prev.room === room || proves))) {
+    // the game PIN of the room's match proves a new court or one of this
+    // room's own: never another room's court (the PIN of any one official
+    // match passed every lock: audit fix-up LP-2)
+    const pinProved = relay && official === true && (prev == null || prev.room === room)
+    const proves = ownKey || pinProved
+    if (prev?.locked && !(relay && (prev.room === room || ownKey))) {
       refused.bound++
       return { ok: false, reason: 'bound' }
     }
     if (!prev) {
       const newCode = !codeEntry
-      // (a room that proved the database row's game PIN is no stranger: no cap,
-      // also when many scorers share one address)
-      const capped = relay && official === true ? null : source
-      const codeSlots = newCode ? budget(capped, 'codes', t) : []
-      const courtSlots = budget(capped, 'courts', t)
+      // a room that proved the database row's game PIN is no stranger: no cap
+      // per address (many scorers share one hall's address), only its own per
+      // room, as every relay room (one room made 1000 codes: LP-2)
+      const bySource = pinProved ? null : source
+      const codeSlots = newCode ? [...budget(bySource, 'codes', t), ...roomBudget(relay ? room : null, 'codes', t)] : []
+      const courtSlots = [...budget(bySource, 'courts', t), ...roomBudget(relay ? room : null, 'courts', t)]
       if (!allowed(codeSlots) || !allowed(courtSlots)) { refused.rate++; return { ok: false, reason: 'rate' } }
       // the room's own court of an older app gives way to its token's court
       if (roomCourt != null) { dropCourt(code, codeEntry, roomCourt); roomCourt = null }

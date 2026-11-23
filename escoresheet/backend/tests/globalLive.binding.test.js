@@ -90,6 +90,109 @@ describe('a court the relay proved (SEC-07)', () => {
   })
 })
 
+describe('the game PIN of one match is no key to the others\' courts (fix-up LP-2)', () => {
+  it('a room that proved its own game PIN, naming an older app\'s locked league court of another room: bound', () => {
+    const store = createGlobalLive({ secret: 's'.repeat(40) })
+    const seed = 'match_1763900000000_victim'
+    assert.equal(store.put(CODE, legacyCourtToken(seed), live(), entry(), { room: seed }).ok, true)
+    // the attacker scores some official match (its game PIN proved) and names
+    // the victim's token: sha256('court\0' + the public external id)
+    const r = store.put(CODE, legacyCourtToken(seed), forged(), entry({ homeTeam: { name: 'MATCH CANCELLED' } }), { room: 'match_attacker_official', official: true, source: '203.0.113.9' })
+    assert.deepEqual(r, { ok: false, reason: 'bound' })
+    assert.deepEqual(courts(store).map((c) => [c.home.name, c.points.home]), [['Bergtal IS', 12]])
+    // the victim's room keeps scoring it
+    assert.equal(store.put(CODE, legacyCourtToken(seed), live({ points_a: 13 }), entry(), { room: seed }).ok, true)
+    assert.equal(courts(store)[0].points.home, 13)
+  })
+
+  it('nor the court another room locked with its own game PIN', () => {
+    const store = createGlobalLive()
+    const token = hex()
+    store.put(CODE, token, live(), entry(), { room: 'match_official_a', official: true })
+    assert.equal(store.put(CODE, token, forged(), entry(), { room: 'match_official_b', official: true }).reason, 'bound')
+    assert.equal(courts(store)[0].points.home, 12)
+    // its own room, also after a restart of the page, still writes it
+    assert.equal(store.put(CODE, token, live({ points_a: 14 }), entry(), { room: 'match_official_a', official: true }).ok, true)
+    assert.equal(courts(store)[0].points.home, 14)
+  })
+
+  it('a court an official room made first with an older app\'s token goes back to that app\'s room', () => {
+    const store = createGlobalLive()
+    const seed = 'match_1763900000000_early'
+    assert.equal(store.put(CODE, legacyCourtToken(seed), forged(), entry(), { room: 'match_attacker_official', official: true }).ok, true)
+    assert.equal(store.put(CODE, legacyCourtToken(seed), live(), entry(), { room: seed }).ok, true)
+    assert.equal(courts(store)[0].points.home, 12)
+    // the official room's next push (its room court) is refused
+    assert.equal(store.put(CODE, null, forged(), entry(), { room: 'match_attacker_official', official: true }).reason, 'bound')
+    assert.equal(courts(store)[0].points.home, 12)
+  })
+})
+
+describe('a relay court never pushes out a court being scored (fix-up LP-1)', () => {
+  it('3 courts a venue relay forwards (HTTP) and 24 relay test rooms: the 3 real courts stay, their forwards stay ok', () => {
+    let t = 1_000_000
+    const store = createGlobalLive({ now: () => t })
+    const real = ['1', '2', '3'].map((n) => ({ n, token: hex() }))
+    // being scored: a forward every few seconds
+    for (let rally = 0; rally < 3; rally++) {
+      for (const r of real) { t += 1000; assert.equal(store.put(CODE, r.token, live({ team_a_name: `Real ${r.n}`, points_a: rally }), {}, { source: '198.51.100.10' }).ok, true) }
+    }
+    // a stranger opens 24 anonymous test rooms on the cloud relay under that code
+    const results = []
+    for (let i = 0; i < 24; i++) {
+      t += 1000
+      results.push(store.put(CODE, null, live({ team_a_name: 'MATCH CANCELLED' }), {}, { room: `match_test_att_${i}`, source: `2001:db8:0:${i % 2}::/64` }).reason || 'ok')
+    }
+    assert.equal(results.filter((r) => r === 'ok').length, 21)
+    assert.equal(results.filter((r) => r === 'courts-full').length, 3)
+    assert.equal(courts(store).filter((c) => c.home.name.startsWith('Real')).length, 3)
+    // the venue relay's next forwards
+    for (const r of real) { t += 1000; assert.equal(store.put(CODE, r.token, live({ team_a_name: `Real ${r.n}`, points_a: 9 }), {}, { source: '198.51.100.10' }).ok, true) }
+    assert.equal(courts(store).filter((c) => c.home.name.startsWith('Real') && c.points.home === 9).length, 3)
+  })
+
+  it('an HTTP court posted only once, or one gone stale, still gives way to a relay court', () => {
+    let t = 1_000_000
+    const store = createGlobalLive({ maxCourtsPerCode: 2, now: () => t })
+    const scored = hex()
+    store.put(CODE, scored, live({ team_a_name: 'Scored' }), {}, { source: '198.51.100.11' })
+    t += 1000
+    store.put(CODE, scored, live({ team_a_name: 'Scored', points_a: 2 }), {}, { source: '198.51.100.11' })
+    t += 1000
+    store.put(CODE, hex(), live({ team_a_name: 'Once' }), {}, { source: '203.0.113.12' })
+    t += 1000
+    assert.equal(store.put(CODE, null, live({ team_a_name: 'Relay' }), {}, { room: 'match_relay_1' }).ok, true)
+    assert.deepEqual(courts(store).map((c) => c.home.name).sort(), ['Relay', 'Scored'])
+    // the next relay newcomer finds no court it may replace
+    t += 1000
+    assert.equal(store.put(CODE, null, live({ team_a_name: 'Relay 2' }), {}, { room: 'match_relay_2' }).reason, 'courts-full')
+    // ... until the HTTP court has had no update for 10 minutes
+    t += 10 * 60_000
+    store.put(CODE, null, live({ team_a_name: 'Relay' }), {}, { room: 'match_relay_1' })
+    assert.equal(store.put(CODE, null, live({ team_a_name: 'Relay 2' }), {}, { room: 'match_relay_2' }).ok, true)
+    assert.deepEqual(courts(store).map((c) => c.home.name).sort(), ['Relay', 'Relay 2'])
+  })
+
+  it('a full store: a relay court takes the place of a code whose courts are all ended, stale or posted once, never of a code being scored', () => {
+    let t = 1_000_000
+    const store = createGlobalLive({ maxCodes: 2, now: () => t })
+    const desk = hex()
+    // a desktop app's tournament, being scored
+    for (let i = 0; i < 3; i++) { t += 1000; store.put('DESK2345', desk, live({ points_a: i }), {}, { source: '198.51.100.13' }) }
+    t += 1000
+    store.put('ONCE2345', hex(), live(), {}, { source: '203.0.113.13' })
+    t += 1000
+    assert.equal(store.put('RLAY2345', null, live(), {}, { room: 'match_relay_3' }).ok, true)
+    assert.equal(store.get('ONCE2345'), null)
+    assert.ok(store.get('DESK2345'))
+    // now both codes have a court being scored or a relay court: no place
+    t += 1000
+    assert.equal(store.put('RLAY6789', null, live(), {}, { room: 'match_relay_4' }).reason, 'full')
+    assert.ok(store.get('DESK2345'))
+    assert.equal(store.put('DESK2345', desk, live({ points_a: 5 }), {}, { source: '198.51.100.13' }).ok, true)
+  })
+})
+
 describe('courts nobody proved: the apps in the field keep working', () => {
   it('an HTTP push (desktop app, venue relay forward) with an older app\'s token: the same token updates the same court', () => {
     const store = createGlobalLive()
