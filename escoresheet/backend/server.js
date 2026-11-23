@@ -831,7 +831,7 @@ function getDataLayer() {
       // tests only: a shorter cooldown than the hour
       ...(process.env.NODE_ENV !== 'production' && Number(process.env.ERROR_ALERT_COOLDOWN_MS) >= 0 && process.env.ERROR_ALERT_COOLDOWN_MS ? { cooldownMs: Number(process.env.ERROR_ALERT_COOLDOWN_MS) } : {})
     })
-    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi, dataAdmin, sqlWorkspace, errors })
+    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi, dataAdmin, sqlWorkspace, errors, saveBack })
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
     // The end of the match records (db/042, lib/retention.js): the daily sweep below

@@ -587,8 +587,10 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       const taken = new Set(held.map((r) => r.sv_number))
       const fresh = p.filter((x) => !taken.has(x.sv_number))
       if (fresh.length) {
+        // the rows no upload brought, by hand and from a match: the same rows
+        // addFromMatch counts against the same cap (PERM-04)
         const { rows: [n] } = await client.query(
-          `SELECT (SELECT count(*)::int FROM public.club_licences WHERE club_id = $1 AND source = 'manual') AS club,
+          `SELECT (SELECT count(*)::int FROM public.club_licences WHERE club_id = $1 AND source <> 'import') AS club,
                   (SELECT count(*)::int FROM public.club_licences
                     WHERE imported_by = $2 AND source = 'manual' AND imported_at > now() - interval '1 day') AS mine`,
           [club, isUuid(userId) ? userId : null])
@@ -629,10 +631,12 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
    * them). A person addPeople would refuse is left out (`invalid`). No
    * gender: a roster does not say it (an official match's player of the
    * other gender is a scorer's mistake to fix, not a fact to keep).
+   * `importedBy` (PERM-04): the account the rows come from (the writer of the
+   * match, or the manager who confirmed its suggestion), as imported_by.
    * { added, already, capped, invalid, lists }. Throws on a DB error (a
    * database without db/048 refuses the source: 23514).
    */
-  async function addFromMatch (client, { clubId, people } = {}) {
+  async function addFromMatch (client, { clubId, people, importedBy = null } = {}) {
     const out = { added: 0, already: 0, capped: 0, invalid: 0, lists: {} }
     if (!isUuid(clubId) || !Array.isArray(people) || !people.length) return out
     const byKey = new Map()
@@ -670,11 +674,11 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
     if (!go.length) return out
     const { rows: added } = await client.query(
       `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, gender, imported_by, source, season)
-       SELECT $1, x.list, x.sv, x.ln, x.fn, NULL, NULL, 'match', $6
+       SELECT $1, x.list, x.sv, x.ln, x.fn, NULL, $7, 'match', $6
          FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS x(list, sv, ln, fn)
        ON CONFLICT (club_id, list, sv_number) DO NOTHING
        RETURNING list`,
-      [clubId, go.map((x) => x.list), go.map((x) => x.sv_number), go.map((x) => x.last_name), go.map((x) => x.first_name), seasonNow()])
+      [clubId, go.map((x) => x.list), go.map((x) => x.sv_number), go.map((x) => x.last_name), go.map((x) => x.first_name), seasonNow(), isUuid(importedBy) ? importedBy : null])
     out.added = added.length
     out.already += go.length - added.length
     for (const r of added) out.lists[r.list] = (out.lists[r.list] || 0) + 1

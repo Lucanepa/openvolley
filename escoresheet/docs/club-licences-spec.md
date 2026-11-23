@@ -299,8 +299,11 @@ Assistant Coaches to `coaches` (a physiotherapist or a medic does not go). `lib/
   `hand_rows` its `source` (`manual` or `match`).
 - At most `MAX_MANUAL_PER_CLUB` (300) rows no upload brought per club (by hand and from matches
   together): those past it are left out, counted (`club_capped` in the audit), never an error. No
-  daily cap (no account writes them). Audited with the saved team as `team.squad.match`
-  (`club_added`, `club_capped`), never a name.
+  daily cap. Audited with the saved team as `team.squad.match` or `team.squad.suggestion`
+  (`club_added`, `club_capped`), never a name. Since owner decision 2026-11-23 no. 2 (PERM-04):
+  only from a closed match, only to the club of the match's writer (`imported_by` the writer);
+  another club's rows come only when its manager confirms the suggestion (`imported_by` that
+  manager). Hand-added rows count against the same 300 (rows of source `manual` and `match`).
 
 ## 9. Only what each role needs (db/037)
 

@@ -98,6 +98,10 @@
  *                                                    name or licence number (an official)
  *   POST   /api/team/:id/club-people { people }      the same: as POST /api/club/:id/licences/people,
  *                                                    to the team's club (db/026)
+ *   GET    /api/team/:id/roster-suggestions          the same: the team's open suggestions (db/058, PERM-04):
+ *                                                    another club's closed official match's roster of the
+ *                                                    team, with what confirming would change
+ *   POST   /api/team/:id/roster-suggestions/:sid     the same: { decision: confirm | reject }
  *   GET    /api/club-licences                        indoor canReadTeams: the players lists and every
  *                                                    person of the lists of the caller's clubs, for the
  *                                                    scoring tablet (offline first)
@@ -204,7 +208,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null, sqlWorkspace = null, errors = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null, sqlWorkspace = null, errors = null, saveBack = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -292,6 +296,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
   const readIndoorTeams = (m, c) => (accessForSport(c.access, 'indoor').canReadTeams ? null : FORBIDDEN())
   // db/024: a club's licence lists (lib/licences.js); 404 on a server built without it
   const lic = (fn) => (licences ? fn(licences) : notFound())
+  // db/058 (PERM-04): another club's official match's roster for the team, to confirm or reject
+  const sug = (fn) => (saveBack?.listSuggestions ? fn(saveBack) : notFound())
   // the list is part of the path, one route each (an enum, never a uuid)
   const licenceListRoutes = LICENCE_LISTS.map((list) => ['PUT', new RegExp(`^/api/club/${ID}/licences/${list}$`), clubManagerOf,
     (m, c) => lic((l) => l.putList({ clubId: m[1], list, people: isPlainObject(c.body) ? c.body.people : undefined, userId: c.user.id }))])
@@ -390,6 +396,10 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.searchPeople({ teamId: m[1], q: q(c.query, 'q'), userId: c.user.id, unlimited: c.access?.isAdmin === true }))],
     // db/026: after a squad is saved, the people typed in by hand go to the team's club if the manager wants
     ['POST', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.addPeople({ teamId: m[1], body: c.body, userId: c.user.id }))],
+    // db/058 (PERM-04, owner decision 2026-11-23 no. 2): another club's closed official match's
+    // roster of this team, a suggestion: what it would change, then confirm or reject
+    ['GET', new RegExp(`^/api/team/${ID}/roster-suggestions$`), teamManagerOf, (m) => sug((sb) => sb.listSuggestions({ teamId: m[1] }))],
+    ['POST', new RegExp(`^/api/team/${ID}/roster-suggestions/${ID}$`), teamManagerOf, (m, c) => sug((sb) => sb.decideSuggestion({ actorId: c.user.id, teamId: m[1], id: m[2], body: c.body }))],
     // db/025: the team manager requests of the team
     ['GET', new RegExp(`^/api/team/${ID}/requests$`), teamManagerOf, (m) => req((r) => r.listForTeam({ teamId: m[1] }))],
     ['POST', new RegExp(`^/api/team/${ID}/requests/${ID}$`), teamManagerOf, (m, c) => req(async (r) => {
