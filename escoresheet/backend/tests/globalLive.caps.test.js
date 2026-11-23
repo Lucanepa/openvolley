@@ -44,6 +44,17 @@ describe('caps per address and hour', () => {
     for (let i = 0; i < 300; i++) assert.equal(store.put(code, token, live({ points_a: i }), {}, { source: '198.51.100.9' }).ok, true)
   })
 
+  it('a room that proved the database row\'s game PIN is not capped (many scorers behind one address)', () => {
+    const store = createGlobalLive()
+    let ok = 0
+    for (let i = 0; i < 20; i++) if (store.put(newCode(), null, live(), {}, { room: `match_official_${i}`, official: true, source: '198.51.100.50' }).ok) ok++
+    assert.equal(ok, 20)
+    // the same address without that proof is
+    let other = 0
+    for (let i = 0; i < 20; i++) if (store.put(newCode(), null, live(), {}, { room: `match_test_${i}`, source: '198.51.100.50' }).ok) other++
+    assert.equal(other, 12)
+  })
+
   it('new courts: 120 per address and hour', () => {
     const store = createGlobalLive({ maxCourtsPerCode: 1000 })
     let ok = 0

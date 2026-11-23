@@ -332,8 +332,11 @@ export function createGlobalLive({
     }
     if (!prev) {
       const newCode = !codeEntry
-      const codeSlots = newCode ? budget(source, 'codes', t) : []
-      const courtSlots = budget(source, 'courts', t)
+      // (a room that proved the database row's game PIN is no stranger: no cap,
+      // also when many scorers share one address)
+      const capped = relay && official === true ? null : source
+      const codeSlots = newCode ? budget(capped, 'codes', t) : []
+      const courtSlots = budget(capped, 'courts', t)
       if (!allowed(codeSlots) || !allowed(courtSlots)) { refused.rate++; return { ok: false, reason: 'rate' } }
       // the room's own court of an older app gives way to its token's court
       if (roomCourt != null) { dropCourt(code, codeEntry, roomCourt); roomCourt = null }
