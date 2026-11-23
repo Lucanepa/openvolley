@@ -228,22 +228,33 @@ describe('ToolbarClock without seconds', () => {
 // cuts it.
 describe('ToolbarClock box', () => {
   /**
-   * Widths jsdom cannot lay out: the time's text (a Range over the box), the
-   * box itself (its inline em width at 16 px, else `widths.box`), its font
-   * size. A text width of 0 is a hidden box.
+   * Sizes jsdom cannot lay out: the time's text (a Range over the box), the
+   * box itself (its inline em width and height at `widths.em` px an em, 16 by
+   * default; else `widths.box` wide and the stylesheet's line height in em
+   * tall), the em probe inside it, the box's computed font size and line
+   * height (`widths.lh`, 1.3 by default). A text width of 0 is a hidden box.
+   * `widths.font` above `widths.em` is Android's text zoom: the font grows,
+   * 1em does not.
    */
   function fakeLayout (widths) {
     const isBox = (el) => el?.classList?.contains('toolbar-clock-time')
+    const em = () => widths.em ?? 16
+    const font = () => widths.font ?? em()
+    const lh = () => widths.lh ?? 1.3
     const hadRange = Object.getOwnPropertyDescriptor(Range.prototype, 'getBoundingClientRect')
     Range.prototype.getBoundingClientRect = function () { return { width: widths.text } }
     const realRect = Element.prototype.getBoundingClientRect
     const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (isBox(this.parentNode) && this.style.width.endsWith('em')) return { width: parseFloat(this.style.width) * em(), height: 0 }
       if (!isBox(this)) return realRect.call(this)
-      const em = parseFloat(this.style.width)
-      return { width: widths.text === 0 ? 0 : (this.style.width ? em * 16 : widths.box) }
+      if (widths.text === 0) return { width: 0, height: 0 }
+      return {
+        width: this.style.width ? parseFloat(this.style.width) * em() : widths.box,
+        height: (this.style.height ? parseFloat(this.style.height) : lh()) * em()
+      }
     })
     const real = window.getComputedStyle
-    const gcs = vi.spyOn(window, 'getComputedStyle').mockImplementation((el, ...rest) => (isBox(el) ? { fontSize: '16px' } : real(el, ...rest)))
+    const gcs = vi.spyOn(window, 'getComputedStyle').mockImplementation((el, ...rest) => (isBox(el) ? { fontSize: `${font()}px`, lineHeight: `${lh() * font()}px` } : real(el, ...rest)))
     return () => {
       if (hadRange) Object.defineProperty(Range.prototype, 'getBoundingClientRect', hadRange)
       else delete Range.prototype.getBoundingClientRect
@@ -290,11 +301,65 @@ describe('ToolbarClock box', () => {
       expect(box().style.width).toMatch(/em$/)
       expect(parseFloat(box().style.width) * 16).toBeGreaterThanOrEqual(109.3)
       expect(parseFloat(box().style.width) * 16).toBeLessThan(109.33)
+      // no text zoom: the stylesheet's height is the line's
+      expect(box().style.height).toBe('')
       const fitted = box().style.width
       const writes = vi.spyOn(box().style, 'width', 'set')
+      const heights = vi.spyOn(box().style, 'height', 'set')
       act(() => { vi.advanceTimersByTime(3000) })
       expect(box().style.width).toBe(fitted)
       expect(writes).not.toHaveBeenCalled()
+      expect(heights).not.toHaveBeenCalled()
+    } finally { restore() }
+  })
+
+  // The Android app follows the system font size: the WebView zooms the text,
+  // so the font computes larger while 1em of a width or height does not (the
+  // A7 Lite emulator at 1.3: font-size 10px computes as 13px, 10em is 100px).
+  // Sized from the computed font size, the box was 1/1.3 too narrow and too
+  // low: "01:52:(" for 01:52:08, "01:4" without seconds.
+  it('Android\'s system font size (a text zoom): the time\'s width and its line\'s height in full', () => {
+    // font size 1.3: the font at 20.8 px, 1em at 16 px; the time 72.8 px wide
+    // on a line of 1.3 x 20.8 = 27.04 px
+    const widths = { text: 72.8, box: 55.2, em: 16, font: 20.8 }
+    const restore = fakeLayout(widths)
+    try {
+      vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+      render(<span data-testid="clock"><ToolbarClock /></span>)
+      const px = (length) => parseFloat(length) * 16
+      expect(box().style.width).toMatch(/em$/)
+      expect(px(box().style.width)).toBeGreaterThanOrEqual(72.8)
+      expect(px(box().style.width)).toBeLessThan(72.83)
+      expect(box().style.height).toMatch(/em$/)
+      expect(px(box().style.height)).toBeCloseTo(27.04, 5)
+      // the probe is gone: the box holds the time alone
+      expect(box().childNodes).toHaveLength(1)
+      expect(box().firstChild.nodeType).toBe(Node.TEXT_NODE)
+      // fitted: a tick writes nothing
+      const fitted = [box().style.width, box().style.height]
+      const writes = [vi.spyOn(box().style, 'width', 'set'), vi.spyOn(box().style, 'height', 'set')]
+      act(() => { vi.advanceTimersByTime(3000) })
+      expect([box().style.width, box().style.height]).toEqual(fitted)
+      for (const write of writes) expect(write).not.toHaveBeenCalled()
+      // seconds off: the width again, the line's height kept
+      act(() => { setLook({ clockSeconds: false }) })
+      widths.text = 46.8
+      act(() => { vi.advanceTimersToNextTimer() })
+      expect(px(box().style.width)).toBeGreaterThanOrEqual(46.8)
+      expect(px(box().style.width)).toBeLessThan(46.83)
+      expect(px(box().style.height)).toBeCloseTo(27.04, 5)
+    } finally { restore() }
+  })
+
+  it('the folded strip\'s clock (11 px, line height 1) at font size 1.3: in full', () => {
+    const widths = { text: 62.9, box: 48.4, em: 11, font: 14.3, lh: 1 }
+    const restore = fakeLayout(widths)
+    try {
+      vi.useFakeTimers({ now: new Date('2026-11-22T10:00:30') })
+      render(<span data-testid="clock"><ToolbarClock /></span>)
+      expect(parseFloat(box().style.width) * 11).toBeGreaterThanOrEqual(62.9)
+      expect(parseFloat(box().style.width) * 11).toBeLessThan(62.93)
+      expect(parseFloat(box().style.height) * 11).toBeCloseTo(14.3, 5)
     } finally { restore() }
   })
 

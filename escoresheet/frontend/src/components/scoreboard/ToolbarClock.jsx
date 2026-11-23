@@ -57,6 +57,25 @@ export function msToNextMinute (now) {
 }
 
 /**
+ * The px in one em of the box's lengths, measured: a probe 100em wide inside
+ * the box (its layout stays in the box), read and taken out at once. Not the
+ * computed font size: Android's system font size reaches the app's WebView as
+ * a text zoom, which enlarges the font (and the computed font-size) but not
+ * the em of widths and heights (font size 1.3: font-size 10px computes as
+ * 13px, a 10em width stays 100px). Sized from the font size, the box came out
+ * 1/1.3 too narrow and too low and cut the end of the time (the A7 Lite
+ * emulator at 1.3, 23.11.2026).
+ */
+function emPx (box) {
+  const probe = document.createElement('span')
+  probe.style.cssText = 'position:absolute;visibility:hidden;width:100em;height:0'
+  box.appendChild(probe)
+  const px = probe.getBoundingClientRect().width / 100
+  probe.remove()
+  return px
+}
+
+/**
  * The date and time of the scoring screen's toolbar, ticking by itself. It
  * was Scoreboard state: each second rendered the whole scoring screen (and
  * any dialog open on it) to change this text. Under the Android in-app view
@@ -71,7 +90,7 @@ export function msToNextMinute (now) {
  * text before it, so a tight toolbar (large system font, the backup alert
  * beside the chevron) still puts the time under the date, as before. The box
  * is as wide as the time in any language (fr-CA writes "23 h 58 min 48 s"),
- * never cutting it.
+ * never cutting it, and one line tall, at any system font size.
  */
 export default function ToolbarClock () {
   const covered = useInAppViewOpen()
@@ -99,13 +118,15 @@ export default function ToolbarClock () {
     next()
     return () => clearTimeout(timer)
   }, [covered, seconds])
-  // The box takes the time's own width (in em, so it follows the font size):
-  // the clock is as wide as its text was without the box, and wraps where it
-  // did. With tabular figures that width only changes with the format or the
-  // font: then the box is resized once; every other tick only reads it, which
-  // lays out the box alone (the layout the frame makes anyway). A hidden box
-  // (the folded toolbar) measures 0 and keeps its width, or the stylesheet's
-  // after a change of seconds.
+  // The box takes the time's own width and its line's height (in em, so they
+  // follow the font size): the clock is as wide as its text was without the
+  // box, and wraps where it did. The stylesheet's height (its line height in
+  // em) is right without a text zoom; with one (emPx) the line is taller and
+  // the box takes its height too. With tabular figures the width only changes
+  // with the format or the font: then the box is resized once; every other
+  // tick only reads it, which lays out the box alone (the layout the frame
+  // makes anyway). A hidden box (the folded toolbar) measures 0 and keeps its
+  // size, or the stylesheet's width after a change of seconds.
   const fit = useCallback(() => {
     const box = boxRef.current
     if (!box?.firstChild) return
@@ -113,9 +134,16 @@ export default function ToolbarClock () {
     range.selectNodeContents(box)
     if (typeof range.getBoundingClientRect !== 'function') return
     const text = range.getBoundingClientRect().width
-    if (!(text > 0) || Math.abs(text - box.getBoundingClientRect().width) < 0.02) return
-    const px = parseFloat(getComputedStyle(box).fontSize)
-    if (px > 0) box.style.width = `${Math.ceil(text * 64) / 64 / px}em`
+    if (!(text > 0)) return
+    const shown = box.getBoundingClientRect()
+    const line = parseFloat(getComputedStyle(box).lineHeight)
+    const fixWidth = Math.abs(text - shown.width) >= 0.02
+    const fixHeight = line > 0 && Math.abs(line - shown.height) >= 0.02
+    if (!fixWidth && !fixHeight) return
+    const em = emPx(box)
+    if (!(em > 0)) return
+    if (fixWidth) box.style.width = `${Math.ceil(text * 64) / 64 / em}em`
+    if (fixHeight) box.style.height = `${line / em}em`
   }, [])
   const fittedSeconds = useRef(seconds)
   useLayoutEffect(() => {

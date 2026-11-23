@@ -1266,7 +1266,9 @@ button:disabled {
    to 4.45ch, in every language but fr-CA); ToolbarClock then sets the box
    to the time's exact width, so the clock wraps where it did and nothing is
    cut. Top-aligned (the box has no baseline), one line tall: the toolbar's
-   1.3, the strip's 1 (--clock-lh on its span). */
+   1.3, the strip's 1 (--clock-lh on its span). Under Android's system font
+   size (a text zoom in the app's WebView) the font grows but 1em does not:
+   ToolbarClock then sets the line's height too. */
 .toolbar-clock-time {
   display: inline-block;
   vertical-align: top;
