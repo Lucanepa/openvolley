@@ -102,15 +102,22 @@ apps feed it too).
   season, its game in `svrz_games`.
 - **Whose team.** The writer is the account that closed the match (`closed_by`), else its
   creator. The side whose team is of a club the writer is a member of is merged at once, as
-  below, with the writer as the actor (audit, `imported_by` of the club's new rows). **The other
-  side** (another club's team, or a team of no club) gets a **suggestion** only
-  (`roster_suggestions`, db/058; no personal data, the roster stays the match's): nothing is
-  written to its saved team or its club's lists. Whoever may manage that team (its team managers,
-  its club's managers, admins) sees it on the team's page with what it would change (`GET
-  /api/team/:id/roster-suggestions`) and confirms it (merged then, the same way, the manager the
-  actor) or rejects it (`POST /api/team/:id/roster-suggestions/:sid { decision }`; audited
-  `team.squad.suggestion`). A suggestion of a match an admin reopened waits until it is closed
-  again; a deleted match takes its suggestions with it.
+  below, with the writer as the actor (audit, `imported_by` of the club's new rows). **Another
+  club's team** gets a **suggestion** only (`roster_suggestions`, db/058; no personal data, the
+  roster stays the match's): nothing is written to its saved team or its club's lists. Whoever may
+  manage that team (its team managers, its club's managers, admins) sees it on the team's page
+  with what it would change (`GET /api/team/:id/roster-suggestions`) and confirms it (merged then,
+  the same way, the manager the actor) or rejects it (`POST /api/team/:id/roster-suggestions/:sid
+  { decision }`; audited `team.squad.suggestion`). A suggestion of a match an admin reopened waits
+  until it is closed again; a deleted match takes its suggestions with it.
+- **A team of no club** (not in `club_teams`: most opponents today; review CR-2 of PERM-04) has
+  nobody to confirm a suggestion, so it gets none. Its saved team is filled **add-only**, the
+  writer the actor (`team.squad.match` with `add_only`): new people are added and empty fields
+  filled (a shirt number nobody holds, a missing licence or first name), as an older match does;
+  nobody's number changes, nobody is set active again, no official's role moves, and it has no
+  club lists. A match without a writer leaves it alone. Its numbers therefore stay those of the
+  first match that gave them until a competition manager or an admin changes them in
+  Competitions, or the team's club comes to OpenVolley (then its managers keep the saved team).
 - **Which team.** Each side of the row by its team name against the schedule's home and away
   names (the same, accents and case aside, or one holding the other; straight or swapped: Match
   Setup's swap, a game played the other way round). A side no name points to is left alone.

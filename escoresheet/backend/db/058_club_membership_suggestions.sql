@@ -16,8 +16,9 @@
 -- 2. roster_suggestions (PERM-04, owner decision 2026-11-23 no. 2): an
 --    official match saves back only once it is closed (approved / final),
 --    and only to the team of a club its writer (matches.closed_by, else
---    created_by) is a member of (lib/rosterSaveBack.js). The other side of
---    the match gets a suggestion instead, one row per (match, side), which
+--    created_by) is a member of (lib/rosterSaveBack.js; a team of no club:
+--    add-only, review CR-2, and no row here). The other side of the match,
+--    another club's team, gets a suggestion instead, one row per (match, side), which
 --    whoever may manage that team (its club's managers, its team managers,
 --    admins: lib/teams.js mayManage) confirms or rejects in the manager.
 --    Confirming merges the match's roster then, as the writer's own club's
@@ -28,8 +29,8 @@
 --    The row goes with its match (ON DELETE CASCADE: a deleted match's
 --    suggestions are gone, and a deleted match is never a team's "latest").
 --    team_name is the schedule's (svrz_games) name of the side's team;
---    club_id / team_id the team's club and club team when it was made (NULL:
---    no club then; the manager's list finds a team by its name).
+--    club_id / team_id the team's club and club team when it was made (the
+--    manager's list finds a team by its name).
 --
 -- current_definitions.sql carries the new ov_manager_rows_changed().
 -- roles.sql: no change (ov_app's default privileges cover new tables; the

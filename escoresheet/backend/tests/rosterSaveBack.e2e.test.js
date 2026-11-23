@@ -6,8 +6,10 @@
  * scorer's saved-teams download and the team manager's squad show it) and
  * the club's lists have the licences. Owner decision 2026-11-23 no. 2
  * (PERM-04), which this file pinned the other way before: nothing before the
- * close, and the opponent (not of the scorer's clubs) gets a suggestion,
- * not a saved team. A test match writes nothing. With the production grants
+ * close. The opponent here is of no club: it gets its saved team add-only
+ * (review CR-2; a suggestion nobody could open in between), another club's
+ * team would get a suggestion (rosterSuggestions.e2e). A test match writes
+ * nothing. With the production grants
  * (db/roles.sql). Made-up clubs and people only.
  *
  * Needs PG_TEST_URL (see tests/helpers/pgTestDb.js) or OV_E2E_DOCKER=1.
@@ -111,14 +113,17 @@ describe('save-back end to end: an official match fills the squad and the club l
       const t = await savedTeamOf(users.scorer, H1)
       return t?.players?.length === 3 ? t : null
     }, { what: 'the saved team of the home team', timeoutMs: 20000 })
-    // the two sides are written one after the other: wait for the away side's suggestion
-    await waitUntil(async () => (await sql.query("SELECT 1 FROM public.roster_suggestions WHERE team_name = $1 AND status = 'open'", [H2])).rowCount === 1,
-      { what: 'the suggestion of the away team', timeoutMs: 20000 })
+    // the two sides are written one after the other: wait for the away side too
+    const away = await waitUntil(async () => {
+      const t = await savedTeamOf(users.scorer, H2)
+      return t?.players?.length === 1 ? t : null
+    }, { what: 'the saved team of the away team', timeoutMs: 20000 })
     assert.deepEqual(saved.players.map((p) => [p.last_name, p.number, p.license_number]), [['Muster', 7, '100001'], ['Beispiel', 12, '100002'], ['Ohnelizenz', 3, null]])
     assert.deepEqual(saved.staff.map((s) => [s.role, s.last_name, s.license_number]), [['Coach', 'Trainer', '5001']])
     assert.equal(saved.club, 'VBC Musterdorf')
-    // the opponent (no club of the scorer's) gets no saved team from this scorer: a suggestion only
-    assert.equal(await savedTeamOf(users.scorer, H2), null)
+    // the opponent the scorer meets at home is of no club: it has one too (add-only, CR-2), and no suggestion
+    assert.deepEqual(away.players.map((p) => [p.last_name, p.number]), [['Gast', 1]])
+    assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.roster_suggestions')).rows[0].n, 0)
     // the team manager's squad is that saved team
     const sq = await call(users.clubmgr, 'GET', `/api/team/${team.id}/squad`)
     assert.equal(sq.status, 200, sq.text)

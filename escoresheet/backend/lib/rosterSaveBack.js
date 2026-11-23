@@ -20,14 +20,22 @@
  *     creator. The side whose team is a club's the writer is a member of
  *     (account_clubs) is merged at once, as before, audited with the writer
  *     as actor (and as imported_by of the club's new rows);
- *   - the other side (another club's team, or a team of no club) gets a
- *     SUGGESTION (db/058 roster_suggestions, one per match and side) and
- *     nothing else: no write to its saved team or its club's lists. Whoever
- *     may manage that team (its club's managers, its team managers, admins)
- *     sees it in the manager (listSuggestions, with what it would change) and
- *     confirms it (merged then, as the own side is, the manager the actor) or
- *     rejects it (decideSuggestion). A suggestion holds no personal data: the
- *     roster is read from the match each time;
+ *   - another club's side gets a SUGGESTION (db/058 roster_suggestions, one
+ *     per match and side) and nothing else: no write to its saved team or its
+ *     club's lists. Whoever may manage that team (its club's managers, its
+ *     team managers, admins) sees it in the manager (listSuggestions, with
+ *     what it would change) and confirms it (merged then, as the own side is,
+ *     the manager the actor) or rejects it (decideSuggestion). A suggestion
+ *     holds no personal data: the roster is read from the match each time;
+ *   - a team of NO club (no club_teams row: most opponents today) has nobody
+ *     who could confirm a suggestion, and the owner wanted its saved team
+ *     filled "also for a team nobody manages" (2026-11-19). Review CR-2: it
+ *     is filled ADD-ONLY, with the writer as actor (audited team.squad.match,
+ *     add_only): new people are added and empty fields filled (a shirt number
+ *     nobody holds, a missing licence or first name), as an older match does;
+ *     no number of anyone changes, nobody is set active again, no official's
+ *     role moves, and it has no club lists. No suggestion is stored for it
+ *     (nobody could open one). Without a writer, nothing;
  *   - a deleted match is gone, with its suggestions (ON DELETE CASCADE); it is
  *     never a team's "latest" match.
  *
@@ -52,8 +60,9 @@
  * the scorer may have swapped the sides in Match Setup, and a name may be
  * shortened); a side no name points to is left alone.
  *
- * For the writer's own club's side (and for a confirmed suggestion), one
- * transaction:
+ * For the writer's own club's side (and for a confirmed suggestion; for a
+ * team of no club the same add-only, as an older match: step 2 with no
+ * number, active or role change, no step 3), one transaction:
  *   1. The team's saved team of the season (lib/teams.js ensureSquad: the
  *      team manager's squad, found by its VolleyManager name, or made the
  *      way a team manager's first save makes it), under the same lock as a
@@ -556,7 +565,7 @@ export function createRosterSaveBack ({
    * the actor. { side, team, saved_team_id, created, latest, changed, counts,
    * club } or { side, team, error } (rolled back by the caller).
    */
-  async function mergeSide (client, { m, game, side, team, roster, year, actorId, suggestions, action, extra = {} }) {
+  async function mergeSide (client, { m, game, side, team, roster, year, actorId, suggestions, action, addOnly = false, extra = {} }) {
     const wrong = licences?.wrongGenders ? await licences.wrongGenders(client, team, roster.players) : new Map()
     const squad = await teams.ensureSquad(client, { actorId, team, year })
     if (squad.answer) return { side, team: team.name, error: `saved team: ${squad.answer.body?.error?.code || squad.answer.status}` }
@@ -564,14 +573,15 @@ export function createRosterSaveBack ({
     await client.query('SELECT 1 FROM public.competition_teams WHERE id = $1 FOR UPDATE', [squad.id])
     const cur = await savedTeams.getTeam({ id: squad.id, client })
     if (cur.status !== 200) throw new Error(`saved team read ${cur.status}`)
-    const latest = !(await laterMatch(client, { name: team.name, kickoff: game.datetime, matchId: m.id, season: year, suggestions }))
+    // add-only (a team of no club, review CR-2): merged as an older match is, whatever its kick-off
+    const latest = addOnly ? false : !(await laterMatch(client, { name: team.name, kickoff: game.datetime, matchId: m.id, season: year, suggestions }))
     const merged = mergeMatchRoster(cur.body.data.team, roster, { latest, wrong: new Set(wrong.keys()) })
     if (merged.changed) {
       const put = await savedTeams.putRoster({ id: squad.id, body: { players: merged.players, staff: merged.staff }, client })
       if (put.status !== 200) return { side, team: team.name, error: `saved team write: ${put.body?.error?.code || put.status}` }
     }
     let clubOut = null
-    if (team.club_id && merged.club.length && licences?.addFromMatch) {
+    if (!addOnly && team.club_id && merged.club.length && licences?.addFromMatch) {
       // the club's lists never fail the saved team (a database without db/048's source)
       await client.query('SAVEPOINT club_lists')
       try {
@@ -591,6 +601,7 @@ export function createRosterSaveBack ({
         matchId: m.id,
         details: {
           ...extra,
+          ...(addOnly ? { add_only: true } : {}),
           game_number: String(m.game_n),
           season: year,
           side,
@@ -640,13 +651,16 @@ export function createRosterSaveBack ({
     return { latest, changed: merged.changed, counts: merged.counts, club_new: clubNew, players, staff, saved_team_id: id }
   }
 
-  /** The writer's own club's side: merged at once (the writer the actor), one transaction. */
-  async function saveOwnSide ({ m, game, side, team, roster, year, writer, suggestions }) {
+  /**
+   * The writer's own club's side, or (`addOnly`) a team of no club's: merged
+   * at once (the writer the actor), one transaction.
+   */
+  async function saveSide ({ m, game, side, team, roster, year, writer, suggestions, addOnly = false }) {
     const client = await connectClient(pool, log)
     let done = false
     try {
       await client.query('BEGIN')
-      const out = await mergeSide(client, { m, game, side, team, roster, year, actorId: writer, suggestions, action: 'team.squad.match' })
+      const out = await mergeSide(client, { m, game, side, team, roster, year, actorId: writer, suggestions, action: 'team.squad.match', addOnly })
       await client.query(out.error ? 'ROLLBACK' : 'COMMIT')
       done = true
       return out
@@ -657,8 +671,8 @@ export function createRosterSaveBack ({
   }
 
   /**
-   * Another club's side (or a team of no club): a suggestion for whoever may
-   * manage that team, when it would change anything; nothing else is written.
+   * Another club's side: a suggestion for whoever may manage that team, when
+   * it would change anything; nothing else is written.
    * Made (audited) or brought up to date while it is open; a decided one is
    * left alone. { side, team, suggested, suggestion_id?, counts } | { side, team, skipped }.
    */
@@ -713,8 +727,10 @@ export function createRosterSaveBack ({
   /**
    * One run for match `matchId`, now: { skipped: reason } or { sides: [{ side,
    * team, own: true, saved_team_id, created, latest, changed, counts, club } |
-   * { side, team, own: false, suggested, suggestion_id?, counts } | { side,
-   * skipped } | { side, error }] }. Throws on a DB error.
+   * { side, team, own: false, add_only: true, saved_team_id, created, latest:
+   * false, changed, counts } (a team of no club) | { side, team, own: false,
+   * suggested, suggestion_id?, counts } | { side, skipped } | { side, error }]
+   * }. Throws on a DB error.
    */
   async function run (matchId) {
     if (!isUuid(matchId)) return { skipped: 'id' }
@@ -746,7 +762,11 @@ export function createRosterSaveBack ({
       try {
         const team = await teamOf(pool, name)
         if (team.club_id && writerClubs.has(team.club_id)) {
-          sides.push({ ...(await saveOwnSide({ m, game, side, team, roster, year, writer, suggestions })), own: true })
+          sides.push({ ...(await saveSide({ m, game, side, team, roster, year, writer, suggestions })), own: true })
+        } else if (!team.club_id) {
+          // a team of no club (review CR-2): add-only, the writer the actor; no suggestion nobody could open
+          if (!writer) sides.push({ side, team: team.name, own: false, skipped: 'no_writer' })
+          else sides.push({ ...(await saveSide({ m, game, side, team, roster, year, writer, suggestions, addOnly: true })), own: false, add_only: true })
         } else if (suggestions) {
           sides.push({ ...(await suggestSide({ m, game, side, team, roster, year, writer })), own: false })
         } else {

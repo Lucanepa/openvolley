@@ -5,9 +5,12 @@
  * name; a player of the other gender, a test match and game 0 are left
  * alone. Owner decision 2026-11-23 no. 2 (PERM-04), which this file pinned
  * the other way before: only a CLOSED match saves back, the writer's own
- * club's team at once (the writer the actor), the other team (here one of
- * no club) a suggestion only (tests/rosterSaveBack.closedOnly.pg.test.js has
- * the rest). Made-up clubs and people only.
+ * club's team at once (the writer the actor); another club's team a
+ * suggestion only (tests/rosterSaveBack.closedOnly.pg.test.js has the rest).
+ * The other team here is of NO club: review CR-2 (a suggestion before, that
+ * nobody could open): its saved team gets the people add-only, no number
+ * changes (tests/rosterSaveBack.noClub.pg.test.js has the rest). Made-up
+ * clubs and people only.
  *
  * Needs PG_TEST_URL (see tests/helpers/pgTestDb.js).
  */
@@ -96,7 +99,7 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
   })
 
   let first
-  it('a closed official match: the writer\'s club\'s team gets its saved team and lists, the other team a suggestion', async () => {
+  it('a closed official match: the writer\'s club\'s team gets its saved team and lists, the team of no club its people add-only', async () => {
     first = await match(960001, {
       home: H1,
       away: H2,
@@ -111,8 +114,8 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     })
     const r = await saveBack.run(first)
     // (960002 is later the same day, but nobody has scored it yet: this match is the latest)
-    assert.deepEqual(r.sides.map((s) => [s.side, s.team, s.own, s.created, s.latest, s.changed, s.suggested]),
-      [['home', H1, true, true, true, true, undefined], ['away', H2, false, undefined, undefined, undefined, true]], JSON.stringify(r))
+    assert.deepEqual(r.sides.map((s) => [s.side, s.team, s.own, s.add_only, s.created, s.latest, s.changed, s.suggested]),
+      [['home', H1, true, undefined, true, true, true, undefined], ['away', H2, false, true, true, false, true, undefined]], JSON.stringify(r))
     const h1 = await squadOf(H1)
     assert.deepEqual(numbers(h1), { Muster: 7, Beispiel: 10, Ohnelizenz: 3, Datum: 5 })
     assert.deepEqual(h1.players.map((x) => [x.last_name, x.license_number, x.is_captain, x.is_libero, x.active]), [
@@ -120,12 +123,12 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     ])
     assert.equal(h1.club, 'VBC Musterdorf')
     assert.deepEqual(h1.staff.map((s) => [s.role, s.last_name, s.license_number]), [['Coach', 'Trainer', '5001'], ['Medic', 'Medic', '5002']])
-    // the other team is not of the writer's clubs (no club's here): no saved team, a suggestion (no names in it)
-    assert.equal(await squadOf(H2), null)
-    const sug = await suggestionsOf(first)
-    assert.deepEqual(sug.map((x) => [x.side, x.team_name, x.club_id, x.status, x.actor_id]), [['away', H2, null, 'open', writer]])
-    assert.equal(sug[0].payload.added, 3)
-    assert.ok(!JSON.stringify(sug).includes('Gast'))
+    // the other team is of no club (CR-2): a saved team all the same, add-only, no club name, no list, no suggestion
+    const h2 = await squadOf(H2)
+    assert.deepEqual(Object.fromEntries(h2.players.map((x) => [x.first_name, x.number])), { Eva: 1, Finn: 2 })
+    assert.deepEqual(h2.staff.map((s) => s.last_name), ['Gastcoach'])
+    assert.equal(h2.club, null)
+    assert.deepEqual(await suggestionsOf(first), [])
     // the club's lists: the licences it lacked, as 'match' rows without a gender; the
     // upload's row stays as it was; the medic is no coach; nobody without a licence
     assert.deepEqual(await clubRows(), [
@@ -138,6 +141,7 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     const { rows: audit } = await raw.query("SELECT actor_id, match_id, details FROM public.audit_log WHERE action IN ('team.squad.match', 'team.squad.suggestion') ORDER BY at, id")
     assert.deepEqual(audit.map((a) => a.actor_id), [writer, writer])
     assert.equal(audit.length, 2)
+    assert.deepEqual(audit.map((a) => [a.details.side, a.details.add_only]), [['home', undefined], ['away', true]])
     assert.equal(audit[0].match_id, first)
     assert.equal(audit[0].details.game_number, '960001')
     assert.equal(audit[0].details.side, 'home')
@@ -150,9 +154,9 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
 
   it('the same match again: nothing changes, nothing is audited', async () => {
     const r = await saveBack.run(first)
-    assert.deepEqual(r.sides.map((s) => s.changed ?? s.suggested), [false, true])
+    assert.deepEqual(r.sides.map((s) => s.changed), [false, false])
     assert.equal((await raw.query("SELECT count(*)::int AS n FROM public.audit_log WHERE action IN ('team.squad.match', 'team.squad.suggestion')")).rows[0].n, 2)
-    assert.equal((await suggestionsOf(first)).length, 1)
+    assert.equal((await suggestionsOf(first)).length, 0)
   })
 
   let second
@@ -165,13 +169,15 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
       playersAway: [p(9, 'Eva', 'Gast', '200001')]
     })
     const r = await saveBack.run(second)
-    assert.deepEqual(r.sides.map((s) => [s.side, s.team, s.latest ?? s.suggested]), [['home', H1, true], ['away', H2, true]])
+    assert.deepEqual(r.sides.map((s) => [s.side, s.team, s.latest]), [['home', H1, true], ['away', H2, false]])
     const h1 = await squadOf(H1)
     assert.deepEqual(numbers(h1), { Muster: 10, Beispiel: null, Ohnelizenz: 3, Datum: 5, Neu: 4 })
     assert.equal(h1.players.length, 5, 'nobody is removed')
     assert.equal(h1.staff.length, 2)
-    assert.equal(await squadOf(H2), null, 'still no saved team for the other team')
-    assert.deepEqual((await suggestionsOf(second)).map((x) => [x.side, x.team_name]), [['away', H2]])
+    // the team of no club, add-only (CR-2): the match's 9 does not renumber Eva
+    const h2 = await squadOf(H2)
+    assert.deepEqual(Object.fromEntries(h2.players.map((x) => [x.first_name, x.number])), { Eva: 1, Finn: 2 })
+    assert.deepEqual(await suggestionsOf(second), [])
     const row = (await clubRows()).find((x) => x.sv_number === '100004')
     assert.equal(row?.source, 'match')
     const { rows: [imp] } = await raw.query("SELECT imported_by FROM public.club_licences WHERE club_id = $1 AND sv_number = '100004'", [club])
@@ -180,7 +186,7 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
 
   it('the earlier match written again later: its numbers do not come back', async () => {
     const r = await saveBack.run(first)
-    assert.deepEqual(r.sides.map((s) => s.latest), [false, undefined])
+    assert.deepEqual(r.sides.map((s) => s.latest), [false, false])
     const h1 = await squadOf(H1)
     assert.deepEqual(numbers(h1), { Muster: 10, Beispiel: null, Ohnelizenz: 3, Datum: 5, Neu: 4 })
   })
@@ -200,7 +206,7 @@ describe('rosterSaveBack: official rosters to saved teams and club lists', { ski
     assert.equal(a.details.roles, 2)
     // 960001 (earlier: Trainer Coach, Medic Medic) written again: no role changes back
     const again = await saveBack.run(first)
-    assert.deepEqual(again.sides.map((s) => [s.latest, s.changed]), [[false, false], [undefined, undefined]])
+    assert.deepEqual(again.sides.map((s) => [s.latest, s.changed]), [[false, false], [false, false]])
     assert.deepEqual((await squadOf(H1)).staff.map((s) => [s.last_name, s.role]), [['Trainer', 'Assistant Coach 1'], ['Medic', 'Coach']])
   })
 
