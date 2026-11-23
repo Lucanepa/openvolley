@@ -2649,7 +2649,9 @@ function sendJsonText(req, res, status, text) {
   gzip(text, { level: 1 }, (err, body) => {
     if (err) return plain()
     if (res.headersSent) return
-    res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' })
+    // added to the request's Vary (Origin, Authorization), not in its place
+    const vary = [res.getHeader('Vary'), 'Accept-Encoding'].filter(Boolean).join(', ')
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Vary: vary })
     res.end(body)
   })
 }
@@ -3592,6 +3594,11 @@ const server = createServer((req, res) => {
   }
 })
 
+/** Does the request carry an account's or a match's credentials (a session or API token, a match token or PIN)? */
+function hasCredentials(req) {
+  return !!(req.headers.authorization || req.headers['x-ov-match-token'] || req.headers['x-ov-match-pin'])
+}
+
 /**
  * The https address of a request the visitor sent to the cloud over plain
  * http, else null (SEC-61). Cloudflare's cf-visitor names the visitor's
@@ -3617,7 +3624,12 @@ function handleHttpRequest(req, res) {
   // Enable CORS with proper origin handling
   const cors = getCorsOrigin(req)
   res.setHeader('Access-Control-Allow-Origin', cors.origin)
-  res.setHeader('Vary', 'Origin')
+  // Authorization too: an answer to a signed-in request is that account's.
+  // A cache that keys on the URL alone (a service worker's runtime cache,
+  // SEC-20) then never hands it to another account or a signed-out request,
+  // and it is not stored at all (no-store below).
+  res.setHeader('Vary', 'Origin, Authorization')
+  if (hasCredentials(req)) res.setHeader('Cache-Control', 'no-store')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
   // X-OV-Proto: the client protocol version; /api/db writes and
   // /api/match/restore need >= 2. Without it here every browser write would
