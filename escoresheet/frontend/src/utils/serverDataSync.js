@@ -2039,8 +2039,11 @@ export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
 // scoreboard role, the connection PINs let the relay check referee/bench PINs
 // itself (LAN). Nothing else secret goes over the relay.
 const RELAY_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
-// globalKey: the only access to a Global match's backup store (utils/globalCloud)
-const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins', 'globalKey']
+// globalKey: the only access to a Global match's backup store (utils/globalCloud);
+// globalOrganizer: the tournament code that lists and adds to its matches and
+// PDFs, cloudShareToken: the match's read-only share link (utils/globalCloudDb,
+// audit SEC-28); liveSecret: the live screen's court (utils/globalLive)
+const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins', 'globalKey', 'globalOrganizer', 'cloudShareToken', 'liveSecret']
 
 // What no relay hands a tablet stays on the device too (the same lists as
 // backend/lib/publicColumns.js): a person's date of birth, nationality and

@@ -545,7 +545,13 @@ export const MATCH_PRIVATE_FIELDS = Object.freeze([
   'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster',
   // a Global match's key to its backup store (frontend utils/globalCloud);
   // a scorer before 2026-11-17 sent it
-  'globalKey'
+  'globalKey',
+  // a Global match's tournament code (it lists the tournament's matches and
+  // PDFs and adds matches to it) and its read-only share link (frontend
+  // utils/globalCloudDb); a scorer up to 26.11.x sends them (audit SEC-28)
+  'globalOrganizer', 'cloudShareToken',
+  // the secret of the match's court on the live screen (frontend utils/globalLive)
+  'liveSecret'
 ])
 /**
  * Match keys only the referee and the scorer's own devices get (relayBundleView):
