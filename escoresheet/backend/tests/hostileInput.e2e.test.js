@@ -14,13 +14,28 @@
  * request error boundary (a route that threw), keep answering /health/live,
  * and keep its process: an anonymous request that ended it lost every relay
  * room, PIN budget and sign-in lockout on match day.
+ *
+ * The routes and socket types added since the first list (14.11; audit
+ * SEC-59) have lists of their own: the TV, Global live / cloud / shared /
+ * organizer, display codes, pair-a-phone, the error tracker, passkey login,
+ * one route of every authenticated family (refused before it reads input,
+ * which must not throw either), display-code-set and the server-to-client
+ * types sent back. They are checked for no crash rather than exact codes, so
+ * a defined 503 / 507 answer (JSON with an error code: a quota, an
+ * unavailable service) passes. A test without a database fails when
+ * server.js (or the endpoint modules it routes to) gets a path or socket
+ * type that no list here reaches.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { SKIP, bootServer, openSocket, provisionDatabase, sleep } from './helpers/e2eServer.js'
+import { PAIR_ENDPOINTS } from '../lib/pairSessions.js'
+
+const BACKEND_DIR = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 const PROTO_NAMES = ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'prototype']
 
@@ -71,9 +86,27 @@ function hostileBodies() {
   return bodies
 }
 
-const hostileQuery = (v) => FIELDS.map((f) => `${f}=${encodeURIComponent(typeof v === 'string' ? v : JSON.stringify(v))}`).join('&')
+// The fields the routes and socket types added since 14.11 read
+const FIELDS_SINCE_1411 = [
+  'court', 'screen', 'matchKey', 'match_external_id', 'text', 'value', 'field', 'secret', 'watch', 'phone', 'state',
+  'courtToken', 'court_token', 'key', 'backup', 'pdf', 'fileBase64', 'stack', 'kind', 'view', 'url', 'release', 'app',
+  'platform', 'breadcrumbs', 'context', 'errors', 'sport', 'teams', 'status', 'credential', 'response', 'challenge',
+  'organizer', 'share', 'known', 'version', 'active', 'enabled', 'presence', 'globalLive', 'globalLiveScreen',
+  'globalLiveShow', 'issuedAt', 'label', 'actionData'
+]
+const ALL_FIELDS = [...new Set([...FIELDS, ...FIELDS_SINCE_1411])]
+
+function hostileBodiesOf(fields) {
+  return [
+    ...HOSTILE_VALUES.map((v) => JSON.stringify(Object.fromEntries(fields.map((f) => [f, v])))),
+    ...hostileBodies().slice(HOSTILE_VALUES.length)
+  ]
+}
+
+const hostileQuery = (v, fields = FIELDS) => fields.map((f) => `${f}=${encodeURIComponent(typeof v === 'string' ? v : JSON.stringify(v))}`).join('&')
 // ?a=1&a=2 (searchParams.getAll) and a[b]=c (the qs shape some apps send)
 const ARRAY_QUERY = FIELDS.map((f) => `${f}=1&${f}=2&${f}[__proto__]=x`).join('&')
+const ARRAY_QUERY_ALL = ALL_FIELDS.map((f) => `${f}=1&${f}=2&${f}[__proto__]=x`).join('&')
 
 // Anonymous routes. `:x` is replaced by each prototype name; GET routes get
 // hostile queries, the others hostile bodies.
@@ -99,6 +132,31 @@ const POST_ROUTES = [
 ]
 const PATCH_ROUTES = ['/api/match/:x']
 
+// Added since 14.11 (map/routes.json of ed07929ae, server.js), anonymous
+const PAIR_ROUTES = PAIR_ENDPOINTS.map((e) => `/api/pair/${e}`)
+const GET_ROUTES_SINCE_1411 = [
+  '/health', '/tv', '/tv/', '/tv/go', '/tv/tv.js', '/tv/:x', '/tv/:x/:x', '/tv/1234567',
+  '/api/global/live', '/api/global/live/:x', '/api/global/live/game/:x', '/api/global/live/ABCDEFGH', '/api/global/:x',
+  '/api/global/shared/:x', '/api/global/shared/:x/pdf', '/api/global/organizer/:x', '/api/global/organizer/:x/:x/pdf',
+  '/pair', '/pair/:x', '/sign/:x', '/embed/match/:x', '/embed/club/:x', '/embed/:x',
+  '/api/public/v1/matches/:x/stream', '/api/display/lookup', '/api/errors', ...PAIR_ROUTES
+]
+const POST_ROUTES_SINCE_1411 = [
+  '/api/display/lookup', '/api/display/live', ...PAIR_ROUTES, '/api/errors',
+  '/api/global/live/:x', '/api/global/live/ABCDEFGH', '/api/global/save', '/api/global/load', '/api/global/:x',
+  '/api/global/cloud/save', '/api/global/cloud/load', '/api/global/cloud/share', '/api/global/cloud/delete', '/api/global/cloud/:x',
+  '/api/auth/passkey/login-options', '/api/auth/passkey/login', '/api/auth/reset-password/confirm'
+]
+// One route of each authenticated family: refused without an account, and
+// the refusal must not throw on what it was sent either
+const AUTH_FAMILY_ROUTES = [
+  '/api/admin/:x', '/api/admin/activity/export', '/api/beach/:x', '/api/club/v1', '/api/club/v1/:x', '/api/club/:x',
+  '/api/club-licences', '/api/club-licences/:x', '/api/game-rosters', '/api/game-rosters/:x', '/api/saved-teams',
+  '/api/saved-teams/:x', '/api/scoresheets', '/api/scoresheets/:x', '/api/approvals', '/api/approvals/:x',
+  '/api/account/approvals', '/api/account/approval-pin', '/api/account/approval-pin/remove', '/api/match-editors/:x',
+  '/api/team/:x', '/api/notifications/read', '/api/match/claim', '/api/match/scorer'
+]
+
 // The test server has no mailer: reset-password answers 503 "temporarily
 // unavailable" (lib/auth.js), whatever the body
 const NO_MAILER_503 = new Set(['/api/auth/reset-password'])
@@ -111,6 +169,27 @@ const SOCKET_TYPES = [
   'clear-all-matches', 'delete-match', 'subscribe-match', 'unsubscribe-match', 'bench-request', 'bench-response',
   ...PROTO_NAMES
 ]
+// Added since 14.11, and the server-to-client types a client may echo back
+const SOCKET_TYPES_SINCE_1411 = [
+  'display-code-set', 'display-presence', 'display-code', 'display-code-state', 'scorer-presence', 'scorer-moved',
+  'match-full-data', 'match-data-update', 'joined_match', 'ping'
+]
+
+/**
+ * A 5xx a route answers on purpose, never the error boundary's 500: 503 / 507
+ * with a JSON error (unavailable, storage full), or /health's 503 with its
+ * status (the test database is not production's: degraded by design).
+ */
+function definedServerAnswer(status, text, path) {
+  if (status !== 503 && status !== 507) return false
+  try {
+    const j = JSON.parse(text)
+    if (!j || typeof j !== 'object') return false
+    if (path === '/health' && status === 503) return typeof j.status === 'string'
+    return typeof j.code === 'string' || typeof j.error === 'string' ||
+      (!!j.error && typeof j.error === 'object' && (typeof j.error.code === 'string' || typeof j.error.message === 'string'))
+  } catch { return false }
+}
 
 /**
  * `noDatabase`: the venue relay answers the account and database routes 503
@@ -123,20 +202,28 @@ function hostileHarness(getSrv, { noDatabase = false } = {}) {
   const nextIp = () => { ipSeq++; return `203.0.${(ipSeq >> 8) & 255}.${ipSeq & 255}` }
   const problems = []
 
-  async function call(method, path, { body, headers = {} } = {}) {
+  // `lenient` (the routes since 14.11): a defined 503 / 507 answer passes too
+  async function call(method, path, { body, headers = {}, lenient = false } = {}) {
     const srv = getSrv()
     try {
       const res = await fetch(srv.base + path, {
         method,
         headers: { 'cf-connecting-ip': nextIp(), 'X-OV-Proto': '2', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
-        body
+        body,
+        // a route that never answers (or a stream it opened) is a problem too
+        signal: AbortSignal.timeout(15000)
       })
-      await res.arrayBuffer().catch(() => {})
-      if (res.status >= 500 && !(res.status === 503 && (noDatabase || NO_MAILER_503.has(path.split('?')[0])))) {
+      const text = lenient ? await res.text().catch(() => '') : (await res.arrayBuffer().catch(() => {}), '')
+      if (res.status >= 500 && !(res.status === 503 && (noDatabase || NO_MAILER_503.has(path.split('?')[0]))) &&
+          !(lenient && definedServerAnswer(res.status, text, path.split('?')[0]))) {
         problems.push(`${method} ${path.slice(0, 120)} -> ${res.status} (body ${String(body ?? '').slice(0, 60)})`)
       }
       return res.status
     } catch (err) {
+      if (err.name === 'TimeoutError') {
+        problems.push(`${method} ${path.slice(0, 120)} -> no answer in 15 s`)
+        return 0
+      }
       // A body over the route's limit is answered 413 and the connection
       // closed while the upload still runs: the client may see only the close
       if (String(body ?? '').length > 64 * 1024 && ['EPIPE', 'ECONNRESET', 'UND_ERR_SOCKET'].includes(err.cause?.code)) return 0
@@ -188,6 +275,89 @@ function hostileHarness(getSrv, { noDatabase = false } = {}) {
           await stillUp(`${method} ${route}`)
         }
       }
+    },
+    /** The routes since 14.11 and the authenticated families: GET with hostile queries and headers, POST with hostile bodies. */
+    async routesSince1411() {
+      problems.length = 0
+      const queries = [
+        ...HOSTILE_VALUES.filter((v) => typeof v !== 'object' || v === null).map((v) => hostileQuery(typeof v === 'string' ? v.slice(0, 100) : v, ALL_FIELDS)),
+        hostileQuery({ toString: 1 }, ALL_FIELDS), hostileQuery(nested(20), ALL_FIELDS), ARRAY_QUERY_ALL, `q=${'x'.repeat(12 * 1024)}`
+      ]
+      const opts = { lenient: true }
+      for (const route of [...GET_ROUTES_SINCE_1411, ...AUTH_FAMILY_ROUTES]) {
+        for (const path of expand(route)) {
+          for (const q of queries) await call('GET', `${path}?${q}`, opts)
+          await call('GET', path, { ...opts, headers: { 'X-OV-Match-Pin': '[object Object]', 'X-OV-Match-Token': '__proto__', Authorization: 'Bearer __proto__' } })
+          await call('GET', path, { ...opts, headers: { 'X-OV-Match-Pin': 'p'.repeat(6 * 1024), Authorization: `Bearer ${'t'.repeat(6 * 1024)}` } })
+        }
+        await stillUp(`GET ${route}`)
+      }
+      const bodies = hostileBodiesOf(ALL_FIELDS)
+      for (const route of [...POST_ROUTES_SINCE_1411, ...AUTH_FAMILY_ROUTES]) {
+        for (const path of expand(route)) {
+          for (const body of bodies) await call('POST', path, { ...opts, body })
+          // navigator.sendBeacon (the error reporter) sends text/plain
+          for (const body of bodies.slice(0, 8)) await call('POST', path, { ...opts, body, headers: { 'Content-Type': 'text/plain' } })
+          await call('POST', path, { ...opts, body: '{}', headers: { 'X-OV-Match-Pin': '__proto__', Authorization: 'Bearer constructor' } })
+          await call('POST', `${path}?${ARRAY_QUERY_ALL}`, { ...opts, body: '{}' })
+        }
+        await stillUp(`POST ${route}`)
+      }
+    },
+    /**
+     * The socket types since 14.11 with hostile fields: on a socket of its
+     * own each, then from the owner of a room (display-code-set, a live
+     * state with Global live fields, bench answers), and a display that
+     * follows a hostile code.
+     */
+    async socketsSince1411() {
+      problems.length = 0
+      const srv = getSrv()
+      const answerOrClose = async (sock, what) => {
+        const closed = new Promise((r) => sock.ws.once('close', () => r('closed')))
+        if (sock.ws.readyState === 1) sock.send({ type: 'ping' })
+        const outcome = await Promise.race([closed, sock.waitFor((m) => m.type === 'pong', 10000, 'pong').then(() => 'pong', () => 'nothing')])
+        if (outcome === 'nothing') problems.push(`socket ${what}: neither a pong nor a close`)
+        sock.ws.close()
+      }
+      for (const type of SOCKET_TYPES_SINCE_1411) {
+        const sock = await openSocket(srv.wsUrl)
+        for (const v of HOSTILE_VALUES) {
+          if (sock.ws.readyState !== 1) break
+          sock.ws.send(JSON.stringify({ ...Object.fromEntries(ALL_FIELDS.map((f) => [f, v])), type }))
+        }
+        await answerOrClose(sock, type)
+      }
+      // the owner of a local-only room (a test match: no database row)
+      for (let i = 0; i < HOSTILE_VALUES.length; i++) {
+        const v = HOSTILE_VALUES[i]
+        const owner = await openSocket(srv.wsUrl)
+        const room = `match_${Date.now()}_hostile${i}`
+        owner.send({
+          type: 'sync-match-data', matchId: room, _timestamp: Date.now(),
+          match: { id: room, seed_key: room, test: true, gamePin: '515151', status: 'live', gameNumber: 9000 + i, court: v },
+          homeTeam: { name: 'Home VC' }, awayTeam: { name: 'Away VC' }, homePlayers: [], awayPlayers: [], sets: [], events: []
+        })
+        const frames = [
+          { type: 'display-code-set', matchId: room, code: v, issuedAt: v, active: v },
+          { type: 'display-code-set', matchId: room, code: 'ABCDEFGH', issuedAt: Date.now() },
+          { type: 'live-state-update', matchId: room, liveState: { points_a: v, team_a_name: v }, globalLive: v, globalLiveScreen: v, globalLiveShow: v, globalLiveCourt: v, courtToken: v },
+          { type: 'live-state-update', matchId: room, liveState: { points_a: 1 }, globalLive: 'ABCDEFGH', globalLiveScreen: v, globalLiveCourt: v },
+          { type: 'bench-response', matchId: room, team: v, id: v, answer: v, response: v },
+          { type: 'display-presence', matchId: room, presence: v, settingsUrl: v },
+          { type: 'subscribe-match', matchId: v, code: v, role: v, team: v }
+        ]
+        for (const f of frames) if (owner.ws.readyState === 1) owner.send(f)
+        await answerOrClose(owner, `owner frames #${i}`)
+      }
+      // a display board that follows a code
+      for (const v of HOSTILE_VALUES) {
+        const board = await openSocket(srv.wsUrl)
+        board.send({ type: 'subscribe-match', code: v })
+        board.send({ type: 'subscribe-match', code: 'ABCDEFGH', matchId: v })
+        await answerOrClose(board, 'display code')
+      }
+      await stillUp('the socket types since 14.11')
     },
     async sockets() {
       problems.length = 0
@@ -317,8 +487,71 @@ function hostileSuite(label, boot) {
       assert.deepEqual(harness.problems, [])
       assert.deepEqual(harness.boundaryHits(), [])
     })
+
+    it('routes since 14.11 (TV, Global, display, pair, errors, passkeys) and the authenticated families: no crash', async () => {
+      await harness.routesSince1411()
+      assert.deepEqual(harness.problems, [])
+      assert.deepEqual(harness.boundaryHits(), [])
+    })
+
+    it('socket types since 14.11: display codes, Global live fields, server-to-client types sent back', async () => {
+      await harness.socketsSince1411()
+      await sleep(200)
+      await harness.stillUp('the socket types since 14.11')
+      assert.deepEqual(harness.problems, [])
+      assert.deepEqual(harness.boundaryHits(), [])
+    })
   })
 }
+
+// No database or server needed: every path server.js routes by a literal or
+// a regex (and the endpoint lists of the modules it routes /api/pair,
+// /api/sign and /api/display to) is reached by one of the lists above, and
+// every socket type handleSocketMessage takes is in a socket list. A route
+// or type added without a hostile-input case fails here.
+describe('hostile input: the lists cover what server.js routes', () => {
+  const read = (f) => readFileSync(join(BACKEND_DIR, f), 'utf8')
+  const ALL_ROUTES = [...GET_ROUTES, ...POST_ROUTES, ...PATCH_ROUTES, ...GET_ROUTES_SINCE_1411, ...POST_ROUTES_SINCE_1411, ...AUTH_FAMILY_ROUTES]
+    .map((r) => r.replaceAll(':x', 'x'))
+  // not a route of its own: a redirect target
+  const NOT_ROUTES = new Set(['/tv/?wrong=1'])
+
+  /** Path literals ('/api/...') and regex paths (/^\/api\/x\/(a|b)$/, alternatives expanded). */
+  function routedPaths(src) {
+    const out = new Set()
+    for (const m of src.matchAll(/'(\/(?:api|tv|pair|sign|embed|health)(?:\/[A-Za-z0-9_.:?=-]*)*\/?)'/g)) out.add(m[1])
+    for (const m of src.matchAll(/\/\^((?:\\\/[A-Za-z0-9_.-]+)+)(\\\/)?(?:\(([a-z|-]+)\))?/g)) {
+      const base = m[1].replaceAll('\\/', '/')
+      if (m[3] && m[2]) for (const alt of m[3].split('|')) out.add(`${base}/${alt}`)
+      else out.add(base + (m[2] ? '/' : ''))
+    }
+    return [...out]
+  }
+  // exact, or a route under the family (a prefix, or a regex path followed by more of it)
+  const covered = (p) => ALL_ROUTES.some((r) => r === p || r === p.replace(/\/$/, '') || r.startsWith(p.endsWith('/') ? p : `${p}/`))
+
+  it('every routed path has a hostile-input case', () => {
+    const paths = [
+      ...routedPaths(read('server.js')),
+      ...['lib/pairSessions.js', 'lib/signSessions.js', 'lib/displayCodes.js'].flatMap((f) => routedPaths(read(f)).filter((p) => p.startsWith('/api/')))
+    ]
+    assert.ok(paths.length > 60, `found ${paths.length} routed paths: the extraction no longer matches server.js`)
+    for (const want of ['/api/pair/input', '/api/sign/submit', '/api/display/live', '/api/global/shared/', '/tv/go']) assert.ok(paths.includes(want), `extraction misses ${want}`)
+    const missing = paths.filter((p) => !NOT_ROUTES.has(p) && !covered(p)).sort()
+    assert.deepEqual(missing, [], 'routes without a hostile-input case: add them to GET_ROUTES_SINCE_1411 / POST_ROUTES_SINCE_1411 / AUTH_FAMILY_ROUTES')
+  })
+
+  it('every socket message type has a hostile-input case', () => {
+    const src = read('server.js')
+    const start = src.indexOf('function handleSocketMessage(')
+    assert.ok(start > 0, 'handleSocketMessage not found in server.js')
+    const body = src.slice(start, src.indexOf('\n}\n', start))
+    const types = [...new Set([...body.matchAll(/^\s+case '([a-z_-]+)':/gm)].map((m) => m[1]))]
+    assert.ok(types.length >= 14, `found ${types.length} socket types in handleSocketMessage`)
+    const missing = types.filter((t) => !SOCKET_TYPES.includes(t) && !SOCKET_TYPES_SINCE_1411.includes(t))
+    assert.deepEqual(missing, [], 'socket types without a hostile-input case: add them to SOCKET_TYPES_SINCE_1411')
+  })
+})
 
 hostileSuite('hostile input: server.js with Postgres', async () => {
   const db = await provisionDatabase()
