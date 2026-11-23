@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { privacyCoverFill } from '../../utils/liteGraphics'
 
 // The phone court's cover with the blur on; the blur switch off
-// (Options › Effects and speed): the near-opaque panel (privacyCoverFill)
+// (Options › Effects and speed): the opaque panel (privacyCoverFill)
 const PHONE_COVER_FROSTED = Object.freeze({ background: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' })
 
 /**

@@ -171,7 +171,7 @@ describe('useLook', () => {
 })
 
 describe('the line-up cover follows the blur switch', () => {
-  it('blur on: frosted; off: the near-opaque panel', () => {
+  it('blur on: frosted; off: the opaque panel', () => {
     runOn('web')
     setLook({ blur: true })
     expect(privacyCoverFill()).toEqual({ background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' })
@@ -179,7 +179,7 @@ describe('the line-up cover follows the blur switch', () => {
     expect(privacyCoverFill()).toEqual({ background: 'rgb(15, 23, 42)' })
   })
 
-  it('the phone court\'s cover too: frosted 8 px, or the near-opaque panel', () => {
+  it('the phone court\'s cover too: frosted 8 px, or the opaque panel', () => {
     runOn('web')
     setLook({ blur: true })
     const { unmount } = render(<LineupSetOverlay side="left" onPeek={() => {}} />)
@@ -191,7 +191,7 @@ describe('the line-up cover follows the blur switch', () => {
     render(<LineupSetOverlay side="left" onPeek={() => {}} />)
     cover = screen.getByTestId('phone-lineup-hidden-left')
     expect(cover.style.backdropFilter || '').toBe('')
-    expect(cover.style.background).toMatch(/rgba\(15, 23, 42, 0\.92\)/)
+    expect(cover.style.background).toBe('rgb(15, 23, 42)')
   })
 
   it('the scoring screen\'s full-screen notices (turn the tablet, turn the phone back) only dim with the blur off', () => {
@@ -252,7 +252,7 @@ describe('the referee, bench and livescore pages: only the switches the scorer s
     expect(liteGraphicsOn()).toBe(true)
   })
 
-  it('the referee view\'s line-up covers follow the blur switch: frosted 16 px, or the near-opaque panel', () => {
+  it('the referee view\'s line-up covers follow the blur switch: frosted 16 px, or the opaque panel', () => {
     const referee = readFileSync(resolve(__dirname, '../../components/Referee.jsx'), 'utf8')
     expect(referee).toMatch(/^ {2}useLook\(\)$/m)
     expect(referee.match(/\.\.\.privacyCoverFill\(undefined, REFEREE_COVER_FROSTED\)/g)).toHaveLength(2)

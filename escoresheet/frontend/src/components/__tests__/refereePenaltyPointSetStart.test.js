@@ -27,7 +27,7 @@ describe('referee: a penalty point before the first serve does not start the set
     expect(src).not.toMatch(/\(e\.type === 'point' \|\| e\.type === 'set_start'\) && e\.setIndex === currentSetIndex/)
   })
   it('the line-up cover is blurred more (16 px)', () => {
-    // one frosted look for both covers; the blur switch off: the near-opaque
+    // one frosted look for both covers; the blur switch off: the opaque
     // panel instead (privacyCoverFill, Options › Effects and speed)
     expect(src).toMatch(/const REFEREE_COVER_FROSTED = Object\.freeze\(\{[^}]*backdropFilter: 'blur\(16px\)'/)
     expect(src.match(/\.\.\.privacyCoverFill\(undefined, REFEREE_COVER_FROSTED\)/g)).toHaveLength(2)
