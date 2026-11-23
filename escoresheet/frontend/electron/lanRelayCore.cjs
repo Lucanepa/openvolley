@@ -967,6 +967,10 @@ const MAIN_INSTANCE_PAGE = `<!DOCTYPE html><html><head><meta charset="utf-8"><me
 <ul><li><a href="/?${OTHER_COURT_PARAM}=${OTHER_COURT_VALUE}">Open the scoresheet for another court on this device</a></li></ul>
 </body></html>`
 
+/** Its policy (SEC-47): links and its own inline style, nothing else
+ *  (relay.rs MAIN_INSTANCE_PAGE_CSP is the same). */
+const MAIN_INSTANCE_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+
 /**
  * Single main-scoresheet lock, the same rule on every relay: only the relay
  * host itself (see createLocalAddressCheck) may register or release it, and it
@@ -1027,7 +1031,7 @@ function createMainInstanceGate({ isLocal }) {
       }
       const addr = req.socket && req.socket.remoteAddress
       if (!this.blocksMainPage(addr, req.headers['x-instance-id'], req.headers.cookie)) return false
-      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': MAIN_INSTANCE_PAGE_CSP })
       res.end(MAIN_INSTANCE_PAGE)
       return true
     },
@@ -3407,6 +3411,7 @@ module.exports = {
   createRateLimiter,
   createLocalAddressCheck,
   createMainInstanceGate,
+  MAIN_INSTANCE_PAGE_CSP,
   OTHER_COURT_COOKIE,
   MAX_OWNED_PER_IP,
   isTrustedRelayOrigin,

@@ -14,6 +14,7 @@ import { dirname, join, resolve, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces, homedir } from 'os'
 import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, isTrustedRelayOrigin, WS_MAX_PAYLOAD, WS_PER_MESSAGE_DEFLATE, signCore, pairCore } from './lanRelayCore.js'
+import { relayPageCsp } from './csp.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -31,6 +32,12 @@ const DIST_DIR = process.env.OV_RELAY_DIST_DIR ? resolve(process.env.OV_RELAY_DI
 // (src-tauri relay.rs resolve_asset), instead of the scorer app.
 const ROLE_PATHS = ['referee', 'bench', 'livescore', 'scoreboard', 'scoresheet', 'upload_roster']
 const HOSTNAME = process.env.HOSTNAME || 'escoresheet.local' // Custom hostname instead of localhost
+// The Content-Security-Policy of the app's pages (SEC-47: csp.js relayPageCsp,
+// as the desktop app's relay sends it). An OpenBeach build (flat
+// referee_beach.html, no referee/ folder page) has inline scripts of its own:
+// its policy is the OpenBeach repository's, none here, as before.
+const isBeachBuild = () => existsSync(join(DIST_DIR, 'referee_beach.html')) && !existsSync(join(DIST_DIR, 'referee', 'index.html'))
+const PAGE_CSP = relayPageCsp()
 
 // The WS protocol and /api/match/* endpoints come from ./lanRelayCore.js (shared
 // with the dev plugin).
@@ -386,6 +393,8 @@ function handleRequest(req, res) {
       'Cache-Control': ext === '.html' || ext === '.json' || basename(filePath) === 'sw.js' || ext === '.webmanifest'
         ? 'no-cache'
         : 'public, max-age=31536000',
+      // The app's pages: its policy (PAGE_CSP)
+      ...(ext === '.html' && !isBeachBuild() ? { 'Content-Security-Policy': PAGE_CSP } : {}),
       // The phone pages (/sign, /pair): strict CSP, no referrer, no-cache
       ...(signCore.isSignPagePath(urlPath) || pairCore.isPairPagePath(urlPath) ? signCore.SIGN_PAGE_HEADERS : {})
     })

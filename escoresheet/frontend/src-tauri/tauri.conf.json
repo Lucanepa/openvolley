@@ -10,10 +10,10 @@
     "devUrl": "http://localhost:5173"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-hAC66PTngtOWJY571phiLXHzeuEYS3pprPNjnV1uBik=' 'sha256-mEG3trr/2+bNH35eWodBg+Kvbb2CTl/9fvqyZgpWiCY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://openvolley.app https://openvolley-media.openvolley.app; font-src 'self' data:; connect-src 'self' https: wss: http: ws: ipc:; worker-src 'self' blob:; frame-src 'self' blob:; media-src 'self' data: blob: https://openvolley.app https://openvolley-media.openvolley.app; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'",
       "capabilities": ["default"]
     }
   },

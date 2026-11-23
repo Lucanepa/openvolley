@@ -1959,6 +1959,32 @@ async fn server_connections(
 /// page navigation cannot send X-Instance-ID). Same names as lanRelayCore.cjs.
 const OTHER_COURT_COOKIE: &str = "ov_other_court";
 
+/// The policy of the "already running" page (SEC-47): its links and inline
+/// style, nothing else (lanRelayCore.cjs MAIN_INSTANCE_PAGE_CSP).
+pub const MAIN_INSTANCE_PAGE_CSP: &str =
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+
+/// The Content-Security-Policy of the app's own pages (SEC-47): frontend/csp.js
+/// relayPageCsp (the app's policy and Tauri's ipc: for this window's native
+/// commands), written to shared/relayPageCsp.txt, which the frontend's
+/// nativeShellHardening.test.js keeps equal to it. The scoretable window and
+/// every tablet page this server hands out get it.
+const APP_PAGE_CSP: &str = include_str!("../../shared/relayPageCsp.txt");
+
+/// The app page policy for a served file of this app, or None: not an HTML
+/// page, a phone page (its own policy), or OpenBeach's build, whose inline
+/// scripts and policy are the OpenBeach repository's.
+fn app_page_csp(path: &str, content_type: Option<&HeaderValue>, f: &crate::flavour::Flavour) -> Option<HeaderValue> {
+    if f.key != "openvolley" || crate::sign::is_sign_page_path(path) || crate::pair::is_pair_page_path(path) {
+        return None;
+    }
+    let html = content_type.and_then(|v| v.to_str().ok()).is_some_and(|t| t.starts_with("text/html"));
+    if !html {
+        return None;
+    }
+    HeaderValue::from_str(APP_PAGE_CSP.trim_end()).ok()
+}
+
 /// The "already running" page: links to the role pages this app has
 /// (OpenBeach has no bench page).
 fn main_instance_page(f: &crate::flavour::Flavour) -> String {
@@ -2031,7 +2057,11 @@ async fn static_handler(
             if main.is_some() && presented != main.as_deref() {
                 return (
                     StatusCode::FORBIDDEN,
-                    [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store")],
+                    [
+                        ("content-type", "text/html; charset=utf-8"),
+                        ("cache-control", "no-store"),
+                        ("content-security-policy", MAIN_INSTANCE_PAGE_CSP),
+                    ],
                     main_instance_page(crate::flavour::CURRENT),
                 )
                     .into_response();
@@ -2040,6 +2070,9 @@ async fn static_handler(
     }
 
     let mut res = serve_asset(path);
+    if let Some(csp) = app_page_csp(path, res.headers().get("content-type"), crate::flavour::CURRENT) {
+        res.headers_mut().insert("Content-Security-Policy", csp);
+    }
     if crate::sign::is_sign_page_path(path) || crate::pair::is_pair_page_path(path) {
         // The phone pages (/sign, spec 4.7; /pair, Pair a phone): strict CSP, no referrer, no-cache
         let h = res.headers_mut();
@@ -5399,6 +5432,7 @@ mod tests {
         // Locked: the "already running" page, with the other-court link
         let r = page(HeaderMap::new(), "/").await;
         assert_eq!(r.status(), StatusCode::FORBIDDEN);
+        assert_eq!(r.headers().get("content-security-policy").unwrap(), MAIN_INSTANCE_PAGE_CSP);
         let html = axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap();
         assert!(String::from_utf8_lossy(&html).contains("/?court=other"));
         // The link sets the opt-in cookie and goes back to "/"
@@ -5859,8 +5893,46 @@ mod tests {
         let mut req = Request::builder().uri("/referee").body(Body::empty()).unwrap();
         req.extensions_mut().insert(ConnectInfo("192.0.2.77:1".parse::<SocketAddr>().unwrap()));
         let res = http_router(state).oneshot(req).await.unwrap();
-        assert!(res.headers().get("content-security-policy").is_none());
+        assert_ne!(
+            res.headers().get("content-security-policy").map(|v| v.to_str().unwrap().to_string()),
+            Some(crate::sign::SIGN_PAGE_CSP.to_string())
+        );
         assert_eq!(res.headers().get("referrer-policy").unwrap(), "strict-origin-when-cross-origin");
+    }
+
+    /// SEC-47: the app's pages (the scoretable window, every tablet page) are
+    /// served with the app's policy, the phone pages with their own, files
+    /// that are no page with none; the policy is csp.js's (shared file).
+    #[tokio::test]
+    async fn the_app_pages_are_served_with_the_app_policy() {
+        use tower::ServiceExt;
+        let policy = APP_PAGE_CSP.trim_end();
+        for needed in ["script-src 'self' 'wasm-unsafe-eval' 'sha256-", "connect-src 'self' https: wss: http: ws: ipc:", "object-src 'none'", "base-uri 'self'", "frame-src 'self' blob:"] {
+            assert!(policy.contains(needed), "{needed} in {policy}");
+        }
+        assert!(!policy.contains("'unsafe-eval'") && !policy.contains("frame-ancestors") && !policy.contains('\n'));
+        let state = new_state(0, 0);
+        let get = |path: &'static str| {
+            let mut req = Request::builder().uri(path).body(Body::empty()).unwrap();
+            req.extensions_mut().insert(ConnectInfo("192.0.2.77:1".parse::<SocketAddr>().unwrap()));
+            http_router(state.clone()).oneshot(req)
+        };
+        // the scoretable (SPA fallback) and a page of the build
+        for path in ["/", "/index.html", "/some/route"] {
+            let res = get(path).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "{path}");
+            assert_eq!(res.headers().get("content-security-policy").unwrap(), policy, "{path}");
+            assert_eq!(res.headers().get("x-frame-options").unwrap(), "SAMEORIGIN", "{path}");
+        }
+        let res = get("/sign").await.unwrap();
+        assert_eq!(res.headers().get("content-security-policy").unwrap(), crate::sign::SIGN_PAGE_CSP);
+        // the rules behind it: HTML of this app only
+        let html = HeaderValue::from_static("text/html; charset=utf-8");
+        let js = HeaderValue::from_static("text/javascript");
+        assert!(app_page_csp("/referee/", Some(&html), &crate::flavour::OPENVOLLEY).is_some());
+        assert!(app_page_csp("/assets/app.js", Some(&js), &crate::flavour::OPENVOLLEY).is_none());
+        assert!(app_page_csp("/pair/", Some(&html), &crate::flavour::OPENVOLLEY).is_none());
+        assert!(app_page_csp("/referee", Some(&html), &crate::flavour::BEACH).is_none(), "OpenBeach brings its own");
     }
 
     // The Global tool's live page for TVs (global_live.rs), the scenarios of

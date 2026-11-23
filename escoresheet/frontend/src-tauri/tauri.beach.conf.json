@@ -4,6 +4,11 @@
   "mainBinaryName": "openbeach-escoresheet",
   "version": "../../../openbeach/escoresheet/frontend/package.json",
   "identifier": "com.openvolley.beach",
+  "app": {
+    "security": {
+      "csp": null
+    }
+  },
   "build": {
     "frontendDist": "../../../openbeach/escoresheet/frontend/dist",
     "beforeBuildCommand": "npm --prefix ../../openbeach/escoresheet/frontend run build",
