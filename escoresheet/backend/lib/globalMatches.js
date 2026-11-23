@@ -384,10 +384,14 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
   }
 
   async function del(key, pin, { ip = null } = {}) {
-    const r = await own(key, pin, 'id', ip)
+    const r = await own(key, pin, `id, ${STORED_SQL} AS bytes`, ip)
     if (r.answer) return r.answer
-    await q('DELETE FROM public.global_matches WHERE id = $1', [r.row.id])
-    usage = null
+    const { rowCount } = await q('DELETE FROM public.global_matches WHERE id = $1', [r.row.id])
+    // kept up to date (a recount after every delete would let delete and save loops scan the table)
+    if (rowCount && usage) {
+      usage.rows = Math.max(0, usage.rows - 1)
+      usage.bytes = Math.max(0, usage.bytes - (Number(r.row.bytes) || 0))
+    }
     return ok({ ok: true })
   }
 
