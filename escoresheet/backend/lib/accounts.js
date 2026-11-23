@@ -115,6 +115,15 @@ export const AUDIT_ACTIONS = Object.freeze([
   // db/026: people typed in by hand added to a club's lists (lib/licences.js
   // addPeople; the club, the team, the counts per list, never a name)
   'club.licences.manual',
+  // owner decision 7 (PERM-19): a team manager's search of the club's people
+  // (lib/licences.js searchPeople; the team, the counts and the row ids
+  // shown, never a name, a licence number or the query)
+  'club.people_search',
+  // db/058 (PERM-04): an official match's roster of a side whose team is not
+  // of the writer's clubs became a suggestion, and that team's manager
+  // confirmed or rejected it (lib/rosterSaveBack.js; the game, the ids and
+  // the counts, never a name or a licence number)
+  'team.squad.suggestion',
   // db/037: one row added by hand deleted by a club manager (lib/licences.js
   // deleteRow; the club and the list, never a name), and a competition or a
   // saved team deleted, or a saved team's roster replaced (lib/savedTeams.js;

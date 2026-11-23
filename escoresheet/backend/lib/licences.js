@@ -106,6 +106,13 @@ export const MAX_MANUAL_PER_DAY = 100
 // A team manager's search of the club's people (an official): a few rows, never the list
 export const MAX_SEARCH_RESULTS = 10
 export const SEARCH_MIN_LENGTH = 3
+// Owner decision 7 (audit 2611, PERM-19): it finds a person, it cannot dump a
+// list. A name word matches the START of a part of a name (at least
+// SEARCH_MIN_LENGTH letters for the longest word), a licence number matches
+// whole, and one account gets at most SEARCH_DAILY_PEOPLE different people
+// in 24 hours (those it was shown already come again); every search is audited
+export const SEARCH_DAILY_PEOPLE = 50
+const SEARCH_WINDOW = '24 hours'
 const MANUAL_FIELDS = Object.freeze(['list', ...LICENCE_FIELDS])
 const SV_RE = /^[0-9]{4,7}$/
 // No db/024 (or db/023) yet: a relation or column that does not exist
@@ -829,26 +836,85 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
   }
 
   /**
-   * GET /api/team/:id/club-people?q=: the people of the club's lists whose
-   * name or licence number has `q` (at least SEARCH_MIN_LENGTH characters;
-   * accents and case aside), at most MAX_SEARCH_RESULTS, each once with its
-   * `lists`. An official may be anyone of
-   * the club (owner 2026-11-09), so a team manager finds one by name instead
-   * of reading the whole lists. { people, more } (more: there were more).
+   * GET /api/team/:id/club-people?q=: the people of the club's lists that `q`
+   * names (accents and case aside), at most MAX_SEARCH_RESULTS, each once
+   * with its `lists`. An official may be anyone of the club (owner
+   * 2026-11-09), so a team manager finds one by name instead of reading the
+   * whole lists (owner decision 2), and cannot rebuild them from the search
+   * (owner decision 7, PERM-19): `q` is a licence number (whole), or words
+   * that each begin a part of the person's name ("mül an" finds Anna Müller,
+   * "ller" nobody), the longest at least SEARCH_MIN_LENGTH letters. An
+   * account sees at most SEARCH_DAILY_PEOPLE different people in 24 hours;
+   * past that only those it was shown already (`limited`: someone was left
+   * out). Each search is audited (club.people_search: the team, the counts,
+   * the ids of the rows shown; never a name, a licence or the query).
+   * `unlimited`: an admin or a manager of the team's club (they read the
+   * whole lists anyway): no budget, no audit. { people, more, limited? }
    */
-  async function searchPeople ({ teamId, q } = {}) {
+  async function searchPeople ({ teamId, q, userId = null, unlimited = false } = {}) {
     if (!isUuid(teamId)) return notFound()
-    const needle = fold(typeof q === 'string' ? q : '')
+    const needle = fold(typeof q === 'string' ? q : '').replace(/[,;]+/g, ' ').trim()
     if (needle.length < SEARCH_MIN_LENGTH || needle.length > 80) return invalid(`q: ${SEARCH_MIN_LENGTH} to 80 characters`)
+    const licence = /^[0-9]{4,7}$/.test(needle) ? needle : null
+    const words = licence ? [] : needle.split(/\s+/).filter(Boolean)
+    if (!licence && Math.max(0, ...words.map((w) => w.length)) < SEARCH_MIN_LENGTH) {
+      return invalid(`q: a word of ${SEARCH_MIN_LENGTH} letters at least, or a licence number`)
+    }
+    const partsOf = (p) => fold(`${p.last_name} ${p.first_name || ''}`).split(/[\s\-'’.]+/).filter(Boolean)
+    // each word begins a part of the name, two words not the same part
+    const named = (p) => {
+      const parts = partsOf(p)
+      const used = new Set()
+      return words.every((w) => {
+        const i = parts.findIndex((x, j) => !used.has(j) && x.startsWith(w))
+        if (i === -1) return false
+        used.add(i)
+        return true
+      })
+    }
     return guarded('search-people', async () => {
       const x = await teamRows(teamId)
       if (x.answer) return x.answer
-      const { rows } = x
-      const hits = mergeLicencePeople(rows).filter((p) =>
-        p.sv_number === needle || fold(`${p.last_name} ${p.first_name || ''} ${p.first_name || ''} ${p.last_name}`).includes(needle))
-      return ok({
-        people: hits.slice(0, MAX_SEARCH_RESULTS),
-        more: hits.length > MAX_SEARCH_RESULTS
+      const { rows, team } = x
+      const hits = mergeLicencePeople(rows).filter((p) => (licence ? p.sv_number === licence : named(p)))
+      let free = !!unlimited
+      if (!free && isUuid(userId)) {
+        const { rows: m } = await pool.query('SELECT 1 FROM public.club_managers WHERE club_id = $1 AND user_id = $2', [team.club_id, userId])
+        free = m.length > 0
+      }
+      if (free) return ok({ people: hits.slice(0, MAX_SEARCH_RESULTS), more: hits.length > MAX_SEARCH_RESULTS })
+      // the person's key in the budget: its first row id (db/037), never the licence number
+      const keyOf = new Map()
+      for (const r of rows) {
+        if (!r.id) continue
+        const k = keyOf.get(r.sv_number)
+        if (!k || r.id < k) keyOf.set(r.sv_number, r.id)
+      }
+      return withTx(async (client) => {
+        // one search of the account at a time: the budget is read and spent together
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ov:people-search:${userId}`])
+        const { rows: seenRows } = await client.query(
+          `SELECT DISTINCT jsonb_array_elements_text(CASE WHEN jsonb_typeof(a.details -> 'ids') = 'array' THEN a.details -> 'ids' ELSE '[]'::jsonb END) AS id
+             FROM public.audit_log a
+            WHERE a.actor_id = $1 AND a.action = 'club.people_search' AND a.at > now() - $2::interval`, [userId, SEARCH_WINDOW])
+        const seen = new Set(seenRows.map((r) => r.id))
+        let room = Math.max(0, SEARCH_DAILY_PEOPLE - seen.size)
+        const shown = []
+        let held = 0
+        for (const p of hits) {
+          if (shown.length >= MAX_SEARCH_RESULTS) break
+          const k = keyOf.get(p.sv_number)
+          if (k && seen.has(k)) { shown.push(p); continue }
+          if (room > 0) { room--; shown.push(p); continue }
+          held++
+        }
+        const ids = shown.map((p) => keyOf.get(p.sv_number)).filter(Boolean)
+        await audit(client, {
+          actorId: userId,
+          action: 'club.people_search',
+          details: { club_id: team.club_id, team_id: team.id, results: shown.length, new: ids.filter((k) => !seen.has(k)).length, limited: held > 0, ids }
+        })
+        return ok({ people: shown, more: hits.length > shown.length, ...(held > 0 ? { limited: true } : {}) })
       })
     })
   }

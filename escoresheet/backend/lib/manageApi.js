@@ -386,7 +386,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     // db/024: the players of the team's gender and age class and the people of its saved team, for "Add from club"
     ['GET', new RegExp(`^/api/team/${ID}/club-players$`), teamManagerOf, (m) => lic((l) => l.teamClubPlayers({ teamId: m[1] }))],
     // an official: a few people of the club's lists by name (owner decision 2: never the whole lists)
-    ['GET', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.searchPeople({ teamId: m[1], q: q(c.query, 'q') }))],
+    // (owner decision 7, PERM-19: a name's start or a licence, a budget of people a day, audited)
+    ['GET', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.searchPeople({ teamId: m[1], q: q(c.query, 'q'), userId: c.user.id, unlimited: c.access?.isAdmin === true }))],
     // db/026: after a squad is saved, the people typed in by hand go to the team's club if the manager wants
     ['POST', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.addPeople({ teamId: m[1], body: c.body, userId: c.user.id }))],
     // db/025: the team manager requests of the team
