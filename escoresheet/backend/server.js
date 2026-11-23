@@ -7047,7 +7047,17 @@ function updateScorerPresence(matchId) {
 // is told whether a display follows and that page: as the answer to its
 // first accepted sync on a socket, and when it changes (a display in, out,
 // or naming another page). Same message as the LAN relays.
+//
+// The cloud relay counts a display (and passes its page on) only for a room
+// it proved: it follows the room by its scoreboard code, or proved a PIN or
+// match token of the match (displayProvedRoom). Room keys are public there
+// (/api/match/list, the public API): any socket naming itself a display set
+// the scorer's "Scoreboard settings" to a LAN page of its choice (audit 2611
+// SEC-45). A venue relay keeps the rule of every LAN relay (lanRelayCore,
+// relay.rs): any display in the room counts. The scorer's app shows the
+// page's host and asks before it opens it, on every relay.
 let displaySeq = 0
+const DISPLAY_NEEDS_PROOF = IS_CLOUD
 
 /** A display's subscribe-match: its announcement, for every room it follows. */
 function noteDisplay(clientInfo, rawUrl) {
@@ -7055,11 +7065,29 @@ function noteDisplay(clientInfo, rawUrl) {
   for (const id of clientInfo.rooms) updateDisplayPresence(id)
 }
 
-/** The room's display state: its open display sockets (in it or waiting for it). */
+/**
+ * Did this socket prove the room of `matchId`? By its scoreboard code
+ * (handleCodeSubscribe), the game PIN (ownedMatches), or a PIN or token of
+ * the match it offered and the relay accepted: what was compared already,
+ * nothing compared or counted here (a PIN offered while the room was not
+ * held is compared by admitWaiting, before the scorer is told).
+ */
+function displayProvedRoom(clientInfo, matchId, entry = activeMatches.get(matchId)) {
+  if (clientInfo.codeRooms.has(matchId) || clientInfo.ownedMatches.has(matchId)) return true
+  const a = clientInfo.matchAccess.get(matchId)
+  if (!a || !entry?.match) return false
+  if (a.token && tokenGrantsRelay(a.token, matchId, entry.match)) return true
+  return a.verified === true && !!a.pin && pinGrantsAccess(entry.match, a.pin)
+}
+
+/** The room's display state: its open display sockets (in it or waiting for it; on the cloud, that proved it). */
 function displayStateIn(matchId) {
   const displays = []
+  const entry = activeMatches.get(matchId)
   for (const c of connections.values()) {
-    if (c.display && c.device === DISPLAY_DEVICE && c.ws.readyState === 1 && c.rooms.has(matchId)) displays.push(c.display)
+    if (!c.display || c.device !== DISPLAY_DEVICE || c.ws.readyState !== 1 || !c.rooms.has(matchId)) continue
+    if (DISPLAY_NEEDS_PROOF && !displayProvedRoom(c, matchId, entry)) continue
+    displays.push(c.display)
   }
   return displayStateOf(displays)
 }
