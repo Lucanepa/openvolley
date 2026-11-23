@@ -508,6 +508,9 @@
       "reviewSetCaptainLibero": "Captain- und Libero-Bezeichnige feschtlege"
     },
     "coinToss": "Usloosig",
+    "numberNeeded": "Trikotnummere für d Usloosig nötig",
+    "numbersMissingNote_one": "{{count}} Spieler hät no kei Trikotnummere: gspeicheret, aber d Usloosig wartet, bis jede eini hät.",
+    "numbersMissingNote_other": "{{count}} Spieler händ no kei Trikotnummere: gspeicheret, aber d Usloosig wartet, bis jede eini hät.",
     "chooseTeamColor": "Teamfarb für {{team}} wähle",
     "chooseTeamColour": "Teamfarb für {{team}} wähle",
     "customColour": "Eigeti Farb",
@@ -3756,6 +3759,8 @@
     "awayTwoLiberosRequired": "Gascht: 2 Liberos nötig bi meh als 12 Spieler",
     "homeTwoLiberosRequired": "Heim: 2 Liberos nötig bi meh als 12 Spieler",
     "homeRosterTooMany": "Heim: höchstens {{max}} Spieler im Kader (jetzt {{count}})",
+    "playersWithoutNumber_one": "{{team}}: {{count}} Spieler ohni Trikotnummere",
+    "playersWithoutNumber_other": "{{team}}: {{count}} Spieler ohni Trikotnummere",
     "awayRosterTooMany": "Gascht: höchstens {{max}} Spieler im Kader (jetzt {{count}})"
   },
   "tabletStatus": {

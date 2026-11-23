@@ -507,6 +507,9 @@
       "reviewSetCaptainLibero": "Définir les désignations capitaine et libéro"
     },
     "coinToss": "Tirage au sort",
+    "numberNeeded": "Numéro de maillot nécessaire pour le tirage au sort",
+    "numbersMissingNote_one": "{{count}} joueur n'a pas encore de numéro de maillot : il est enregistré, mais le tirage au sort attend que chaque joueur en ait un.",
+    "numbersMissingNote_other": "{{count}} joueurs n'ont pas encore de numéro de maillot : ils sont enregistrés, mais le tirage au sort attend que chaque joueur en ait un.",
     "chooseTeamColor": "Choisir la couleur de l'équipe {{team}}",
     "chooseTeamColour": "Choisis la couleur de l'équipe {{team}}",
     "customColour": "Couleur personnalisée",
@@ -3755,6 +3758,8 @@
     "awayTwoLiberosRequired": "Visiteur : 2 libéros requis pour plus de 12 joueurs",
     "homeTwoLiberosRequired": "Domicile : 2 libéros requis pour plus de 12 joueurs",
     "homeRosterTooMany": "Domicile : {{max}} joueurs au plus dans l’effectif (actuellement {{count}})",
+    "playersWithoutNumber_one": "{{team}} : {{count}} joueur sans numéro de maillot",
+    "playersWithoutNumber_other": "{{team}} : {{count}} joueurs sans numéro de maillot",
     "awayRosterTooMany": "Visiteur : {{max}} joueurs au plus dans l’effectif (actuellement {{count}})"
   },
   "tabletStatus": {

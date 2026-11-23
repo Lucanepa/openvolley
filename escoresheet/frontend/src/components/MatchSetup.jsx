@@ -57,6 +57,7 @@ import { useSponsorsOption } from '../hooks/useSponsorsOption'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
 import { isShirtNumber, shirtNumberDigits, recordNumbersMissingFrom } from '../domain/roster'
+import { playersWithoutNumber } from '../domain/coinTossChecks'
 import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
 import PlayerPoolModal from './PlayerPoolModal'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
@@ -1109,6 +1110,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     'Zürich'
   ].sort()
 
+  // players saved without a shirt number yet (the coin toss waits for them)
+  const homeWithoutNumber = playersWithoutNumber(homeRoster)
+  const awayWithoutNumber = playersWithoutNumber(awayRoster)
   const homeLiberoCount = homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length
   const awayLiberoCount = awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length
   const homeCounts = {
@@ -1432,6 +1436,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       // what this visit signs or brings from a sent roster starts empty
       signedForRef.current = {}
       pendingSentRef.current.home = null
+      acceptedInVisitRef.current.home = false
     } else if (currentView === 'away') {
       originalAwayTeamRef.current = {
         awayRoster: JSON.parse(JSON.stringify(awayRoster)),
@@ -1440,6 +1445,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       // what this visit signs or brings from a sent roster starts empty
       signedForRef.current = {}
       pendingSentRef.current.away = null
+      acceptedInVisitRef.current.away = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentView])
@@ -2896,6 +2902,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // A sent-ahead roster used in the editor: { home|away: { row, signatures } }.
   // Only the editor's Save stores its signatures and marks it used; Back drops it
   const pendingSentRef = useRef({ home: null, away: null })
+  // An uploaded roster accepted in this visit of the roster editor: stored
+  // already, the editor's Confirm still saves it (and sends it to the cloud)
+  const acceptedInVisitRef = useRef({ home: false, away: false })
   const signatureStateOf = {
     'home-coach': [homeCoachSignature, setHomeCoachSignature],
     'home-captain': [homeCaptainSignature, setHomeCaptainSignature],
@@ -3790,6 +3799,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       [pendingField]: !fresh?.[pendingField] || sameUpload(fresh[pendingField], raw) ? null : fresh[pendingField],
       uploadedRosterTaken: takenAfter(fresh, team, raw, 'accepted')
     })
+    // the accepted players with their stored ids (none without a team):
+    // the roster editor's Confirm then updates the same rows, players
+    // without a shirt number included
+    let acceptedPlayers = players
     try {
       if (teamId) {
         // One transaction: a failure leaves the roster as it was
@@ -3800,7 +3813,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           Object.assign(matchUpdate, acceptedUpdate(await db.matches.get(matchId)))
           await db.players.where('teamId').equals(teamId).delete()
           if (players.length) {
-            await db.players.bulkAdd(players.map(p => ({
+            const storedIds = await db.players.bulkAdd(players.map(p => ({
               teamId,
               number: p.number,
               name: `${p.lastName} ${p.firstName}`.trim(),
@@ -3812,7 +3825,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               isLfp: p.isLfp,
               role: null,
               createdAt: new Date().toISOString()
-            })))
+            })), { allKeys: true })
+            if (Array.isArray(storedIds)) acceptedPlayers = players.map((p, i) => ({ ...p, id: storedIds[i] }))
           }
           await db.matches.update(matchId, matchUpdate)
         })
@@ -3829,15 +3843,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       return
     }
     if (isHome) {
-      setHomeRoster(players)
+      setHomeRoster(acceptedPlayers)
       setBenchHome(bench)
       if (signatures.coach) setHomeCoachSignature(signatures.coach)
       if (signatures.captain) setHomeCaptainSignature(signatures.captain)
     } else {
-      setAwayRoster(players)
+      setAwayRoster(acceptedPlayers)
       setBenchAway(bench)
       if (signatures.coach) setAwayCoachSignature(signatures.coach)
       if (signatures.captain) setAwayCaptainSignature(signatures.captain)
+    }
+    // Accept stores the roster (and marks the upload taken): the roster
+    // editor's Back no longer goes back to the roster it opened with. It did,
+    // and the uploaded players were gone from the form while stored (the next
+    // save wrote the old roster over them; tester 23.11.2026)
+    if (teamId && currentView === team) {
+      acceptedInVisitRef.current[team] = true
+      const opened = { roster: JSON.parse(JSON.stringify(acceptedPlayers)), bench: JSON.parse(JSON.stringify(bench)) }
+      if (isHome) originalHomeTeamRef.current = { homeRoster: opened.roster, benchHome: opened.bench }
+      else originalAwayTeamRef.current = { awayRoster: opened.roster, benchAway: opened.bench }
     }
     await clearServerPendingRoster(team, raw)
   }
@@ -5118,6 +5142,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             )
           })()}
         </div>
+        {/* Players saved without a shirt number: the # fields ask for them */}
+        {homeWithoutNumber > 0 && (
+          <p role="note" data-testid="numbers-missing-home" className="m-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+            {t('matchSetup.numbersMissingNote', { count: homeWithoutNumber })}
+          </p>
+        )}
         {/* Add new player section */}
         {homeRoster.length < 14 && (
           <div className="mx-auto w-max max-w-full rounded-xl border border-stone-200 bg-stone-50/60 p-3 stack:w-full">
@@ -5215,6 +5245,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             // Check if this player's number is a duplicate
             const isDuplicate = p.number != null && p.number !== '' &&
               homeRoster.some((other, idx) => idx !== i && other.number === p.number)
+            // saved without a number: its # asks for one (no coin toss until then)
+            const missingNumber = (p.number == null || p.number === '') && !!(p.firstName || p.lastName)
 
             // Determine border style based on captain/libero status
             const isCaptain = p.isCaptain || false
@@ -5252,9 +5284,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700')}
-                  aria-invalid={isDuplicate || undefined}
-                  title={isDuplicate ? t('scoreboard.duplicateJersey') : undefined}
+                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
+                  aria-invalid={isDuplicate || missingNumber || undefined}
+                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : undefined}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
                     if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
@@ -5581,7 +5613,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             )
 
             // If no changes, just go back to main view
-            if (!hasChanges && !pendingSentRef.current.home) {
+            if (!hasChanges && !pendingSentRef.current.home && !acceptedInVisitRef.current.home) {
               console.log('[MatchSetup] No home roster changes, skipping sync')
               setCurrentView('main')
               return
@@ -5600,12 +5632,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
             }
 
-            // A named player without a shirt number: the stored roster (coin toss,
-            // scoresheet) and the cloud would hold different players
-            const unnumbered = homeRoster.filter(p => (p.firstName || p.lastName) && (p.number == null || p.number === ''))
-            if (unnumbered.length > 0) {
-              validationErrors.push(t('matchSetup.validation.missingNumbers', { names: unnumbered.map(p => [p.lastName, p.firstName].filter(Boolean).join(' ')).join(', ') }))
-            }
+            // A player without a shirt number is saved (db/teamPlayers), the
+            // coin toss waits for the numbers (owner 23.11.2026: refused here,
+            // the scorer went Back and the uploaded players were gone)
 
             // Check for invalid numbers (whole numbers 1-99) - critical - must block
             const invalidNumbers = homeRoster.filter(p => p.number != null && p.number !== '' && !isShirtNumber(p.number))
@@ -5644,8 +5673,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
 
               // The stored players follow the roster, an emptied one too
               // (db/teamPlayers): the editor showed 0 while Coin toss, the
-              // scoresheet and Match setup opened again read the old players
-              await writeTeamPlayers(match.homeTeamId, homeRoster)
+              // scoresheet and Match setup opened again read the old players.
+              // The form keeps the stored ids: the next save updates the same
+              // rows, players without a number included
+              const storedIds = await writeTeamPlayers(match.homeTeamId, homeRoster)
+              setHomeRoster(homeRoster.map((p, idx) => (storedIds[idx] != null && p.id !== storedIds[idx] ? { ...p, id: storedIds[idx] } : p)))
 
               // Update match with short name and bench officials. The
               // signatures are stored by their pads and Clear at once (each
@@ -6173,6 +6205,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             )
           })()}
         </div>
+        {/* Players saved without a shirt number: the # fields ask for them */}
+        {awayWithoutNumber > 0 && (
+          <p role="note" data-testid="numbers-missing-away" className="m-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+            {t('matchSetup.numbersMissingNote', { count: awayWithoutNumber })}
+          </p>
+        )}
         {/* Add new player section */}
         {awayRoster.length < 14 && (
           <div className="mx-auto w-max max-w-full rounded-xl border border-stone-200 bg-stone-50/60 p-3 stack:w-full">
@@ -6279,6 +6317,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             return awayRoster.map((p, i) => {
             const isDuplicate = p.number != null && p.number !== '' &&
               awayRoster.some((other, idx) => idx !== i && other.number === p.number)
+            // saved without a number: its # asks for one (no coin toss until then)
+            const missingNumber = (p.number == null || p.number === '') && !!(p.firstName || p.lastName)
 
             const isCaptain = p.isCaptain || false
             const isLibero = !!p.libero
@@ -6315,9 +6355,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700')}
-                  aria-invalid={isDuplicate || undefined}
-                  title={isDuplicate ? t('scoreboard.duplicateJersey') : undefined}
+                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
+                  aria-invalid={isDuplicate || missingNumber || undefined}
+                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : undefined}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
                     if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
@@ -6641,7 +6681,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             )
 
             // If no changes, just go back to main view
-            if (!hasChanges && !pendingSentRef.current.away) {
+            if (!hasChanges && !pendingSentRef.current.away && !acceptedInVisitRef.current.away) {
               console.log('[MatchSetup] No away roster changes, skipping sync')
               setCurrentView('main')
               return
@@ -6660,12 +6700,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
             }
 
-            // A named player without a shirt number: the stored roster (coin toss,
-            // scoresheet) and the cloud would hold different players
-            const unnumbered = awayRoster.filter(p => (p.firstName || p.lastName) && (p.number == null || p.number === ''))
-            if (unnumbered.length > 0) {
-              validationErrors.push(t('matchSetup.validation.missingNumbers', { names: unnumbered.map(p => [p.lastName, p.firstName].filter(Boolean).join(' ')).join(', ') }))
-            }
+            // A player without a shirt number is saved (db/teamPlayers), the
+            // coin toss waits for the numbers (owner 23.11.2026: refused here,
+            // the scorer went Back and the uploaded players were gone)
 
             // Check for invalid numbers (whole numbers 1-99) - critical - must block
             const invalidNumbers = awayRoster.filter(p => p.number != null && p.number !== '' && !isShirtNumber(p.number))
@@ -6704,8 +6741,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
 
               // The stored players follow the roster, an emptied one too
               // (db/teamPlayers): the editor showed 0 while Coin toss, the
-              // scoresheet and Match setup opened again read the old players
-              await writeTeamPlayers(match.awayTeamId, awayRoster)
+              // scoresheet and Match setup opened again read the old players.
+              // The form keeps the stored ids: the next save updates the same
+              // rows, players without a number included
+              const storedIds = await writeTeamPlayers(match.awayTeamId, awayRoster)
+              setAwayRoster(awayRoster.map((p, idx) => (storedIds[idx] != null && p.id !== storedIds[idx] ? { ...p, id: storedIds[idx] } : p)))
 
               // Update match with short name and bench officials. The
               // signatures are stored by their pads and Clear at once (each
@@ -7096,10 +7136,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   const awayRosterExists = !!(away && awayRoster.length >= 6 && awayCounts.liberos >= 0)
 
   // Roster validation for proceeding to coin toss (requires captain and coach,
-  // at most 14 players: FIVB 4.1.1)
-  // Note: all players having numbers is only required when CONFIRMING coin toss, not proceeding to it
-  const homeConfigured = homeRosterExists && homeRoster.length <= ROSTER_MAX && homeCounts.hasCaptain && homeCounts.hasCoach && homeCounts.liberosOk
-  const awayConfigured = awayRosterExists && awayRoster.length <= ROSTER_MAX && awayCounts.hasCaptain && awayCounts.hasCoach && awayCounts.liberosOk
+  // at most 14 players: FIVB 4.1.1), and a shirt number for every player,
+  // liberos too: a player is saved without one, the coin toss waits for it
+  // (owner 23.11.2026: "players saved anyway, but no coin toss until numbers")
+  const homeConfigured = homeRosterExists && homeRoster.length <= ROSTER_MAX && homeCounts.hasCaptain && homeCounts.hasCoach && homeCounts.liberosOk && homeWithoutNumber === 0
+  const awayConfigured = awayRosterExists && awayRoster.length <= ROSTER_MAX && awayCounts.hasCaptain && awayCounts.hasCoach && awayCounts.liberosOk && awayWithoutNumber === 0
 
   // All 4 cards must be complete before proceeding to coin toss
   const canProceedToCoinToss = matchInfoConfirmed && officialsConfigured && homeConfigured && awayConfigured
@@ -7136,6 +7177,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         if (!homeCounts.hasCoach) missing.push(t('warnings.homeCoachMissing'))
         if (!homeCounts.liberosOk) missing.push(t('warnings.homeTwoLiberosRequired', 'Home: 2 liberos required for more than 12 players'))
       }
+      if (homeWithoutNumber > 0) missing.push(t('warnings.playersWithoutNumber', { team: home || t('matchSetup.homeTeam'), count: homeWithoutNumber }))
     }
     if (!awayConfigured) {
       if (!away || awayRoster.length < 6) missing.push(t('warnings.awayRosterIncomplete', { count: awayRoster.length }))
@@ -7145,6 +7187,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         if (!awayCounts.hasCoach) missing.push(t('warnings.awayCoachMissing'))
         if (!awayCounts.liberosOk) missing.push(t('warnings.awayTwoLiberosRequired', 'Away: 2 liberos required for more than 12 players'))
       }
+      if (awayWithoutNumber > 0) missing.push(t('warnings.playersWithoutNumber', { team: away || t('matchSetup.awayTeam'), count: awayWithoutNumber }))
     }
     return missing
   }

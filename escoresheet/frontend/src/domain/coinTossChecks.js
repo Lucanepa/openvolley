@@ -7,6 +7,26 @@ import { ROSTER_MAX } from './playerPool'
 import { isShirtNumber } from './roster'
 
 const hasNumber = (p) => p.number != null && p.number !== ''
+
+/** How many players of a roster (liberos too) have no shirt number yet. */
+export function playersWithoutNumber(roster) {
+  return (Array.isArray(roster) ? roster : []).filter(p => p && !hasNumber(p)).length
+}
+
+/**
+ * The coin toss waits until every player of both teams has a shirt number,
+ * a test or easy match too (the line-up and the sheet go by numbers; owner
+ * 23.11.2026: "players saved anyway, but no coin toss until numbers").
+ * @returns {{ key: string, params: { team: 'home'|'away', count: number } }[]}
+ */
+export function rosterNumberIssues({ homeRoster = [], awayRoster = [] } = {}) {
+  const issues = []
+  for (const [team, roster] of [['home', homeRoster], ['away', awayRoster]]) {
+    const count = playersWithoutNumber(roster)
+    if (count > 0) issues.push({ key: 'validation.playersWithoutNumbers', params: { team, count } })
+  }
+  return issues
+}
 // FIVB 19.1.1: two liberos at most, one per slot
 const MAX_LIBEROS = 2
 const LIBERO_SLOT_LABEL = { libero1: 'L1', libero2: 'L2' }

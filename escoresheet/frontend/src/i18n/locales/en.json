@@ -509,6 +509,9 @@
       "reviewSetCaptainLibero": "Set captain and libero designations"
     },
     "coinToss": "Coin toss",
+    "numberNeeded": "Shirt number needed for the coin toss",
+    "numbersMissingNote_one": "{{count}} player has no shirt number yet: saved, but the coin toss waits until every player has one.",
+    "numbersMissingNote_other": "{{count}} players have no shirt number yet: saved, but the coin toss waits until every player has one.",
     "chooseTeamColor": "Choose {{team}} team colour",
     "chooseTeamColour": "Choose {{team}} team colour",
     "customColour": "Custom colour",
@@ -3762,6 +3765,8 @@
     "awayTwoLiberosRequired": "Away: 2 liberos required for more than 12 players",
     "homeTwoLiberosRequired": "Home: 2 liberos required for more than 12 players",
     "homeRosterTooMany": "Home: at most {{max}} players on the roster (now {{count}})",
+    "playersWithoutNumber_one": "{{team}}: {{count}} player without a shirt number",
+    "playersWithoutNumber_other": "{{team}}: {{count}} players without a shirt number",
     "awayRosterTooMany": "Away: at most {{max}} players on the roster (now {{count}})"
   },
   "tabletStatus": {

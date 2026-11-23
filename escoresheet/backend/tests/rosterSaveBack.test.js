@@ -111,6 +111,18 @@ describe('mergeMatchRoster', () => {
     assert.equal(body(m).error, undefined)
   })
 
+  // the scorer's tablet saves players without a shirt number (the coin toss
+  // waits for them) and sends them as number null (frontend db/teamPlayers)
+  it('a match player without a shirt number: matched by licence or added without one; nobody\'s number taken', () => {
+    const squad = { players: [sq(7, 'Muster', { license_number: '111111' })], staff: [] }
+    const rows = [{ number: null, first_name: 'Anna', last_name: 'Muster', dob: '111111' }, { number: null, first_name: 'Nina', last_name: 'Neu', dob: '222222' }]
+    const m = mergeMatchRoster(squad, { players: rows.map((r) => matchPerson(r)), staff: [] })
+    assert.deepEqual(m.players.map((p) => [p.last_name, p.number, p.license_number]), [['Muster', 7, '111111'], ['Neu', null, '222222']])
+    assert.equal(m.counts.cleared, 0)
+    assert.equal(m.counts.numbers, 0)
+    assert.equal(body(m).error, undefined)
+  })
+
   const st = (role, last, extra = {}) => ({ id: id(), role, first_name: 'Carla', last_name: last, license_number: null, ...extra })
   const ms = (role, last, extra = {}) => ({ role, first_name: 'Carla', last_name: last, license_number: null, ...extra })
   const roles = (m) => m.staff.map((s) => [s.last_name, s.role])
