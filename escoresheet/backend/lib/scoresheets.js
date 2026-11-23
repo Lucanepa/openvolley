@@ -26,7 +26,8 @@
  *                                            (scoresheet.read): no entry, no file
  *   sportOf(matchId)                         { sport } | { sport: null } | { error }
  *   createViewLink({ actorId, matchId })     reads the PDF as readPdf (same check before,
- *                                            same audit entry) and keeps it for
+ *                                            same audit entry) and keeps where it is (its
+ *                                            storage key and digest, not the file) for
  *                                            VIEW_LINK_TTL_MS under a random token:
  *                                            { path: /api/scoresheet-view/<token>/<file name>,
  *                                            expires_at }
@@ -34,8 +35,9 @@
  *                                            trusted server code (the final scoresheet
  *                                            mail, lib/finalMail.js): { data, filename,
  *                                            mtimeMs }, null (none), or { unknown: true }
- *   readViewLink({ token, name })            that PDF, inline, by its link: { status, file }
- *                                            or 404. The browser's own PDF viewer opens
+ *   readViewLink({ token, name })            that PDF (read again, the same bytes), inline,
+ *                                            by its link: { status, file } or 404 (async).
+ *                                            The browser's own PDF viewer opens
  *                                            the link in a tab (no Authorization header
  *                                            there), shows the file name and saves under
  *                                            it (owner 2026-10-13: a blob: URL saved as
@@ -494,7 +496,11 @@ class Refused extends Error {
  */
 export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, readApprovals = null, vector = null, vectorTimes = null, captureError = null, logger = console, now = () => Date.now(), setTimer = setTimeout } = {}) {
   const log = logger
-  /** token -> { file, expires } (insertion order = age) */
+  /**
+   * token -> { key, sha256, filename, expires } (insertion order = age): which
+   * stored file the link opens, never the file itself (SEC-39: 50 PDFs of up
+   * to 5 MiB were held in memory for the TTL). readViewLink reads it again.
+   */
   const viewLinks = new Map()
   const pruneViewLinks = () => {
     const t = now()
@@ -790,7 +796,13 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
    * contentType, filename, disposition } }, or an error result (404
    * OV_SCORESHEET_NOT_FOUND when no PDF is stored).
    */
-  async function readPdf ({ actorId, matchId, download = false } = {}) {
+  async function readPdf (o = {}) {
+    const r = await readStoredPdf(o)
+    return r.key ? { status: r.status, file: r.file } : r
+  }
+
+  /** readPdf, plus the storage key of the file it read (`key`, for the view link). */
+  async function readStoredPdf ({ actorId, matchId, download = false } = {}) {
     if (!isUuid(matchId)) return notFound()
     let m
     let located
@@ -835,6 +847,7 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     }
     return {
       status: 200,
+      key: `${file.folder}/${file.name}`,
       file: {
         data,
         contentType: 'application/pdf',
@@ -1772,14 +1785,16 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
   /**
    * POST /api/scoresheets/:id/view: the PDF behind a short-lived link for the
    * browser's viewer. The read is checked and audited exactly as GET .../pdf.
+   * The link keeps the file's place and digest only (SEC-39); it opens those
+   * same bytes, read again (readViewLink).
    */
   async function createViewLink ({ actorId, matchId } = {}) {
-    const r = await readPdf({ actorId, matchId, download: false })
+    const r = await readStoredPdf({ actorId, matchId, download: false })
     if (r.status !== 200 || !r.file) return r
     pruneViewLinks()
     const token = randomBytes(32).toString('base64url')
     const expires = now() + VIEW_LINK_TTL_MS
-    viewLinks.set(token, { file: r.file, expires })
+    viewLinks.set(token, { key: r.key, sha256: createHash('sha256').update(r.file.data).digest('hex'), filename: r.file.filename, expires })
     return ok({
       path: `/api/scoresheet-view/${token}/${encodeURIComponent(r.file.filename)}`,
       filename: r.file.filename,
@@ -1787,8 +1802,13 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
     })
   }
 
-  /** GET /api/scoresheet-view/:token/:name: the PDF of a live link, inline; else 404. */
-  function readViewLink ({ token, name } = {}) {
+  /**
+   * GET /api/scoresheet-view/:token/:name: the PDF of a live link, inline;
+   * else 404. Read from storage again: the file the link was made for, as it
+   * was then (another file there since, or none: 404, the manager opens it
+   * again, which is checked and audited anew). Never throws.
+   */
+  async function readViewLink ({ token, name } = {}) {
     if (typeof token !== 'string' || !VIEW_TOKEN_RE.test(token)) return notFound()
     const v = viewLinks.get(token)
     if (!v) return notFound()
@@ -1797,8 +1817,16 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
       return notFound()
     }
     // the name is part of the link: a link with another name is not this file's
-    if (name !== v.file.filename) return notFound()
-    return { status: 200, file: { ...v.file, disposition: 'inline' } }
+    if (name !== v.filename) return notFound()
+    let data
+    try {
+      data = await storage.readTrusted({ bucket: SCORESHEETS_BUCKET, path: v.key })
+    } catch (err) {
+      if (err?.code !== 'OV_STORAGE_NOT_FOUND') log.warn?.(`[scoresheets] view link read failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 120)}`)
+      return notFound()
+    }
+    if (createHash('sha256').update(data).digest('hex') !== v.sha256) return notFound()
+    return { status: 200, file: { data, contentType: 'application/pdf', filename: v.filename, disposition: 'inline' } }
   }
 
   return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles, recordOldPdfs, matchForRebuild, rebuildPdf, rebuildVector, rewriteRecordedWithVector, queueVectorCopy, vectorPending }

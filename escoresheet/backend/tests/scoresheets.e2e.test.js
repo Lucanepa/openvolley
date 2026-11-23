@@ -151,19 +151,19 @@ describe('scoresheet view links (unit)', () => {
     assert.equal(made.body.data.filename, 'game402397_1LD_2026-10-10.pdf')
     assert.equal(audits.length, 1)
     const token = tokenOf(made.body.data.path)
-    assert.equal(s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' }).status, 200)
-    assert.equal(s.readViewLink({ token, name: 'game402397.pdf' }).status, 404)
+    assert.equal((await s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' })).status, 200)
+    assert.equal((await s.readViewLink({ token, name: 'game402397.pdf' })).status, 404)
     tick(VIEW_LINK_TTL_MS - 1)
-    assert.equal(s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' }).status, 200)
+    assert.equal((await s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' })).status, 200)
     tick(1)
-    assert.equal(s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' }).status, 404)
+    assert.equal((await s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' })).status, 404)
   })
 
   it('keeps at most VIEW_LINK_MAX PDFs: the oldest link goes first', async () => {
     const { s, m } = sheets()
     const first = tokenOf((await s.createViewLink({ actorId: 'u1', matchId: m.id })).body.data.path)
     for (let i = 0; i < VIEW_LINK_MAX; i++) await s.createViewLink({ actorId: 'u1', matchId: m.id })
-    assert.equal(s.readViewLink({ token: first, name: 'game402397_1LD_2026-10-10.pdf' }).status, 404)
+    assert.equal((await s.readViewLink({ token: first, name: 'game402397_1LD_2026-10-10.pdf' })).status, 404)
   })
 
   it('a refused read makes no link', async () => {
