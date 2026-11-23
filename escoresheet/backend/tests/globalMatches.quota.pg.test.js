@@ -32,6 +32,19 @@ describe('the ceilings from the environment', () => {
     assert.throws(() => cloudLimitsFromEnv({ OV_GLOBAL_CLOUD_MAX_MB: 'lots' }), /OV_GLOBAL_CLOUD_MAX_MB/)
     assert.throws(() => cloudLimitsFromEnv({ OV_GLOBAL_CLOUD_MAX_ROWS: '-1' }), /OV_GLOBAL_CLOUD_MAX_ROWS/)
   })
+
+  it('what everyone writes, sized to the WAL archive (GCS-R1): 16 MiB a minute, 256 MiB an hour, 1 GiB a day; OV_GLOBAL_CLOUD_WRITE_MB_DAY / _WAL_MAX_MB', () => {
+    assert.equal(QUOTA_DEFAULTS.writtenPerMinute, 16 * MiB)
+    assert.equal(QUOTA_DEFAULTS.writtenPerHour, 256 * MiB)
+    assert.equal(QUOTA_DEFAULTS.writtenPerDay, 1024 * MiB)
+    assert.equal(QUOTA_DEFAULTS.writtenNetShare, 0.25)
+    assert.equal(QUOTA_DEFAULTS.walMaxBytes, 1024 * MiB)
+    assert.deepEqual(cloudLimitsFromEnv({ OV_GLOBAL_CLOUD_WRITE_MB_DAY: '2048', OV_GLOBAL_CLOUD_WAL_MAX_MB: '512' }),
+      { writtenPerDay: 2048 * MiB, writtenPerHour: 512 * MiB, writtenPerMinute: 32 * MiB, walMaxBytes: 512 * MiB })
+    assert.throws(() => cloudLimitsFromEnv({ OV_GLOBAL_CLOUD_WRITE_MB_DAY: '0' }), /OV_GLOBAL_CLOUD_WRITE_MB_DAY/)
+    // the network tiers: an IPv6 /48 and an IPv4 /24 too (GCS-R4)
+    assert.deepEqual(QUOTA_DEFAULTS.perNetwork.map((l) => [l.name, l.v6Bits, l.v4Bits]), [['/64', 64, 32], ['/56', 56, 32], ['/48', 48, 24]])
+  })
 })
 
 describe('Global cloud: the ceiling and the network budgets (SEC-01)', { skip: SKIP_PG }, () => {
@@ -143,21 +156,21 @@ describe('Global cloud: the ceiling and the network budgets (SEC-01)', { skip: S
     assert.equal(Number((await pool.query('SELECT stored_bytes FROM public.global_matches')).rows[0].stored_bytes), one)
   })
 
-  it('a network\'s bytes: what its saves add, and what they write in a day (re-saves of one copy too)', async () => {
+  it('a network\'s bytes: what its saves add to the table a day; re-saves of one copy add nothing', async () => {
+    // (what re-saves write is the shared write budget's: globalMatches.writes.pg.test.js)
     const gm = createGlobalMatches({
       pool, logger: silent,
-      perNetwork: [{ name: '/64', v6Bits: 64, max: { keys: 100, bytes: 100 * KiB, written: 300 * KiB } }]
+      perNetwork: [{ name: '/64', v6Bits: 64, max: { keys: 100, bytes: 100 * KiB } }]
     })
     const ip = { ip: '192.0.2.20' }
     const key = newKey()
     assert.equal((await gm.save(key, '1234', { bundle: bundleOf(60 * KiB), summary }, ip)).status, 200)
     // a second copy would add more than the 100 KiB the network may add
     assert.equal((await gm.save(newKey(), '1234', { bundle: bundleOf(60 * KiB), summary }, ip)).status, 429)
-    // re-saves of the same size add nothing, but each is written
-    assert.equal((await gm.save(key, '1234', { bundle: bundleOf(60 * KiB), summary }, ip)).status, 200)
-    assert.equal((await gm.save(key, '1234', { bundle: bundleOf(60 * KiB), summary }, ip)).status, 200)
-    assert.equal((await gm.save(key, '1234', { bundle: bundleOf(60 * KiB), summary }, ip)).status, 200)
-    assert.equal((await gm.save(key, '1234', { bundle: bundleOf(60 * KiB), summary }, ip)).status, 429)
+    // re-saves of the same size add nothing
+    for (let i = 0; i < 4; i++) assert.equal((await gm.save(key, '1234', { bundle: bundleOf(60 * KiB), summary }, ip)).status, 200)
+    // growing the copy adds
+    assert.equal((await gm.save(key, '1234', { bundle: bundleOf(120 * KiB), summary }, ip)).status, 429)
   })
 
   it('a day later the network\'s budget is back', async () => {
@@ -169,16 +182,22 @@ describe('Global cloud: the ceiling and the network budgets (SEC-01)', { skip: S
     assert.equal((await gm.save(newKey(), '1234', { bundle: bundleOf(KiB), summary }, { ip: '192.0.2.30' })).status, 200)
   })
 
-  it('everyone together writes at most writtenPerMinute: beyond it a retryable 503 OV_BUSY', async () => {
+  it('everyone together: a save is let in while the minute has room and counted as stored; beyond, a retryable 503 OV_BUSY', async () => {
+    // GCS-R1 changed this: the minute is counted as Postgres stores what a
+    // save wrote (incompressible here), and a save is let in while there is
+    // room (it was refused when its raw size would pass the minute)
     let t = Date.parse('2026-11-23T10:00:00Z')
-    const gm = createGlobalMatches({ pool, logger: silent, now: () => new Date(t), writtenPerMinute: 100 * KiB })
-    assert.equal((await gm.save(newKey(), '1234', { bundle: bundleOf(60 * KiB), summary }, { ip: net(10) })).status, 200)
-    const r = await gm.save(newKey(), '1234', { bundle: bundleOf(60 * KiB), summary }, { ip: net(11) })
+    const gm = createGlobalMatches({ pool, logger: silent, now: () => new Date(t), writtenPerMinute: 200 * KiB, writtenReserveShare: 0 })
+    const statuses = []
+    for (let i = 0; i < 5; i++) statuses.push((await gm.save(newKey(), '1234', { bundle: randomBundleOf(60 * KiB), summary }, { ip: `192.0.${10 + i}.1` })).status)
+    assert.deepEqual(statuses, [200, 200, 200, 200, 503])
+    const r = await gm.save(newKey(), '1234', { bundle: randomBundleOf(60 * KiB), summary }, { ip: '192.0.20.1' })
     assert.equal(r.status, 503)
     assert.equal(r.body.error.code, 'OV_BUSY')
     assert.equal(r.body.error.retryable, true)
+    assert.ok(r.retryAfter > 0 && r.retryAfter <= 60, String(r.retryAfter))
     t += 60 * 1000
-    assert.equal((await gm.save(newKey(), '1234', { bundle: bundleOf(60 * KiB), summary }, { ip: net(11) })).status, 200)
+    assert.equal((await gm.save(newKey(), '1234', { bundle: randomBundleOf(60 * KiB), summary }, { ip: '192.0.20.1' })).status, 200)
   })
 
   it('a normal match under the limits saves as before (defaults: a whole tournament day behind one address)', async () => {

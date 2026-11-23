@@ -25,12 +25,23 @@
  *     records: at most maxTotalBytes / maxRows in all (counted from
  *     stored_bytes, db/053, cached usageTtlMs and kept up to date by every
  *     save), 507 OV_GLOBAL_FULL for a new key beyond them; a copy that
- *     exists may still grow up to growHeadroom above the ceiling. Per network
- *     (IPv6 /64 and /56, an IPv4 address; lib/globalQuota.js, in memory) and
- *     day: new keys, bytes added, bytes written, 429 OV_GLOBAL_QUOTA beyond;
- *     bytes written by everyone per minute (re-saves leave dead rows until
- *     vacuum), 503 OV_BUSY beyond. onAlert at alertShare of the ceiling and
- *     when it refuses (at most hourly).
+ *     exists may still grow up to growHeadroom above the ceiling, each network
+ *     (IPv6 /48, IPv4 /24) by its 'headroom' a day. Per network (IPv6 /64,
+ *     /56 and /48, an IPv4 address and its /24; lib/globalQuota.js, in
+ *     memory) and day: new keys and bytes added, 429 OV_GLOBAL_QUOTA beyond.
+ *     A full table evicts the newest copies of the networks that created
+ *     more than evictShare of it since the start (the creator is known in
+ *     memory only), never anyone else's; 507 when there are none
+ *     (scripts/global-cloud-purge.mjs clears junk an earlier process let in).
+ *     onAlert at alertShare of the ceiling, when it refuses and when it
+ *     evicts (at most hourly).
+ *   - GCS-R1, every byte saved becomes WAL, which the archive keeps on the
+ *     same volume until the hourly backup run: what everyone writes a minute,
+ *     an hour and a day (counted as stored, compressed), a network a quarter
+ *     of each and the last quarter for networks that wrote little (503
+ *     OV_BUSY when all is spent, 429 OV_GLOBAL_QUOTA for a network's share);
+ *     with walGuard, no write while walMaxBytes of WAL wait for the next
+ *     backup run or the archiving fails (503).
  *   - SEC-30, the PIN (4 to 8 digits, the match's referee PIN): every wrong
  *     PIN of a copy is counted in its row (survives address changes and
  *     restarts); each PIN_LOCK_AFTER-th locks the copy (15 min, doubled each
@@ -49,7 +60,7 @@
  */
 import crypto from 'node:crypto'
 import { KEY_RE } from './globalStore.js'
-import { addressPrefix, createNetworkBudget, createOncePer } from './globalQuota.js'
+import { addressPrefix, createNetworkBudget, createOncePer, createSharedBudget, DAY_MS } from './globalQuota.js'
 
 export const PIN_RE = /^[0-9]{4,8}$/
 export const ORGANIZER_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -71,23 +82,54 @@ export const QUOTA_DEFAULTS = Object.freeze({
   maxTotalBytes: 2 * GiB,
   maxRows: 50_000,
   // a copy that exists may still grow this share above maxTotalBytes (a match
-  // in progress keeps its cloud copy when the ceiling is reached)
+  // in progress keeps its cloud copy when the ceiling is reached); what one
+  // network may grow there is its perNetwork 'headroom' (GCS-R4)
   growHeadroom: 0.25,
   usageTtlMs: 60_000,
   alertShare: 0.5,
-  // bytes written by everyone in a minute
-  writtenPerMinute: 256 * MiB,
-  // per network and day: keys = new copies, bytes = what they add, written =
-  // every byte saved (a copy is saved about once a minute during its match)
+  // What everyone writes (GCS-R1): every saved byte becomes WAL, which the
+  // archive keeps on the database volume until the hourly backup takes it
+  // away, and the backups keep 8 days of. Counted as Postgres stores it
+  // (pg_column_size: a real match's JSON compresses about 4:1, random filler
+  // does not), plus WAL_ROW_BYTES a save. A genuine copy writes about 20-40
+  // KB a minute while its match runs (2-3 MB a match with its PDF), so a
+  // minute serves hundreds of matches at once and a day thousands. One
+  // network (IPv6 /48, IPv4 /24) may use a quarter of each window, and the
+  // last quarter is kept for networks that used little of it (under 1/32):
+  // beyond, 429 OV_GLOBAL_QUOTA (the network's share) or 503 OV_BUSY (all).
+  writtenPerMinute: 16 * MiB,
+  writtenPerHour: 256 * MiB,
+  writtenPerDay: 1 * GiB,
+  writtenNetShare: 0.25,
+  writtenReserveShare: 0.25,
+  writtenLightShare: 1 / 32,
+  // When the table is full (GCS-R4): a network that created more than this
+  // share of its rows or bytes since the start gives room, its newest copies
+  // first (at most evictPerSave a save); a new copy of that network itself
+  // gets 507. The copies of every other network are never evicted.
+  evictShare: 0.1,
+  evictPerSave: 50,
+  // per network and day: keys = new copies, bytes = what they add to the
+  // table, headroom = what they grow while the table is above its ceiling
   perNetwork: Object.freeze([
-    Object.freeze({ name: '/64', v6Bits: 64, v4Bits: 32, max: Object.freeze({ keys: 200, bytes: 512 * MiB, written: 3 * GiB }) }),
-    Object.freeze({ name: '/56', v6Bits: 56, v4Bits: 32, max: Object.freeze({ keys: 500, bytes: 1 * GiB, written: 6 * GiB }) })
-  ])
+    Object.freeze({ name: '/64', v6Bits: 64, v4Bits: 32, max: Object.freeze({ keys: 200, bytes: 128 * MiB }) }),
+    Object.freeze({ name: '/56', v6Bits: 56, v4Bits: 32, max: Object.freeze({ keys: 500, bytes: 256 * MiB }) }),
+    Object.freeze({ name: '/48', v6Bits: 48, v4Bits: 24, max: Object.freeze({ keys: 1000, bytes: 512 * MiB, headroom: 32 * MiB }) })
+  ]),
+  // the WAL waiting for the next backup run (walGuard, server.js): beyond
+  // walMaxBytes (or while the archiving fails) every cloud write is refused
+  walMaxBytes: 1 * GiB,
+  walSampleMs: 60_000
 })
+/** What a save costs in WAL beside its columns: the row version, its index entries, the TOAST index. */
+export const WAL_ROW_BYTES = 2048
 /**
  * The ceilings from the environment (server.js): OV_GLOBAL_CLOUD_MAX_MB (the
- * table's bytes, default 2048) and OV_GLOBAL_CLOUD_MAX_ROWS (default 50000).
- * Throws on a value it does not understand, so a typo fails at startup.
+ * table's bytes, default 2048), OV_GLOBAL_CLOUD_MAX_ROWS (default 50000),
+ * OV_GLOBAL_CLOUD_WRITE_MB_DAY (what everyone may write a day, default 1024;
+ * an hour a quarter of it, a minute 1/64) and OV_GLOBAL_CLOUD_WAL_MAX_MB (the
+ * WAL waiting for the next backup beyond which cloud writes stop, default
+ * 1024). Throws on a value it does not understand, so a typo fails at startup.
  */
 export function cloudLimitsFromEnv(env = process.env) {
   const out = {}
@@ -102,6 +144,14 @@ export function cloudLimitsFromEnv(env = process.env) {
   if (mb !== undefined) out.maxTotalBytes = Math.round(mb * MiB)
   const rows = num('OV_GLOBAL_CLOUD_MAX_ROWS')
   if (rows !== undefined) out.maxRows = Math.floor(rows)
+  const day = num('OV_GLOBAL_CLOUD_WRITE_MB_DAY')
+  if (day !== undefined) {
+    out.writtenPerDay = Math.round(day * MiB)
+    out.writtenPerHour = Math.round(day * MiB / 4)
+    out.writtenPerMinute = Math.round(day * MiB / 64)
+  }
+  const wal = num('OV_GLOBAL_CLOUD_WAL_MAX_MB')
+  if (wal !== undefined) out.walMaxBytes = Math.round(wal * MiB)
   return out
 }
 // SEC-30: wrong PINs of one copy, from anywhere
@@ -112,6 +162,8 @@ export const PIN_LOCK_MAX_MS = 24 * 60 * 60_000
 export const PIN_FAILURE_FORGET_MS = 24 * 60 * 60_000
 /** The network a wrong PIN is held against while the copy is locked. */
 export const guesserNetwork = (ip) => addressPrefix(ip, 48, 24)
+/** The network a copy's creation and its writes are counted to (GCS-R1, GCS-R4): an IPv6 /48, an IPv4 /24. */
+export const creatorNetwork = (ip) => addressPrefix(ip, 48, 24)
 /**
  * The memory of who guessed (GCS-R3, the review of the SEC-30 fix): at most
  * PIN_NETWORKS_PER_KEY guessing networks per copy, never pushed out by a new
@@ -206,10 +258,22 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
 
   // ---- SEC-01: the table's ceiling and the networks' budgets ----
   const budget = createNetworkBudget({ limits: o.perNetwork, now: ms })
+  // what everyone writes, a minute, an hour, a day (GCS-R1)
+  const writes = createSharedBudget({
+    windows: [
+      { name: 'minute', ms: 60_000, max: o.writtenPerMinute },
+      { name: 'hour', ms: 60 * 60_000, max: o.writtenPerHour },
+      { name: 'day', ms: DAY_MS, max: o.writtenPerDay }
+    ],
+    netOf: creatorNetwork,
+    netShare: o.writtenNetShare,
+    reserveShare: o.writtenReserveShare,
+    lightShare: o.writtenLightShare,
+    now: ms
+  })
   // { at, bytes, rows }: counted at most every usageTtlMs, kept up to date by the saves
   let usage = null
   let counting = null
-  let written = { start: 0, bytes: 0 }
   const alertOnce = createOncePer(60 * 60_000, ms)
   const alert = (name, message) => {
     if (!alertOnce(name)) return
@@ -224,34 +288,168 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
     return counting
   }
   const mb = (n) => Math.round(n / MiB)
+  const busy = (retryAfter) => ({ ...fail(503, 'OV_BUSY', 'Server busy, retry shortly', { retryable: true }), retryAfter })
 
-  /** The refusal of a save of newBytes (replacing oldBytes; isNew: a new copy) from ip, or null. */
+  // ---- GCS-R1: the WAL waiting for the next backup (walGuard) ----
+  // server.js passes walGuard { lastBackupAt: async () => ms | null } (the
+  // host's last_backup stamp): the archive the backup run empties holds the
+  // WAL written since it. Measured from pg_current_wal_insert_lsn, sampled at
+  // most every walSampleMs; a failing archive_command (pg_stat_archiver) stops
+  // the cloud writes at once. Unknown (no stamp, a failed probe): not refused.
+  const walGuard = o.walGuard || null
+  const walSamples = [] // { at, lsn }, a day and a bit
+  let walSeen = null // { at, failing, pending }
+  let walChecking = null
+  async function walProbe() {
+    if (walGuard.probe) return walGuard.probe()
+    const { rows: [r] } = await q(`SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(), '0/0')::bigint AS lsn,
+      coalesce((SELECT last_failed_time IS NOT NULL AND (last_archived_time IS NULL OR last_failed_time > last_archived_time) FROM pg_stat_archiver), false) AS failing`)
+    return { lsn: Number(r.lsn), failing: r.failing === true }
+  }
+  async function walState() {
+    if (!walGuard) return null
+    if (walSeen && ms() - walSeen.at < o.walSampleMs) return walSeen
+    walChecking ||= (async () => {
+      const p = await walProbe()
+      const backupAt = await walGuard.lastBackupAt?.() ?? null
+      const at = ms()
+      walSamples.push({ at, lsn: p.lsn })
+      while (walSamples.length > 2 && at - walSamples[1].at > DAY_MS + 3600_000) walSamples.shift()
+      let base = walSamples[0]
+      for (const x of walSamples) { if (x.at <= backupAt) base = x; else break }
+      walSeen = { at, failing: p.failing === true, pending: Number.isFinite(backupAt) ? Math.max(0, p.lsn - base.lsn) : null }
+    })().catch((err) => {
+      if (alertOnce('wal-probe')) logger.warn?.('[Global cloud] WAL check failed:', String(err?.code || err?.message || err).slice(0, 120))
+      walSeen = { at: ms(), failing: false, pending: null }
+    }).finally(() => { walChecking = null })
+    await walChecking
+    return walSeen
+  }
+
+  // ---- GCS-R4: who created which copy, for the eviction when full ----
+  // keyHash -> { net, bytes, last } of the copies this process saw created
+  // (memory only: addresses are never stored), net -> { rows, bytes, keys }
+  const created = new Map()
+  const holdings = new Map()
+  function forgetCopy(kh) {
+    const c = created.get(kh)
+    if (!c) return
+    created.delete(kh)
+    const h = holdings.get(c.net)
+    if (!h) return
+    h.rows--
+    h.bytes -= c.bytes
+    h.keys.delete(kh)
+    if (!h.keys.size) holdings.delete(c.net)
+  }
+  function noteCopy(kh, net, bytes, isNew) {
+    let c = created.get(kh)
+    if (isNew) {
+      if (c) forgetCopy(kh)
+      while (created.size >= o.maxRows * 1.1 + 100) forgetCopy(created.keys().next().value)
+      c = { net, bytes: 0, last: ms() }
+      created.set(kh, c)
+      let h = holdings.get(net)
+      if (!h) { h = { rows: 0, bytes: 0, keys: new Set() }; holdings.set(net, h) }
+      h.rows++
+      h.keys.add(kh)
+    }
+    if (!c) return
+    const h = holdings.get(c.net)
+    if (h) h.bytes += bytes - c.bytes
+    c.bytes = bytes
+    c.last = ms()
+  }
+  const overShare = (net) => {
+    const h = holdings.get(net)
+    return !!h && (h.rows > o.maxRows * o.evictShare || h.bytes > o.maxTotalBytes * o.evictShare)
+  }
+  /**
+   * A full table makes room for one new copy of newBytes from net: the
+   * newest copies of the networks over their share (evictShare), the largest
+   * holder of what is short first. Returns the usage after it, or null when
+   * there is no such copy (or net is over its share itself).
+   */
+  async function evictFor(u, newBytes, net) {
+    if (overShare(net)) return null
+    const rowsShort = (x) => x.rows + 1 > o.maxRows
+    const bytesShort = (x) => x.bytes + newBytes > o.maxTotalBytes
+    const nets = [...holdings].filter(([n]) => n !== net && overShare(n))
+      .sort(([, a], [, b]) => (rowsShort(u) ? b.rows - a.rows : b.bytes - a.bytes))
+    const victims = []
+    let freeRows = 0
+    let freeBytes = 0
+    for (const [, h] of nets) {
+      for (const kh of [...h.keys].reverse()) {
+        if (victims.length >= o.evictPerSave) break
+        if (!rowsShort({ rows: u.rows - freeRows }) && !bytesShort({ bytes: u.bytes - freeBytes })) break
+        victims.push(kh)
+        freeRows++
+        freeBytes += created.get(kh)?.bytes ?? 0
+      }
+    }
+    if (!victims.length) return null
+    const { rows } = await q(`DELETE FROM public.global_matches WHERE key_hash = ANY($1::text[]) RETURNING key_hash, ${STORED_SQL} AS bytes`, [victims])
+    for (const kh of victims) forgetCopy(kh)
+    const after = { ...u, at: u.at, rows: Math.max(0, u.rows - rows.length), bytes: Math.max(0, u.bytes - rows.reduce((n, r) => n + (Number(r.bytes) || 0), 0)) }
+    if (usage) { usage.rows = after.rows; usage.bytes = after.bytes }
+    logger.warn?.(`[Global cloud] the table was full: ${rows.length} copies of networks over their share evicted`)
+    alert('evicted', `the Global cloud is full (${mb(after.bytes)} MB in ${after.rows} copies, ceiling ${mb(o.maxTotalBytes)} MB / ${o.maxRows}): the newest copies of networks over a ${Math.round(o.evictShare * 100)}% share were evicted`)
+    return after
+  }
+
+  /** The refusal of a save of newBytes (replacing oldBytes; isNew: a new copy) from ip, or { headroom }: what it grows above the ceiling. */
   async function admit({ isNew, newBytes, oldBytes, ip }) {
     const grow = Math.max(0, newBytes - oldBytes)
-    const t = ms()
-    if (t - written.start >= 60_000) written = { start: t, bytes: 0 }
-    if (written.bytes + newBytes > o.writtenPerMinute) {
-      return fail(503, 'OV_BUSY', 'Server busy, retry shortly', { retryable: true })
+    const wal = await walState()
+    if (wal?.failing) {
+      alert('wal', 'the database\'s WAL archiving fails (pg_stat_archiver): Global cloud saves are refused until it works again')
+      return busy(300)
     }
-    const over = budget.over(ip, { keys: isNew ? 1 : 0, bytes: grow, written: newBytes })
+    if (wal?.pending != null && wal.pending > o.walMaxBytes) {
+      alert('wal', `${mb(wal.pending)} MB of WAL wait for the next backup run (limit ${mb(o.walMaxBytes)} MB): Global cloud saves are refused until it runs`)
+      return busy(300)
+    }
+    // a save is let in while its window has room, and charged what it wrote
+    const w = writes.over(ip, 1)
+    if (w) {
+      logger.warn?.(`[Global cloud] refusing a save: ${w.why === 'total' ? 'everyone\'s' : 'a network\'s share of the'} ${w.window}'s write budget is spent`)
+      if (w.why === 'total') return busy(Math.ceil(w.retryMs / 1000))
+      return { ...fail(429, 'OV_GLOBAL_QUOTA', 'Too much saved from this network, try again later'), retryAfter: Math.ceil(w.retryMs / 1000) }
+    }
+    let u = await currentUsage()
+    const headroom = !isNew && grow > 0 && u.bytes + grow > o.maxTotalBytes ? grow : 0
+    const over = budget.over(ip, { keys: isNew ? 1 : 0, bytes: grow, headroom })
+    if (over?.what === 'headroom' || (headroom && u.bytes + grow > o.maxTotalBytes * (1 + o.growHeadroom))) {
+      alert('full', `the Global cloud is full (${mb(u.bytes)} MB in ${u.rows} copies, ceiling ${mb(o.maxTotalBytes)} MB / ${o.maxRows}): copies that grow are refused`)
+      return fail(507, 'OV_GLOBAL_FULL', 'The cloud is full, try again later')
+    }
     if (over) {
       logger.warn?.(`[Global cloud] refusing a save: a network's daily ${over.what} budget (${over.limit}) is spent`)
       return fail(429, 'OV_GLOBAL_QUOTA', 'Too much saved from this network today, try again later')
     }
-    const u = await currentUsage()
-    const full = isNew
-      ? u.bytes + newBytes > o.maxTotalBytes || u.rows + 1 > o.maxRows
-      : grow > 0 && u.bytes + grow > o.maxTotalBytes * (1 + o.growHeadroom)
-    if (full) {
-      alert('full', `the Global cloud is full (${mb(u.bytes)} MB in ${u.rows} copies, ceiling ${mb(o.maxTotalBytes)} MB / ${o.maxRows}): new copies are refused`)
-      return fail(507, 'OV_GLOBAL_FULL', 'The cloud is full, try again later')
+    if (isNew && (u.bytes + newBytes > o.maxTotalBytes || u.rows + 1 > o.maxRows)) {
+      const after = await evictFor(u, newBytes, creatorNetwork(ip))
+      if (after) u = after
+      if (!after || u.bytes + newBytes > o.maxTotalBytes || u.rows + 1 > o.maxRows) {
+        alert('full', `the Global cloud is full (${mb(u.bytes)} MB in ${u.rows} copies, ceiling ${mb(o.maxTotalBytes)} MB / ${o.maxRows}): new copies are refused`)
+        return fail(507, 'OV_GLOBAL_FULL', 'The cloud is full, try again later')
+      }
     }
-    return null
+    return { headroom }
   }
 
-  function charged({ isNew, newBytes, oldBytes, ip }) {
-    written.bytes += newBytes
-    budget.charge(ip, { keys: isNew ? 1 : 0, bytes: Math.max(0, newBytes - oldBytes), written: newBytes })
+  /** After the write: what it cost in WAL (as Postgres stores the columns it wrote), the budgets, the counts. */
+  async function charged({ kh, isNew, newBytes, oldBytes, ip, headroom, pdfWritten }) {
+    let stored = newBytes
+    try {
+      const { rows: [w] } = await q(`SELECT pg_column_size(bundle) + pg_column_size(summary) + CASE WHEN $2::boolean THEN coalesce(pg_column_size(pdf), 0) ELSE 0 END AS stored
+        FROM public.global_matches WHERE key_hash = $1`, [kh, pdfWritten])
+      if (w && Number.isFinite(Number(w.stored))) stored = Number(w.stored)
+    } catch { /* counted as sent */ }
+    writes.charge(ip, stored + WAL_ROW_BYTES)
+    budget.charge(ip, { keys: isNew ? 1 : 0, bytes: Math.max(0, newBytes - oldBytes), headroom })
+    noteCopy(kh, creatorNetwork(ip), newBytes, isNew)
     if (usage) {
       usage.bytes = Math.max(0, usage.bytes + newBytes - oldBytes)
       if (isNew) usage.rows++
@@ -425,8 +623,8 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
     const isNew = !cur
     const newBytes = bundleBytes + Buffer.byteLength(sum) + (keepPdf ? Number(cur?.pdf_bytes) || 0 : pdfBuf?.length ?? 0)
     const oldBytes = cur ? Number(cur.bytes) || 0 : 0
-    const refused = await admit({ isNew, newBytes, oldBytes, ip })
-    if (refused) return refused
+    const admitted = await admit({ isNew, newBytes, oldBytes, ip })
+    if (admitted.status) return admitted
     const { rows } = await q(
       `INSERT INTO public.global_matches AS g (key_hash, pin_hash, organizer_hash, summary, bundle, pdf, stored_bytes)
        VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $8)
@@ -446,7 +644,7 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
     if (!rows[0]) return fail(403, 'OV_GLOBAL_PIN', 'Wrong PIN')
     // the first save set the PIN: its network gave the right one (GCS-R3)
     if (isNew) noteRight(kh, guesserNetwork(ip))
-    charged({ isNew, newBytes, oldBytes, ip })
+    await charged({ kh, isNew, newBytes, oldBytes, ip, headroom: admitted.headroom, pdfWritten: !keepPdf && !!pdfBuf })
     maybeSweep()
     return ok({ ok: true, updatedAt: iso(rows[0].updated_at), shareToken: rows[0].share_token ?? null })
   }
@@ -470,6 +668,7 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
     const r = await own(key, pin, `id, ${STORED_SQL} AS bytes`, ip)
     if (r.answer) return r.answer
     const { rowCount } = await q('DELETE FROM public.global_matches WHERE id = $1', [r.row.id])
+    forgetCopy(keyHash(key))
     // kept up to date (a recount after every delete would let delete and save loops scan the table)
     if (rowCount && usage) {
       usage.rows = Math.max(0, usage.rows - 1)
@@ -514,6 +713,8 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
     const { rowCount } = await q('DELETE FROM public.global_matches WHERE expires_at <= now()')
     if (rowCount) usage = null
     budget.sweep()
+    // copies whose last save is past the retention are gone now
+    for (const [kh, c] of created) if (now().getTime() - c.last > RETENTION_DAYS * DAY_MS) forgetCopy(kh)
     return rowCount || 0
   }
 
@@ -526,5 +727,8 @@ export function createGlobalMatches({ pool, now = () => new Date(), logger = con
   /** What the PIN memory holds (tests): copies and networks. */
   const pinMemory = () => ({ keys: guessers.size, entries })
 
-  return { save, load, setShare, del, shared, sharedPdf, organizerList, organizerPdf, sweepExpired, usage: currentUsage, budget, pinMemory }
+  /** What the networks created since the start hold (tests). */
+  const createdBy = (ip) => { const h = holdings.get(creatorNetwork(ip)); return h ? { rows: h.rows, bytes: h.bytes } : { rows: 0, bytes: 0 } }
+
+  return { save, load, setShare, del, shared, sharedPdf, organizerList, organizerPdf, sweepExpired, usage: currentUsage, budget, writes, wal: walState, createdBy, pinMemory }
 }

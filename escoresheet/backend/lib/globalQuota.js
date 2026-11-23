@@ -149,6 +149,63 @@ export function createNetworkBudget({ limits = [], windowMs = DAY_MS, maxEntries
   return { over, charge, usedBy, sweep, get size() { return entries.size } }
 }
 
+/**
+ * A budget everyone shares, per window (GCS-R1: the Global cloud's bytes
+ * written in a minute, an hour and a day, which all become WAL). windows:
+ * [{ name, ms, max }] (a window without a positive max is not limited). One
+ * network (netOf: an IPv6 /48, an IPv4 /24) may use netShare of a window;
+ * the last reserveShare of it is kept for the networks that used less than
+ * lightShare of it, so a few heavy networks cannot leave everyone else with
+ * nothing. over(ip, n) says which window n more would pass ({ window, why:
+ * 'total' | 'network' | 'reserve', retryMs }, or null); charge(ip, n) counts
+ * n. Fixed windows; at most maxNets networks per window (the oldest go).
+ */
+export function createSharedBudget({ windows = [], netOf = (ip) => addressPrefix(ip, 48, 24), netShare = 0.25, reserveShare = 0.25, lightShare = 1 / 32, maxNets = 50_000, now = Date.now } = {}) {
+  const state = windows.map((w) => ({ name: w.name, ms: w.ms, max: Number(w.max), start: 0, total: 0, nets: new Map() }))
+  const roll = (s, t) => {
+    if (t - s.start < s.ms) return
+    s.start = t
+    s.total = 0
+    s.nets.clear()
+  }
+
+  function over(ip, n = 1) {
+    const t = now()
+    const net = netOf(ip)
+    for (const s of state) {
+      if (!(s.max > 0)) continue
+      roll(s, t)
+      const used = s.nets.get(net) ?? 0
+      const why = s.total + n > s.max ? 'total'
+        : used + n > s.max * netShare ? 'network'
+          : s.total + n > s.max * (1 - reserveShare) && used + n > s.max * lightShare ? 'reserve'
+            : null
+      if (why) return { window: s.name, why, retryMs: Math.max(1000, s.start + s.ms - t) }
+    }
+    return null
+  }
+
+  function charge(ip, n) {
+    if (!(n > 0)) return
+    const t = now()
+    const net = netOf(ip)
+    for (const s of state) {
+      roll(s, t)
+      s.total += n
+      if (!s.nets.has(net) && s.nets.size >= maxNets) s.nets.delete(s.nets.keys().next().value)
+      s.nets.set(net, (s.nets.get(net) ?? 0) + n)
+    }
+  }
+
+  /** Each window's total and networks (tests, alerts). */
+  function used() {
+    const t = now()
+    return Object.fromEntries(state.map((s) => { roll(s, t); return [s.name, { total: s.total, networks: s.nets.size }] }))
+  }
+
+  return { over, charge, used }
+}
+
 /** One call at most every everyMs (an alert that must not repeat on every request). */
 export function createOncePer(everyMs, now = Date.now) {
   const last = new Map()

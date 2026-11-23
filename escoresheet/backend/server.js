@@ -499,9 +499,16 @@ let globalMatchesPromise = null
 function getGlobalMatches() {
   if (!DB_MODE) return null
   // its ceiling, budgets and PIN lock (audit 2026-11-23 SEC-01, SEC-30):
-  // OV_GLOBAL_CLOUD_MAX_MB / OV_GLOBAL_CLOUD_MAX_ROWS; alerts reach the error tracker
+  // OV_GLOBAL_CLOUD_MAX_MB / _MAX_ROWS / _WRITE_MB_DAY / _WAL_MAX_MB; alerts
+  // reach the error tracker. The WAL guard (GCS-R1) measures the WAL written
+  // since the host's last backup run (STATUS_DIR/last_backup), which the
+  // archive on the database volume holds until the next run takes it away.
+  const lastBackupAt = async () => {
+    const { at } = await readStatusStamp('last_backup')
+    return at ? Date.parse(at) : null
+  }
   globalMatchesPromise ||= Promise.all([getDataLayer(), import('./lib/globalMatches.js')])
-    .then(([layer, gm]) => gm.createGlobalMatches({ pool: layer.db.pool, onAlert: globalAlert('Global cloud'), ...gm.cloudLimitsFromEnv(process.env) }))
+    .then(([layer, gm]) => gm.createGlobalMatches({ pool: layer.db.pool, onAlert: globalAlert('Global cloud'), walGuard: { lastBackupAt }, ...gm.cloudLimitsFromEnv(process.env) }))
   globalMatchesPromise.catch(() => { globalMatchesPromise = null })
   return globalMatchesPromise
 }
