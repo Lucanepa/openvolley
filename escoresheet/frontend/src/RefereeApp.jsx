@@ -117,7 +117,10 @@ export async function validateRefereePin(pin, { checkCloud = validatePinSupabase
   const ok = (r) => r?.success && r.match
   const otherGame = (r) => !matchExternalId && isOtherGame(r.match, gameNumber)
   let cloud
-  try { cloud = await (matchExternalId ? checkCloud(pin, 'referee', { matchExternalId: String(matchExternalId) }) : checkCloud(pin, 'referee')) } catch (err) { cloud = failedCheck(err) }
+  // Only a game number picked: the cloud check names the one cloud match the
+  // picker listed under it, if any (serverDataSync listedMatchKey, SEC-06)
+  const cloudMatch = matchExternalId ? { matchExternalId: String(matchExternalId) } : (gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : null)
+  try { cloud = await (cloudMatch ? checkCloud(pin, 'referee', cloudMatch) : checkCloud(pin, 'referee')) } catch (err) { cloud = failedCheck(err) }
   if (ok(cloud) && otherGame(cloud)) cloud = { success: false }
   if (ok(cloud)) return { match: cloud.match, source: 'supabase' }
   let lan

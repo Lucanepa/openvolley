@@ -221,7 +221,10 @@ describe('referee match link', () => {
     fireEvent.click(screen.getByRole('button', { name: 'refereeDashboard.enter' }))
 
     expect((await screen.findByTestId('dashboard')).textContent).toBe(OTHER)
-    expect(sync.validatePinSupabase).toHaveBeenCalledWith('445566', 'referee')
+    // the game number goes along: serverDataSync names a match from it only
+    // when the picker listed exactly one under it (listedMatchKey; two here,
+    // serverDataSync.pinMatch.test.js), so the check names none
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith('445566', 'referee', { gameNumber: '1' })
   })
 
   it('a wrong PIN does not connect', async () => {
