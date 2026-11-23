@@ -3,8 +3,9 @@
  * sees it: the SV number is what the recognition reads best (digits), the
  * names what it reads worst (accents, "Müfler" for Müller). A player whose
  * SV number the saved team has gets the saved team's spelling, sure; one
- * the saved team knows by name (accents and case aside, either order) and
- * whose number was not read gets the saved team's number. Nothing else
+ * whose SV number is no one's there but whose name the saved team knows
+ * (accents and case aside, either order; one person only) gets the saved
+ * team's number (amber when the read one looked right). Nothing else
  * changes: the confirm screen shows the rest as read.
  *
  * savedTeam: a saved team row (domain/savedTeams: players and staff with
@@ -51,10 +52,14 @@ function checked (person, find, licenceRe) {
       confidence: { ...person.confidence, licence: Math.max(person.confidence?.licence ?? 0, 0.95), firstName: 1, lastName: 1 }
     }
   }
-  if (!licenceRe.test(person.licence || '')) {
-    const byName = find.byName(person.firstName, person.lastName)
-    const lic = byName ? licenceOf(byName.license_number) : null
-    if (lic) return { ...person, licence: lic, fromSavedTeam: true, confidence: { ...person.confidence, licence: 0.85 } }
+  // the SV number read is no one's in the saved team, the name is someone's
+  // (one person only): the saved team's number. A read that looked right
+  // ("10031" for 100311, a digit lost) is replaced too, shown amber to check.
+  const byName = find.byName(person.firstName, person.lastName)
+  const lic = byName ? licenceOf(byName.license_number) : null
+  if (lic && lic !== person.licence) {
+    const readLooksRight = licenceRe.test(person.licence || '')
+    return { ...person, licence: lic, fromSavedTeam: true, confidence: { ...person.confidence, licence: readLooksRight ? 0.75 : 0.85 } }
   }
   return person
 }

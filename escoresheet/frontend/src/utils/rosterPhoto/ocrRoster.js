@@ -43,6 +43,11 @@ const LFP_HEADER = /^(GFL|LAS|JFL|LFP)$/i
 const LFP_MARK = /^[Xx×]$/
 // the name columns' headers (parseRosterPdf FIRST_NAME_HEADER, LAST_NAME_HEADER)
 const NAME_HEADER = /^(vorname|nachname|prénom|prenom|nome|cognome)$/i
+const FIRST_NAME_COL = /^(vorname|prénom|prenom|nome|first)$/i
+const LAST_NAME_COL = /^(nachname|name|nom|cognome|last)$/i
+// a name the photo lost (a circle drawn over it): a stand-in word the reader
+// takes, emptied again after (the confirm screen shows the gap)
+const NO_NAME = 'Xqzname'
 const SHIRT = /^\d{1,2}$/
 // a circled number as the recognition may write it: "(7)", "(7", "7)", "©7", "@7"
 const CIRCLED_TEXT = /^(?:[(©®@](\d{1,2})\)?|(\d{1,2})\))$/
@@ -122,32 +127,38 @@ export function cleanWord (text) {
 }
 
 /**
- * The marks a team wrote in a player row, taken out of it: a shirt number
- * before the SV number (the one nearest it) or after the date (a number
- * anywhere else is part of the list), circled for the captain; C or K for
- * the captain, L for a libero (owner 2026-11-23).
+ * The marks a team wrote in a player row, taken out of it (owner
+ * 2026-11-23: "coaches can write next (left) or between name and licence,
+ * kinda everywhere"):
+ *   - a shirt number: before the SV number (the nearest one), else anywhere
+ *     between the SV number and the date (a number there would break the
+ *     name), else after the date but right of the printed table; circled =
+ *     the captain;
+ *   - C or K the captain, L a libero: before the SV number, right after it,
+ *     after the date, or as a bare capital anywhere between (an "L." there
+ *     is a middle name's initial).
  * circled(word): whether a ring of ink lies around the word (scan.js ringScore).
- * @returns {{ words, number, numberConf, captain, libero, markConf }}
+ * @returns {{ words, number, numberConf, numberWord, captain, libero, markConf }}
  */
 function takeMarks (words, circled = () => false, tableRight = Infinity) {
   const at = words.findIndex((w) => LICENCE.test(w.text))
-  if (at < 0) return { words, number: null, numberConf: 1, captain: false, libero: false, markConf: 1 }
+  if (at < 0) return { words, number: null, numberConf: 1, numberWord: null, captain: false, libero: false, markConf: 1 }
+  const dateAt = words.findIndex((w, i) => i > at && DATE.test(w.text))
+  const end = dateAt >= 0 ? dateAt : words.length
+  // where a number stood: before the SV number wins, then between, then after the date
+  const RANK = { leading: 3, inside: 2, trailing: 1 }
   const out = []
-  let number = null
-  let leadingNumber = false
-  let numberWord = null
-  let numberConf = 1
+  let found = null // { number, conf, word, where, ringed }
   let captain = false
   let libero = false
   let markConf = 1
-  const dateAt = words.findIndex((w, i) => i > at && DATE.test(w.text))
   words.forEach((w, i) => {
-    const mark = MARK.exec(w.text)
     const leading = i < at
+    const inside = i > at && i < end
     const trailing = dateAt >= 0 && i > dateAt
-    // before the SV number or after the date; between the names only a bare
-    // letter ("L." there is a middle name's initial). The gender column is M / F / H.
-    if (mark && (leading || trailing || (i > at + 1 && BARE_MARK.test(w.text)))) {
+    const mark = MARK.exec(w.text)
+    const markHere = leading || trailing || (inside && (i === at + 1 || BARE_MARK.test(w.text) || /^[([].+[)\]]$/.test(w.text)))
+    if (mark && markHere) {
       if (mark[1].toUpperCase() === 'L') libero = true
       else captain = true
       markConf = Math.min(markConf, w.conf / 100)
@@ -155,28 +166,31 @@ function takeMarks (words, circled = () => false, tableRight = Infinity) {
     }
     const ringed = CIRCLED_TEXT.exec(w.text)
     const shirt = ringed ? ringed[1] || ringed[2] : (SHIRT.test(w.text) ? w.text : (leading ? handNumber(w.text) : null))
+    // (between the SV number and the date: not a piece of a split date, "14" "03.2004")
+    const brokenDate = inside && /^(\d{1,2}[./]|\d{4}$)/.test(words[i + 1]?.text || '')
     // after the date only right of the printed table (its tick and mark
     // columns read as digits: a ✓ comes out as "4")
-    const outside = w.x0 > tableRight
-    if (shirt && Number(shirt) >= 1 && (leading || (trailing && outside && number === null))) {
-      // "1" "1" side by side is one 11 (the recognition split it)
-      const joined = leading && numberWord && w.x0 - numberWord.x1 < 0.5 * (w.y1 - w.y0) && String(number).length === 1 && shirt.length === 1
-      // before the SV number the nearest one wins (a mark between them aside)
-      number = joined ? Number(`${number}${shirt}`) : Number(shirt)
-      numberConf = joined ? Math.min(numberConf, w.conf / 100) : w.conf / 100
-      numberWord = w
-      if (leading) leadingNumber = true
-      if (ringed || circled(w)) {
-        captain = true
-        markConf = Math.min(markConf, w.conf / 100)
+    const where = leading ? 'leading' : inside && !brokenDate ? 'inside' : trailing && w.x0 > tableRight ? 'trailing' : null
+    if (shirt && Number(shirt) >= 1 && where) {
+      const prev = found
+      // "1" "1" side by side before the SV number is one 11 (the recognition split it)
+      const joined = where === 'leading' && prev?.where === 'leading' && w.x0 - prev.word.x1 < 0.5 * (w.y1 - w.y0) && String(prev.number).length === 1 && shirt.length === 1
+      if (joined) found = { ...prev, number: Number(`${prev.number}${shirt}`), conf: Math.min(prev.conf, w.conf / 100), word: { ...w, x0: prev.word.x0 }, ringed: prev.ringed || !!ringed }
+      else if (!prev || RANK[where] > RANK[prev.where] || (where === 'leading' && prev.where === 'leading')) {
+        found = { number: Number(shirt), conf: w.conf / 100, word: w, where, ringed: !!ringed }
       }
+      // taken out of the row in any case: a number between the names would break them
       return
     }
     // whatever else stands before the SV number is no part of the row
     if (leading) return
     out.push(w)
   })
-  return { words: out, number, numberConf, captain, libero, markConf, leadingNumber }
+  if (found && (found.ringed || circled(found.word))) {
+    captain = true
+    markConf = Math.min(markConf, found.conf)
+  }
+  return { words: out, number: found?.number ?? null, numberConf: found?.conf ?? 1, numberWord: found?.word ?? null, captain, libero, markConf }
 }
 
 // "Trainer: #12345 | Anna Muster (1980)" as read: the "#" or the "|" lost or
@@ -237,6 +251,7 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
   // a narrow column; in a photo the X sits in the middle of a wide one)
   let headers = null
   let tableRight = Infinity // the right end of the table's header row
+  let nameCols = null // where the first and last name columns start (their headers)
   // stand-in SV numbers for misread ones: six digits no row of the page has
   const read = new Set(lines.flatMap((l) => l.words.map((w) => cleanWord(w.text))).filter((t) => LICENCE.test(t)))
   let standIns = 0
@@ -253,10 +268,25 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
       .sort((a, b) => a.x0 - b.x0)
     // a name that went on in the line below its row ("Sánchez-Robles" /
     // "Herrero"): a short line of letters only, right under a player row
-    if (lastRow && words.length && words.length <= 3 && words.every((w) => /^\p{L}[\p{L}'’.-]*$/u.test(w.text)) &&
+    // (a number or a mark written beside it counts for that row)
+    const nameBit = (w) => /^\p{L}[\p{L}'’.-]*$/u.test(w.text) && !BARE_MARK.test(w.text)
+    const markBit = (w) => SHIRT.test(w.text) || BARE_MARK.test(w.text)
+    if (lastRow && words.length && words.length <= 4 && words.some(nameBit) && words.every((w) => nameBit(w) || markBit(w)) &&
         line.top - lastRow.bottom < 0.8 * height) {
-      const under = lastRow.words.reduce((best, w) => (Math.abs(w.x0 - words[0].x0) < Math.abs(best.x0 - words[0].x0) ? w : best))
-      rows.get(lastRow.licence).more.push({ under: under.text, text: words.map((w) => w.text).join(' ') })
+      const names = words.filter(nameBit)
+      const under = lastRow.words.reduce((best, w) => (Math.abs(w.x0 - names[0].x0) < Math.abs(best.x0 - names[0].x0) ? w : best))
+      const row = rows.get(lastRow.licence)
+      row.more.push({ under: under.text, text: names.map((w) => w.text).join(' ') })
+      for (const w of words.filter(markBit)) {
+        if (BARE_MARK.test(w.text)) {
+          if (w.text === 'L') row.libero = true
+          else row.captain = true
+          row.markConf = Math.min(row.markConf, w.conf / 100, HANDWRITTEN_MAX)
+        } else if (row.number === null && Number(w.text) >= 1) {
+          row.number = Number(w.text)
+          row.numberConf = Math.min(w.conf / 100, HANDWRITTEN_MAX)
+        }
+      }
       lastRow = { ...lastRow, bottom: line.bottom }
       return
     }
@@ -265,6 +295,9 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
     if (words.some((w) => LFP_HEADER.test(w.text) || NAME_HEADER.test(w.text))) {
       headers = words.map((w) => ({ x: w.x0, lfp: LFP_HEADER.test(w.text) }))
       tableRight = Math.max(...words.map((w) => w.x1))
+      const first = words.find((w) => FIRST_NAME_COL.test(w.text))
+      const last = words.find((w) => LAST_NAME_COL.test(w.text) && w !== first)
+      nameCols = first && last ? { first: first.x0, last: last.x0 } : nameCols
     }
     // An SV number read with a digit too few or too many ("9122"): the row
     // is kept all the same, under a stand-in the reader accepts, and gets
@@ -282,6 +315,21 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
     if (!kept.length) return
     const licenceWord = kept.find((w) => LICENCE.test(w.text))
     if (licenceWord) {
+      const at0 = kept.indexOf(licenceWord)
+      // signs that are no name and no number between the SV number and the
+      // date (a circle read as "@)")
+      for (let k = kept.length - 1; k > at0; k--) {
+        if (!/[\p{L}\d]/u.test(kept[k].text) && !(DATE.test(kept[k].text))) kept.splice(k, 1)
+      }
+      // one name only (the other lost): a stand-in in the missing column
+      let n = at0 + 1
+      while (n < kept.length && /^\p{L}{2,}/u.test(kept[n].text) && !GENDER_WORD.test(kept[n].text)) n++
+      if (n === at0 + 2) {
+        const only = kept[at0 + 1]
+        const inLast = nameCols ? Math.abs(only.x0 - nameCols.last) < Math.abs(only.x0 - nameCols.first) : true
+        const x0 = inLast ? (nameCols ? nameCols.first : Math.max(licenceWord.x1 + 4, only.x0 - 4 * height)) : (nameCols ? nameCols.last : only.x1 + 4 * height)
+        kept.splice(inLast ? at0 + 1 : at0 + 2, 0, { ...only, text: NO_NAME, x0, x1: x0 + 3 * height, conf: 0 })
+      }
       // A date of birth misread ("16101083") or missing: the reader finds a
       // player row by its date, never keeps it (db/048). A stand-in date
       // keeps the row; the date is dropped again below.
@@ -292,11 +340,18 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
         let lastName = at
         while (lastName + 1 < kept.length && /^\p{L}{2,}/u.test(kept[lastName + 1].text) && !GENDER_WORD.test(kept[lastName + 1].text)) lastName++
         if (lastName > at) {
-          // (the misread date itself, else a new word after the name and gender)
-          const after = kept.findIndex((w, k) => k > lastName && (w.text.match(/\d/g) || []).length >= 4)
-          if (after >= 0) kept[after] = { ...kept[after], text: STAND_IN_DATE }
-          else {
-            const gender = GENDER_WORD.test(kept[lastName + 1]?.text || '') ? lastName + 1 : lastName
+          // (the misread date itself, all its pieces when the reading split it
+          // ("14" "03.2004"), else a new word after the name and gender)
+          const gender = GENDER_WORD.test(kept[lastName + 1]?.text || '') ? lastName + 1 : lastName
+          let first = gender + 1
+          let last = first
+          while (last < kept.length && /^[\d./,]+$/.test(kept[last].text)) last++
+          const pieces = kept.slice(first, last)
+          if (pieces.length && (pieces.map((w) => w.text).join('').match(/\d/g) || []).length >= 4) {
+            kept.splice(first, pieces.length, { ...pieces[0], text: STAND_IN_DATE, x1: pieces[pieces.length - 1].x1 })
+          } else if ((first = kept.findIndex((w, k) => k > lastName && (w.text.match(/\d/g) || []).length >= 4)) >= 0) {
+            kept[first] = { ...kept[first], text: STAND_IN_DATE }
+          } else {
             const w = kept[gender]
             kept.splice(gender + 1, 0, { ...w, text: STAND_IN_DATE, x0: w.x1 + 6, x1: w.x1 + 60, conf: 0 })
           }
@@ -307,9 +362,15 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
       // no number read in front of the SV number: a circle there (the
       // recognition skips many circled numbers) still makes the captain
       let ring = null
-      if (!marks.leadingNumber && ringAt) {
-        // (a circle is drawn bigger than the row: two lines above and below)
-        ring = ringAt({ x0: licenceWord.x0 - 7 * height, y0: line.top - 2 * height, x1: licenceWord.x0 - 2, y1: line.bottom + 2 * height }, height)
+      if (marks.number === null && ringAt) {
+        // anywhere a team writes (left of the SV number up to the date); a
+        // circle is drawn bigger than the row: two lines above and below, its
+        // middle on this row (not the neighbour's circle)
+        const dateWord = kept.find((w) => DATE.test(w.text))
+        const right = dateWord ? dateWord.x0 - 2 : Math.max(...kept.map((w) => w.x1))
+        const found = ringAt({ x0: licenceWord.x0 - 7 * height, y0: line.top - 2 * height, x1: right, y1: line.bottom + 2 * height }, height)
+        const middle = found ? (found.ring.y0 + found.ring.y1) / 2 : NaN
+        ring = found && middle >= line.top - 0.5 * height && middle <= line.bottom + 0.5 * height ? found : null
         if (ring) {
           marks.captain = true
           marks.markConf = Math.min(marks.markConf, HANDWRITTEN_MAX)
@@ -349,7 +410,7 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
     const row = p.licence ? rows.get(p.licence) : null
     if (!row) return { ...p, confidence: { licence: 0.5, firstName: 0.5, lastName: 0.5 } }
     // the rest of a name from the line below goes to the name it stood under
-    const names = { firstName: p.firstName, lastName: p.lastName }
+    const names = { firstName: p.firstName === NO_NAME ? '' : p.firstName, lastName: p.lastName === NO_NAME ? '' : p.lastName }
     for (const m of row.more) {
       const key = String(p.firstName).split(/\s+/).includes(m.under) ? 'firstName' : 'lastName'
       names[key] = `${names[key]} ${m.text}`.trim()
