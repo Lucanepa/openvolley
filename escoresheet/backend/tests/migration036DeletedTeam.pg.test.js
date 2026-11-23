@@ -10,9 +10,15 @@ import { SKIP_PG, createTestDatabase } from './helpers/pgTestDb.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const sqlOf = (f) => readFileSync(join(here, '..', 'db', f), 'utf8')
-const files = readFileSync(join(here, 'helpers', 'pgTestDb.js'), 'utf8').match(/MIGRATIONS_SQL = \[([^\]]*)\]/)[1].match(/'([^']+)'/g).map((s) => s.slice(1, -1)).filter((f) => f !== '036_team_manager_confirm.sql')
+const files = readFileSync(join(here, 'helpers', 'pgTestDb.js'), 'utf8').match(/MIGRATIONS_SQL = \[([^\]]*)\]/)[1].match(/'([^']+)'/g).map((s) => s.slice(1, -1))
+  // db/058 redefines the trigger after 036 (PERM-12): the schema of before has db/030's
+  .filter((f) => f !== '036_team_manager_confirm.sql' && f !== '058_club_membership_suggestions.sql')
 const BEFORE = [readFileSync(join(here, 'fixtures', 'synthetic_schema.sql'), 'utf8'), ...files.map(sqlOf)].join('\n')
-const MIGRATION = sqlOf('036_team_manager_confirm.sql') + '\n' + sqlOf('current_definitions.sql')
+// current_definitions.sql is as of db/058 since the audit fixes: its
+// ov_manager_rows_changed() marks a new club manager's membership in
+// account_clubs.granted_via (PERM-12), so the column comes first
+const COLUMN_058 = 'ALTER TABLE public.account_clubs ADD COLUMN IF NOT EXISTS granted_via text;'
+const MIGRATION = sqlOf('036_team_manager_confirm.sql') + '\n' + COLUMN_058 + '\n' + sqlOf('current_definitions.sql')
 
 describe('db/036: a team deleted since', { skip: SKIP_PG }, () => {
   let t, raw

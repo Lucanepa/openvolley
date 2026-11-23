@@ -31,7 +31,11 @@ const BEFORE_036 = [
     '028_notifications.sql', '029_club_manager_links.sql', '030_manager_roles.sql', '031_manager_roles_definer.sql',
     '032_match_id_scoping.sql', '033_match_scoresheets.sql'].map(sqlOf)
 ].join('\n')
-const MIGRATION = sqlOf('036_team_manager_confirm.sql') + '\n' + sqlOf('current_definitions.sql')
+// current_definitions.sql is as of db/058 since the audit fixes: its
+// ov_manager_rows_changed() marks a new club manager's membership in
+// account_clubs.granted_via (PERM-12), so the column comes first
+const COLUMN_058 = 'ALTER TABLE public.account_clubs ADD COLUMN IF NOT EXISTS granted_via text;'
+const MIGRATION = sqlOf('036_team_manager_confirm.sql') + '\n' + COLUMN_058 + '\n' + sqlOf('current_definitions.sql')
 
 describe('migration 036: team managers confirmed, no club membership', { skip: SKIP_PG }, () => {
   let t, raw

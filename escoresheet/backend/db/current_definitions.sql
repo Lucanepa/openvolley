@@ -1,5 +1,5 @@
 -- current_definitions.sql: the current body of every function that more
--- than one numbered migration defines. current as of: db/039
+-- than one numbered migration defines. current as of: db/058
 --
 -- scripts/migrate.mjs applies it after the numbered files on every run, in
 -- one transaction. A numbered file never runs twice through the runner, but
@@ -160,27 +160,54 @@ BEGIN
    WHERE p.ctid = n.row_id AND p.roles IS DISTINCT FROM n.next;
 END $$;
 
--- db/036 (db/030 with db/031's SECURITY DEFINER and search_path: it calls ov_sync_manager_roles, which ov_app may not
--- execute): a new club manager joins the club, a team manager no club
+-- db/058 (db/036's, which is db/030 with db/031's SECURITY DEFINER and search_path: it calls ov_sync_manager_roles,
+-- which ov_app may not execute): a new club manager joins the club marked 'manager' and leaves it again with its
+-- manager row (PERM-12), a team manager joins no club
 CREATE OR REPLACE FUNCTION public.ov_manager_rows_changed()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
+DECLARE
+  left_club boolean := false;
 BEGIN
   IF TG_OP IN ('INSERT', 'UPDATE') THEN
     PERFORM public.ov_sync_manager_roles(NEW.user_id);
-    -- a new club manager joins the club; a team manager no club (db/036:
-    -- it reads through its team, lib/teams.js mayManage)
+    -- a new club manager joins the club, marked 'manager' (db/058); one that
+    -- was a member before keeps its own membership; a team manager joins no
+    -- club (db/036: it reads through its team, lib/teams.js mayManage)
     IF TG_TABLE_NAME = 'club_managers' THEN
-      INSERT INTO public.account_clubs (user_id, club_id, granted_by)
-      VALUES (NEW.user_id, NEW.club_id, NEW.added_by)
+      INSERT INTO public.account_clubs (user_id, club_id, granted_by, granted_via)
+      VALUES (NEW.user_id, NEW.club_id, NEW.added_by, 'manager')
       ON CONFLICT (user_id, club_id) DO NOTHING;
     END IF;
   END IF;
   IF TG_OP IN ('DELETE', 'UPDATE') THEN
     PERFORM public.ov_sync_manager_roles(OLD.user_id);
+    -- db/058 (PERM-12): a club manager taken off leaves the club the trigger
+    -- made it join; a membership of its own stays
+    -- (nested: a team_managers row has no club_id to name)
+    IF TG_TABLE_NAME = 'club_managers' THEN
+      IF TG_OP = 'DELETE' THEN
+        left_club := true;
+      ELSE
+        left_club := NEW.user_id IS DISTINCT FROM OLD.user_id OR NEW.club_id IS DISTINCT FROM OLD.club_id;
+      END IF;
+      IF left_club AND NOT EXISTS (SELECT 1 FROM public.club_managers cm WHERE cm.club_id = OLD.club_id AND cm.user_id = OLD.user_id) THEN
+        WITH gone AS (
+          DELETE FROM public.account_clubs ac
+           WHERE ac.user_id = OLD.user_id AND ac.club_id = OLD.club_id AND ac.granted_via = 'manager'
+          RETURNING ac.user_id, ac.club_id
+        )
+        INSERT INTO public.audit_log (action, target_user_id, details)
+        SELECT 'account.clubs', g.user_id, jsonb_build_object('removed', g.club_id, 'reason', 'club_manager_removed', 'by', 'db/058')
+          FROM gone g
+         -- not while the account or the club is being deleted (the cascade)
+         WHERE EXISTS (SELECT 1 FROM auth.users u WHERE u.id = g.user_id)
+           AND EXISTS (SELECT 1 FROM public.clubs c WHERE c.id = g.club_id);
+      END IF;
+    END IF;
   END IF;
   RETURN NULL;
 END $$;
