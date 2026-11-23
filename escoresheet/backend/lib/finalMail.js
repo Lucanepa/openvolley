@@ -30,7 +30,9 @@
  * others), at most MAX_RECIPIENTS. An account's mail is in the language picked
  * at its sign-up (user metadata mail_lang, lib/auth.js); a typed address or a
  * club's contact in English (FINAL_MAIL_LANG overrides). Only while the
- * switch is on, and only matches closed after it was turned on (never the backlog).
+ * switch is on, and only matches closed after it was turned on (never the
+ * backlog). "Turned on" is the last change from off to on: saving the switch
+ * again, or off and on, never drops a close already on its way (SEC-12).
  *
  * The PDF is the one of the close's approval: the newest PDF stored for the
  * match (lib/scoresheets.js latestPdf: the files recorded for it, db/033),
@@ -275,15 +277,23 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     }
   }
 
-  /** PUT /api/settings { send_final_email } */
+  /**
+   * PUT /api/settings { send_final_email }. changed_at is when the switch was
+   * turned on: it moves only when it goes from off to on (SEC-12). Saving the
+   * same value again (a stale tab) or turning it off leaves it, so the closes
+   * after it that are still on their way (waiting for the PDF, deferred, the
+   * PDF to follow) are not left out by a later save.
+   */
   async function setSettings ({ actorId, body } = {}) {
     if (!body || typeof body.send_final_email !== 'boolean') return invalid('send_final_email: true or false')
     const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       await client.query(
-        `INSERT INTO public.app_settings (id, send_final_email, changed_by, changed_at) VALUES (true, $1, $2, now())
-         ON CONFLICT (id) DO UPDATE SET send_final_email = EXCLUDED.send_final_email, changed_by = EXCLUDED.changed_by, changed_at = EXCLUDED.changed_at`,
+        `INSERT INTO public.app_settings (id, send_final_email, changed_by, changed_at) VALUES (true, $1, $2, CASE WHEN $1 THEN now() END)
+         ON CONFLICT (id) DO UPDATE SET send_final_email = EXCLUDED.send_final_email, changed_by = EXCLUDED.changed_by,
+           changed_at = CASE WHEN EXCLUDED.send_final_email AND (app_settings.send_final_email IS NOT TRUE OR app_settings.changed_at IS NULL)
+                             THEN now() ELSE app_settings.changed_at END`,
         [body.send_final_email, isUuid(actorId) ? actorId : null])
       await audit(client, { actorId, action: 'settings.final_email', details: { send_final_email: body.send_final_email } })
       await client.query('COMMIT')
@@ -527,7 +537,13 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     return 'sent_no_pdf'
   }
 
-  /** The closes due now, the longest due first, without the matches `seen`. */
+  /**
+   * The closes due now, the longest due first, without the matches `seen`.
+   * Only a close the sweep has not started (no match_final_mails row) must
+   * be after the switch was turned on (never the backlog); one already on
+   * its way (waiting for the PDF, deferred, the PDF to follow) is finished
+   * whatever the switch did since, up to LATE_PDF_DAYS (SEC-12).
+   */
   async function dueCloses (changedAt, seen) {
     const t = now()
     const { rows } = await pool.query(
@@ -535,7 +551,8 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
          ${CLOSE_FROM}
         WHERE m.closed_at IS NOT NULL
           AND m.closed_at <= $3::timestamptz
-          AND (m.closed_at >= greatest($1::timestamptz, $2::timestamptz)
+          AND ((f.match_id IS NULL AND m.closed_at >= greatest($1::timestamptz, $2::timestamptz))
+               OR (f.match_id IS NOT NULL AND m.closed_at >= $2::timestamptz)
                -- a close an admin mailed by hand (sendNow): finished whenever it closed
                OR (f.match_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.audit_log a
                     WHERE a.action = 'match.final_mail_manual' AND a.match_id = m.id AND a.at >= m.closed_at AND a.at >= $2::timestamptz)))
@@ -566,9 +583,12 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
   /**
    * The officials who signed a mailed close that an admin reopened since:
    * the accounts of its approvals the reopen voided (made before the close,
-   * voided as match_reopened after it). Once per close.
+   * voided as match_reopened after it). Once per close. Every such close was
+   * mailed (a match_final_mails row with recipients), so, as dueCloses does
+   * for a close on its way, when the switch was turned on does not matter:
+   * a reopen within LATE_PDF_DAYS is told (SEC-12).
    */
-  async function reopenNotices (changedAt, ctx) {
+  async function reopenNotices (ctx) {
     const t = now()
     const { rows } = await pool.query(
       `SELECT f.match_id AS id, f.closed_at::text AS closed_at_exact, f.delivered, m.game_n, m.scheduled_at,
@@ -578,9 +598,9 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
          JOIN LATERAL (SELECT a.at, a.details FROM public.audit_log a
                         WHERE a.action = 'match.reopen' AND a.match_id = f.match_id AND a.at > f.closed_at
                         ORDER BY a.at LIMIT 1) r ON true
-        WHERE f.reopen_notice IS NULL AND f.recipients > 0 AND r.at >= greatest($1::timestamptz, $2::timestamptz)
+        WHERE f.reopen_notice IS NULL AND f.recipients > 0 AND r.at >= $1::timestamptz
         ORDER BY r.at, f.match_id
-        LIMIT ${BATCH}`, [changedAt, iso(t - LATE_PDF_DAYS * DAY_MS)])
+        LIMIT ${BATCH}`, [iso(t - LATE_PDF_DAYS * DAY_MS)])
     const out = []
     for (const f of rows) {
       const mark = (notice, delivered = []) => pool.query(
@@ -653,7 +673,7 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
         }
         if (rows.length < BATCH) break
       }
-      for (const r of await reopenNotices(settings.changed_at, ctx)) count(r)
+      for (const r of await reopenNotices(ctx)) count(r)
       return out
     } catch (err) {
       log.error?.(`[final-mail] sweep failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
