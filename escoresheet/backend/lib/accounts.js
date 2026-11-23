@@ -589,14 +589,25 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     const before = normalizeRoles(prof?.roles)
     const hadRole = before.includes(role)
     const { rows: [again] } = await client.query('SELECT 1 FROM public.invite_redemptions WHERE invite_id = $1 AND user_id = $2', [inv.id, userId])
-    // db/018: an indoor code's club is joined too (a second club's code adds that club)
-    const club = sport === 'indoor' && isUuid(inv.club_id) ? inv.club_id : null
-    const { rows: [member] } = club
-      ? await client.query('SELECT 1 FROM public.account_clubs WHERE user_id = $1 AND club_id = $2', [userId, club])
-      : { rows: [{}] }
+    // db/018: an indoor scorer code's club is joined too (a second club's code
+    // adds that club). PERM-20: only a scorer code's: account_clubs is "scores
+    // for", and a referee (or competition manager) code gives its role and
+    // nothing of the club (no home games, licence lists, sent rosters or saved
+    // teams), as an approved referee request does (lib/accountRequests.js)
+    const club = sport === 'indoor' && isUuid(inv.club_id) && inv.role === 'scorer' ? inv.club_id : null
+    const { rows: [mem] } = club
+      ? await client.query("SELECT to_jsonb(ac) ->> 'granted_via' AS via FROM public.account_clubs ac WHERE ac.user_id = $1 AND ac.club_id = $2", [userId, club])
+      : { rows: [] }
+    // a membership of its own (db/058, PERM-12: not one a club manager row
+    // alone gave, which goes with that row)
+    const member = !club || (!!mem && mem.via !== 'manager')
     // A code this account used before: nothing new. Its club only while the
     // account is still a member: one taken off the club needs a new code.
     if (again && !member) throw abort(INVITE_REMOVED())
+    // PERM-06: nor does any other code of the club made before it was taken
+    // off (a manager's removal, an admin's, or the end of its manager row); a
+    // code made after that, or the club adding it again, is the club asking it back
+    if (club && !member && await removedFromClubSince(client, userId, club, inv.created_at)) throw abort(INVITE_REMOVED())
     // Idempotent: a code redeemed before, or nothing to give (the role held,
     // the club joined) is not counted (a single-use code is not wasted)
     if (again || (hadRole && member)) {
@@ -618,6 +629,12 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
          SELECT $1, $2, NULL WHERE EXISTS (SELECT 1 FROM public.clubs WHERE id = $2)
          ON CONFLICT (user_id, club_id) DO NOTHING`, [userId, club])
       joined = rowCount > 0
+      // a club manager who redeems the club's scorer code: the membership is its own now
+      if (!joined && mem?.via === 'manager') {
+        const { rowCount: own } = await client.query(
+          "UPDATE public.account_clubs SET granted_via = NULL WHERE user_id = $1 AND club_id = $2 AND granted_via = 'manager'", [userId, club])
+        joined = own > 0
+      }
     }
     if (hadRole) {
       await audit(client, { actorId: userId, action: 'account.clubs', targetUserId: userId, details: { invite_id: inv.id, joined: club } })
@@ -625,6 +642,25 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role, ...(joined ? { club_id: club } : {}), ...beachOnly }, app: sport })
     }
     return ok({ roles: after, role_granted: role, already_had: hadRole, ...beachOnly })
+  }
+
+  /**
+   * PERM-06: was `userId` taken off club `clubId` at or after `since` (a club
+   * code's created_at)? A club manager's or an admin's removal of the member
+   * (club.member_remove), an admin's new list of the account's clubs without
+   * it (account.clubs before / after), or the membership its manager row
+   * alone gave going with that row (db/058, account.clubs removed).
+   */
+  async function removedFromClubSince (client, userId, clubId, since) {
+    const { rows } = await client.query(
+      `SELECT 1 FROM public.audit_log a
+        WHERE a.target_user_id = $1 AND a.at >= $3
+          AND ((a.action = 'club.member_remove' AND a.details ->> 'club_id' = $2::text)
+            OR (a.action = 'account.clubs'
+                AND ((coalesce(a.details -> 'before', '[]'::jsonb) ? $2::text AND NOT coalesce(a.details -> 'after', '[]'::jsonb) ? $2::text)
+                  OR a.details ->> 'removed' = $2::text)))
+        LIMIT 1`, [userId, clubId, since])
+    return rows.length > 0
   }
 
   /** The team link part of redeemInvite (inside its transaction, the code row locked). */
