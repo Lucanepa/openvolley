@@ -795,6 +795,8 @@
       "serveLabel": "AUFSCHLAG",
       "to": "TO",
       "sub": "AUS",
+      "timeoutFull": "Timeout",
+      "substitutionFull": "Wechsel",
       "last": "Letzte",
       "rallyStatus": "Ballwechselstatus",
       "lastAction": "Letzte Aktion",

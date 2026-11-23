@@ -802,6 +802,8 @@
       "serveLabel": "SERVIZIO",
       "to": "TO",
       "sub": "SOS",
+      "timeoutFull": "Timeout",
+      "substitutionFull": "Sostituzione",
       "last": "Ultimo",
       "rallyStatus": "Stato scambio",
       "lastAction": "Ultima azione",

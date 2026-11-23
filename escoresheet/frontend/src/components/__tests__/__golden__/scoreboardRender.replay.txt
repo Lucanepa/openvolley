@@ -60,15 +60,15 @@
               "MUS"
         <div>
           <div class="to-sub-counter" data-help-id="scoreboard-timeout-left">
-            <div class="to-sub-label">
-              "TO"
             <div class="to-sub-value">
               "0"
+            <div class="to-sub-label">
+              "Time-out"
           <div class="to-sub-counter">
-            <div class="to-sub-label">
-              "SUB"
             <div class="to-sub-value">
               "0"
+            <div class="to-sub-label">
+              "Substitution"
         <div>
           <button class="tap-hint tap-hint-sm">
             "Improper request"
@@ -319,15 +319,15 @@
               "BSP"
         <div>
           <div class="to-sub-counter" data-help-id="scoreboard-timeout-right">
-            <div class="to-sub-label">
-              "TO"
             <div class="to-sub-value">
               "0"
+            <div class="to-sub-label">
+              "Time-out"
           <div class="to-sub-counter">
-            <div class="to-sub-label">
-              "SUB"
             <div class="to-sub-value">
               "0"
+            <div class="to-sub-label">
+              "Substitution"
         <div>
           <button class="tap-hint tap-hint-sm">
             "Improper request"

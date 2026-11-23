@@ -801,6 +801,8 @@
       "serveLabel": "SERVICE",
       "to": "TM",
       "sub": "RMP",
+      "timeoutFull": "Temps mort",
+      "substitutionFull": "Remplacement",
       "last": "Dernier",
       "rallyStatus": "État de l'échange",
       "lastAction": "Dernière action",

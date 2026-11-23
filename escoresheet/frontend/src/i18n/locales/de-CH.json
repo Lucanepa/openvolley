@@ -802,6 +802,8 @@
       "serveLabel": "UFSCHLAG",
       "to": "TO",
       "sub": "US",
+      "timeoutFull": "Timeout",
+      "substitutionFull": "Wächsel",
       "last": "Letschti",
       "rallyStatus": "Ballwächselstatus",
       "lastAction": "Letschti Aktion",
