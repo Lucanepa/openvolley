@@ -149,6 +149,9 @@ describe('sqlWorkspace write mode: secret columns end to end', { skip: SKIP }, (
     expectCode(await runSql({ sql: 'INSERT INTO clubs (name) SELECT concat_ws(\',\', external_id, connection_pins) FROM matches', write_mode: true, commit: true }), 400, 'secret_column_not_allowed')
     expectCode(await runSql({ sql: 'INSERT INTO clubs (name) SELECT ROW(m.*)::text FROM matches m', write_mode: true, commit: true }), 400, 'secret_column_not_allowed')
     assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.clubs')).rows[0].n, before)
+    // a script is refused whole: the write before the refused statement is rolled back
+    expectCode(await runSql({ sql: "INSERT INTO clubs (name) VALUES ('VBC Vorher'); SELECT row_to_json(m) FROM matches m", write_mode: true, commit: true }), 400, 'whole_row_not_allowed')
+    assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.clubs')).rows[0].n, before)
   })
 
   it('everything else of write mode works as before', async () => {
@@ -156,7 +159,10 @@ describe('sqlWorkspace write mode: secret columns end to end', { skip: SKIP }, (
       'SELECT row_to_json(c) FROM clubs c', 'SELECT cast((game_n) AS numeric(6, 1)) FROM matches',
       "SELECT count(*) FILTER (WHERE status = 'live') FROM matches", 'SELECT status, count(*) FROM matches GROUP BY status ORDER BY 1',
       `UPDATE clubs SET contact_email = contact_email WHERE id = '${club.id}'`,
-      `DELETE FROM clubs WHERE id = '${club.id}' AND false`]) {
+      `DELETE FROM clubs WHERE id = '${club.id}' AND false`,
+      // a statement may use what an earlier one of the run made (each is checked right before it runs)
+      'DECLARE c CURSOR FOR SELECT id, name FROM clubs FOR UPDATE; FETCH NEXT FROM c; UPDATE clubs SET name = name WHERE CURRENT OF c',
+      'DECLARE c CURSOR FOR SELECT id, external_id FROM matches; FETCH ALL FROM c']) {
       const r = await write(text)
       assert.equal(r.status, 200, `${text}: ${r.text}`)
       assert.equal(r.json.data.hidden_columns, undefined, text)

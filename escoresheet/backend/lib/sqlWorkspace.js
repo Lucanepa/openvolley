@@ -25,9 +25,9 @@
  * the secret columns (game PINs, token and code hashes) out itself: a
  * statement naming one is refused (checkWriteScope), so is one that reaches
  * one without its name (a whole row, an expression over SELECT *'s columns,
- * renamed columns: checkPlanSecrets on its EXPLAIN plan, before anything
- * runs), and the answer never carries one (SELECT *, RETURNING *: left out,
- * named in hidden_columns).
+ * renamed columns: checkPlanSecrets on its EXPLAIN plan, right before it
+ * runs; the run is rolled back whole), and the answer never carries one
+ * (SELECT *, RETURNING *: left out, named in hidden_columns).
  *
  * Both modes: one transaction, statement_timeout 15 s, every statement
  * checked before anything runs (checkStatementPolicy: nothing that leaves
@@ -859,12 +859,14 @@ export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', l
     let out = { columns: [], rows: [], row_count: 0, truncated: false }
     const refuse = (i, r) => Object.assign(new Error('refused'), { __result: fail(400, r.code, r.message, { hint: r.hint, statement_index: i }) })
     /**
-     * Write mode, before anything runs: the tables with secret columns, then
-     * each statement's renamed columns (checkWriteScope) and its plan
-     * (checkPlanSecrets). EXPLAIN runs nothing. Returns what the answer
-     * leaves out: the secret columns by table oid and column number.
+     * Write mode: the tables and views with secret columns, and a check of
+     * one statement right before it runs (it has not run yet, and the run is
+     * one transaction, rolled back when a statement is refused): its renamed
+     * columns (checkWriteScope) and its plan (checkPlanSecrets; EXPLAIN runs
+     * nothing). `columns`: what the answer leaves out, by table oid and
+     * column number.
      */
-    const guardSecrets = async (client) => {
+    const secretGuard = async (client) => {
       const { rows: cols } = await client.query(
         `SELECT n.nspname, c.relname, c.oid::bigint AS oid, a.attnum::int AS attnum
            FROM pg_attribute a
@@ -874,23 +876,26 @@ export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', l
             AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_toast%'`, [SECRET_COLUMN_SQL_RE])
       const secretRelations = new Set(cols.map((r) => `${r.nspname}.${r.relname}`))
       const secretNames = new Set(cols.map((r) => String(r.relname).toLowerCase()))
-      for (let i = 0; i < statements.length; i++) {
-        const renamed = checkWriteScope(statements[i], { secretRelations: secretNames })
-        if (renamed) throw refuse(i, renamed)
-        if (!EXPLAINABLE.has(leadingKeyword(statements[i]))) continue
-        let plan
-        try {
-          plan = (await client.query(`EXPLAIN (VERBOSE, FORMAT JSON) ${statements[i]}`)).rows[0]?.['QUERY PLAN']
-        } catch (pgErr) {
-          throw Object.assign(new Error('statement'), { __result: statementError(pgErr, i, true) })
+      return {
+        columns: new Set(cols.map((r) => `${r.oid}/${r.attnum}`)),
+        async check (i) {
+          const renamed = checkWriteScope(statements[i], { secretRelations: secretNames })
+          if (renamed) throw refuse(i, renamed)
+          if (!EXPLAINABLE.has(leadingKeyword(statements[i]))) return
+          let plan
+          try {
+            plan = (await client.query(`EXPLAIN (VERBOSE, FORMAT JSON) ${statements[i]}`)).rows[0]?.['QUERY PLAN']
+          } catch (pgErr) {
+            throw Object.assign(new Error('statement'), { __result: statementError(pgErr, i, true) })
+          }
+          const used = checkPlanSecrets(plan, { secretRelations })
+          if (used) throw refuse(i, used)
         }
-        const used = checkPlanSecrets(plan, { secretRelations })
-        if (used) throw refuse(i, used)
       }
-      return new Set(cols.map((r) => `${r.oid}/${r.attnum}`))
     }
-    const runAll = async (client, secretColumns = null) => {
+    const runAll = async (client, guard = null) => {
       for (let i = 0; i < statements.length; i++) {
+        if (guard) await guard.check(i)
         let stmt = statements[i]
         if (i === lastIdx && shouldAutoLimit(stmt)) stmt = `${stmt}\nLIMIT ${DEFAULT_ROW_CAP + 1}`
         let res
@@ -908,7 +913,7 @@ export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', l
             // selected (SELECT *, t.*, RETURNING *, a CTE's column): by its
             // name or by the table column it comes from (SEC-40)
             const secret = (f) => SECRET_COLUMN_RE.test(String(f.name).toLowerCase()) ||
-              (secretColumns != null && f.tableID > 0 && secretColumns.has(`${f.tableID}/${f.columnID}`))
+              (guard != null && f.tableID > 0 && guard.columns.has(`${f.tableID}/${f.columnID}`))
             const shown = writeMode ? fields.filter((f) => !secret(f)) : fields
             const hidden = writeMode ? fields.filter(secret).map((f) => f.name) : []
             const all = r.rows || []
@@ -948,8 +953,7 @@ export function createSqlWorkspace ({ pool, audit, readerRole = 'ov_readonly', l
           await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`)
           await client.query('SET LOCAL search_path = public, pg_catalog')
           await client.query("SELECT set_config('ov.user_id', $1, true), set_config('ov.admin', 'on', true)", [actorId])
-          const secretColumns = await guardSecrets(client)
-          await runAll(client, secretColumns)
+          await runAll(client, await secretGuard(client))
           if (commit) {
             await audit(client, auditEntry(out))
             await client.query('COMMIT')
