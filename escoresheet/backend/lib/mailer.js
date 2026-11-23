@@ -140,22 +140,26 @@ export function mailBrandOf(kind, app) {
 // lib/approvals.js: nothing else draws from it, so no amount of sign-ups, and
 // no amount of wrong PINs, can silence them. The notices of a locked or
 // blocked PIN, which anyone who types wrong PINs causes, have their own
-// "pin_lock" (SEC-32, audit 26.11). "signup" carries the
+// "pin_lock" (SEC-32, audit 26.11). The "someone keeps trying your
+// password" notices (sign_in_attempts, lib/auth.js tellOfAttempts), which a
+// guesser causes for any address it knows, have their own "sign_in" too, so
+// they never use up the reset mails' (2611 review,
+// SIGNIN-NOTICE-SHARES-RESET-BUDGET). "signup" carries the
 // sign-up notices to admins and approvers (lib/signupNotices.js), "notify"
 // the club-manager invitations, the team-manager proposals and the final
 // mail's notices (a missing PDF, a reopened match): none can starve the
 // account mails. email_changed (a changed login address) is an account mail too.
 // "user" carries the mails a signed-in user asks for to its own address
 // (sendUser: the game PIN, the match information), which have no kind.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', sign_in_attempts: 'account', confirm: 'confirm', approval: 'security', approval_pin_locked: 'pin_lock', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', sign_in_attempts: 'sign_in', confirm: 'confirm', approval: 'security', approval_pin_locked: 'pin_lock', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them; scoresheet_test: test mails
 // (any scorer, any time) must not use up the final scoresheets' budget
-export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 150, notify: 100, signup: 100, security: 50, pin_lock: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
+export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 150, notify: 100, signup: 100, security: 50, pin_lock: 50, sign_in: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
 // The budgets an operator sizes (deploy/env.example), each by its variable:
 // a whole number above 0 per hour; anything else keeps the default, with a
 // warning at startup. A size given to createMailer wins (tests).
-export const BUDGET_ENV = Object.freeze({ account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', pin_lock: 'MAIL_BUDGET_PIN_LOCK', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
+export const BUDGET_ENV = Object.freeze({ account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', pin_lock: 'MAIL_BUDGET_PIN_LOCK', sign_in: 'MAIL_BUDGET_SIGN_IN', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
 
 /** The hourly budgets the environment sets (BUDGET_ENV): { budgets: { name: n }, warnings: [line] }. */
 export function budgetsFromEnv(env = process.env) {

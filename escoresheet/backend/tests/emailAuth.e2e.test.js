@@ -313,7 +313,7 @@ describe('account emails end to end', { skip: SKIP }, () => {
     assert.equal(internal.mail.enabled, true)
     assert.ok(internal.mail.sent >= 6, JSON.stringify(internal.mail))
     // SEC-32: the PIN-lock notices' own budget (pin_lock) is listed too
-    assert.deepEqual(Object.keys(internal.mail.budgets).sort(), ['account', 'confirm', 'notify', 'pin_lock', 'scoresheet', 'scoresheet_test', 'security', 'signup', 'user'])
+    assert.deepEqual(Object.keys(internal.mail.budgets).sort(), ['account', 'confirm', 'notify', 'pin_lock', 'scoresheet', 'scoresheet_test', 'security', 'sign_in', 'signup', 'user'])
     assert.deepEqual(internal.mail.exhausted, [])
     assert.equal(JSON.stringify(internal.mail).includes('@'), false)
     const proxied = await (await fetch(`${srv.base}/health`, { headers: { 'cf-connecting-ip': nextIp() } })).json()

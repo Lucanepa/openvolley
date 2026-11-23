@@ -347,13 +347,16 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
 
   // SEC-32 (audit 26.11): the lock notices used to share the security budget;
   // they have their own now (pin_lock), so wrong PINs cannot use it up
-  it('defaults: 50 account and 150 confirmation mails per hour, 100 notices, 100 sign-up notices, 50 security notices of their own, 50 PIN-lock notices of their own, 300 final and 50 test scoresheets, 100 user mails, 5 per inbox', () => {
-    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 150, notify: 100, signup: 100, security: 50, pin_lock: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
+  it('defaults: 50 account and 150 confirmation mails per hour, 100 notices, 100 sign-up notices, 50 security notices of their own, 50 PIN-lock notices of their own, 50 sign-in attempts notices of their own, 300 final and 50 test scoresheets, 100 user mails, 5 per inbox', () => {
+    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 150, notify: 100, signup: 100, security: 50, pin_lock: 50, sign_in: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
     // the user mails (sendUser) have no kind: nothing else draws from their budget
     assert.equal(Object.values(MAIL_BUDGET_OF).includes('user'), false)
     // nothing but the "your PIN was used" notices draws from the security budget
     assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'security'), ['approval'])
     assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'pin_lock'), ['approval_pin_locked'])
+    // 2611 review: the sign-in attempts notice no longer draws from the reset mails' budget
+    assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'sign_in'), ['sign_in_attempts'])
+    assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'account'), ['reset', 'password_changed', 'passkey_added', 'email_changed'])
     assert.equal(MAIL_BUDGET_OF.signup, 'signup')
     assert.equal(MAIL_BUDGET_OF.scoresheet, 'scoresheet')
     assert.equal(MAIL_BUDGET_OF.scoresheet_test, 'scoresheet_test', 'test mails do not use the final scoresheets\' budget')
@@ -404,6 +407,21 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
     assert.equal(m.stats().budgets.confirm.droppedTotal, 6)
   })
 
+  // 2611 review, SIGNIN-NOTICE-SHARES-RESET-BUDGET: a guesser who knows 50
+  // addresses sent 50 sign-in attempts notices an hour, on the reset mails'
+  // budget: every reset of that hour then went without its mail
+  it('sign-in attempts notices cannot use up the budget of reset mails', async () => {
+    const { sent, transport } = stub()
+    const m = createMailer({ transport, from: 'x <x@example.test>', budgets: { account: 3, sign_in: 4 }, logger: silent })
+    for (let i = 0; i < 10; i++) await m.send('sign_in_attempts', { to: `ref${i}@example.ch`, vars: { count: 100 } })
+    assert.equal(sent.length, 4, 'the sign_in budget')
+    assert.deepEqual(await m.send('reset', { to: 'owner@example.ch', link }), { sent: true }, 'reset keeps its budget')
+    const st = m.stats()
+    assert.deepEqual(st.exhausted, ['sign_in'])
+    assert.equal(st.budgets.sign_in.dropped, 6)
+    assert.equal(st.budgets.account.used, 1)
+  })
+
   it('one Gmail inbox gets at most 5 reset/confirm mails an hour, whatever the spelling; password_changed is not capped', async () => {
     let t = 0
     const { sent, transport } = stub()
@@ -448,8 +466,9 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   })
 
   it('budgetsFromEnv: the operator sizes the final and the test scoresheet budgets; a bad value keeps the default, with a warning', () => {
-    assert.deepEqual({ ...BUDGET_ENV }, { account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', pin_lock: 'MAIL_BUDGET_PIN_LOCK', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
+    assert.deepEqual({ ...BUDGET_ENV }, { account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', pin_lock: 'MAIL_BUDGET_PIN_LOCK', sign_in: 'MAIL_BUDGET_SIGN_IN', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
     assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_CONFIRM: '400', MAIL_BUDGET_SECURITY: '80' }).budgets, { confirm: 400, security: 80 })
+    assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_SIGN_IN: '20' }).budgets, { sign_in: 20 })
     assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_USER: '30' }).budgets, { user: 30 })
     assert.deepEqual(budgetsFromEnv({}), { budgets: {}, warnings: [] })
     assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_FINAL: ' 600 ', MAIL_BUDGET_TEST: '20' }).budgets, { scoresheet: 600, scoresheet_test: 20 })
