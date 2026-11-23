@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { idModeOf, cleanIdValue, typedIdValue, isDateValue, licenceOf, dateValueText, isPlaceholderValue, personLicence, importedIdValue, idLabelOf, ID_SHEET_HEADING, ID_LABEL_FALLBACK } from '../idMode'
+import { idModeOf, cleanIdValue, typedIdValue, isDateValue, licenceOf, dateValueText, isPlaceholderValue, personLicence, importedIdValue, idLabelOf, idPlaceholderOf, ID_SHEET_HEADING, ID_LABEL_FALLBACK } from '../idMode'
 
 describe('idMode', () => {
   it('a Swiss match (anything not Global) carries the licence, whatever idMode it has', () => {
@@ -100,5 +100,17 @@ describe('what comes into the value', () => {
     expect(idLabelOf(t, 'dob', 'Date of birth')).toBe('Date of birth')
     expect(idLabelOf(t, 'licence', 'Date of birth')).toBe('idMode.label.licence|Licence')
     expect(idLabelOf(t, 'number', 'x')).toBe('idMode.label.number|ID number')
+  })
+})
+
+// The roster editor's add-player row had an empty box for the licence (the
+// names have placeholders; portrait rows hide the labels)
+describe('the placeholder of an unlabelled ID field', () => {
+  const t = (key, fallback) => `${key}|${fallback}`
+  it('is "Licence/DoB" in a Swiss match, the label for a Global ID number or text, none for birthdates', () => {
+    expect(idPlaceholderOf(t, 'licence')).toBe('idMode.placeholder.licence|Licence/DoB')
+    expect(idPlaceholderOf(t, 'number')).toBe('idMode.label.number|ID number')
+    expect(idPlaceholderOf(t, 'text')).toBe('idMode.label.text|Info')
+    expect(idPlaceholderOf(t, 'dob')).toBe(undefined)
   })
 })
