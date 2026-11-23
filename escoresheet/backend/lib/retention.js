@@ -15,7 +15,13 @@
  *   scoresheet files        the day folders ({day}/, beach/{day}/) of the
  *                           'scoresheets' bucket from before the cutoff day,
  *                           PDFs and the JSON files beside them, with their
- *                           public.match_scoresheets rows
+ *                           public.match_scoresheets rows; and the folders of
+ *                           days more than FUTURE_FOLDER_DAYS ahead (or no
+ *                           real date), which the cutoff never reached: no
+ *                           app uploads there (server.js refuses days more
+ *                           than a week ahead since 2026-11-23, SEC-16), so
+ *                           they hold junk. One that holds the recorded PDF
+ *                           of a match that exists stays (a mistyped year)
  *   svrz_games              VolleyManager's assignments (referees' names; no
  *                           dates of birth since db/048) of games before the cutoff day,
  *                           and svrz_games_removed of the same days
@@ -47,12 +53,15 @@
 
 import { SEASON_SQL, seasonOf } from './officialGame.js'
 import { SCORESHEET_DAY_RE } from './scoresheets.js'
+import { isFarFutureDay } from './storage.js'
 
 export const DEFAULT_RETENTION_YEARS = 2
 export const MIN_RETENTION_YEARS = 1
 export const MAX_RETENTION_YEARS = 30
 export const BATCH = 100
 export const MAX_MATCHES_PER_RUN = 2000
+/** Day folders further ahead than this are swept as junk (a typed year one too far stays: about a year). */
+export const FUTURE_FOLDER_DAYS = 400
 const BUCKET = 'scoresheets'
 
 /** The newest season that is past retention at `now` with `years` retention years (null: no valid input). */
@@ -138,11 +147,39 @@ export function createRetention ({ pool, storage = null, audit = null, log = con
     return out.sort()
   }
 
-  async function sweepScoresheets (day, dryRun) {
-    const result = { scoresheetFolders: 0, scoresheetFiles: 0, scoresheetRecords: 0 }
+  /**
+   * The day folders more than FUTURE_FOLDER_DAYS after `now` (or not a real
+   * date), except one that holds the recorded PDF of a match that exists.
+   */
+  async function futureFolders (now) {
+    if (!storage?.listFoldersTrusted) return []
+    const out = []
+    for (const prefix of ['', 'beach']) {
+      const names = await storage.listFoldersTrusted({ bucket: BUCKET, path: prefix })
+      for (const name of names) {
+        if (!SCORESHEET_DAY_RE.test(name) || !isFarFutureDay(name, { now: now.getTime(), maxDays: FUTURE_FOLDER_DAYS })) continue
+        const folder = prefix ? `${prefix}/${name}` : name
+        const { rows } = await pool.query(
+          'SELECT 1 FROM public.match_scoresheets WHERE match_id IS NOT NULL AND path LIKE $1 LIMIT 1',
+          [folder.replace(/[\\%_]/g, (c) => '\\' + c) + '/%'])
+        if (rows.length) {
+          log.warn?.(`[Retention] ${folder}/ is far in the future but holds a match's scoresheet: kept`)
+          continue
+        }
+        out.push(folder)
+      }
+    }
+    return out.sort()
+  }
+
+  async function sweepScoresheets (day, dryRun, now = new Date()) {
+    const result = { scoresheetFolders: 0, scoresheetFiles: 0, scoresheetRecords: 0, scoresheetFutureFolders: 0 }
     let folders = []
     try {
       folders = await expiredFolders(day)
+      const future = await futureFolders(now)
+      result.scoresheetFutureFolders = future.length
+      folders = [...folders, ...future]
     } catch (err) {
       // no storage root (no sentinel), or unreadable: the database part still runs
       log.warn?.(`[Retention] scoresheet folders not read: ${err?.code || err?.message}`)
@@ -191,7 +228,7 @@ export function createRetention ({ pool, storage = null, audit = null, log = con
     const season = expiredSeason(now, years)
     const day = cutoffDay(now, years)
     const matches = await sweepMatches(season, dryRun)
-    const files = await sweepScoresheets(day, dryRun)
+    const files = await sweepScoresheets(day, dryRun, now)
     const svrz = await sweepSvrz(day, dryRun)
     const result = { years, cutoffDay: day, expiredSeason: season, dryRun, matches, ...files, ...svrz }
     const removed = matches + files.scoresheetFiles + files.scoresheetRecords + svrz.svrzGames + svrz.svrzRemoved
