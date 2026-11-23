@@ -4,7 +4,8 @@
 //    time-out / substitution boxes (owner: the whole text goes), and the
 //    time-outs stay closed until the next rally is completed (the rule stays);
 //  - "Decision change" stays on screen; its dialog offers "Point A" /
-//    "Point B" (none chosen) with the score and serve preview;
+//    "Point B" (none chosen), the score now and, on each option, the score
+//    and the serve it gives (owner 23.11.2026), before one is chosen;
 //  - confirming gives the replayed rally to that team in one action: the
 //    replay goes, the point is recorded as the point buttons record it (a
 //    side-out rotates), the time-outs open again;
@@ -84,6 +85,13 @@ const dialog = (re) => [...document.querySelectorAll('[role="dialog"]')].find(d 
 const decisionDialog = () => dialog(/Decision change/)
 const radio = (option) => decisionDialog()?.querySelector(`[data-decision-option="${option}"]`)
 const confirmButton = () => [...decisionDialog().querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm')
+const labels = () => [...decisionDialog().querySelectorAll('[data-decision-label]')].map(l => l.textContent.trim())
+// What an option gives, on its card: { score: 'home:away', serve }
+const outcomeOf = (option) => {
+  const el = screen.getByTestId(`decision-outcome-${option}`)
+  return { score: el.querySelector('[data-score]').getAttribute('data-score'), serve: el.getAttribute('data-serve') }
+}
+const currentScore = () => screen.getByTestId('decision-current').querySelector('[data-score]').getAttribute('data-score')
 const events = async () => (await db.events.toArray()).sort((a, b) => a.seq - b.seq)
 const ofType = async (type) => (await events()).filter(e => e.type === type)
 const lastLineup = async (team) => (await ofType('lineup')).filter(e => e.payload.team === team).at(-1).payload.lineup
@@ -164,16 +172,23 @@ describe('rally mode: the decision change on a replay', () => {
     expect(screen.getByTestId('decision-last-replay').textContent).toBe('The last rally was replayed')
     const radios = [...decisionDialog().querySelectorAll('[role="radio"]')]
     expect(radios.map(r => r.getAttribute('data-decision-option'))).toEqual(['point_home', 'point_away'])
-    expect(radios.map(r => r.textContent.trim())).toEqual(['Point A', 'Point B'])
+    expect(labels()).toEqual(['Point A', 'Point B'])
     expect(radios.every(r => r.getAttribute('aria-checked') === 'false')).toBe(true)
     expect(confirmButton().disabled).toBe(true)
-    // the preview: the team given the rally scores and serves
+    expect(screen.getByTestId('decision-choose')).toBeTruthy()
+    // before any choice: the score now, and what each option gives (the
+    // team given the rally scores and serves)
+    expect(currentScore()).toBe('1:1')
+    expect(outcomeOf('point_home')).toEqual({ score: '2:1', serve: 'home' })
+    expect(outcomeOf('point_away')).toEqual({ score: '1:2', serve: 'away' })
+    expect(screen.getByTestId('decision-outcome-point_away').textContent).toContain('HOM 1 : 2 AWY')
     fireEvent.click(radio('point_away'))
-    await waitFor(() => expect(screen.getByTestId('decision-preview-serve').getAttribute('data-serve')).toBe('away'), { timeout: 5000 })
-    expect(screen.getByTestId('decision-preview').textContent).toContain('1 : 2')
+    await waitFor(() => expect(radio('point_away').getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
+    expect(confirmButton().disabled).toBe(false)
+    expect(screen.queryByTestId('decision-choose')).toBeNull()
     fireEvent.click(radio('point_home'))
-    await waitFor(() => expect(screen.getByTestId('decision-preview-serve').getAttribute('data-serve')).toBe('home'), { timeout: 5000 })
-    expect(screen.getByTestId('decision-preview').textContent).toContain('2 : 1')
+    await waitFor(() => expect(radio('point_home').getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
+    expect(radio('point_away').getAttribute('aria-checked')).toBe('false')
     await settle()
     fireEvent.click(confirmButton())
 
@@ -195,6 +210,11 @@ describe('rally mode: the decision change on a replay', () => {
     // the decision change of that point is the usual one now
     await openDecisionDialog()
     expect([...decisionDialog().querySelectorAll('[role="radio"]')].map(r => r.getAttribute('data-decision-option'))).toEqual(['swap', 'replay'])
+    // still "Assign to other team" chosen first; each option shows its outcome
+    expect(radio('swap').getAttribute('aria-checked')).toBe('true')
+    expect(currentScore()).toBe('2:1')
+    expect(outcomeOf('swap')).toEqual({ score: '1:2', serve: 'away' })
+    expect(outcomeOf('replay')).toEqual({ score: '1:1', serve: 'away' })
     fireEvent.click(button('Cancel'))
     await waitFor(() => expect(decisionDialog()).toBeFalsy(), { timeout: 5000 })
 
@@ -232,8 +252,11 @@ describe('rally mode: the decision change on a replay', () => {
     // and changed again: the rally to B after all
     await openDecisionDialog()
     expect(screen.getByTestId('decision-last-replay')).toBeTruthy()
+    // 1:0 now (B's point taken back); B given the rally: 1:1, B serves
+    expect(currentScore()).toBe('1:0')
+    expect(outcomeOf('point_away')).toEqual({ score: '1:1', serve: 'away' })
     fireEvent.click(radio('point_away'))
-    await waitFor(() => expect(screen.getByTestId('decision-preview-serve').getAttribute('data-serve')).toBe('away'), { timeout: 5000 })
+    await waitFor(() => expect(radio('point_away').getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
     await settle()
     fireEvent.click(confirmButton())
     await waitFor(async () => expect(await ofType('replay')).toHaveLength(0), { timeout: 5000 })

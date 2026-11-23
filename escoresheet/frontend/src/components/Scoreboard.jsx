@@ -24765,7 +24765,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const outcomes = onReplay
           ? replayDecisionOutcomes({ events: data?.events, setIndex: lastEvent?.setIndex, score, match: data?.match })
           : decisionChangeOutcomes({ events: data?.events, point: lastEvent, score, match: data?.match })
-        const outcome = selectedOption ? outcomes[selectedOption] : null
 
         // Get team names for display
         const homeTeamName = data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')
@@ -24790,6 +24789,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
         const dialogTitle = continuousDialog ? t('scoreboard.modals.decisionReplay') : t('scoreboard.modals.decisionChange')
 
+        // A score in the A/B chip style ("A MUS 3 : 2 BSP B"): the current
+        // one plain, an option's plain or (chosen) green
+        const scoreChip = (home, away, tone) => (
+          <span data-score={`${home}:${away}`} style={{
+            background: tone === 'new' ? 'rgba(34, 197, 94, 0.15)' : 'var(--panel)',
+            border: tone === 'new' ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid var(--border)',
+            padding: '4px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+          }}>
+            <span style={{ ...teamBoxStyle(homeColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
+            <strong style={{ fontVariantNumeric: 'tabular-nums', color: tone === 'new' ? '#15803d' : 'var(--text)' }}>{homeTeamName} {home} : {away} {awayTeamName}</strong>
+            <span style={{ ...teamBoxStyle(awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
+          </span>
+        )
+
         // Helper to render team with A/B badge
         const TeamWithLabel = ({ team, name }) => (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -24810,7 +24823,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             title={dialogTitle}
             open={true}
             onClose={cancelReplayRally}
-            width={options.length > 2 ? 580 : 500}
+            width={520}
           >
             <div style={{ padding: '4px 0' }}>
               {onReplay ? (
@@ -24822,6 +24835,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {t('scoreboard.dialogs.lastPointTo', 'Last point was assigned to')} <strong><span style={{ ...teamBoxStyle(oldTeamColor), padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
                 </p>
               )}
+              {/* The score now, from the start; each option shows its own */}
+              <div data-testid="decision-current" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '16px', fontSize: '13px', color: 'var(--muted)' }}>
+                <span>{t('scoreboard.dialogs.current', 'Current:')}</span>
+                {scoreChip(currentHomePoints, currentAwayPoints, 'plain')}
+              </div>
 
               {/* Row 19: what came after the point is taken back first, in
                   the order it was recorded (handleDecisionChange) */}
@@ -24869,91 +24887,76 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )
               })()}
 
-              {/* Horizontal radio buttons (continuous play: three, none
-                  chosen until one is tapped) */}
-              <div role="radiogroup" aria-label={dialogTitle} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                {options.map(option => (
-                  <div
-                    key={option}
-                    role="radio"
-                    aria-checked={selectedOption === option}
-                    tabIndex={0}
-                    data-decision-option={option}
-                    onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: option })}
-                    onKeyDown={(e) => {
-                      if (e.key !== ' ') return
-                      e.preventDefault()
-                      setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: option })
-                    }}
-                    style={{
-                      flex: '1 1 0',
-                      minWidth: 0,
-                      padding: '12px 14px',
-                      background: selectedOption === option ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
-                      border: selectedOption === option ? '2px solid #eab308' : '1px solid var(--border)',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '10px'
-                    }}
-                  >
-                    <div style={{
-                      width: '18px',
-                      height: '18px',
-                      borderRadius: '50%',
-                      border: selectedOption === option ? '5px solid #eab308' : '2px solid var(--border)',
-                      background: selectedOption === option ? '#eab308' : 'transparent',
-                      flexShrink: 0
-                    }} />
-                    <span style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.25 }}>{optionLabels[option]}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Expanded details panel: what the chosen option leaves */}
-              <div data-testid="decision-preview" style={{
-                padding: '16px',
-                marginBottom: '20px',
-                background: 'rgba(234, 179, 8, 0.1)',
-                border: '1px solid rgba(234, 179, 8, 0.3)',
-                borderRadius: '8px'
-              }}>
-                {!outcome ? (
-                  <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)', textAlign: 'center' }}>{t('scoreboard.dialogs.chooseDecision', 'Choose what the referee decided.')}</p>
-                ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', fontSize: '13px', color: 'var(--muted)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ minWidth: '55px', textAlign: 'right' }}>{t('scoreboard.dialogs.current', 'Current:')}</span>
-                    <div style={{ background: 'var(--panel)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ ...teamBoxStyle(homeColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
-                      <strong>{homeTeamName} {currentHomePoints} : {currentAwayPoints} {awayTeamName}</strong>
-                      <span style={{ ...teamBoxStyle(awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
+              {/* The options, one card each, with what it gives: the new
+                  score and who serves (owner 23.11.2026: "add the score
+                  before and after based on each decision"), so the outcomes
+                  can be compared before one is chosen. One under the other:
+                  three fit the tablet and the phone alike */}
+              <div role="radiogroup" aria-label={dialogTitle} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                {options.map(option => {
+                  const chosen = selectedOption === option
+                  const result = outcomes[option]
+                  return (
+                    <div
+                      key={option}
+                      role="radio"
+                      aria-checked={chosen}
+                      tabIndex={0}
+                      data-decision-option={option}
+                      onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: option })}
+                      onKeyDown={(e) => {
+                        if (e.key !== ' ') return
+                        e.preventDefault()
+                        setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: option })
+                      }}
+                      style={{
+                        minHeight: '56px',
+                        padding: '10px 12px',
+                        background: chosen ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
+                        border: chosen ? '2px solid #eab308' : '1px solid var(--border)',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'background-color 0.15s, border-color 0.15s',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        columnGap: '12px',
+                        rowGap: '6px'
+                      }}
+                    >
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        border: chosen ? '5px solid #eab308' : '2px solid var(--border)',
+                        background: chosen ? '#eab308' : 'transparent',
+                        flexShrink: 0
+                      }} />
+                      <span data-decision-label="" style={{ flex: '1 1 120px', minWidth: 0, fontSize: '14px', fontWeight: 600, lineHeight: 1.25 }}>{optionLabels[option]}</span>
+                      {result && (
+                        <span
+                          data-testid={`decision-outcome-${option}`}
+                          data-home={result.home}
+                          data-away={result.away}
+                          data-serve={result.serve}
+                          style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}
+                        >
+                          {scoreChip(result.home, result.away, chosen ? 'new' : 'plain')}
+                          <span title={t('scoreboard.dialogs.serve', 'Serve:')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <VolleyballIcon size={16} />
+                            <span style={{ ...teamBoxStyle(result.serve === 'home' ? homeColor : awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                              {result.serve === 'home' ? homeLabel : awayLabel}
+                            </span>
+                          </span>
+                        </span>
+                      )}
                     </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ minWidth: '55px', textAlign: 'right' }}>{t('scoreboard.dialogs.new', 'New:')}</span>
-                    <div style={{ background: 'rgba(34, 197, 94, 0.15)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(34, 197, 94, 0.4)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ ...teamBoxStyle(homeColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
-                      <strong style={{ color: '#22c55e' }}>
-                        {homeTeamName} {outcome.home} : {outcome.away} {awayTeamName}
-                      </strong>
-                      <span style={{ ...teamBoxStyle(awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
-                    </div>
-                  </div>
-                  <div data-testid="decision-preview-serve" data-serve={outcome.serve} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ minWidth: '55px', textAlign: 'right' }}>{t('scoreboard.dialogs.serve', 'Serve:')}</span>
-                    <VolleyballIcon size={16} />
-                    <span style={{ ...teamBoxStyle(outcome.serve === 'home' ? homeColor : awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
-                      {outcome.serve === 'home' ? homeLabel : awayLabel}
-                    </span>
-                    <strong>{outcome.serve === 'home' ? homeTeamName : awayTeamName}</strong>
-                  </div>
-                </div>
-                )}
+                  )
+                })}
               </div>
+              {!selectedOption && (
+                <p data-testid="decision-choose" style={{ margin: '-6px 0 16px', fontSize: '13px', color: 'var(--muted)', textAlign: 'center' }}>{t('scoreboard.dialogs.chooseDecision', 'Choose what the referee decided.')}</p>
+              )}
 
               {/* Buttons */}
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>

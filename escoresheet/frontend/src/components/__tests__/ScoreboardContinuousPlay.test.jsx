@@ -91,6 +91,13 @@ const settle = () => wait(GHOST_CLICK_MS + 150)
 const button = (text) => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text && !b.disabled)
 const holdButton = (letter) => screen.queryByRole('button', { name: new RegExp(`^Point ${letter}, hold for ${POINT_HOLD_MS / 1000} seconds$`) })
 const dialog = (re) => [...document.querySelectorAll('[role="dialog"]')].find(d => re.test(d.textContent))
+const labelOf = (radio) => radio.querySelector('[data-decision-label]').textContent.trim()
+// What a decision option gives, on its card: { score: 'home:away', serve }
+const outcomeOf = (option) => {
+  const el = screen.getByTestId(`decision-outcome-${option}`)
+  return { score: el.querySelector('[data-score]').getAttribute('data-score'), serve: el.getAttribute('data-serve') }
+}
+const currentScore = () => screen.getByTestId('decision-current').querySelector('[data-score]').getAttribute('data-score')
 const events = async () => (await db.events.toArray()).sort((a, b) => a.seq - b.seq)
 const ofType = async (type) => (await events()).filter(e => e.type === type)
 const mount = (matchId) => render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
@@ -213,8 +220,14 @@ describe('continuous play: Decision change / Replay', () => {
     await waitFor(() => expect(dialog(/Decision change \/ Replay/)).toBeTruthy(), { timeout: 5000 })
     const radios = [...dialog(/Decision change \/ Replay/).querySelectorAll('[role="radio"]')]
     expect(radios.map(r => r.getAttribute('data-decision-option'))).toEqual(['swap', 'replay', 'record_replay'])
-    expect(radios.map(r => r.textContent.trim())).toEqual(['Assign to other team', 'Replay', 'Rally replayed'])
+    expect(radios.map(labelOf)).toEqual(['Assign to other team', 'Replay', 'Rally replayed'])
     expect(radios.every(r => r.getAttribute('aria-checked') === 'false')).toBe(true)
+    // nothing chosen, and each option already shows the score and serve it
+    // gives (owner 23.11.2026); "Rally replayed" keeps both
+    expect(currentScore()).toBe('1:0')
+    expect(outcomeOf('swap')).toEqual({ score: '0:1', serve: 'away' })
+    expect(outcomeOf('replay')).toEqual({ score: '0:0', serve: 'home' })
+    expect(outcomeOf('record_replay')).toEqual({ score: '1:0', serve: 'home' })
     const confirm = () => [...dialog(/Decision change \/ Replay/).querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm')
     expect(confirm().disabled).toBe(true)
     // Enter does nothing while nothing is chosen
@@ -224,8 +237,7 @@ describe('continuous play: Decision change / Replay', () => {
 
     fireEvent.click(radios[2])
     await waitFor(() => expect(confirm().disabled).toBe(false), { timeout: 5000 })
-    // the preview: the score and the serve stay
-    expect(screen.getByTestId('decision-preview-serve').getAttribute('data-serve')).toBe('home')
+    expect(radios[2].getAttribute('aria-checked')).toBe('true')
     fireEvent.click(confirm())
     await waitFor(async () => expect(await ofType('replay')).toHaveLength(1), { timeout: 5000 })
     expect((await ofType('replay'))[0].payload).toEqual({ reason: 'continuous' })
@@ -266,9 +278,13 @@ describe('continuous play: Decision change / Replay', () => {
     let radios = await open()
     expect(screen.getByTestId('decision-last-replay').textContent).toBe('The last rally was replayed')
     expect(radios.map(r => r.getAttribute('data-decision-option'))).toEqual(['point_home', 'point_away', 'record_replay'])
-    expect(radios.map(r => r.textContent.trim())).toEqual(['Point A', 'Point B', 'Rally replayed'])
+    expect(radios.map(labelOf)).toEqual(['Point A', 'Point B', 'Rally replayed'])
     expect(radios.every(r => r.getAttribute('aria-checked') === 'false')).toBe(true)
     expect(confirm().disabled).toBe(true)
+    expect(currentScore()).toBe('1:0')
+    expect(outcomeOf('point_home')).toEqual({ score: '2:0', serve: 'home' })
+    expect(outcomeOf('point_away')).toEqual({ score: '1:1', serve: 'away' })
+    expect(outcomeOf('record_replay')).toEqual({ score: '1:0', serve: 'home' })
     fireEvent.click(radios[2])
     await waitFor(() => expect(confirm().disabled).toBe(false), { timeout: 5000 })
     await settle()
@@ -280,9 +296,9 @@ describe('continuous play: Decision change / Replay', () => {
 
     // Point B: the replayed rally to B
     radios = await open()
+    expect(outcomeOf('point_away')).toEqual({ score: '1:1', serve: 'away' })
     fireEvent.click(radios[1])
-    await waitFor(() => expect(screen.getByTestId('decision-preview-serve').getAttribute('data-serve')).toBe('away'), { timeout: 5000 })
-    expect(screen.getByTestId('decision-preview').textContent).toContain('1 : 1')
+    await waitFor(() => expect(radios[1].getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
     await settle()
     fireEvent.click(confirm())
     await waitFor(async () => expect((await ofType('point')).at(-1)._replacedReplay).toBeTruthy(), { timeout: 5000 })
@@ -331,11 +347,13 @@ describe('continuous play: Decision change / Replay', () => {
     fireEvent.click(screen.getByTestId('decision-replay-button'))
     await waitFor(() => expect(dialog(/Decision change \/ Replay/)).toBeTruthy(), { timeout: 5000 })
     const radio = (option) => dialog(/Decision change \/ Replay/).querySelector(`[data-decision-option="${option}"]`)
-    fireEvent.click(radio('replay'))
     // home served the replayed rally: home serves it again (the preview said away)
-    await waitFor(() => expect(screen.getByTestId('decision-preview-serve').getAttribute('data-serve')).toBe('home'), { timeout: 5000 })
+    expect(outcomeOf('replay')).toEqual({ score: '1:0', serve: 'home' })
+    expect(outcomeOf('swap')).toEqual({ score: '2:0', serve: 'home' })
+    fireEvent.click(radio('replay'))
+    await waitFor(() => expect(radio('replay').getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
     fireEvent.click(radio('swap'))
-    await waitFor(() => expect(screen.getByTestId('decision-preview-serve').getAttribute('data-serve')).toBe('home'), { timeout: 5000 })
+    await waitFor(() => expect(radio('swap').getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
     fireEvent.click([...dialog(/Decision change \/ Replay/).querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm'))
     await waitFor(async () => {
       const set = await db.sets.get(setId)
