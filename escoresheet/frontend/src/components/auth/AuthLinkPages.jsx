@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CircleCheck, KeyRound, LinkIcon, MailCheck } from 'lucide-react'
 import { apiAuth } from '../../lib/apiClient'
-import { BUTTON_VARIANTS, Button, cn, Field, FOCUS_RING, FormError, Input } from '../../ui'
+import { BUTTON_VARIANTS, Button, Checkbox, cn, Field, FOCUS_RING, FormError, Input } from '../../ui'
 import { scorerAppUrlFor } from '../../utils/managerSite'
 import { useManagerBrand } from '../../managerBrand'
+import { requestPartLabel, sortRequestParts } from '../../domain/signUpRequests'
 
 /**
  * The pages behind the links of the account emails, shown by the manager
@@ -66,6 +67,39 @@ function InvalidLink({ body, onRequestNew, onSignIn }) {
   )
 }
 
+const fullName = (d) => [d?.first_name, d?.last_name].filter((x) => typeof x === 'string' && x.trim()).join(' ')
+
+/**
+ * What the sign-up of a not yet confirmed address gave (audit 2611 SEC-15):
+ * whoever set it may not be the owner of the address, so the owner keeps or
+ * drops each part with the new password. All kept unless unticked.
+ */
+function SignUpDetails({ details, keep, onChange }) {
+  const { t } = useTranslation()
+  const name = fullName(details)
+  const parts = sortRequestParts(details.requests)
+  return (
+    <fieldset data-testid="signup-details" className="space-y-2 rounded-lg border border-stone-200 p-3">
+      <legend className="px-1 text-sm font-medium text-stone-700">{t('authEmail.signUpDetailsTitle')}</legend>
+      <p className="text-xs text-stone-500">{t('authEmail.signUpDetailsBody')}</p>
+      {name && (
+        <Checkbox label={t('authEmail.signUpDetailsName', { name })} checked={keep.name}
+          onChange={(e) => onChange({ ...keep, name: e.target.checked })} data-testid="signup-keep-name" />
+      )}
+      {details.license_number && (
+        <Checkbox label={t('authEmail.signUpDetailsLicence', { licence: details.license_number })} checked={keep.licence}
+          onChange={(e) => onChange({ ...keep, licence: e.target.checked })} data-testid="signup-keep-licence" />
+      )}
+      {parts.map((part) => (
+        <Checkbox key={part.id} label={t('authEmail.signUpDetailsRequest', { part: requestPartLabel(part, t) })}
+          checked={keep.requests.includes(part.id)}
+          onChange={(e) => onChange({ ...keep, requests: e.target.checked ? [...keep.requests, part.id] : keep.requests.filter((id) => id !== part.id) })}
+          data-testid={`signup-keep-request-${part.id}`} />
+      ))}
+    </fieldset>
+  )
+}
+
 /** #reset?token=: a new password, twice. */
 export function ResetPasswordPage({ token, lang, onSignIn, onRequestNew }) {
   const { t } = useTranslation()
@@ -75,6 +109,21 @@ export function ResetPasswordPage({ token, lang, onSignIn, onRequestNew }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [state, setState] = useState(token ? 'form' : 'invalid')
+  // the sign-up's details when this password confirms the address, and what of them to keep
+  const [details, setDetails] = useState(null)
+  const [keep, setKeep] = useState(null)
+
+  useEffect(() => {
+    if (!token) return undefined
+    let live = true
+    Promise.resolve(apiAuth.signUpDetails?.(token)).then((res) => {
+      const d = res?.error ? null : res?.data?.signup_details
+      if (!live || !d) return
+      setDetails(d)
+      setKeep({ name: true, licence: true, requests: (d.requests || []).map((r) => r.id) })
+    }, () => {})
+    return () => { live = false }
+  }, [token])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -85,9 +134,11 @@ export function ResetPasswordPage({ token, lang, onSignIn, onRequestNew }) {
     if (password !== repeat) return setError(t('auth.passwordsDoNotMatch'))
     setBusy(true)
     // OpenBeach's manager: the "password changed" notice is OpenBeach's
-    const res = brand.app === 'beach'
-      ? await apiAuth.confirmPasswordReset(token, password, lang || undefined, brand.app)
-      : await apiAuth.confirmPasswordReset(token, password, lang || undefined)
+    const res = details
+      ? await apiAuth.confirmPasswordReset(token, password, lang || undefined, brand.app === 'beach' ? brand.app : undefined, keep)
+      : brand.app === 'beach'
+        ? await apiAuth.confirmPasswordReset(token, password, lang || undefined, brand.app)
+        : await apiAuth.confirmPasswordReset(token, password, lang || undefined)
     setBusy(false)
     if (!res?.error) {
       setPassword('')
@@ -121,6 +172,7 @@ export function ResetPasswordPage({ token, lang, onSignIn, onRequestNew }) {
       <Field label={t('authEmail.repeatPassword')}>
         <Input size="lg" type="password" value={repeat} onChange={e => setRepeat(e.target.value)} autoComplete="new-password" required />
       </Field>
+      {details && keep && <SignUpDetails details={details} keep={keep} onChange={setKeep} />}
       <Button variant="hero" block type="submit" disabled={busy || !password || !repeat} loading={busy}>
         {busy ? t('authEmail.saving') : t('authEmail.savePassword')}
       </Button>

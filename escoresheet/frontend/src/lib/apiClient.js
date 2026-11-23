@@ -1038,8 +1038,18 @@ export const apiAuth = {
 
   // The links of the account emails (utils/authLinks.js). The token goes
   // nowhere else and is never logged.
-  async confirmPasswordReset(token, password, lang, app) {
-    return authRequest('reset-password/confirm', { token, password, ...(lang ? { lang } : {}), ...(app ? { app } : {}) })
+  // keep: { name, licence, requests: [id] }, what to keep of the details a
+  // sign-up gave when this password confirms the address (signUpDetails);
+  // without it the server keeps none of them for an unconfirmed address
+  async confirmPasswordReset(token, password, lang, app, keep) {
+    return authRequest('reset-password/confirm', { token, password, ...(lang ? { lang } : {}), ...(app ? { app } : {}), ...(keep ? { keep } : {}) })
+  },
+
+  // What the sign-up of a not yet confirmed address gave (name, licence
+  // number, requests), for the reset link's page to keep or drop:
+  // { data: { signup_details: null | { first_name, last_name, license_number, requests } } }
+  async signUpDetails(token) {
+    return authRequest('reset-password/details', { token })
   },
 
   // password: the one chosen at sign-up; without it (or wrong) the server

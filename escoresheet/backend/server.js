@@ -714,7 +714,9 @@ function getDataLayer() {
       // HMACs keyed with a key derived from OV_PIN_SECRET (none written without it)
       signInSourceSecret: process.env.OV_PIN_SECRET || null,
       // db/025: what a new account asks for at sign-up (nothing is granted then)
-      signUpRequests: { parse: arq.parseSignUpRequests, store: (client, userId, rows) => arq.storeSignUpRequests(client, userId, rows) },
+      // (list: their names for the reset link's page, which keeps or drops
+      // them when its new password confirms the address; `requests` is made below)
+      signUpRequests: { parse: arq.parseSignUpRequests, store: (client, userId, rows) => arq.storeSignUpRequests(client, userId, rows), list: (client, userId) => (requests ? requests.mine(client, userId) : []) },
       // The account's own delete-account: the admin path's last-super-admin
       // refusal and audit entry, in the deletion's transaction (accounts is
       // made below; this runs only on a request)

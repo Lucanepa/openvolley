@@ -223,7 +223,7 @@ describe('auth token helpers', () => {
       'change-password', 'confirm-email', 'delete-account', 'get-user',
       'passkey/delete', 'passkey/list', 'passkey/login', 'passkey/login-options', 'passkey/register', 'passkey/register-options',
       'profile', 'reauth', 'resend-confirmation',
-      'reset-password', 'reset-password/confirm', 'session/list', 'sign-in', 'sign-out', 'sign-out-everywhere', 'sign-up', 'update-user'
+      'reset-password', 'reset-password/confirm', 'reset-password/details', 'session/list', 'sign-in', 'sign-out', 'sign-out-everywhere', 'sign-up', 'update-user'
     ])
   })
 })

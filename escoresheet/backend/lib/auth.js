@@ -75,7 +75,11 @@
  * account gets, and the owner is mailed a reset link instead; without mail,
  * 422 user_already_exists (as before). The confirmation of an account created
  * with a link keeps the password, sessions and passkeys of whoever signed up
- * only when the clicker gives that password (confirmEmailLink).
+ * only when the clicker gives that password (confirmEmailLink). Otherwise,
+ * and whenever a reset link's new password confirms an address, the owner
+ * keeps or drops each detail the sign-up gave (name, licence number,
+ * requests: reset-password/details, reset-password/confirm `keep`), and the
+ * approvers are told after that (audit 2611 SEC-15).
  *
  * CPU guard: bcryptjs is pure JS. With bcryptWorkers (server.js) it runs in
  * worker threads (lib/bcryptPool.js), off the event loop that also serves the
@@ -114,7 +118,7 @@ const DAY = 24 * 60 * 60
 export const AUTH_ACTIONS = Object.freeze([
   'sign-in', 'sign-up', 'sign-out', 'get-user', 'update-user',
   'delete-account', 'profile', 'reset-password', 'reset-password/confirm',
-  'confirm-email', 'resend-confirmation',
+  'reset-password/details', 'confirm-email', 'resend-confirmation',
   // passkeys (lib/passkeys.js): sign-in with the device's fingerprint or face
   'passkey/login-options', 'passkey/login', 'passkey/register-options',
   'passkey/register', 'passkey/list', 'passkey/delete',
@@ -204,9 +208,12 @@ const DEFAULTS = Object.freeze({
   // db/025 (lib/accountRequests.js): what a new account asks for at sign-up
   // (the body's `requests`: scorer, referee, team or club manager, with the
   // club and team), stored in the sign-up's transaction; nothing is granted.
-  // { parse(raw, { app }) -> { rows } | { error }, store(client, userId, rows) }
+  // { parse(raw, { app }) -> { rows } | { error }, store(client, userId, rows),
+  // list?(client, userId) -> [{ id, kind, club_id, club_name, team_id, team_name }] }
   // (store throws an error with `signUpRequests` set for a club or team that
-  // is gone: the sign-up answers 422). null: `requests` is ignored.
+  // is gone: the sign-up answers 422; list names the parts for
+  // reset-password/details, else they come without names). null: `requests`
+  // is ignored.
   signUpRequests: null,
   // Mirrors handle_new_user() from frontend/src/db/migrations/001_auth_profiles.sql.
   // `roles` is never taken from the client: it always gets defaultRoles.
@@ -344,8 +351,8 @@ const DEFAULTS = Object.freeze({
   // characters): the rows are HMACs keyed with a key derived from it.
   signInSourcesTable: 'auth.sign_in_sources',
   signInSourceSecret: null,
-  // db/025: what an account asked for at sign-up (confirmEmailLink clears it
-  // when the confirmer is not shown to be the one who signed up)
+  // db/025: what an account asked for at sign-up (when a reset link's new
+  // password confirms the address, only the parts its owner keeps stay)
   accountRequestsTable: 'public.account_requests'
 })
 const FAILED_SOURCE_MS = 15 * 60 * 1000
@@ -2416,11 +2423,22 @@ export function createAuth(options = {}) {
     const out = await withTransaction(async (client) => {
       const t = await consumeToken(client, token, 'reset')
       if (t.state !== 'ok') return null
-      return setPasswordIn(client, t.userId, hash, { confirmEmail: true })
+      // An address nobody confirmed yet (a sign-up, maybe with someone else's
+      // address, SEC-15): this password confirms it, and of what the sign-up
+      // gave only what the body keeps stays (`keep`; none without it)
+      const unconfirmed = await addressUnconfirmedIn(client, t.userId, { forUpdate: true })
+      const kept = unconfirmed ? await keepSignUpDetailsIn(client, t.userId, keptDetails(body.keep)) : null
+      const r = await setPasswordIn(client, t.userId, hash, { confirmEmail: true })
+      return { ...r, confirmedNow: unconfirmed && r.emailConfirmed, kept }
     })
     if (!out) return INVALID_LINK()
     await clearAllLocks(out.email)
     await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
+    if (out.confirmedNow) {
+      // the approvers hear of the sign-up now, of what its owner kept
+      await audit('account.email_confirmed', out.userId, { with_password_reset: true, ...out.kept }, requestApp(body))
+      accountConfirmed(out.userId)
+    }
     if (mailer.enabled) {
       const lang = mailLang(body, ctx)
       const app = requestApp(body)
@@ -2429,37 +2447,118 @@ export function createAuth(options = {}) {
     return ok({ password_updated: true })
   }
 
+  /** Is the address of `userId` unconfirmed (the users table tracks it, and it is NULL)? */
+  async function addressUnconfirmedIn(client, userId, { forUpdate = false } = {}) {
+    const cols = await usersColumns(client)
+    if (!cols.has('email_confirmed_at')) return false
+    const { rows } = await client.query(
+      `SELECT email_confirmed_at IS NULL AS open FROM ${T.users} WHERE id = $1${forUpdate ? ' FOR UPDATE' : ''}`, [userId])
+    return rows[0]?.open === true
+  }
+
   /**
-   * What a sign-up typed into the account (audit 2611 SEC-15), in the
-   * caller's transaction: the profile's name and licence number, and its
-   * open requests (db/025, also the ones a team manager proposed since). The
-   * owner enters their own on the account page; the licence question asks
-   * again (it asks a profile without one).
+   * What the sign-up of an address nobody confirmed yet gave (audit 2611
+   * SEC-15, review I-3): the profile's name and licence number and the open
+   * requests (db/025, also those a team manager proposed since). Whoever
+   * signed up may not own the address: the owner keeps or drops each part
+   * with the password that confirms it (reset-password/confirm `keep`).
+   * -> null (confirmed, or nothing given) or { first_name, last_name,
+   * license_number, requests: [{ id, kind, club_id, club_name, team_id, team_name }] }.
    */
-  async function clearSignUpDetailsIn(client, userId) {
+  async function signUpDetailsIn(client, userId) {
+    if (!(await addressUnconfirmedIn(client, userId))) return null
+    const text = (v) => (typeof v === 'string' && v.trim() ? v : null)
+    const out = { first_name: null, last_name: null, license_number: null, requests: [] }
     if (T.profiles) {
       const pcols = await columnsOf(cfg.profilesTable, client)
-      const clear = ['first_name', 'last_name', 'license_number'].filter((c) => writable(pcols, c))
+      const want = ['first_name', 'last_name', 'license_number'].filter((c) => pcols.has(c))
+      if (want.length) {
+        const { rows } = await client.query(
+          `SELECT ${want.map(quoteIdent).join(', ')} FROM ${T.profiles} WHERE ${quoteIdent(cfg.profileUserIdColumn)} = $1 LIMIT 1`, [userId])
+        for (const c of want) out[c] = text(rows[0]?.[c] == null ? null : String(rows[0][c]))
+      }
+    }
+    let parts = []
+    if (typeof cfg.signUpRequests?.list === 'function') {
+      parts = await cfg.signUpRequests.list(client, userId)
+    } else if (T.requests && (await columnsOf(cfg.accountRequestsTable, client)).has('user_id')) {
+      parts = (await client.query(`SELECT id, kind, club_id, team_id FROM ${T.requests} WHERE user_id = $1 ORDER BY created_at, id`, [userId])).rows
+    }
+    out.requests = (parts || []).map((r) => ({
+      id: r.id, kind: r.kind, club_id: r.club_id ?? null, club_name: r.club_name ?? null, team_id: r.team_id ?? null, team_name: r.team_name ?? null
+    }))
+    if (!out.first_name && !out.last_name && !out.license_number && !out.requests.length) return null
+    return out
+  }
+
+  /** The `keep` of a reset-password/confirm body; absent or malformed: keep nothing. */
+  function keptDetails(keep) {
+    if (!isPlainObject(keep)) return { name: false, licence: false, requests: [] }
+    const ids = Array.isArray(keep.requests)
+      ? [...new Set(keep.requests.filter((id) => typeof id === 'string' && UUID_RE.test(id)).map((id) => id.toLowerCase()))].slice(0, 100)
+      : []
+    return { name: keep.name === true, licence: keep.licence === true, requests: ids }
+  }
+
+  /**
+   * In the caller's transaction: of what the sign-up gave only `keep`
+   * (keptDetails) stays; the name, the licence number and every request not
+   * kept go. -> { name, licence, requests_kept, requests_dropped }
+   */
+  async function keepSignUpDetailsIn(client, userId, keep) {
+    const out = { name: keep.name, licence: keep.licence, requests_kept: 0, requests_dropped: 0 }
+    if (T.profiles) {
+      const pcols = await columnsOf(cfg.profilesTable, client)
+      const clear = [...(keep.name ? [] : ['first_name', 'last_name']), ...(keep.licence ? [] : ['license_number'])].filter((c) => writable(pcols, c))
       if (clear.length) {
         const set = clear.map((c) => `${quoteIdent(c)} = NULL`)
         if (writable(pcols, 'updated_at')) set.push('updated_at = now()')
         await client.query(`UPDATE ${T.profiles} SET ${set.join(', ')} WHERE ${quoteIdent(cfg.profileUserIdColumn)} = $1`, [userId])
       }
     }
-    if (T.requests && (await columnsOf(cfg.accountRequestsTable, client)).has('user_id')) {
-      await client.query(`DELETE FROM ${T.requests} WHERE user_id = $1`, [userId])
+    const rcols = T.requests ? await columnsOf(cfg.accountRequestsTable, client) : new Map()
+    if (rcols.has('user_id') && rcols.has('id')) {
+      const { rowCount } = await client.query(
+        `DELETE FROM ${T.requests} WHERE user_id = $1 AND NOT (id = ANY($2::uuid[]))`, [userId, keep.requests])
+      out.requests_dropped = rowCount
+      const { rows } = await client.query(`SELECT count(*)::int AS n FROM ${T.requests} WHERE user_id = $1`, [userId])
+      out.requests_kept = rows[0].n
     }
+    return out
+  }
+
+  /**
+   * POST reset-password/details { token }: what the sign-up of a not yet
+   * confirmed address gave, for the reset link's page (the link proves the
+   * inbox, as it does for the new password). Spends nothing.
+   * 200 { signup_details: null | {...} } (signUpDetailsIn); 400 invalid_link.
+   */
+  async function resetLinkDetails(body, ctx) {
+    const blocked = limit('tokenIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const token = body.token
+    if (!isWellFormedToken(token)) return INVALID_LINK()
+    if (!(await tokensAvailable())) return RESET_UNAVAILABLE()
+    const { rows } = await pool.query(
+      `SELECT user_id FROM ${T.tokens} WHERE hash = $1 AND purpose = 'reset' AND used_at IS NULL AND expires_at > now()`,
+      [hashToken(token)])
+    if (!rows.length) return INVALID_LINK()
+    return ok({ signup_details: await signUpDetailsIn(pool, rows[0].user_id) })
   }
 
   /**
    * POST confirm-email { token, password? } (an `app` is ignored): marks the
    * address confirmed. An account created with a link may have been made by
    * someone else with this address: unless the clicker gives the account's
-   * password, the confirmation keeps nothing of whoever signed up (password,
-   * sessions, passkeys, the profile's name and licence number, the open
-   * requests go), tells no approver, and answers set_password_token, a reset
-   * link token for the clicker to choose a password (the click proved the
-   * inbox, as a reset link does).
+   * password, whoever signed up loses the account (password, sessions and
+   * passkeys go) and the answer carries set_password_token, a reset link
+   * token for the clicker to choose a password (the click proved the inbox,
+   * as a reset link does). That password confirms the address
+   * (confirmPasswordReset): the clicker sees what the sign-up gave (the
+   * name, the licence number, the requests: reset-password/details) and
+   * keeps what is theirs, and only then are the approvers told (SEC-15,
+   * review I-3). Until then the address stays unconfirmed, so nothing of it
+   * can be approved.
    */
   async function confirmEmailLink(body, ctx) {
     const blocked = limit('tokenIp', ipKey(ctx.ip))
@@ -2489,13 +2588,13 @@ export function createAuth(options = {}) {
       }
       const { rows: urows } = await client.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1 FOR UPDATE`, [t.userId])
       if (confirmsByLink(urows[0]?.u) && urows[0].u.email_confirmed_at == null && !passwordOk) {
-        // Not shown to be the one who signed up: nothing of theirs stays,
-        // neither the password, sessions and passkeys nor the name, licence
-        // number and requests they typed (audit 2611 SEC-15)
-        await setPasswordIn(client, t.userId, `!unset:${generateToken()}`, { confirmEmail: true })
-        await clearSignUpDetailsIn(client, t.userId)
+        // Not shown to be the one who signed up: their password, sessions
+        // and passkeys go; the address is confirmed with the clicker's new
+        // password, which keeps what the clicker keeps of the details
+        // (confirmPasswordReset, SEC-15)
+        const r = await setPasswordIn(client, t.userId, `!unset:${generateToken()}`)
         setPasswordToken = await issueToken(client, t.userId, 'reset')
-        return { userId: t.userId, already: false, reset: true }
+        return { userId: t.userId, already: false, reset: true, revokedSessions: r.revokedSessions }
       }
       let set = 'email_confirmed_at = coalesce(email_confirmed_at, now())'
       if (writable(cols, 'updated_at')) set += ', updated_at = now()'
@@ -2507,12 +2606,12 @@ export function createAuth(options = {}) {
       return { userId: t.userId, already: false }
     })
     if (!out) return INVALID_LINK()
-    if (!out.already) {
-      await audit('account.email_confirmed', out.userId, out.reset ? { password_cleared: true, details_cleared: true } : {})
-      // The approvers hear of a sign-up its owner confirmed; after a cleared
-      // one there is nothing to approve (no request, no name) and the owner
-      // enters their own details (the licence question asks again)
-      if (!out.reset) accountConfirmed(out.userId)
+    if (out.reset) {
+      // confirmed (and the approvers told) with the clicker's new password
+      await audit('account.password_reset', out.userId, { password_cleared: true, sessions_revoked: out.revokedSessions })
+    } else if (!out.already) {
+      await audit('account.email_confirmed', out.userId, {})
+      accountConfirmed(out.userId)
     }
     if (setPasswordToken) await clearAllLocks(normalizeEmail((await findUserId(out.userId)).email))
     return ok({ confirmed: true, already_confirmed: out.already, ...(setPasswordToken ? { set_password_token: setPasswordToken } : {}) })
@@ -2964,6 +3063,7 @@ export function createAuth(options = {}) {
           return fail(501, 'Email change is not available yet.', 'not_implemented')
         case 'reset-password': return await requestPasswordReset(b, c)
         case 'reset-password/confirm': return await confirmPasswordReset(b, c)
+        case 'reset-password/details': return await resetLinkDetails(b, c)
         case 'confirm-email': return await confirmEmailLink(b, c)
         case 'resend-confirmation': return await resendConfirmation(b, c)
         case 'passkey/login-options': return await passkeyLoginOptions(b, c)
