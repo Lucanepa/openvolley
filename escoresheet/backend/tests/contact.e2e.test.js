@@ -170,7 +170,7 @@ describe('POST /api/contact (server.js, no mail configured)', () => {
     const busy = await postFrom(nextIp2(), form([...VALID, ['files', Buffer.alloc(2 * 1024 * 1024, 0x41), 'log.txt']]))
     assert.equal(busy.status, 503)
     assert.deepEqual(busy.json, { success: false, code: 'busy', error: 'Too many messages right now. Please try again later' })
-    assert.match(srv.output.join(''), /\[Contact\] 8 messages already being received: busy/)
+    assert.match(srv.output.join(''), /\[Contact\] 8 messages already being received \(at most 2 per address\): busy/)
 
     // 4. The eight clients go away: their slots are freed, all eight
     for (const h of ten) h.req.destroy()
