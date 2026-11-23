@@ -35,34 +35,57 @@ export const BENCH_FIT_GRID = { width: `calc(100% / ${FIT})`, display: 'flex', f
 
 const overflows = (col) => col.scrollHeight - col.clientHeight > 1
 
+// Each column's own factor from its last fit. Every measurement is a forced
+// layout of the column, and on the tablet with its large system font each
+// one restyles every square. Most fits come to the factor of the last one
+// (the observer runs again after every fit: the squares changed size), so
+// the search starts there: two measurements instead of about ten. Not the
+// factor on the column: after the shared step that is the other column's.
+const lastFit = new WeakMap()
+
+// The largest two-decimal factor in [lo, hi) that fits, between lo (fits)
+// and hi (overflows): halving, as many steps as [min, 1] needs.
+function largestFit(lo, hi, fitsAt) {
+  for (let i = 0; i < SEARCH_STEPS; i++) {
+    const mid = Math.round(((lo + hi) / 2) * 100) / 100
+    if (mid <= lo || mid >= hi) break
+    if (fitsAt(mid)) lo = mid
+    else hi = mid
+  }
+  return lo
+}
+
 /**
  * Sets --bench-fit on the column to the largest factor in [min, 1] (two
  * decimals) at which it does not overflow, and returns it: 1 when it fits as
  * it is, `min` when even that overflows. The column keeps its scroll position.
+ *
+ * The search starts from the column's last factor (1 the first time) and only
+ * looks on the side of it where the answer is. The height grows with the
+ * factor, so the answer is the same as a search over all of [min, 1]
+ * (benchFit.test.js checks it against that search).
  */
 export function fitBenchColumn(col, min = BENCH_FIT_MIN) {
   const set = (f) => col.style.setProperty(FIT_VAR, String(f))
+  const fitsAt = (f) => { set(f); return !overflows(col) }
   const top = col.scrollTop
-  let fit = 1
-  set(1)
-  if (overflows(col)) {
-    set(min)
-    if (overflows(col)) {
-      fit = min
-    } else {
-      let lo = min
-      let hi = 1
-      for (let i = 0; i < SEARCH_STEPS; i++) {
-        const mid = Math.round(((lo + hi) / 2) * 100) / 100
-        if (mid <= lo || mid >= hi) break
-        set(mid)
-        if (overflows(col)) hi = mid
-        else lo = mid
-      }
-      fit = lo
+  const start = Math.min(1, Math.max(min, lastFit.get(col) ?? 1))
+  let fit
+  if (fitsAt(start)) {
+    if (start >= 1) fit = 1
+    else {
+      const up = Math.round(start * 100 + 1) / 100
+      if (!fitsAt(up)) fit = start
+      else if (up >= 1 || fitsAt(1)) fit = 1
+      else fit = largestFit(up, 1, fitsAt)
     }
+  } else if (start <= min || !fitsAt(min)) {
+    fit = min
+  } else {
+    fit = largestFit(min, start, fitsAt)
   }
   set(fit)
+  lastFit.set(col, fit)
   if (col.scrollTop !== top) col.scrollTop = top
   return fit
 }

@@ -24,6 +24,7 @@
 // on a fast desktop; the lean copy is ~100 properties and ~12 MB (~1 s).
 
 import { wellFormedText } from '../../src/utils/stringUtils.js';
+import { LIGHT_PDF_PIXEL_RATIO, pdfSharpFor, SHARP_PDF_PIXEL_RATIO } from '../../src/utils/lookSettings.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -45,6 +46,23 @@ export function isWebKitEngine(ua: string = typeof navigator !== 'undefined' ? n
   // WebKit itself says AppleWebKit/605 and later; Chromium (and jsdom) keep 537.36
   const v = /AppleWebKit\/(\d+)/.exec(ua);
   return !!v && Number(v[1]) >= 600 && !/(Chrome|Chromium|Edg|OPR|Android|SamsungBrowser)/.test(ua);
+}
+
+/**
+ * The capture's pixel ratio: 2, ~190 dpi on A3, sharp enough for print, a
+ * reasonable file size; or 1.5 (~145 dpi), about half the pixels to draw,
+ * encode and hold, where the hall tablet (Galaxy Tab A7 Lite) took 43 s for
+ * the approval's PDF. Options › Effects and speed › Sharp PDF
+ * (utils/lookSettings pdfSharpFor), read here when the PDF is made; never set,
+ * today's default: 1.5 in the Android app (owner 22.11.2026), 2 on the web,
+ * the desktop apps, iOS, the server render and the pixel check (a fresh
+ * browser: nothing stored). The sheet is placed on the page in mm (SHEET_MM):
+ * only the picture's resolution changes.
+ */
+export const CAPTURE_PIXEL_RATIO = SHARP_PDF_PIXEL_RATIO;
+export const ANDROID_APP_CAPTURE_PIXEL_RATIO = LIGHT_PDF_PIXEL_RATIO;
+export function capturePixelRatio(win: Window | undefined = typeof window !== 'undefined' ? window : undefined): number {
+  return pdfSharpFor(win as (Window & typeof globalThis) | undefined) ? CAPTURE_PIXEL_RATIO : ANDROID_APP_CAPTURE_PIXEL_RATIO;
 }
 
 /** What html-to-image copies by default: every property of a computed style. */

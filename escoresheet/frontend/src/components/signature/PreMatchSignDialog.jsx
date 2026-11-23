@@ -204,8 +204,10 @@ export function SignaturesMissingModal({ teams, onSign, onClose }) {
  * @param {() => void} props.onClick
  * @param {object} [props.style] the layout's sizes
  * @param {string} [props.testId]
+ * @param {boolean} [props.still] no flash: a dialog is open over it (a flash
+ *   under it would keep redrawing the dialog's blurred backdrop)
  */
-export function MissingSignatureButton({ roles, detail, onClick, style, testId }) {
+export function MissingSignatureButton({ roles, detail, onClick, style, testId, still = false }) {
   const { t } = useTranslation()
   const roleLabel = (role) => t(role === 'coach' ? 'coinToss.coach' : 'coinToss.captain')
   return (
@@ -213,6 +215,7 @@ export function MissingSignatureButton({ roles, detail, onClick, style, testId }
       type="button"
       className="missing-signature-button"
       data-testid={testId}
+      data-still={still ? '' : undefined}
       onClick={onClick}
       style={style}
     >

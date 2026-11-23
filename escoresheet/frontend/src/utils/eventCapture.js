@@ -214,15 +214,50 @@ function getComponentName(element) {
   return 'global'
 }
 
+// Recorded light (performance pass, 22.11): a tap on the hall's tablet
+// fires several of these before React sees it, and the support timeline
+// (utils/diagnosticsReport) shows presses, moves and scrolls as counts only
+// and drops focus / blur. Their target keeps its tag and id and what tells a
+// password or PIN field (isSecretEntry: type, name, aria-label), not its
+// text (the whole subtree's, redacted), CSS path, classes or data
+// attributes; the component comes from a cache per element.
+const LIGHT_EVENTS = new Set(['touchstart', 'touchend', 'mousedown', 'mouseup', 'touchmove', 'scroll', 'focus', 'blur'])
+
+function lightTargetInfo(element) {
+  if (!element) return null
+  const hidden = !!element.closest?.('[data-sensitive]')
+  return {
+    tagName: element.tagName?.toLowerCase(),
+    id: element.id || null,
+    name: element.name || null,
+    type: element.type || null,
+    ariaLabel: hidden ? null : redactScreenText(element.getAttribute?.('aria-label') || null)
+  }
+}
+
+// getComponentName walks every ancestor (up to the root on Tailwind class
+// lists): once per element for the light entries
+const componentNames = new WeakMap()
+function cachedComponentName(element) {
+  if (!element || typeof element !== 'object') return getComponentName(element)
+  let name = componentNames.get(element)
+  if (name === undefined) {
+    name = getComponentName(element)
+    componentNames.set(element, name)
+  }
+  return name
+}
+
 /**
  * Create event handler for a specific event type
  */
 function createEventHandler(eventType, config) {
+  const light = LIGHT_EVENTS.has(eventType)
   const handler = (event) => {
     try {
       const target = event.target
-      const component = getComponentName(target)
-      const targetInfo = extractTargetInfo(target)
+      const component = light ? cachedComponentName(target) : getComponentName(target)
+      const targetInfo = light ? lightTargetInfo(target) : extractTargetInfo(target)
 
       // Build payload based on event type
       const payload = buildEventPayload(eventType, event, target)

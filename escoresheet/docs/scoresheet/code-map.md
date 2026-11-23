@@ -38,7 +38,7 @@ Paths are relative to `escoresheet/frontend/` unless they start with
 | MatchSetup "Scoresheet" | `/scoresheet/?matchId={id}` | preview | `src/components/MatchSetup.jsx:2647` |
 | CoinToss | `/scoresheet/?matchId={id}` | preview | `src/components/CoinToss.jsx:1725` |
 | Scoreboard menu: view / print / save | `/scoresheet/?matchId={id}[&action=print\|save]` | preview / print / save (print = save: both call `handleSavePdf`, nothing calls `window.print()`) | `src/components/Scoreboard.jsx:13024,13072,13120,13850` |
-| MatchEnd "show scoresheet" | `/scoresheet/?matchId={id}[&action=…]` + `sessionStorage.scoresheetData` | preview / save | `src/components/MatchEnd.jsx:933-948` |
+| MatchEnd "show scoresheet" | `/scoresheet/?matchId={id}[&action=…]` (the page reads this device's database; no `sessionStorage` copy since the perf pass of 22.11.2026) | preview / save | `src/components/MatchEnd.jsx:1291-1297` |
 | MatchEnd "Approve" | `/scoresheet/?matchId={id}&action=getBlob` | getBlob (PDF goes back to MatchEnd) | `src/components/MatchEnd.jsx:1029-1035`, `src/utils/scoresheetPdfRequest.js` |
 | Archive (scoresheets subdomain) | `ScoresheetApp.jsx` renders `App_Scoresheet` itself; links `?date=&game=` (View) and `?date=&game=&action=save` (Download PDF, new tab) | preview / save | `src/ScoresheetApp.jsx:300-350`, `src/scoresheet-main.jsx`, `scripts/build-subdomains.js:86` |
 | Storage list inside `/scoresheet/` | `?list` or `/storage` path; "Download PDF" opens `?date=&game=&action=save` | save | `scoresheet_pdf/index_scoresheet.tsx:452-685` |
@@ -70,7 +70,7 @@ browser popup; desktop: `window.open`, turned into an app window labelled
 1. `?matchId=` -> `UrlMatchIdScoresheet` -> `LiveScoresheet` (one live query: `utils/matchData` `loadLocalMatchData`, one read transaction).
 2. `?date=&game=` -> `StorageScoresheet` (backend storage JSON, own account only).
 3. `?list` / `/storage` -> `ScoresheetList`.
-4. `sessionStorage.scoresheetData` -> `LiveScoresheet` if it has `match.id`, else `StaticScoresheet`.
+4. `sessionStorage.scoresheetData` -> `LiveScoresheet` if it has `match.id`, else `StaticScoresheet`. Read only when the URL names none of the sources above (l. 625): no opener in the app writes the copy any more (perf pass 22.11.2026: each open stringified the whole match into it, about 1 MB at match end, for nothing); every opener puts `?matchId=` in the URL (1.1). Kept for an older link in the same tab.
 5. Nothing -> `ImportScoresheet`.
 
 `?action=` (`preview|print|save|getBlob`, default preview) is read once at load
@@ -88,7 +88,7 @@ same rules.
 | Scorer's sheet (view, print, save), approval PDF (`getBlob`) | `/scoresheet/?matchId=` (`index_scoresheet.tsx` `LiveScoresheet`) | `utils/matchData` `loadLocalMatchData` (this device's database) | re-read on a BroadcastChannel notice |
 | Archive site, a match on this device | scoresheet subdomain `?matchId=` (`src/ScoresheetApp.jsx` `MatchIdViewer`) | `loadLocalMatchData` | the same loader as above (was a second copy) |
 | A stored file | `/scoresheet/?date&game` (`StorageScoresheet`), archive `?date&game` (`ScoresheetViewer`) | `utils/scoresheetStorage` `fetchScoresheetJson` | one loader (was two copies); the archive opens approved (`_final`) files only, the scorer app's own page also the in-match file (`{ final: false }`, approved first) |
-| Imported JSON, `sessionStorage` fallback | `/scoresheet/` (`ImportScoresheet`, `StaticScoresheet`) | the object as stored | |
+| Imported JSON, an older `sessionStorage` copy | `/scoresheet/` without a source in the URL (`ImportScoresheet`, `StaticScoresheet`) | the object as stored | no opener writes the copy any more (1.3) |
 | Referee tablet's live sheet | `src/components/referee/RefereeScoresheet.jsx` | `referee/scoresheetInput.js` `scoresheetInputFromBundle` (the relay bundle = the scorer's database minus PINs, signatures, officials, dates of birth) | sets and events through `matchData` helpers; a running set takes its score from its points; a lone line-up hidden |
 | Manager "Rebuild PDF" | `src/components/manage/RebuildScoresheet.jsx` | `src/utils/scoresheetFromCloud.js` `scoresheetDataFromCloud` (the server's record) | the same steps as a device taking the match over (`backupManager` `cloudDataFromServer`, `localMatchRowFromCloud`), kept in memory |
 
@@ -220,7 +220,7 @@ setup uses `DD.MM.YYYY`, sync uses ISO. No normalisation anywhere on the sheet.
 ### 2.5 Other sources
 
 - Backend storage JSON (`StorageScoresheet`, `ScoresheetApp`): `{ match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, uploadedAt }` written by `src/utils/scoresheetUploader.js` (in-match and `_final` after approval). The cloud backend is currently down (Supabase exit), so this path only works against the self-hosted backend.
-- `sessionStorage.scoresheetData` (MatchEnd): same shape, but `LiveScoresheet` re-reads Dexie by `match.id`.
+- `sessionStorage.scoresheetData`: same shape, read only when the URL names no source (1.3 item 4). No opener writes it any more (perf pass 22.11.2026): Match End, the approval and every other opener put `?matchId=` in the URL, and the page reads this device's database (item 1).
 - Imported JSON file: same shape.
 
 ---

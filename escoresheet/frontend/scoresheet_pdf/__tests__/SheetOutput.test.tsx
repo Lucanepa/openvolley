@@ -275,6 +275,47 @@ describe('Save PDF', () => {
     expect(clicked).toHaveLength(0)
   })
 
+  // Perf pass 22.11.2026: the tablet's 43 s approval PDF was one number; the
+  // page's heartbeat runs on the thread the capture holds (in-app view)
+  it('getBlob for the approval: each step of the capture tells the opener the time it took, numbers only', async () => {
+    const posted: any[] = []
+    const opener = { closed: false, postMessage: (m: any) => posted.push(m) }
+    const own = Object.getOwnPropertyDescriptor(window, 'opener')
+    Object.defineProperty(window, 'opener', { configurable: true, value: opener })
+    const close = vi.spyOn(window, 'close').mockImplementation(() => {})
+    try {
+      render(<App matchData={fixture()} autoAction="getBlob" dataReady />)
+      await waitFor(() => expect(posted.some(m => m.type === 'pdfBlob')).toBe(true), { timeout: 4000 })
+      const steps = posted.filter(m => m.type === 'pdfProgress' && 'ms' in m)
+      expect(steps.map(m => m.step)).toEqual(['capture', 'styles', 'canvas', 'jpeg', 'pdf'])
+      for (const m of steps) {
+        expect(Object.keys(m).sort()).toEqual(['ms', 'step', 'type'])
+        expect(Number.isInteger(m.ms) && m.ms >= 0).toBe(true)
+      }
+      // ... before the PDF, which comes last
+      expect(posted.findIndex(m => m.type === 'pdfBlob')).toBeGreaterThan(posted.indexOf(steps[4]))
+    } finally {
+      close.mockRestore()
+      if (own) Object.defineProperty(window, 'opener', own)
+      else delete (window as any).opener
+    }
+  })
+
+  it('getBlob for the manager (onBlob, the PDF stays on its page) reports no steps to anyone', async () => {
+    const posted: any[] = []
+    const own = Object.getOwnPropertyDescriptor(window, 'opener')
+    Object.defineProperty(window, 'opener', { configurable: true, value: { closed: false, postMessage: (m: any) => posted.push(m) } })
+    try {
+      const got: any[] = []
+      render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+      await waitFor(() => expect(got).toHaveLength(1))
+      expect(posted.filter(m => m.type === 'pdfProgress')).toEqual([])
+    } finally {
+      if (own) Object.defineProperty(window, 'opener', own)
+      else delete (window as any).opener
+    }
+  })
+
   it('Chromium (Brave, the manager\'s Rebuild PDF) copies only the styles the sheet uses, in one capture: the copy of every property took ~10 s', async () => {
     const htmlToImage: any = await import('html-to-image')
     htmlToImage.toCanvas.mockClear()
@@ -293,6 +334,52 @@ describe('Save PDF', () => {
     expect(opts.includeStyleProperties.some((p: string) => p.startsWith('--'))).toBe(false)
     expect(opts.includeStyleProperties).not.toContain('margin-inline-start')
   })
+
+  // owner 22.11.2026: the hall tablet's capture at 1.5 (capturePixelRatio);
+  // the web, the desktop apps, iOS and the server render keep 2 (above)
+  it('in the Android app the capture is made at pixel ratio 1.5, the PDF placed in mm as before', async () => {
+    const htmlToImage: any = await import('html-to-image')
+    htmlToImage.toCanvas.mockClear()
+    pdfCalls.length = 0
+    const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; SM-T220 Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Safari/537.36'
+    ;(window as any).Capacitor = { isNativePlatform: () => true }
+    Object.defineProperty(window.navigator, 'userAgent', { configurable: true, get: () => ANDROID_UA })
+    try {
+      const got: any[] = []
+      render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+      await waitFor(() => expect(got).toHaveLength(1))
+      expect(got[0].blob.type).toBe('application/pdf')
+      expect(htmlToImage.toCanvas).toHaveBeenCalledTimes(1)
+      expect(htmlToImage.toCanvas.mock.calls[0][1].pixelRatio).toBe(1.5)
+      // the picture on the A3 page: 410 x 287 mm at 5 mm, whatever its pixels
+      expect(pdfCalls.find(c => c[0] === 'addImage')).toEqual(['addImage', 'JPEG', 5, 5, 410, 287])
+    } finally {
+      delete (window as any).Capacitor
+      delete (window.navigator as any).userAgent
+    }
+  })
+
+  // Options › Effects and speed › Sharp PDF off (utils/lookSettings): the
+  // device's choice, read when the PDF is made
+  it('with Sharp PDF off on this device the capture is made at 1.5, on again at 2', async () => {
+    const htmlToImage: any = await import('html-to-image')
+    for (const [stored, ratio] of [['false', 1.5], ['true', 2]] as const) {
+      htmlToImage.toCanvas.mockClear()
+      pdfCalls.length = 0
+      localStorage.setItem('ov.look.pdfSharp', stored)
+      try {
+        const got: any[] = []
+        const { unmount } = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
+        await waitFor(() => expect(got).toHaveLength(1))
+        expect(htmlToImage.toCanvas.mock.calls[0][1].pixelRatio).toBe(ratio)
+        expect(pdfCalls.find(c => c[0] === 'addImage')).toEqual(['addImage', 'JPEG', 5, 5, 410, 287])
+        unmount()
+      } finally {
+        localStorage.removeItem('ov.look.pdfSharp')
+      }
+    }
+    // two whole sheets drawn and captured: past 30 s on the CI runners
+  }, 90000)
 
   it('a lean capture that fails in Chromium is tried once more with the lean list, never with the full copy (~8x larger)', async () => {
     const htmlToImage: any = await import('html-to-image')
@@ -337,11 +424,26 @@ describe('Save PDF', () => {
     expect(clicked).toHaveLength(0)
   })
 
+  // Perf pass 22.11.2026: the approval waited a fixed 500 ms before it began
+  it('an automatic getBlob begins at once: no fixed wait before the capture', async () => {
+    vi.useFakeTimers()
+    try {
+      const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={() => {}} />)
+      // the fonts and two frames (jsdom has no frames: at most 100 ms), then the PDF is being made
+      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      expect(view.queryByTestId('pdf-generating')).not.toBeNull()
+      view.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('the view closed before the capture began: no failure is reported either', async () => {
     const got: any[] = []
     const view = render(<App matchData={fixture()} autoAction="getBlob" dataReady readOnly embedded onBlob={(out) => got.push(out)} />)
-    // after the automatic start (500 ms), inside the waits before the capture (jsdom
-    // loads no picture: picturesReady waits its 3 s)
+    // after the automatic start (no fixed wait since 22.11.2026; it was 500 ms),
+    // inside the waits before the capture (jsdom loads no picture: picturesReady
+    // waits its 3 s)
     await new Promise(r => setTimeout(r, 600))
     view.unmount()
     await new Promise(r => setTimeout(r, 400))

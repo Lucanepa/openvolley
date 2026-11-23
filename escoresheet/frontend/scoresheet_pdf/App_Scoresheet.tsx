@@ -8,7 +8,7 @@ import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { SheetPage } from './components/SheetPage';
 import type { SanctionRecord } from './types_scoresheet';
 import { buildScoresheetFilename, buildScoresheetTitle } from './utils/sheetFormat';
-import { drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, nextFrames, picturesReady, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
+import { capturePixelRatio, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, missingPictures, nextFrames, picturesReady, sheetFontEmbedCSS, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
 import { matchLfpTracking, deviceLfpSetting } from '../src/domain/sheetInputs.js';
 import { useMatchTz } from '../src/ui/useMatchTz.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
@@ -123,6 +123,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // sheet, and the PDF prints the whole text on further pages (field-spec 8:
   // never truncate)
   const [remarksClipped, setRemarksClipped] = useState(false);
+  // ... as the sheet last drawn, for the PDF made from it: its further pages
+  // follow the sheet captured, also when the capture began before the REMARKS
+  // box's first fit was reported (an automatic save right after the load)
+  const remarksClippedRef = useRef(remarksClipped);
+  remarksClippedRef.current = remarksClipped;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sheetBoxRef = useRef<HTMLDivElement>(null);
 
@@ -337,6 +342,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const wasShowingLCS = showLCS;
     // the desktop app's quit question says a PDF is still being saved here
     setPdfBusy(true);
+    // the approval's log: this page's own time until now (load, read, render)
+    reportStep('capture', performance.now());
 
     // the view is gone (Rebuild PDF cancelled or timed out): stop here
     const stillShown = () => { if (!mountedRef.current) throw new CaptureAbandoned(); };
@@ -382,9 +389,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       const fontCss = await fontEmbedCSS;
       stillShown();
 
-      // pixelRatio 2: ~190 dpi on A3, sharp enough for print, a reasonable file size
+      // pixelRatio 2: ~190 dpi on A3, sharp enough for print, a reasonable file
+      // size; 1.5 with Options › Effects and speed › Sharp PDF off, the
+      // default in the Android app (capturePixelRatio, utils/pdfCapture.ts:
+      // the device's choice, read now). The PDF places the picture in mm, at
+      // any ratio.
+      const pixelRatio = capturePixelRatio(window);
       const capture = (props: string[]) => htmlToImage.toCanvas(sheet!, {
-        pixelRatio: 2,
+        pixelRatio,
         backgroundColor: '#ffffff',
         style: {
           transform: 'none',
@@ -392,6 +404,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         includeStyleProperties: styleListFor(props),
         ...(fontCss ? { fontEmbedCSS: fontCss } : {}),
       });
+      // Each step's time from here on, for the approval's log (reportStep)
+      let lapAt = performance.now();
+      const lap = (step: string) => {
+        const now = performance.now();
+        reportStep(step, now - lapAt);
+        lapAt = now;
+      };
       // Every engine copies only the properties the sheet uses (utils/pdfCapture.ts):
       // the full copy was a ~100 MB SVG that took ~10 s in Chromium (Brave) and
       // that WebKit cannot load at all. WebKit (the Linux and macOS desktop apps,
@@ -405,11 +424,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         const showPictures = hideImages(pictures);
         let c: HTMLCanvasElement;
         try {
-          c = await capture(usedStyleProperties(sheet!));
+          const props = usedStyleProperties(sheet!);
+          lap('styles');
+          c = await capture(props);
         } finally {
           showPictures();
         }
         drawImagesOnto(c, sheet!, pictures);
+        lap('canvas');
         return c;
       };
       let canvas: HTMLCanvasElement;
@@ -420,9 +442,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           canvas = await leanWithPictures();
         } else {
           try {
-            canvas = await capture(usedStyleProperties(sheet!));
+            const props = usedStyleProperties(sheet!);
+            lap('styles');
+            canvas = await capture(props);
+            lap('canvas');
           } catch (err) {
             console.warn('[Scoresheet] Capture failed, retrying with the pictures drawn afterwards:', err);
+            lap('retry');
             stillShown();
             canvas = await leanWithPictures();
           }
@@ -435,6 +461,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       assertCanvas(canvas);
 
       const imgData = canvas.toDataURL('image/jpeg', 0.85);
+      lap('jpeg');
       assertJpegDataUrl(imgData);
 
       // A3 landscape (420 x 297 mm); the 410 x 287 mm sheet placed at its true size,
@@ -463,7 +490,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         pdf.setFontSize(6);
         pdf.text(searchLine, SHEET_OFFSET_MM.x, 3, { renderingMode: 'invisible' } as any);
       } catch { /* text layer is optional */ }
-      if (remarksClipped) {
+      if (remarksClippedRef.current) {
         const all = remarksText({ overflowSanctions, remarks, generated: autoRemarks });
         await applyTextFont(pdf, `${title}\n${all}`);
         // as many pages as the text needs (utils/remarksPages)
@@ -472,6 +499,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
       stillShown();
       const bytes = pdf.output('arraybuffer');
+      lap('pdf');
       assertValidPdf(bytes);
       const pdfBlob = new Blob([bytes], { type: 'application/pdf' });
 
@@ -540,12 +568,25 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   onBlobRef.current = onBlob;
   // true while the approval (getBlob) still waits for this window's PDF
   const approvalBusyRef = useRef(autoAction === 'getBlob');
+  // The approval's log (MatchEnd: 'timing'): one message at each step of the
+  // capture with the time it took here, numbers only. The beat below runs on
+  // the thread the capture holds, so on the Android in-app view it is heard
+  // late. Never throws: a step of the capture never fails for it.
+  const reportStep = (step: string, ms: number) => {
+    try {
+      if (autoAction !== 'getBlob' || onBlobRef.current || !approvalBusyRef.current) return;
+      reportPdfProgress({ step, ms });
+    } catch { /* the log only */ }
+  };
   useEffect(() => {
     if (!autoAction || autoAction === 'preview' || !dataReady || autoActionDone.current) return;
     autoActionDone.current = true;
 
     const timer = setTimeout(async () => {
       await (document as any).fonts?.ready;
+      // the first renders' own updates land first (Fit's zoom, the REMARKS
+      // box's fit): handleSavePdfRef is then the closure that holds them
+      await nextFrames();
       if (!mountedRef.current) return;
       if (autoAction === 'print' || autoAction === 'save') {
         await handleSavePdfRef.current();
@@ -562,7 +603,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         if (onBlobRef.current) onBlobRef.current(out || null);
         else await deliverPdfToOpener(out || null);
       }
-    }, 500);
+      // No fixed wait (it was 500 ms): the frames above, and handleSavePdf
+      // waits for two more, the fonts and the pictures. The timer stays, so
+      // its cleanup cancels the first of the two runs of this effect under
+      // React's StrictMode (index_scoresheet).
+    }, 0);
 
     return () => { clearTimeout(timer); autoActionDone.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

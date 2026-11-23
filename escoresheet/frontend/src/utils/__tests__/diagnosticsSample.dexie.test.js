@@ -271,6 +271,9 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     expect(t).toMatch(/Unsent writes:\s+5 \(1 set, 4 event\)/)
     expect(t).toContain('this device holds a scorer claim')
     expect(t).toMatch(/Clock offset:\s+the relay's clock is -412 ms/)
+    // Options › Effects and speed as on this device (never set: today's look), no check yet
+    expect(t).toMatch(/Effects and speed:\s+blur on, animations on, clock with seconds, PDF 2×/)
+    expect(t).toMatch(/Device check:\s+not run on this device/)
     const tl = t.slice(t.indexOf('== 3. Timeline'), t.indexOf('== 4. App log'))
     const order = ['APP START', 'tap     "New match"', 'typed 14 keys into "Home team"', 'a password or PIN field', 'tap     "Point B"', 'Point B (home) → 0:1 (set 1)', 'Time-out B (home)', 'Substitution B (home) #5 in for #12', 'refused: event insert 503', 'undone', 'APP IN THE BACKGROUND', 'with nothing recorded', 'APP IN THE FOREGROUND AGAIN', 'the device went offline', '"Contact support"']
     let pos = -1

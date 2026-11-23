@@ -122,10 +122,14 @@ describe('Scoreboard: the coach and captain signatures before the first serve', 
     expect(left.textContent).toContain('Missing signatures')
     expect(left.textContent).toContain('Captain · Coach')
     expect(screen.getByTestId('missing-signature-right')).toBeTruthy()
+    // flashing; still under a dialog (styles.css [data-still])
+    expect(left.hasAttribute('data-still')).toBe(false)
     await settle()
 
     fireEvent.click(button('Start set'))
     const modal = await screen.findByTestId('signatures-missing-modal', {}, { timeout: 5000 })
+    expect(screen.getByTestId('missing-signature-left').hasAttribute('data-still')).toBe(true)
+    expect(screen.getByTestId('missing-signature-right').hasAttribute('data-still')).toBe(true)
     expect(modal.textContent).toContain('A · HOM')
     expect(modal.textContent).toContain('B · AWY')
     expect(modal.textContent).toContain('Still to sign: Captain, Coach')
@@ -140,6 +144,8 @@ describe('Scoreboard: the coach and captain signatures before the first serve', 
     expect(screen.getByTestId('pre-match-sign-coach').textContent).toContain('Carla Coach')
     expect(screen.getByTestId('pre-match-sign-captain').textContent).toContain('#4 X Last4')
     expect(screen.queryByTestId('signatures-missing-modal')).toBeNull()
+    expect(screen.getByTestId('missing-signature-left').hasAttribute('data-still')).toBe(true)
+    expect(screen.getByTestId('missing-signature-right').hasAttribute('data-still')).toBe(true)
   }, 60000)
 
   it('a team that has signed stops flashing; the other keeps its role still missing', async () => {

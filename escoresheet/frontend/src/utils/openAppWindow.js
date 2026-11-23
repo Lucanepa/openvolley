@@ -245,6 +245,29 @@ let current = null // { root, frame, close }
 /** The in-app view on screen, if any (tests). */
 export const currentInAppView = () => current
 
+// Who wants to know when the in-app view covers the screen: the scoring
+// screen's clock and heartbeat and the header's relay poll pause under it
+// (nobody sees them, and the page in the view shares the thread)
+const viewListeners = new Set()
+
+/** Whether an in-app view covers the screen now. */
+export const isInAppViewOpen = () => current != null
+
+/**
+ * `fn(open)` when the in-app view opens (true) or closes (false). Another
+ * page shown in the open view is neither. Returns the unsubscribe function.
+ */
+export function onInAppViewChange(fn) {
+  viewListeners.add(fn)
+  return () => { viewListeners.delete(fn) }
+}
+
+function notifyInAppView(open) {
+  for (const fn of [...viewListeners]) {
+    try { fn(open) } catch (err) { console.warn('[openAppWindow] in-app view listener failed:', err) }
+  }
+}
+
 function el(doc, tag, style, attrs = {}) {
   const node = doc.createElement(tag)
   Object.assign(node.style, style)
@@ -321,6 +344,7 @@ export function showInAppView(href, { title, win = window } = {}) {
     win.removeEventListener('keydown', onKey)
     root.remove()
     current = null
+    notifyInAppView(false)
     if (!fromHistory) {
       // drop the entry pushed on open, so Back does not need two presses later
       try { if (win.history.state?.ovAppWindow) win.history.back() } catch { /* ignore */ }
@@ -337,6 +361,7 @@ export function showInAppView(href, { title, win = window } = {}) {
 
   doc.body.appendChild(root)
   current = { root, frame, close, setTitle, status }
+  notifyInAppView(true)
   return current
 }
 

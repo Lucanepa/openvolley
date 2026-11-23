@@ -154,6 +154,28 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   // Track all changes for audit log
   const [changes, setChanges] = useState([])
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  // Close / Save hand the page back to App, which from the scoring screen
+  // first reads the match (App leaveManualAdjustments): until it switches,
+  // this page stays up with the changes, so no second save and no Close
+  // (a ref for the taps, the state for the button). The form is locked
+  // from the Save tap and during that wait (`formLocked`): an edit typed
+  // then went with the page, unsaved and without the "Discard unsaved
+  // changes?" question. A Close tap while the changes are being saved does
+  // nothing either (no discard question for changes being saved).
+  const leavingRef = useRef(false)
+  const [leaving, setLeaving] = useState(false)
+  const leave = async (...calls) => {
+    leavingRef.current = true
+    setLeaving(true)
+    try {
+      await Promise.all(calls.map(call => call()))
+    } finally {
+      leavingRef.current = false
+      setLeaving(false)
+    }
+  }
+  const formLocked = saving || leaving
   const [activeTab, setActiveTab] = useState(initialTab)
   // the correction board over the corrections tab (match end: opt-in, the list stays the default here)
   const [showBoard, setShowBoard] = useState(false)
@@ -478,6 +500,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   // Every event deleted or edited by the save is recorded as a manual
   // adjustment in the event history (db/eventHistory)
   const handleSave = async () => withActivityContext({ reason: 'manual_adjustment', actionId: randomUuid() }, async () => {
+    if (leavingRef.current) return
     if (changes.length === 0) {
       showAlert(t('manualAdjustmentsEditor.noChanges', 'No changes to save'), 'info')
       return
@@ -499,6 +522,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       if (!ok) return
     }
 
+    savingRef.current = true
     setSaving(true)
     // the Swap A/B fields written (for the cloud coin toss)
     let designationSaved = null
@@ -629,12 +653,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       } catch (e) { /* BroadcastChannel not supported */ }
 
       showAlert(t('manualAdjustmentsEditor.saved', 'Changes saved successfully'), 'success')
-      if (onSave) onSave(changes)
-      if (onClose) onClose()
+      // "Saving..." until App has switched screens (onSave, then onClose)
+      await leave(() => onSave?.(changes), () => onClose?.())
     } catch (error) {
       console.error('Error saving changes:', error)
       showAlert(t('manualAdjustmentsEditor.saveError', 'Error saving changes: ') + error.message, 'error')
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   })
@@ -750,6 +775,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   // Teams and Match info are saved together with "Save changes"; leaving
   // with unsaved edits asks first (corrections are saved one by one)
   const handleClose = async () => {
+    if (leavingRef.current || savingRef.current) return
     if (changes.length > 0) {
       const ok = await confirmDialog({
         title: t('corrections.confirm.discardTitle', 'Discard unsaved changes?'),
@@ -760,7 +786,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       })
       if (!ok) return
     }
-    onClose?.()
+    await leave(() => onClose?.())
   }
 
   // After a correction at the match end: the result changed, so the account
@@ -870,7 +896,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
               size="xl"
               className="px-5 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:opacity-100"
               onClick={handleSave}
-              disabled={saving || changes.length === 0 || closed}
+              disabled={saving || leaving || changes.length === 0 || closed}
               data-help-id="manual-save-button"
             >
               {saving ? t('common.saving', 'Saving...') : t('corrections.action.saveChanges', 'Save changes')} {changes.length > 0 && `(${changes.length})`}
@@ -904,8 +930,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       </div>
       )}
 
-      {/* Content */}
-      <div className="p-4 sm:p-6" style={{ maxWidth: activeTab === 'corrections' ? '960px' : '1400px', margin: '0 auto' }}>
+      {/* Content: locked while the changes are saved and App switches back
+          (formLocked; a disabled fieldset disables every input, select and
+          button in it, the focused one too) */}
+      <div className="p-4 sm:p-6" style={{ maxWidth: activeTab === 'corrections' ? '960px' : '1400px', margin: '0 auto' }} aria-busy={formLocked || undefined}>
+        <fieldset disabled={formLocked} data-testid="manual-adjustments-form" style={{ margin: 0, padding: 0, border: 0, minWidth: 0 }}>
         {/* ==================== CORRECTIONS TAB ==================== */}
         {activeTab === 'corrections' && !closed && boardFits() && (
           <div className="ov-kit mb-3 flex justify-end">
@@ -1506,6 +1535,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
             </div>
           </div>
         )}
+        </fieldset>
       </div>
       {/* The shirt colour picker of the match info tab: the same picker,
           palette and custom-colour memory as Match setup; the colour is

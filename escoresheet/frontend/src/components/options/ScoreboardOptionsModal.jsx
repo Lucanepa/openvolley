@@ -29,6 +29,7 @@ import { diagnosticLogQuery } from '../../utils/activity/logQuery'
 import { reloadWithReason } from '../../diagnostics/reload'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
+import LookOptions from './LookOptions'
 import { useToolMode } from '../../utils/toolMode'
 import { readShowTapHints, setShowTapHints } from '../../utils/tapHints'
 
@@ -71,9 +72,10 @@ function InfoDot({ title }) {
   )
 }
 
-function ToggleSwitch({ value, onToggle }) {
+function ToggleSwitch({ value, onToggle, ...rest }) {
   // Kit Switch, lg; on = slate-900 here, not brand red (R4: over the scoreboard).
-  return <Switch size="lg" checked={!!value} onCheckedChange={() => onToggle()} className={cn('ml-4', value && 'bg-slate-900')} />
+  // `rest`: its name (aria-label), which the kit asks every switch for.
+  return <Switch size="lg" checked={!!value} onCheckedChange={() => onToggle()} className={cn('ml-4', value && 'bg-slate-900')} {...rest} />
 }
 
 function Row({ children, style }) {
@@ -938,6 +940,12 @@ export default function ScoreboardOptionsModal({
           <Row style={{ alignItems: 'flex-start' }}>
             <ThemeOption info={<InfoDot title={t('options.themeInfo')} />} />
           </Row>
+        </Section>
+
+        {/* The four look switches (utils/lookSettings); the device check
+            itself runs from Home, never with a match open */}
+        <Section title={t('options.look.title')}>
+          <LookOptions kit={{ Row, InfoDot, ToggleSwitch }} />
         </Section>
 
         <div className="mb-6 flex flex-col gap-3">

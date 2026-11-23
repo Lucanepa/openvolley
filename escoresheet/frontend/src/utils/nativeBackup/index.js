@@ -4,7 +4,7 @@
  * Options modal.
  */
 
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { detectBackupPlatform, isNativeBackupPlatform, createPlatformStore } from './platform'
 import { createNativeBackupEngine } from './engine'
 import { isContinuedElsewhere } from '../matchReopen'
@@ -62,10 +62,21 @@ function subscribe(listener) {
   return () => listeners.delete(listener)
 }
 const getSnapshot = () => (engine ? engine.getStatus() : EMPTY_STATUS)
+const noSubscribe = () => () => {}
 
-/** Live backup status { folder, lastBackup, lastFile, error, count } for the UI. */
-export function useNativeBackupStatus() {
-  const status = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+/**
+ * Live backup status { folder, lastBackup, lastFile, error, count } for the UI.
+ * paused: no re-render at each backup file (App while scoring, where nothing
+ * of it is shown); the status as it was when it paused, read fresh again
+ * once unpaused.
+ */
+export function useNativeBackupStatus({ paused = false } = {}) {
+  const frozen = useMemo(() => {
+    if (!paused) return null
+    const snapshot = getSnapshot()
+    return () => snapshot
+  }, [paused])
+  const status = useSyncExternalStore(frozen ? noSubscribe : subscribe, frozen || getSnapshot, frozen || getSnapshot)
   useEffect(() => {
     getNativeBackupEngine().then(e => e?.loadFolder())
   }, [])

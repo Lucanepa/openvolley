@@ -20,6 +20,7 @@ import { stripCacheBustParam } from './hooks/useServiceWorker'
 import { setAppEntry } from './utils/appEntry'
 import { captureScorerReturn } from './utils/scorerReturn'
 import { initTheme } from './utils/theme'
+import { initLook } from './utils/lookSettings'
 import { installErrorTrail } from './utils/diagnosticsInfo'
 
 // Not the scoretable: this page never saves a match backup (utils/appEntry)
@@ -39,6 +40,10 @@ stripCacheBustParam()
 installErrorTrail()
 
 initTheme()
+// The look switches the scorer set on this device (Options › Effects and
+// speed, utils/lookSettings): blur and animations off apply here too; a
+// switch never set keeps this page's look (blur and animations on)
+initLook({ storedOnly: true })
 // /board (livescore.openvolley.app/board, /livescore/board, <relay>/livescore/board):
 // the full-screen scoreboard page (components/board). A ?code= leaves the
 // address here, before anything else reads it (utils/boardCode).

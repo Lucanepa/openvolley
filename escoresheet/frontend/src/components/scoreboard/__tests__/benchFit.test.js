@@ -48,6 +48,102 @@ describe('fitBenchColumn (side column squares fit its height)', () => {
   })
 })
 
+// The oracle: the full search as it was written first (try 1, then the
+// minimum, then halve [min, 1] to two decimals). Whatever the column showed
+// before, fitBenchColumn must come to the same factor.
+function fullSearch(fitsAt, min = BENCH_FIT_MIN) {
+  if (fitsAt(1)) return 1
+  if (!fitsAt(min)) return min
+  let lo = min
+  let hi = 1
+  for (let i = 0; i < 7; i++) {
+    const mid = Math.round(((lo + hi) / 2) * 100) / 100
+    if (mid <= lo || mid >= hi) break
+    if (fitsAt(mid)) lo = mid
+    else hi = mid
+  }
+  return lo
+}
+
+// A column whose squares can change (a substitution, a sanction, a side
+// swap) and that counts its scrollHeight reads: each one is a forced layout
+// in the browser.
+function changingColumn({ height, fixed, squares }) {
+  const col = document.createElement('aside')
+  col.content = { fixed, squares }
+  col.reads = 0
+  const fit = () => Number(col.style.getPropertyValue('--bench-fit') || 1)
+  Object.defineProperty(col, 'clientHeight', { get: () => height })
+  Object.defineProperty(col, 'scrollHeight', {
+    get: () => { col.reads++; return Math.max(height, Math.ceil(col.content.fixed + col.content.squares * fit())) }
+  })
+  return col
+}
+const fitsWith = (height, { fixed, squares }) => (f) => Math.max(height, Math.ceil(fixed + squares * f)) - height <= 1
+
+describe('fitBenchColumn: the same factor as the full search, from any start', () => {
+  const heights = [400, 600, 800]
+  const fixeds = [100, 200, 300, 400, 500]
+  const squaresList = [100, 250, 400, 550, 700, 850, 1000]
+
+  it('over a grid of columns and of what they held before', () => {
+    let cases = 0
+    for (const height of heights) {
+      for (const fixed of fixeds) {
+        for (const before of squaresList) {
+          for (const squares of squaresList) {
+            const col = changingColumn({ height, fixed, squares: before })
+            fitBenchColumn(col)
+            col.content = { fixed, squares }
+            const expected = fullSearch(fitsWith(height, col.content))
+            expect(fitBenchColumn(col), `h ${height} fixed ${fixed} squares ${before} -> ${squares}`).toBe(expected)
+            expect(col.style.getPropertyValue('--bench-fit')).toBe(String(expected))
+            cases++
+          }
+        }
+      }
+    }
+    expect(cases).toBe(heights.length * fixeds.length * squaresList.length ** 2)
+  })
+
+  it('measures less: two reads for the run the observer starts after a fit, fewer over the grid', () => {
+    let reads = 0
+    let fullReads = 0
+    for (const height of heights) {
+      for (const fixed of fixeds) {
+        for (const before of squaresList) {
+          for (const squares of squaresList) {
+            const col = changingColumn({ height, fixed, squares: before })
+            fitBenchColumn(col)
+            col.content = { fixed, squares }
+            col.reads = 0
+            fitBenchColumn(col)
+            reads += col.reads
+            const fits = fitsWith(height, col.content)
+            fullSearch((f) => { fullReads++; return fits(f) })
+            // the squares changed size, so the observer fits again: same content
+            col.reads = 0
+            fitBenchColumn(col)
+            expect(col.reads).toBeLessThanOrEqual(2)
+          }
+        }
+      }
+    }
+    expect(reads).toBeLessThan(fullReads)
+  })
+
+  it('after the other column set a smaller shared factor on this one', () => {
+    for (const height of heights) {
+      for (const squares of squaresList) {
+        const col = changingColumn({ height, fixed: 200, squares })
+        const own = fitBenchColumn(col)
+        col.style.setProperty('--bench-fit', String(BENCH_FIT_MIN))
+        expect(fitBenchColumn(col)).toBe(own)
+      }
+    }
+  })
+})
+
 describe('createBenchFitGroup (both side columns)', () => {
   const fakeWindow = () => {
     const frames = []

@@ -57,10 +57,10 @@ import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload,
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { liveCodeForMatch, cachedCourtToken, getLiveCourt, liveListedForMatch } from '../utils/globalLive'
 import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
-import { useRelayTablets } from '../hooks/useRealtimeConnection'
+import ToolbarClock from './scoreboard/ToolbarClock'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
-import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
+import { openAppWindow, openFailedMessageKey, isInAppViewOpen, onInAppViewChange } from '../utils/openAppWindow'
 import { scoresheetErrorFromEvent } from '../utils/scoresheetErrorMessage'
 import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
@@ -113,6 +113,8 @@ import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
+import { liteGraphicsOn, privacyCoverFill } from '../utils/liteGraphics'
+import { useLook } from '../utils/lookSettings'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, officialsAsRoles, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { setSummaryFit } from './scoreboard/setSummaryFit'
@@ -528,17 +530,6 @@ function readScoreboard(matchId) {
       return aTime - bTime
     })
 
-    // Log all action IDs to track sequence numbers (show only base integer IDs, not decimals)
-    const baseActionIds = events
-      .map(e => {
-        const seq = e.seq || 0
-        return Math.floor(seq) // Get integer part only
-      })
-      .filter(id => id > 0)
-      .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
-
-    // Action IDs tracked internally
-
     const result = {
       set: currentSet,
       match,
@@ -569,13 +560,20 @@ export const preloadScoreboard = (matchId) => preload(scoreboardKey(matchId), ()
 // side-out rotations followed those (stress test 2026-10-25)
 const newestFirst = (a, b) => compareBySeq(b, a)
 
+// A match over opened here: how long after a failed try Match End is asked
+// for again (the "Check if match is already finished" effect)
+export const FINISHED_MATCH_RETRY_MS = 10000
+
 export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onOpenMatchInfo, onTriggerEventBackup }) {
   // diagnostics mode: React commits per user action (nothing while it is off)
   useDiagCommits('scoreboard')
   const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { vmin } = useScaledLayout()
-  const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
+  // Options › Effects and speed: the line-up covers (privacyCoverFill) follow
+  // the blur switch at once
+  useLook()
+  const { flush: flushSyncQueue } = useSyncQueue({ watchStatus: false })
   const cLogger = useComponentLogging('Scoreboard')
   const { syncState, syncSetEnd, resetSyncState } = useSequentialSync()
   const [syncModalOpen, setSyncModalOpen] = useState(false)
@@ -587,7 +585,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncProceedCallbackRef.current = null
     }
   }, [])
-  const [now, setNow] = useState(() => new Date())
+  // No `now` state: the toolbar clock ticks in ToolbarClock, so the whole
+  // screen does not render every second
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   )
@@ -745,7 +744,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const scorerAttentionTriggerRef = useRef(scorerAttentionTrigger)
   useEffect(() => { timeoutModalRef.current = timeoutModal }, [timeoutModal])
   useEffect(() => { scorerAttentionTriggerRef.current = scorerAttentionTrigger }, [scorerAttentionTrigger])
-  const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
+  const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: seconds left when (re)started, started: boolean, anchor?, duration?: its clock } | null
   // The break between two sets runs on this screen (set by the effect after
   // isBetweenSets): every live-state push in it keeps the break
   const breakRunningRef = useRef(false)
@@ -990,6 +989,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Relay refused this scoreboard (another device holds the match id, or too
   // many failed claims): shown to the scorer instead of failing silently.
   const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
+  // Shown for 45 s from the refusal: a timer of its own (the screen's 1 s
+  // clock used to hide it). A refusal again is a new object, from 45 s again.
+  useEffect(() => {
+    if (!relayRejection) return undefined
+    const timer = setTimeout(() => setRelayRejection(prev => (prev === relayRejection ? null : prev)), Math.max(0, relayRejection.at + 45000 - Date.now()))
+    return () => clearTimeout(timer)
+  }, [relayRejection])
   const noSleepVideoRef = useRef(null) // Video element for NoSleep fallback
   const checkAndRequestCaptainOnCourtRef = useRef(null) // Store latest captain check function
   const logEventRef = useRef(null) // Store latest logEvent function to avoid circular dependencies
@@ -1073,22 +1079,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         noSleepVideoRef.current = null
       }
     }
-  }, [])
-  const [connectionStatuses, setConnectionStatuses] = useState({
-    api: 'unknown',
-    server: 'unknown',
-    websocket: 'unknown',
-    scoreboard: 'unknown',
-    match: 'unknown',
-    db: 'unknown'
-  })
-  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
-  const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
-
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(timer)
   }, [])
 
   // Single-tab enforcement - prevent opening scoresheet in multiple tabs for same match
@@ -1278,11 +1268,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [matchId])
 
-  // Send heartbeat to indicate scoresheet is active
+  // Send heartbeat to indicate scoresheet is active: the match's updatedAt,
+  // which only says "opened lately" (currentMatch.js, the 7-day rule;
+  // deviceSelfCheck.js lastActivityAt, after the newest event). Every 5 min,
+  // not every 10 s: each write re-read the whole match here, re-ran App's
+  // match queries and, with the in-app view open, the scoresheet's read.
+  // Backups ignore it (matchWriteHook.js VOLATILE_MATCH_KEY). Not written
+  // under the in-app view; once when it closes and when the app is back.
   useEffect(() => {
     if (!matchId) return
 
+    const HEARTBEAT_MS = 5 * 60 * 1000
     const updateHeartbeat = async () => {
+      if (isInAppViewOpen()) return
       try {
         await db.matches.update(matchId, {
           updatedAt: new Date().toISOString()
@@ -1295,10 +1293,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Initial heartbeat
     updateHeartbeat()
 
-    // Update heartbeat every 10 seconds
-    const interval = setInterval(updateHeartbeat, 10000)
+    const interval = setInterval(updateHeartbeat, HEARTBEAT_MS)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') updateHeartbeat()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    const offInAppView = onInAppViewChange((open) => {
+      if (!open) updateHeartbeat()
+    })
 
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibility)
+      offInAppView()
+    }
   }, [matchId])
 
   // Clear confirmed set end tracking when match changes
@@ -3056,105 +3064,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [matchId])
 
-
-
-  // Check connection statuses
-  const matchStatus = matchLoaded ? (data.match.status ?? null) : undefined
-  const checkConnectionStatuses = useCallback(async () => {
-    const statuses = {
-      api: 'unknown',
-      server: 'unknown',
-      websocket: 'unknown',
-      scoreboard: 'unknown',
-      match: 'unknown',
-      db: 'unknown'
-    }
-    const debugInfo = {}
-
-    // Get the backend URL - use VITE_BACKEND_URL if configured, otherwise relative URL
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || ''
-    const isStaticHosting = !import.meta.env.DEV && (
-      window.location.hostname.includes('github.io') ||
-      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
-    )
-
-    // Skip API checks if on static hosting AND no backend URL configured
-    if (isStaticHosting && !backendUrl) {
-      statuses.api = 'n/a'
-      statuses.server = 'n/a'
-      statuses.websocket = 'n/a'
-      debugInfo.api = { status: 'n/a', message: 'Static hosting - no backend configured' }
-      debugInfo.server = { status: 'n/a', message: 'Static hosting - no backend configured' }
-      debugInfo.websocket = { status: 'n/a', message: 'Static hosting - no WebSocket configured' }
-    } else try {
-      // Use configured backend URL or relative URL
-      // A health check: /api/server/status (every relay has it), not the
-      // match list, which grows with every published match
-      const apiUrl = backendUrl ? `${backendUrl}/api/server/status` : '/api/server/status'
-      const response = await fetch(apiUrl)
-      if (response.ok) {
-        statuses.api = 'connected'
-        statuses.server = 'connected'
-        debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
-        debugInfo.server = { status: 'connected', message: 'Server is reachable' }
-      } else {
-        statuses.api = 'disconnected'
-        statuses.server = 'disconnected'
-        debugInfo.api = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
-        debugInfo.server = { status: 'disconnected', message: `Server returned status ${response.status}: ${response.statusText}` }
-      }
-    } catch (err) {
-      statuses.api = 'disconnected'
-      statuses.server = 'disconnected'
-      const errMsg = import.meta.env.DEV
-        ? `Network error: ${err.message || 'Failed to connect to API'}`
-        : 'Server not available (running in standalone mode)'
-      debugInfo.api = { status: 'disconnected', message: errMsg }
-      debugInfo.server = { status: 'disconnected', message: errMsg }
-    }
-
-    // Relay socket state. No throwaway probe socket: this check used to open
-    // one whenever wsRef was empty (it always was, see the relay effect), on
-    // every heartbeat write and rally.
-    const ws = wsRef.current
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      statuses.websocket = 'connected'
-    } else if (ws && ws.readyState === WebSocket.CONNECTING) {
-      statuses.websocket = 'connecting'
-    } else {
-      statuses.websocket = matchId ? 'connecting' : 'disconnected'
-    }
-
-    // Check Scoreboard connection (same as server for now)
-    statuses.scoreboard = statuses.server
-
-    // Check Match status
-    if (matchStatus !== undefined) {
-      statuses.match = matchStatus === 'live' ? 'live' : matchStatus === 'scheduled' ? 'scheduled' : matchStatus === 'final' ? 'final' : 'unknown'
-    } else {
-      statuses.match = 'no_match'
-    }
-
-    // Check DB (IndexedDB) - always available in browser
-    try {
-      await db.matches.count()
-      statuses.db = 'connected'
-    } catch (err) {
-      statuses.db = 'disconnected'
-    }
-
-    setConnectionStatuses(statuses)
-    // Primitives only: the heartbeat rewrites the match every 10 s, and a new
-    // match object re-ran this check (and its probes) each time.
-  }, [matchLoaded, matchStatus, matchId])
-
-  // Periodically check connection statuses (60s interval to reduce console spam when server is down)
-  useEffect(() => {
-    checkConnectionStatuses()
-    const interval = setInterval(checkConnectionStatuses, 60000) // Check every 60 seconds
-    return () => clearInterval(interval)
-  }, [checkConnectionStatuses])
-
   const ensuringSetRef = useRef(false)
   const setCreationInProgressRef = useRef(false) // Prevent race condition: don't auto-create set while confirmSetEndTime is running
 
@@ -3296,6 +3205,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ensuringSetRef.current = false
       })
   }, [data, ensureActiveSet, matchId])
+
+  // The 10 s heartbeat's re-read re-ran the effect above while the match had
+  // no unfinished set: the only retry when its first try was skipped (a set
+  // being created by confirmSetEndTime, or one already running), else the
+  // screen stayed on 'Loading...'. The heartbeat is rare now: the same
+  // guarded call every 10 s for as long as there is no set.
+  const awaitsActiveSet = !!(matchId && data && !data.set)
+  useEffect(() => {
+    if (!awaitsActiveSet) return undefined
+    const timer = setInterval(() => {
+      if (ensuringSetRef.current || setCreationInProgressRef.current) return
+      ensuringSetRef.current = true
+      ensureActiveSet()
+        .catch(err => {
+          // Silently handle error, but ensure lock is released
+          setCreationInProgressRef.current = false
+        })
+        .finally(() => {
+          ensuringSetRef.current = false
+        })
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [awaitsActiveSet, ensureActiveSet])
 
   // Sync remarks text when modal opens
   useEffect(() => {
@@ -3551,15 +3483,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // pressing Enter at the whistle and A a moment later lost the point.
   const checkRallyTap = useRallyTapGuard(rallyStatus)
 
+  // The events of one set, for rallyStatusOf, isFirstRallyOf and
+  // startingLineupsIn: they skip every row whose setIndex !== setIndex
+  // (domain/rally), so the set's rows ([matchId+setIndex], in primary-key
+  // order as the matchId index gives them: ties in seq break the same way)
+  // answer as the whole match does, at a fraction of the read late in a
+  // match. A set index that is no number (none: rows without a setIndex
+  // count there, which that index does not hold) reads the whole match.
+  const readSetEvents = useCallback((setIndex) => (
+    typeof setIndex === 'number' && Number.isFinite(setIndex)
+      ? db.events.where('[matchId+setIndex]').equals([matchId, setIndex]).toArray()
+      : db.events.where('matchId').equals(matchId).toArray()
+  ), [matchId])
+
   // The rally of the set being played, read from the database (inside an
   // action: its transaction). A tap is checked against it, not against the
   // screen, which on a slow tablet can be seconds behind
   const readRallyStatus = useCallback(async () => {
     const set = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
     if (!set) return 'idle'
-    const events = await db.events.where('matchId').equals(matchId).toArray()
-    return rallyStatusOf(events, set.index)
-  }, [matchId])
+    return rallyStatusOf(await readSetEvents(set.index), set.index)
+  }, [matchId, readSetEvents])
 
   substitutionGuardRef.current = {
     events: data?.events,
@@ -3713,9 +3657,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // pending; time-outs also in the set interval, where one would count in
   // the next set: R15, R18.1), or null (domain/interruptionRequests.js)
   const intervalRunning = isBetweenSets && betweenSetsCountdown !== null
-  const requestBlockFor = (teamKey, kind) => (
-    data?.set ? requestBlockReason(data.events, data.set.index, teamKey, kind, { intervalRunning }) : null
-  )
+  // Once per change of the log, the set or the interval: the TO counters
+  // and the block lines asked it about 16 times a render, each a few scans
+  // and a sort of the set's events (same function, same arguments)
+  const requestBlocks = useMemo(() => {
+    if (!data?.set) return null
+    const of = (teamKey, kind) => requestBlockReason(data.events, data.set.index, teamKey, kind, { intervalRunning })
+    return {
+      home: { timeout: of('home', 'timeout'), substitution: of('home', 'substitution') },
+      away: { timeout: of('away', 'timeout'), substitution: of('away', 'substitution') }
+    }
+  }, [data?.events, data?.set, intervalRunning])
+  const requestBlockFor = (teamKey, kind) => {
+    const cached = requestBlocks?.[teamKey]
+    if (cached && kind in cached) return cached[kind]
+    return data?.set ? requestBlockReason(data.events, data.set.index, teamKey, kind, { intervalRunning }) : null
+  }
   const timeoutBlocked = (side) => !!requestBlockFor(mapSideToTeamKey(side), 'timeout')
   // The one line under a team's TO / SUB counters while they are closed
   const requestBlockLine = (side) => {
@@ -3795,7 +3752,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       setBetweenSetsCountdown(null)
       return
     }
-    setBetweenSetsCountdown(prev => (prev && prev.started ? { ...prev, countdown: remaining } : prev))
+    // the digits and the bar count to the new length (their clock's duration)
+    const duration = betweenSetsInitialCountdownRef.current
+    setBetweenSetsCountdown(prev => (prev && prev.started ? { ...prev, countdown: remaining, duration } : prev))
   }, [longIntervalOn]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { longIntervalSeenRef.current = null }, [matchId])
 
@@ -3825,28 +3784,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Checked every 100 ms; the state changes only when the shown second does
-    // (a new object every 100 ms rendered the whole scoring screen ten times
-    // a second for the whole set interval, as the time-out countdown did)
+    // The digits and the bar tick by themselves from the countdown's clock
+    // (CountdownSeconds, breakClock), given to them once here: the shown
+    // second was this state, so the whole scoring screen rendered once a
+    // second for the whole interval, with the line-up dialog open over it
+    // (the time-out countdown was changed the same way)
+    const anchor = betweenSetsAnchorRef.current
+    const duration = betweenSetsInitialCountdownRef.current
+    if (betweenSetsCountdown.anchor !== anchor || betweenSetsCountdown.duration !== duration) {
+      setBetweenSetsCountdown(prev => (prev && prev.started ? { ...prev, anchor, duration } : prev))
+      return
+    }
+
+    // Checked every 100 ms; the state changes only when the clock runs out
     const timer = setInterval(() => {
       const remaining = secondsLeft(betweenSetsAnchorRef.current, betweenSetsInitialCountdownRef.current)
-      if (remaining === betweenSetsCountdown.countdown) return
+      if (remaining > 0) return
 
-      if (remaining <= 0) {
-        // Auto-end the set interval when countdown reaches 0
-        countdownDismissedRef.current = true
-        setBetweenSetsCountdown(null)
-        betweenSetsStartTimestampRef.current = null // Reset for next interval
-      } else {
-        setBetweenSetsCountdown(prev => {
-          if (!prev || !prev.started) return prev
-          return { ...prev, countdown: remaining }
-        })
-      }
+      // Auto-end the set interval when countdown reaches 0
+      countdownDismissedRef.current = true
+      setBetweenSetsCountdown(null)
+      betweenSetsStartTimestampRef.current = null // Reset for next interval
     }, 100)
 
     return () => clearInterval(timer)
   }, [betweenSetsCountdown])
+
+  // The running interval's clock for its digits and bar (CountdownSeconds,
+  // on the desktop and the phone): null in its first frame, which shows the
+  // seconds it started with (betweenSetsCountdown.countdown)
+  const breakClock = useMemo(() => (
+    betweenSetsCountdown?.anchor != null && betweenSetsCountdown?.duration != null
+      ? { anchor: betweenSetsCountdown.anchor, duration: betweenSetsCountdown.duration }
+      : null
+  ), [betweenSetsCountdown?.anchor, betweenSetsCountdown?.duration])
 
   // The change of courts in the deciding set on page load/refresh: the
   // scoring screen opened with a team on 8 and the courts not changed (the
@@ -3872,6 +3843,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.set, data?.match])
 
   // Check if set has ended on page load/refresh (score indicates set over but modal not shown)
+  // Checked again when a set end or forfait flow ends (setTransitionLoading
+  // cleared, released with the set-creation lock): a check skipped under the
+  // lock was re-run by the 10 s heartbeat's re-read, the only retry when the
+  // flow failed with the set won and still open (a set forfait whose forfait
+  // event could not be written).
   useEffect(() => {
     // Don't run if set creation is in progress (prevents race condition)
     if (setCreationInProgressRef.current) return
@@ -3912,7 +3888,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         setEndModalDismissedRef.current = null
       }
     }
-  }, [data?.set, data?.sets, setEndTimeModal])
+  }, [data?.set, data?.sets, setEndTimeModal, setTransitionLoading])
 
   // A set end confirmed in another tab (the set rows are shared): this tab's
   // dialog closes, there is nothing left to confirm
@@ -4664,14 +4640,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       links
     }
   }, [data, leftIsHome, getTeamLineupState, teamAKey, data?.events])
-
-  // Date and time apart, joined by a space: toLocaleString puts a comma
-  // between them ("08/11/2026, 09:51:10")
-  const formatTimestamp = useCallback(date => {
-    const day = date.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' })
-    const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-    return `${day} ${time}`
-  }, [])
 
   // Player discs wear the team's shirt colour, the libero the colour that
   // stands out most from both teams (the two liberos picked together, so
@@ -6017,7 +5985,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         console.warn('[Scoreboard] Point on a match that is over: ignored')
         return
       }
-      if (tap && await readRallyStatus() !== 'in_play') {
+      // The match's sets and events, read once: every read of the events is
+      // a whole-match read on the path from the tap to the score. The tap
+      // check, the serve before the point and the side-out's line-ups below
+      // all use these. No line-up or libero_exit row of this point is
+      // written before those uses (the set score and the point row come
+      // first, the libero exit and the rotation after the line-up lookups in
+      // writeSideOutRows), and they keep only line-up rows. The whole match,
+      // not the set ([matchId+setIndex]): servingTeamFromLog counts a row
+      // without a setIndex as set 1 (domain/rules).
+      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+      const allEventsBeforePoint = await db.events
+        .where('matchId')
+        .equals(matchId)
+        .toArray()
+      // CRITICAL: the set being played from IndexedDB, not from the screen
+      // (stale after set transitions): per index the newest row, as the live query
+      const freshCurrentSet = currentSetOf(allSets)
+      // (as readRallyStatus: no set, no rally in play)
+      if (tap && (!freshCurrentSet || rallyStatusOf(allEventsBeforePoint, freshCurrentSet.index) !== 'in_play')) {
         console.warn('[Scoreboard] Point tap without a rally in play (the screen was behind): ignored')
         return
       }
@@ -6038,18 +6024,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
-      // CRITICAL: Query fresh current set from IndexedDB to avoid stale data after set transitions
-      // Use same deduplication logic as useLiveQuery: prefer highest ID for duplicate indices
-      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-      const setsByIndex = new Map()
-      for (const set of allSets) {
-        const existing = setsByIndex.get(set.index)
-        if (!existing || set.id > existing.id) {
-          setsByIndex.set(set.index, set)
-        }
-      }
-      const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
-      const freshCurrentSet = dedupedSets.find(s => !s.finished) || dedupedSets[dedupedSets.length - 1]
       if (!freshCurrentSet) return
       // A set its score has won takes no point more: its Set end dialog is
       // open, its end not confirmed yet (a 26th point under it was kept in
@@ -6064,12 +6038,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const homePoints = teamKey === 'home' ? newPoints : (freshCurrentSet.homePoints || 0)
       const awayPoints = teamKey === 'away' ? newPoints : (freshCurrentSet.awayPoints || 0)
 
-      // Check who has serve BEFORE this point by querying database directly
+      // Check who has serve BEFORE this point, from the database (read above)
       // The team that scored the last point has serve, so check the last point in DB
-      const allEventsBeforePoint = await db.events
-        .where('matchId')
-        .equals(matchId)
-        .toArray()
       const pointEventsBefore = allEventsBeforePoint
         .filter(e => e.type === 'point' && e.setIndex === freshCurrentSet.index)
         .sort(newestFirst) // Most recent first
@@ -6109,12 +6079,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const writeSideOutRows = async (pointSeq) => {
         if (scoringTeamHadServe) return
 
-        // Query database directly for the most recent lineup (data.events might be stale)
-        const allLineupEvents = await db.events
-          .where('matchId')
-          .equals(matchId)
-          .toArray()
-        const teamLineupEvents = allLineupEvents
+        // The most recent lineup, from the database (data.events might be
+        // stale): the point's read above, no line-up row written since
+        const teamLineupEvents = allEventsBeforePoint
           .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
           .sort(newestFirst) // Most recent first
 
@@ -6175,12 +6142,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const [position, liberoNumber] = liberoInFrontRow
 
               // Find the original player that should be in this position
-              // Query database directly for lineup events (data.events might be stale)
-              const allLineupEventsForLibero = await db.events
-                .where('matchId')
-                .equals(matchId)
-                .toArray()
-              const allLineupEventsFiltered = allLineupEventsForLibero
+              // Lineup events from the database (data.events might be stale):
+              // the point's read, no line-up row written since
+              const allLineupEventsFiltered = allEventsBeforePoint
                 .filter(e =>
                   e.type === 'lineup' &&
                   e.payload?.team === teamKey &&
@@ -6512,7 +6476,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // reaches. Awaited (Dexie reads only): its dialog opens with the point
       await afterPointScored({ set: freshCurrentSet, homePoints, awayPoints, teamKey })
     }),
-    [data?.set, data?.events, logEvent, mapSideToTeamKey, afterPointScored, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi, readRallyStatus]
+    [data?.set, data?.events, logEvent, mapSideToTeamKey, afterPointScored, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi]
   )
 
   // One action (runAction): a second tap while it is written is dropped
@@ -6540,12 +6504,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.warn('[Scoreboard] Start rally on a match that is over: ignored')
       return
     }
-    if (await readRallyStatus() === 'in_play') {
+    // The sets and the set's events, read once for the in-play check, the
+    // set won and the first-rally gates below (nothing is written before the
+    // rally_start). The events of the set being played only (readSetEvents):
+    // those checks look at no other row; none for the set, the whole match
+    const playedSet = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
+    const setIndexNow = playedSet?.index ?? data?.set?.index
+    const eventsNow = await readSetEvents(setIndexNow)
+    // (as readRallyStatus: no set, no rally in play)
+    if (playedSet && rallyStatusOf(eventsNow, playedSet.index) === 'in_play') {
       console.warn('[Scoreboard] Start rally with a rally in play (the screen was behind): ignored')
       return
     }
     // Nor in a set its score has won (its Set end dialog is open)
-    const playedSet = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
     if (playedSet && getSetResult(playedSet.homePoints, playedSet.awayPoints, playedSet.index, { targets: setTargetsRef.current }).isSetWon) {
       console.warn('[Scoreboard] Start rally in a set its score has already won: ignored')
       return
@@ -6583,9 +6554,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     // If this is the first rally, show set start time confirmation. Read
-    // from the database, as the gates below: the screen can be behind
-    const eventsNow = await db.events.where('matchId').equals(matchId).toArray()
-    const setIndexNow = playedSet?.index ?? data?.set?.index
+    // from the database (above), as the gates below: the screen can be behind
     if (isFirstRallyOf(eventsNow, setIndexNow)) {
       // Both starting line-ups first (an Easy match excepted). Start set is
       // disabled without them, but Enter (keyboard scoring) came here
@@ -6654,7 +6623,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       clearTimeout(recentSubFlashTimeoutRef.current)
     }
     deferUi(() => setRecentlySubstitutedPlayers([]))
-  }), [logEvent, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus, showAlert, t])
+  }), [logEvent, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readSetEvents, showAlert, t])
 
   // A tap on the rally buttons (Start rally, Point A | Point B), on every
   // layout, with its click event: none that is the end of the tap before it
@@ -9183,9 +9152,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   )
 
   // Get substitution details with scores
+  // Kept per side until the log, the set or the sides change: the SUB
+  // counters asked for them twice a render each (a pass over the log per
+  // substitution); nobody changes the list
+  const substitutionDetailsBySide = useMemo(() => new Map(), [data?.events, data?.set, mapSideToTeamKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const getSubstitutionDetails = useCallback(
     side => {
       if (!data?.events || !data?.set) return []
+      const cacheable = side === 'left' || side === 'right'
+      if (cacheable && substitutionDetailsBySide.has(side)) return substitutionDetailsBySide.get(side)
       const teamKey = mapSideToTeamKey(side)
       const setIndex = data.set.index
 
@@ -9226,9 +9201,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       })
 
+      if (cacheable) substitutionDetailsBySide.set(side, details)
       return details
     },
-    [data?.events, data?.set, mapSideToTeamKey]
+    [data?.events, data?.set, mapSideToTeamKey, substitutionDetailsBySide]
   )
 
   const handlePlaceholder = message => () => {
@@ -9262,20 +9238,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.events])
 
   // Get substitution history for a team in the current set
+  // Built once per change of the log or the set for both teams: the bench
+  // chips asked it several times each per render, and each call looked up
+  // every substitution's place in the log with a pass over all events
+  // (eventIndex: the first event with its id, as findIndex gave). The arrays
+  // are shared, so nobody may change them (frozen in development).
+  const substitutionHistoryOf = (events, setIndex, teamKey, indexOf) => events
+    .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === setIndex)
+    .sort(compareBySeq)
+    .map((e, idx) => ({
+      ...e,
+      index: idx,
+      eventIndex: indexOf(e.id)
+    }))
+  const substitutionHistoryByTeam = useMemo(() => {
+    if (!data?.events || !data?.set) return null
+    const firstIndex = new Map()
+    data.events.forEach((e, i) => { if (!firstIndex.has(e.id)) firstIndex.set(e.id, i) })
+    // findIndex compares with ===: no event's id equals NaN
+    const indexOf = (id) => (Number.isNaN(id) ? -1 : firstIndex.get(id))
+    const of = (teamKey) => {
+      const list = substitutionHistoryOf(data.events, data.set.index, teamKey, indexOf)
+      if (import.meta.env.DEV) {
+        list.forEach(Object.freeze)
+        Object.freeze(list)
+      }
+      return list
+    }
+    return { home: of('home'), away: of('away') }
+  }, [data?.events, data?.set]) // eslint-disable-line react-hooks/exhaustive-deps
   const getSubstitutionHistory = useCallback((teamKey) => {
     if (!data?.events || !data?.set) return []
-
-    const substitutions = data.events
-      .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === data.set.index)
-      .sort(compareBySeq)
-      .map((e, idx) => ({
-        ...e,
-        index: idx,
-        eventIndex: data.events.findIndex(ev => ev.id === e.id)
-      }))
-
-    return substitutions
-  }, [data?.events, data?.set])
+    if (teamKey === 'home' || teamKey === 'away') return substitutionHistoryByTeam[teamKey]
+    return substitutionHistoryOf(data.events, data.set.index, teamKey, (id) => data.events.findIndex(ev => ev.id === id))
+  }, [data?.events, data?.set, substitutionHistoryByTeam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const leftTeamSubstitutionHistory = useMemo(() =>
     getSubstitutionHistory(leftIsHome ? 'home' : 'away'),
@@ -9373,26 +9369,78 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }
 
+  // What the per-player checks below look up, in one pass over the log per
+  // change of it: each bench chip, court disc, libero and official ran those
+  // checks with a pass over all events each, about a dozen a chip, every
+  // render. Per team (payload.team, as `===`), keyed by the number as a
+  // string (`String(a) === String(b)`), each with the predicate of the check
+  // that reads it, unchanged:
+  //  - outExpelled / outDisqualified / outBarred: the substitutions that
+  //    took the player out expelled, disqualified, exceptionally (for the match)
+  //  - disqualified: his disqualifications (the sanctioned number, a
+  //    playing coach's too); expelledInSets: the sets (setIndex || 1) of
+  //    his expulsions
+  //  - formalByNumber / formalByRole: the formal sanctions (warning,
+  //    penalty, expulsion, disqualification) by number / role, in log order
+  //  - lastPointAt: per set (setIndex || 1), the log position of its last point
+  const playerLogIndex = useMemo(() => {
+    if (!data?.events) return null
+    const byTeam = () => new Map()
+    const inTeam = (map, team) => {
+      let m = map.get(team)
+      if (!m) map.set(team, m = new Map())
+      return m
+    }
+    const mark = (map, team, key) => inTeam(map, team).set(key, true)
+    const push = (map, team, key, value) => {
+      const m = inTeam(map, team)
+      let list = m.get(key)
+      if (!list) m.set(key, list = [])
+      list.push(value)
+    }
+    const index = {
+      outExpelled: byTeam(), outDisqualified: byTeam(), outBarred: byTeam(),
+      disqualified: byTeam(), expelledInSets: byTeam(),
+      formalByNumber: byTeam(), formalByRole: byTeam(),
+      lastPointAt: new Map()
+    }
+    const FORMAL = ['warning', 'penalty', 'expulsion', 'disqualification']
+    data.events.forEach((e, i) => {
+      if (e.type === 'substitution') {
+        const team = e.payload?.team
+        const out = String(e.payload?.playerOut)
+        if (e.payload?.isExpelled === true) mark(index.outExpelled, team, out)
+        if (e.payload?.isDisqualified === true) mark(index.outDisqualified, team, out)
+        if (e.payload?.isExceptional === true && substitutionBarsForMatch(e.payload)) mark(index.outBarred, team, out)
+      } else if (e.type === 'sanction') {
+        const team = e.payload?.team
+        const type = e.payload?.type
+        if (type === 'disqualification' || type === 'expulsion') {
+          const number = String(sanctionedPlayerNumber(e.payload))
+          if (type === 'disqualification') mark(index.disqualified, team, number)
+          else push(index.expelledInSets, team, number, e.setIndex || 1)
+        }
+        if (FORMAL.includes(type)) {
+          push(index.formalByNumber, team, String(e.payload?.playerNumber), e)
+          push(index.formalByRole, team, e.payload?.role, e)
+        }
+      } else if (e.type === 'point') {
+        index.lastPointAt.set(e.setIndex || 1, i)
+      }
+    })
+    return index
+  }, [data?.events])
+
   // Helper functions to check substitution types
   const wasSubstitutedDueToExpulsion = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return false
-    return data.events.some(e =>
-      e.type === 'substitution' &&
-      e.payload?.team === teamKey &&
-      String(e.payload?.playerOut) === String(playerNumber) &&
-      e.payload?.isExpelled === true
-    )
-  }, [data?.events])
+    return playerLogIndex.outExpelled.get(teamKey)?.has(String(playerNumber)) === true
+  }, [data?.events, playerLogIndex])
 
   const wasSubstitutedDueToDisqualification = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return false
-    return data.events.some(e =>
-      e.type === 'substitution' &&
-      e.payload?.team === teamKey &&
-      String(e.payload?.playerOut) === String(playerNumber) &&
-      e.payload?.isDisqualified === true
-    )
-  }, [data?.events])
+    return playerLogIndex.outDisqualified.get(teamKey)?.has(String(playerNumber)) === true
+  }, [data?.events, playerLogIndex])
 
   // Out for the match by an exceptional substitution (FIVB 15.7, 15.8): an
   // injured, expelled or disqualified player replaced beyond the legal
@@ -9401,14 +9449,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // for that set only, as wasSubstitutedDueToExpulsion handles.
   const wasExceptionallySubstituted = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return false
-    return data.events.some(e =>
-      e.type === 'substitution' &&
-      e.payload?.team === teamKey &&
-      String(e.payload?.playerOut) === String(playerNumber) &&
-      e.payload?.isExceptional === true &&
-      substitutionBarsForMatch(e.payload)
-    )
-  }, [data?.events])
+    return playerLogIndex.outBarred.get(teamKey)?.has(String(playerNumber)) === true
+  }, [data?.events, playerLogIndex])
 
   const canPlayerReEnter = useCallback((teamKey, playerNumber, currentSetIndex) => {
     if (!data?.events || !currentSetIndex) return true
@@ -9856,14 +9898,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Check if player is disqualified - disqualified players cannot re-enter
     // (numbers as strings: a sanction from the court disc carries a string;
-    // also one given to him as a team official, a playing coach)
-    const playerSanctions = data.events.filter(e =>
-      e.type === 'sanction' &&
-      e.payload?.team === teamKey &&
-      String(sanctionedPlayerNumber(e.payload)) === String(playerNumber) &&
-      e.payload?.type === 'disqualification'
-    )
-    if (playerSanctions.length > 0) return false // Disqualified, cannot re-enter
+    // also one given to him as a team official, a playing coach;
+    // playerLogIndex: the sanctions of that kind, team and number)
+    if (playerLogIndex.disqualified.get(teamKey)?.has(String(playerNumber))) return false // Disqualified, cannot re-enter
 
     const substitutions = getSubstitutionHistory(teamKey)
 
@@ -9879,23 +9916,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Check if player was expelled - expelled players can only re-enter in next set
     // If expelled in current set, cannot re-enter in current set
-    const expulsionSanctions = data.events.filter(e =>
-      e.type === 'sanction' &&
-      e.payload?.team === teamKey &&
-      String(sanctionedPlayerNumber(e.payload)) === String(playerNumber) &&
-      e.payload?.type === 'expulsion' &&
-      (e.setIndex || 1) === data.set.index
-    )
-    if (expulsionSanctions.length > 0) {
+    // (the sets, setIndex || 1, of his expulsions)
+    if (playerLogIndex.expelledInSets.get(teamKey)?.get(String(playerNumber))?.includes(data.set.index)) {
       return false // Expelled in this set, can only re-enter next set
     }
 
-    // Check if there was a point change since substitution
-    const eventsAfterSub = data.events
-      .filter((e, idx) => idx > lastSubstitutionIndex && (e.setIndex || 1) === data.set.index)
-      .sort(compareBySeq)
-
-    const pointAfterSub = eventsAfterSub.find(e => e.type === 'point')
+    // Check if there was a point change since substitution: a point of this
+    // set (setIndex || 1) later in the log than the substitution
+    const pointAfterSub = playerLogIndex.lastPointAt.get(data.set.index) > lastSubstitutionIndex
 
     if (!pointAfterSub) return false // No point change yet
 
@@ -9908,7 +9936,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (hasComeBack) return false // Already came back
 
     return true // Can come back
-  }, [data?.events, data?.set, getSubstitutionHistory])
+  }, [data?.events, data?.set, getSubstitutionHistory, playerLogIndex])
 
   // Check if a bench player already came back (got in and out again)
   const hasPlayerComeBack = useCallback((teamKey, playerNumber) => {
@@ -9927,10 +9955,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const lastSubstitutionIn = playerSubstitutionsIn[playerSubstitutionsIn.length - 1]
     const lastSubstitutionInIndex = lastSubstitutionIn.eventIndex
 
-    // Check if player was substituted out after being substituted in
+    // Check if player was substituted out after being substituted in (its
+    // eventIndex: data.events.findIndex(e => e.id === s.id), worked out once)
     const hasBeenSubstitutedOut = substitutions.some(s =>
       String(s.payload?.playerOut) === String(playerNumber) &&
-      data.events.findIndex(e => e.id === s.id) > lastSubstitutionInIndex
+      s.eventIndex > lastSubstitutionInIndex
     )
 
     return hasBeenSubstitutedOut
@@ -9944,11 +9973,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // 22.11.2026; libero_recovered). Numbers are compared as strings: a
   // sanction given from the court disc carries the number as a string.
   // MUST be defined before handlers that use it in dependency arrays
+  // Each answer is kept until its inputs change (the liberos' tiles, menus
+  // and the court asked it about 20 times a render): by team and number as a
+  // string, which is all liberoPlayState and the roster lookup compare by.
+  const liberoStates = useMemo(() => new Map(), [data?.events, data?.set?.index, data?.homePlayers, data?.awayPlayers]) // eslint-disable-line react-hooks/exhaustive-deps
   const liberoStateOf = useCallback((teamKey, liberoNumber) => {
+    const key = (teamKey === 'home' || teamKey === 'away') && liberoNumber != null ? `${teamKey}:${String(liberoNumber)}` : null
+    if (key && liberoStates.has(key)) return liberoStates.get(key)
     const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
     const player = teamPlayers?.find(p => p.number != null && String(p.number) === String(liberoNumber)) || null
-    return liberoPlayState(data?.events, teamKey, liberoNumber, { setIndex: data?.set?.index ?? null, player })
-  }, [data?.events, data?.set?.index, data?.homePlayers, data?.awayPlayers])
+    const state = liberoPlayState(data?.events, teamKey, liberoNumber, { setIndex: data?.set?.index ?? null, player })
+    if (key) liberoStates.set(key, state)
+    return state
+  }, [data?.events, data?.set?.index, data?.homePlayers, data?.awayPlayers, liberoStates])
 
   const isLiberoUnable = useCallback((teamKey, liberoNumber) => liberoStateOf(teamKey, liberoNumber).unable, [liberoStateOf])
 
@@ -12274,33 +12311,109 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const sanctionMemberOf = useCallback((teamKey, member) => sanctionMember(linksOfTeam(teamKey), { team: teamKey, ...member }), [linksOfTeam])
 
   // Get sanctions for a player or official
+  // (the team's formal sanctions, warning, penalty, expulsion and
+  // disqualification, in log order: playerLogIndex)
   const getPlayerSanctions = useCallback((teamKey, playerNumber, role = null) => {
     if (!data?.events) return []
 
-    const sanctions = data.events.filter(e => {
-      if (e.type !== 'sanction') return false
-      if (e.payload?.team !== teamKey) return false
+    // For player sanctions
+    // Convert both to strings for comparison to handle number/string mismatches
+    if (playerNumber !== null && playerNumber !== undefined) {
+      return (playerLogIndex.formalByNumber.get(teamKey)?.get(String(playerNumber)) || []).slice()
+    }
 
-      // For player sanctions
-      if (playerNumber !== null && playerNumber !== undefined) {
-        // Convert both to strings for comparison to handle number/string mismatches
-        const eventPlayerNumber = e.payload?.playerNumber
-        const matchesPlayer = String(eventPlayerNumber) === String(playerNumber)
-        const isFormalSanction = ['warning', 'penalty', 'expulsion', 'disqualification'].includes(e.payload?.type)
-        return matchesPlayer && isFormalSanction
+    // For official sanctions
+    if (role) {
+      return (playerLogIndex.formalByRole.get(teamKey)?.get(role) || []).slice()
+    }
+
+    return []
+  }, [data?.events, playerLogIndex])
+
+  // The S and T columns of the set results tables: a team's substitutions
+  // and time-outs in a set (e.setIndex === set.index, payload.team === the
+  // team, as the rows compared them), counted in one pass per log change
+  // instead of two passes over the log per row of every table
+  const setRequestCounts = useMemo(() => {
+    const counts = { substitution: new Map(), timeout: new Map() }
+    for (const e of data?.events || []) {
+      if (e.type !== 'substitution' && e.type !== 'timeout') continue
+      const byTeam = counts[e.type]
+      let bySet = byTeam.get(e.payload?.team)
+      if (!bySet) byTeam.set(e.payload?.team, bySet = new Map())
+      bySet.set(e.setIndex, (bySet.get(e.setIndex) || 0) + 1)
+    }
+    return counts
+  }, [data?.events])
+  const setRequestCount = (type, teamKey, setIndex) => setRequestCounts[type].get(teamKey)?.get(setIndex) || 0
+
+  // The Last action line under the rally buttons: the set's latest main
+  // event that has a description, and its short description. Each is worked
+  // out when the line first needs it after a change of the log or the set,
+  // then kept (the line copied and sorted the set's events and described
+  // them on every render)
+  const lastActionKept = useMemo(() => ({}), [data?.events, data?.set, getActionDescription, getShortActionDescription])
+  const lastActionEvent = () => {
+    if (!('event' in lastActionKept)) lastActionKept.event = findLastActionEvent()
+    return lastActionKept.event
+  }
+  const lastActionDescription = (lastEvent) => {
+    if (!('description' in lastActionKept)) lastActionKept.description = getShortActionDescription(lastEvent)
+    return lastActionKept.description
+  }
+  const findLastActionEvent = () => {
+    if (!(data?.events && data.events.length > 0 && data?.set)) return null
+    // IMPORTANT: Only show events from the CURRENT SET
+    const currentSetIndex = data.set.index
+    const currentSetEvents = data.events.filter(e => e.setIndex === currentSetIndex)
+
+    if (currentSetEvents.length === 0) return null
+
+    // Sort by sequence number (highest first)
+    const sortedEvents = [...currentSetEvents].sort((a, b) => {
+      const aSeq = a.seq || 0
+      const bSeq = b.seq || 0
+      if (aSeq !== 0 || bSeq !== 0) {
+        return bSeq - aSeq // Descending
       }
-
-      // For official sanctions
-      if (role) {
-        return e.payload?.role === role &&
-          ['warning', 'penalty', 'expulsion', 'disqualification'].includes(e.payload?.type)
-      }
-
-      return false
+      // Fallback to timestamp
+      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+      return bTime - aTime
     })
 
-    return sanctions
-  }, [data?.events])
+    // Helper to check if an event is a sub-event (decimal sequence like 7.1)
+    const isSubEvent = (event) => {
+      const seq = event.seq || 0
+      return seq !== Math.floor(seq)
+    }
+
+    // Find the last main event (integer sequence)
+    let lastEvent = null
+    for (const e of sortedEvents) {
+      // Skip sub-events (they're part of their parent)
+      if (isSubEvent(e)) continue
+
+      // Skip rally_start; a replay is named ("Rally replayed", owner 22.11.2026)
+      if (e.type === 'rally_start') continue
+
+      // For lineup events, only show initial or substitution
+      if (e.type === 'lineup') {
+        const hasInitial = e.payload?.isInitial === true
+        const hasSubstitution = e.payload?.fromSubstitution === true
+        if (!hasInitial && !hasSubstitution) continue
+      }
+
+      // Try to get description
+      const desc = getActionDescription(e)
+      if (desc && desc !== 'Unknown action') {
+        lastEvent = e
+        break
+      }
+    }
+
+    return lastEvent
+  }
 
   // Confirm player sanction
   const runPlayerSanctionConfirm = useConfirmAction(onConfirmFailed)
@@ -14118,36 +14231,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [])
 
-  // Tablets the relay sees on this match's room (seed key). The heartbeat
-  // fields below are never written on this device, so they alone always read
-  // "not connected".
-  const relayTablets = useRelayTablets(
-    matchLoaded ? relayMatchKey(data.match) : null,
-    data?.match,
-    { enabled: !!(data?.match?.refereeConnectionEnabled || data?.match?.homeTeamConnectionEnabled || data?.match?.awayTeamConnectionEnabled) }
-  )
-
-  // Check if referees are connected (heartbeat within last 15 seconds, or on the relay)
-  // Must be before any early returns to comply with Rules of Hooks
-  const isReferee1Connected = useMemo(() => {
-    if (relayTablets.referee > 0) return true
-    if (!data?.match?.lastReferee1Heartbeat) return false
-    const lastHeartbeat = new Date(data.match.lastReferee1Heartbeat).getTime()
-    const currentTime = new Date().getTime()
-    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastReferee1Heartbeat, now, relayTablets.referee])
-
-  const isReferee2Connected = useMemo(() => {
-    if (!data?.match?.lastReferee2Heartbeat) return false
-    const lastHeartbeat = new Date(data.match.lastReferee2Heartbeat).getTime()
-    const currentTime = new Date().getTime()
-    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastReferee2Heartbeat, now])
-
-  const isAnyRefereeConnected = isReferee1Connected || isReferee2Connected
-  const refereeConnectionEnabled = data?.match?.refereeConnectionEnabled === true
-  const homeTeamConnectionEnabled = data?.match?.homeTeamConnectionEnabled === true
-  const awayTeamConnectionEnabled = data?.match?.awayTeamConnectionEnabled === true
+  // Which tablets are connected: the header's chip (TabletStatusIndicator)
+  // and the Connect dialog ask the relay. The memos that were here (relay
+  // poll, heartbeat fields nothing writes, a status per role) had no reader.
 
   // Team labels (A or B) based on coin toss assignment
   const homeLabel = data?.match?.coinTossTeamA === 'home' ? 'A' : (data?.match?.coinTossTeamB === 'home' ? 'B' : 'A')
@@ -14194,64 +14280,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const handleCancelCaptainOnCourt = useCallback(() => {
     setCaptainOnCourtModal(null)
   }, [])
-
-  // Check if bench teams are connected (heartbeat within last 15 seconds)
-  const isHomeTeamConnected = useMemo(() => {
-    if (relayTablets.benchHome > 0) return true
-    if (!data?.match?.lastHomeTeamHeartbeat) return false
-    const lastHeartbeat = new Date(data.match.lastHomeTeamHeartbeat).getTime()
-    const currentTime = new Date().getTime()
-    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastHomeTeamHeartbeat, now, relayTablets.benchHome])
-
-  const isAwayTeamConnected = useMemo(() => {
-    if (relayTablets.benchAway > 0) return true
-    if (!data?.match?.lastAwayTeamHeartbeat) return false
-    const lastHeartbeat = new Date(data.match.lastAwayTeamHeartbeat).getTime()
-    const currentTime = new Date().getTime()
-    return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastAwayTeamHeartbeat, now, relayTablets.benchAway])
-
-  // Helper function to get connection status and color
-  const getConnectionStatus = useCallback((type) => {
-    if (type === 'referee') {
-      if (!refereeConnectionEnabled) {
-        return { status: 'disabled', color: 'var(--muted)' } // grey
-      }
-      if (isReferee1Connected || isReferee2Connected) {
-        return { status: 'connected', color: '#22c55e' } // green
-      }
-      // Enabled but not connected
-      return { status: 'not_connected', color: '#eab308' } // yellow
-    } else if (type === 'teamA') {
-      if (!homeTeamConnectionEnabled) {
-        return { status: 'disabled', color: 'var(--muted)' } // grey
-      }
-      const hasPin = !!data?.match?.homeTeamPin
-      if (!hasPin) {
-        return { status: 'error', color: '#ef4444' } // red - no PIN configured
-      }
-      if (isHomeTeamConnected) {
-        return { status: 'connected', color: '#22c55e' } // green
-      }
-      // Enabled, has PIN, but not connected
-      return { status: 'not_connected', color: '#eab308' } // yellow
-    } else if (type === 'teamB') {
-      if (!awayTeamConnectionEnabled) {
-        return { status: 'disabled', color: 'var(--muted)' } // grey
-      }
-      const hasPin = !!data?.match?.awayTeamPin
-      if (!hasPin) {
-        return { status: 'error', color: '#ef4444' } // red - no PIN configured
-      }
-      if (isAwayTeamConnected) {
-        return { status: 'connected', color: '#22c55e' } // green
-      }
-      // Enabled, has PIN, but not connected
-      return { status: 'not_connected', color: '#eab308' } // yellow
-    }
-    return { status: 'error', color: '#ef4444' } // red - unknown
-  }, [refereeConnectionEnabled, isReferee1Connected, isReferee2Connected, homeTeamConnectionEnabled, awayTeamConnectionEnabled, isHomeTeamConnected, isAwayTeamConnected, data?.match])
 
   const runCourtSwitchConfirm = useConfirmAction(onConfirmFailed)
   const confirmCourtSwitch = useCallback(() => runCourtSwitchConfirm(() => runAction('courtSwitch', async () => {
@@ -14305,7 +14333,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, { reason: 'undo' })), [runAction, deferUi, runCourtSwitchCancel, courtSwitchModal, matchId, discardEvents, resyncSetScoreFromEvents, syncToReferee, syncLiveStateToSupabase])
 
   // Check if match is already finished (loaded a completed match)
-  // If so, trigger onFinishSet to navigate to MatchEnd screen
+  // If so, trigger onFinishSet to navigate to MatchEnd screen.
+  // It is the only way out of the full-screen 'Loading...' below (no button),
+  // so a failed try (App's finishSet: a write refused, storage full, the
+  // database reopening) is tried again every FINISHED_MATCH_RETRY_MS while
+  // the screen still shows it. This effect used to re-run every 10 s (the
+  // heartbeat's re-read gave a new `data`) and at every App render (a new
+  // finishSet): an implicit retry, gone with the 5-minute heartbeat and
+  // App's stable callbacks. One call at a time: a re-run while a call is on
+  // its way or a retry is planned does nothing.
+  const finishedMatchRef = useRef({ running: false, timer: null, mounted: false })
+  const [finishedMatchRetry, setFinishedMatchRetry] = useState(0)
+  useEffect(() => {
+    const own = finishedMatchRef.current
+    own.mounted = true
+    return () => {
+      own.mounted = false
+      clearTimeout(own.timer)
+      own.timer = null
+    }
+  }, [])
   useEffect(() => {
     // The scoreboard already ended the match and navigated (match end / forfeit)
     if (matchEndingRef.current) return
@@ -14317,13 +14364,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, data?.match?.bestOf)
 
       if (isMatchFinished && onFinishSet) {
+        const own = finishedMatchRef.current
+        if (own.running || own.timer) return
         console.log('[Scoreboard] Match is already finished, navigating to MatchEnd')
         // Pass the last finished set to trigger match end navigation
         const lastSet = finishedSets.sort((a, b) => b.index - a.index)[0]
-        onFinishSet(lastSet)
+        own.running = true
+        Promise.resolve()
+          .then(() => onFinishSet(lastSet))
+          .then(() => { own.running = false }, (error) => {
+            own.running = false
+            console.error('[Scoreboard] Opening Match End failed, trying again:', error)
+            if (!own.mounted) return
+            own.timer = setTimeout(() => {
+              own.timer = null
+              setFinishedMatchRetry(n => n + 1)
+            }, FINISHED_MATCH_RETRY_MS)
+          })
       }
     }
-  }, [data, setTransitionLoading, onFinishSet])
+  }, [data, setTransitionLoading, onFinishSet, finishedMatchRetry])
 
   if (!data?.set || setTransitionLoading) {
     const loadingStep = setTransitionLoading?.step || 'Loading...'
@@ -14452,18 +14512,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
 
-      const scoresheetData = {
-        match,
-        homeTeam: data?.homeTeam,
-        awayTeam: data?.awayTeam,
-        homePlayers: data?.homePlayers || [],
-        awayPlayers: data?.awayPlayers || [],
-        sets: data?.sets || [],
-        events: data?.events || [],
-        sanctions: []
-      }
-
-      sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+      // the page reads the match from this device's database (?matchId=)
       const opened = openAppWindow(`/scoresheet/?matchId=${match.id}${action ? `&action=${action}` : ''}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
 
       if (!opened.ok) {
@@ -14592,6 +14641,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
+    // The interval's digits as the desktop shows them (mm:ss, "0" at the end)
+    const breakCountdownText = (seconds) => (seconds <= 0 ? '0' : formatCountdown(seconds))
     let centre = null
     if (timeoutModal && timeoutModal.started) {
       centre = {
@@ -14609,16 +14660,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         confirmLabel: t('scoreboard.buttons.confirmSet5Setup', { number: displaySetNumber(5, data?.match?.bestOf) }),
         ...(betweenSetsCountdown ? {
           countdown: betweenSetsCountdown.countdown,
-          countdownText: betweenSetsCountdown.countdown <= 0 ? '0' : formatCountdown(betweenSetsCountdown.countdown),
-          total: currentBreakSeconds
+          countdownText: breakCountdownText(betweenSetsCountdown.countdown),
+          total: currentBreakSeconds,
+          // the phone's digits tick by themselves (CountdownSeconds), as mm:ss
+          clock: breakClock,
+          textOf: breakCountdownText
         } : {})
       }
     } else if (betweenSetsCountdown) {
       centre = {
         kind: 'interval',
         countdown: betweenSetsCountdown.countdown,
-        countdownText: betweenSetsCountdown.countdown <= 0 ? '0' : formatCountdown(betweenSetsCountdown.countdown),
-        total: currentBreakSeconds
+        countdownText: breakCountdownText(betweenSetsCountdown.countdown),
+        total: currentBreakSeconds,
+        clock: breakClock,
+        textOf: breakCountdownText
       }
     }
 
@@ -14805,7 +14861,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         top={isPhoneView ? 52 : 112}
         {...benchActions}
       />
-      {relayRejection && now - relayRejection.at < 45000 && (
+      {relayRejection && (
         <div role="alert" className="no-print rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
           position: 'fixed',
           top: 8,
@@ -14837,7 +14893,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           right: 0,
           bottom: 0,
           backgroundColor: 'rgb(28 25 23 / 0.6)',
-          backdropFilter: 'blur(4px)',
+          // the blur switch off (ov-lite): it only dims
+          ...(liteGraphicsOn() ? null : { backdropFilter: 'blur(4px)' }),
           zIndex: 99999,
           display: 'flex',
           flexDirection: 'column',
@@ -14921,7 +14978,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             position: 'fixed',
             inset: 0,
             backgroundColor: 'rgb(28 25 23 / 0.6)',
-            backdropFilter: 'blur(4px)',
+            // the blur switch off (ov-lite): it only dims; the clock under
+            // it is not blurred again every second
+            ...(liteGraphicsOn() ? null : { backdropFilter: 'blur(4px)' }),
             zIndex: 99999,
             display: 'flex',
             flexDirection: 'column',
@@ -14943,10 +15002,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </div>
       )}
       {/* The phone layout has its own header (undo, match menu) */}
-      {!isPhoneView && <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)} clock={formatTimestamp(now)}>
-        {/* Column 1: Date/Time, with the fold-away chevron right beside it */}
+      {!isPhoneView && <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)} clock={<ToolbarClock />}>
+        {/* Column 1: Date/Time (ticks by itself, not the whole screen), with the fold-away chevron right beside it */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '0.4cqw' }}>
-          <span className="toolbar-clock" style={{ fontSize: 'calc(1.28cqw * var(--cqf, 1))' }}>{formatTimestamp(now)}</span>
+          <span className="toolbar-clock" style={{ fontSize: 'calc(1.28cqw * var(--cqf, 1))' }}><ToolbarClock /></span>
           <ToolbarChevron collapsed={false} onToggle={() => setHeaderCollapsed(true)} />
           <NativeBackupAlert onOpen={() => setShowOptionsInMenu(true)} />
         </div>
@@ -15464,6 +15523,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 testId="missing-signature-left"
                 roles={preMatchMissing[leftTeamKeyNow]}
                 onClick={() => setPreMatchSignTeam(leftTeamKeyNow)}
+                still={!!preMatchSignTeam || signaturesMissingOpen}
                 style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(4.4cqw * var(--cqf, 1))' : 'max(12px, calc(5.6cqw * var(--cqf, 1)))' }}
               />
             )}
@@ -16584,12 +16644,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && leftPoints > rightPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentLeftTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentLeftTeamKey, set.index)
                               let rowColor = 'inherit'
                               if (set.finished) {
                                 rowColor = won === 1 ? '#22c55e' : '#ef4444'
@@ -16728,6 +16784,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {!leftTeamLineupSet && (
                         <button
                           className="lineup-button lineup-button-left"
+                          // still with its glows (styles.css): they start again in step
+                          data-still={lineupModal ? '' : undefined}
                           onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
                           style={{
                             position: 'absolute',
@@ -16751,7 +16809,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: '12px',
                             cursor: 'pointer',
                             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                            animation: 'lineupFlash 1.5s ease-in-out infinite'
+                            // still under the line-up dialog, which covers it: a
+                            // flash there redraws the dialog's blurred backdrop
+                            animation: lineupModal ? 'none' : 'lineupFlash 1.5s ease-in-out infinite'
                           }}
                         >
                           <span>{t('scoreboard.lineup', 'Line-up')}</span>
@@ -16761,6 +16821,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {!rightTeamLineupSet && (
                         <button
                           className="lineup-button lineup-button-right"
+                          data-still={lineupModal ? '' : undefined}
                           onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
                           style={{
                             position: 'absolute',
@@ -16784,7 +16845,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: '12px',
                             cursor: 'pointer',
                             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                            animation: 'lineupFlash 1.5s ease-in-out infinite'
+                            animation: lineupModal ? 'none' : 'lineupFlash 1.5s ease-in-out infinite'
                           }}
                         >
                           <span>{t('scoreboard.lineup', 'Line-up')}</span>
@@ -17346,8 +17407,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          background: 'rgba(15, 23, 42, 0.5)',
-                          backdropFilter: 'blur(8px)',
+                          ...privacyCoverFill(),
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
@@ -17985,8 +18045,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          background: 'rgba(15, 23, 42, 0.5)',
-                          backdropFilter: 'blur(8px)',
+                          ...privacyCoverFill(),
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
@@ -18196,12 +18255,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && leftPoints > rightPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentLeftTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentLeftTeamKey, set.index)
 
                               // Determine row color based on set status
                               let rowColor = 'inherit'
@@ -18368,13 +18423,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {/* Countdown beneath buttons - only shown if active */}
                     {betweenSetsCountdown && (
                       <div style={{ marginTop: 'calc(20px * var(--scale-factor))', textAlign: 'center', width: '100%' }}>
+                        {/* the digits and the bar tick by themselves (CountdownSeconds) */}
+                        <CountdownSeconds clock={breakClock} fallback={betweenSetsCountdown.countdown}>{(seconds) => (<>
                         <div style={{
                           fontSize: 'calc(49px * var(--scale-factor))',
                           fontWeight: 700,
-                          color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                          color: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                           fontFamily: getScoreFont()
                         }}>
-                          {betweenSetsCountdown.countdown <= 0 ? "0" : formatCountdown(betweenSetsCountdown.countdown)}
+                          {seconds <= 0 ? "0" : formatCountdown(seconds)}
                         </div>
                         <div style={{
                           width: '60%',
@@ -18387,27 +18444,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           marginRight: 'auto'
                         }}>
                           <div style={{
-                            width: `${currentBreakSeconds > 0 ? (betweenSetsCountdown.countdown / currentBreakSeconds) * 100 : 0}%`,
+                            width: `${currentBreakSeconds > 0 ? (seconds / currentBreakSeconds) * 100 : 0}%`,
                             height: '100%',
-                            background: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                            background: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                             borderRadius: '4px',
-                            transition: 'width 1s linear, background 0.3s',
+                            transition: 'background 0.3s', // steps once a second: a width glide laid out every frame
                             marginLeft: 'auto'
                           }} />
                         </div>
+                        </>)}</CountdownSeconds>
                       </div>
                     )}
                   </>
                 ) : (betweenSetsCountdown && !timeoutModal?.started) ? (
                   <>
+                    {/* the digits and the bar tick by themselves (CountdownSeconds) */}
+                    <CountdownSeconds clock={breakClock} fallback={betweenSetsCountdown.countdown}>{(seconds) => (<>
                     <div style={{
                       fontSize: '49px',
                       fontWeight: 700,
-                      color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                      color: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
                       fontFamily: getScoreFont()
                     }}>
-                      {betweenSetsCountdown.countdown <= 0 ? "0" : formatCountdown(betweenSetsCountdown.countdown)}
+                      {seconds <= 0 ? "0" : formatCountdown(seconds)}
                     </div>
                     {/* Progress bar */}
                     <div style={{
@@ -18422,14 +18482,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       marginRight: 'auto'
                     }}>
                       <div style={{
-                        width: `${currentBreakSeconds > 0 ? (betweenSetsCountdown.countdown / currentBreakSeconds) * 100 : 0}%`,
+                        width: `${currentBreakSeconds > 0 ? (seconds / currentBreakSeconds) * 100 : 0}%`,
                         height: '100%',
-                        background: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
+                        background: seconds <= 30 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
-                        transition: 'width 1s linear, background 0.3s',
+                        transition: 'background 0.3s', // steps once a second: a width glide laid out every frame
                         marginLeft: 'auto'
                       }} />
                     </div>
+                    </>)}</CountdownSeconds>
                     <button
                       className="secondary"
                       onClick={endSetInterval}
@@ -18490,7 +18551,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         height: '100%',
                         background: seconds <= 10 ? '#ef4444' : 'var(--accent)',
                         borderRadius: '4px',
-                        transition: 'width 1s linear, background 0.3s',
+                        transition: 'background 0.3s', // steps once a second: a width glide laid out every frame
                         marginLeft: 'auto'
                       }} />
                     </div>
@@ -18579,58 +18640,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       >
                         {/* Last action - filtered to current set */}
                         {data?.events && data.events.length > 0 && data?.set && (() => {
-                          // IMPORTANT: Only show events from the CURRENT SET
-                          const currentSetIndex = data.set.index
-                          const currentSetEvents = data.events.filter(e => e.setIndex === currentSetIndex)
-
-                          if (currentSetEvents.length === 0) return null
-
-                          // Sort by sequence number (highest first)
-                          const sortedEvents = [...currentSetEvents].sort((a, b) => {
-                            const aSeq = a.seq || 0
-                            const bSeq = b.seq || 0
-                            if (aSeq !== 0 || bSeq !== 0) {
-                              return bSeq - aSeq // Descending
-                            }
-                            // Fallback to timestamp
-                            const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-                            const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-                            return bTime - aTime
-                          })
-
-                          // Helper to check if an event is a sub-event (decimal sequence like 7.1)
-                          const isSubEvent = (event) => {
-                            const seq = event.seq || 0
-                            return seq !== Math.floor(seq)
-                          }
-
-                          // Find the last main event (integer sequence)
-                          let lastEvent = null
-                          for (const e of sortedEvents) {
-                            // Skip sub-events (they're part of their parent)
-                            if (isSubEvent(e)) continue
-
-                            // Skip rally_start; a replay is named ("Rally replayed", owner 22.11.2026)
-                            if (e.type === 'rally_start') continue
-
-                            // For lineup events, only show initial or substitution
-                            if (e.type === 'lineup') {
-                              const hasInitial = e.payload?.isInitial === true
-                              const hasSubstitution = e.payload?.fromSubstitution === true
-                              if (!hasInitial && !hasSubstitution) continue
-                            }
-
-                            // Try to get description
-                            const desc = getActionDescription(e)
-                            if (desc && desc !== 'Unknown action') {
-                              lastEvent = e
-                              break
-                            }
-                          }
+                          // The set's latest main event with a description
+                          // (lastActionEvent: kept until the log or the set changes)
+                          const lastEvent = lastActionEvent()
 
                           if (!lastEvent || lineupCovered.includes(lastEvent.payload?.team)) return null
 
-                          const description = getShortActionDescription(lastEvent)
+                          const description = lastActionDescription(lastEvent)
 
                           return (
                             // One fixed line: a description that wrapped to two lines made the
@@ -18719,12 +18735,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && rightPoints > leftPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentRightTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentRightTeamKey, set.index)
 
                               // Determine row color based on set status
                               let rowColor = 'inherit'
@@ -18811,12 +18823,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && leftPoints > rightPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentLeftTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentLeftTeamKey, set.index)
                               let rowColor = 'inherit'
                               if (set.finished) rowColor = won === 1 ? '#22c55e' : '#ef4444'
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
@@ -18883,12 +18891,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && rightPoints > leftPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentRightTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentRightTeamKey, set.index)
                               let rowColor = 'inherit'
                               if (set.finished) rowColor = won === 1 ? '#22c55e' : '#ef4444'
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
@@ -18949,6 +18953,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 testId="missing-signature-right"
                 roles={preMatchMissing[rightTeamKeyNow]}
                 onClick={() => setPreMatchSignTeam(rightTeamKeyNow)}
+                still={!!preMatchSignTeam || signaturesMissingOpen}
                 style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(4.4cqw * var(--cqf, 1))' : 'max(12px, calc(5.6cqw * var(--cqf, 1)))' }}
               />
             )}
@@ -20067,12 +20072,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
                               const won = set.finished && rightPoints > leftPoints ? 1 : 0
-                              const substitutions = (data?.events || []).filter(e =>
-                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
-                              const timeouts = (data?.events || []).filter(e =>
-                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                              ).length
+                              const substitutions = setRequestCount('substitution', currentRightTeamKey, set.index)
+                              const timeouts = setRequestCount('timeout', currentRightTeamKey, set.index)
                               let rowColor = 'inherit'
                               if (set.finished) {
                                 rowColor = won === 1 ? '#22c55e' : '#ef4444'
@@ -22191,12 +22192,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       const teamPoints = teamKey === 'home' ? set.homePoints : set.awayPoints
                       const oppPoints = teamKey === 'home' ? set.awayPoints : set.homePoints
                       const won = set.finished && teamPoints > oppPoints ? 1 : 0
-                      const substitutions = (data?.events || []).filter(e =>
-                        e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === teamKey
-                      ).length
-                      const timeouts = (data?.events || []).filter(e =>
-                        e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === teamKey
-                      ).length
+                      const substitutions = setRequestCount('substitution', teamKey, set.index)
+                      const timeouts = setRequestCount('timeout', teamKey, set.index)
                       let rowColor = 'inherit'
                       if (set.finished) {
                         rowColor = won === 1 ? '#22c55e' : '#ef4444'
@@ -24762,7 +24759,7 @@ function ScoreboardToolbar({ children, collapsed, onToggle, clock }) {
           style={{ height: '16px' }}
         >
           {clock && (
-            <span data-testid="toolbar-strip-clock" className="tabular-nums text-stone-500" style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1 }}>{clock}</span>
+            <span data-testid="toolbar-strip-clock" className="tabular-nums text-stone-500" style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1, '--clock-lh': 1 }}>{clock}</span>
           )}
           <ToolbarChevron collapsed onToggle={onToggle} />
           {/* the "Phone keyboard" indicator, small, while the bar is folded */}

@@ -153,6 +153,8 @@ vi.mock('../../db/db', () => {
   return { db, default: db }
 })
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import JSZip from 'jszip'
 import MatchEnd from '../MatchEnd'
 import { matchBackupFromFile } from '../../utils/backupManager'
@@ -494,6 +496,27 @@ describe('MatchEnd: the approval PDF in the activity log', () => {
     expect(typeof log[3].ms).toBe('number')
   })
 
+  // Perf pass 22.11.2026: the tablet's 43 s was one number
+  it('the PDF that came, and where its time went (the page\'s own steps, numbers only)', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    const req = reqOf(opened[0])
+    await postFromSheet({ type: 'pdfProgress', step: 'loading', req })
+    await postFromSheet({ type: 'pdfProgress', step: 'capture', ms: 3100, req })
+    await postFromSheet({ type: 'pdfProgress', step: 'styles', ms: 2000, req })
+    // the heartbeat: no time, its step already heard
+    await postFromSheet({ type: 'pdfProgress', step: 'capture', req })
+    await postFromSheet({ type: 'pdfProgress', step: 'canvas', ms: 26100, req })
+    await postFromSheet({ type: 'pdfProgress', step: 'jpeg', ms: 900, req })
+    await postFromSheet({ type: 'pdfProgress', step: 'pdf', ms: 1200, req })
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf', req })
+    await findButton(en.matchEnd.closeMatch)
+    const log = pdfLog()
+    expect(log.map(e => e.step)).toEqual(['requested', 'received', 'timing'])
+    expect(log[2]).toMatchObject({ level: 'info', purpose: 'approval', attempt: 1, matchId: 1, ms: log[1].ms })
+    expect(log[2].reason).toMatch(/^load=\d+ capture=\d+ page=3100 styles=2000 canvas=26100 jpeg=900 pdf=1200 events=0 dpr=1 zoom=1$/)
+  })
+
   it('Approve without PDF is an error entry with the reason', async () => {
     render(<MatchEnd matchId={1} />)
     await approve()
@@ -543,5 +566,71 @@ describe('MatchEnd: the match end in the cloud live state', () => {
     await findButton(en.matchEnd.approveParams)
     await new Promise(r => setTimeout(r, 50))
     expect(liveEnd.calls).toHaveLength(0)
+  })
+})
+
+// Perf pass 22.11.2026: every open of the scoresheet (and the approval)
+// stringified the whole match into sessionStorage, which the page, reading
+// ?matchId= from this device's database, never used.
+describe('MatchEnd: the scoresheet window reads the match from this device', () => {
+  const copies = () => setItem.mock.calls.filter(([key]) => key === 'scoresheetData')
+  let setItem
+  beforeEach(() => {
+    sessionStorage.clear()
+    setItem = vi.spyOn(Storage.prototype, 'setItem')
+  })
+  afterEach(() => setItem.mockRestore())
+
+  it('the approval opens it by match id, with no copy of the match', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    expect(opened[0].url).toMatch(/^\/scoresheet\/\?matchId=1&action=getBlob&pdfReq=/)
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    expect(copies()).toHaveLength(0)
+    expect(sessionStorage.getItem('scoresheetData')).toBeNull()
+  })
+
+  it('the preview and the missing PDF open it by match id, with no copy of the match', async () => {
+    seed({ approved: true, approvedAt: '2026-10-08T10:00:00Z', scoresheetPdfMissing: true, gameNumber: 4242 })
+    render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.closeMatch)
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en.matchEnd.scoresheet) }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(en.matchEnd.preview) }))
+    await waitFor(() => expect(opened).toHaveLength(1))
+    expect(opened[0].url).toBe('/scoresheet/?matchId=1')
+    fireEvent.click(await findButton(en.matchEnd.pdfMissing.create))
+    await waitFor(() => expect(opened).toHaveLength(2))
+    expect(opened[1].url).toMatch(/^\/scoresheet\/\?matchId=1&action=getBlob&pdfReq=/)
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await waitFor(() => expect(store.tables.matches.get(1).scoresheetPdfMissing).toBe(false))
+    expect(copies()).toHaveLength(0)
+    expect(sessionStorage.getItem('scoresheetData')).toBeNull()
+  })
+})
+
+// The ZIP library comes with the app (owner 22.11.2026): the perf pass loaded
+// jszip only once Match End showed, so the approval depended on fetching a
+// chunk at the match end, and a browser without a service worker that had
+// lost the network then could not approve at all ("Failed to fetch
+// dynamically imported module"). Static import, as before.
+describe('MatchEnd: the ZIP library', () => {
+  it('is imported with the app, never loaded at the approval', () => {
+    const source = readFileSync(resolve(__dirname, '../MatchEnd.jsx'), 'utf8')
+    expect(source).toMatch(/^import JSZip from 'jszip'$/m)
+    expect(source).not.toMatch(/import\(\s*['"]jszip['"]\s*\)/)
+  })
+
+  it('makes the approval\'s ZIP with the PDF and the match data', async () => {
+    const zipFile = vi.spyOn(JSZip.prototype, 'file')
+    try {
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      expect(zipFile.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining(['x.pdf', expect.stringMatching(/^MatchData_.*\.json$/)]))
+    } finally {
+      zipFile.mockRestore()
+    }
   })
 })

@@ -1417,6 +1417,29 @@
   "idMode": {"title": "Accanto a ogni nome", "dob": "Usa le date di nascita", "number": "Usa un numero di identificazione", "text": "Usa del testo", "label": {"dob": "Data di nascita", "number": "Numero di identificazione", "text": "Info", "licence": "Licenza"}, "hint": {"licence": "o data di nascita (gg.mm.aaaa)"}},
   "globalImport": {"templateGames": "Modello partite (Excel)", "templateRosters": "Modello rose (Excel)", "gamesTitle": "Importa partite", "rostersTitle": "Importa rose", "gamesHint": "Un file Excel o CSV con una riga per partita: partita, data, ora, palestra, città, lega, casa, ospite, best of, arbitri. Nulla viene salvato: il file è letto su questo dispositivo.", "rostersHint": "Un file Excel o CSV con una riga per persona: squadra, numero, nome, cognome, ruolo (giocatore, libero, capitano, allenatore...), data di nascita. Nulla viene salvato: il file è letto su questo dispositivo.", "choose": "Scegli file", "template": "Modello", "errFile": "Impossibile leggere il file.", "errEmpty": "Il file è vuoto.", "errColumns": "Colonne non trovate. Usa il modello.", "noTeamName": "(senza nome squadra)", "counts": "{{players}} giocatori, {{staff}} staff", "warnings": "{{count}} righe non pulite: {{list}}", "applied": "{{count}} giocatori aggiunti", "gamesButton": "Importa partite (Excel)", "rostersButton": "Importa rose (Excel)"},
   "home": {
+    "deviceCheck": {
+      "title": {
+        "fast": "Questo dispositivo è veloce.",
+        "ok": "Questo dispositivo ha una velocità media.",
+        "slow": "Questo dispositivo è piuttosto lento."
+      },
+      "smoother": "Per un punteggio più fluido ti consigliamo: {{list}}.",
+      "fuller": "Può mostrare l'aspetto completo: {{list}}.",
+      "lessMotion": "Il tuo dispositivo è impostato per meno movimento, quindi ti consigliamo: nessuna animazione.",
+      "item": {
+        "blurOff": "nessuna sfocatura dietro le finestre",
+        "blurOn": "la sfocatura dietro le finestre",
+        "motionOff": "nessuna animazione",
+        "motionOn": "le animazioni",
+        "clockSecondsOff": "l'orologio senza secondi",
+        "clockSecondsOn": "l'orologio con i secondi",
+        "pdfSharpOff": "un PDF più leggero",
+        "pdfSharpOn": "un PDF nitido"
+      },
+      "apply": "Applica",
+      "keep": "Lascia così",
+      "changeLater": "Puoi cambiarlo in qualsiasi momento nelle opzioni."
+    },
     "storageWarning": "Questo browser può cancellare i dati dell'app, e una partita su questo dispositivo ha modifiche non ancora inviate. Accedi perché vengano sincronizzate, installa l'app o aggiungila alla schermata iniziale, oppure attiva i download dei backup nelle Opzioni.",
     "tool": {"label": "Strumento", "swiss": "Svizzera", "global": "Globale", "globalNote": "Qualsiasi torneo: senza accesso, senza elenco partite. Squadre e giocatori restano su questo dispositivo."},
     "match": "Partita",
@@ -1570,6 +1593,30 @@
     "err_io": "Impossibile leggere questo backup."
   },
   "options": {
+    "look": {
+      "title": "Effetti e velocità",
+      "check": "Test del dispositivo",
+      "checkInfo": "L'app misura per circa un secondo quanto è veloce questo dispositivo. Niente lascia il dispositivo.",
+      "checkNow": "Testa questo dispositivo",
+      "checking": "Test in corso…",
+      "notChecked": "Non ancora testato.",
+      "checkedOn": "Testato il {{date}}: {{verdict}}",
+      "verdict": {
+        "fast": "questo dispositivo è veloce.",
+        "ok": "questo dispositivo ha una velocità media.",
+        "slow": "questo dispositivo è piuttosto lento."
+      },
+      "matches": "Le tue impostazioni corrispondono alla raccomandazione.",
+      "checkFromHome": "Per un nuovo test, apri le opzioni nella schermata iniziale.",
+      "blur": "Sfocatura dietro le finestre",
+      "blurInfo": "Lo schermo dietro una finestra aperta viene sfocato. Disattivata: viene solo oscurato, meno lavoro per un dispositivo lento.",
+      "motion": "Animazioni",
+      "motionInfo": "Pulsanti che lampeggiano (Formazione, Firma mancante), menu e barre che scorrono. Disattivate: niente si muove, e ciò che richiede la tua attenzione mantiene il suo colore.",
+      "clockSeconds": "Secondi sull'orologio",
+      "clockSecondsInfo": "L'orologio della schermata del punteggio mostra i secondi. Disattivati: solo ore e minuti, cambia una volta al minuto.",
+      "pdfSharp": "PDF nitido",
+      "pdfSharpInfo": "Il PDF del referto creato su questo dispositivo, alla massima nitidezza. Disattivato: un po' meno nitido, ma creato più in fretta."
+    },
     "tool": {"title": "Strumento", "locked": "C’è una partita su questo dispositivo. Eliminala per cambiare strumento.", "swissNote": "Partite di lega svizzere: accesso, elenco partite, Einsatzliste, rose di club e cloud."},
     "title": "Opzioni",
     "close": "Chiudere",

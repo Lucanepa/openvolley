@@ -29,6 +29,8 @@ import { jobMatchKey } from './syncIds'
 import { detectOs } from './deviceKind'
 import { diagnosticsState } from '../diagnostics'
 import { buildDiagnosticsReport, formatSize, makeClock, TIMELINE_WINDOW_MS } from './diagnosticsReport'
+import { readLook } from './lookSettings'
+import { readCheck } from './deviceCheck'
 
 const APP_NAMES = { scorer: 'scorer app', referee: 'referee app', bench: 'bench app', livescore: 'livescore', scoresheet: 'scoresheet' }
 // A key naming a secret, as a word of it (refereePin, game_pin, api_auth_token,
@@ -366,6 +368,9 @@ export async function collectDiagnosticsInput({
     queueErrors: queue?.errors || [],
     storage: await attempt(notes, 'The storage estimate', () => storageEstimate(nav), 'unknown'),
     diagnosticsMode: diagMode,
+    // Options › Effects and speed and the device check (the scorer app's)
+    look: scorer ? (() => { try { return readLook({ storage: local }) } catch { return null } })() : null,
+    deviceCheck: scorer ? readCheck(local) : null,
     deviceId: (() => { try { return deviceId(local) } catch { return null } })(),
     accountId: currentAccountId(local)
   }

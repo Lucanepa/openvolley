@@ -364,6 +364,113 @@ describe('requestBlockReason (the disabled buttons)', () => {
   })
 })
 
+// requestBlockReason answers from the set interval and the replay only
+// (performance pass, 2026-11-22): the first issue of the full lists, as it
+// was worked out before, over generated logs. A new 'block' issue in the
+// lists must be added to requestBlockReason too.
+describe('requestBlockReason = the first block issue of the request lists (oracle)', () => {
+  // the function as it was: the whole list, then its first issue
+  const requestBlockReasonBefore = (events, setIndex, team, kind, { intervalRunning = false } = {}) => {
+    const issues = kind === 'timeout'
+      ? timeoutRequestIssues(events, setIndex, team, { intervalRunning })
+      : substitutionRequestIssues(events, setIndex, team)
+    return issues[0]?.kind === 'block' ? issues[0].reason : null
+  }
+
+  // a small seeded generator (mulberry32): the same logs every run
+  const random = (seed) => () => {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed)
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
+    return ((t ^ t >>> 14) >>> 0) / 4294967296
+  }
+  const pick = (rnd, list) => list[Math.floor(rnd() * list.length)]
+  const TEAMS = ['home', 'away']
+  const makers = [
+    (rnd) => ({ type: 'point', payload: { team: pick(rnd, TEAMS) } }),
+    (rnd) => ({ type: 'point', payload: { team: pick(rnd, TEAMS) } }),
+    () => ({ type: 'rally_start', payload: {} }),
+    () => ({ type: 'rally_start', payload: {} }),
+    () => ({ type: 'replay', payload: {} }),
+    () => ({ type: 'replay', payload: {} }),
+    (rnd) => ({ type: 'timeout', payload: { team: pick(rnd, TEAMS) } }),
+    (rnd) => ({ type: 'substitution', payload: { team: pick(rnd, TEAMS), playerOut: 1 + Math.floor(rnd() * 6), playerIn: 7 + Math.floor(rnd() * 6) } }),
+    (rnd) => ({ type: 'substitution', payload: { team: pick(rnd, TEAMS), playerOut: 2, playerIn: 9, ...pick(rnd, [{ isInjury: true }, { isExpelled: true }, { isExceptional: true }, { autoRemark: 'Set 1, #2 replaced due to injury' }]) } }),
+    (rnd) => ({ type: 'sanction', payload: { team: pick(rnd, TEAMS), type: pick(rnd, ['delay_warning', 'delay_warning', 'delay_penalty', 'improper_request', 'warning']) } }),
+    () => ({ type: 'cancelled_point', payload: { team: 'home' } }),
+    () => ({ type: 'rectification', payload: {} }),
+    (rnd) => ({ type: 'lineup', payload: { team: pick(rnd, TEAMS), fromSubstitution: true } }),
+    (rnd) => ({ type: 'libero_entry', payload: { team: pick(rnd, TEAMS), liberoIn: 12, playerOut: 5 } }),
+    () => ({ type: 'remark', payload: {} })
+  ]
+  const makeLog = (rnd, length) => {
+    const log = []
+    let s = 0
+    for (let i = 0; i < length; i++) {
+      const e = pick(rnd, makers)(rnd)
+      // mostly the next seq; now and then a sub-event (N.1), the same seq, none
+      const r = rnd()
+      s = r < 0.75 ? s + 1 : r < 0.85 ? s + 0.1 : r < 0.95 ? s : s
+      const seqOf = r >= 0.95 ? undefined : s
+      // set 1, set 2 or no set (read as set 1)
+      const sr = rnd()
+      const setIndex = sr < 0.7 ? 1 : sr < 0.9 ? 2 : undefined
+      log.push({ ...e, ...(seqOf === undefined ? {} : { seq: seqOf }), ...(setIndex === undefined ? {} : { setIndex }) })
+    }
+    // sometimes not in seq order (rows as a merge left them)
+    if (rnd() < 0.3) log.reverse()
+    return log
+  }
+
+  it('gives the same answer for every prefix of 400 generated logs, both teams, both kinds, interval or not', () => {
+    const rnd = random(20261122)
+    let compared = 0
+    const seen = new Set()
+    const listed = new Set()
+    for (let n = 0; n < 400; n++) {
+      const log = makeLog(rnd, 1 + Math.floor(rnd() * 40))
+      for (let len = 0; len <= log.length; len++) {
+        const events = log.slice(0, len)
+        for (const setIndex of [1, 2]) {
+          for (const team of TEAMS) {
+            for (const kind of ['timeout', 'substitution']) {
+              for (const intervalRunning of [false, true]) {
+                const before = requestBlockReasonBefore(events, setIndex, team, kind, { intervalRunning })
+                const now = requestBlockReason(events, setIndex, team, kind, { intervalRunning })
+                if (now !== before) throw new Error(`differs: ${JSON.stringify({ events, setIndex, team, kind, intervalRunning, before, now })}`)
+                seen.add(before)
+                compared++
+              }
+            }
+            if (len === log.length) {
+              for (const i of timeoutRequestIssues(events, setIndex, team)) listed.add(i.reason)
+              for (const i of substitutionRequestIssues(events, setIndex, team)) listed.add(i.reason)
+            }
+          }
+        }
+      }
+    }
+    expect(compared).toBeGreaterThan(100000)
+    // the logs reach every answer, and the full lists' notices and warnings
+    expect([...seen].sort()).toEqual([null, 'replay_pending', 'set_interval'].sort())
+    expect([...listed].sort()).toEqual(['after_delay_warning', 'replay_pending', 'second_substitution_request', 'substitution_limit', 'third_timeout'])
+  })
+
+  it('also without events or options', () => {
+    for (const events of [undefined, null, []]) {
+      for (const kind of ['timeout', 'substitution']) {
+        expect(requestBlockReason(events, 1, 'home', kind)).toBe(requestBlockReasonBefore(events, 1, 'home', kind))
+        expect(requestBlockReason(events, 1, 'home', kind, { intervalRunning: true })).toBe(requestBlockReasonBefore(events, 1, 'home', kind, { intervalRunning: true }))
+      }
+    }
+  })
+
+  it('the only block issues are the set interval and the replay pending', () => {
+    expect(Object.entries(REQUEST_ISSUES).filter(([, spec]) => spec.kind === 'block').map(([reason]) => reason).sort())
+      .toEqual(['replay_pending', 'set_interval'])
+  })
+})
+
 describe('REQUEST_ISSUES', () => {
   it('every warn / notice can be cancelled; only the request warnings offer "Continue anyway"', () => {
     for (const [reason, spec] of Object.entries(REQUEST_ISSUES)) {

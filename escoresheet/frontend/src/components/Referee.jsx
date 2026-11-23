@@ -46,6 +46,8 @@ import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } f
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours.js'
 import { compareBySeq } from '../domain/describe'
 import { useTheme } from '../utils/theme'
+import { useLook } from '../utils/lookSettings'
+import { privacyCoverFill } from '../utils/liteGraphics'
 import { themeMenuItems } from './themeMenuItems'
 import { discCapPx } from './referee/discSizing.js'
 import { isWideLayout, screenFit, mustTurnUpright, SIDE_PANEL_CSS, REFEREE_LAYOUT, PORTRAIT_COURT } from './referee/refereeLayout.js'
@@ -158,6 +160,10 @@ function useSyncedFontSize(texts, containerWidth, baseFontSize, minFontSize, isS
 // change look older than the last one before it (stress test 2026-10-25)
 const newestFirst = (a, b) => compareBySeq(b, a)
 
+// The referee's line-up cover with the blur on (owner 15.11: more blurred,
+// the numbers were still readable)
+const REFEREE_COVER_FROSTED = Object.freeze({ background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' })
+
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
@@ -177,6 +183,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const lastAttentionTriggerRef = useRef(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const theme = useTheme()
+  // Options › Effects and speed (utils/lookSettings, initLook in
+  // referee-main): the line-up covers follow the blur switch
+  useLook()
   // Score/countdown font from settings
   const [scoreFont, setScoreFont] = useState(() => {
     const saved = localStorage.getItem('scoreFont')
@@ -2865,10 +2874,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    // owner 15.11: more blurred (the numbers were still readable)
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    backdropFilter: 'blur(16px)',
-                    WebkitBackdropFilter: 'blur(16px)',
+                    // owner 15.11: more blurred (the numbers were still readable);
+                    // the blur switch off: the opaque panel (privacyCoverFill)
+                    ...privacyCoverFill(undefined, REFEREE_COVER_FROSTED),
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -2959,10 +2967,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    // owner 15.11: more blurred (the numbers were still readable)
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    backdropFilter: 'blur(16px)',
-                    WebkitBackdropFilter: 'blur(16px)',
+                    // owner 15.11: more blurred (the numbers were still readable);
+                    // the blur switch off: the opaque panel (privacyCoverFill)
+                    ...privacyCoverFill(undefined, REFEREE_COVER_FROSTED),
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',

@@ -115,6 +115,46 @@ describe('useAutoBackup in the desktop app', () => {
     unmount()
   })
 
+  // App while scoring (performance pass, 22.11): the status is not followed,
+  // so App does not re-render at each backup file; watched again, it is the
+  // status of now
+  it('watchStatus false: no re-render at a backup file; watched again, the status of now', async () => {
+    localStorage.removeItem('nativeAutoBackupEnabled') // switched off above
+    const { default: useAutoBackup } = await import('../useAutoBackup')
+    const { getNativeBackupEngine } = await import('../../utils/nativeBackup')
+    const engine = await getNativeBackupEngine()
+    state.match = { id: 7, gameN: 321, seed_key: 'seedabc', status: 'live' }
+    let renders = 0
+    const { result, rerender, unmount } = renderHook(({ watch }) => {
+      renders++
+      return useAutoBackup(7, { watchStatus: watch })
+    }, { initialProps: { watch: false } })
+    await new Promise(r => setTimeout(r, 300)) // opened: its file written
+    const shown = result.current.lastBackup
+    const before = writes.length
+    const rendersBefore = renders
+
+    // a point: its file is written, the hook does not render
+    state.events.push({ type: 'point', seq: 4, payload: { team: 'home' } })
+    act(() => fakeDb.write('events', 'creating', undefined, { matchId: 7, type: 'point' }))
+    await waitFor(() => expect(writes).toHaveLength(before + 1))
+    await new Promise(r => setTimeout(r, 50))
+    expect(renders).toBe(rendersBefore)
+    expect(result.current.lastBackup).toBe(shown)
+
+    // watched again: the engine's status now, and it follows the next file
+    rerender({ watch: true })
+    expect(result.current.lastBackup).toBe(engine.getStatus().lastBackup)
+    expect(result.current.lastBackup).not.toBe(shown)
+    const watched = renders
+    state.events.push({ type: 'point', seq: 5, payload: { team: 'home' } })
+    act(() => fakeDb.write('events', 'creating', undefined, { matchId: 7, type: 'point' }))
+    await waitFor(() => expect(writes).toHaveLength(before + 2))
+    await waitFor(() => expect(renders).toBeGreaterThan(watched))
+    expect(result.current.lastBackup).toBe(engine.getStatus().lastBackup)
+    unmount()
+  })
+
   // 2026-10-29: the desktop app reopened its copy of match 406970, which a
   // phone had continued and closed a week before, and wrote a fresh backup
   // file of it at open

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, persistentStorage } from './db/db'
 import { wipeMatchEvents } from './db/eventHistory'
 import SavedBackupsList from './components/SavedBackupsList'
 import MatchSetup, { preloadMatchSetup } from './components/MatchSetup'
-import Scoreboard, { preloadScoreboard } from './components/Scoreboard'
+import ScoreboardScreen, { preloadScoreboard } from './components/Scoreboard'
 import CoinToss from './components/CoinToss'
 import MatchEnd, { preloadMatchEnd } from './components/MatchEnd'
 import ManualAdjustments from './components/ManualAdjustments'
@@ -33,16 +33,26 @@ import { isScorerMoved, takeBackScoring, relaySyncDevice, serverScoreForTakeBack
 import ScorerMovedModal from './components/ScorerMovedModal'
 import ClosedOnServerModal from './components/ClosedOnServerModal'
 import SelfCheckNotice from './components/SelfCheckNotice'
+import DeviceCheckCard from './components/DeviceCheckCard'
+import { homeQuietForCheck, useAutoDeviceCheck } from './utils/deviceCheck'
+import { logState } from './utils/comprehensiveLogger'
 import { isKnownClosedOnServer, isStaleClosedCopy, wasClosedOnServer } from './utils/matchReopen'
-import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
+import { readHomeMatchStatus } from './utils/homeMatchStatus'
+import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
+import { useLatestCallback } from './hooks/useLatestCallback'
 import { pickNativeBackupFile } from './utils/nativeBackup'
 import { useBackupUnlock } from './hooks/useBackupUnlock'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import { publishEndedLiveStates } from './utils/matchEndLiveState'
 import ballFallback from './ball_fallback.png'
 import { isLocalOnly } from './domain/matchKind'
+
+// The scoring screen renders on its own state, data and contexts only: App's
+// renders while scoring (its live queries, the sync status) stop here. Its
+// callbacks keep one identity (useLatestCallback in App).
+const Scoreboard = memo(ScoreboardScreen)
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -148,6 +158,14 @@ function startupCheckShownRecently(now = Date.now()) {
 }
 // read once per page load (not in a render: StrictMode calls initializers twice)
 const STARTUP_CHECK_SHOWN_RECENTLY = typeof window !== 'undefined' && startupCheckShownRecently()
+
+// The device check stops when a match screen is noted open (deviceSelfCheck
+// noteOpenMatch), whatever App's state says; its result goes into the local
+// interaction log (numbers only, never sent: utils/comprehensiveLogger)
+const matchOpenNoted = () => readOpenMatch() != null
+const logDeviceCheck = (r) => logState('DeviceCheck', 'result', {
+  tier: r.tier, score: r.score, workMs: r.workMs, layoutMs: r.layoutMs, platform: r.hints?.platform, cores: r.hints?.cores, memoryGb: r.hints?.memoryGb, from: 'home'
+})
 
 export default function App() {
   const { t, i18n } = useTranslation()
@@ -305,7 +323,10 @@ export default function App() {
   // queue write does not re-render the whole app); it only needs to know
   // whether the cloud is waiting for a sign-in.
   const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
-  const backup = useAutoBackup(matchId)
+  // The native backup status (folder, last file, error) is shown on Home, in
+  // Match Setup and in the Options dialog only: while scoring, App does not
+  // re-render at each backup file (one after nearly every scoring write)
+  const backup = useAutoBackup(matchId, { watchStatus: !matchId || showMatchSetup || homeOptionsModal })
   const { unlock: unlockBackup, dialog: backupUnlockDialog } = useBackupUnlock()
   // Backup file for a restore: the desktop app opens its own dialog in the
   // backup folder; elsewhere the browser file picker. A whole-database export
@@ -615,13 +636,17 @@ export default function App() {
   // Never a copy the server has closed (isStaleClosedCopy): a phone reopened
   // one on its scoring screen at every start (2026-10-23). It is not the
   // live match either, for the update check and the Back / close prompts.
+  // Only its status and test flag, as one string ('live|1'): a write of the
+  // live match's row (the heartbeat) no longer re-renders App. undefined when
+  // there is none (first() finds nothing), null when it cannot be read.
   const activeMatch = useLiveQuery(async () => {
     try {
-      return await db.matches
+      const live = await db.matches
         .where('status')
         .equals('live')
         .filter(m => !isStaleClosedCopy(m))
         .first()
+      return live ? `${live.status}|${live.test ? 1 : 0}` : live
     } catch (error) {
       console.error('Unable to load active match', error)
       return null
@@ -634,8 +659,8 @@ export default function App() {
   useEffect(() => installAppLifecycle(), [])
   // Android app: who installed it, the opt-in update check (utils/androidUpdate.js)
   useEffect(() => installAndroidUpdates(), [])
-  const activeMatchStatus = activeMatch?.status
-  const activeMatchIsTest = !!activeMatch?.test
+  const [activeMatchStatus, activeMatchTest] = typeof activeMatch === 'string' ? activeMatch.split('|') : []
+  const activeMatchIsTest = activeMatchTest === '1'
   // undefined until the live query has answered: before that "no live match"
   // is only a guess, and the Android update check must not run on a guess
   const activeMatchLoaded = activeMatch !== undefined
@@ -712,7 +737,12 @@ export default function App() {
   // (utils/deviceMatches.js): Continue and Delete above only reach the newest.
   // Copies of one match that the self-check flagged are listed and marked;
   // each row says what the server said about it (deviceSelfCheck copyState).
+  // The same array while the rows are equal: a match-row write while scoring
+  // (the heartbeat) re-reads the list but no longer re-renders App. Still read
+  // off Home: the list is current when the home screen comes back, in one
+  // change (AppCloseMatchOneChange).
   const serverHereKey = serverHere.join(',')
+  const deviceMatchesShown = useRef(null)
   const deviceMatches = useLiveQuery(async () => {
     try {
       const matches = await db.matches.toArray()
@@ -720,10 +750,14 @@ export default function App() {
       const teams = teamIds.length ? await db.teams.bulkGet(teamIds) : []
       const names = new Map(teams.filter(Boolean).map(tm => [tm.id, tm.name]))
       const here = new Set(serverHereKey ? serverHereKey.split(',').map(Number) : [])
-      return deviceMatchRows(matches, names, {
+      const rows = deviceMatchRows(matches, names, {
         duplicateIds: duplicateCopyIds(matches),
         stateOf: (m) => copyState(m, { checkedHere: here.has(m.id) })
       })
+      const key = JSON.stringify(rows)
+      if (deviceMatchesShown.current?.key === key) return deviceMatchesShown.current.rows
+      deviceMatchesShown.current = { key, rows }
+      return rows
     } catch (error) {
       console.error('Unable to list the matches on this device', error)
       return []
@@ -1062,99 +1096,21 @@ export default function App() {
     if (implied) setToolMode(implied)
   }, [toolMode, matchesLoaded, currentOfficialMatch, currentTestMatch])
 
-  // Get match status and details
+  // The current match's status (utils/homeMatchStatus): the header's match
+  // chip and Home's New match / Test match / Easy warnings. { match, status }
+  // for the match the status was read for. The same object while neither
+  // changes: the query re-runs at every point (it reads the sets), but App
+  // re-renders only when the status or the match row changes (useLiveQuery
+  // compares by identity), and a live match's events are not read at all.
+  const matchStatusShown = useRef(null)
   const matchStatus = useLiveQuery(async () => {
-    if (!currentMatch) return null
-
-    // For test matches that have been restarted (no signatures, only initial set, no events), don't show status
-    if (currentMatch.test === true) {
-      const hasSignatures = currentMatch.homeCoachSignature ||
-        currentMatch.homeCaptainSignature ||
-        currentMatch.awayCoachSignature ||
-        currentMatch.awayCaptainSignature
-
-      if (!hasSignatures) {
-        const sets = await db.sets.where('matchId').equals(currentMatch.id).toArray()
-        const events = await db.events.where('matchId').equals(currentMatch.id).toArray()
-        // If only initial set exists and no events, it's been restarted - don't show status
-        if (sets.length === 1 && events.length === 0) {
-          return null
-        }
-      }
-    }
-
-    const homeTeamPromise = currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : Promise.resolve(null)
-    const awayTeamPromise = currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : Promise.resolve(null)
-
-    const setsPromise = db.sets.where('matchId').equals(currentMatch.id).toArray()
-    const eventsPromise = db.events.where('matchId').equals(currentMatch.id).toArray()
-    const homePlayersPromise = currentMatch.homeTeamId
-      ? db.players.where('teamId').equals(currentMatch.homeTeamId).count()
-      : Promise.resolve(0)
-    const awayPlayersPromise = currentMatch.awayTeamId
-      ? db.players.where('teamId').equals(currentMatch.awayTeamId).count()
-      : Promise.resolve(0)
-
-    const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
-      homeTeamPromise,
-      awayTeamPromise,
-      setsPromise,
-      eventsPromise,
-      homePlayersPromise,
-      awayPlayersPromise
-    ])
-
-    const signaturesComplete = Boolean(
-      currentMatch.homeCoachSignature &&
-      currentMatch.homeCaptainSignature &&
-      currentMatch.awayCoachSignature &&
-      currentMatch.awayCaptainSignature
-    )
-
-    const infoConfigured = Boolean(
-      (currentMatch.scheduledAt && String(currentMatch.scheduledAt).trim() !== '') ||
-      (currentMatch.city && String(currentMatch.city).trim() !== '') ||
-      (currentMatch.hall && String(currentMatch.hall).trim() !== '') ||
-      (currentMatch.league && String(currentMatch.league).trim() !== '')
-    )
-
-    const rostersReady = homePlayers >= 6 && awayPlayers >= 6
-    const matchReadyForPlay = infoConfigured && signaturesComplete && rostersReady
-
-    const hasActiveSet = sets.some(set => {
-      return Boolean(
-        set.finished ||
-        set.startTime ||
-        set.homePoints > 0 ||
-        set.awayPoints > 0
-      )
-    })
-
-    const hasEventActivity = events.some(event =>
-      ['set_start', 'rally_start', 'point'].includes(event.type)
-    )
-
-    let status = 'No data'
-    // A copy the server has closed is no match being recorded: the header
-    // does not say so, and New match warns instead of doing nothing
-    if (currentMatch.status === 'final' || (sets.length > 0 && sets.every(s => s.finished)) || isStaleClosedCopy(currentMatch)) {
-      status = 'Match ended'
-    } else if ((currentMatch.status === 'live' || hasActiveSet || hasEventActivity) && matchReadyForPlay) {
-      status = 'Match recording'
-    } else if (homePlayers > 0 || awayPlayers > 0 || currentMatch.homeCoachSignature || currentMatch.awayCoachSignature) {
-      if (signaturesComplete) {
-        status = 'Coin toss'
-      } else {
-        status = 'Setup'
-      }
-    }
-
-    return {
-      match: currentMatch,
-      homeTeam,
-      awayTeam,
-      status
-    }
+    const status = await readHomeMatchStatus(db, currentMatch)
+    if (status == null) return null
+    const shown = matchStatusShown.current
+    if (shown && shown.match === currentMatch && shown.status === status) return shown
+    const next = { match: currentMatch, status }
+    matchStatusShown.current = next
+    return next
   }, [currentMatch])
 
   // Query for match info menu (teams for active match or home view)
@@ -1951,6 +1907,37 @@ export default function App() {
     setShowMatchSetup(false)
     setShowCoinToss(true)
   }
+
+  // The match info alone, over the scoring screen (its Menu)
+  const openMatchInfoFromScoreboard = () => {
+    setManualAdjustmentsFrom('scoreboard')
+    setShowManualAdjustments(true)
+  }
+
+  // Leaving the match info / corrections (Close, Save): back to Match End, or
+  // to the scoring screen once it has read the match (preloadScoreboard), so
+  // its remount paints the match instead of "Loading..." while it reads every
+  // event. Save calls onSave and onClose one after the other: one read.
+  const scoreboardReturn = useRef(null)
+  const leaveManualAdjustments = async () => {
+    const from = manualAdjustmentsFrom
+    if (from === 'scoreboard') {
+      if (!scoreboardReturn.current) {
+        scoreboardReturn.current = preloadScoreboard(matchId).finally(() => { scoreboardReturn.current = null })
+      }
+      await scoreboardReturn.current
+    }
+    setShowManualAdjustments(false)
+    if (from !== 'scoreboard') setShowMatchEnd(true)
+    setManualAdjustmentsFrom('matchEnd')
+  }
+
+  // The memoized scoring screen's callbacks: one identity, App's newest closure
+  const scoreboardFinishSet = useLatestCallback(finishSet)
+  const scoreboardOpenSetup = useLatestCallback(openMatchSetup)
+  const scoreboardOpenMatchSetup = useLatestCallback(openMatchSetupView)
+  const scoreboardOpenMatchInfo = useLatestCallback(openMatchInfoFromScoreboard)
+  const scoreboardOpenCoinToss = useLatestCallback(openCoinTossView)
 
   const returnToMatch = () => setShowMatchSetup(false)
 
@@ -3861,6 +3848,20 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [onHome, homeReadsDone])
   const homeVisible = homeShown || homeReadsDone
+
+  // The device check (utils/deviceCheck, owner 22.11.2026): once per device,
+  // on Home once it shows, never while a match is open (scored, set up, at its
+  // end, being opened) or under a first-start dialog ("How do you use...",
+  // "Connecting..."); it stops at its next step when that changes. Its
+  // recommendation is the card on Home (DeviceCheckCard), under the same rule.
+  const firstStartDialog = (showStartupConnectivity && !offlineMode) || (toolMode === null && matchesLoaded && !matchId && !homeOptionsModal)
+  // Home's own match set-up while no match id is set yet: the Easy match
+  // form, today's games, the new-match / replace and other confirms, the
+  // restore and delete dialogs, a test or easy match being prepared
+  const homeSetupDialog = !!easyMatchForm || todayGamesOpen || !!newMatchModal || !!confirmModal || !!restoreMatchModal || !!restorePreviewData ||
+    !!deleteMatchModal || testMatchLoading || easyMatchLoading || !!homeWhilePreparing
+  const homeQuiet = homeQuietForCheck({ matchId, homeVisible, firstStartDialog, openingMatch: !!openingMatch, covered: simpleBoardShown || !!manageTab || sizeGateShown || homeSetupDialog })
+  useAutoDeviceCheck(homeQuiet && !homeOptionsModal, { matchOpen: matchOpenNoted, onResult: logDeviceCheck })
   // The home screen's list, each row with what the server does not have yet
   const homeDeviceMatches = deviceMatches?.filter(r => r.id !== closedMatchId)
     .map(r => ({ ...r, unsent: unsentByKey?.get(r.seedKey)?.changes || 0 }))
@@ -4074,16 +4075,8 @@ export default function App() {
                   matchId={matchId}
                   // from the scoreboard during the match: the match info alone
                   {...(manualAdjustmentsFrom === 'scoreboard' ? { initialTab: 'info', tabIds: ['info'] } : {})}
-                  onClose={() => {
-                    setShowManualAdjustments(false)
-                    if (manualAdjustmentsFrom !== 'scoreboard') setShowMatchEnd(true)
-                    setManualAdjustmentsFrom('matchEnd')
-                  }}
-                  onSave={() => {
-                    setShowManualAdjustments(false)
-                    if (manualAdjustmentsFrom !== 'scoreboard') setShowMatchEnd(true)
-                    setManualAdjustmentsFrom('matchEnd')
-                  }}
+                  onClose={leaveManualAdjustments}
+                  onSave={leaveManualAdjustments}
                 />
               ) : showMatchEnd && matchId ? (
                 <MatchEnd
@@ -4135,6 +4128,7 @@ export default function App() {
                     continueMatch={(id) => openFromHome(() => continueMatch(id, { checkServer: true }))}
                     continueTestMatch={() => openFromHome(continueTestMatch)}
                     continueInfo={continueInfo}
+                    deviceCheckCard={homeQuiet ? <DeviceCheckCard /> : null}
                     selfCheckNotice={
                       <SelfCheckNotice
                         report={shownSelfCheck}
@@ -4161,11 +4155,11 @@ export default function App() {
                 <Scoreboard
                   matchId={matchId}
                   scorerAttentionTrigger={scorerAttentionTrigger}
-                  onFinishSet={finishSet}
-                  onOpenSetup={openMatchSetup}
-                  onOpenMatchSetup={openMatchSetupView}
-                  onOpenMatchInfo={() => { setManualAdjustmentsFrom('scoreboard'); setShowManualAdjustments(true) }}
-                  onOpenCoinToss={openCoinTossView}
+                  onFinishSet={scoreboardFinishSet}
+                  onOpenSetup={scoreboardOpenSetup}
+                  onOpenMatchSetup={scoreboardOpenMatchSetup}
+                  onOpenMatchInfo={scoreboardOpenMatchInfo}
+                  onOpenCoinToss={scoreboardOpenCoinToss}
                   onTriggerEventBackup={backup.triggerEventBackup}
                 />
               )}
@@ -4730,6 +4724,7 @@ export default function App() {
             <ToolModeChooser open={toolMode === null && matchesLoaded && !matchId && !homeOptionsModal} />
             <HomeOptionsModal
               toolMode={{ mode: toolMode, locked: toolLocked, onChange: setToolMode }}
+              canCheckDevice={!matchId && !openingMatch}
               open={homeOptionsModal}
               onClose={() => setHomeOptionsModal(false)}
               onOpenConnectionSetup={() => setConnectionSetupModal(true)}

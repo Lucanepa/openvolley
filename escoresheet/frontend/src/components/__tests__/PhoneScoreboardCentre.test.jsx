@@ -8,8 +8,8 @@
 // The centre now shares the row with the two square slots, in the flow: the
 // row is as high as the point buttons, or as its content when that is higher
 // (the view scrolls instead of overlapping).
-import { describe, it, expect, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import { render, screen, cleanup, waitFor } from '@testing-library/react'
 import '../../i18n'
 import PhoneScoreboard from '../scoreboard/PhoneScoreboard.jsx'
 import { cssValue } from '../../__tests__/cssValue.js'
@@ -74,6 +74,27 @@ describe('PhoneScoreboard: the centre between rallies', () => {
     expect(sides.parentElement.style.gridTemplateColumns).toBe(cssValue('grid-template-columns', 'repeat(2, minmax(0, 1fr))'))
     expect(centreOf().textContent).toContain('Confirm set 5 setup')
     expect(centreOf().textContent).toContain('2:38')
+  })
+
+  // The interval's countdown ticks by itself with its clock (CountdownSeconds),
+  // as the time-out's: the Scoreboard no longer renders each second of it
+  // (performance pass, 2026-11-22); its text stays mm:ss
+  it('the interval and the deciding set\'s countdown tick by themselves with their clock, as mm:ss', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(100000)
+    try {
+      const clock = { anchor: 100000 - 22000, duration: 180 } // 22 s gone: 2:38 left
+      const textOf = (s) => (s <= 0 ? '0' : s < 60 ? String(s) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`)
+      const { rerender } = render(<PhoneScoreboard {...props({ centre: { kind: 'interval', countdown: 180, countdownText: '3:00', total: 180, clock, textOf } })} />)
+      expect(screen.getByTestId('phone-countdown').textContent).toBe('2:38')
+      now.mockReturnValue(100000 + 1000)
+      await waitFor(() => expect(screen.getByTestId('phone-countdown').textContent).toBe('2:37'))
+      rerender(<PhoneScoreboard {...props({ setNumber: 5, centre: { kind: 'set5', confirmLabel: 'Confirm set 5 setup', countdown: 180, countdownText: '3:00', total: 180, clock, textOf } })} />)
+      expect(centreOf().textContent).toContain('2:37')
+      now.mockReturnValue(100000 + 128 * 1000) // 150 s gone: 30 left
+      await waitFor(() => expect(screen.getByTestId('phone-countdown').textContent).toBe('30'))
+    } finally {
+      now.mockRestore()
+    }
   })
 
   it('a rally in play shows the two point buttons, no centre', () => {

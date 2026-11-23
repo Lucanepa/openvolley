@@ -40,13 +40,20 @@ import { isScorerEntry } from '../utils/appEntry'
 /** The Scoreboard events that download a backup in a browser without a folder */
 export const BROWSER_DOWNLOAD_EVENTS = new Set(['set_end', 'match_end'])
 
-export default function useAutoBackup(activeMatchId = null) {
+/**
+ * @param {number|null} activeMatchId the open match
+ * @param {{ watchStatus?: boolean }} [options] watchStatus false: the native
+ *   engine's status (backupFolder, lastBackup, backupError) is not followed
+ *   and the caller does not re-render at each backup file; it is read again
+ *   once watched (App watches it only where it is shown)
+ */
+export default function useAutoBackup(activeMatchId = null, { watchStatus = true } = {}) {
   // Apps write native backups; browsers keep the folder / download behaviour
   const [platform] = useState(() => detectBackupPlatform())
   // Backups are the scoretable's job only (never a tablet's referee / bench page)
   const [scorerPage] = useState(() => isScorerEntry())
   const nativeMode = isNativeBackupPlatform(platform)
-  const nativeStatus = useNativeBackupStatus()
+  const nativeStatus = useNativeBackupStatus({ paused: !watchStatus })
 
   // State
   const [backupDirName, setBackupDirName] = useState(null)

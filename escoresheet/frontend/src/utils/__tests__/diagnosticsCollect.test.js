@@ -97,6 +97,9 @@ describe('diagnostics: a tablet app (referee, bench, livescore)', () => {
     expect(r.text).toMatch(/Page:\s+https:\/\/app\.openvolley\.app\/referee\/$/m)
     expect(r.text).not.toContain('903211')
     expect(r.fileName).toBe('openvolley-diagnostics-20261029-2201.txt')
+    // the look switches and the device check are the scorer app's
+    expect(r.text).not.toContain('Effects and speed')
+    expect(r.text).not.toContain('Device check')
   })
 })
 

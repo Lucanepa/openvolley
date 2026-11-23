@@ -590,7 +590,8 @@ In the signature cell for "1st Referee", "2nd Referee" and "Scorer":
 - Otherwise the cell stays empty.
 
 The "Assistant Scorer" row and the captain boxes do not change. The sets come from the PDF's
-existing data (sessionStorage `scoresheetData` or Dexie), so a stale approval never prints.
+existing data (this device's database, read by `?matchId=`; no opener writes a
+`sessionStorage` copy since the perf pass of 22.11.2026), so a stale approval never prints.
 
 ### 4.7 Manager console
 
