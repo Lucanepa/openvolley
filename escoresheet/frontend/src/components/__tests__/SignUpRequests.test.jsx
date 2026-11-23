@@ -29,6 +29,8 @@ const fill = (form) => {
   fireEvent.change(input('Email'), { target: { value: 'lea@example.ch' } })
   fireEvent.change(input('Password'), { target: { value: 'secret1234' } })
   fireEvent.change(input('Confirm password'), { target: { value: 'secret1234' } })
+  // required since 23.11.2026
+  fireEvent.change(input('auth.licenceNumber'), { target: { value: '123456' } })
 }
 const submit = (form) => fireEvent.click(within(form).getByRole('button', { name: 'Create account' }))
 

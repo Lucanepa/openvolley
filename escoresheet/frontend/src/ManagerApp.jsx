@@ -5,6 +5,7 @@ import { useAuth } from './contexts/AuthContext'
 import ManageConsole, { manageTabsFor } from './components/manage/ManageConsole'
 import LoginModal from './components/auth/LoginModal'
 import SignUpForm from './components/auth/SignUpForm'
+import { askLicence } from './components/auth/licenceAsk'
 import InviteCodeForm from './components/auth/InviteCodeForm'
 import EmailConfirmBanner from './components/auth/EmailConfirmBanner'
 import { ConfirmEmailPage, ResetPasswordPage } from './components/auth/AuthLinkPages'
@@ -692,6 +693,12 @@ export default function ManagerApp({ authLink = null }) {
     replaceRoute('')
     setTab(null)
   }, [user, route, replaceRoute])
+
+  // An account without a licence number is asked for it once the manager opens
+  // (LicenceAskHost; owner 23.11.2026), unless it said "Later" here since its
+  // last sign-in
+  const userId = user?.id ?? null
+  useEffect(() => { if (userId) askLicence(userId) }, [userId])
 
   // "Account created" belongs to the session that made the account only
   const isSignedIn = Boolean(user)

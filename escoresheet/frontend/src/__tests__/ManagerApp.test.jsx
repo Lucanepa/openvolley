@@ -321,10 +321,12 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     'Last name': 'Muster',
     Email: 'lea@club.ch',
     Password: 'secret1234',
-    'Confirm password': 'secret1234'
+    'Confirm password': 'secret1234',
+    // required since 23.11.2026 (owner: "have registered people insert their licence n")
+    'auth.licenceNumber': '123456'
   }
 
-  it('the page: every field of the sign-up, an optional licence number and no date of birth, a way back to sign in', () => {
+  it('the page: every field of the sign-up, the licence number required, no date of birth, a way back to sign in', () => {
     setAuth({ user: null })
     render(<ManagerApp />)
     const page = screen.getByTestId('manager-sign-up')
@@ -343,10 +345,10 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     expect(within(country).getAllByRole('option').map(o => o.value)).toEqual(['CHE'])
     // no line under the heading on OpenVolley (OpenBeach keeps its own)
     expect(within(page).queryByText('managerSite.signUpBody')).toBeNull()
-    // the licence number: optional (not required), empty, digits only, at most 7
+    // the licence number: required (owner 23.11.2026), empty, digits only, at most 7
     const licence = within(page).getByLabelText('auth.licenceNumber')
     expect(licence).toHaveValue('')
-    expect(licence).not.toBeRequired()
+    expect(licence).toBeRequired()
     expect(licence).toHaveAttribute('inputmode', 'numeric')
     expect(within(page).getByText('auth.licenceNumberHint')).toBeInTheDocument()
     fireEvent.change(licence, { target: { value: 'SV 12 34-567 89' } })
@@ -379,6 +381,12 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     submit()
     expect(await within(page).findByText('auth.licenceNumberInvalid')).toBeInTheDocument()
     expect(within(page).getByLabelText('auth.licenceNumber')).toHaveAttribute('aria-invalid', 'true')
+
+    // none at all: the browser holds the form (required), nothing is sent
+    fill(page, { ...valid, 'auth.licenceNumber': 'SV' })
+    expect(within(page).getByLabelText('auth.licenceNumber')).toHaveValue('')
+    submit()
+    expect(within(page).getByLabelText('auth.licenceNumber').validity.valueMissing).toBe(true)
     expect(auth.value.signUp).not.toHaveBeenCalled()
   })
 
@@ -497,14 +505,14 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     expect(screen.queryByTestId('manager-sign-up')).toBeNull()
   })
 
-  it('sends the trimmed fields and the licence number (null when left empty), never a date of birth', async () => {
+  it('sends the trimmed fields and the licence number, never a date of birth', async () => {
     setAuth({ user: null })
     render(<ManagerApp />)
     const page = screen.getByTestId('manager-sign-up')
     fill(page, { ...valid, Email: ' lea@club.ch ', 'First name': ' Lea ' })
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
     await waitFor(() => expect(auth.value.signUp).toHaveBeenCalledWith('lea@club.ch', 'secret1234', {
-      firstName: 'Lea', lastName: 'Muster', country: 'CHE', licenceNumber: null
+      firstName: 'Lea', lastName: 'Muster', country: 'CHE', licenceNumber: '123456'
     }, { requests: [] }))
   })
 

@@ -143,6 +143,33 @@ describe('admin account actions with the production grants', { skip: SKIP }, () 
     assert.ok(!JSON.stringify(a.details).includes('@'), JSON.stringify(a.details))
   })
 
+  // owner 23.11.2026: the account page shows the licence number with name and email
+  it('Edit details: the licence number (list, PATCH, audit); a bad one is refused', async () => {
+    const t = await account('licenced', { roles: ['scorer'] })
+    const list = async () => (await call(users.adminA, 'GET', `/api/admin/accounts?filter=all&q=${encodeURIComponent(t.email)}`)).json.data
+    const first = await list()
+    assert.equal(first.can_edit_licence, true)
+    assert.equal(first.accounts.find((a) => a.id === t.id).license_number, null)
+    for (const license_number of ['123', '12345678', '12a45', 1234.5, true]) {
+      const bad = await call(users.adminA, 'PATCH', `/api/admin/accounts/${t.id}`, { license_number })
+      assert.equal(bad.status, 400, `${JSON.stringify(license_number)}: ${bad.text}`)
+    }
+    const r = await call(users.adminA, 'PATCH', `/api/admin/accounts/${t.id}`, { license_number: ' 7654321 ' })
+    assert.equal(r.status, 200, r.text)
+    assert.deepEqual([r.json.data.license_number, r.json.data.changed], ['7654321', ['license_number']])
+    assert.equal((await list()).accounts.find((a) => a.id === t.id).license_number, '7654321')
+    // found by its licence number too
+    const byLicence = (await call(users.adminA, 'GET', '/api/admin/accounts?filter=all&q=7654321')).json.data.accounts
+    assert.deepEqual(byLicence.map((a) => a.id), [t.id])
+    const { rows: [a] } = await sql.query("SELECT details FROM public.audit_log WHERE action = 'account.profile' AND target_user_id = $1", [t.id])
+    assert.deepEqual([a.details.before.license_number, a.details.after.license_number], [null, '7654321'])
+    // null removes it; the name stays
+    const off = await call(users.adminA, 'PATCH', `/api/admin/accounts/${t.id}`, { license_number: null })
+    assert.equal(off.status, 200, off.text)
+    const { rows: [p] } = await sql.query('SELECT first_name, license_number FROM public.profiles WHERE user_id = $1', [t.id])
+    assert.deepEqual([p.first_name, p.license_number], ['licenced', null])
+  })
+
   it('adding an editor and linking to a club need a confirmed account; the audit keeps no address', async () => {
     const { rows: [m] } = await sql.query("INSERT INTO public.matches (external_id, status, sport_type) VALUES ($1, 'setup', 'indoor') RETURNING id", [`adm_${randomBytes(3).toString('hex')}`])
     const no = await call(users.adminA, 'POST', `/api/admin/matches/${m.id}/editors`, { email: users.fresh.email })

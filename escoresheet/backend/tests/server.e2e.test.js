@@ -78,6 +78,9 @@ async function bootServer(env, args = []) {
   const childEnv = { ...inherited, ...env, PORT: String(port) }
   // the database mode needs a PIN secret (server.js); a test that names none gets one
   if (childEnv.DATABASE_URL && childEnv.OV_PIN_SECRET === undefined) childEnv.OV_PIN_SECRET = 'e2e-test-pin-secret-'.padEnd(40, 'x')
+  // its accounts sign up without a licence number (production needs one;
+  // tests/signupLicence.e2e.test.js), as in tests/helpers/e2eServer.js
+  if (childEnv.OV_SIGNUP_LICENCE === undefined) childEnv.OV_SIGNUP_LICENCE = 'optional'
   const child = spawn(process.execPath, ['server.js', ...args], { cwd: BACKEND_DIR, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
   const output = []
   child.stdout.on('data', (d) => output.push(d.toString()))

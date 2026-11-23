@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.26 · État au 22 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.27 · État au 23 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -320,7 +320,9 @@ sur `manager.openvolley.app` et `manager-beach.openvolley.app`.
 
 **Données :** adresse e-mail, mot de passe (enregistré uniquement sous forme
 de hachage, jamais en clair), prénom et nom, pays, numéro de licence
-(facultatif : ton numéro de licence Swiss Volley, 4 à 7 chiffres), la langue
+(ton numéro de licence Swiss Volley, 4 à 7 chiffres ; nécessaire pour un
+nouveau compte depuis le 23 novembre 2026, les comptes ouverts avant sont
+invités à l'indiquer à leur prochaine connexion), la langue
 choisie à l'inscription (pour les e-mails du
 compte), rôles (par exemple marqueur, arbitre, gestionnaire de
 compétition), les applications concernées (salle, beach), dates de création,

@@ -969,6 +969,25 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       assert.deepEqual([np.license_number, np.dob, np.raw_user_meta_data.dob, np.raw_user_meta_data.license_number], [null, null, undefined, undefined])
     })
 
+    // owner 23.11.2026: production needs the licence number at sign-up (server.js
+    // licenceRequired unless OV_SIGNUP_LICENCE=optional)
+    it('licenceRequired: no licence number, no account; with one it signs up', async () => {
+      const auth = makeAuth({ limits: { signUpIp: false }, licenceRequired: true })
+      const ip = nextIp()
+      for (const [i, metadata] of [{ first_name: 'Nolic' }, { license_number: '' }, { license_number: null }, { license_number: '   ' }].entries()) {
+        const r = await auth.handleAuthRequest('sign-up', { email: `required${i}@example.ch`, password: 'pw12345678', metadata }, { ip })
+        assert.equal(r.status, 422, JSON.stringify(metadata))
+        assert.equal(r.body.error.code, JSON.stringify(metadata).includes('   ') ? 'validation_failed' : 'licence_required', JSON.stringify(metadata))
+      }
+      assert.equal((await pool.query(`SELECT count(*)::int AS n FROM auth.users WHERE email LIKE 'required%'`)).rows[0].n, 0)
+      const bad = await auth.handleAuthRequest('sign-up', { email: 'requiredbad@example.ch', password: 'pw12345678', metadata: { license_number: '12' } }, { ip })
+      assert.deepEqual([bad.status, bad.body.error.code], [422, 'validation_failed'])
+      const good = await auth.handleAuthRequest('sign-up', { email: 'requiredok@example.ch', password: 'pw12345678', metadata: { license_number: '1234567' } }, { ip })
+      assert.equal(good.status, 200, JSON.stringify(good.body))
+      const { rows: [p] } = await pool.query("SELECT p.license_number FROM public.profiles p JOIN auth.users u ON u.id = p.user_id WHERE u.email = 'requiredok@example.ch'")
+      assert.equal(p.license_number, '1234567')
+    })
+
     it('profile is read-only: updates (including roles) are ignored', async () => {
       const auth = makeAuth()
       const su = await auth.handleAuthRequest('sign-up', { email: 'profile@example.ch', password: 'pw12345678', metadata: { first_name: 'Pat' } }, { ip: nextIp() })

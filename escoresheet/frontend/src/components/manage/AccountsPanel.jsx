@@ -6,6 +6,7 @@ import { API_GRANTABLE_ROLES, BEACH_ROLES, plainRole } from '../../lib/access'
 import { requestPartLabel, sortRequestParts } from '../../domain/signUpRequests'
 import RoleChips from '../auth/RoleChips'
 import KitModal from './KitModal'
+import { licenceInput, licenceOk, licenceValue } from '../auth/licenceNumber'
 import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, personName, useErrorText } from './common'
 import { usePageItem } from './usePageItem'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, KeyValue, SkeletonRows, Button, Checkbox, Chip, Field, Input, Notice, Select, dayLabel, confirmDialog, toast } from '../../ui'
@@ -92,6 +93,9 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, f
   const canDelete = data?.can_delete === true
   // PATCH /api/admin/accounts/:id (name and address): only on a server that has it
   const canEdit = data?.can_edit === true
+  // ... and the licence number with them (owner 23.11.2026): a server that takes it
+  const canEditLicence = canEdit && data?.can_edit_licence === true
+  const editDetailsLabel = canEditLicence ? t('manage.accounts.editDetailsLicence') : t('manage.accounts.editDetails')
   // POST .../deactivate|reactivate: only on a server that has them
   const canDeactivate = data?.can_deactivate === true
 
@@ -222,6 +226,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, f
     reject: rejectSignUp,
     editRoles: setEditing,
     editDetails: canEdit ? setDetailsOf : null,
+    editDetailsLabel,
     editClubs: withClubs ? setClubsOf : null,
     remove: setDeleting,
     setActive: canDeactivate ? setActive : null
@@ -231,6 +236,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, f
     {detailsOf && (
       <DetailsModal
         account={detailsOf}
+        withLicence={canEditLicence}
         selfIsSuperAdmin={selfIsSuperAdmin}
         onClose={() => setDetailsOf(null)}
         onSaved={() => { setDetailsOf(null); reload(); pending.reload() }}
@@ -338,6 +344,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, f
                   <span className="min-w-0 max-w-full truncate" title={a.email}>{a.email}</span>
                   <span>{t('manage.accounts.created', { date: date(a.created_at) })}</span>
                   <span>{a.last_sign_in_at ? t('manage.accounts.lastSignIn', { date: date(a.last_sign_in_at) }) : t('manage.accounts.neverSignedIn')}</span>
+                  {a.license_number && <span data-testid="account-row-licence">{t('manage.accounts.licenceMeta', { number: a.license_number })}</span>}
                   {a.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
                 </>}
                 chips={<>
@@ -362,7 +369,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, f
                   {offer(a) === 'reject' && (
                     <RowTool className={DANGER_TOOL} disabled={!online || busyId === a.id} onClick={() => rejectSignUp(a)} data-testid="reject-account">{t('manage.accounts.reject')}</RowTool>
                   )}
-                  {canEdit && canEditDetails(a, selfIsSuperAdmin) && <RowTool disabled={!online} onClick={() => setDetailsOf(a)} data-testid="edit-details">{t('manage.accounts.editDetails')}</RowTool>}
+                  {canEdit && canEditDetails(a, selfIsSuperAdmin) && <RowTool disabled={!online} onClick={() => setDetailsOf(a)} data-testid="edit-details">{editDetailsLabel}</RowTool>}
                   <RowTool disabled={!online} onClick={() => setEditing(a)}>{t('manage.accounts.editRoles')}</RowTool>
                   {withClubs && <RowTool disabled={!online} onClick={() => setClubsOf(a)}>{t('manage.accounts.editClubs')}</RowTool>}
                   {offer(a) === 'delete' && (
@@ -414,7 +421,9 @@ function AccountPage({ account: a, app, withClubs, online, busy, error, offer, m
             // a phone's grid has two columns: the address takes the whole line and breaks only when it is wider
             { label: t('manage.accounts.page.email'), value: <span className="[overflow-wrap:anywhere]">{a.email}</span>, className: 'col-span-2 sm:col-span-1' },
             { label: t('manage.accounts.page.created'), value: date(a.created_at) },
-            { label: t('manage.accounts.page.lastSignIn'), value: a.last_sign_in_at ? date(a.last_sign_in_at) : t('manage.accounts.neverSignedIn') }
+            { label: t('manage.accounts.page.lastSignIn'), value: a.last_sign_in_at ? date(a.last_sign_in_at) : t('manage.accounts.neverSignedIn') },
+            // db/048, owner 23.11.2026: with the name and address (a server that sends it)
+            ...('license_number' in a ? [{ label: t('manage.accounts.page.licence'), value: <span data-testid="account-page-licence">{a.license_number || '–'}</span> }] : [])
           ]}
         />
         {a.email_confirmed === false && <p className="mt-2 text-xs font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</p>}
@@ -429,7 +438,7 @@ function AccountPage({ account: a, app, withClubs, online, busy, error, offer, m
           ) : a.pending && (
             <Button variant="positive" disabled={!online || busy} loading={busy} onClick={() => actions.approve(a)} data-testid="approve-account">{t('manage.accounts.approve')}</Button>
           )}
-          {actions.editDetails && canEditDetails(a, selfIsSuperAdmin) && <Button variant="secondary" disabled={!online} onClick={() => actions.editDetails(a)} data-testid="edit-details">{t('manage.accounts.editDetails')}</Button>}
+          {actions.editDetails && canEditDetails(a, selfIsSuperAdmin) && <Button variant="secondary" disabled={!online} onClick={() => actions.editDetails(a)} data-testid="edit-details">{actions.editDetailsLabel || t('manage.accounts.editDetails')}</Button>}
           <Button variant="secondary" disabled={!online} onClick={() => actions.editRoles(a)} data-testid="edit-roles">{t('manage.accounts.editRoles')}</Button>
           {actions.editClubs && <Button variant="secondary" disabled={!online} onClick={() => actions.editClubs(a)} data-testid="edit-clubs">{t('manage.accounts.editClubs')}</Button>}
           {actions.setActive && mayToggle && (a.deactivated ? (
@@ -781,22 +790,26 @@ export function canEditDetails(account, selfIsSuperAdmin = false) {
 
 /**
  * An account's name and address (owner 2026-11-11: "let me modify them (e.g.
- * names etc)"): PATCH /api/admin/accounts/:id with the fields changed. The
- * password, passkeys and the address's confirmation stay.
+ * names etc)") and, on a server that takes it (`withLicence`), its licence
+ * number (owner 23.11.2026, db/048): PATCH /api/admin/accounts/:id with the
+ * fields changed. The password, passkeys and the address's confirmation stay.
  */
-function DetailsModal({ account, onClose, onSaved }) {
+function DetailsModal({ account, withLicence = false, onClose, onSaved }) {
   const { t } = useTranslation()
   const errorText = useErrorText()
-  const [form, setForm] = useState(() => ({ first_name: account.first_name || '', last_name: account.last_name || '', email: account.email || '' }))
+  const [form, setForm] = useState(() => ({ first_name: account.first_name || '', last_name: account.last_name || '', email: account.email || '', license_number: account.license_number || '' }))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setError('') }
+  const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: k === 'license_number' ? licenceInput(e.target.value) : e.target.value })); setError('') }
   const changed = {}
   for (const k of ['first_name', 'last_name']) if (form[k].trim() !== (account[k] || '')) changed[k] = form[k].trim()
   if (form.email.trim().toLowerCase() !== String(account.email || '').toLowerCase()) changed.email = form.email.trim()
+  if (withLicence && licenceValue(form.license_number) !== (account.license_number || null)) changed.license_number = licenceValue(form.license_number)
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())
+  const licenceFine = !withLicence || licenceOk(form.license_number)
   const save = async () => {
     if (busy || !Object.keys(changed).length || !emailOk) return
+    if (!licenceFine) { setError(t('auth.licenceNumberInvalid')); return }
     setBusy(true)
     const res = await admin.updateAccount(account.id, changed)
     setBusy(false)
@@ -814,7 +827,7 @@ function DetailsModal({ account, onClose, onSaved }) {
       open
       onClose={close}
       decision
-      title={t('manage.accounts.detailsTitle', { name })}
+      title={t(withLicence ? 'manage.accounts.detailsLicenceTitle' : 'manage.accounts.detailsTitle', { name })}
       closeLabel={t('common.close', 'Close')}
       footer={<>
         <Button variant="secondary" size="lg" onClick={close} disabled={busy}>{t('common.cancel', 'Cancel')}</Button>
@@ -831,6 +844,11 @@ function DetailsModal({ account, onClose, onSaved }) {
         <Field label={t('manage.accounts.email')} hint={changed.email ? t('manage.accounts.emailHint') : undefined}>
           <Input type="email" value={form.email} onChange={set('email')} maxLength={254} autoComplete="off" data-testid="account-email" />
         </Field>
+        {withLicence && (
+          <Field label={t('auth.licenceNumber')} hint={t('manage.accounts.licenceHint')}>
+            <Input type="text" inputMode="numeric" pattern="[0-9]*" value={form.license_number} onChange={set('license_number')} autoComplete="off" data-testid="account-licence" />
+          </Field>
+        )}
       </div>
       <InlineError error={error} className="mt-2" />
     </KitModal>

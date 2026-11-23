@@ -37,7 +37,7 @@
 import { createHash, randomInt } from 'node:crypto'
 import { ADMIN_ROLES, API_GRANTABLE_ROLES, INDOOR_ROLES, SPORTS, SPORT_ROLES, accessForSport, accessFromRoles, normalizeRoles, roleFor, sportOfRole } from './access.js'
 import { findClaim, officialRowsOf, publicClaim, seasonOf, sportOf } from './officialGame.js'
-import { EMAIL_CONFIRMATION_MARK } from './auth.js'
+import { EMAIL_CONFIRMATION_MARK, LICENSE_RE } from './auth.js'
 import { connectClient } from './pgClient.js'
 import { createPinHasher, isHashedPin } from './pinHash.js'
 
@@ -906,10 +906,10 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       const term = q.trim()
       if (term) {
         const pat = p(likePattern(term))
-        where.push(`(u.email ILIKE ${pat} OR p.first_name ILIKE ${pat} OR p.last_name ILIKE ${pat})`)
+        where.push(`(u.email ILIKE ${pat} OR p.first_name ILIKE ${pat} OR p.last_name ILIKE ${pat} OR p.license_number ILIKE ${pat})`)
       }
       const { rows } = await pool.query(
-        `SELECT u.id, u.email, p.first_name, p.last_name, p.roles, u.created_at, u.last_sign_in_at,
+        `SELECT u.id, u.email, p.first_name, p.last_name, p.license_number, p.roles, u.created_at, u.last_sign_in_at,
                 (to_jsonb(u) ->> 'email_confirmed_at') IS NOT NULL AS email_confirmed,
                 coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz > now(), false) AS deactivated
            FROM auth.users u
@@ -934,6 +934,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             email: r.email,
             first_name: r.first_name ?? null,
             last_name: r.last_name ?? null,
+            // db/048: the account's licence number (owner 23.11: on its page with name and email)
+            license_number: r.license_number ?? null,
             roles: acc.roles,
             pending: a === 'beach' ? acc.apps.beach.isPending : ((a ? acc.apps[a].isPending : acc.isPending) && !manages),
             created_at: iso(r.created_at),
@@ -950,6 +952,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         can_delete: typeof eraseAccount === 'function',
         // PATCH /api/admin/accounts/:id exists on this server (name and address)
         can_edit: true,
+        // ... and takes the licence number too (owner 23.11.2026)
+        can_edit_licence: true,
         // POST /api/admin/accounts/:id/deactivate|reactivate exist on this server
         can_deactivate: true
       })
@@ -1009,9 +1013,10 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
   }
 
   /**
-   * PATCH /api/admin/accounts/:userId { first_name?, last_name?, email? }
-   * (owner 2026-11-11: "let me modify them (e.g. names etc)"): an admin
-   * changes an account's name or address. A super admin's only by a super
+   * PATCH /api/admin/accounts/:userId { first_name?, last_name?, email?, license_number? }
+   * (owner 2026-11-11: "let me modify them (e.g. names etc)"; 23.11 the
+   * licence number, db/048: 4 to 7 digits, null removes it): an admin
+   * changes an account's name, address or licence number. A super admin's only by a super
    * admin. The address stays one account's (409 OV_EMAIL_TAKEN) and keeps its
    * confirmation; the password and passkeys stay. Audited account.profile
    * with the fields before and after. `actor` = { id, access }.
@@ -1019,9 +1024,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
   async function updateProfile ({ actor, userId, body } = {}) {
     if (!isUuid(userId)) return notFound()
     if (!isPlainObject(body)) return invalid('body: must be an object')
-    const known = ['first_name', 'last_name', 'email']
+    const known = ['first_name', 'last_name', 'email', 'license_number']
     const extra = Object.keys(body).find((k) => !known.includes(k))
-    if (extra !== undefined) return invalid(`${extra.slice(0, 40)}: only first_name, last_name and email can be changed`)
+    if (extra !== undefined) return invalid(`${extra.slice(0, 40)}: only first_name, last_name, email and license_number can be changed`)
     const want = {}
     for (const k of ['first_name', 'last_name']) {
       if (body[k] === undefined) continue
@@ -1035,15 +1040,22 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       if (!e || e.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return invalid('email: an email address')
       want.email = e
     }
+    if (body.license_number !== undefined) {
+      // digits only, as sign-up takes it (lib/auth.js); '' or null: none
+      const raw = body.license_number
+      const lic = raw === null ? '' : typeof raw === 'string' ? raw.trim() : (Number.isInteger(raw) ? String(raw) : undefined)
+      if (lic === undefined || (lic !== '' && !LICENSE_RE.test(lic))) return invalid('license_number: 4 to 7 digits, or null')
+      want.license_number = lic || null
+    }
     if (!Object.keys(want).length) return invalid('first_name: change at least one field')
     const res = await guarded('update-profile', () => withTx(async (client) => {
       const { rows: [u] } = await client.query('SELECT id, email FROM auth.users WHERE id = $1 FOR UPDATE', [userId])
       if (!u) throw abort(notFound())
-      const { rows: [prof] } = await client.query('SELECT first_name, last_name, roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
+      const { rows: [prof] } = await client.query('SELECT first_name, last_name, license_number, roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
       if (normalizeRoles(prof?.roles).includes('super_admin') && !actor?.access?.isSuperAdmin) {
         throw abort(fail(403, 'OV_FORBIDDEN', 'Only a super admin can change the details of a super admin'))
       }
-      const before = { first_name: prof?.first_name ?? null, last_name: prof?.last_name ?? null, email: u.email ?? null }
+      const before = { first_name: prof?.first_name ?? null, last_name: prof?.last_name ?? null, email: u.email ?? null, license_number: prof?.license_number ?? null }
       const after = { ...before, ...want }
       const changed = known.filter((k) => (after[k] ?? null) !== (before[k] ?? null) && !(k === 'email' && String(before.email || '').toLowerCase() === after.email))
       if (changed.includes('email')) {
@@ -1067,14 +1079,14 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         if (t?.sessions) await client.query('DELETE FROM auth.app_sessions WHERE user_id = $1', [userId])
         if (t?.tokens) await client.query('UPDATE auth.app_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [userId])
       }
-      if (changed.includes('first_name') || changed.includes('last_name')) {
+      if (changed.includes('first_name') || changed.includes('last_name') || changed.includes('license_number')) {
         if (prof) {
-          await client.query('UPDATE public.profiles SET first_name = $2, last_name = $3 WHERE user_id = $1', [userId, after.first_name, after.last_name])
+          await client.query('UPDATE public.profiles SET first_name = $2, last_name = $3, license_number = $4 WHERE user_id = $1', [userId, after.first_name, after.last_name, after.license_number])
         } else {
           // No ON CONFLICT: the production profiles table may lack a unique index on user_id.
           await client.query(
-            `INSERT INTO public.profiles (user_id, first_name, last_name, roles) SELECT $1, $2, $3, '{}'::text[]
-              WHERE NOT EXISTS (SELECT 1 FROM public.profiles WHERE user_id = $1)`, [userId, after.first_name, after.last_name])
+            `INSERT INTO public.profiles (user_id, first_name, last_name, license_number, roles) SELECT $1, $2, $3, $4, '{}'::text[]
+              WHERE NOT EXISTS (SELECT 1 FROM public.profiles WHERE user_id = $1)`, [userId, after.first_name, after.last_name, after.license_number])
         }
       }
       if (changed.length) {
@@ -1082,7 +1094,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         const pick = (o) => Object.fromEntries(changed.map((k) => k === 'email' ? ['email_sha256', o.email ? emailDigest(o.email) : null] : [k, o[k] ?? null]))
         await audit(client, { actorId: actor?.id, action: 'account.profile', targetUserId: userId, details: { changed, before: pick(before), after: pick(after) } })
       }
-      return ok({ id: userId, first_name: after.first_name, last_name: after.last_name, email: changed.includes('email') ? after.email : before.email, changed, ...(changed.includes('email') ? { old_email: before.email } : {}) })
+      return ok({ id: userId, first_name: after.first_name, last_name: after.last_name, email: changed.includes('email') ? after.email : before.email, license_number: after.license_number, changed, ...(changed.includes('email') ? { old_email: before.email } : {}) })
     }))
     access?.invalidate(userId)
     if (res?.body?.data?.old_email) {

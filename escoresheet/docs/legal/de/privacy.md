@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.26 · Stand: 22. November 2026
+**OpenVolley und OpenBeach** · Version 1.27 · Stand: 23. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -299,8 +299,10 @@ Konten werden auf `manager.openvolley.app` und `manager-beach.openvolley.app`
 eröffnet.
 
 **Daten:** E-Mail-Adresse, Passwort (nur als Hash gespeichert, nie im
-Klartext), Vor- und Nachname, Land, Lizenznummer (freiwillig: deine
-Lizenznummer von Swiss Volley, 4 bis 7 Ziffern), die bei der Eröffnung gewählte Sprache
+Klartext), Vor- und Nachname, Land, Lizenznummer (deine
+Lizenznummer von Swiss Volley, 4 bis 7 Ziffern; seit dem 23. November 2026
+für ein neues Konto nötig, ältere Konten werden bei der nächsten Anmeldung
+danach gefragt), die bei der Eröffnung gewählte Sprache
 (für die E-Mails an das Konto), Rollen
 (zum Beispiel Schreiber/in, Schiedsrichter/in, Wettbewerbsmanager/in), die
 Apps, für die das Konto gilt (Halle, Beach), Zeitpunkte von Eröffnung,
