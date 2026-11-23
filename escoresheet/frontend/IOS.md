@@ -27,18 +27,23 @@ runner with the newest stable Xcode.
   `scripts/release-android.sh` (`CAPACITOR=true`, cloud backend), `npx cap
   sync ios`, builds for the simulator and starts the app on an iPad
   simulator. The screenshot and the log are the `ios-smoke` artifact.
-- **TestFlight**: run the workflow by hand with "testflight" ticked (or put
-  the label `testflight` on a pull request). It archives the Release build,
-  signs it with the Apple Distribution certificate and the "OpenVolley App
-  Store" profile, and uploads it with the App Store Connect API key. Version =
-  `package.json`, build number = the workflow's run number. After Apple's
-  processing (minutes to an hour) the build shows in App Store Connect ›
-  TestFlight; internal testers get it in the TestFlight app at once.
+- **TestFlight**: run the workflow by hand on `main` (or a tag) with
+  "testflight" ticked; pull requests never sign or upload. The build job
+  (npm, vite, Xcode, no secret) archives the Release build unsigned; the
+  `testflight` job (no npm, no third-party action) signs that archive with
+  the Apple Distribution certificate and the "OpenVolley App Store" profile,
+  checks the signature, profile and entitlements of the .ipa and uploads it
+  with the App Store Connect API key. Version = `package.json`, build number =
+  the workflow's run number. After Apple's processing (minutes to an hour)
+  the build shows in App Store Connect › TestFlight; internal testers get it
+  in the TestFlight app at once.
 
-Secrets: `IOS_DIST_CERTIFICATE` (Apple Distribution .p12, base64),
-`IOS_DIST_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE` (.mobileprovision,
-base64), and `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_PRIVATE_KEY`
-(shared with the notarized macOS app, desktop.yml).
+Secrets, in the GitHub environment `ios-signing` only (deployment branch
+`main` and tags; no repository secret of these names): `IOS_DIST_CERTIFICATE`
+(Apple Distribution .p12, base64), `IOS_DIST_CERTIFICATE_PASSWORD`,
+`IOS_PROVISIONING_PROFILE` (.mobileprovision, base64), and `APPLE_API_KEY`,
+`APPLE_API_ISSUER`, `APPLE_API_PRIVATE_KEY` (the same key as the notarized
+macOS app's environment `macos-signing`, desktop.yml).
 
 ## Native code
 

@@ -1,0 +1,31 @@
+name: Workflow and deploy checks
+
+# The static check of every workflow (.github/scripts/workflow-hygiene.sh:
+# pinned actions, permissions, no token left behind, signing keys only in
+# environment jobs without npm or third-party actions) and its own test.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/**'
+  pull_request:
+    paths:
+      - '.github/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Workflow hygiene
+        run: |
+          .github/scripts/workflow-hygiene.sh
+          .github/scripts/test-workflow-hygiene.sh
