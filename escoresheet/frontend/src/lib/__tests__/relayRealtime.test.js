@@ -627,3 +627,37 @@ describe('livescore viewer and summary channels', () => {
     expect(got).toEqual([3, 4])
   })
 })
+
+// Audit 2611 PERM-03: the server sends a live state whole (line-ups,
+// sanctions, the scorer's alarm) only to the channel of that match's token
+describe('a match token on the channel', () => {
+  it('goes with the subscribe-db, read again at every (re)subscribe; none when there is none', () => {
+    const client = makeClient()
+    let token = 'v1.first.sig'
+    client.channel('referee', { token: () => token })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'match_live_state', filter: `match_id=eq.${UUID}` }, () => {})
+      .subscribe()
+    client.channel('plain')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: 'external_id=eq.seed-1' }, () => {})
+      .subscribe()
+    client.channel('fixed', { token: 'v1.fixed.sig' })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sets', filter: `match_id=eq.${UUID}` }, () => {})
+      .subscribe()
+    client.channel('broken', { token: () => { throw new Error('no access') } })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `match_id=eq.${UUID}` }, () => {})
+      .subscribe()
+    vi.advanceTimersByTime(0)
+    const ws = last()
+    ws.serverOpen()
+    const subs = ws.ofType('subscribe-db')
+    expect(subs.map((m) => m.token ?? null)).toEqual(['v1.first.sig', null, 'v1.fixed.sig', null])
+    // a reconnect re-subscribes with the token of now (renewed meanwhile)
+    token = 'v1.renewed.sig'
+    ws.serverClose(1006)
+    vi.advanceTimersByTime(60000)
+    const again = last()
+    expect(again).not.toBe(ws)
+    again.serverOpen()
+    expect(again.ofType('subscribe-db').find((m) => m.subs[0].table === 'match_live_state').token).toBe('v1.renewed.sig')
+  })
+})

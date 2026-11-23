@@ -33,7 +33,7 @@ import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // statically. It is only *instantiated* in DATABASE_URL mode.
 import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch, jsonTooDeep } from './lib/realtimeHub.js'
 // What anonymous readers (live sockets, /api/db without a session) may see.
-import { projectLiveRow, projectLiveSummaryRow, hasAnonPolicy, anonSelectCheck, relayBundleView, relayMatchView, relayLiveStateView, publicLiveState, coveredLiveLineupTeam, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, withoutDobColumns, dobColumnFilter, DOB_COLUMNS, OFFICIALS_ONLY_COLUMNS, withoutColumns, columnFilterOf } from './lib/publicColumns.js'
+import { projectLiveRow, projectLiveGrantedRow, projectLiveSummaryRow, hasAnonPolicy, anonSelectCheck, relayBundleView, relayMatchView, relayLiveStateView, publicLiveState, coveredLiveLineupTeam, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, withoutDobColumns, dobColumnFilter, DOB_COLUMNS, OFFICIALS_ONLY_COLUMNS, withoutColumns, columnFilterOf } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
 import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, isConnectionPinMatch, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
 // Bench requests (line-up, time-out, substitution) from a bench tablet to the scorer
@@ -857,9 +857,99 @@ const realtimeHub = DB_MODE
     // no channel makes room, and one without a channel for 10 s is closed.
     netsOf: (ip) => roleNetsOf(ip, ipBucketKey(ip)),
     maxPerNet: LIVE_PER_NET,
+    // a live state's private columns only to a channel that may have them (liveRowGranted)
+    privateRows: { project: projectLiveGrantedRow, grants: (channel, table, row, socketChannels) => liveRowGranted(channel, table, row, socketChannels) },
+    grantChannel: (msg) => liveChannelGrant(msg),
     getClientIp: (req) => getClientIp(req)
   })
   : null
+
+// --- A live state's private columns on the live hub (audit 2611 PERM-03) -----
+// Live sockets prove nothing: a live state goes out in its public columns
+// (LIVE_COLUMNS), as on anonymous /api/db and the relay's PIN-less summary.
+// Before, every anonymous subscribe-db (sport_type=indoor: every live match)
+// got the line-ups, substitutions, sanctions and last event's data. The
+// private columns (LIVE_STATE_PRIVATE_COLUMNS) go to:
+//   - a channel whose subscribe-db carries the match token of that match
+//     (`token`: the X-OV-Match-Token of the PIN check, issued for matches.id),
+//     checked on every publish: the token must still verify, and the match
+//     row must still grant it (stillGrantsRow: the role's connection on, its
+//     PIN unchanged; the row read again at most every LIVE_GRANT_RECHECK_MS);
+//   - unless OV_LIVE_PRIVATE=token: a channel without a token that follows
+//     ONE match by its match_id, the only match the socket follows so (the
+//     referee's scorer alarm and the referee / bench live-state fallback of
+//     the apps in the halls, OpenVolley 26.11.x and 3.x, send no token). A
+//     channel by sport_type, or a socket that follows several matches so,
+//     gets the public columns only.
+const LIVE_PRIVATE_NEEDS_TOKEN = process.env.OV_LIVE_PRIVATE === 'token'
+const LIVE_GRANT_RECHECK_MS = 30 * 1000
+const LIVE_GRANT_ROWS_MAX = 2000
+const liveGrantRows = new Map() // matches.id -> { at, row: { id, connections } | null, pins }
+const liveGrantPending = new Set()
+
+/** A subscribe-db's match token, verified: { token, payload, matchUuid } or null. */
+function liveChannelGrant(msg) {
+  const token = typeof msg?.token === 'string' && msg.token.length <= 2048 ? msg.token : null
+  const payload = token ? matchTokens.verify(token) : null
+  if (!payload || typeof payload.u !== 'string' || !payload.u || !isTokenRole(payload.r)) return null
+  refreshLiveGrantRow(payload.u)
+  return { token, payload, matchUuid: payload.u }
+}
+
+/** Read the match row a token is checked against (connections, connection_pins) again; never throws. */
+function refreshLiveGrantRow(matchUuid) {
+  if (liveGrantPending.has(matchUuid)) return
+  liveGrantPending.add(matchUuid)
+  ;(async () => {
+    try {
+      const layer = await getDataLayer()
+      const { status, body } = await layer.db.runQuery({
+        table: 'matches',
+        action: 'select',
+        params: { columns: 'id, connections, connection_pins', filters: [{ type: 'eq', column: 'id', value: matchUuid }] }
+      }, { internal: true, maxRows: 1 })
+      const found = status === 200 && Array.isArray(body?.data) ? body.data[0] : null
+      liveGrantRows.delete(matchUuid)
+      if (liveGrantRows.size >= LIVE_GRANT_ROWS_MAX) liveGrantRows.delete(liveGrantRows.keys().next().value)
+      liveGrantRows.set(matchUuid, {
+        at: Date.now(),
+        row: found ? { id: found.id, connections: found.connections } : null,
+        pins: found?.connection_pins && typeof found.connection_pins === 'object' ? found.connection_pins : null
+      })
+    } catch { /* the next publish asks again */ } finally {
+      liveGrantPending.delete(matchUuid)
+    }
+  })()
+}
+
+/** Does the channel's match token still grant its match (as on /api/db, stillGrantsRow)? */
+function liveTokenStillGrants(grant) {
+  if (!matchTokens.verify(grant.token)) return false
+  const known = liveGrantRows.get(grant.matchUuid)
+  if (!known || Date.now() - known.at > LIVE_GRANT_RECHECK_MS) refreshLiveGrantRow(grant.matchUuid)
+  return !!known?.row && matchTokens.stillGrantsRow(grant.payload, known.row, known.pins)
+}
+
+/** The match_ids the socket's channels follow match_live_state by (any other filter: '*'). */
+function liveStateMatchesOf(channels) {
+  const ids = new Set()
+  for (const ch of channels.values()) {
+    for (const s of ch.subs) if (s.table === 'match_live_state') ids.add(s.column === 'match_id' ? s.value : '*')
+  }
+  return ids
+}
+
+/** May this channel get the private columns of this live-state row (see above)? */
+function liveRowGranted(channel, table, row, socketChannels) {
+  if (table !== 'match_live_state' || row?.match_id == null) return false
+  const id = String(row.match_id)
+  if (channel.grant && channel.grant.matchUuid === id && liveTokenStillGrants(channel.grant)) return true
+  if (LIVE_PRIVATE_NEEDS_TOKEN) return false
+  const own = liveStateMatchesOf(new Map([['c', channel]]))
+  if (own.size !== 1 || !own.has(id)) return false
+  const all = liveStateMatchesOf(socketChannels)
+  return all.size === 1 && all.has(id)
+}
 let publicStreams = null // lib/publicApi.js createLiveStreams, on first stream
 // open public streams per address (default 100 in lib/publicApi.js; the e2e test lowers it)
 const PUBLIC_STREAMS_PER_ADDRESS = Number(process.env.PUBLIC_STREAMS_PER_ADDRESS) > 0 ? Math.floor(Number(process.env.PUBLIC_STREAMS_PER_ADDRESS)) : undefined

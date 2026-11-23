@@ -51,6 +51,10 @@
  *              (default match_id, external_id, sport_type). value is compared
  *              as a string. Unfiltered subs are refused unless
  *              `allowUnfiltered` is set.
+ *       token  optional: what the channel proves (grantChannel; server.js: the
+ *              match token of a PIN check). A row privateRows.grants for the
+ *              channel goes out in privateRows' projection (a live state's
+ *              private columns). Older servers ignore it.
  *     -> { type: 'subscribe-db-ack', id }
  *     -> { type: 'subscribe-db-error', id, code, message }   (socket stays open)
  *   { type: 'unsubscribe-db', id }   -> { type: 'unsubscribe-db-ack', id }
@@ -333,6 +337,16 @@ function sameColumns(known, row) {
  * @property {(table: string, row: object) => object} [project]  Applied after redact:
  *           returns the row live subscribers may see (lib/publicColumns.js projectLiveRow).
  *           Default: the redacted row.
+ * @property {{ project: (table: string, row: object) => object, grants: (channel: object, table: string, row: object, socketChannels: Map<string, object>) => boolean }} [privateRows]
+ *           A channel may get more of a row than `project` gives: `grants(channel, table,
+ *           row, socketChannels)` (row: as `project` gave it; socketChannels: every channel
+ *           of the channel's socket) is asked on every publish, and a granted row
+ *           goes to that channel's socket in `project` of privateRows (applied after redact
+ *           too). server.js: a live state's private columns to the channel of its match's
+ *           token (audit 2611 PERM-03). Default: none.
+ * @property {(msg: object) => object|null} [grantChannel]  Called with a subscribe-db
+ *           message: what the channel carries for privateRows.grants (`channel.grant`),
+ *           e.g. a verified match token. Default: none.
  * @property {string[]} [tables]            Subscribable tables.
  * @property {string[] | ((table: string, column: string) => boolean)} [filterColumns]
  *           Allowed filter columns, or a predicate (e.g. backed by the pgQuery catalog
@@ -402,6 +416,8 @@ export function createRealtimeHub(options = {}) {
   const {
     redact,
     project = null,
+    privateRows = null,
+    grantChannel = null,
     tables = DEFAULT_TABLES,
     filterColumns = DEFAULT_FILTER_COLUMNS,
     allowUnfiltered = false,
@@ -444,6 +460,8 @@ export function createRealtimeHub(options = {}) {
     const redacted = redact(table, row) || row
     return project ? (project(table, redacted) || {}) : redacted
   }
+  // what a granted channel sees of a redacted row (privateRows), else the public row
+  const grantedRow = (table, redacted) => (privateRows ? (privateRows.project(table, redacted) || {}) : (project ? (project(table, redacted) || {}) : redacted))
   const summaryRow = (table, row) => {
     if (!summaryProject) return publicRow(table, row)
     return summaryProject(table, redact(table, row) || row) || {}
@@ -732,7 +750,10 @@ export function createRealtimeHub(options = {}) {
     const previous = state.channels.get(id)
     if (previous) unindexChannel(previous)
     // summary: the livescore list, which shows scores only and needs no frame per state
-    const channel = { id, ws, subs, tables: new Set(subs.map(s => s.table)), summary: msg.summary === true }
+    const channel = { id, ws, subs, tables: new Set(subs.map(s => s.table)), summary: msg.summary === true, grant: null }
+    if (grantChannel) {
+      try { channel.grant = grantChannel(msg) || null } catch { channel.grant = null }
+    }
     state.channels.set(id, channel)
     state.noChannelSince = null
     indexChannel(channel)
@@ -960,10 +981,16 @@ export function createRealtimeHub(options = {}) {
     }
   }
 
-  /** A row as a live subscriber would see it (clone, internals out, redact, project). */
+  /**
+   * A row as a live subscriber would see it (clone, internals out, redact,
+   * project): with privateRows, as a granted channel would, so a change of a
+   * private column alone (the scorer-attention alarm) is no duplicate.
+   */
   function visibleRow(table, raw) {
     const row = cloneRow(raw)
-    return row ? publicRow(table, stripInternal(row)) : null
+    if (!row) return null
+    stripInternal(row)
+    return privateRows ? grantedRow(table, redact(table, row) || row) : publicRow(table, row)
   }
 
   /**
@@ -1018,21 +1045,24 @@ export function createRealtimeHub(options = {}) {
     if (!filterColumnsOf.has(table)) return sent
     counters.published++
 
-    // Prepare each row once: clone, strip internals, redact.
+    // Prepare each row once: clone, strip internals, redact, project. The
+    // redacted rows are kept for a granted channel's projection (privateRows).
     const prepared = []
+    const redactedOf = (r) => {
+      const c = cloneRow(r)
+      return c ? (redact(table, stripInternal(c)) || c) : null
+    }
+    const projected = (r) => (project ? (project(table, r) || {}) : r)
     for (const { i, raw, type } of accepted) {
-      let row = cloneRow(raw)
-      if (!row) continue
-      row = publicRow(table, stripInternal(row))
-      let previous = null
-      if (type === 'UPDATE' && oldRows && oldRows[i]) {
-        previous = cloneRow(oldRows[i])
-        if (previous) previous = publicRow(table, stripInternal(previous))
-      }
+      const base = redactedOf(raw)
+      if (!base) continue
+      const row = projected(base)
+      const previousBase = type === 'UPDATE' && oldRows && oldRows[i] ? redactedOf(oldRows[i]) : null
+      const previous = previousBase ? projected(previousBase) : null
       const payload = type === 'DELETE'
         ? { schema: 'public', table, commit_timestamp: commitTimestamp, eventType: type, new: {}, old: row }
         : { schema: 'public', table, commit_timestamp: commitTimestamp, eventType: type, new: row, old: previous || {} }
-      prepared.push({ index: prepared.length, type, row, payload, json: null })
+      prepared.push({ index: prepared.length, type, row, base, previousBase, payload, json: null, grantedJson: null })
     }
     if (prepared.length === 0) return sent
 
@@ -1062,22 +1092,39 @@ export function createRealtimeHub(options = {}) {
       if (!entries) perSocket.set(ws, (entries = new Map()))
       for (const p of toSend) {
         let e = entries.get(p.index)
-        if (!e) entries.set(p.index, (e = { p, ids: [], coalesced: 0 }))
+        if (!e) entries.set(p.index, (e = { p, ids: [], coalesced: 0, granted: false }))
         e.ids.push(channel.id)
         if (over) e.coalesced = Math.max(e.coalesced, matched.length)
+        // the socket proved this row for one of its channels: it gets it whole, once
+        if (privateRows && !e.granted) {
+          try { e.granted = privateRows.grants(channel, table, p.row, sockets.get(ws)?.channels || new Map()) === true } catch { e.granted = false }
+        }
       }
     }
 
     for (const [ws, entries] of perSocket) {
       if (overBuffer(ws)) continue
       const ordered = [...entries.values()].sort((a, b) => a.p.index - b.p.index)
-      for (const { p, ids, coalesced } of ordered) {
-        if (p.json == null) p.json = JSON.stringify(p.payload)
+      for (const { p, ids, coalesced, granted } of ordered) {
+        let body
+        if (granted) {
+          if (p.grantedJson == null) {
+            const row = grantedRow(table, p.base)
+            const previous = p.previousBase ? grantedRow(table, p.previousBase) : null
+            p.grantedJson = JSON.stringify(p.type === 'DELETE'
+              ? { ...p.payload, new: {}, old: row }
+              : { ...p.payload, new: row, old: previous || {} })
+          }
+          body = p.grantedJson
+        } else {
+          if (p.json == null) p.json = JSON.stringify(p.payload)
+          body = p.json
+        }
         // Splice the channel ids in front of the shared body: no per-socket stringify.
         const head = `{"type":"db-change","id":${JSON.stringify(ids[0])}` +
           (ids.length > 1 ? `,"ids":${JSON.stringify(ids)}` : '') +
           (coalesced ? `,"coalesced":${coalesced}` : '') + ','
-        ws.send(head + p.json.slice(1), { compress: false })
+        ws.send(head + body.slice(1), { compress: false })
         sent++
       }
     }

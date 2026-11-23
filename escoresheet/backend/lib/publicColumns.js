@@ -173,9 +173,14 @@ const MATCHES_LIVE_COLUMNS = Object.freeze({
   coin_toss: COIN_TOSS_KEYS
 })
 
+// A live socket proves nothing: a live state goes out in the columns a viewer
+// without a PIN gets (MATCH_LIVE_STATE_PUBLIC_COLUMNS), as on anonymous
+// /api/db and the relay's PIN-less summary. Its private columns only to a
+// channel that may have them (LIVE_GRANTED_COLUMNS, server.js liveRowGranted:
+// the match token of that match, audit 2611 PERM-03).
 export const LIVE_COLUMNS = Object.freeze({
   matches: MATCHES_LIVE_COLUMNS,
-  match_live_state: MATCH_LIVE_STATE_COLUMNS,
+  match_live_state: MATCH_LIVE_STATE_PUBLIC_COLUMNS,
   sets: SETS_COLUMNS,
   // Live subscribers only use an events change as a refetch trigger: no
   // payload, no state snapshot, no lineups.
@@ -383,6 +388,12 @@ export function projectRows(policy, table, rows) {
 
 /** The realtime hub's projection (LIVE_COLUMNS). */
 export const projectLiveRow = (table, row) => projectRow(LIVE_COLUMNS, table, row)
+
+/** LIVE_COLUMNS with the live state's private columns (LIVE_STATE_PRIVATE_COLUMNS). */
+export const LIVE_GRANTED_COLUMNS = Object.freeze({ ...LIVE_COLUMNS, match_live_state: MATCH_LIVE_STATE_COLUMNS })
+
+/** The realtime hub's projection of a row its channel was granted (the match's token). */
+export const projectLiveGrantedRow = (table, row) => projectRow(LIVE_GRANTED_COLUMNS, table, row)
 
 // The livescore list's columns of a live state (frontend utils/relayLivescore
 // LIVESCORE_LIVE_FIELDS): what a summary channel of the hub sends.
