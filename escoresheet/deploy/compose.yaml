@@ -239,10 +239,19 @@ services:
       # app's own sites only (lib/cors.js ALLOWED_ORIGINS)
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
       WEBAUTHN_ORIGINS: ${WEBAUTHN_ORIGINS:-}
-      # Hourly budgets of the final and the test scoresheet mails (lib/mailer.js
-      # BUDGET_ENV; empty: 300 and 50)
+      # Hourly budgets of the final and the test scoresheet mails and of the
+      # account mails (lib/mailer.js BUDGET_ENV; empty: the defaults in
+      # env.example). All of them, so a budget changed in .env during a mail
+      # incident reaches the backend (tests/compose-env.test.sh)
       MAIL_BUDGET_FINAL: ${MAIL_BUDGET_FINAL:-}
       MAIL_BUDGET_TEST: ${MAIL_BUDGET_TEST:-}
+      MAIL_BUDGET_ACCOUNT: ${MAIL_BUDGET_ACCOUNT:-}
+      MAIL_BUDGET_CONFIRM: ${MAIL_BUDGET_CONFIRM:-}
+      MAIL_BUDGET_NOTIFY: ${MAIL_BUDGET_NOTIFY:-}
+      MAIL_BUDGET_SIGNUP: ${MAIL_BUDGET_SIGNUP:-}
+      MAIL_BUDGET_SECURITY: ${MAIL_BUDGET_SECURITY:-}
+      # sign-up needs a licence number unless `optional` (empty in production)
+      OV_SIGNUP_LICENCE: ${OV_SIGNUP_LICENCE:-}
       VM_USERNAME: ${VM_USERNAME:-}
       VM_PASSWORD: ${VM_PASSWORD:-}
       VM_SYNC: ${VM_SYNC:-on}
