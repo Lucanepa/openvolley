@@ -172,6 +172,27 @@ export function liberoToReplaceByRedesignation(players, events, teamKey, { setIn
 }
 
 /**
+ * Why a libero is unable, as the re-designation replacing him records it
+ * (its `reason`): the reason of the latest event that made him unable (his
+ * libero_unable, an expulsion or a disqualification, an injury substitution
+ * of older data); 'declared' when none says otherwise. The new libero may
+ * come in at once after an injury, expulsion or disqualification (Swiss exam
+ * Q143, Q204), after a declaration only after a completed rally.
+ * @param {Array} events all events of the match
+ * @param {'home'|'away'} teamKey
+ * @param {number|string} liberoNumber
+ * @returns {'declared'|'injury'|'expulsion'|'disqualification'}
+ */
+export function liberoUnableReason(events, teamKey, liberoNumber) {
+  const latest = unableEventsOf(events, teamKey, liberoNumber).sort(bySeqDesc)[0]
+  if (!latest) return 'declared'
+  if (latest.type === 'sanction') return latest.payload.type
+  if (latest.type === 'substitution') return 'injury'
+  const reason = latest.payload?.reason
+  return reason === 'injury' || reason === 'expulsion' || reason === 'disqualification' ? reason : 'declared'
+}
+
+/**
  * The players a team may re-designate as its libero once it has no libero
  * left (FIVB 19.4.2.3-19.4.2.4; the scorer's "Libero re-designation" list):
  * roster players who are

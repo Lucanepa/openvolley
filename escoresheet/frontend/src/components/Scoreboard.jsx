@@ -89,7 +89,7 @@ import { decisionChangeOutcomes, replayToDecide, replayDecisionOutcomes, REPLAY_
 import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
-import { playerReplacedByLibero, playersForLiberoRedesignation, liberoPlayState, liberoToReplaceByRedesignation, LIBERO_RECOVERED } from '../domain/liberos'
+import { playerReplacedByLibero, playersForLiberoRedesignation, liberoPlayState, liberoToReplaceByRedesignation, liberoUnableReason, LIBERO_RECOVERED } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, countAllSubstitutions, MAX_SUBSTITUTIONS_PER_SET, substitutionBarsForMatch } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
@@ -11580,7 +11580,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Check if libero re-designation is needed and trigger modal
   // Called after a libero is marked as unable - we know they're unable so skip that check
-  const checkLiberoRedesignation = useCallback((teamKey, liberoNumber, liberoType, reason = 'declared') => {
+  // `reason`: why he is unable, when the caller knows it; else the
+  // confirmation takes it from his events (liberoUnableReason)
+  const checkLiberoRedesignation = useCallback((teamKey, liberoNumber, liberoType, reason = null) => {
     if (!data?.set) return
 
     // Check if already re-designated (a number from a court disc is a string)
@@ -11629,7 +11631,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       team: teamKey,
       unableLiberoNumber: liberoNumber,
       unableLiberoType: liberoType ?? teamPlayers.find(p => String(p.number) === String(liberoNumber))?.libero,
-      reason: reason
+      ...(reason ? { reason } : {})
     })
   }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation])
 
@@ -13887,14 +13889,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const confirmLiberoRedesignation = useCallback((newLiberoNumber) => runLiberoRedesignation(() => runAction('liberoRedesignation', async () => {
     if (!liberoRedesignationModal || !data?.set) return
 
-    const { team, unableLiberoNumber, unableLiberoType, reason = 'declared' } = liberoRedesignationModal
+    const { team, unableLiberoNumber, unableLiberoType } = liberoRedesignationModal
+    // Why the replaced libero is unable: as the prompt after his
+    // libero_unable says, else (the Redesignate buttons, the prompt after a
+    // sanction or an injury substitution) as his latest libero_unable or
+    // sanction records it. After an injury, an expulsion or a
+    // disqualification the new libero may come in at once (Swiss exam Q143,
+    // Q204; hasPointSinceLastLiberoExchange); 'declared' only for a
+    // declaration or when nothing says otherwise.
+    const reason = liberoRedesignationModal.reason || liberoUnableReason(data?.events, team, unableLiberoNumber)
     // Only a player the list offers: never one who may no longer play
     if (!getAvailablePlayersForRedesignation(team, unableLiberoNumber).some(p => String(p.number) === String(newLiberoNumber))) return
     // Closed with the written change (deferUi, one render): the candidate list
     // is live and never redraws without the chosen player
     deferUi(() => setLiberoRedesignationModal(null))
 
-    // Log the libero_unable event if not already logged (with reason='declared' if not specified)
+    // Log the libero_unable event if not already logged (with the reason above:
+    // 'declared' when nothing else is recorded)
     const hasUnableEvent = data?.events?.some(e =>
       e.type === 'libero_unable' &&
       e.payload?.team === team &&
@@ -13906,7 +13917,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         team,
         liberoNumber: unableLiberoNumber,
         liberoType: unableLiberoType,
-        reason: 'declared' // Default to declared if not specified
+        reason
       })
     }
 
