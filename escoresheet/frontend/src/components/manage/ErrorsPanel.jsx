@@ -16,7 +16,9 @@ import {
  * hit it (name, address, roles, clubs; reading them is audited) or "guest".
  * Resolve (now, or "in version x": an older version reporting it stays
  * quiet), mute (a day, a week, for good), important, a note and a commit.
- * A device's or an account's reports can be deleted on request.
+ * A device's or an account's reports can be deleted on request, and after a
+ * flood of junk reports the errors only guests reported (not those marked
+ * important).
  * The mail and the push name no member: this page is where names are.
  */
 const STATUS_OPTIONS = ['open', 'resolved', 'muted', 'all']
