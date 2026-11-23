@@ -168,8 +168,8 @@ describe('old-browser check: on every page, allowed by the CSP', () => {
     const hash = `'sha256-${createHash('sha256').update(BROWSER_CHECK_SCRIPT, 'utf8').digest('base64')}'`
     expect(BROWSER_CHECK_HASH).toBe(hash)
     expect(contentSecurityPolicy().match(/script-src ([^;]+)/)[1].split(' ')).toContain(hash)
-    const server = readFileSync(resolve(frontendDir, '../backend/server.js'), 'utf8')
-    const backendScriptSrc = server.match(/"script-src ([^"]+)"/)[1].split(' ')
-    expect(backendScriptSrc).toContain(hash)
+    // the backend's copy of the policy (backend/lib/pageCsp.js, SEC-46)
+    const backendCsp = readFileSync(resolve(frontendDir, '../backend/lib/pageCsp.js'), 'utf8')
+    expect(backendCsp).toContain(`BROWSER_CHECK_HASH = "${hash}"`)
   })
 })

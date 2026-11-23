@@ -108,8 +108,9 @@ describe('theme boot script (theme-boot.js)', () => {
 
   it('is allowed by the CSP of the backend that serves the pages on a venue box', () => {
     const hash = createHash('sha256').update(THEME_BOOT_SCRIPT, 'utf8').digest('base64')
-    const server = readFileSync(resolve(__dirname, '../../../../backend/server.js'), 'utf-8')
-    expect(server).toContain(`"script-src 'self' 'sha256-${hash}'`)
+    // the backend's copy of the policy (backend/lib/pageCsp.js, SEC-46)
+    const backendCsp = readFileSync(resolve(__dirname, '../../../../backend/lib/pageCsp.js'), 'utf-8')
+    expect(backendCsp).toContain(`THEME_BOOT_HASH = "'sha256-${hash}'"`)
   })
 
   it('both builds use it', () => {

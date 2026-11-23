@@ -45,6 +45,7 @@ import { accessForSport } from './lib/access.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
 import { renderLandingPage, landingMatchRow, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
 import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
+import { pageContentSecurityPolicy } from './lib/pageCsp.js'
 import { LIVESCORE_JS, embedPage } from './lib/publicEmbed.js'
 import { createLiveStreams, listParams, MATCH_ID_RE as PUBLIC_MATCH_ID_RE } from './lib/publicApi.js'
 import { createVectorPdf } from './lib/vectorPdf.js'
@@ -3355,6 +3356,15 @@ const CLOUD_CONNECT_SRC = [
   ...PUBLIC_ORIGINS.filter(o => o.startsWith('https://')).map(o => 'wss://' + o.slice('https://'.length))
 ].join(' ')
 
+// The Content-Security-Policy of every answer (lib/pageCsp.js: the frontend's
+// own policy, frontend/csp.js, so the app a venue server or a standalone
+// build hands out can seal its backups, SEC-46). The cloud: its own sites for
+// connect-src, and no page may frame it; a venue server: the LAN relays and
+// any backend, and the app frames its own pages (PDF capture).
+const PAGE_CSP = IS_CLOUD
+  ? pageContentSecurityPolicy({ connectSrc: CLOUD_CONNECT_SRC, frameAncestors: "'none'" })
+  : pageContentSecurityPolicy({ frameAncestors: "'self'" })
+
 // --- Health ------------------------------------------------------------------
 // /health/live: process is up (Docker healthcheck). Never touches the database.
 // /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
@@ -3595,28 +3605,9 @@ function handleHttpRequest(req, res) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
   }
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
-  // Content Security Policy — emitted in all modes so LAN/self-hosted deployments
-  // are not left without a policy. connect-src is widened in non-cloud mode so LAN
-  // clients can reach arbitrary same-network IPs.
-  const connectSrc = IS_CLOUD
-    ? `connect-src ${CLOUD_CONNECT_SRC}`
-    : "connect-src 'self' ws: wss: http: https:"
-  res.setHeader('Content-Security-Policy', [
-    "default-src 'self'",
-    // and the colour theme boot script and the old-browser check of the
-    // frontend pages this server hands out (frontend/theme-boot.js and
-    // browser-check.js; the frontend's theme and browser check tests check
-    // these hashes against the scripts)
-    "script-src 'self' 'sha256-hAC66PTngtOWJY571phiLXHzeuEYS3pprPNjnV1uBik=' 'sha256-mEG3trr/2+bNH35eWodBg+Kvbb2CTl/9fvqyZgpWiCY='",
-    "style-src 'self' 'unsafe-inline'",
-    // the help panel's videos and their posters and subtitles stream from the
-    // website (frontend components/help, helpSections.js VIDEO_BASE)
-    "img-src 'self' data: blob: https://openvolley.app",
-    "media-src 'self' https://openvolley.app",
-    connectSrc,
-    "font-src 'self'",
-    "frame-ancestors 'none'"
-  ].join('; '))
+  // Content Security Policy — emitted in all modes so LAN/self-hosted
+  // deployments are not left without a policy (PAGE_CSP, lib/pageCsp.js).
+  res.setHeader('Content-Security-Policy', PAGE_CSP)
 
   if (req.method === 'OPTIONS') {
     // the scoreboard codes: any site (CORS *, never with credentials)
