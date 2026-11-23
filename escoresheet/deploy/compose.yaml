@@ -284,6 +284,8 @@ services:
       NTFY_TOPIC: ${NTFY_TOPIC:-}
       NTFY_TOKEN: ${NTFY_TOKEN:-}
       NTFY_ADDRESS: ${NTFY_ADDRESS:-}
+      # what the error tables may hold (empty: 512 MB; 0: no ceiling)
+      OV_ERRORS_MAX_BYTES: ${OV_ERRORS_MAX_BYTES:-}
     volumes:
       - type: bind
         source: ${OV_STORAGE_HOST_DIR:?set OV_STORAGE_HOST_DIR in .env}

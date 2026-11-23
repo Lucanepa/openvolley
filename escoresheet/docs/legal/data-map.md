@@ -415,7 +415,7 @@ file tar). The policy must say so (F8).
 | **From the server** | Its own errors (route catches, layer errors, manage catch, failed jobs, unhandled rejections, uncaught exceptions): message, frames, the route (method + path, ids masked), request id, status; no request content, no account |
 | **Who reads it** | Super admins only, in the manager's Errors tab (`/api/admin/errors*`): groups, breakdowns, the reports with the member's name, e-mail, roles and clubs (reading reports that name members is audited `errors.read`; triage `errors.update`; delete on request by device or account `errors.delete`). Not in `/api/db`; read-only in the Data tab; `ov_read` view for the operator |
 | **Alerts** | A digest of new groups, regressions and groups still happening a day later (≤ 6 an hour, one group ≤ once an hour): mail to `ERROR_ALERT_EMAIL` (admin@openvolley.app, via Migadu) with roles and clubs of the accounts concerned, **never names or addresses**; ntfy push to the operator's phone through the operator's own ntfy on lenovoserver (CH), reached over Tailscale (`NTFY_ADDRESS`): title, error message, tool, OS, version only; a bell notice for every super admin. Audited `errors.alert` (counts only) |
-| **Retention as built** | Events 90 days after they were received (`purge`, daily); groups with no events that are not open 180 days after last seen; account deletion deletes the account's events (`lib/auth.js` ownedTables). At most 500 stored events per group and day |
+| **Retention as built** | Events 90 days after they were received (`purge`, daily), and of a group only its newest 7,000; groups with no events 180 days after last seen, whatever their status (db/054); account deletion deletes the account's events (`lib/auth.js` ownedTables). At most 500 stored events per group and day; a report without a session opens at most 20 new groups an hour per address (200 in total); past `OV_ERRORS_MAX_BYTES` (512 MB) reports are only counted |
 | **Basis** | (f) troubleshooting, security; opt-out in the apps (right to object) |
 
 ## 5. Processors and transfers
@@ -459,7 +459,7 @@ source). Neither is a recipient.
 | Event history (undone / corrected events) | With the match (part of the record) |
 | Activity log (server) | Match entries 24 months or with the match; others 90 days; delete on request |
 | Activity log (device) | Uploaded rows 180 days / 100,000 rows; daily files 30 days / 50 MB |
-| Error reports (server, db/050) | Events 90 days; groups without events and not open 180 days; with the account (its events) |
+| Error reports (server, db/050, db/054) | Events 90 days, at most the newest 7,000 of a group; groups without events 180 days; with the account (its events) |
 | Interaction (click) log (device only) | 30 days / 50,000 rows |
 | Match records (cloud), with events, revisions, approvals, closures, remarks | The season + `retention_years` seasons (db/042, default 2), then the daily sweep (`lib/retention.js`); closed matches read-only; redaction on request: `scripts/redact-person.mjs` |
 | Saved teams, beach tournaments | Until deleted by a manager (kept after the creator's account is deleted) |
