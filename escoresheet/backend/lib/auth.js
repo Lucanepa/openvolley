@@ -22,7 +22,7 @@
  *     auth.verifyAccessToken(token)    -> { user, session } | null (throws on DB failure)
  *     auth.requireUser(req, res)       -> user | null   (writes 401/503 itself)
  *     auth.setPassword(emailOrId, pw)  -> { userId, email, revokedSessions }
- *     auth.verifyPassword(userId, pw)  -> { ok } | { locked, retryAfterSec } (throws AUTH_BUSY)
+ *     auth.verifyPassword(userId, pw, { ip }?) -> { ok } | { locked, retryAfterSec } (throws AUTH_BUSY)
  *     auth.findUserId(emailOrId)       -> { id, email } (throws if not exactly one)
  *     auth.revokeUserSessions(userId)  -> number
  *     auth.eraseAccount(userId, { inTransaction }) -> { deleted } (delete-account's
@@ -32,10 +32,13 @@
  *     auth.settle()                    -> resolves when the background mail jobs are done (tests)
  *     auth.sweep()                     -> clears stale in-memory counters
  *     auth.limits / auth.lockout       -> the counters (inspect, reset, replace)
- *     auth.bcryptGate                  -> { active, queued, peak } of the bcrypt limiter
+ *     auth.bcryptGate                  -> { active, queued, peak, rejected, lanes } of the bcrypt limiter
+ *     auth.bcryptStats()               -> the worker threads' state, or null (main thread)
+ *     auth.close()                     -> stops the bcrypt worker threads
  *   sendAuthResult(res, result), createRateLimiter(opts), createLockout(opts),
- *   createConcurrencyGate(opts), ipBucketKey(ip), hashToken(token),
- *   generateToken(), isWellFormedToken(token), AUTH_ACTIONS
+ *   createConcurrencyGate(opts), createFairGate(opts), ipBucketKey(ip),
+ *   ipLaneKey(ip), hashToken(token), generateToken(), isWellFormedToken(token),
+ *   AUTH_ACTIONS
  *
  * Email links (db/010_auth_tokens.sql, lib/mailer.js; README "Account emails"):
  * with a mailer (SMTP configured) reset-password mails a one-time link
@@ -73,15 +76,20 @@
  * with a link keeps the password, sessions and passkeys of whoever signed up
  * only when the clicker gives that password (confirmEmailLink).
  *
- * CPU guard: bcryptjs is pure JS and runs on the main event loop, which also
- * serves the live-scoring relay. Every bcrypt call goes through a small
- * concurrency gate (bcryptMaxConcurrent, bcryptMaxQueue); when the queue is
- * full the request gets 503 "auth_busy" at once instead of queueing. Sign-in
- * also has a global bucket (limits.signInGlobal) next to the per-IP one,
- * charged only to sources that failed lately, and per-IP buckets key IPv6
- * clients on their /64 (ipBucketKey). The lockout is per account and source
- * (DEFAULTS.lockout), with an account-wide ceiling that a source which signed
- * in before passes (DEFAULTS.accountLockout).
+ * CPU guard: bcryptjs is pure JS. With bcryptWorkers (server.js) it runs in
+ * worker threads (lib/bcryptPool.js), off the event loop that also serves the
+ * live-scoring relay; otherwise on the main thread as before. Every bcrypt
+ * call goes through a gate that is fair between clients (createFairGate,
+ * audit 2611 SEC-03): one job at a time per client lane (an IPv6 /48 or an
+ * IPv4 address, ipLaneKey), the lane served least recently first, a source
+ * that signed in to the account before ahead of the rest, a short wait
+ * (bcryptMaxWaitMs), and 503 "auth_busy" at once when there is no place; an
+ * ops alert when that goes on (onGateSaturated). Sign-in also has a global
+ * bucket (limits.signInGlobal) next to the per-IP one, charged only to
+ * sources that failed lately, and per-IP buckets key IPv6 clients on their
+ * /64 (ipBucketKey). The lockout is per account and source (DEFAULTS.lockout),
+ * with an account-wide ceiling that a source which signed in before passes
+ * (DEFAULTS.accountLockout).
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -92,6 +100,7 @@ import { cleanTransports, createPasskeyCeremonies, passkeyConfig, passkeyDeviceL
 import { connectClient } from './pgClient.js'
 import { EMAIL_RE } from './emailAddress.js'
 import { accessFromRoles } from './access.js'
+import { createBcryptPool } from './bcryptPool.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -228,10 +237,25 @@ const DEFAULTS = Object.freeze({
   adminMinPasswordLength: 14,
   bcryptCost: 10,
   maxBcryptCost: 15, // stored hashes above this are treated as invalid (DoS guard)
-  // At most this many bcrypt operations run (interleaved) at once; up to
-  // bcryptMaxQueue more wait, anything beyond gets 503 auth_busy.
+  // Worker threads for bcrypt (lib/bcryptPool.js, audit 2611 SEC-03): 0 runs
+  // it on the main thread (bcryptjs's async API, as before); server.js sets
+  // OV_BCRYPT_WORKERS (default 1). Without bcryptjs on disk (the bundled hall
+  // server) it stays on the main thread.
+  bcryptWorkers: 0,
+  // At most this many bcrypt operations run at once (default: 2 on the main
+  // thread, one per worker thread), at most bcryptLaneConcurrent of one
+  // client (ipLaneKey: an IPv6 /48 or an IPv4 address); up to bcryptMaxQueue
+  // more wait (fairly: createFairGate), at most bcryptMaxWaitMs, anything
+  // beyond gets 503 auth_busy at once.
   bcryptMaxConcurrent: 2,
   bcryptMaxQueue: 16,
+  bcryptMaxWaitMs: 3000,
+  bcryptLaneConcurrent: 1,
+  // Ops alert (options.onGateSaturated, server.js: the error tracker) when
+  // sign-ins keep being turned away (auth_busy, the gate at capacity) for
+  // bcryptSaturatedMs; at most once per bcryptAlertCooldownMs.
+  bcryptSaturatedMs: 30 * 1000,
+  bcryptAlertCooldownMs: 15 * 60 * 1000,
 
   // Refuse sign-in for users whose email_confirmed_at is NULL (when the column
   // exists): GoTrue refused them too, and an unconfirmed row may belong to
@@ -507,6 +531,181 @@ export function createConcurrencyGate({ maxConcurrent, maxQueue = 0, maxWaitMs =
 }
 
 /**
+ * The fairness lane of a client (the bcrypt gate, createFairGate): IPv4 as is,
+ * IPv4-mapped IPv6 as the IPv4 address, any other IPv6 address as its /48. A
+ * /48 is what one site (and one free tunnel account) gets: rotating through
+ * its 65536 /64s gives a fresh per-IP bucket each time (ipBucketKey), but one
+ * lane (audit 2611 SEC-03).
+ */
+export function ipLaneKey(ip) {
+  const k = ipBucketKey(ip)
+  if (!k.endsWith('::/64')) return k
+  return k.split(':').slice(0, 3).join(':') + '::/48'
+}
+
+/**
+ * A concurrency gate that is fair between clients (audit 2611 SEC-03), for the
+ * bcrypt work of sign-in. run(fn, { lane, priority, abandoned }):
+ *   - at most maxConcurrent jobs run; at most laneConcurrent of one lane (a
+ *     client, ipLaneKey); a job without a lane (scripts, the dummy hash) has
+ *     no lane limit;
+ *   - waiting jobs start priority first, then the lane served least recently,
+ *     then in arrival order: a flood from one lane cannot keep another
+ *     client's job waiting behind it;
+ *   - when the queue (maxQueue) is full, a newcomer whose lane waits with
+ *     fewer jobs than the longest lane takes the place of that lane's newest
+ *     job, and a priority newcomer the place of the newest job of the longest
+ *     lane; the job pushed out, or a newcomer that finds no place, rejects at
+ *     once with err.code === 'AUTH_BUSY';
+ *   - a job that waited maxWaitMs rejects with 'AUTH_BUSY' (a quick 503
+ *     instead of a long wait);
+ *   - `abandoned` as in createConcurrencyGate.
+ * onReject(reason): 'full' | 'evicted' | 'timeout', for the saturation alert.
+ */
+export function createFairGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0, laneConcurrent = 1, onReject = null } = {}) {
+  if (!(maxConcurrent > 0) || !(maxQueue >= 0) || !(laneConcurrent > 0)) {
+    throw new Error('createFairGate: maxConcurrent (> 0), laneConcurrent (> 0) and maxQueue (>= 0) are required')
+  }
+  let active = 0
+  let peak = 0
+  let rejected = 0
+  let served = 0
+  const lanes = new Map() // lane -> { active, queued, served }
+  const waiting = [] // { lane, priority, resolve, reject, timer }
+  const busy = () => Object.assign(new Error('auth: bcrypt queue is full'), { code: 'AUTH_BUSY' })
+  const laneOf = (lane) => {
+    let s = lanes.get(lane)
+    if (!s) { s = { active: 0, queued: 0, served: 0 }; lanes.set(lane, s) }
+    return s
+  }
+  const tidy = (lane) => {
+    const s = lanes.get(lane)
+    if (s && !s.active && !s.queued) lanes.delete(lane)
+  }
+  const canStart = (lane) => lane == null || (lanes.get(lane)?.active || 0) < laneConcurrent
+  const servedOf = (lane) => (lane == null ? 0 : lanes.get(lane)?.served || 0)
+  const refuse = (reason) => {
+    rejected++
+    try { onReject?.(reason) } catch { /* an alert must never fail a sign-in */ }
+    return busy()
+  }
+  function start(lane) {
+    active++
+    if (active > peak) peak = active
+    if (lane != null) {
+      const s = laneOf(lane)
+      s.active++
+      s.served = ++served
+    }
+  }
+  function unqueue(e) {
+    clearTimeout(e.timer)
+    if (e.lane != null) { const s = lanes.get(e.lane); if (s) s.queued-- }
+  }
+  function pick() {
+    let best = -1
+    for (let i = 0; i < waiting.length; i++) {
+      const e = waiting[i]
+      if (!canStart(e.lane)) continue
+      if (best === -1) { best = i; continue }
+      const b = waiting[best]
+      if (e.priority !== b.priority) { if (e.priority) best = i; continue }
+      if (servedOf(e.lane) < servedOf(b.lane)) best = i
+    }
+    return best
+  }
+  function pump() {
+    while (active < maxConcurrent) {
+      const i = pick()
+      if (i === -1) return
+      const [e] = waiting.splice(i, 1)
+      unqueue(e)
+      start(e.lane)
+      e.resolve()
+    }
+  }
+  function release(lane) {
+    active--
+    if (lane != null) {
+      const s = lanes.get(lane)
+      if (s) s.active--
+      tidy(lane)
+    }
+    pump()
+  }
+  /** Index of the waiting job a newcomer of `lane` may push out, or -1. */
+  function victimFor(lane, priority) {
+    const counts = new Map()
+    for (const e of waiting) {
+      if (e.priority) continue
+      const k = e.lane ?? e
+      counts.set(k, (counts.get(k) || 0) + 1)
+    }
+    let most = 0
+    for (const n of counts.values()) if (n > most) most = n
+    if (!most) return -1
+    const mine = lane == null ? 0 : (counts.get(lane) || 0)
+    if (!priority && most <= mine + 1) return -1
+    // the newest job of a longest lane
+    for (let i = waiting.length - 1; i >= 0; i--) {
+      const e = waiting[i]
+      if (!e.priority && counts.get(e.lane ?? e) === most) return i
+    }
+    return -1
+  }
+  return {
+    maxConcurrent,
+    maxQueue,
+    laneConcurrent,
+    async run(fn, { lane = null, priority = false, abandoned } = {}) {
+      if (active < maxConcurrent && canStart(lane)) {
+        start(lane)
+      } else {
+        if (waiting.length >= maxQueue) {
+          const v = maxQueue > 0 ? victimFor(lane, priority) : -1
+          if (v === -1) throw refuse('full')
+          const [out] = waiting.splice(v, 1)
+          unqueue(out)
+          tidy(out.lane)
+          out.reject(refuse('evicted'))
+        }
+        await new Promise((resolve, reject) => {
+          const entry = { lane, priority: !!priority, resolve, reject, timer: null }
+          if (lane != null) laneOf(lane).queued++
+          if (maxWaitMs > 0) {
+            entry.timer = setTimeout(() => {
+              const i = waiting.indexOf(entry)
+              if (i === -1) return
+              waiting.splice(i, 1)
+              unqueue(entry)
+              tidy(lane)
+              reject(refuse('timeout'))
+            }, maxWaitMs)
+            entry.timer.unref?.()
+          }
+          waiting.push(entry)
+        })
+      }
+      if (typeof abandoned === 'function' && abandoned()) {
+        release(lane)
+        throw Object.assign(new Error('gate: the caller left while queued'), { code: 'GATE_ABANDONED' })
+      }
+      try {
+        return await fn()
+      } finally {
+        release(lane)
+      }
+    },
+    get active() { return active },
+    get queued() { return waiting.length },
+    get peak() { return peak },
+    get rejected() { return rejected },
+    get lanes() { return lanes.size },
+    resetPeak() { peak = active }
+  }
+}
+
+/**
  * Per-account lockout: maxFailures failed attempts within windowMs lock the key
  * for lockMs. Keyed by normalized email, so unknown emails lock exactly like
  * real ones and the lockout cannot be used to probe for accounts.
@@ -652,13 +851,52 @@ export function createAuth(options = {}) {
   if (cfg.sessionTtlSec > cfg.absoluteTtlSec) throw new Error('createAuth: sessionTtlSec exceeds absoluteTtlSec')
   cfg.contactEmail = cfg.contactEmail || process.env.CONTACT_EMAIL || 'support@openvolley.app'
   const ipKey = typeof cfg.ipKey === 'function' ? cfg.ipKey : ipBucketKey
-  const rawBcrypt = options.bcrypt || { compare: bcryptjs.compare, hash: bcryptjs.hash }
-  const bcryptGate = createConcurrencyGate({ maxConcurrent: cfg.bcryptMaxConcurrent, maxQueue: cfg.bcryptMaxQueue })
-  const bcrypt = {
-    compare: (password, hash) => bcryptGate.run(() => rawBcrypt.compare(password, hash)),
-    hash: (password, cost) => bcryptGate.run(() => rawBcrypt.hash(password, cost))
-  }
+  const laneKey = typeof cfg.laneKey === 'function' ? cfg.laneKey : ipLaneKey
   const log = options.logger || console
+  // bcrypt off the main thread when the server asks for worker threads
+  // (lib/bcryptPool.js; null without bcryptjs on disk). An injected
+  // options.bcrypt (tests) is used as it is.
+  const bcryptPool = !options.bcrypt && cfg.bcryptWorkers > 0 ? createBcryptPool({ size: cfg.bcryptWorkers, logger: log }) : null
+  const rawBcrypt = options.bcrypt || bcryptPool || { compare: bcryptjs.compare, hash: bcryptjs.hash }
+  const gateWatch = { streakStart: 0, last: 0, rejected: 0, alertedAt: 0 }
+  const bcryptGate = createFairGate({
+    maxConcurrent: options.bcryptMaxConcurrent ?? (bcryptPool ? bcryptPool.size : DEFAULTS.bcryptMaxConcurrent),
+    maxQueue: cfg.bcryptMaxQueue,
+    maxWaitMs: cfg.bcryptMaxWaitMs,
+    laneConcurrent: cfg.bcryptLaneConcurrent,
+    onReject: () => noteGateBusy()
+  })
+  // o: { lane, priority } of the request (createFairGate)
+  const bcrypt = {
+    compare: (password, hash, o) => bcryptGate.run(() => rawBcrypt.compare(password, hash), o),
+    hash: (password, cost, o) => bcryptGate.run(() => rawBcrypt.hash(password, cost), o)
+  }
+  /**
+   * The gate turned a job away. Turn-aways that keep coming (gaps under 5 s)
+   * for bcryptSaturatedMs are a flood, or a server too small for its load:
+   * the ops alert, at most once per bcryptAlertCooldownMs.
+   */
+  function noteGateBusy() {
+    const t = Date.now()
+    if (!gateWatch.last || t - gateWatch.last > 5000) { gateWatch.streakStart = t; gateWatch.rejected = 0 }
+    gateWatch.last = t
+    gateWatch.rejected++
+    if (t - gateWatch.streakStart < cfg.bcryptSaturatedMs) return
+    if (gateWatch.alertedAt && t - gateWatch.alertedAt < cfg.bcryptAlertCooldownMs) return
+    gateWatch.alertedAt = t
+    const info = {
+      seconds: Math.round((t - gateWatch.streakStart) / 1000),
+      rejected: gateWatch.rejected,
+      active: bcryptGate.active,
+      queued: bcryptGate.queued,
+      lanes: bcryptGate.lanes,
+      maxConcurrent: bcryptGate.maxConcurrent
+    }
+    log.error(`[auth] sign-in gate at capacity for ${info.seconds} s: ${info.rejected} requests answered auth_busy (${info.active} running, ${info.queued} waiting, ${info.lanes} clients)`)
+    if (typeof cfg.onGateSaturated === 'function') {
+      try { cfg.onGateSaturated(info) } catch { /* an alert must never fail a request */ }
+    }
+  }
   const mailer = cfg.mailer && typeof cfg.mailer.send === 'function' ? cfg.mailer : disabledMailer()
 
   const T = {
@@ -780,12 +1018,12 @@ export function createAuth(options = {}) {
    * usable and against a same-cost dummy hash otherwise (unknown email, user
    * without password, malformed hash), so response time does not tell them apart.
    */
-  async function checkPassword(password, storedHash) {
+  async function checkPassword(password, storedHash, gateOptions) {
     const real = usableHash(storedHash)
     const target = real || await dummyHash()
     let match = false
     try {
-      match = await bcrypt.compare(password, target)
+      match = await bcrypt.compare(password, target, gateOptions)
     } catch (err) {
       if (err?.code === 'AUTH_BUSY') throw err // overload, not a wrong password
       match = false
@@ -819,9 +1057,13 @@ export function createAuth(options = {}) {
     }
   }
 
-  function hashPassword(password) {
-    return bcrypt.hash(password, cfg.bcryptCost)
+  /** gateOptions: the request's { lane } for the bcrypt gate (createFairGate). */
+  function hashPassword(password, gateOptions) {
+    return bcrypt.hash(password, cfg.bcryptCost, gateOptions)
   }
+
+  /** The bcrypt gate's options of a request from `ip`. */
+  const gateFor = (ip, priority = false) => ({ lane: laneKey(ip), priority })
 
   // --- users -------------------------------------------------------------------
   function isUserBlocked(u) {
@@ -1098,7 +1340,7 @@ export function createAuth(options = {}) {
    * -> { ok: true } | { ok: false } | { locked: true, retryAfterSec }.
    * Throws AUTH_BUSY when the bcrypt queue is full, and on a database error.
    */
-  async function verifyPassword(userId, password) {
+  async function verifyPassword(userId, password, { ip } = {}) {
     await usersColumns()
     const byId = typeof userId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
     const { rows } = byId
@@ -1110,7 +1352,7 @@ export function createAuth(options = {}) {
     if (attempt.locked) return { locked: true, retryAfterSec: attempt.retryAfterSec }
     try {
       const pw = typeof password === 'string' && password.length <= 1024 ? password : ''
-      const match = await checkPassword(pw, user?.encrypted_password)
+      const match = await checkPassword(pw, user?.encrypted_password, ip ? gateFor(ip) : undefined)
       if (!match || isUserBlocked(user)) {
         lockout.fail(key)
         return { ok: false }
@@ -1299,11 +1541,15 @@ export function createAuth(options = {}) {
       // Last, so requests refused above never use up the global budget; and
       // only for sources that failed lately (see DEFAULTS.limits.signInGlobal).
       const lastFail = failedSources.get(source)
-      if (lastFail != null && Date.now() - lastFail < FAILED_SOURCE_MS && limits.signInGlobal?.hit('*').limited) return BUSY()
+      const failedLately = lastFail != null && Date.now() - lastFail < FAILED_SOURCE_MS
+      if (failedLately && limits.signInGlobal?.hit('*').limited) return BUSY()
 
       const cols = await usersColumns()
       const user = await findUserByEmail(email)
-      const passwordOk = await checkPassword(password, user?.encrypted_password)
+      // The bcrypt gate is fair between clients, and a source that signed in
+      // to this account before (and did not fail since) goes first: a flood
+      // of made-up sign-ins cannot turn its owner away (SEC-03)
+      const passwordOk = await checkPassword(password, user?.encrypted_password, gateFor(ctx.ip, knownSource(email, source) && !failedLately))
       if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) return failed()
       const session = await createSession(user.id, user.encrypted_password)
       if (!session) return failed() // password changed or account deleted while we were checking
@@ -1386,7 +1632,7 @@ export function createAuth(options = {}) {
     // scoresheet, lib/finalMail.js) go out in it, as the confirmation does
     meta.mail_lang = mailLang(body, ctx)
 
-    const hash = await hashPassword(body.password)
+    const hash = await hashPassword(body.password, gateFor(ctx.ip))
     const id = randomUUID()
     // With a mailer and db/010 the address stays unconfirmed and gets a link;
     // otherwise the account is confirmed at once (as before).
@@ -1617,7 +1863,7 @@ export function createAuth(options = {}) {
     const v = await sessionFromBody(body, ctx)
     if (v.error) return v.error
     const token = bearerOf(body, ctx)
-    const denied = await confirmIdentity(body, token, v.user.id)
+    const denied = await confirmIdentity(body, token, v.user.id, ctx)
     if (denied) return denied
     const userId = v.user.id
     try {
@@ -1770,7 +2016,7 @@ export function createAuth(options = {}) {
     if (!pre.rows.length) return INVALID_LINK()
     const adminProblem = validateNewPassword(body.password, await minPasswordFor(pre.rows[0].user_id))
     if (adminProblem) return fail(422, adminProblem, 'weak_password')
-    const hash = await hashPassword(body.password)
+    const hash = await hashPassword(body.password, gateFor(ctx.ip))
     const out = await withTransaction(async (client) => {
       const t = await consumeToken(client, token, 'reset')
       if (t.state !== 'ok') return null
@@ -1831,7 +2077,7 @@ export function createAuth(options = {}) {
       const { rows } = await pool.query(
         `SELECT u.encrypted_password FROM ${T.tokens} t JOIN ${T.users} u ON u.id = t.user_id
           WHERE t.hash = $1 AND t.purpose = 'confirm' AND t.used_at IS NULL AND t.expires_at > now()`, [hashToken(token)])
-      if (rows[0]) passwordOk = await checkPassword(body.password, rows[0].encrypted_password)
+      if (rows[0]) passwordOk = await checkPassword(body.password, rows[0].encrypted_password, gateFor(ctx.ip))
     }
     let setPasswordToken = null
     const out = await withTransaction(async (client) => {
@@ -2001,7 +2247,7 @@ export function createAuth(options = {}) {
     if (blockedUser) return blockedUser
     const password = typeof body.password === 'string' ? body.password : ''
     if (!password || password.length > 1024) return fail(400, 'Your password is needed to add a passkey.', 'password_required')
-    const check = await verifyPassword(userId, password)
+    const check = await verifyPassword(userId, password, ctx)
     if (check.locked) {
       const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
       return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
@@ -2101,7 +2347,7 @@ export function createAuth(options = {}) {
     const id = typeof body.id === 'string' ? body.id : ''
     if (!UUID_RE.test(id)) return fail(400, 'Invalid passkey id', 'validation_failed')
     const token = bearerOf(body, ctx)
-    const denied = await confirmIdentity(body, token, v.user.id)
+    const denied = await confirmIdentity(body, token, v.user.id, ctx)
     if (denied) return denied
     const out = await withTransaction(async (client) => {
       // The account filter is the ownership check.
@@ -2150,7 +2396,7 @@ export function createAuth(options = {}) {
    * fresh. Returns null when confirmed, else the answer (403 reauth_required,
    * 401 invalid_password, 429 account_locked, 401 passkey_*).
    */
-  async function confirmIdentity(body, token, userId) {
+  async function confirmIdentity(body, token, userId, ctx = {}) {
     const password = typeof body.password === 'string' ? body.password : ''
     if (isPlainObject(body.passkey)) {
       if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
@@ -2174,7 +2420,7 @@ export function createAuth(options = {}) {
       await pool.query(`UPDATE ${T.passkeys} SET counter = $2, last_used_at = now() WHERE id = $1`, [verified.passkey.id, verified.newCounter])
     } else if (password) {
       if (password.length > 1024) return fail(401, 'Wrong password.', 'invalid_password')
-      const check = await verifyPassword(userId, password)
+      const check = await verifyPassword(userId, password, ctx)
       if (check.locked) {
         const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
         return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
@@ -2197,7 +2443,7 @@ export function createAuth(options = {}) {
     if (v.error) return v.error
     if (!isPlainObject(body.passkey) && !(typeof body.password === 'string' && body.password)) return REAUTH_REQUIRED()
     const token = bearerOf(body, ctx)
-    const denied = await confirmIdentity(body, token, v.user.id)
+    const denied = await confirmIdentity(body, token, v.user.id, ctx)
     if (denied) return denied
     return ok({ fresh_until: freshSessions.get(freshKey(token)) })
   }
@@ -2219,13 +2465,13 @@ export function createAuth(options = {}) {
     const next = typeof body.new_password === 'string' ? body.new_password : ''
     const pwProblem = validateNewPassword(next) || validateNewPassword(next, await minPasswordFor(userId))
     if (pwProblem) return fail(422, pwProblem, 'weak_password')
-    const check = await verifyPassword(userId, current)
+    const check = await verifyPassword(userId, current, ctx)
     if (check.locked) {
       const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
       return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
     }
     if (!check.ok) return fail(401, 'Wrong password.', 'invalid_password')
-    const hash = await hashPassword(next)
+    const hash = await hashPassword(next, gateFor(ctx.ip))
     const out = await withTransaction(async (client) => {
       const r = await setPasswordIn(client, userId, hash)
       const session = await createSession(userId, hash, client)
@@ -2276,7 +2522,7 @@ export function createAuth(options = {}) {
     const token = bearerOf(body, ctx)
     const removePasskeys = body.remove_passkeys === true
     if (removePasskeys) {
-      const denied = await confirmIdentity(body, token, v.user.id)
+      const denied = await confirmIdentity(body, token, v.user.id, ctx)
       if (denied) return denied
     }
     const out = await withTransaction(async (client) => {
@@ -2375,6 +2621,10 @@ export function createAuth(options = {}) {
     lockout,
     accountLockout,
     bcryptGate,
+    /** The worker threads' state (null: bcrypt on the main thread). */
+    bcryptStats: () => bcryptPool?.stats() ?? null,
+    /** Stops the bcrypt worker threads (shutdown, tests); later jobs run on the main thread. */
+    close: async () => { await bcryptPool?.close() },
     config: Object.freeze(Object.fromEntries(Object.entries(cfg).filter(
       ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted', 'selfDelete', 'mailer'].includes(k)))),
     /** Drops the cached column lists (after a restore or migration). */

@@ -694,6 +694,16 @@ function getDataLayer() {
       // Sign-up needs the licence number (owner 23.11.2026); OV_SIGNUP_LICENCE=optional
       // keeps it optional (the e2e servers, tests/helpers/e2eServer.js)
       licenceRequired: process.env.OV_SIGNUP_LICENCE !== 'optional',
+      // bcrypt in worker threads, off the relay's event loop (lib/bcryptPool.js,
+      // audit 2611 SEC-03): OV_BCRYPT_WORKERS threads (default 1: the backend
+      // has one CPU, deploy/compose.yaml; at most 8), 0 = on the main thread as
+      // before. The sign-in gate runs one job per thread.
+      bcryptWorkers: /^\d{1,2}$/.test(process.env.OV_BCRYPT_WORKERS || '') ? Math.min(8, Number(process.env.OV_BCRYPT_WORKERS)) : 1,
+      // Sign-ins turned away (auth_busy) for 30 s on end: a flood, or a server
+      // too small for its load. To the error tracker (mail, push, bell).
+      onGateSaturated: (info) => captureServerError(
+        new Error(`auth: the sign-in gate is at capacity (${info.rejected} sign-ins answered auth_busy in ${info.seconds} s)`),
+        { view: 'POST /api/auth/sign-in', status: 503, data: info }),
       // db/025: what a new account asks for at sign-up (nothing is granted then)
       signUpRequests: { parse: arq.parseSignUpRequests, store: (client, userId, rows) => arq.storeSignUpRequests(client, userId, rows) },
       // The account's own delete-account: the admin path's last-super-admin
