@@ -1053,6 +1053,10 @@ export async function continueWithLocalCopy(matchId, { checkServer = serverClose
   return data
 }
 
+// The sync_queue statuses of a job the server has not answered with success
+// (db/db.js): a restore in place replaces such set and event jobs
+const UNDELIVERED_JOB_STATUSES = ['queued', 'sending', 'error', 'failed']
+
 /**
  * Restore match in place - overwrite existing match with backup data
  * Used for cloud backup restore during active match
@@ -1156,10 +1160,17 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
       // superseded too. Match insert/update jobs are KEPT: they carry columns the
       // restore payload does not (officials, signatures, connections, ...), and
       // have lower ids, so they run before the restore job.
+      // Every job not delivered goes: queued, waiting out a backoff ('error'),
+      // refused and parked for the hourly retry or Retry all ('failed'), and
+      // an older build's 'sending'. A parked insert kept its old local id: once
+      // its retry went through, the server stored the rally a second time
+      // beside the restore's copy under the new id (audit LOG-08). Deleted,
+      // not marked: a job on its way in the running pass is still 'queued',
+      // and the queue's write of its answer then finds no row to bring back.
       const pendingJobs = await db.sync_queue.toArray()
       const replacedByRestore = (j) => (j.resource === 'set' || j.resource === 'event' || (j.resource === 'match' && j.action === 'restore'))
       await db.sync_queue.bulkDelete(pendingJobs
-        .filter(j => (j.status === 'queued' || j.status === 'error') && replacedByRestore(j) && jobMatchKey(j) === externalId)
+        .filter(j => UNDELIVERED_JOB_STATUSES.includes(j.status) && replacedByRestore(j) && jobMatchKey(j) === externalId)
         .map(j => j.id))
 
       // PINs from the local match after the update above (backup fields over the
@@ -2173,13 +2184,35 @@ export async function importMatchFromSupabase(cloudData, { replaceNewer = false 
       // This handles the case where a match was started but no rallies were played yet
       if (sets.length === 0 && (match.coin_toss_confirmed || events.length > 0)) {
         console.log('[Import] No sets found, creating Set 1 for match with coin toss confirmed or events')
-        await db.sets.add({
+        const firstSetId = await db.sets.add({
           matchId: localMatchId,
           index: 1,
           homePoints: 0,
           awayPoints: 0,
           finished: false
         })
+        // The server has no row of it (the scoring device's set insert never
+        // got there): its insert goes like the coin toss sends one. Without
+        // it every later score of the set was an update matching no row,
+        // answered 200 and counted as sent, and set 1 never reached the
+        // server (audit LOG-17). An upsert by its id; not for a match the
+        // server has closed (it refuses it) nor a local-only one.
+        if (seedKey && !isLocalOnly(match) && !isKnownClosedOnServer(localMatchRow)) {
+          await db.sync_queue.add({
+            resource: 'set',
+            action: 'insert',
+            payload: {
+              external_id: setExtId(seedKey, firstSetId),
+              match_id: seedKey,
+              index: 1,
+              home_points: 0,
+              away_points: 0,
+              finished: false
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+        }
       }
 
       for (const event of events) {
