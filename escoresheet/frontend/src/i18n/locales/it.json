@@ -1374,6 +1374,7 @@
     "offline": "Offline",
     "switchToOnline": "Passa alla modalità online",
     "switchToOffline": "Passa alla modalità offline",
+    "onlineButNoConnection": "Online, ma senza connessione: le modifiche restano su questo dispositivo e partono appena torna",
     "dashboardConnectionInfo": "Info connessione dashboard",
     "serverStatus": "Stato del server",
     "serverRunning": "Server attivo",

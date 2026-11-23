@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
-import { useConnectionSummary } from '../hooks/useConnectionSummary'
+import { useConnectionSummary, useBrowserOffline, isConnectionDown } from '../hooks/useConnectionSummary'
 import { dayTimeLabel } from '../ui/format.js'
 import UserButton from './auth/UserButton'
 import TabletStatusIndicator from './TabletStatusIndicator'
@@ -162,6 +162,11 @@ export default function MainHeader({
   const { scaleFactor, userScaleOverride, setUserScaleOverride } = useScaledLayout()
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   const [scaleMenuOpen, setScaleMenuOpen] = useState(false)
+  // Online wanted, nothing answers (no network, no local server): the switch
+  // stays on but turns grey (owner, 23.11.2026: "like I'd like it online but
+  // I can't"). No sync-queue query: the header must not re-render per point.
+  const browserOffline = useBrowserOffline()
+  const connectionDown = !offlineMode && isConnectionDown({ connectionStatuses, browserOffline })
 
   // Scale options: 50%, 75%, 100%, 125%, 150% (25% steps, max 150%)
   const scaleOptions = [0.5, 0.75, 1.0, 1.25, 1.5]
@@ -705,7 +710,8 @@ export default function MainHeader({
               role="switch"
               aria-checked={!offlineMode}
               onClick={() => setOfflineMode(!offlineMode)}
-              title={offlineMode ? t('header.switchToOnline') : t('header.switchToOffline')}
+              data-connection-down={connectionDown ? '' : undefined}
+              title={offlineMode ? t('header.switchToOnline') : connectionDown ? t('header.onlineButNoConnection') : t('header.switchToOffline')}
               className={cn(HEADER_SWITCH, isCompactBar && 'pl-1.5')}
             >
               <span className={isCompactBar ? 'sr-only' : undefined}>{offlineMode ? t('header.offline') : t('header.online')}</span>
@@ -716,10 +722,10 @@ export default function MainHeader({
                   it cut the match chip to "#40..." at 360 px. */}
               <SwitchTrack
                 checked={!offlineMode}
-                className={!offlineMode ? 'bg-emerald-500' : undefined}
+                className={offlineMode ? undefined : connectionDown ? 'bg-stone-300' : 'bg-emerald-500'}
                 thumbIcon={offlineMode
                   ? <WifiOff size={11} strokeWidth={2.75} aria-hidden="true" data-testid="header-online-icon" className="text-stone-400" />
-                  : <Wifi size={11} strokeWidth={2.75} aria-hidden="true" data-testid="header-online-icon" className="text-emerald-600" />}
+                  : <Wifi size={11} strokeWidth={2.75} aria-hidden="true" data-testid="header-online-icon" className={connectionDown ? 'text-stone-400' : 'text-emerald-600'} />}
               />
             </button>
           </span>

@@ -1373,6 +1373,7 @@
     "offline": "Hors ligne",
     "switchToOnline": "Passer en mode online",
     "switchToOffline": "Passer en mode offline",
+    "onlineButNoConnection": "En ligne, mais sans connexion : les modifications attendent sur cet appareil et partent dès qu'elle revient",
     "dashboardConnectionInfo": "Info connexion tableau de bord",
     "serverStatus": "État du serveur",
     "serverRunning": "Serveur actif",
