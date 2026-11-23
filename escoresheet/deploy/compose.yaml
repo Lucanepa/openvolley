@@ -255,6 +255,9 @@ services:
       MAIL_BUDGET_SECURITY: ${MAIL_BUDGET_SECURITY:-}
       # The locked / blocked approval-PIN notices' own hourly budget (empty: 50)
       MAIL_BUDGET_PIN_LOCK: ${MAIL_BUDGET_PIN_LOCK:-}
+      # The game PIN / match information mails a scorer asks for to its own
+      # address (lib/mailer.js sendUser; empty: 100)
+      MAIL_BUDGET_USER: ${MAIL_BUDGET_USER:-}
       # sign-up needs a licence number unless `optional` (empty in production)
       OV_SIGNUP_LICENCE: ${OV_SIGNUP_LICENCE:-}
       VM_USERNAME: ${VM_USERNAME:-}
