@@ -173,8 +173,10 @@ ignore them.
 An official league game's live score is public by its game number (1–7
 digits), without a code: `GET /api/global/live/game/<number>` on the cloud
 (from the published live score) or on a hall relay (its own room of that
-number). CORS `*`, poll every 5 s. The answer is the TV page's court summary
+number). Indoor games only: OpenBeach numbers its games per tournament. CORS
+`*`, poll every 5 s. The answer is the TV page's court summary
 (`data.courts[0]`: `home` / `away` `{ name, short, color }`, `setsWon`,
-`points`, `sets`, `currentSet`, `bestOf`, `serving` `home`/`away`, `ended`,
-`timeout`, `interval`), with no time-out counts or substitutions. OpenVolley's
+`points`, `sets`, `currentSet` (a best-of-3 decider is 3), `bestOf`,
+`serving` `home`/`away`, `ended`, `timeout`, `interval`), with no time-out
+counts or substitutions. OpenVolley's
 board page takes a game number in its code field.
