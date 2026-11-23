@@ -215,6 +215,8 @@ export default function App() {
   // Global: the match's backup code (utils/globalCloud) to restore from
   const [globalRestoreCode, setGlobalRestoreCode] = useState('')
   const [globalRestoreBusy, setGlobalRestoreBusy] = useState(false)
+  // what the restore by backup code says, under its own field (restoreByCodeSection)
+  const [globalRestoreError, setGlobalRestoreError] = useState('')
   const [cloudBackupLoading, setCloudBackupLoading] = useState(false)
   const [cloudBackupError, setCloudBackupError] = useState('')
   const [restorePreviewData, setRestorePreviewData] = useState(null) // { data, source: 'database'|'cloud'|'local' }
@@ -3919,6 +3921,64 @@ export default function App() {
   // "Connecting..."); it stops at its next step when that changes. Its
   // recommendation is the card on Home (DeviceCheckCard), under the same rule.
   const firstStartDialog = (showStartupConnectivity && !offlineMode) || (toolMode === null && matchesLoaded && !matchId && !homeOptionsModal)
+
+  // Restore match by the match's backup code (no account, no game PIN): a
+  // Global or guest match, whose backup is kept under its code
+  // (utils/globalCloud). First in the Global tool and in the Swiss tool
+  // signed out, after the search by game PIN in the Swiss tool signed in
+  // (audit LOG-07: a guest match's backup could not be restored at all)
+  function restoreByCodeSection() {
+    return (
+      <div className="mb-6 flex flex-col" data-testid="restore-global">
+        <h3 className="text-sm font-semibold text-stone-800">{globalTool ? t('restoreGlobal.title', 'Restore from the online backup') : t('restoreGlobal.titleCode', 'Restore with the backup code')}</h3>
+        <p className="mt-1 mb-3 text-xs text-stone-500">{globalTool
+          ? t('restoreGlobal.desc', 'Enter the backup code of the match (Match Setup, Backups). The app then asks for its referee PIN.')
+          : t('restoreGlobal.descGuest', 'A match without an account (New match while signed out): enter its backup code (Match Setup, Backups). The app then asks for its referee PIN.')}</p>
+        <input
+          type="text"
+          value={globalRestoreCode}
+          onChange={(e) => { setGlobalRestoreCode(e.target.value.trim()); setGlobalRestoreError('') }}
+          placeholder="AbCdEfGhIjKlMnOpQrStUv"
+          aria-label={t('restoreGlobal.code', 'Backup code')}
+          data-testid="restore-global-code"
+          autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          className="mb-3 w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
+        />
+        <button
+          type="button"
+          data-testid="restore-global-button"
+          disabled={globalRestoreBusy || !isGlobalKey(globalRestoreCode)}
+          onClick={async () => {
+            setGlobalRestoreBusy(true)
+            setGlobalRestoreError('')
+            try {
+              const text = await loadGlobal(globalRestoreCode, 'backup')
+              if (!text) { setGlobalRestoreError(t('restoreGlobal.notFound', 'No backup found for this code.')); return }
+              // a backup file like any other (utils/backupFile): an
+              // encrypted one asks for the match's referee PIN first
+              const unlocked = await unlockBackup(matchBackupFromFile(parseBackupText(text)))
+              if (!unlocked) return // cancelled
+              // only a Global or guest match, kept as the kind it is and
+              // local only: never an official match into this device
+              // (utils/globalCloud)
+              const data = globalRestoreData(unlocked)
+              if (!data) { setGlobalRestoreError(t('restoreGlobal.notGlobal', 'This code holds no Global match and no match without an account.')); return }
+              setRestorePreviewData({ data, source: 'cloud', backupName: 'global' })
+            } catch (err) {
+              setGlobalRestoreError(restoreErrorText(err, t))
+            } finally {
+              setGlobalRestoreBusy(false)
+            }
+          }}
+          className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+        >
+          {globalRestoreBusy ? t('common.loading') : t('restoreGlobal.button', 'Find backup')}
+        </button>
+        {globalRestoreError && <FormError className="mt-2">{globalRestoreError}</FormError>}
+      </div>
+    )
+  }
+
   // Home's own match set-up while no match id is set yet: the Easy match
   // form, today's games, the new-match / replace and other confirms, the
   // restore and delete dialogs, a test or easy match being prepared
@@ -4386,6 +4446,7 @@ export default function App() {
                   setRestoreMatchIdInput('')
                   setRestorePin('')
                   setRestoreError('')
+                  setGlobalRestoreError('')
                   setCloudBackups([])
                   setCloudBackupPin('')
                   setCloudBackupGameN('')
@@ -4398,53 +4459,8 @@ export default function App() {
                 panelStyle={{ display: 'flex', flexDirection: 'column' }}
               >
                 <div className="ov-kit flex min-h-0 flex-1 flex-col">
-                  {/* Global: restore by the match's backup code (no account, no game PIN) */}
-                  {!offlineMode && globalTool && (
-                    <div className="mb-6 flex flex-col" data-testid="restore-global">
-                      <h3 className="text-sm font-semibold text-stone-800">{t('restoreGlobal.title', 'Restore from the online backup')}</h3>
-                      <p className="mt-1 mb-3 text-xs text-stone-500">{t('restoreGlobal.desc', 'Enter the backup code of the match (Match Setup, Backups). The app then asks for its referee PIN.')}</p>
-                      <input
-                        type="text"
-                        value={globalRestoreCode}
-                        onChange={(e) => { setGlobalRestoreCode(e.target.value.trim()); setRestoreError('') }}
-                        placeholder="AbCdEfGhIjKlMnOpQrStUv"
-                        aria-label={t('restoreGlobal.code', 'Backup code')}
-                        data-testid="restore-global-code"
-                        autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                        className="mb-3 w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
-                      />
-                      <button
-                        type="button"
-                        data-testid="restore-global-button"
-                        disabled={globalRestoreBusy || !isGlobalKey(globalRestoreCode)}
-                        onClick={async () => {
-                          setGlobalRestoreBusy(true)
-                          setRestoreError('')
-                          try {
-                            const text = await loadGlobal(globalRestoreCode, 'backup')
-                            if (!text) { setRestoreError(t('restoreGlobal.notFound', 'No backup found for this code.')); return }
-                            // a backup file like any other (utils/backupFile): an
-                            // encrypted one asks for the match's referee PIN first
-                            const unlocked = await unlockBackup(matchBackupFromFile(parseBackupText(text)))
-                            if (!unlocked) return // cancelled
-                            // only a Global match, kept test-flagged: never an
-                            // official match into this device (utils/globalCloud)
-                            const data = globalRestoreData(unlocked)
-                            if (!data) { setRestoreError(t('restoreGlobal.notGlobal', 'This code holds no match of the Global tool.')); return }
-                            setRestorePreviewData({ data, source: 'cloud', backupName: 'global' })
-                          } catch (err) {
-                            setRestoreError(restoreErrorText(err, t))
-                          } finally {
-                            setGlobalRestoreBusy(false)
-                          }
-                        }}
-                        className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
-                      >
-                        {globalRestoreBusy ? t('common.loading') : t('restoreGlobal.button', 'Find backup')}
-                      </button>
-                      {restoreError && <FormError className="mt-2">{restoreError}</FormError>}
-                    </div>
-                  )}
+                  {/* Restore by the match's backup code: the Global tool, and the Swiss tool's guest matches */}
+                  {!offlineMode && (globalTool || !signedInUser) && restoreByCodeSection()}
                   {/* Restore from Cloud Backup */}
                   {!offlineMode && !globalTool && (
                     <div className="mb-6 flex min-h-0 flex-col">
@@ -4593,6 +4609,9 @@ export default function App() {
                       )}
                     </div>
                   )}
+
+                  {/* Signed in, the Swiss tool's restore by game PIN first; a guest match's backup code after it */}
+                  {!offlineMode && !globalTool && !!signedInUser && restoreByCodeSection()}
 
                   {/* Divider before local backup (only after the cloud part) */}
                   {!offlineMode && (

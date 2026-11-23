@@ -104,16 +104,20 @@ async function globalBackupText(matchId, backupData) {
 }
 
 /**
- * A backup read by its code, as Global mode restores it: only a Global match,
- * a real match that stays local (domain/matchKind isLocalOnly: the sync queue
- * and the restore never send it to the league's server). A backup made
- * before 2026-11-17 holds test: true, dropped here. null for anything else: a code that holds an
- * official match, or a file someone with the code replaced, is not restored
- * into this device's official matches.
+ * A backup read by its code, as Restore match takes it back: only a match
+ * that keeps its files in this store (domain/matchKind usesKeyStore), a
+ * Global match or a guest match (the Swiss "New match" signed out), each
+ * kept as the kind it is (audit LOG-07: a guest backup was stored but never
+ * restored). A real match that stays local (isLocalOnly: the sync queue and
+ * the restore never send it to the league's server). A backup made before
+ * 2026-11-17 holds test: true, dropped here. null for anything else: a code
+ * that holds an official match, or a file someone with the code replaced, is
+ * not restored into this device's official matches.
  */
 export function globalRestoreData(data) {
-  if (!data || typeof data !== 'object' || !data.match || data.match.global !== true) return null
-  return { ...data, match: { ...data.match, global: true, test: false } }
+  if (!data || typeof data !== 'object' || !data.match || !usesKeyStore(data.match)) return null
+  const kind = data.match.global === true ? { global: true } : { guest: true }
+  return { ...data, match: { ...data.match, ...kind, test: false } }
 }
 
 /**
