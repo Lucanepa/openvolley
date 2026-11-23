@@ -276,6 +276,19 @@ type), each twice:
   by their pseudonyms), never a PIN or an address. Nobody is refused for it: a hard refusal for every caller let 30
   anonymous guesses from two addresses lock out a match's referee, benches
   and scorer, and 100 every OpenBeach referee.
+- **lookups without a match** (`OV_PIN_ONLY_LOOKUP`, `lib/matchAccess.js`
+  `pinOnlyLookupFromEnv`): a referee or bench check that names no match
+  (validate-connection-pin without `matchExternalId`, the relay's
+  validate-pin without `matchId` or `gameNumber`) tests one guess against
+  every open match of its sport, and with the per-range rule above a guesser
+  gets one share per address range it holds (2611 review,
+  SEC06-RESIDUAL-PIN-ONLY). `on` (empty, the default) serves them for both
+  sports, as OpenVolley 3.x and the current OpenBeach release need; `beach`
+  only for OpenBeach; `off` for none. A refused one answers **409
+  `match-required`** before any PIN is compared or counted (the apps ask for
+  the game in the list, as for a PIN two matches share), with a
+  `[PIN] lookup without a match … refused` line. When to switch: the
+  post-release checklist in `deploy/README.md`.
 A scoreboard's claim on the relay counts for the database match whose game
 PIN it compares (the rows its room key and synced match name), whatever room
 key it names; a relay room re-pointed at a database match it never proved

@@ -162,6 +162,18 @@ refuses to `initdb` when a cluster has existed on the filesystem (`state/initial
 **Never `source` `.env`** into a shell: Compose prefers exported shell variables over `.env`,
 so later `up`/rollback commands in that shell would silently use the old values.
 
+## Post-release checklist: switches that wait for the old apps
+
+Some checks of the 2026-11 audit stay lenient on purpose, because app builds still in the halls
+send the older form. Each has a switch in `.env` (env.example); turn it on when the builds that
+need the lenient form are gone, with `docker compose up -d ov-backend` (the backend logs the
+setting at start). Record the date planned for each in the release notes.
+
+| Switch | Now | Turn on when |
+|---|---|---|
+| `OV_PIN_ONLY_LOOKUP` | `on` (empty): referee / bench PIN checks without their match, both sports | `beach` once the OpenVolley apps that name no match are gone (3.x; 26.11.x sends none only when two picker rows share a game number); `off` once the OpenBeach release that names its match has replaced the current one (SEC-06) |
+| `OV_BEACH_REFEREE_ADDRESS` | `optional` (empty): a beach referee slot without a stored address keeps the older rule | `required` once the OpenBeach release that stores `officials[].email` has replaced the older builds (PERM-08, owner decision 6) |
+
 ## What touches the other tenant (isolation on the shared VM)
 
 Written for the co-tenancy on `lucanepa-prod` (until 16.10.2026). The limits are the same on

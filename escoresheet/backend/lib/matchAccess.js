@@ -106,6 +106,39 @@ export const CONNECTION_PIN_TYPES = Object.freeze({
   })
 })
 
+/**
+ * OV_PIN_ONLY_LOOKUP: the sports whose referee and bench PIN checks may still
+ * name no match (validate-connection-pin without matchExternalId, the relay's
+ * validate-pin without matchId or gameNumber). Such a lookup tests one guess
+ * against every open match of the sport, and the owner's rule for the PIN
+ * locks (lock the guessers only) gives a guesser with many address ranges
+ * one share per range (audit 2611 review, SEC06-RESIDUAL-PIN-ONLY). The apps
+ * that name their match do not need it; the older ones do:
+ *   on     (default, empty) both sports: OpenVolley 3.x and the rare
+ *          26.11.x case of two picker rows with one game number send none,
+ *          and the current OpenBeach release names no match at all
+ *   beach  only OpenBeach's: an indoor lookup must name its match (once the
+ *          OpenVolley apps without it are gone from the halls)
+ *   off    none (once the OpenBeach release that names its match has
+ *          replaced the current one)
+ * A refused lookup answers 409 `match-required` (the apps then ask for the
+ * game in the list, as for a PIN that two matches share). Case and spaces do
+ * not matter; anything else throws, so a typo stops the start.
+ * @returns {{ mode: 'on'|'beach'|'off', allows: (sport: string) => boolean }}
+ */
+export const PIN_ONLY_LOOKUP_MODES = Object.freeze(['on', 'beach', 'off'])
+export function pinOnlyLookupFromEnv (env = process.env) {
+  const raw = String(env?.OV_PIN_ONLY_LOOKUP ?? '').trim().toLowerCase()
+  const mode = raw || 'on'
+  if (!PIN_ONLY_LOOKUP_MODES.includes(mode)) {
+    throw new TypeError(`OV_PIN_ONLY_LOOKUP must be on, beach or off (got ${JSON.stringify(String(env.OV_PIN_ONLY_LOOKUP).slice(0, 20))})`)
+  }
+  return Object.freeze({
+    mode,
+    allows: (sport) => mode === 'on' || (mode === 'beach' && sport === 'beach')
+  })
+}
+
 /** The validate-connection-pin config of (sport, type), or null for an unknown pair. */
 export function connectionPinType (sport, type) {
   if (typeof sport !== 'string' || typeof type !== 'string') return null

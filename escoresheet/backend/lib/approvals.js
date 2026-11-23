@@ -219,6 +219,24 @@ function authBusy () {
 const safeMessage = (err) => String(err?.message || err).replace(/"[^"]*"/g, '"…"').slice(0, 160)
 
 /**
+ * OV_BEACH_REFEREE_ADDRESS (server.js -> createApprovals
+ * beachOfficialAddressRequired): `required` binds a beach referee slot to the
+ * address the match setup stored, as an indoor slot is (owner decision 6),
+ * once the OpenBeach release that stores officials[].email has replaced the
+ * builds that store none; empty or `optional` (the default) keeps the older
+ * rule for a beach slot without an address, so those builds keep approving
+ * (PERM-08; audit 2611 review, PERM08-NO-SWITCH: the switch was a code
+ * change). Anything else keeps the default and says so in `warning`.
+ * @returns {{ required: boolean, warning: string|null }}
+ */
+export function beachRefereeAddressFromEnv (env = process.env) {
+  const raw = String(env?.OV_BEACH_REFEREE_ADDRESS ?? '').trim().toLowerCase()
+  if (raw === 'required') return { required: true, warning: null }
+  if (raw === '' || raw === 'optional') return { required: false, warning: null }
+  return { required: false, warning: `OV_BEACH_REFEREE_ADDRESS is not "required" or "optional" (${raw.slice(0, 20)}): a beach referee slot without a stored address keeps the older rule` }
+}
+
+/**
  * @param {object} o
  * @param {import('pg').Pool} o.pool
  * @param {object} [o.auth]    lib/auth.js instance (verifyPassword)

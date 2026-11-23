@@ -279,6 +279,12 @@ services:
       OV_PIN_RANGE_FAILURES: ${OV_PIN_RANGE_FAILURES:-}
       OV_PIN_MATCH_FAILURES: ${OV_PIN_MATCH_FAILURES:-}
       OV_PIN_SEARCH_FAILURES: ${OV_PIN_SEARCH_FAILURES:-}
+      # Referee / bench PIN checks that name no match: on (empty) | beach | off
+      # (env.example, the post-release checklist in deploy/README.md)
+      OV_PIN_ONLY_LOOKUP: ${OV_PIN_ONLY_LOOKUP:-}
+      # A beach referee approval needs the address stored with its match:
+      # required | optional (empty; env.example, the post-release checklist)
+      OV_BEACH_REFEREE_ADDRESS: ${OV_BEACH_REFEREE_ADDRESS:-}
       # Password hashing in worker threads (lib/bcryptPool.js); empty = 1, 0 = main thread
       OV_BCRYPT_WORKERS: ${OV_BCRYPT_WORKERS:-}
       # V8's heap limit, below mem_limit (change them together). Node sizes
