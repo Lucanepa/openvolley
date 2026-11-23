@@ -5,8 +5,10 @@
  * only to the accounts that could write the match when it went (its creator
  * and editors, db/056 deleted_matches.owners) and to admins; anyone else
  * hears 'unknown' (OV_MATCH_UNKNOWN), as of a match never stored. The app
- * that holds the match's sent jobs is its creator's or an editor's, so it
- * still hears 'deleted' and never sends a deleted match again.
+ * that holds the match's sent jobs hears 'deleted' through the device that
+ * scored it (db/060 deleted_matches.devices; 2611 review SR-1: another
+ * account signed in on that tablet heard 'unknown' and sent it back), so it
+ * never sends a deleted match again.
  * Needs PG_TEST_URL (a throwaway Postgres, see tests/helpers/pgTestDb.js) or
  * OV_E2E_DOCKER=1.
  */
@@ -105,6 +107,43 @@ describe('who hears that a match was deleted (PERM-17)', { skip: SKIP }, () => {
     assert.equal((await dbCall(owner, 'insert', { data: { external_id: ext, game_n: gameN++, status: 'live', game_pin: '615283' } })).status, 200)
     assert.equal(await known(owner, ext), 'stored')
     assert.equal(await known(outsider, ext), 'stored')
+  })
+
+  // 2611 review, SR-1: the app reads "unknown" as "the server lost it" and
+  // sends the match again. Another scorer signed in on the tablet that scored
+  // the match (or the creator's account deleted since) heard "unknown", and
+  // an admin's deleted match came back as that scorer's.
+  it('a device that scored the match hears "deleted", whoever is signed in on it; another device does not', async () => {
+    const creator = await account('tabletowner')
+    const second = await account('tabletsecond')
+    const tablet = { id: randomBytes(16).toString('hex').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5'), platform: 'android' }
+    const other = { id: '0f0e0d0c-0b0a-4908-8706-050403020100', platform: 'web' }
+    const ext = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
+    const ins = await api(srv.base, '/api/db', { token: creator.token, proto: '2', headers: { 'cf-connecting-ip': creator.ip }, body: { table: 'matches', action: 'insert', params: { data: { external_id: ext, game_n: gameN++, status: 'live', game_pin: '624193' } }, device: tablet } })
+    assert.equal(ins.status, 200, ins.text)
+    assert.equal((await sql.query('SELECT device_id FROM match_scorer_devices s JOIN matches m ON m.id = s.match_id WHERE m.external_id = $1', [ext])).rows[0]?.device_id, tablet.id, 'the tablet scores it')
+    // an admin's delete (the same trigger as every delete path)
+    await sql.query('DELETE FROM public.matches WHERE external_id = $1', [ext])
+    assert.deepEqual((await sql.query('SELECT devices FROM deleted_matches WHERE external_id = $1', [ext])).rows[0].devices, [tablet.id])
+    const knownOn = async (user, device) => {
+      const r = await api(srv.base, '/api/match/known', { token: user.token, headers: { 'cf-connecting-ip': user.ip }, body: { external_id: ext, ...(device ? { device } : {}) } })
+      assert.equal(r.status, 200, r.text)
+      return r.json.data.state
+    }
+    const updateOn = async (user, device) => (await api(srv.base, '/api/db', { token: user.token, proto: '2', headers: { 'cf-connecting-ip': user.ip }, body: { table: 'matches', action: 'update', params: { data: { status: 'final' }, filters: [{ type: 'eq', column: 'external_id', value: ext }] }, ...(device ? { device } : {}) } })).json?.error?.code ?? null
+    // the second scorer on the club tablet: the match stays deleted
+    assert.equal(await updateOn(second, tablet), 'OV_MATCH_DELETED')
+    assert.equal(await knownOn(second, tablet), 'deleted')
+    // the same account elsewhere, or with no device named (older apps): as before
+    assert.equal(await updateOn(second, other), 'OV_MATCH_UNKNOWN')
+    assert.equal(await knownOn(second, other), 'unknown')
+    assert.equal(await knownOn(second, null), 'unknown')
+    // the creator's account deleted since: its tablet still knows
+    await sql.query('DELETE FROM auth.users WHERE id = $1', [creator.id])
+    assert.deepEqual((await sql.query('SELECT owners FROM deleted_matches WHERE external_id = $1', [ext])).rows[0].owners, [])
+    assert.equal(await knownOn(second, tablet), 'deleted')
+    // the match did not come back
+    assert.equal((await sql.query('SELECT count(*)::int AS n FROM matches WHERE external_id = $1', [ext])).rows[0].n, 0)
   })
 
   it('a match deleted before db/056 (no owners kept) answers as before; an account that goes leaves the lists', async () => {

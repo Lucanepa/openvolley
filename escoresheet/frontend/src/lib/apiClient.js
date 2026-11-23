@@ -423,11 +423,14 @@ export function apiMatchRestoreByPin(gameN, pin, { claim = false, externalId = n
 
 /**
  * Whether the server stores, deleted or never saw a match (POST
- * /api/match/known). Needs a session.
+ * /api/match/known). Needs a session. Names this device: a match deleted
+ * on the server is 'deleted' to a device that scored it, whoever is signed
+ * in on it (another account on the club tablet: 2611 review, SR-1), so it is
+ * never sent back.
  * @returns {Promise<{data: {state: 'stored'|'deleted'|'unknown'}|null, error: object|null, status: number}>}
  */
 export function apiMatchKnown(externalId) {
-  return postJson('/api/match/known', { external_id: externalId }, { fallbackError: 'Match lookup failed' })
+  return postJson('/api/match/known', { external_id: externalId, ...deviceField() }, { fallbackError: 'Match lookup failed' })
 }
 
 /**

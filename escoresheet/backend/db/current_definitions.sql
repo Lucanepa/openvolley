@@ -1,5 +1,5 @@
 -- current_definitions.sql: the current body of every function that more
--- than one numbered migration defines. current as of: db/058
+-- than one numbered migration defines. current as of: db/060
 --
 -- scripts/migrate.mjs applies it after the numbered files on every run, in
 -- one transaction. A numbered file never runs twice through the runner, but
@@ -211,5 +211,31 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$;
+
+-- db/056, as db/060 left it: the devices that scored the match are kept with
+-- the record of its deletion too (2611 review, SR-1)
+CREATE OR REPLACE FUNCTION public.ov_matches_deleted_owners()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.external_id IS NOT NULL THEN
+    INSERT INTO public.deleted_matches (external_id, owners, devices)
+    VALUES (OLD.external_id, ARRAY(
+      SELECT DISTINCT o.user_id FROM (
+        SELECT OLD.created_by AS user_id
+        UNION ALL
+        SELECT e.user_id FROM public.match_editors e WHERE e.match_id = OLD.id
+      ) o WHERE o.user_id IS NOT NULL ORDER BY o.user_id), ARRAY(
+      SELECT d.device_id FROM (
+        SELECT lower(s.device_id) AS device_id FROM public.match_scorer_devices s WHERE s.match_id = OLD.id
+        UNION
+        SELECT lower(r.device_id) FROM public.event_revisions r WHERE r.match_id = OLD.id AND r.device_id IS NOT NULL
+      ) d WHERE d.device_id <> '' ORDER BY d.device_id LIMIT 20))
+    ON CONFLICT (external_id) DO UPDATE SET owners = EXCLUDED.owners, devices = EXCLUDED.devices, deleted_at = now();
+  END IF;
+  RETURN OLD;
+END
+$$;
 
 COMMIT;

@@ -1118,6 +1118,17 @@ today is that club's). Each rename is one audit row (`club.update`, no account, 
 `'vm-sync'`, `renamed: { from, to }`). A new column with a constant default: safe for the old
 backend; without it the sync renames nothing and the lists read `team_name` alone.
 
+**`db/060`: the devices of a deleted match (2611 review, SR-1).** `deleted_matches.devices` (text[]):
+the installation ids of the devices that scored the match when it was deleted (its scoring
+device, db/019, and its event revisions' devices, db/015; at most 20), filled by db/056's trigger
+function. `POST /api/match/known` and the `/api/db` update of one match the server lacks answer
+"deleted" (`OV_MATCH_DELETED`) also to a request whose `device` is one of them, whoever is signed
+in on it: another scorer on the club tablet that scored the match, or after the creator's account
+was deleted, heard "unknown", and the app sends a match it is told is unknown again (an admin's
+deleted match came back as that scorer's). The apps send `device` with every `/api/db` write and,
+from this release on, with `/api/match/known`; older ones get the owners rule as before. A nullable
+column: the old backend ignores it, and a record of before keeps NULL.
+
 Rosters sent ahead with a signature before db/048 lose it once, at their next send (the roster
 hash no longer has the `dob` key). Tests: `tests/migration048.pg.test.js`,
 `tests/scrubSheetBirthdates.pg.test.js`.
