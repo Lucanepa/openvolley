@@ -39,7 +39,7 @@ import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTo
 // Bench requests (line-up, time-out, substitution) from a bench tablet to the scorer
 import { normalizeBenchRequest, normalizeBenchResponse, createBenchRequestStore, createWindowLimiter, currentSetOfBundle, benchView, refereeInfo } from './lib/benchRequests.js'
 // Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
-import { ipBucketKey, createConcurrencyGate, bearerFromHeaders } from './lib/auth.js'
+import { ipBucketKey, createConcurrencyGate, bearerFromHeaders, EMAIL_CONFIRMATION_MARK } from './lib/auth.js'
 import { createAttemptLimiter, createPinFailureBudget, pinScope, PIN_MATCH_FAILURE_MAX, PIN_SEARCH_FAILURE_MAX, PIN_RANGE_FAILURE_MAX, MATCH_SERVER_ONLY_COLUMNS, RESTORE_DEFAULTS } from './lib/matchRestore.js'
 import { accessForSport } from './lib/access.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
@@ -57,7 +57,7 @@ import { pairPageFile } from './lib/pairPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
-import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIVE_MATCH_SQL, matchMailDateTime, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
+import { BUSY_BODY, CONTACT_IDLE_MS, CONTACT_TOTAL_MS, contactMailerFromEnv, contactNetworkKey, createContactSlots, handleContact, LIVE_MATCH_SQL, matchMailDateTime, MAX_CONTACT_BODY_BYTES, SENDER_SQL } from './lib/contact.js'
 import { pinFromBody, pinMailText } from './lib/matchPinMail.js'
 import { mailErrorReason } from './lib/mailer.js'
 // What an address bucket proved recently (a match token / PIN check), for the live hub
@@ -2332,27 +2332,33 @@ async function ownConfirmedAddress(layer, userId) {
  * shares one IPv6 /64.
  */
 /**
- * The support form's sender (lib/contact.js handleContact): signed in (a valid
- * session in the Authorization header) and scoring a live match (the scoring
- * device of a match that has not ended, claimed by this account in the last
- * 12 hours). Never throws: anything unclear is { signedIn: false }.
+ * The support form's sender (lib/contact.js handleContact): its network (the
+ * /56 of an IPv6 address, an IPv4 address as is), signed in (a valid session
+ * in the Authorization header), trusted (that account has a confirmed
+ * address and a role, SEC-31), its address, and scoring a live match (the
+ * scoring device of a match that has not ended, claimed by this account in
+ * the last 12 hours). Never throws: anything unclear is { signedIn: false }.
  */
 async function contactSender(req) {
+  const network = contactNetworkKey(ipBucketKey(getClientIp(req)))
+  const anonymous = { signedIn: false, trusted: false, liveMatch: false, network }
   const token = DB_MODE ? bearerFromHeaders(req.headers) : null
-  if (!token) return { signedIn: false, liveMatch: false }
+  if (!token) return anonymous
   try {
     const layer = await getDataLayer()
     const user = (await layer.auth.verifyAccessToken(token))?.user
-    if (!user) return { signedIn: false, liveMatch: false }
+    if (!user) return anonymous
+    const { rows: [who] } = await layer.db.pool.query(SENDER_SQL, [user.id, EMAIL_CONFIRMATION_MARK.key, EMAIL_CONFIRMATION_MARK.value])
     let liveMatch = false
     try {
       const { rows } = await layer.db.pool.query(
         LIVE_MATCH_SQL, [user.id])
       liveMatch = rows.length > 0
     } catch { /* no db/019: no live match known */ }
-    return { signedIn: true, liveMatch }
+    const confirmed = who?.confirmed === true
+    return { signedIn: true, trusted: confirmed && who?.has_role === true, confirmed, accountId: user.id, email: who?.email || null, liveMatch, network }
   } catch {
-    return { signedIn: false, liveMatch: false }
+    return anonymous
   }
 }
 
@@ -4156,35 +4162,42 @@ function handleHttpRequest(req, res) {
       res.end(JSON.stringify({ success: false, error: 'Too many requests. Please wait before submitting again.' }))
       return
     }
-    // One slot per request until it is answered, however it ends (answered,
-    // refused, timed out, the client gone): the slots cap the bodies held
-    const job = contactSlots.run(async () => {
-      let body
-      try {
-        // A phone on hall Wi-Fi uploading 10 MB: no data for 30 s, or not
-        // done in 2 minutes, gives up (408)
-        body = await readBodyBuffer(req, MAX_CONTACT_BODY_BYTES, { idleMs: 30 * 1000, totalMs: 120 * 1000 })
-      } catch (err) {
-        sendBodyError(res, err, {
-          tooLargeBody: { success: false, code: 'files_too_large', error: 'Attachments too large' },
-          invalidBody: { success: false, code: 'invalid_body', error: 'Invalid request' }
-        })
+    ;(async () => {
+      // Who sends (the session in the header, before the body): a trusted
+      // account may use the slots and the budget share kept for it (SEC-31)
+      const sender = await contactSender(req)
+      // One slot per request until it is answered, however it ends (answered,
+      // refused, timed out, the client gone): the slots cap the bodies held,
+      // at most 2 per address
+      const job = contactSlots.run(async () => {
+        let body
+        try {
+          // A phone on hall Wi-Fi uploading 10 MB: no data for 15 s, or not
+          // done in 2 minutes, gives up (408)
+          body = await readBodyBuffer(req, MAX_CONTACT_BODY_BYTES, { idleMs: CONTACT_IDLE_MS, totalMs: CONTACT_TOTAL_MS })
+        } catch (err) {
+          sendBodyError(res, err, {
+            tooLargeBody: { success: false, code: 'files_too_large', error: 'Attachments too large' },
+            invalidBody: { success: false, code: 'invalid_body', error: 'Invalid request' }
+          })
+          return
+        }
+        const r = await handleContact({ body, contentType: req.headers['content-type'], mailer: contactMailer, sender })
+        sendJson(res, r.status, r.body)
+      }, { key: ipBucketKey(getClientIp(req)), trusted: sender.trusted === true })
+      if (!job) {
+        // Every slot taken (or this address's): the hourly cap's 503 busy
+        // (the app offers mailto), at once. The body is drained and
+        // discarded, never held; the connection stays open so the client can
+        // still read the answer (closed, a client still uploading gets EPIPE
+        // instead)
+        console.warn(`[Contact] ${contactSlots.inFlight} messages already being received: busy`)
+        req.resume()
+        sendJson(res, 503, BUSY_BODY)
         return
       }
-      const r = await handleContact({ body, contentType: req.headers['content-type'], mailer: contactMailer, sender: await contactSender(req) })
-      sendJson(res, r.status, r.body)
-    })
-    if (!job) {
-      // Every slot taken: the hourly cap's 503 busy (the app offers mailto),
-      // at once. The body is drained and discarded, never held; the
-      // connection stays open so the client can still read the answer
-      // (closed, a client still uploading gets EPIPE instead)
-      console.warn(`[Contact] ${contactSlots.max} messages already being received: busy`)
-      req.resume()
-      sendJson(res, 503, BUSY_BODY)
-      return
-    }
-    job.catch((err) => {
+      await job
+    })().catch((err) => {
       console.error('[Contact] request failed:', err?.message)
       sendJson(res, 500, { success: false, code: 'server_error', error: 'Could not send the message' })
     })

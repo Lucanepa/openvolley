@@ -54,6 +54,24 @@
  * requests at once (createContactSlots), each with up to 14 MB of body; the
  * next one gets the same 503 busy as a used-up budget.
  *
+ * Who may use how much (SEC-31, audit 26.11), so one client with a dozen
+ * addresses and a throwaway account, or a few slow uploads, cannot shut the
+ * form for everyone:
+ *   - the hourly budget in shares: a message of a sender that is not a
+ *     trusted account (anonymous, or an account without a confirmed address
+ *     or without any role) may use the first CONTACT_PUBLIC_SHARE of it, a P1
+ *     one of such a sender up to 1 - CONTACT_SIGNED_IN_SHARE; the rest is
+ *     kept for trusted accounts (a confirmed address and a role);
+ *   - CONTACT_PER_SOURCE_PER_HOUR messages an hour per account (any session)
+ *     and, for a sender that is not trusted, per network (an IPv4 address, an
+ *     IPv6 /56): over it 429 rate_limited;
+ *   - at most MAX_CONTACT_IN_FLIGHT_PER_ADDRESS bodies in flight per address
+ *     (the /64 of IPv6), CONTACT_RESERVED_SLOTS of the slots for trusted
+ *     accounts, and a body that sends nothing for CONTACT_IDLE_MS gives up;
+ *   - the mail says whether its Reply-To is verified (the signed-in
+ *     account's own confirmed address) or only typed into the form
+ *     (FreeScout's auto reply goes to it either way).
+ *
  * Public API:
  *   handleContact({ body, contentType, mailer, logger, now }) -> Promise<{ status, body }>  never throws
  *   parseContactBody(buffer, contentType) -> { fields, files, diagnosticsFile? }   (throws ContactError)
@@ -66,7 +84,9 @@
  *   supportSubject(value) -> "[P1 – match running] [scoring] Support – Bug report"
  *   buildSupportMail(value, attachments, { receivedAt, diagnosticsFile }) -> nodemailer message (no from / to)
  *   createContactMailer({ transport, from, to, maxPerHour }) / contactMailerFromEnv(env) / disabledContactMailer(reason)
- *   createContactSlots(max) -> { run(work) -> Promise | null, inFlight, max }: MAX_CONTACT_IN_FLIGHT at once
+ *   createContactSlots(max) -> { run(work, { key, trusted }) -> Promise | null, inFlight, max }: MAX_CONTACT_IN_FLIGHT at once
+ *   contactNetworkKey(bucket) -> the /56 of an IPv6 /64 bucket, an IPv4 address as is
+ *   SENDER_SQL                  the sender's address, confirmation and roles (server.js contactSender)
  */
 
 import nodemailer from 'nodemailer'
@@ -164,13 +184,43 @@ const MAX_PART_HEADER_BYTES = 2048
 export const MAX_COMMENTS = 5000
 export const MAX_DIAGNOSTICS_BYTES = 32 * 1024
 export const CONTACT_MAILS_PER_HOUR = 30
-// The share of the hourly budget only signed-in senders may use, so
-// anonymous messages from one client cannot use up the whole hour
+// The share of the hourly budget only trusted accounts (a confirmed address
+// and a role) may use, so messages of other senders cannot use up the hour
 export const CONTACT_SIGNED_IN_SHARE = 1 / 3
+// The share a message of another sender may use unless it is P1: the
+// difference to 1 - CONTACT_SIGNED_IN_SHARE is kept for their P1 messages
+export const CONTACT_PUBLIC_SHARE = 1 / 2
+// Messages an hour per account and, for a sender that is not trusted, per network
+export const CONTACT_PER_SOURCE_PER_HOUR = 5
 const HOUR_MS = 60 * 60 * 1000
 // Requests in flight at once (createContactSlots): each holds its body, up to
 // MAX_CONTACT_BODY_BYTES, in memory for up to 2 minutes, so 10 hold 140 MB
 export const MAX_CONTACT_IN_FLIGHT = 10
+// ... of them per address (server.js: the /64 of IPv6), and kept for trusted accounts
+export const MAX_CONTACT_IN_FLIGHT_PER_ADDRESS = 2
+export const CONTACT_RESERVED_SLOTS = 2
+// A body that sends nothing this long gives up (408); the whole body may take 2 minutes
+export const CONTACT_IDLE_MS = 15 * 1000
+export const CONTACT_TOTAL_MS = 120 * 1000
+
+/**
+ * The support form's sender as server.js reads it ($1 user id, $2 and $3
+ * lib/auth.js EMAIL_CONFIRMATION_MARK): its address, whether it is confirmed
+ * (as lib/accounts.js confirmationOf: unconfirmed only while the
+ * confirmation link is open), and whether it has any role.
+ */
+export const SENDER_SQL = `SELECT lower(u.email) AS email,
+    NOT coalesce((to_jsonb(u) ->> 'email_confirmed_at') IS NULL AND (to_jsonb(u) -> 'raw_app_meta_data' ->> $2) = $3, false) AS confirmed,
+    coalesce((SELECT cardinality(p.roles) FROM public.profiles p WHERE p.user_id = u.id LIMIT 1), 0) > 0 AS has_role
+  FROM auth.users u WHERE u.id = $1`
+
+/** The network of a rate-limit bucket (lib/auth.js ipBucketKey): an IPv4 address as is, an IPv6 /64 as its /56. */
+export function contactNetworkKey (bucket) {
+  const s = String(bucket || '')
+  const m = /^([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4})::\/64$/i.exec(s)
+  if (!m) return s || 'unknown'
+  return `${m[1]}:${m[2]}:${m[3]}:${(parseInt(m[4], 16) & 0xff00).toString(16)}::/56`.toLowerCase()
+}
 
 /** A rejected request: status and code for the answer, message for people. */
 export class ContactError extends Error {
@@ -573,7 +623,7 @@ export function supportSubject(value, priority = priorityOf(value)) {
  * plain-text body with the priority first, then every field and the
  * diagnostics.
  */
-export function buildSupportMail(value, attachments = [], { receivedAt = new Date(), diagnosticsFile = null } = {}) {
+export function buildSupportMail(value, attachments = [], { receivedAt = new Date(), diagnosticsFile = null, replyToVerified = false } = {}) {
   const priority = priorityOf(value)
   const rows = [
     ['Priority', `${priority.level} – ${priority.reason}`],
@@ -582,6 +632,8 @@ export function buildSupportMail(value, attachments = [], { receivedAt = new Dat
     ['Severity', SEVERITY_LABELS[value.severity] || ''],
     ['Area', `${SECTION_NAMES[value.area]} (${value.area})`],
     ['Email', value.email],
+    // SEC-31: FreeScout replies to it; only a signed-in account's own confirmed address is known to be the sender's
+    ['Reply-To', replyToVerified ? 'verified (the signed-in account\'s confirmed address)' : 'not verified (typed into the form)'],
     ['Source', value.source],
     ['Language', value.language],
     ['App version', value.appVersion],
@@ -609,7 +661,7 @@ export function buildSupportMail(value, attachments = [], { receivedAt = new Dat
     // a custom header only, nothing FreeScout reads as an auto-responder.
     // nodemailer writes the name as X-Openvolley-Priority (header names are
     // case-insensitive)
-    headers: { 'X-OpenVolley-Priority': priority.level },
+    headers: { 'X-OpenVolley-Priority': priority.level, 'X-OpenVolley-Reply-To': replyToVerified ? 'verified' : 'unverified' },
     text: lines.join('\n'),
     attachments: [...attachments, ...(diagnosticsFile ? [diagnosticsFile] : [])].map((a) => ({ filename: a.filename, content: a.data, contentType: a.mime }))
   }
@@ -630,32 +682,40 @@ export function disabledContactMailer(reason = 'not configured') {
 
 /**
  * Sends the support mails: from and to are fixed here, never taken from a
- * request. At most maxPerHour mails per fixed hour window (all senders); the
- * last CONTACT_SIGNED_IN_SHARE of it only for send(mail, { signedIn: true }).
- * A mail the SMTP server does not take is given back to the budget.
- * @param {{ transport: { sendMail: Function, close?: Function }, from: string, to: string, maxPerHour?: number, now?: () => number }} o
+ * request. At most maxPerHour mails per fixed hour window (all senders), in
+ * the shares of the header: send(mail, { trusted, p1, sources }); a sender
+ * that is not `trusted` may use CONTACT_PUBLIC_SHARE of it (a `p1` message
+ * 1 - CONTACT_SIGNED_IN_SHARE). `sources`: the keys (an account, a network)
+ * of which each sends at most perSourcePerHour in the window (skipped
+ * 'source'). A mail the SMTP server does not take is given back.
+ * @param {{ transport: { sendMail: Function, close?: Function }, from: string, to: string, maxPerHour?: number, perSourcePerHour?: number, now?: () => number }} o
  */
-export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_MAILS_PER_HOUR, now = Date.now } = {}) {
+export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_MAILS_PER_HOUR, perSourcePerHour = CONTACT_PER_SOURCE_PER_HOUR, now = Date.now } = {}) {
   if (!transport || typeof transport.sendMail !== 'function') throw new Error('createContactMailer: transport is required')
   if (!from) throw new Error('createContactMailer: from is required')
   if (!isContactEmail(to)) throw new Error('createContactMailer: to must be one address')
   let windowStart = now()
   let used = 0
+  const perSource = new Map() // key -> mails in this window
   return {
     enabled: true,
     reason: null,
     from,
     to,
-    async send(mail, { signedIn = false } = {}) {
+    async send(mail, { trusted = false, p1 = false, sources = [] } = {}) {
       const t = now()
-      if (t - windowStart >= HOUR_MS) { windowStart = t; used = 0 }
-      const cap = signedIn ? maxPerHour : Math.floor(maxPerHour * (1 - CONTACT_SIGNED_IN_SHARE))
+      if (t - windowStart >= HOUR_MS) { windowStart = t; used = 0; perSource.clear() }
+      const cap = trusted ? maxPerHour : Math.floor(maxPerHour * (p1 ? 1 - CONTACT_SIGNED_IN_SHARE : CONTACT_PUBLIC_SHARE))
       if (used >= cap) return { sent: false, skipped: 'budget' }
+      const keys = [...new Set((Array.isArray(sources) ? sources : []).filter((k) => typeof k === 'string' && k))]
+      if (keys.some((k) => (perSource.get(k) || 0) >= perSourcePerHour)) return { sent: false, skipped: 'source' }
       used++
+      for (const k of keys) perSource.set(k, (perSource.get(k) || 0) + 1)
       try {
         await transport.sendMail({ ...mail, from, to, disableFileAccess: true, disableUrlAccess: true })
       } catch (err) {
         if (used > 0) used--
+        for (const k of keys) perSource.set(k, Math.max(0, (perSource.get(k) || 1) - 1))
         throw err
       }
       return { sent: true }
@@ -712,20 +772,32 @@ export const BUSY_BODY = Object.freeze({ success: false, code: 'busy', error: 'T
  * slot once work settles, whichever way it ends (answered, refused, the body
  * timed out or the client gone, work throwing), and returns work's promise;
  * with every slot taken it starts nothing and returns null.
+ * run(work, { key, trusted }) (SEC-31): at most perKey at once with the same
+ * `key` (the sender's address), and a sender with `trusted: false` gets none
+ * of the last `reserved` slots. Without options: any free slot.
  */
-export function createContactSlots(max = MAX_CONTACT_IN_FLIGHT) {
+export function createContactSlots(max = MAX_CONTACT_IN_FLIGHT, { perKey = MAX_CONTACT_IN_FLIGHT_PER_ADDRESS, reserved = CONTACT_RESERVED_SLOTS } = {}) {
   let inFlight = 0
+  const byKey = new Map()
   return {
     max,
+    perKey,
     get inFlight() { return inFlight },
-    run(work) {
-      if (inFlight >= max) return null
+    run(work, { key = null, trusted = true } = {}) {
+      if (inFlight >= (trusted === false ? Math.max(0, max - reserved) : max)) return null
+      if (key !== null && (byKey.get(key) || 0) >= perKey) return null
       inFlight++
+      if (key !== null) byKey.set(key, (byKey.get(key) || 0) + 1)
       let released = false
       const release = () => {
         if (released) return
         released = true
         inFlight--
+        if (key !== null) {
+          const n = (byKey.get(key) || 1) - 1
+          if (n > 0) byKey.set(key, n)
+          else byKey.delete(key)
+        }
       }
       try {
         return Promise.resolve(work()).finally(release)
@@ -741,13 +813,18 @@ export function createContactSlots(max = MAX_CONTACT_IN_FLIGHT) {
  * One POST /api/contact after the rate limit and the body read. Never throws.
  *   200 { success: true }                         mailed (or the honeypot was filled)
  *   400 / 413 / 415 { success: false, code, error } the body, a field or a file is refused
+ *   429 { success: false, code: 'rate_limited' }  this account or network sent its hour's messages
  *   503 { success: false, code: 'unavailable' | 'busy' }  no mail configured / hourly budget used up
  *   502 { success: false, code: 'send_failed' }   the SMTP server did not take it
- * The app offers to send the message by email (mailto) after a 5xx.
- * sender (server.js): { signedIn, liveMatch } of the request's session.
- * "A match is running" (P1) is kept only from a session that scores a live
- * match; a signed-in sender may use the budget's reserved share.
+ * The app offers to send the message by email (mailto) after any of these.
+ * sender (server.js): { signedIn, trusted, liveMatch, accountId, email,
+ * network } of the request's session and address. "A match is running" (P1)
+ * is kept only from a session that scores a live match; a trusted sender
+ * (a confirmed address and a role) may use the budget's reserved share; the
+ * Reply-To is verified when it is a signed-in account's own confirmed address.
  */
+export const RATE_LIMITED_BODY = Object.freeze({ success: false, code: 'rate_limited', error: 'Too many messages from you right now. Please try again later' })
+
 export async function handleContact({ body, contentType, mailer, sender = {}, logger = console, now = () => new Date() } = {}) {
   let value
   let attachments
@@ -772,11 +849,19 @@ export async function handleContact({ body, contentType, mailer, sender = {}, lo
     logger.warn(`[Contact] ${what} not mailed: support mail is off (${mailer?.reason || 'no mailer'})`)
     return answer(503, { success: false, code: 'unavailable', error: 'The support form is not available right now' })
   }
+  const trusted = sender.signedIn === true && sender.trusted === true
+  const replyToVerified = sender.signedIn === true && sender.confirmed === true &&
+    typeof sender.email === 'string' && sender.email.toLowerCase() === value.email.toLowerCase()
+  const sources = [
+    sender.signedIn === true && typeof sender.accountId === 'string' && sender.accountId ? `account:${sender.accountId}` : null,
+    !trusted && typeof sender.network === 'string' && sender.network ? `network:${sender.network}` : null
+  ]
   try {
-    const r = await mailer.send(buildSupportMail(value, attachments, { receivedAt: now(), diagnosticsFile }), { signedIn: sender.signedIn === true })
+    const mail = buildSupportMail(value, attachments, { receivedAt: now(), diagnosticsFile, replyToVerified })
+    const r = await mailer.send(mail, { trusted, p1: priorityOf(value).level === 'P1', sources })
     if (!r.sent) {
-      logger.warn(`[Contact] ${what} not mailed: ${r.skipped === 'budget' ? 'hourly budget used up' : r.skipped}`)
-      return answer(503, BUSY_BODY)
+      logger.warn(`[Contact] ${what} not mailed: ${r.skipped === 'budget' ? 'hourly budget used up' : r.skipped === 'source' ? 'the sender\'s hourly messages used up' : r.skipped}`)
+      return r.skipped === 'source' ? answer(429, RATE_LIMITED_BODY) : answer(503, BUSY_BODY)
     }
   } catch (err) {
     logger.error(`[Contact] ${what} not mailed: ${describeMailError(err)}`)

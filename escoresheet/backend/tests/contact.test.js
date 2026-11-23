@@ -489,17 +489,23 @@ describe('contact: the mail', () => {
     assert.deepEqual([r.status, r.body.code], [502, 'send_failed'])
     assert.doesNotMatch(lines.join('\n'), /tester@example\.ch|support@example\.test/, 'addresses masked in the log')
 
+    // SEC-31 (audit 26.11): this case pinned "the last third is kept for any
+    // signed-in sender" and 2 of 3 for anonymous ones; the reserved share is
+    // now for trusted accounts only (a confirmed address and a role), and a
+    // message of any other sender that is not P1 gets half of the budget
     let t = 0
-    const { mailer, sent } = streamMailer({ maxPerHour: 3, now: () => t })
+    const { mailer, sent } = streamMailer({ maxPerHour: 4, now: () => t })
     for (let i = 0; i < 2; i++) assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200)
     const busy = await handleContact({ body, contentType, mailer, logger: silent })
     assert.deepEqual([busy.status, busy.body.code], [503, 'busy'])
-    // the last third is kept for signed-in senders
-    assert.equal((await handleContact({ body, contentType, mailer, sender: { signedIn: true }, logger: silent })).status, 200)
+    // a session that is not a trusted account counts as anonymous
     assert.equal((await handleContact({ body, contentType, mailer, sender: { signedIn: true }, logger: silent })).status, 503)
+    // the rest is kept for trusted accounts
+    for (let i = 0; i < 2; i++) assert.equal((await handleContact({ body, contentType, mailer, sender: { signedIn: true, trusted: true }, logger: silent })).status, 200)
+    assert.equal((await handleContact({ body, contentType, mailer, sender: { signedIn: true, trusted: true }, logger: silent })).status, 503)
     t += 60 * 60 * 1000
     assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200, 'a new hour')
-    assert.equal(sent.length, 4)
+    assert.equal(sent.length, 5)
   })
 
   it('a mail the SMTP server refused is given back to the budget; "match running" needs a session with a live match', async () => {
