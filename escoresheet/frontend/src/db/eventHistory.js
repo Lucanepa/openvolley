@@ -30,6 +30,7 @@ import {
   plainCopy
 } from '../domain/eventRevisions'
 import { isLocalOnly } from '../domain/matchKind'
+import { buildEventInsertJob } from '../utils/eventSync'
 
 /** Tables an action's transaction must include for the history to be written atomically. */
 export const EVENT_HISTORY_SCOPE = Object.freeze(['event_history', 'sync_queue', 'activity_log'])
@@ -258,6 +259,32 @@ async function lastVoidOps(database, matchId) {
   return out
 }
 
+// An event insert job that is on its way or got there: waiting, parked or
+// sent (db/db.js); a superseded or dropped one never reached the server
+const INSERT_HELD = ['queued', 'sending', 'error', 'failed', 'sent']
+
+/**
+ * The restore rows whose event has no insert job on this device. The undo
+ * of a decision change puts back the sub-rows (side-out line-up, automatic
+ * libero exit) the change removed, under their ids; the change had deleted
+ * their inserts still queued (Scoreboard discardEvents). Offline, the
+ * server never got those rows: the void and the restore were stored for an
+ * event it did not have, and the point lost its line-up and libero exit
+ * there for good (audit LOG-18). Such a row gets its insert again, before
+ * its restore. An upsert by the event's id: harmless where the server has
+ * the row after all (an insert sent and pruned from the queue since).
+ */
+async function restoresWithoutInsert(database, rows) {
+  const restores = rows.filter(r => r.op === 'restore' && r.eventExt && r.after)
+  if (!restores.length) return new Set()
+  const exts = new Set(restores.map(r => r.eventExt))
+  const held = new Set()
+  await database.sync_queue.where('resource').equals('event').each(j => {
+    if (j.action === 'insert' && INSERT_HELD.includes(j.status) && exts.has(j.payload?.external_id)) held.add(j.payload.external_id)
+  })
+  return new Set(restores.filter(r => !held.has(r.eventExt)))
+}
+
 // After-commit writes run one after the other, in hook order
 function writeLater(database, input) {
   writeQueue.p = writeQueue.p.then(async () => {
@@ -284,7 +311,16 @@ function writeLater(database, input) {
       }
       if (!rows.length) return
       await database.event_history.bulkAdd(rows)
-      const jobs = rows.map(r => revisionSyncJob(r, byMatch.get(r.matchId), eventExtId)).filter(Boolean)
+      const withInsert = await restoresWithoutInsert(database, rows)
+      const jobs = []
+      for (const r of rows) {
+        const info = byMatch.get(r.matchId)
+        const job = revisionSyncJob(r, info, eventExtId)
+        if (!job) continue
+        // the event's own insert first, then its restore
+        if (withInsert.has(r)) jobs.push(buildEventInsertJob({ ...r.after, id: r.eventId }, { seed_key: info.seedKey }))
+        jobs.push(job)
+      }
       if (jobs.length) await database.sync_queue.bulkAdd(jobs)
       stored = rows
     })

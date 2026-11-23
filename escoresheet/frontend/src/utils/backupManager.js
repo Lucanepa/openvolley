@@ -27,7 +27,7 @@ import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDat
 import { isEncryptedBackup, BACKUP_DAMAGED } from './backupCrypto/envelope'
 import { backupFileText, CARRIED_PINS, openWithKnownPins } from './backupFile'
 import { redactMatch, SECRETS_REMOVED } from './nativeBackup/redact'
-import { recomputeMatch } from '../domain/recompute'
+import { recomputeMatch, isRotationLiberoExit } from '../domain/recompute'
 import { queueEventSync } from './eventSync'
 import { officialsToArray } from '../domain/officials'
 import { unsentOfMatch } from './deviceSelfCheck'
@@ -2259,10 +2259,13 @@ export async function importMatchFromSupabase(cloudData, { replaceNewer = false 
       // that has them gets none. Over the cloud rows only: the line-ups
       // fetchMatchByPin makes up (latest rally, live state) are the current
       // ones already, not a starting line-up to replay the rallies on.
+      // The automatic libero exit of a rotation (the libero reached the front
+      // row) is such a sub-row too: without it this device kept the libero on
+      // court (audit LOG-18)
       const rebuilt = recomputeMatch(cloudEvents.map(eventRow), { match: localMatchRow, matchId: localMatchId })
-        .add.filter(row => row.type === 'lineup')
+        .add.filter(row => row.type === 'lineup' || isRotationLiberoExit(row))
       for (const row of rebuilt) {
-        const id = await db.events.add({ matchId: localMatchId, setIndex: row.setIndex, type: 'lineup', payload: row.payload, ts: row.ts, seq: row.seq })
+        const id = await db.events.add({ matchId: localMatchId, setIndex: row.setIndex, type: row.type, payload: row.payload, ts: row.ts, seq: row.seq })
         if (!isKnownClosedOnServer(localMatchRow)) await queueEventSync(db, id)
       }
       if (rebuilt.length) console.log(`[Import] ${seedKey}: ${rebuilt.length} line-up row(s) rebuilt from the entries (a log without its line-up sub-rows)`)
