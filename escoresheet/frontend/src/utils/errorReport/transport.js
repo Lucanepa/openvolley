@@ -4,8 +4,9 @@
  * the sync queue, which waits for a signed-in session; works signed out. A
  * batch goes 5 s after the first report, at once for an error, and by
  * navigator.sendBeacon (text/plain) when the page is hidden or closed. A
- * report that could not be sent is sent again later with the same uid (the
- * server counts it once). A session's Bearer token goes along when there is
+ * report that could not be sent, or that the server's rate limit dropped
+ * (202 { dropped }), is sent again later with the same uid (the server counts
+ * it once); a dropped one at most a day after it happened. A session's Bearer token goes along when there is
  * one, so the server can name the account; the body never names it.
  * Switched off (Options › Support and feedback): nothing is queued or sent,
  * and what was queued is dropped.
@@ -16,6 +17,9 @@ export const MAX_QUEUE = 100
 export const BATCH = 20
 export const DELAY_MS = 5000
 const RETRY_MS = 60 * 1000
+// A report the server's rate limit dropped (202 with dropped > 0) goes again
+// later, up to this long after it happened; then it is let go
+export const DROPPED_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 const storage = () => {
   try { return globalThis.localStorage || null } catch { return null }
@@ -53,7 +57,7 @@ function writeQueue(q, store = storage()) {
 /**
  * @param {{ url: () => string|null, authHeader?: () => object, fetchImpl?: Function, beacon?: Function, store?: Storage, setTimer?: Function }} deps
  */
-export function createTransport({ url, authHeader = () => ({}), fetchImpl = (...a) => globalThis.fetch(...a), beacon = (u, b) => globalThis.navigator?.sendBeacon?.(u, b), store = storage(), setTimer = (fn, ms) => setTimeout(fn, ms) } = {}) {
+export function createTransport({ url, authHeader = () => ({}), fetchImpl = (...a) => globalThis.fetch(...a), beacon = (u, b) => globalThis.navigator?.sendBeacon?.(u, b), store = storage(), setTimer = (fn, ms) => setTimeout(fn, ms), now = () => Date.now() } = {}) {
   let timer = null
   let sending = false
   let memory = [] // when storage is unusable
@@ -101,8 +105,19 @@ export function createTransport({ url, authHeader = () => ({}), fetchImpl = (...
           schedule(RETRY_MS)
           break
         }
-        // taken (200), dropped by a rate limit (202) or refused as malformed
-        // (400): never sent again. Anything else (5xx, 429): later.
+        // taken (200) or refused as malformed (400, 413): never sent again.
+        // A rate limit (202 with dropped > 0): what it took or refused goes,
+        // the rest waits and goes again later (until DROPPED_MAX_AGE_MS after
+        // it happened). Anything else (5xx, 429): later.
+        const dropped = res.status === 202 ? await droppedOf(res) : null
+        if (dropped) {
+          const cutoff = now() - DROPPED_MAX_AGE_MS
+          const inBatch = new Set(batch.map((e) => e.uid))
+          const tooOld = (e) => Date.parse(e.client_ts) < cutoff
+          save(queue().filter((e) => !dropped.done.has(e.uid) && !(inBatch.has(e.uid) && tooOld(e))))
+          schedule(RETRY_MS)
+          break
+        }
         if (res.ok || res.status === 400 || res.status === 413) {
           const done = new Set(batch.map((e) => e.uid))
           save(queue().filter((e) => !done.has(e.uid)))
@@ -116,6 +131,21 @@ export function createTransport({ url, authHeader = () => ({}), fetchImpl = (...
       sending = false
     }
     return { sent }
+  }
+
+  /** A 202's body: { done: the uids it took or refused } when it dropped some, else null (taken as a 200). */
+  async function droppedOf(res) {
+    try {
+      const data = typeof res.json === 'function' ? (await res.json())?.data : null
+      if (!(Number(data?.dropped) > 0)) return null
+      const done = new Set([
+        ...(Array.isArray(data.accepted) ? data.accepted : []),
+        ...(Array.isArray(data.rejected) ? data.rejected.map((r) => r?.uid) : [])
+      ])
+      return { done }
+    } catch {
+      return null
+    }
   }
 
   /** The page is going away: what is queued goes by beacon (no headers, so no account). */
