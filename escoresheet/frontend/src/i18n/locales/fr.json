@@ -7064,6 +7064,7 @@
   },
   "globalLive": {
     "listedLabel": "Afficher les matchs Global sur livescore.openvolley.app (le score seulement, comme sur les TV)",
+    "listedHint": "Dès qu’un terrain de ce code figure sur livescore.openvolley.app, le code n’affiche que les terrains qui y figurent (tout le monde trouve le code sur cette liste). Un terrain qui n’y figure pas a besoin de son propre code.",
     "list": {
       "title": "Matchs Global",
       "open": "Ouvrir l'écran live"

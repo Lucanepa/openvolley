@@ -553,16 +553,19 @@ officials, line-ups, sanctions, remarks, signatures and PINs are not sent; in
 OpenBeach, however, a team's name is usually its players' names, and it then
 appears on the screen. The summary is kept in the server's memory only, never
 in a database or a file, and is removed 45 minutes after the match has ended,
-after 3 hours without an update, or when the server restarts. Anyone who knows
-the code can see the summaries of its matches on openvolley.app/tv, on
+after 3 hours without an update (15 minutes for a summary that came only once
+and not through the relay), or when the server restarts. Anyone who knows the
+code can see the summaries of its matches on openvolley.app/tv, on
 livescore.openvolley.app or read them from the server's interface; a venue
 relay shows them on its own network too. A scorer device with a live screen
 code also lists the summaries of its Global matches on
 livescore.openvolley.app, for anyone and without the code, unless "Show Global
 matches on livescore.openvolley.app" is switched off on it in Options, Live
-screen (it is on by default). League matches are on the livescore anyway; test
-and Easy matches are never listed. Switch the live screen off in Options to
-stop sending.
+screen (it is on by default). A code with a summary on that list shows only
+its listed summaries, on the TVs too; a match that is not to be listed needs a
+code of its own. League matches are on the livescore anyway; test and Easy
+matches are never listed. Switch the live screen off in Options to stop
+sending.
 
 **Approval with a PIN:** officials can confirm the result with a personal
 approval PIN in addition to their signature. Stored are: the PIN as a

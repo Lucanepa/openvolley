@@ -25,7 +25,8 @@
  *   GET /api/global/live -> { data: { updatedAt, events: [{ code, updatedAt, courts }] }, error: null }
  *
  * (the livescore site's list; a court that stops saying so leaves it with
- * its next update). Bounded: maxCodes codes, maxCourtsPerCode
+ * its next update). A code with a listed court shows its listed courts only
+ * (owner decision 8, 23.11.2026). Bounded: maxCodes codes, maxCourtsPerCode
  * courts per code, a court is dropped endedKeepMs after its match ended,
  * idleMs after its last update (an unproved court posted once: onceMs), a
  * code with no court left is dropped; who may write or replace a court:
@@ -376,14 +377,22 @@ export function createGlobalLive({
 
   const order = (a, b) => (a.ended - b.ended) || String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')) || String(a.hall || '').localeCompare(String(b.hall || ''))
 
-  /** The page's data for a code (one court with `screen`), or null when nothing is live under it. */
+  /**
+   * The page's data for a code (one court with `screen`), or null when
+   * nothing is live under it. A code with a court on the public livescore
+   * list shows its listed courts only (owner decision 8, 23.11.2026: the list
+   * gives its code to anyone; a court that is not listed needs a code of its
+   * own).
+   */
   function get(code, { screen = null } = {}) {
     if (!isLiveCode(code)) return null
     sweep()
     const entry = codes.get(code)
     if (!entry || entry.courts.size === 0) return null
+    const all = [...entry.courts.values()]
+    const shown = all.some((c) => c.listed) ? all.filter((c) => c.listed) : all
     const only = screenNumber(screen)
-    const list = [...entry.courts.values()].map((c) => c.summary).filter((c) => only == null || c.screen === only)
+    const list = shown.map((c) => c.summary).filter((c) => only == null || c.screen === only)
     // running matches first, then by the scheduled time, then by hall
     list.sort(order)
     const updatedAt = list.reduce((m, c) => (c.updatedAt > m ? c.updatedAt : m), '')

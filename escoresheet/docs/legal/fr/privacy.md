@@ -641,15 +641,18 @@ les remarques, les signatures et les PIN ne sont pas envoyés ; dans OpenBeach,
 le nom d'une équipe est toutefois souvent celui de ses joueuses ou joueurs, et
 il apparaît alors à l'écran. Le résumé est gardé uniquement dans la mémoire du
 serveur, jamais dans une base de données ni dans un fichier, et il est
-supprimé 45 minutes après la fin du match, après 3 heures sans mise à jour ou
-au redémarrage du serveur. Toute personne qui connaît le code peut voir les
+supprimé 45 minutes après la fin du match, après 3 heures sans mise à jour (15
+minutes pour un résumé arrivé une seule fois et pas par le relais) ou au
+redémarrage du serveur. Toute personne qui connaît le code peut voir les
 résumés de ses matchs sur openvolley.app/tv et livescore.openvolley.app ou les
 lire via l'interface du serveur ; un relais de salle les montre aussi sur son
 propre réseau. Un appareil de marque qui a un code d'écran en direct liste en
 outre les résumés de ses matchs Global sur livescore.openvolley.app, pour tout
 le monde et sans le code, sauf si « Afficher les matchs Global sur
 livescore.openvolley.app » est désactivé sur cet appareil dans Options, Écran
-en direct (c'est activé par défaut). Les matchs de championnat figurent de
+en direct (c'est activé par défaut). Un code qui a un résumé sur cette liste
+n'affiche que ses résumés listés, aussi sur les TV ; un match qui ne doit pas
+être listé a besoin de son propre code. Les matchs de championnat figurent de
 toute façon dans le livescore ; les matchs de test et simples n'y sont jamais
 listés. Désactive l'écran en direct dans les Options pour arrêter l'envoi.
 

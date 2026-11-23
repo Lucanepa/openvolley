@@ -603,7 +603,8 @@ osservazioni, firme e PIN non vengono inviati; in OpenBeach, però, il nome di
 una squadra è di solito quello delle sue giocatrici o dei suoi giocatori, e
 allora compare sullo schermo. Il riepilogo è conservato solo nella memoria del
 server, mai in un database o in un file, e viene rimosso 45 minuti dopo la
-fine della partita, dopo 3 ore senza aggiornamenti o al riavvio del server.
+fine della partita, dopo 3 ore senza aggiornamenti (15 minuti per un riepilogo
+arrivato una sola volta e non tramite il relay) o al riavvio del server.
 Chiunque conosca il codice può vedere i riepiloghi delle sue partite su
 openvolley.app/tv e livescore.openvolley.app o leggerli tramite l'interfaccia
 del server; un relay di palestra li mostra anche nella sua rete. Un
@@ -611,9 +612,11 @@ dispositivo segnapunti con un codice dello schermo live elenca inoltre i
 riepiloghi delle sue partite Global su livescore.openvolley.app, per chiunque
 e senza il codice, a meno che «Mostra le partite Global su
 livescore.openvolley.app» sia disattivato su di esso in Opzioni, Schermo live
-(di default è attivo). Le partite di campionato sono comunque nel livescore;
-le partite di prova e semplici non vi compaiono mai. Disattiva lo schermo live
-nelle Opzioni per interrompere l'invio.
+(di default è attivo). Un codice con un riepilogo in questa lista mostra solo
+i suoi riepiloghi elencati, anche sui TV; una partita che non deve essere
+elencata ha bisogno di un codice proprio. Le partite di campionato sono
+comunque nel livescore; le partite di prova e semplici non vi compaiono mai.
+Disattiva lo schermo live nelle Opzioni per interrompere l'invio.
 
 **Approvazione con PIN:** gli ufficiali di gara possono confermare il
 risultato, oltre che con la firma, con un PIN di approvazione personale.

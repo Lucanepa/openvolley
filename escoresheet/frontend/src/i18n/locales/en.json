@@ -7071,6 +7071,7 @@
   },
   "globalLive": {
     "listedLabel": "Show Global matches on livescore.openvolley.app (the score only, as on the TVs)",
+    "listedHint": "When a court of this code is on livescore.openvolley.app, the code shows only the courts listed there (anyone finds the code on that list). A court that is not listed needs a code of its own.",
     "list": {
       "title": "Global matches",
       "open": "Open the live screen"

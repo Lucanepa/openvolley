@@ -7053,6 +7053,7 @@
   },
   "globalLive": {
     "listedLabel": "Global-Spiele auf livescore.openvolley.app zeigen (nur der Spielstand, wie auf den TVs)",
+    "listedHint": "Ist ein Feld dieses Codes auf livescore.openvolley.app, zeigt der Code nur die dort gelisteten Felder (auf der Liste findet jede und jeder den Code). Ein Feld, das nicht gelistet ist, braucht einen eigenen Code.",
     "list": {
       "title": "Global-Spiele",
       "open": "Live-Screen öffnen"

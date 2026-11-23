@@ -7070,6 +7070,7 @@
   },
   "globalLive": {
     "listedLabel": "Mostra le partite Global su livescore.openvolley.app (solo il punteggio, come sui TV)",
+    "listedHint": "Se un campo di questo codice è su livescore.openvolley.app, il codice mostra solo i campi elencati lì (chiunque trova il codice in quella lista). Un campo non elencato ha bisogno di un codice proprio.",
     "list": {
       "title": "Partite Global",
       "open": "Apri lo schermo live"

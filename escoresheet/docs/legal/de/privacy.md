@@ -622,17 +622,20 @@ PINs werden nicht gesendet; in OpenBeach ist der Name eines Teams aber meist
 der Name seiner Spielerinnen oder Spieler, und er erscheint dann auf dem
 Bildschirm. Die Zusammenfassung liegt nur im Arbeitsspeicher des Servers, nie
 in einer Datenbank oder Datei, und wird 45 Minuten nach Spielende, nach 3
-Stunden ohne Aktualisierung oder beim Neustart des Servers entfernt. Wer den
-Code kennt, kann die Zusammenfassungen seiner Spiele auf openvolley.app/tv und
-livescore.openvolley.app sehen oder über die Schnittstelle des Servers
-abrufen; ein Hallen-Relais zeigt sie auch in seinem eigenen Netz. Ein
-Schreibergerät mit Live-Bildschirm-Code listet die Zusammenfassungen seiner
-Global-Spiele zudem auf livescore.openvolley.app, für alle und ohne den Code,
-ausser «Global-Spiele auf livescore.openvolley.app zeigen» ist auf ihm in
-Optionen, Live-Bildschirm ausgeschaltet (standardmässig ist es eingeschaltet).
-Meisterschaftsspiele sind ohnehin im Livescore; Test- und Einfach-Spiele werden
-nie gelistet. Schalte den Live-Bildschirm in den Optionen aus, um das Senden zu
-beenden.
+Stunden ohne Aktualisierung (15 Minuten bei einer Zusammenfassung, die nur
+einmal und nicht über das Relais kam) oder beim Neustart des Servers entfernt.
+Wer den Code kennt, kann die Zusammenfassungen seiner Spiele auf
+openvolley.app/tv und livescore.openvolley.app sehen oder über die
+Schnittstelle des Servers abrufen; ein Hallen-Relais zeigt sie auch in seinem
+eigenen Netz. Ein Schreibergerät mit Live-Bildschirm-Code listet die
+Zusammenfassungen seiner Global-Spiele zudem auf livescore.openvolley.app, für
+alle und ohne den Code, ausser «Global-Spiele auf livescore.openvolley.app
+zeigen» ist auf ihm in Optionen, Live-Bildschirm ausgeschaltet (standardmässig
+ist es eingeschaltet). Ein Code mit einer Zusammenfassung auf dieser Liste
+zeigt nur seine gelisteten Zusammenfassungen, auch auf den TVs; ein Spiel, das
+nicht gelistet werden soll, braucht einen eigenen Code. Meisterschaftsspiele
+sind ohnehin im Livescore; Test- und Einfach-Spiele werden nie gelistet.
+Schalte den Live-Bildschirm in den Optionen aus, um das Senden zu beenden.
 
 **Freigabe mit PIN:** Offizielle können das Resultat zusätzlich zur
 Unterschrift mit einem persönlichen Freigabe-PIN bestätigen. Gespeichert

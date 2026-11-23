@@ -24,6 +24,13 @@ describe('GlobalLivePanel', () => {
     expect(screen.getByTestId('global-live-start')).toBeTruthy()
   })
 
+  it('says beside the livescore opt-in that a listed code shows its listed courts only (owner decision 8)', () => {
+    render(<GlobalLivePanel />)
+    fireEvent.click(screen.getByTestId('global-live-start'))
+    expect(screen.getByTestId('global-live-listed-hint').textContent).toBe(en.globalLive.listedHint)
+    expect(en.globalLive.listedHint).toMatch(/needs a code of its own/)
+  })
+
   it('joins another device\'s code, and refuses a wrong one', () => {
     render(<GlobalLivePanel />)
     fireEvent.change(screen.getByTestId('global-live-input'), { target: { value: 'nope' } })
