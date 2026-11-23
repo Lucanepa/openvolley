@@ -4289,7 +4289,7 @@
           "sent_no_pdf_one": "Sent without the PDF {{date}} to {{count}} recipient, the PDF follows",
           "sent_no_pdf_other": "Sent without the PDF {{date}} to {{count}} recipients, the PDF follows",
           "pending": "Pending: waiting for the PDF or another try",
-          "deferred": "Pending: held back by the hourly email limit",
+          "deferred": "Pending: held back by an email limit (the hourly one, or the closing account's daily one for typed addresses)",
           "partial": "Not every recipient was reached",
           "failed": "Could not be sent",
           "no_recipients": "Not sent: no recipients",

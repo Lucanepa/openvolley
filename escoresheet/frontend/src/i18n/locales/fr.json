@@ -4282,7 +4282,7 @@
           "sent_no_pdf_one": "Envoyée sans le PDF le {{date}} à {{count}} destinataire, le PDF suit",
           "sent_no_pdf_other": "Envoyée sans le PDF le {{date}} à {{count}} destinataires, le PDF suit",
           "pending": "En attente : du PDF ou d’un nouvel essai",
-          "deferred": "En attente : retenue par la limite horaire d’e-mails",
+          "deferred": "En attente : retenue par une limite d’e-mails (l’horaire, ou la limite journalière du compte qui a clôturé pour les adresses saisies)",
           "partial": "Tous les destinataires n’ont pas été atteints",
           "failed": "N’a pas pu être envoyée",
           "no_recipients": "Pas envoyée : aucun destinataire",

@@ -94,9 +94,13 @@
  * without anything that reads as a link or an address) and the result only
  * as a score. The accounts and the clubs' contacts get it as before. The
  * sweep mails at most MAX_TYPED_PER_CLOSER_DAY typed addresses per closing
- * account (closed_by, else the creator) and day; the rest are left out of
- * that close (logged, counted in its audit entry as capped). An admin's
- * closes and an admin's Send now are not capped.
+ * account (closed_by, else the creator) and day; the rest of a close wait:
+ * the others get the mail at once, the close's round stays open (deferred)
+ * until the closing account's day ends, and the next sweep after it mails
+ * them, within that day's cap again, up to LATE_PDF_DAYS after the close
+ * (2611 review, SR-2: they were left out of the close for good). The audit
+ * entry comes when the round ends. An admin's closes and an admin's Send now
+ * are not capped.
  */
 
 import { createHash } from 'node:crypto'
@@ -412,6 +416,11 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     const e = typedSent.get(key)
     return e && now() - e.start < DAY_MS ? e.n : 0
   }
+  // when the closing account's day of typed addresses ends (now, when none is counted)
+  const typedResetAt = (key) => {
+    const e = typedSent.get(key)
+    return e && now() - e.start < DAY_MS ? e.start + DAY_MS : now()
+  }
   function useTyped (key, n) {
     if (!n) return
     const t = now()
@@ -424,8 +433,9 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
   /**
    * The sweep's cap on typed addresses (see the header): `to` without the
    * typed addresses over the closing account's daily allowance that this
-   * close has not reached yet ({ to, capped, closer }). An admin's close is
-   * not capped.
+   * close has not reached yet ({ to, capped, closer, retryAt }: retryAt, when
+   * the held ones may go, the end of the closing account's day). An admin's
+   * close is not capped.
    */
   async function withinTypedCap (m, to, reachedBefore) {
     const fresh = to.filter((x) => x.typed && !reachedBefore(x))
@@ -437,8 +447,8 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
       const { rows: [p] } = await pool.query('SELECT p.roles && $2::text[] AS admin FROM public.profiles p WHERE p.user_id = $1 LIMIT 1', [closer, [...ADMIN_ROLES]])
       if (p?.admin === true) return { to, capped: 0, closer }
     }
-    const drop = new Set(fresh.slice(left).map((x) => x.address))
-    return { to: to.filter((x) => !drop.has(x.address)), capped: drop.size, closer }
+    const hold = new Set(fresh.slice(left).map((x) => x.address))
+    return { to: to.filter((x) => !hold.has(x.address)), capped: hold.size, closer, retryAt: typedResetAt(closer) }
   }
 
   /** The PDF of the close's approval (see the header): { data, filename, mtimeMs }, or null. */
@@ -571,10 +581,17 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     // the sweep: typed addresses within the closing account's daily cap (SEC-11)
     const cap = manual ? { to, capped: 0, closer: null } : await withinTypedCap(m, to, reachedOne)
     to = cap.to
-    if (cap.capped) log.warn?.(`[final-mail] match ${m.id}: ${cap.capped} typed address(es) left out, the closing account's ${MAX_TYPED_PER_CLOSER_DAY} a day are used up`)
+    // held ones wait for the closing account's next day (SR-2), up to LATE_PDF_DAYS after the close
+    const holding = cap.capped > 0 && t - new Date(m.closed_at).getTime() < LATE_PDF_DAYS * DAY_MS
+    const holdUntil = holding ? Math.max(cap.retryAt ?? t, t + DEFER_MS) : null
+    if (cap.capped) log.warn?.(`[final-mail] match ${m.id}: ${cap.capped} typed address(es) ${holding ? `held until ${new Date(holdUntil).toISOString()}` : 'left out'}, the closing account's ${MAX_TYPED_PER_CLOSER_DAY} a day are used up`)
     info.recipients = to.length
     info.reached = 0
     if (!to.length) {
+      if (holding) {
+        await save(m, { outcome: 'deferred', recipients: m.mailed ?? 0, attempts: m.attempts, delivered: m.delivered, nextTryAt: holdUntil })
+        return 'deferred'
+      }
       await save(m, { outcome: 'no_recipients', recipients: 0 })
       return 'no_recipients'
     }
@@ -629,6 +646,11 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
       return r.held ? 'deferred' : 'later'
     }
     if (pdf) {
+      if (holding) {
+        // everyone within the cap has it; the round stays open for the held ones
+        await save(m, { outcome: 'deferred', recipients, attempts: m.attempts, delivered: [...done], nextTryAt: holdUntil })
+        return 'deferred'
+      }
       await save(m, { outcome: 'sent', recipients })
       await auditMail({ recipients: to.length, pdf: true, ...(late ? { late_pdf: true } : {}) })
       return 'sent'

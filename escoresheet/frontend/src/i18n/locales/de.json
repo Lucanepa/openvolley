@@ -4267,7 +4267,7 @@
           "sent_no_pdf_one": "Ohne PDF gesendet {{date}} an {{count}} Empfänger, das PDF folgt",
           "sent_no_pdf_other": "Ohne PDF gesendet {{date}} an {{count}} Empfänger, das PDF folgt",
           "pending": "Ausstehend: wartet auf das PDF oder einen neuen Versuch",
-          "deferred": "Ausstehend: vom stündlichen E-Mail-Limit zurückgehalten",
+          "deferred": "Ausstehend: von einem E-Mail-Limit zurückgehalten (dem stündlichen oder dem täglichen des abschliessenden Kontos für eingetippte Adressen)",
           "partial": "Nicht alle Empfänger erreicht",
           "failed": "Konnte nicht gesendet werden",
           "no_recipients": "Nicht gesendet: keine Empfänger",

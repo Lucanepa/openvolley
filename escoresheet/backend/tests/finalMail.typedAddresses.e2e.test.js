@@ -166,7 +166,11 @@ describe('final mail: typed addresses get the fixed text, capped per closing acc
     assert.ok(own.text.includes('ACTION REQUIRED'), 'the scorer\'s own account as today')
   })
 
-  it(`at most ${MAX_TYPED_PER_CLOSER_DAY} typed addresses a day per closing account; the accounts and club contacts are not capped; a new day mails them again`, async () => {
+  // 2611 review, SR-2: the typed addresses over the cap were left out of
+  // their close for good (only logged and counted); a club's youth Saturday
+  // of 11 or 12 home games closed on the hall tablet's account passes it.
+  // They wait for the closing account's next day now.
+  it(`at most ${MAX_TYPED_PER_CLOSER_DAY} typed addresses a day per closing account; the rest of 11 closes wait for its next day; the accounts and club contacts are not capped`, async () => {
     const per = 4
     const full = Math.floor(MAX_TYPED_PER_CLOSER_DAY / per)
     const games = []
@@ -182,13 +186,33 @@ describe('final mail: typed addresses get the fixed text, capped per closing acc
     const over = games.filter((g) => typedOf(g) < per)
     assert.equal(over.length, 1, 'one close over the cap')
     const last = over[0]
-    assert.equal(typedOf(last), 0, 'its typed addresses left out')
+    assert.equal(typedOf(last), 0, 'its typed addresses wait')
     assert.equal(mailsTo(people.scorer2.email, last).length, 1, 'the closing account itself still gets it')
     assert.equal(mailsTo('contact@alpha.example.ch', last).length, 1, 'the club contacts still get it')
-    assert.ok(audits.some((a) => a.action === 'match.final_mail' && a.details.game_n === last && a.details.capped === per), 'counted in the audit entry')
-    assert.ok(logger.lines.some((l) => /typed address\(es\) left out/.test(l)))
-    // the next day: the closing account's typed addresses go out again
-    clock += 24 * 60 * minutes(1) + minutes(1)
+    assert.ok(logger.lines.some((l) => /typed address\(es\) held until/.test(l)))
+    const lastId = (await sql.query('SELECT id FROM public.matches WHERE game_n = $1', [last])).rows[0].id
+    const row = async () => (await sql.query('SELECT outcome, next_try_at FROM public.match_final_mails WHERE match_id = $1', [lastId])).rows[0]
+    assert.equal((await row()).outcome, 'deferred', 'its round stays open')
+    assert.equal(audits.filter((a) => a.action === 'match.final_mail' && a.details.game_n === last).length, 0, 'audited when the round ends')
+    // later the same day: still held, nobody mailed twice
+    clock += 60 * minutes(1)
+    await fm.sweep()
+    assert.equal(typedOf(last), 0)
+    assert.equal(mailsTo(people.scorer2.email, last).length, 1, 'the closing account is not mailed again')
+    // the closing account's next day: the held addresses get the official mail and the PDF
+    clock += 23 * 60 * minutes(1) + minutes(1)
+    await fm.sweep()
+    assert.equal(typedOf(last), per, 'the held typed addresses are mailed')
+    for (const o of strangers(last)) {
+      const [mail] = mailsTo(o.email, last)
+      assert.match(mail.raw, /application\/pdf/, 'with the PDF')
+      assert.doesNotMatch(mail.text, /Technical remarks|ACTION REQUIRED/, 'the fixed text, none of the scorer\'s own')
+    }
+    assert.equal(mailsTo(people.scorer2.email, last).length, 1, 'and nobody else twice')
+    assert.equal(mailsTo('contact@alpha.example.ch', last).length, 1)
+    assert.equal((await row()).outcome, 'sent')
+    assert.equal(audits.filter((a) => a.action === 'match.final_mail' && a.details.game_n === last).length, 1, 'one audit entry for the close')
+    // a new close on that day: within the new day's cap with the held ones
     const next = ++gameSeq
     await closed({ gameN: next, by: people.scorer2, officials: strangers(next) })
     await fm.sweep()
