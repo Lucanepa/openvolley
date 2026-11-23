@@ -2,8 +2,8 @@
 // the screen mode strip, and the set 2-3 interval duration showed bare ' and
 // '' as its units. The strip's Auto segment says "Auto" (the detected mode in
 // a line under it while Auto is chosen) and the fields say min / s.
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -14,6 +14,7 @@ vi.mock('../../contexts/AlertContext', () => ({ useAlert: () => ({ showAlert: vi
 vi.mock('../SupportFeedbackModal', () => ({ default: () => null }))
 
 import HomeOptionsModal from '../options/HomeOptionsModal'
+import ScoreboardOptionsModal from '../options/ScoreboardOptionsModal'
 
 const noop = () => {}
 const matchOptions = {
@@ -70,5 +71,57 @@ describe('Options: screen mode strip and interval units', () => {
     expect(src).toMatch(/t\('options\.unitSec'/)
     expect(src).not.toMatch(/options\.autoWithMode/)
     expect(src).toMatch(/screen-mode-auto-detected/)
+  })
+})
+
+// Options › Point entry (owner 22.11.2026): Rallies (as always) or
+// Continuous play, at the top of the match options in both dialogs; this
+// device only (localStorage rallyMode). Continuous play has no Start rally
+// and its point is held, so the two accidental-tap checks are hidden there
+// (their values are kept).
+describe('Options: Point entry (rallies or continuous play)', () => {
+  afterEach(() => localStorage.removeItem('rallyMode'))
+  const both = (rallyMode, setRallyMode = noop) => [
+    () => render(<HomeOptionsModal open onClose={noop} matchOptions={{ ...matchOptions, rallyMode, setRallyMode }} displayOptions={{ displayMode: 'auto', setDisplayMode: noop, detectedDisplayMode: 'desktop', activeDisplayMode: 'desktop', enterDisplayMode: noop, exitDisplayMode: noop }} wakeLock={{ wakeLockActive: false, toggleWakeLock: noop }} />),
+    () => render(<ScoreboardOptionsModal open onClose={noop} matchId={7} matchOptions={{ ...matchOptions, rallyMode, setRallyMode }} displayOptions={{}} />)
+  ]
+
+  it.each([0, 1])('dialog %i: Rallies by default, with both accidental-tap checks', (i) => {
+    const { unmount } = both(undefined)[i]()
+    const strip = screen.getByRole('radiogroup', { name: 'options.rallyMode' })
+    const [rallies, continuous] = within(strip).getAllByRole('radio')
+    expect(rallies).toHaveTextContent('options.rallyModeRallies')
+    expect(rallies.getAttribute('aria-checked')).toBe('true')
+    expect(continuous).toHaveTextContent('options.rallyModeContinuous')
+    expect(screen.getByText('options.checkAccidentalRallyStart')).toBeInTheDocument()
+    expect(screen.getByText('options.checkAccidentalPointAward')).toBeInTheDocument()
+    unmount()
+  })
+
+  it.each([0, 1])('dialog %i: Continuous play hides the accidental-tap checks and is kept on this device', (i) => {
+    const setRallyMode = vi.fn()
+    const { unmount } = both('continuous', setRallyMode)[i]()
+    const strip = screen.getByRole('radiogroup', { name: 'options.rallyMode' })
+    expect(within(strip).getAllByRole('radio')[1].getAttribute('aria-checked')).toBe('true')
+    expect(screen.queryByText('options.checkAccidentalRallyStart')).toBeNull()
+    expect(screen.queryByText('options.checkAccidentalPointAward')).toBeNull()
+    expect(screen.getByTestId('rally-mode-hint')).toHaveTextContent('options.rallyModeContinuousHint:2')
+    fireEvent.click(within(strip).getAllByRole('radio')[0])
+    expect(setRallyMode).toHaveBeenCalledWith('rallies')
+    expect(localStorage.getItem('rallyMode')).toBe('rallies')
+    fireEvent.click(within(strip).getAllByRole('radio')[1])
+    expect(setRallyMode).toHaveBeenLastCalledWith('continuous')
+    expect(localStorage.getItem('rallyMode')).toBe('continuous')
+    unmount()
+  })
+
+  it('at the top of the match options in both dialogs', () => {
+    for (const file of ['HomeOptionsModal.jsx', 'ScoreboardOptionsModal.jsx']) {
+      const src = readFileSync(resolve(__dirname, `../options/${file}`), 'utf8')
+      const at = src.indexOf('<RallyModeOption kit={{ Row, InfoDot }} value={rallyMode} onChange={setRallyMode} />')
+      expect(at, file).toBeGreaterThan(-1)
+      expect(at, file).toBeLessThan(src.indexOf("t('options.checkAccidentalRallyStart')"))
+      expect(src.slice(at, src.indexOf("t('options.checkAccidentalRallyStart')"))).toContain("{rallyMode !== 'continuous' && (<>")
+    }
   })
 })

@@ -24,6 +24,11 @@ describe('classifyTimeoutRequest', () => {
     expect(classifyTimeoutRequest(events, 1, 'home')).toMatchObject({ ordinal: 2, consecutive: true })
   })
 
+  it('continuous play: the point (with the rally_start it writes right before it) ends the interruption', () => {
+    const events = [ev('timeout', { team: 'home' }), ev('rally_start', { continuous: true }), ev('point', { team: 'away' })]
+    expect(classifyTimeoutRequest(events, 1, 'home')).toMatchObject({ ordinal: 2, consecutive: false })
+  })
+
   it('the opponent\'s time-out, a substitution or a sanction does not end the interruption', () => {
     const events = [
       ev('timeout', { team: 'home' }),

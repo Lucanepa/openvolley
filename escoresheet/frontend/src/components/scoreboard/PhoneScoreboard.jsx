@@ -6,6 +6,7 @@ import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextP
 import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, recentLinesFor, tintOf } from './phoneLayout'
 import { captainRingStyle } from './captainRing'
 import RallyTapNotice from './RallyTapNotice'
+import HoldToConfirmButton from './HoldToConfirmButton.jsx'
 import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
 import LineupSetOverlay from './LineupSetOverlay.jsx'
 import { lineupHiddenUntilBoth } from '../../domain/lineupPrivacy'
@@ -35,9 +36,13 @@ import PhonePairDock from '../phonePair/PhonePairDock.jsx'
  * @param {number|string} props.setNumber the set as shown (bo3 decider "3")
  * @param {{ left: object, right: object }} props.teams see TeamVM below
  * @param {'left'|'right'|null} props.serving
- * @param {{ status: 'idle'|'in_play', isFirstRally: boolean, startDisabled: boolean, canReplayRally: boolean, canChangeDecision?: boolean, isRallyReplayed: boolean, requestBlockText?: string|null }} props.rally
+ * @param {{ status: 'idle'|'in_play', isFirstRally: boolean, startDisabled: boolean, canReplayRally: boolean, canChangeDecision?: boolean, isRallyReplayed: boolean, requestBlockText?: string|null, continuous?: boolean, holdSeconds?: number, tapNotice?: number, tapNoticeText?: string|null }} props.rally
  *   (canChangeDecision: the decision change is offered, also after time-outs /
- *   substitutions that followed the last point; canReplayRally when absent)
+ *   substitutions that followed the last point; canReplayRally when absent.
+ *   continuous: continuous play (utils/rallyMode): no Start rally, the point
+ *   squares from the set's start, each held holdSeconds (actions.holdPoint,
+ *   actions.pointHeldTooShort, actions.pointHoldRef for the keys), and one
+ *   "Decision change / Replay" cell)
  * @param {null|{ kind: 'timeout', teamName: string, countdown: number, total: number }
  *   |{ kind: 'interval', countdown: number, total: number }
  *   |{ kind: 'set5', countdown?: number, total?: number, confirmLabel: string }} props.centre
@@ -106,6 +111,10 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     return () => observer.disconnect()
   }, [])
   const inPlay = rally.status === 'in_play'
+  // Continuous play: the point squares from the set's start (Start set
+  // before), no Start rally between the rallies
+  const continuous = !!rally.continuous
+  const pointsOnScreen = continuous ? !rally.isFirstRally : inPlay
 
   const paintOf = (team) => {
     const colour = normaliseColour(team.color)
@@ -406,7 +415,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         <button type="button" style={cardButton} onClick={() => actions.endInterval()}>{t('scoreboard.buttons.endSetInterval')}</button>
       </div>
     )
-  } else if (!inPlay) {
+  } else if (!pointsOnScreen) {
     overlay = (
       <button
         type="button"
@@ -429,7 +438,24 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // on screen without scrolling; the root is the size container that
   // measures what is left (phoneLayout.js has the heights).
   const squareClass = 'phone-square'
-  const pointButton = (team) => (
+  const pointLabel = (team) => t('scoreboard.buttons.pointTeam', { team: team.label })
+  // Continuous play: held about 2 s, its fill and "Hold" in the square
+  const holdPointButton = (team) => (
+    <HoldToConfirmButton
+      key={team.side}
+      data-help-id={`scoreboard-point-${team.side}`}
+      className={`${squareClass} hold-hint`}
+      label={pointLabel(team)}
+      caption={t('scoreboard.holdCaption')}
+      ariaLabel={t('scoreboard.holdPointLabel', { point: pointLabel(team), seconds: rally.holdSeconds ?? 2 })}
+      onConfirm={() => actions.holdPoint?.(team.side)}
+      onShortPress={() => actions.pointHeldTooShort?.()}
+      apiRef={actions.pointHoldRef?.(team.side) ?? null}
+      style={{ minWidth: 0, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', ...paint[team.side].fill }}
+      contentStyle={{ fontSize: 24, fontWeight: 800, lineHeight: 1.1 }}
+    />
+  )
+  const pointButton = (team) => continuous ? holdPointButton(team) : (
     <button
       key={team.side}
       type="button"
@@ -562,8 +588,8 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       </section>
 
       <section aria-label={t('scoreboard.phone.pointButtons')} style={{ flex: 'none', position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
-        <RallyTapNotice id={rally.tapNotice} />
-        {inPlay && !centre ? (
+        <RallyTapNotice id={rally.tapNotice} message={rally.tapNoticeText} />
+        {pointsOnScreen && !centre ? (
           <>{pointButton(left)}{pointButton(right)}</>
         ) : (
           <>
@@ -582,11 +608,17 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       <section aria-label={t('scoreboard.phone.moreActions')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6, padding: '0 12px 14px' }}>
         {gridButton('libero', t('scoreboard.phone.libero'), () => setSheet({ kind: 'libero' }), { disabled: !idle || rally.isRallyReplayed })}
         {gridButton('sanction', t('scoreboard.sanction'), () => setSheet({ kind: 'sanction' }), { disabled: rally.status !== 'idle' })}
-        {gridButton('replay', t('scoreboard.phone.replay'), () => actions.replay(), { disabled: !inPlay })}
-        {/* the last point, also when time-outs / substitutions followed it
-            (the Scoreboard takes them back with the decision change, row 19);
-            not while a time-out runs, as the tablet hides it then */}
-        {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && (rally.canChangeDecision ?? rally.canReplayRally)) || centre?.kind === 'timeout', small: true })}
+        {/* Continuous play: one cell for the two, from the set's start (the
+            Scoreboard's handleReplay picks the dialog); not during a time-out */}
+        {continuous
+          ? gridButton('decision-replay', t('scoreboard.phone.decisionReplay'), () => actions.replay(), { disabled: rally.isFirstRally || centre?.kind === 'timeout', span: 2, small: true })
+          : <>
+            {gridButton('replay', t('scoreboard.phone.replay'), () => actions.replay(), { disabled: !inPlay })}
+            {/* the last point, also when time-outs / substitutions followed it
+                (the Scoreboard takes them back with the decision change, row 19);
+                not while a time-out runs, as the tablet hides it then */}
+            {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && (rally.canChangeDecision ?? rally.canReplayRally)) || centre?.kind === 'timeout', small: true })}
+          </>}
         {gridButton('rosters', t('scoreboard.rosters'), () => actions.rosters(), { muted: true })}
         {gridButton('scoresheet', t('scoreboard.phone.scoresheet'), () => actions.scoresheet(), { muted: true })}
         {gridButton('remarks', t('scoreboard.phone.remarks'), () => actions.remarks(), { muted: true, span: 2 })}

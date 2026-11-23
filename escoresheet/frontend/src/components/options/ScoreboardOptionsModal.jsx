@@ -30,6 +30,7 @@ import { reloadWithReason } from '../../diagnostics/reload'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
 import LookOptions from './LookOptions'
+import RallyModeOption from './RallyModeOption'
 import { useToolMode } from '../../utils/toolMode'
 import { readShowTapHints, setShowTapHints } from '../../utils/tapHints'
 
@@ -431,6 +432,8 @@ export default function ScoreboardOptionsModal({
   } = server || {}
 
   const {
+    rallyMode,
+    setRallyMode,
     checkAccidentalRallyStart,
     setCheckAccidentalRallyStart,
     accidentalRallyStartDuration,
@@ -560,6 +563,11 @@ export default function ScoreboardOptionsModal({
         )}
 
         <Section title={t('options.matchOptions')}>
+          {/* Rallies or continuous play (this device): continuous play has
+              no Start rally and its point is held, so the two accidental-tap
+              checks are hidden there (their values are kept) */}
+          <RallyModeOption kit={{ Row, InfoDot }} value={rallyMode} onChange={setRallyMode} />
+          {rallyMode !== 'continuous' && (<>
           <Row style={{ marginBottom: '12px' }}>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
@@ -631,6 +639,7 @@ export default function ScoreboardOptionsModal({
               }}
             />
           </Row>
+          </>)}
           <Row style={{ marginBottom: '12px' }}>
             <div className="flex items-center gap-1.5">
               <div className="text-sm font-semibold text-stone-900">{t('options.showNamesOnCourt')}</div>

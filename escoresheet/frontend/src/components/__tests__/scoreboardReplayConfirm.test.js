@@ -14,14 +14,21 @@ describe('Scoreboard "Replay rally" confirmation', () => {
     expect(inPlay).toContain('setReplayConfirm(true)')
     expect(inPlay).not.toContain("logEvent('replay')")
     // the decision-change path keeps its own modal, no second confirmation
-    expect(handler).toContain('setReplayRallyConfirm({')
+    // (continuous play: the same modal with its third option, decisionDialog)
+    expect(handler).toContain('setReplayRallyConfirm(decisionDialog({')
   })
 
-  it('only the confirmation logs the replay, and only while the rally is in play', () => {
+  it('only the confirmation logs the replay, and only while the rally is in play (continuous play: between rallies too)', () => {
     const confirm = between('const confirmReplay = useCallback', 'const cancelReplay')
-    expect(confirm).toContain("if (rallyStatus !== 'in_play') return")
+    expect(confirm).toContain("if (rallyStatus !== 'in_play') {\n      if (continuousPlay && !isFirstRally) await recordContinuousReplay()\n      return\n    }")
     expect(confirm).toContain("await logEvent('replay')")
     expect(sb.match(/logEvent\('replay'\)/g)).toHaveLength(1)
+    // continuous play's replay between rallies: one writer, no rally_start
+    // with it; the confirmation and the decision dialog's third option use it
+    expect(sb.match(/logEvent\('replay', /g)).toHaveLength(1)
+    expect(sb).toContain("const recordContinuousReplay = useCallback(() => logEvent('replay', { reason: 'continuous' }), [logEvent])")
+    const decision = between('const handleDecisionChange = useCallback', '// Row 19: the time-outs')
+    expect(decision).toMatch(/if \(selectedOption === 'record_replay'\) \{\n\s+deferUi\(\(\) => setReplayRallyConfirm\(null\)\)\n\s+await recordContinuousReplay\(\)\n\s+return\n\s+\}/)
   })
 
   it('the modal is a decision modal: Enter confirms, it blocks the point keys', () => {

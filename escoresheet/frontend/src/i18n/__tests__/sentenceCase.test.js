@@ -41,8 +41,9 @@ const PROPER = new Set([
 ])
 
 // Title-Cased words after the first one, ignoring placeholders, words after a
-// sentence end, a colon, an arrow or an opening quote, and words with inner
-// capitals or all caps (PIN, TO, JSON, eScoresheet).
+// sentence end, a colon, an arrow, an opening quote or a spaced slash (two
+// labels on one button: the owner's "Decision change / Replay", 22.11.2026),
+// and words with inner capitals or all caps (PIN, TO, JSON, eScoresheet).
 function titleCaseWords(value) {
   const masked = value.replace(/\{\{[^}]*\}\}/g, (s) => 'x'.repeat(s.length))
   const bad = []
@@ -53,6 +54,7 @@ function titleCaseWords(value) {
     if (/^[^\p{L}\p{N}]*$/u.test(before)) continue
     const gap = before.match(/[^\p{L}\p{N}]*$/u)[0]
     if (/[.!?:→\n]/.test(gap) || /(^|\s)["“«']\s*$/.test(gap)) continue
+    if (/\s\/\s+$/.test(gap)) continue
     // numbered option: "2 - Very limited functionality"
     if (/^\s*\d+$/.test(before.slice(0, before.length - gap.length)) && /[-–]/.test(gap)) continue
     bad.push(word)
@@ -76,6 +78,8 @@ describe('sentence case labels (en)', () => {
     'benchDashboard.selectTeam': 'Select your team',
     'connection.connectToServer': 'Connect to server',
     'options.checkAccidentalRallyStart': 'Check accidental rally start',
+    'options.rallyModeContinuous': 'Continuous play',
+    'scoreboard.buttons.decisionReplay': 'Decision change / Replay',
   }
 
   it.each(Object.entries(known))('%s stays sentence case', (key, expected) => {
