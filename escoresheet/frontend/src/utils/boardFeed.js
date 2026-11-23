@@ -106,10 +106,13 @@ export function boardScoreFromRow(row) {
   if (!row || typeof row !== 'object') return null
   const sb = liveScoreboard(row)
   const aLeft = (row.side_a || 'left') === 'left'
+  // in a set break the board shows the coming set: no time-out taken in it
+  // yet (a scorer app up to 26.11.x sent the finished set's, audit LOG-21)
+  const inBreak = sb.phase === 'set_break'
   const team = (p) => ({
     short: str(row[`team_${p}_short`]),
     color: normaliseColour(row[`team_${p}_color`]),
-    timeoutsUsed: countOf(row[`timeouts_${p}`]),
+    timeoutsUsed: inBreak ? 0 : countOf(row[`timeouts_${p}`]),
     subs: num(row[`subs_count_${p}`])
   })
   const [l, r] = aLeft ? [team('a'), team('b')] : [team('b'), team('a')]

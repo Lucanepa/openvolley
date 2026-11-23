@@ -135,8 +135,11 @@ describe('Scoreboard live-state wiring', () => {
   const sb = readFileSync(resolve(__dirname, '../../components/Scoreboard.jsx'), 'utf8')
   it('every live-state push carries the public fields, from the push\'s snapshot, sets and current_set', () => {
     expect(sb).toMatch(/\.\.\.livePublicFields\(\{ snapshot, sets: matchSets, pushedSetIndex: finalSetIndex, countFinishedSet \}\)/)
-    // the private substitution lists stay as they were
-    expect(sb).toMatch(/subs_a: snapshot\.subsA\?\.length > 0 \? snapshot\.subsA : null/)
+    // the private substitution lists and the time-outs: those of the set
+    // current_set names (audit LOG-21; before, the snapshot's as they were,
+    // the finished set's in the set end's push)
+    expect(sb).toMatch(/\.\.\.liveSetCounters\(\{ snapshot, pushedSetIndex: finalSetIndex \}\)/)
+    expect(sb).not.toMatch(/timeouts_a: snapshot\.timeoutsA/)
     // the sets are read at the push itself, not from a cached list
     expect(sb).toMatch(/const matchSets = await db\.sets\.where\(\{ matchId \}\)\.toArray\(\)/)
   })

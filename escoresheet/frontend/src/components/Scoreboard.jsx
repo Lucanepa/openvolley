@@ -113,7 +113,7 @@ import PreMatchSignDialog, { SignaturesMissingModal, MissingSignatureButton } fr
 import { savedSidesOfRegularSets } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot, correctionAfter } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
-import { livePublicFields } from '../domain/livePublicFields'
+import { livePublicFields, liveSetCounters } from '../domain/livePublicFields'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
@@ -2904,11 +2904,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Rich lineups with all position data
         lineup_a: snapshot.lineupA,
         lineup_b: snapshot.lineupB,
-        // Timeouts and subs (send full array for referee to see substitution details)
-        timeouts_a: snapshot.timeoutsA,
-        timeouts_b: snapshot.timeoutsB,
-        subs_a: snapshot.subsA?.length > 0 ? snapshot.subsA : null,
-        subs_b: snapshot.subsB?.length > 0 ? snapshot.subsB : null,
+        // Timeouts and subs (send full array for referee to see substitution
+        // details), of the set current_set names: none yet in the next set
+        // the set end's push names (domain/livePublicFields)
+        ...liveSetCounters({ snapshot, pushedSetIndex: finalSetIndex }),
         // For every viewer, PIN or not (subs_a / subs_b are PIN-only): the
         // regular substitutions of the set current_set names, and the
         // finished sets' scores (domain/livePublicFields)

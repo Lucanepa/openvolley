@@ -84,6 +84,25 @@ export function liveSetResultsOf(sets, { teamAKey = 'home', endingSetIndex = nul
 }
 
 /**
+ * The time-outs and substitutions of a live-state push: those of the set it
+ * names (current_set). The set end's push names the next set while its
+ * snapshot is still the finished set's: none yet then, not the finished set's
+ * under the next set's number (audit LOG-21). subs_a / subs_b stay PIN-only.
+ * @param {{ snapshot: object, pushedSetIndex: number }} args
+ * @returns {{ timeouts_a: *, timeouts_b: *, subs_a: Array<object>|null, subs_b: Array<object>|null }}
+ */
+export function liveSetCounters({ snapshot, pushedSetIndex }) {
+  const sameSet = Number(pushedSetIndex) === Number(snapshot?.currentSetIndex)
+  const subs = (list) => (sameSet && Array.isArray(list) && list.length > 0 ? list : null)
+  return {
+    timeouts_a: sameSet ? snapshot?.timeoutsA : 0,
+    timeouts_b: sameSet ? snapshot?.timeoutsB : 0,
+    subs_a: subs(snapshot?.subsA),
+    subs_b: subs(snapshot?.subsB)
+  }
+}
+
+/**
  * subs_count_a, subs_count_b and set_results of a live-state push.
  * @param {object} args
  * @param {object} args.snapshot  the push's state snapshot (currentSetIndex, teamAKey, subsA, subsB, pointsA, pointsB)
