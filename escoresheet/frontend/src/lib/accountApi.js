@@ -366,9 +366,13 @@ export const admin = {
   updateError(id, body) {
     return apiRequest('PATCH', `/api/admin/errors/${enc(id)}`, body)
   },
-  /** Delete on request: a device's or an account's reports (audited). */
-  deleteErrorEvents({ device, account } = {}) {
-    return apiRequest('DELETE', `/api/admin/errors/events${query({ device, account, confirm: 'yes' })}`)
+  /**
+   * Delete on request: a device's or an account's reports (audited). With
+   * `anonymous`: every error only reports without an account fed (not those
+   * marked important), with its reports: { deleted, groups }.
+   */
+  deleteErrorEvents({ device, account, anonymous = false } = {}) {
+    return apiRequest('DELETE', `/api/admin/errors/events${query({ device, account, anonymous: anonymous ? '1' : undefined, confirm: 'yes' })}`)
   },
   /** The activity log (db/016): filters match (game no. or external id), account (id), kind (prefix), level, from, to, app, before, limit. */
   listActivity({ match, account, kind, level, from, to, app, before, limit } = {}) {
