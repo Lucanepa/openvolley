@@ -83,9 +83,11 @@ describe('passkey rules', () => {
 
   it('one relying party, openvolley.app, for every OpenVolley and OpenBeach site', () => {
     assert.equal(config.rpId, 'openvolley.app')
-    for (const o of [APP, 'https://manager.openvolley.app', 'https://manager-beach.openvolley.app', 'https://beach.openvolley.app', 'https://openvolley.app']) {
+    for (const o of [APP, 'https://manager.openvolley.app', 'https://manager-beach.openvolley.app', 'https://beach.openvolley.app']) {
       assert.equal(originAllowed(o, config), true, o)
     }
+    // the website is no sign-in site (SEC-65, tests/passkeys.origins.test.js)
+    for (const o of ['https://openvolley.app', 'https://www.openvolley.app']) assert.equal(originAllowed(o, config), false, o)
   })
 
   it('the apps\' own schemes, plain http and look-alike hosts never ask', () => {
