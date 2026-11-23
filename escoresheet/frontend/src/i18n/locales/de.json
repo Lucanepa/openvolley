@@ -258,7 +258,8 @@
     "searchReferees": "Schiedsrichter suchen...",
     "connectToInternet": "Mit Internet verbinden, um Schiedsrichter-Historie zu sehen",
     "noRefereesFound": "Keine Schiedsrichter gefunden",
-    "noRefereeHistory": "Noch keine Schiedsrichter-Historie. Gib Schiedsrichter manuell ein und sie werden für zukünftige Spiele gespeichert."
+    "noRefereeHistory": "Noch keine Schiedsrichter-Historie. Gib Schiedsrichter manuell ein und sie werden für zukünftige Spiele gespeichert.",
+    "typeToSearch": "Tippe einen Namen ein, um weitere Schiedsrichter zu finden."
   },
   "matchSetup": {
     "playsAs": "Spielt als",

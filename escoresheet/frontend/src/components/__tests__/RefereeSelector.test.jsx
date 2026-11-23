@@ -8,14 +8,15 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, fallback) => (typeof fallback === 'string' ? fallback : key), i18n: { language: 'en' } })
 }))
 
-// apiFrom('referee_database') resolves each page request when the test says so.
+// apiFrom('referee_database') resolves each request when the test says so.
 const api = vi.hoisted(() => ({ pending: [], empties: [], queries: [] }))
 vi.mock('../../lib/apiClient', () => ({
   apiFrom: () => {
-    const call = { order: [], gt: null, limit: null }
+    const call = { order: [], gt: null, limit: null, ilike: [], contains: null }
     const q = {
       select: () => q,
-      contains: () => q,
+      contains: (col, v) => { call.contains = [col, v]; return q },
+      ilike: (col, v) => { call.ilike.push([col, v]); return q },
       order: (col, opts) => { call.order.push([col, opts?.ascending !== false]); return q },
       gt: (col, v) => { call.gt = [col, v]; return q },
       limit: (n) => { call.limit = n; return q },
@@ -34,7 +35,7 @@ vi.mock('../../ui', async (importOriginal) => {
   return { ...ui, EmptyInset: (props) => { api.empties.push(props.children); return ui.EmptyInset(props) } }
 })
 
-import RefereeSelector from '../RefereeSelector'
+import RefereeSelector, { prefixPattern, REFEREE_PICKER_LIMIT, REFEREE_SEARCH_DEBOUNCE_MS } from '../RefereeSelector'
 
 // The page request reaches the mock a microtask after the effect runs
 async function resolvePage(n, result) {
@@ -171,26 +172,79 @@ describe('RefereeSelector', () => {
     expect(await screen.findByRole('button', { name: /Müller, Anna/ })).toBeInTheDocument()
   })
 
-  it('reads the whole directory past the 1000-row cap and lists it by last name', async () => {
-    const page1 = Array.from({ length: 1000 }, (_, i) => ({
-      id: `id${String(i).padStart(4, '0')}`, first_name: `F${i}`, last_name: `Name${String(i).padStart(4, '0')}`, country: 'CHE'
+  // PERM-07 (audit 2611): the picker read the whole directory (selectAll),
+  // which gave up past 200,000 rows and left it empty; it now searches
+  it('asks the server for the first referees by last name, never the whole directory, and says to type for more', async () => {
+    const page = Array.from({ length: REFEREE_PICKER_LIMIT }, (_, i) => ({
+      id: `id${String(i).padStart(4, '0')}`, first_name: `F${i}`, last_name: `Name${String(999 - i).padStart(4, '0')}`, country: 'CHE'
     }))
-    // The 1001st row by id sorts first by last name
-    const page2 = [{ id: 'id9999', first_name: 'Beat', last_name: 'Aebi', country: 'CHE' }]
     render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
-    await resolvePage(0, { data: page1, error: null })
-    expect(api.queries[0]).toEqual({ order: [['id', true]], gt: null, limit: 1000 })
-    await resolvePage(1, { data: page2, error: null })
-    expect(api.queries[1].gt).toEqual(['id', 'id0999'])
-    expect(api.pending).toHaveLength(2)
-
-    // Plain DOM reads: role queries over 1001 rows are slow in jsdom
+    await resolvePage(0, { data: page, error: null })
+    expect(api.queries[0]).toEqual({ order: [['last_name', true]], gt: null, limit: REFEREE_PICKER_LIMIT, ilike: [], contains: ['sport_type', '["indoor"]'] })
     const list = screen.getByTestId('referee-picker-list')
-    await waitFor(() => expect(list.textContent).toContain('Aebi'))
+    await waitFor(() => expect(list.textContent).toContain('Name0900'))
     const names = [...list.querySelectorAll('button')].map(b => b.textContent)
-    expect(names).toHaveLength(1001)
-    expect(names[0]).toMatch(/Aebi/)
-    expect(names[1]).toMatch(/Name0000/)
+    expect(names).toHaveLength(REFEREE_PICKER_LIMIT)
+    expect(names[0]).toMatch(/Name0900/)
+    expect(screen.getByTestId('referee-picker-more').textContent).toBe('refereeSelector.typeToSearch')
+    await new Promise(r => setTimeout(r, REFEREE_SEARCH_DEBOUNCE_MS + 50))
+    expect(api.pending).toHaveLength(1) // one request, no paging
+  })
+
+  it('a short directory shows no "type for more"', async () => {
+    render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
+    await resolvePage(0, { data: rows, error: null })
+    await screen.findByRole('button', { name: /Müller, Anna/ })
+    expect(screen.queryByTestId('referee-picker-more')).toBeNull()
+  })
+
+  it('typing searches the server by name prefix (last and first name), each with the limit, and lists the answers once, by last name', async () => {
+    const onSelect = vi.fn()
+    render(<RefereeSelector open onClose={() => {}} onSelect={onSelect} />)
+    await resolvePage(0, { data: rows, error: null })
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'be' } })
+    await waitFor(() => expect(api.pending).toHaveLength(3), { timeout: 2000 })
+    expect(api.queries.slice(1).map(q => [q.ilike, q.limit, q.order])).toEqual([
+      [[['last_name', 'be*']], REFEREE_PICKER_LIMIT, [['last_name', true]]],
+      [[['first_name', 'be*']], REFEREE_PICKER_LIMIT, [['last_name', true]]]
+    ])
+    const beat = { id: 'x1', first_name: 'Beat', last_name: 'Zürcher', country: 'CHE' }
+    const bern = { id: 'x2', first_name: 'Anna', last_name: 'Bernasconi', country: 'ITA' }
+    await act(async () => {
+      api.pending[1]({ data: [bern], error: null })
+      api.pending[2]({ data: [beat, bern], error: null })
+    })
+    const list = screen.getByTestId('referee-picker-list')
+    await waitFor(() => expect(list.textContent).toContain('Zürcher'))
+    expect([...list.querySelectorAll('button')].map(b => b.textContent)).toEqual(['Bernasconi, Anna', 'Zürcher, Beat'])
+    fireEvent.click(screen.getByRole('button', { name: /Zürcher, Beat/ }))
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ firstName: 'Beat', lastName: 'Zürcher' }))
+  })
+
+  it('"Last First" also asks for the last name by its first word; a failed search says so like a failed load', async () => {
+    render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
+    await resolvePage(0, { data: rows, error: null })
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Keller  Lu' } })
+    await waitFor(() => expect(api.pending).toHaveLength(4), { timeout: 2000 })
+    expect(api.queries.slice(1).map(q => q.ilike)).toEqual([[['last_name', 'Keller Lu*']], [['first_name', 'Keller Lu*']], [['last_name', 'Keller*']]])
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await act(async () => {
+      api.pending[1]({ data: [], error: null })
+      api.pending[2]({ data: null, error: { message: 'offline', status: 0, network: true } })
+      api.pending[3]({ data: [], error: null })
+    })
+    await waitFor(() => expect(screen.getByText('refereeSelector.noRefereesFound')).toBeInTheDocument())
+    errors.mockRestore()
+  })
+
+  it('prefixPattern: the typed text as a prefix, without the pattern characters', () => {
+    expect(prefixPattern('kel')).toBe('kel*')
+    expect(prefixPattern('  Müller  ')).toBe('Müller*')
+    expect(prefixPattern('a%b_c*d\\e')).toBe('abcde*')
+    expect(prefixPattern('Van   der')).toBe('Van der*')
+    expect(prefixPattern('%')).toBeNull()
+    expect(prefixPattern('')).toBeNull()
+    expect(prefixPattern(null)).toBeNull()
   })
 
   it('renders nothing while closed', () => {

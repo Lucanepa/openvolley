@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Database } from 'lucide-react'
 import { apiFrom } from '../lib/apiClient'
-import { selectAll } from '../lib/selectAll'
+import { sortRows } from '../lib/selectAll'
 import KitModal from './manage/KitModal'
 import { SearchInput, SkeletonRows, EmptyInset } from '../ui'
 import { FOCUS_RING_INSET } from '../ui/Button.jsx'
@@ -18,6 +18,57 @@ const ROW = cn(
 )
 
 const nameKey = (r) => `${r.lastName}\u0000${r.firstName}`.trim().toLowerCase()
+
+// The referees one answer holds (PERM-07, audit 2611): the directory is
+// searched on the server, by name prefix, never loaded whole. It used to be
+// read whole through selectAll, which gives up past 200,000 rows (a flood
+// left every picker empty), and every open downloaded all of it.
+export const REFEREE_PICKER_LIMIT = 100
+// Typing waits this long before it asks the server
+export const REFEREE_SEARCH_DEBOUNCE_MS = 250
+
+/**
+ * The typed text as a prefix pattern of /api/db's ilike (backend
+ * lib/pgQuery.js: `*` is any text), or null for nothing typed. The pattern
+ * characters the user typed are dropped, not matched.
+ */
+export function prefixPattern(text) {
+  const t = String(text ?? '').replace(/[%_*\\]/g, '').replace(/\s+/g, ' ').trim()
+  return t ? `${t}*` : null
+}
+
+const directory = () => apiFrom('referee_database')
+  .select('id, first_name, last_name, country, created_at')
+  .contains('sport_type', JSON.stringify([SPORT_TYPE]))
+const firstPage = (q) => q.order('last_name', { ascending: true }).limit(REFEREE_PICKER_LIMIT)
+
+/**
+ * The directory rows for what was typed: nothing typed, the first
+ * REFEREE_PICKER_LIMIT by last name; else those whose last or first name
+ * starts with it (and, for "Last First", whose last name starts with its
+ * first word), each lookup at most REFEREE_PICKER_LIMIT. Rows by last name
+ * (as selectAll sorted them: accented names by the locale), each once.
+ * { data, error } like one request.
+ */
+export async function searchReferees(text) {
+  const whole = prefixPattern(text)
+  if (!whole) {
+    const r = await firstPage(directory())
+    return r?.error ? r : { ...r, data: sortRows(r?.data || [], [{ column: 'last_name' }]) }
+  }
+  const lookups = [
+    firstPage(directory().ilike('last_name', whole)),
+    firstPage(directory().ilike('first_name', whole))
+  ]
+  const word = prefixPattern(String(text).trim().split(/\s+/)[0])
+  if (word && word !== whole) lookups.push(firstPage(directory().ilike('last_name', word)))
+  const answers = await Promise.all(lookups)
+  const failed = answers.find((a) => a?.error)
+  if (failed) return failed
+  const byId = new Map()
+  for (const a of answers) for (const row of a?.data || []) if (!byId.has(row.id)) byId.set(row.id, row)
+  return { data: sortRows([...byId.values()], [{ column: 'last_name' }]), error: null }
+}
 
 /**
  * The directory rows with a `detail` for a name that occurs more than once:
@@ -37,7 +88,9 @@ export function withNameDetails(referees) {
 
 /**
  * The referee database picker of Match setup (1st / 2nd referee): a kit
- * Modal with a search field and the referees of the cloud referee_database.
+ * Modal with a search field and the referees of the cloud referee_database,
+ * searched on the server (searchReferees): the first ones by last name on
+ * open, the matching ones as the user types.
  *
  * Its box never changes size (pickerLayout.js): the panel width comes from
  * the kit Modal (`size="md"`), and the result area has a fixed height that the
@@ -55,18 +108,27 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
   // so the first frame already shows the skeleton (not a stale "no referees")
   const [loading, setLoading] = useState(true)
   const [offline, setOffline] = useState(false)
+  // The last answer was cut at REFEREE_PICKER_LIMIT: typing finds the others
+  const [more, setMore] = useState(false)
+  // What the server is asked for: the search text, a moment after typing
+  const [asked, setAsked] = useState('')
 
-  // Load the referees each time the picker opens; the last list stays on
-  // screen while it refreshes.
+  useEffect(() => {
+    if (!open) return
+    const text = searchQuery.trim()
+    if (text === asked) return
+    const timer = setTimeout(() => setAsked(text), REFEREE_SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [open, searchQuery, asked])
+
+  // Load the referees each time the picker opens and for each search; the
+  // last list stays on screen (filtered as the user types) while it refreshes.
   useEffect(() => {
     if (!open) return
     let cancelled = false
     ;(async () => {
       try {
-        // The whole directory, paged past the server's row cap, by last name
-        const { data, error } = await selectAll(() => apiFrom('referee_database')
-          .select('id, first_name, last_name, country, created_at')
-          .contains('sport_type', JSON.stringify([SPORT_TYPE])), { order: [{ column: 'last_name' }] })
+        const { data, error } = await searchReferees(asked)
         if (cancelled) return
         if (error) {
           console.error('Error loading referees from history:', error)
@@ -75,6 +137,7 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
           return
         }
         setOffline(false)
+        setMore(!asked && (data || []).length >= REFEREE_PICKER_LIMIT)
         // Map to the shape Match setup expects (no date of birth: db/048).
         // Names are not unique in the directory (two people, or one entered
         // twice): rows are keyed by their id, and same names show a licence
@@ -96,9 +159,9 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
     })()
     return () => {
       cancelled = true
-      setLoading(true) // the next open starts as loading again
+      setLoading(true) // the next open or search starts as loading again
     }
-  }, [open])
+  }, [open, asked])
 
   const filteredReferees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
@@ -108,6 +171,7 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
 
   const close = () => {
     setSearchQuery('') // fresh search next time
+    setAsked('')
     onClose()
   }
 
@@ -139,6 +203,9 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
             {referee.detail && <span className="ml-auto shrink-0 pl-3 text-xs font-normal tabular-nums text-stone-500">{referee.detail}</span>}
           </button>
         ))}
+        {more && !searchQuery.trim() && (
+          <p data-testid="referee-picker-more" className="px-3 py-2 text-xs text-stone-500">{t('refereeSelector.typeToSearch')}</p>
+        )}
       </div>
     )
   }

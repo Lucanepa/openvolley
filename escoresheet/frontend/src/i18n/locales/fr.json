@@ -264,7 +264,8 @@
     "searchReferees": "Rechercher arbitres...",
     "connectToInternet": "Connecte-toi à internet pour voir l'historique des arbitres",
     "noRefereesFound": "Aucun arbitre trouvé",
-    "noRefereeHistory": "Pas encore d'historique d'arbitres. Entre les arbitres manuellement et ils seront sauvegardés pour les prochains matchs."
+    "noRefereeHistory": "Pas encore d'historique d'arbitres. Entre les arbitres manuellement et ils seront sauvegardés pour les prochains matchs.",
+    "typeToSearch": "Tape un nom pour trouver d'autres arbitres."
   },
   "matchSetup": {
     "playsAs": "Joue comme",

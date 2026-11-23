@@ -265,7 +265,8 @@
     "searchReferees": "Schiri sueche...",
     "connectToInternet": "Mit em Internet verbinde, zum d Schiri-Historie gseh",
     "noRefereesFound": "Kei Schiri gfunde",
-    "noRefereeHistory": "No kei Schiri-Historie. Gib d Schiris manuell ii, dänn werded si für zuekünftigi Spiil gspeicheret."
+    "noRefereeHistory": "No kei Schiri-Historie. Gib d Schiris manuell ii, dänn werded si für zuekünftigi Spiil gspeicheret.",
+    "typeToSearch": "Tipp en Name ii, dänn findsch meh Schiris."
   },
   "matchSetup": {
     "playsAs": "Spiilt als",

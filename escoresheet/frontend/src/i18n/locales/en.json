@@ -266,7 +266,8 @@
     "searchReferees": "Search referees...",
     "connectToInternet": "Connect to internet to see referee history",
     "noRefereesFound": "No referees found",
-    "noRefereeHistory": "No referee history yet. Enter referees manually and they will be saved for future matches."
+    "noRefereeHistory": "No referee history yet. Enter referees manually and they will be saved for future matches.",
+    "typeToSearch": "Type a name to find more referees."
   },
   "matchSetup": {
     "playsAs": "Plays as",
