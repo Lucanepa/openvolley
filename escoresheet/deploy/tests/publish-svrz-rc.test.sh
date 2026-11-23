@@ -240,6 +240,7 @@ left=$(find "$T/dest" -type f ! -path "$T/dest/apt/dists/*" ! -path "$T/dest/ind
 [[ -z "$left" ]] || bad "--resign synced more than apt/dists/: $left"
 [[ "$(cat "$T/dest/index.html")" == old ]] || bad "--resign touched the rest of the served tree"
 grep -q 'status=up' "$T/kuma.log" || bad "--resign: no Kuma up push"
+[[ -s "$H/resign-heartbeat" ]] || bad "--resign: no heartbeat for the publish guard"
 ok "--resign: syncs apt/dists/ only, pushes up"
 : > "$T/kuma.log"
 expect_fail "--resign goes only with --no-sync" rs --no-sync "$SV_DEB"
