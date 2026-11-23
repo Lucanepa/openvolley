@@ -283,7 +283,6 @@ function TeamGames({ games: list, onOpen }) {
   return (
     <section>
       <PanelHead title={t('manage.myTeams.games')} level={2} />
-      <p className="mb-3 text-sm text-stone-500">{t('manage.myTeams.gamesHint')}</p>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
       {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={3} pill={false} />
