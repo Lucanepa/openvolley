@@ -25,10 +25,11 @@
  *   GET /api/global/live -> { data: { updatedAt, events: [{ code, updatedAt, courts }] }, error: null }
  *
  * (the livescore site's list; a court that stops saying so leaves it with
- * its next update). Bounded: maxCodes
- * codes, maxCourtsPerCode courts per code (the oldest court gives way), a
- * court is dropped endedKeepMs after its match ended and idleMs after its
- * last update, a code with no court left is dropped.
+ * its next update). Bounded: maxCodes codes, maxCourtsPerCode
+ * courts per code, a court is dropped endedKeepMs after its match ended,
+ * idleMs after its last update (an unproved court posted once: onceMs), a
+ * code with no court left is dropped; who may write or replace a court:
+ * createGlobalLive.
  *
  * Node built-ins only. Pure: server.js does the relay checks (the room is a
  * Global match, the sender owns it), the rate limit and the HTTP layer.
@@ -38,11 +39,16 @@ import crypto from 'node:crypto'
 export const LIVE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const CODE_RE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/
 
-/** A court token: a hex hash of a match's own secret key (frontend utils/globalLive.js courtToken). */
+/** A court token: a hex hash of a match's own secret (frontend utils/globalLive.js courtTokenFor). */
 export const isCourtToken = (t) => typeof t === 'string' && /^[0-9a-f]{32}$/.test(t)
 
-/** A court token for a relay room that sent none (an older scorer app): a hash of the room key. */
-export const courtTokenOf = (roomKey) => crypto.createHash('sha256').update(`room\0${roomKey}`).digest('hex').slice(0, 32)
+/**
+ * The court token a scorer app up to 26.11.x (and OpenBeach) makes of a key:
+ * SHA-256 of "court\0" + the key. Of a league or OpenBeach match's seed key it
+ * is public (the seed key is the match's public id): only the relay room of
+ * that key proves anything with it (createGlobalLive put).
+ */
+export const legacyCourtToken = (key) => crypto.createHash('sha256').update(`court\0${key}`).digest('hex').slice(0, 32)
 
 const LIVE_SUMMARY_FIELDS = ['team_a_name', 'team_a_short', 'team_a_color', 'team_b_name', 'team_b_short', 'team_b_color', 'sets_won_a', 'sets_won_b', 'points_a', 'points_b', 'current_set', 'best_of', 'side_a', 'serving_team', 'match_status', 'timeout_active', 'set_interval_active']
 /** Only the live-state fields courtSummary reads (what a forward or a push carries). */
@@ -136,65 +142,250 @@ export function courtSummary(liveState, entry = {}, nowIso = new Date().toISOStr
   }
 }
 
-export function createGlobalLive({ maxCodes = 1000, maxCourtsPerCode = 24, idleMs = 3 * 60 * 60 * 1000, endedKeepMs = 45 * 60 * 1000, now = Date.now } = {}) {
-  /** code -> Map(courtId -> { summary, at, endedAt }) */
-  const codes = new Map()
+const HOUR_MS = 60 * 60 * 1000
 
-  // The room key never leaves the server: a court's id is a short hash of it
-  const courtIdOf = (code, roomKey) => crypto.createHash('sha256').update(`${code}\0${roomKey}`).digest('base64url').slice(0, 10)
+/**
+ * The /56 of an IPv6 /64 bucket key (lib/auth.js ipBucketKey
+ * "2001:db8:0:1::/64"), else the key itself (an IPv4 address).
+ */
+export function netOfBucket(bucket) {
+  const v6 = typeof bucket === 'string' ? /^([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4})::\/64$/.exec(bucket) : null
+  return v6 ? `${v6[1]}:${v6[2]}:${v6[3]}:${(parseInt(v6[4], 16) & 0xff00).toString(16)}::/56` : bucket
+}
+
+/**
+ * The store. Who may write a court (audit SEC-07 / SEC-10 / LOG-11, 23.11.2026):
+ *
+ * - A court is keyed by an HMAC (a key of this process) of its code and token,
+ *   so its public id says nothing about the token.
+ * - A relay room (`room`: the room key of a socket that owns it) is bound to
+ *   one court per code: a push without a token, or with a token the room did
+ *   not start with, goes to that court (a scorer page's first push came
+ *   without its token and made a second, frozen court: LOG-11); a room that
+ *   started without a token (an older app) and then sends one moves to it,
+ *   its room court is dropped.
+ * - A court is locked to its room when the relay proved it: the room key's own
+ *   court token (what an app up to 26.11.x makes of the seed key, which is the
+ *   room key), the server's token of a room that sent none, or a room whose
+ *   scorer proved the game PIN of the match's database row (`official`). A
+ *   locked court takes no HTTP push and no other room, except a room that
+ *   proves it the same way. Any other court is unproved: whoever has its
+ *   token updates it, as before (a current app's token comes from a random
+ *   secret of the match that never leaves the device: nobody can guess it;
+ *   an older app's token of a league or OpenBeach match is a hash of the
+ *   public seed key, but its scorer on the cloud relay locks it).
+ * - Bounded without letting strangers push real courts out: a new court an
+ *   HTTP push makes replaces only an ended or stale court of a full code,
+ *   and a new code only a code with nothing live (a relay court also an
+ *   HTTP-only court, and a code the relay never proved); an unproved court
+ *   posted only once goes after onceMs; new codes and new courts per address
+ *   (/64 bucket and its /56) and hour are capped. What is refused is counted
+ *   (stats, /health).
+ */
+export function createGlobalLive({
+  maxCodes = 1000,
+  maxCourtsPerCode = 24,
+  idleMs = 3 * HOUR_MS,
+  endedKeepMs = 45 * 60 * 1000,
+  // an unproved court with a single push (nobody scores it)
+  onceMs = 15 * 60 * 1000,
+  // a court without an update this long may give way to a new one
+  staleMs = 10 * 60 * 1000,
+  // new codes / new courts per hour: [per /64 bucket, per /56]
+  newCodesPerHour = [12, 36],
+  newCourtsPerHour = [120, 360],
+  maxSources = 20000,
+  // the room courts' tokens: an HMAC under it (null: an unkeyed hash, as
+  // before, on a venue relay without a secret)
+  secret = null,
+  now = Date.now
+} = {}) {
+  /** code -> { courts: Map(courtId -> court), proved, at } */
+  const codes = new Map()
+  /** relay room key -> { code, id, token, derived } */
+  const rooms = new Map()
+  /** 'codes\0' | 'courts\0' + address -> { start, n } */
+  const sources = new Map()
+  const refused = { full: 0, courtsFull: 0, rate: 0, bound: 0 }
+
+  const idKey = crypto.randomBytes(32)
+  const roomKey = secret ? crypto.createHmac('sha256', String(secret)).update('ov-global-live-room:v1').digest() : null
+  const courtIdOf = (code, token) => crypto.createHmac('sha256', idKey).update(`${code}\0${token}`).digest('base64url').slice(0, 10)
+  /** The token of a room that sends none (an older scorer app). */
+  const roomTokenOf = (room) => (roomKey
+    ? crypto.createHmac('sha256', roomKey).update(`room\0${room}`).digest('hex')
+    : crypto.createHash('sha256').update(`room\0${room}`).digest('hex')).slice(0, 32)
+
+  function dropCourt(code, entry, id) {
+    const c = entry.courts.get(id)
+    entry.courts.delete(id)
+    const b = c?.room != null ? rooms.get(c.room) : null
+    if (b && b.code === code && b.id === id) rooms.delete(c.room)
+  }
+  function dropCode(code) {
+    const entry = codes.get(code)
+    if (!entry) return
+    for (const id of [...entry.courts.keys()]) dropCourt(code, entry, id)
+    codes.delete(code)
+  }
 
   function sweep() {
     const t = now()
-    for (const [code, courts] of codes) {
-      for (const [id, c] of courts) {
-        if (t - c.at > idleMs || (c.endedAt && t - c.endedAt > endedKeepMs)) courts.delete(id)
+    for (const [code, entry] of codes) {
+      for (const [id, c] of entry.courts) {
+        if (t - c.at > idleMs || (c.endedAt && t - c.endedAt > endedKeepMs) || (c.room == null && c.n < 2 && t - c.at > onceMs)) dropCourt(code, entry, id)
       }
-      if (courts.size === 0) codes.delete(code)
+      if (entry.courts.size === 0) codes.delete(code)
+    }
+    // a room whose court is gone (another room took it over, or it went)
+    for (const [room, b] of rooms) if (!codes.get(b.code)?.courts.has(b.id)) rooms.delete(room)
+    for (const [k, s] of sources) if (t - s.start > HOUR_MS) sources.delete(k)
+  }
+
+  // The hour's budget of new codes or courts of an address (its /64 bucket
+  // and the /56 around it); no address: the relay host itself, a test
+  function budget(source, kind, t) {
+    if (!source) return []
+    const limits = kind === 'codes' ? newCodesPerHour : newCourtsPerHour
+    const keys = [source]
+    const net = netOfBucket(source)
+    if (net !== source) keys.push(net)
+    return keys.map((k, i) => {
+      const key = `${kind}\0${i}\0${k}`
+      let s = sources.get(key)
+      if (s && t - s.start > HOUR_MS) { sources.delete(key); s = null }
+      return { key, s, limit: limits[i] ?? limits[0] }
+    })
+  }
+  const allowed = (slots) => slots.every(({ s, limit }) => !s || s.n < limit)
+  function charge(slots, t) {
+    for (const { key, s } of slots) {
+      if (s) { s.n++; continue }
+      // bounded: the oldest window gives way
+      if (sources.size >= maxSources) sources.delete(sources.keys().next().value)
+      sources.set(key, { start: t, n: 1 })
     }
   }
 
+  const replaceable = (c, t) => c.endedAt != null || t - c.at > staleMs
+  // The court a new one may replace in a full code: the oldest ended or stale
+  // one; for a relay court also the oldest one only HTTP pushes feed
+  function courtToReplace(entry, relay, t) {
+    let pick = null
+    for (const [id, c] of entry.courts) if (replaceable(c, t) && (!pick || c.at < pick.c.at)) pick = { id, c }
+    if (!pick && relay) for (const [id, c] of entry.courts) if (c.room == null && (!pick || c.at < pick.c.at)) pick = { id, c }
+    return pick?.id ?? null
+  }
+  // The code a new one may replace in a full store: the least recently updated
+  // with nothing live (every court ended or stale); for a relay court also
+  // the least recently updated code the relay never proved
+  function codeToReplace(relay, t) {
+    let pick = null
+    for (const [code, e] of codes) {
+      if ((!pick || e.at < pick.e.at) && [...e.courts.values()].every((c) => replaceable(c, t))) pick = { code, e }
+    }
+    if (!pick && relay) for (const [code, e] of codes) if (!e.proved && (!pick || e.at < pick.e.at)) pick = { code, e }
+    return pick?.code ?? null
+  }
+
   /**
-   * The scorer's live state for one room. False: not taken (bad code, store
-   * full). The caller has checked that the room is a Global match.
+   * One court's live state. `token`: the court token (an HTTP push needs one;
+   * a relay room may send none). Options: screen (the court number the scorer
+   * device set, 1-99), listed (the device opted in to the public livescore
+   * list), room (the key of a relay room the sender owns; none: an HTTP
+   * push), official (that room's scorer proved the database row's game PIN),
+   * source (the sender's address bucket, for the hourly caps). The caller has
+   * checked the room and the rate limit.
+   * @returns {{ ok: true, token: string, id: string } | { ok: false, reason: 'bad'|'full'|'courts-full'|'rate'|'bound' }}
    */
-  /**
-   * screen: the court number the scorer device set (1-99) for /tv/<code>/<n>, or null.
-   * listed: the scorer device opted in to the public livescore list (list()).
-   */
-  function update(code, roomKey, liveState, entry, screen = null, listed = false) {
-    if (!isLiveCode(code) || !roomKey || !liveState || typeof liveState !== 'object') return false
+  function put(code, token, liveState, entry, { screen = null, listed = false, room = null, official = false, source = null } = {}) {
+    if (!isLiveCode(code) || !liveState || typeof liveState !== 'object') return { ok: false, reason: 'bad' }
+    const relay = room != null && String(room) !== ''
+    if (token != null && (typeof token !== 'string' || token === '')) return { ok: false, reason: 'bad' }
+    if (!relay && token == null) return { ok: false, reason: 'bad' }
     sweep()
-    let courts = codes.get(code)
-    if (!courts) {
-      if (codes.size >= maxCodes) return false
-      courts = new Map()
-      codes.set(code, courts)
-    }
-    const id = courtIdOf(code, String(roomKey))
     const t = now()
-    const summary = { id, ...courtSummary(liveState, entry, new Date(t).toISOString()), screen: screenNumber(screen) }
-    const prev = courts.get(id)
-    if (!prev && courts.size >= maxCourtsPerCode) {
-      // the court updated longest ago gives way
-      let oldest = null
-      for (const [k, c] of courts) if (!oldest || c.at < oldest[1].at) oldest = [k, c]
-      if (oldest) courts.delete(oldest[0])
+    let roomCourt = null
+    if (relay) {
+      room = String(room)
+      const b = rooms.get(room)
+      if (b && b.code === code) {
+        if (token == null || token === b.token) token = b.token
+        else if (b.derived) roomCourt = b.id // an older app's room court gives way to its token's court
+        else token = b.token // one court per room: not a token it did not start with
+      }
+      if (token == null) token = roomTokenOf(room)
     }
-    courts.set(id, { summary, at: t, endedAt: summary.ended ? (prev?.endedAt || t) : null, listed: listed === true })
-    return true
+    const derived = relay && token === roomTokenOf(room)
+    // the relay proves this room's own court: the token is its key's, or the server's of it
+    const proves = relay && (derived || token === legacyCourtToken(room) || official === true)
+    const id = courtIdOf(code, token)
+    let codeEntry = codes.get(code)
+    const prev = codeEntry?.courts.get(id) || null
+    if (prev?.locked && !(relay && (prev.room === room || proves))) {
+      refused.bound++
+      return { ok: false, reason: 'bound' }
+    }
+    if (!prev) {
+      const newCode = !codeEntry
+      const codeSlots = newCode ? budget(source, 'codes', t) : []
+      const courtSlots = budget(source, 'courts', t)
+      if (!allowed(codeSlots) || !allowed(courtSlots)) { refused.rate++; return { ok: false, reason: 'rate' } }
+      // the room's own court of an older app gives way to its token's court
+      if (roomCourt != null) { dropCourt(code, codeEntry, roomCourt); roomCourt = null }
+      if (newCode && codes.size >= maxCodes) {
+        const gone = codeToReplace(relay, t)
+        if (gone == null) { refused.full++; return { ok: false, reason: 'full' } }
+        dropCode(gone)
+      }
+      if (!newCode && codeEntry.courts.size >= maxCourtsPerCode) {
+        const gone = courtToReplace(codeEntry, relay, t)
+        if (gone == null) { refused.courtsFull++; return { ok: false, reason: 'courts-full' } }
+        dropCourt(code, codeEntry, gone)
+      }
+      if (newCode) {
+        codeEntry = { courts: new Map(), proved: false, at: t }
+        codes.set(code, codeEntry)
+      }
+      charge(codeSlots, t)
+      charge(courtSlots, t)
+    }
+    if (roomCourt != null && roomCourt !== id) dropCourt(code, codeEntry, roomCourt)
+    const summary = { id, ...courtSummary(liveState, entry, new Date(t).toISOString()), screen: screenNumber(screen) }
+    codeEntry.courts.set(id, {
+      summary,
+      at: t,
+      endedAt: summary.ended ? (prev?.endedAt || t) : null,
+      listed: listed === true,
+      room: relay ? room : (prev?.room ?? null),
+      locked: (prev?.locked === true) || proves,
+      n: (prev?.n || 0) + 1
+    })
+    codeEntry.at = t
+    if (relay) {
+      codeEntry.proved = true
+      rooms.set(room, { code, id, token, derived })
+    }
+    return { ok: true, token, id }
   }
 
-  /** The page's data for a code, or null when nothing is live under it. */
+  /** put() for callers that only need yes or no. */
+  function update(code, token, liveState, entry, screen = null, listed = false, opts = {}) {
+    return put(code, token, liveState, entry, { ...opts, screen, listed }).ok
+  }
+
+  const order = (a, b) => (a.ended - b.ended) || String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')) || String(a.hall || '').localeCompare(String(b.hall || ''))
+
   /** The page's data for a code (one court with `screen`), or null when nothing is live under it. */
   function get(code, { screen = null } = {}) {
     if (!isLiveCode(code)) return null
     sweep()
-    const courts = codes.get(code)
-    if (!courts || courts.size === 0) return null
+    const entry = codes.get(code)
+    if (!entry || entry.courts.size === 0) return null
     const only = screenNumber(screen)
-    const list = [...courts.values()].map((c) => c.summary).filter((c) => only == null || c.screen === only)
+    const list = [...entry.courts.values()].map((c) => c.summary).filter((c) => only == null || c.screen === only)
     // running matches first, then by the scheduled time, then by hall
-    list.sort((a, b) => (a.ended - b.ended) || String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')) || String(a.hall || '').localeCompare(String(b.hall || '')))
+    list.sort(order)
     const updatedAt = list.reduce((m, c) => (c.updatedAt > m ? c.updatedAt : m), '')
     return { code, updatedAt, courts: list }
   }
@@ -202,24 +393,33 @@ export function createGlobalLive({ maxCodes = 1000, maxCourtsPerCode = 24, idleM
   /**
    * The public livescore's list: the codes with at least one court whose
    * scorer opted in, with those courts only; running events first, at most
-   * maxEvents.
+   * maxEvents (codes the relay proved take the places first, so pushes from
+   * strangers cannot crowd them out).
    */
   function list({ maxEvents = 50 } = {}) {
     sweep()
     const events = []
-    for (const [code, courts] of codes) {
-      const shown = [...courts.values()].filter((c) => c.listed).map((c) => c.summary)
+    for (const [code, entry] of codes) {
+      const shown = [...entry.courts.values()].filter((c) => c.listed).map((c) => c.summary)
       if (shown.length === 0) continue
-      shown.sort((a, b) => (a.ended - b.ended) || String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')) || String(a.hall || '').localeCompare(String(b.hall || '')))
+      shown.sort(order)
       const updatedAt = shown.reduce((m, c) => (c.updatedAt > m ? c.updatedAt : m), '')
-      events.push({ code, updatedAt, live: shown.some((c) => !c.ended), courts: shown })
+      events.push({ code, updatedAt, live: shown.some((c) => !c.ended), proved: entry.proved, courts: shown })
     }
     events.sort((a, b) => (b.live - a.live) || b.updatedAt.localeCompare(a.updatedAt))
-    const out = events.slice(0, maxEvents).map(({ live, ...e }) => e)
+    const kept = new Set([...events.filter((e) => e.proved), ...events.filter((e) => !e.proved)].slice(0, maxEvents))
+    const out = events.filter((e) => kept.has(e)).map(({ live, proved, ...e }) => e)
     return { updatedAt: out.reduce((m, e) => (e.updatedAt > m ? e.updatedAt : m), '') || null, events: out }
   }
 
-  return { update, get, list, sweep, size: () => codes.size }
+  /** For /health: the store's size and what it refused since the start. */
+  function stats() {
+    let courts = 0
+    for (const e of codes.values()) courts += e.courts.size
+    return { codes: codes.size, courts, refused: { ...refused } }
+  }
+
+  return { put, update, get, list, sweep, stats, size: () => codes.size }
 }
 
 /**

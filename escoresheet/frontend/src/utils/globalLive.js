@@ -53,13 +53,34 @@ export const liveCodeUrl = (code) => (isLiveCode(code) ? `${TV_SITE}${code}` : n
 /** The same page on a venue relay (no internet needed): its HTTP base + /tv/<code>. */
 export const localTvUrl = (base, code) => (isLiveCode(code) && typeof base === 'string' && /^https?:\/\//.test(base) ? `${base.replace(/\/+$/, '')}/tv/${code}` : null)
 
-// A match's court token (backend isCourtToken): the first 32 hex characters of
-// SHA-256 of its own secret key (globalKey, else seed key), so its court is
-// one court on the page whether it comes over the relay, from a venue relay's
-// forward or from the desktop app's push, and nobody can guess it.
+// A match's court token (backend isCourtToken): the first 32 hex characters
+// of SHA-256 of its own secret, so its court is one court on the page whether
+// it comes over the relay, from a venue relay's forward or from the desktop
+// app's push. The secret is the match's liveSecret (random, 128 bits, made on
+// this device, never relayed: serverDataSync NEVER_RELAYED), a Global match's
+// globalKey before it has one. Never its seed key: that is a league or
+// OpenBeach match's public id, and its hash let anyone take over the court on
+// every TV (audit SEC-07). No secret: no token (the relay then keeps one
+// court per room).
+const LIVE_SECRET_RE = /^[A-Za-z0-9_-]{22,64}$/
+export const isLiveSecret = (v) => typeof v === 'string' && LIVE_SECRET_RE.test(v)
+/** A new liveSecret: 16 random bytes, base64url. */
+export function newLiveSecret(cryptoImpl = globalThis.crypto) {
+  const bytes = new Uint8Array(16)
+  cryptoImpl.getRandomValues(bytes)
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+/** The match's secret for its court token, or null. */
+export function liveSecretOf(match) {
+  if (isLiveSecret(match?.liveSecret)) return match.liveSecret
+  if (typeof match?.globalKey === 'string' && match.globalKey) return match.globalKey
+  return null
+}
 const tokens = new Map()
 export async function courtTokenFor(match, subtle = globalThis.crypto?.subtle) {
-  const secret = match?.globalKey || match?.seed_key || match?.seedKey
+  const secret = liveSecretOf(match)
   if (!secret || !subtle) return null
   if (tokens.has(secret)) return tokens.get(secret)
   const digest = await subtle.digest('SHA-256', new TextEncoder().encode(`court\0${secret}`))
@@ -67,13 +88,73 @@ export async function courtTokenFor(match, subtle = globalThis.crypto?.subtle) {
   tokens.set(secret, hex)
   return hex
 }
-/** The token if already worked out (a live push cannot wait); starts the work otherwise. */
+/** The token if already worked out; starts the work otherwise. */
 export function cachedCourtToken(match) {
-  const secret = match?.globalKey || match?.seed_key || match?.seedKey
+  const secret = liveSecretOf(match)
   if (!secret) return null
   if (tokens.has(secret)) return tokens.get(secret)
   courtTokenFor(match).catch(() => null)
   return null
+}
+
+// One liveSecret per match, also when two pushes ask at once
+const making = new Map()
+/**
+ * The match with its liveSecret: made and stored once (Dexie matches row),
+ * the first time the match goes to a live screen. Unchanged when it has one
+ * (or a Global match's globalKey), or when it cannot be stored (no token then
+ * rather than a new one with every push).
+ * @param {import('dexie').Dexie} database
+ * @param {number|string} matchId
+ * @param {object} match
+ */
+export async function ensureLiveSecret(database, matchId, match) {
+  if (!match || liveSecretOf(match) || matchId == null || !database?.matches) return match
+  if (!making.has(matchId)) {
+    making.set(matchId, (async () => {
+      try {
+        return await database.transaction('rw', database.matches, async () => {
+          const row = await database.matches.get(matchId)
+          if (!row) return null
+          if (isLiveSecret(row.liveSecret)) return row.liveSecret
+          const liveSecret = newLiveSecret()
+          await database.matches.update(matchId, { liveSecret })
+          return liveSecret
+        })
+      } catch {
+        return null
+      } finally {
+        making.delete(matchId)
+      }
+    })())
+  }
+  const liveSecret = await making.get(matchId)
+  return liveSecret ? { ...match, liveSecret } : match
+}
+
+/**
+ * What a live-state push to the relay carries for the live screen: the code,
+ * the match's court token (worked out first: the first push of a page load
+ * went without it and made a second, frozen court on every TV, audit
+ * LOG-11), the court number and the livescore opt-in. {} without a code.
+ * `match` is the match with its liveSecret (the desktop app's push needs it).
+ * @returns {Promise<{ fields: object, match: object }>}
+ */
+export async function liveScreenFieldsFor({ match, db: database, matchId }) {
+  const code = liveCodeForMatch(match)
+  if (!code) return { fields: {}, match }
+  const withSecret = await ensureLiveSecret(database, matchId, match)
+  const court = await courtTokenFor(withSecret).catch(() => null)
+  const screen = getLiveCourt()
+  return {
+    fields: {
+      globalLive: code,
+      ...(court ? { globalLiveCourt: court } : {}),
+      ...(screen ? { globalLiveScreen: screen } : {}),
+      ...(liveListedForMatch(withSecret) ? { globalLiveListed: true } : {})
+    },
+    match: withSecret
+  }
 }
 
 export function getLiveCode() {

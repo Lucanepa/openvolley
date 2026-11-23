@@ -55,7 +55,7 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
-import { liveCodeForMatch, cachedCourtToken, getLiveCourt, liveListedForMatch } from '../utils/globalLive'
+import { liveScreenFieldsFor } from '../utils/globalLive'
 import { pushGlobalLive, pushesGlobalLive } from '../utils/globalLivePush'
 import ToolbarClock from './scoreboard/ToolbarClock'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
@@ -2940,6 +2940,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       if (eventType === 'set_end') intervalStartedAtRef.current = breakStartedAt
 
+      // The live screen for TVs (utils/globalLive.js): on a device that opted
+      // in, the code and this match's court token, worked out before the push
+      // (the first push of a page load went without the token: a second,
+      // frozen court on every TV, audit LOG-11)
+      const { fields: liveScreen, match: liveMatch } = await liveScreenFieldsFor({ match, db, matchId })
+
       // Also push the computed live-state over the LAN relay so offline consumers
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
       // Never an older state after a newer one: on a side-out the 'point' push
@@ -2953,21 +2959,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         targets: routeOf(),
         toRelay: () => {
           if (!liveOrder.shouldPush(liveSeq)) return
-          // a Global match on a device that opted in to the live page for
-          // TVs: the tournament code (utils/globalLive.js)
-          const liveCode = liveCodeForMatch(match)
-          const liveCourt = liveCode ? cachedCourtToken(match) : null
           sendRelayMessage({
             type: 'live-state-update',
             matchId: relayKeyRef.current,
             liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session },
-            ...(liveCode ? { globalLive: liveCode } : {}),
-            ...(liveCourt ? { globalLiveCourt: liveCourt } : {}),
-            ...(liveCode && getLiveCourt() ? { globalLiveScreen: getLiveCourt() } : {}),
-            ...(liveCode && liveListedForMatch(match) ? { globalLiveListed: true } : {})
+            ...liveScreen
           })
           // the desktop app's relay feeds no cloud page: it sends the court itself
-          if (liveCode && pushesGlobalLive()) pushGlobalLive({ code: liveCode, match, liveState: liveStateData, db, matchId })
+          if (liveScreen.globalLive && pushesGlobalLive()) pushGlobalLive({ code: liveScreen.globalLive, match: liveMatch, liveState: liveStateData, db, matchId })
         },
         toCloud: async () => {
           // The cloud wants a sign-in (the sync queue got a 401): no lookup and no
