@@ -17,7 +17,11 @@
  *     2. a group alerted less than an hour ago waits for that hour (cooldown);
  *     3. at most MAX_PER_HOUR digests an hour (counted from the audit log's
  *        errors.alert entries, so also across a restart); over it, they wait
- *        a quarter of an hour;
+ *        a quarter of an hour; a group only reports without a session fed
+ *        (error_groups.anonymous, db/054) rides along at most
+ *        ANONYMOUS_PER_MAIL a mail and only in the first MAX_PER_HOUR -
+ *        ANONYMOUS_RESERVE digests of an hour, so junk reports cannot use up
+ *        the hour's digests;
  *     4. the mail; when it fails, nothing is marked: the next tick tries again
  *        (and only then the push and the bell, so they are never repeated);
  *     5. the push to ntfy (best effort, logged when it fails);
@@ -26,6 +30,11 @@
  *     7. the groups marked alerted; an errors.alert audit entry (counts only).
  *   suppressed (TEST_MODE=1): nothing is sent; the log says what would have
  *   been, and the groups are marked as if it had.
+ *
+ * Reported text (titles, views, breadcrumbs) is one line each and links to
+ * other hosts are [link] (lib/errorTracker.js redactText); the subject says
+ * only the count, the kind and the tool, so a report cannot write the
+ * owner's subject or an "Open:" line of its own (SEC-33).
  *
  * Configuration (deploy/env.example):
  *   ERROR_ALERTS            on (default in cloud mode) | off
@@ -45,6 +54,12 @@ export const COOLDOWN_MS = 60 * 60 * 1000
 export const MAX_PER_HOUR = 6
 export const CEILING_RETRY_MS = 15 * 60 * 1000
 export const MAX_GROUPS_PER_MAIL = 12
+// Groups only reports without a session have fed (anyone can send one,
+// SEC-33) get a smaller share of the digests: at most this many in a mail,
+// and only while fewer than MAX_PER_HOUR - ANONYMOUS_RESERVE digests went out
+// in the last hour (the rest of the hour is kept for the others)
+export const ANONYMOUS_PER_MAIL = 4
+export const ANONYMOUS_RESERVE = 3
 const PUSH_TIMEOUT_MS = 8000
 
 const REASON_LABEL = { new: 'NEW', regression: 'REGRESSION', ongoing: 'STILL HAPPENING' }
@@ -59,6 +74,15 @@ const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&a
 const cut = (s, n) => {
   const t = String(s ?? '')
   return t.length > n ? t.slice(0, n - 1) + '…' : t
+}
+// A reported text on one line (a group stored before redactText made it so
+// included): a report never adds a line of its own to the digest (SEC-33)
+// eslint-disable-next-line no-control-regex
+const flat = (s) => String(s ?? '').replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]+/g, ' ')
+/** "3× js.error · scorer": what a subject says of a group (no reported text) */
+const whatOf = (a) => {
+  const tools = (a.tools?.length ? a.tools : [a.last?.tool]).filter(Boolean).map((t) => TOOL_LABEL[t] || 'app')
+  return `${a.count}× ${a.group.kind}${tools.length ? ` · ${[...new Set(tools)].join(', ')}` : ''}`
 }
 
 /** "referee · VBC Musterdorf", "guest", "2 members: scorer (VBC Musterdorf); referee" */
@@ -99,36 +123,36 @@ function groupLines(a, managerUrl) {
   const e = a.last || {}
   const lines = [
     `── ${a.count}× ${REASON_LABEL[a.reason] || 'NEW'} · ${PRODUCT_LABEL[g.product] || g.product} · ${(a.tools.length ? a.tools : [e.tool]).filter(Boolean).map((t) => TOOL_LABEL[t] || t).join(', ')} · ${g.kind}`,
-    `   ${cut(g.title, 300)}`,
+    `   ${cut(flat(g.title), 300)}`,
     `   When: ${whenLine(a)}`,
-    `   Version: ${a.versions.length ? a.versions.join(', ') : (e.app_version || '–')}${e.build ? ` (build ${String(e.build).slice(0, 12)})` : ''}`,
-    `   Device: ${deviceLine(e) || '–'}${a.devices > 1 ? ` (${a.devices} devices)` : ''}`,
-    `   Who: ${whoLine(a)}`
+    `   Version: ${flat(a.versions.length ? a.versions.join(', ') : (e.app_version || '–'))}${e.build ? ` (build ${flat(String(e.build).slice(0, 12))})` : ''}`,
+    `   Device: ${flat(deviceLine(e)) || '–'}${a.devices > 1 ? ` (${a.devices} devices)` : ''}`,
+    `   Who: ${flat(whoLine(a))}`
   ]
-  if (e.view) lines.push(`   Where: ${e.view}`)
-  if (e.match_external_id) lines.push(`   Match: ${e.match_external_id}`)
-  if (e.request_id) lines.push(`   Request id: ${e.request_id}`)
+  if (e.view) lines.push(`   Where: ${flat(e.view)}`)
+  if (e.match_external_id) lines.push(`   Match: ${flat(e.match_external_id)}`)
+  if (e.request_id) lines.push(`   Request id: ${flat(e.request_id)}`)
   const frames = readableFrames(e)
-  if (frames.length) lines.push('   Stack:', ...frames.map((f) => `     ${f}`))
+  if (frames.length) lines.push('   Stack:', ...frames.map((f) => `     ${flat(f)}`))
   const crumbs = Array.isArray(e.breadcrumbs) ? e.breadcrumbs.slice(-8) : []
-  if (crumbs.length) lines.push('   Before it:', ...crumbs.map((b) => `     ${b.t ? String(b.t).slice(11, 19) + '  ' : ''}${b.c}: ${b.m}`))
+  if (crumbs.length) lines.push('   Before it:', ...crumbs.map((b) => `     ${b.t ? flat(String(b.t).slice(11, 19)) + '  ' : ''}${flat(b.c)}: ${flat(b.m)}`))
   lines.push(`   Open: ${groupLink(managerUrl, g.id)}`)
   return lines
 }
 
 /**
  * The digest mail of some due groups: { subject, text, html }. Names no
- * member (roles and clubs only).
+ * member (roles and clubs only). The subject carries no reported text, only
+ * the count, the kind and the tool (SEC-33).
  */
 export function renderDigest(alerts, { managerUrl } = {}) {
   const shown = alerts.slice(0, MAX_GROUPS_PER_MAIL)
   const total = alerts.reduce((n, a) => n + a.count, 0)
   const head = shown[0]
   const product = PRODUCT_LABEL[head?.group.product] || 'OpenVolley'
-  const headline = cut(head?.group.title || '(no message)', 90)
   const subject = alerts.length === 1
-    ? `[${product}] ${head.reason === 'regression' ? 'Error is back' : head.reason === 'ongoing' ? 'Error still happening' : 'New error'} — ${headline}`
-    : `[${product}] ${total} errors in ${alerts.length} kinds — ${headline}`
+    ? `[${product}] ${head.reason === 'regression' ? 'Error is back' : head.reason === 'ongoing' ? 'Error still happening' : 'New error'} — ${whatOf(head)}`
+    : `[${product}] ${total} errors in ${alerts.length} kinds — ${whatOf(head)}, …`
   const intro = `${total} error${total === 1 ? '' : 's'} in ${alerts.length} kind${alerts.length === 1 ? '' : 's'}.`
   const text = [
     intro,
@@ -153,7 +177,7 @@ export function renderDigest(alerts, { managerUrl } = {}) {
     return '<div style="border:1px solid #e7e5e4;border-left:4px solid ' + reasonBg + ';border-radius:8px;padding:12px 14px;margin:0 0 14px">' +
       `<div style="margin:0 0 6px">${chip(`${a.count}×`, '#1c1917')}${chip(REASON_LABEL[a.reason] || 'NEW', reasonBg)}${chip(PRODUCT_LABEL[g.product] || g.product, '#f5f5f4', '#1c1917')}${chip(g.source === 'server' ? 'Server' : 'App', '#f5f5f4', '#1c1917')}</div>` +
       `<div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#57534e">${escapeHtml(g.kind)}</div>` +
-      `<div style="font-weight:600;margin:4px 0 8px;word-break:break-word">${escapeHtml(cut(g.title, 300))}</div>` +
+      `<div style="font-weight:600;margin:4px 0 8px;word-break:break-word">${escapeHtml(cut(flat(g.title), 300))}</div>` +
       '<table style="border-collapse:collapse;font-size:13px;margin:0 0 8px">' +
       row('Tool', (a.tools.length ? a.tools : [e.tool]).filter(Boolean).map((t) => TOOL_LABEL[t] || t).join(', ')) +
       row('When', whenLine(a)) +
@@ -195,7 +219,7 @@ export function renderPush(alerts, { managerUrl } = {}) {
     ? `${product}: ${head.reason === 'regression' ? 'error is back' : head.reason === 'ongoing' ? 'error still happening' : 'new error'}${head.count > 1 ? ` (${head.count}x)` : ''}`
     : `${product}: ${total} errors in ${alerts.length} kinds`
   const where = [TOOL_LABEL[e.tool] || e.tool, [e.os_name, e.os_version].filter(Boolean).join(' ') || e.platform, e.app_version].filter(Boolean).join(' · ')
-  const body = cut(`${head.group.title}\n${where}`, 300) + (alerts.length > 1 ? `\n+${alerts.length - 1} more` : '')
+  const body = cut(`${flat(head.group.title)}\n${flat(where)}`, 300) + (alerts.length > 1 ? `\n+${alerts.length - 1} more` : '')
   // high: the server failing, an error back after "resolved", or the scorer during a match
   const urgent = alerts.some((a) => a.group.source === 'server' || a.reason === 'regression' || a.duringMatch)
   return {
@@ -241,7 +265,7 @@ export function postVia(address, url, { method = 'POST', body = '', headers = {}
  * @param {Function} [deps.audit]      accounts.audit
  * @param {boolean} [deps.suppressed]  TEST_MODE: log only
  */
-export function createErrorAlerts({ tracker, pool, mailer = null, to = '', managerUrl = 'https://manager.openvolley.app', ntfy = {}, audit = null, log = console, now = Date.now, suppressed = false, cooldownMs = COOLDOWN_MS, maxPerHour = MAX_PER_HOUR, fetchImpl = globalThis.fetch } = {}) {
+export function createErrorAlerts({ tracker, pool, mailer = null, to = '', managerUrl = 'https://manager.openvolley.app', ntfy = {}, audit = null, log = console, now = Date.now, suppressed = false, cooldownMs = COOLDOWN_MS, maxPerHour = MAX_PER_HOUR, anonymousPerMail = ANONYMOUS_PER_MAIL, anonymousReserve = ANONYMOUS_RESERVE, fetchImpl = globalThis.fetch } = {}) {
   const recipient = typeof to === 'string' && to.includes('@') ? to.trim() : ''
   const pushUrl = ntfy?.url && ntfy?.topic ? `${String(ntfy.url).replace(/\/+$/, '')}/${encodeURIComponent(String(ntfy.topic))}` : ''
   // NTFY_ADDRESS: connect there, keep the name (a tailnet name public DNS does not resolve to the tailnet)
@@ -298,7 +322,7 @@ export function createErrorAlerts({ tracker, pool, mailer = null, to = '', manag
       if (!admins.length) return 0
       let n = 0
       for (const a of alerts) {
-        const details = JSON.stringify({ title: cut(a.group.title, 160), count: a.count, reason: a.reason, product: a.group.product, kind: a.group.kind, tools: a.tools })
+        const details = JSON.stringify({ title: cut(flat(a.group.title), 160), count: a.count, reason: a.reason, product: a.group.product, kind: a.group.kind, tools: a.tools })
         const r = await pool.query(
           `INSERT INTO public.notifications (user_id, kind, app, target, details)
            SELECT x, 'error', $2, $3, $4::jsonb FROM unnest($1::uuid[]) AS x
@@ -327,13 +351,25 @@ export function createErrorAlerts({ tracker, pool, mailer = null, to = '', manag
       for (const a of cooling) await tracker.deferAlerts([a.group.id], Date.parse(a.group.last_alert_at) + cooldownMs)
       const ready = due.filter((a) => !cooling.includes(a))
       if (!ready.length) return { due: due.length, cooling: cooling.length }
-      if (!suppressed && (await sentLastHour()) >= maxPerHour) {
+      const sent = suppressed ? 0 : await sentLastHour()
+      if (sent >= maxPerHour) {
         counters.deferred += ready.length
         await tracker.deferAlerts(ready.map((a) => a.group.id), t + CEILING_RETRY_MS)
         log.warn?.(`[errors] ${maxPerHour} digests in the last hour: ${ready.length} kind(s) wait ${CEILING_RETRY_MS / 60000} min`)
         return { due: due.length, deferred: ready.length }
       }
-      const batch = ready.slice(0, MAX_GROUPS_PER_MAIL)
+      // the groups only reports without a session fed: a few a mail, and not
+      // in the digests the hour keeps for the others; they wait meanwhile
+      const known = ready.filter((a) => !a.group.anonymous)
+      const anonymous = ready.filter((a) => a.group.anonymous)
+      const anonymousMay = sent < maxPerHour - anonymousReserve
+      const batch = known.slice(0, MAX_GROUPS_PER_MAIL)
+      if (anonymousMay) batch.push(...anonymous.slice(0, Math.max(0, Math.min(anonymousPerMail, MAX_GROUPS_PER_MAIL - batch.length))))
+      if (!anonymousMay && anonymous.length) {
+        counters.deferred += anonymous.length
+        await tracker.deferAlerts(anonymous.map((a) => a.group.id), t + CEILING_RETRY_MS)
+      }
+      if (!batch.length) return { due: due.length, deferred: anonymous.length }
       const digest = renderDigest(batch, { managerUrl })
       if (suppressed) {
         counters.suppressed++

@@ -725,7 +725,9 @@ function getDataLayer() {
       clubsOfMany: (client, ids) => clubs.clubsOfMany(client, ids),
       // readable stacks from the web builds' hidden source maps (lib/sourceMaps.js); ERROR_SOURCE_MAPS=off: none
       ...(String(process.env.ERROR_SOURCE_MAPS || '').toLowerCase() === 'off' ? {} : { sourceMaps: smp.createSourceMaps() }),
-      ...(Number(process.env.ERROR_ALERT_DEBOUNCE_MS) >= 0 && process.env.ERROR_ALERT_DEBOUNCE_MS ? { debounceMs: Number(process.env.ERROR_ALERT_DEBOUNCE_MS) } : {})
+      ...(Number(process.env.ERROR_ALERT_DEBOUNCE_MS) >= 0 && process.env.ERROR_ALERT_DEBOUNCE_MS ? { debounceMs: Number(process.env.ERROR_ALERT_DEBOUNCE_MS) } : {}),
+      // the ceiling of what the error tables hold (default 512 MB; 0: none): past it reports are counted, not stored
+      ...(Number(process.env.OV_ERRORS_MAX_BYTES) >= 0 && process.env.OV_ERRORS_MAX_BYTES ? { maxStoreBytes: Number(process.env.OV_ERRORS_MAX_BYTES) } : {})
     })
     const errorAlerts = era.createErrorAlerts({
       tracker: errors,

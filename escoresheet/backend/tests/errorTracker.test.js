@@ -172,7 +172,8 @@ describe('error alerts: the digest', () => {
   it('names roles and clubs, never a member, and links the group', () => {
     const a = alertOf()
     const d = renderDigest([a], { managerUrl: 'https://manager.example' })
-    assert.match(d.subject, /^\[OpenVolley\] New error — TypeError: x is undefined$/)
+    // the subject: the count, the kind and the tool, never the reported text (SEC-33)
+    assert.match(d.subject, /^\[OpenVolley\] New error — 3× js\.error · scorer$/)
     assert.match(d.text, /Who: 1 member: scorer, referee \(VBC Musterdorf\) and guests \(not signed in\)/)
     assert.match(d.text, /Device: Android 15 · Chrome WebView 131\.0\.6778\.39 · android_app · 1280x752/)
     assert.ok(d.text.includes(groupLink('https://manager.example', a.group.id)))
