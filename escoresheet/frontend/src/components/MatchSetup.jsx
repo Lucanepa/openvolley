@@ -15,7 +15,7 @@ import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal, { knownMatchFormat } from './LoadOfficialMatchModal'
 import GlobalImportModal from './GlobalImportModal'
 import { setTargetsOf } from '../domain/rules'
-import { idModeOf, idPlaceholderOf, importedIdValue, licenceOf, SWISS_ID_MODE, ID_LABEL_FALLBACK } from '../domain/idMode'
+import { idModeOf, idPlaceholderOf, licenceOf, SWISS_ID_MODE, ID_LABEL_FALLBACK } from '../domain/idMode'
 import IdField from './IdField'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
@@ -27,6 +27,7 @@ import { championshipTypeFields } from '../domain/championshipType'
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
 import { parseRosterPdf, rosterPdfErrorText } from '../utils/parseRosterPdf'
+import { importedRosterOf, importedToSetup } from '../domain/importedRoster'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { sendMatchInfoMail } from '../utils/matchInfoMail'
 import MatchPinNotice from './MatchPinNotice'
@@ -65,7 +66,7 @@ import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule, teamContactEmail, withTeamContacts } from '../domain/officials'
 import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
-import { savedTeamToRoster, findSavedTeamSuggestions, fillNumbersFromSaved, savedNumberFinder } from '../domain/savedTeams'
+import { savedTeamToRoster, findSavedTeamSuggestions, savedNumberFinder } from '../domain/savedTeams'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rosterSearchOutcome, rowToPendingRoster, sentRostersSameAsUsed } from '../db/gameRosters'
 import { REMOTE_PANEL_CHECK_MS, useSentRosterRefresh } from '../hooks/useSentRosterRefresh'
@@ -4089,6 +4090,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   const handleSearchHomeRoster = () => handleSearchRoster('home')
   const handleSearchAwayRoster = () => handleSearchRoster('away')
 
+  // An imported roster (domain/importedRoster: a PDF or a photo of the
+  // list) in the side's roster and bench, the one way for both: the list's
+  // players replace the roster, its numbers kept and the missing ones from
+  // the side's saved team (by licence, else name; owner 2026-11-19), its
+  // captain and liberos where the team marked them (owner 2026-11-23), its
+  // coach and assistants on the bench. An Einsatzliste lists every eligible
+  // player: with more than 14 the scorer ticks who plays (the summary follows
+  // the choice). Not saved here: the roster editor's Save writes it, its
+  // Back discards it.
+  const applyImportedRoster = async (side, imported) => {
+    const { players, bench, numbersFilled } = importedToSetup(imported, { idMode, savedTeam: savedTeamOf(side) })
+    if (numbersFilled) toast.info(t('savedTeams.numbersFilled', { count: numbersFilled }))
+    if (side === 'home') { setHomeRoster(players); setBenchHome(bench) } else { setAwayRoster(players); setBenchAway(bench) }
+    const summary = { team: side, players: players.length, benchOfficials: bench.length }
+    if (players.length > ROSTER_MAX) {
+      await openPlayerPool(side, { imported: players, includeCurrent: false, summary })
+    } else {
+      setImportSummaryModal({ ...summary, errors: [] })
+    }
+  }
+
   // PDF upload handlers - must be defined before conditional returns
   const handleHomePdfUpload = async (file) => {
     if (!file) return
@@ -4097,72 +4119,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
 
     try {
       const parsedData = await parseRosterPdf(file)
-
-      // Replace all players with imported ones (overwrite mode)
-      // An Einsatzliste has no shirt numbers: the side's saved team gives them
-      // (by licence, else name; owner 2026-11-19), the 14 or fewer and the
-      // player pool of more alike
-      const { roster: mergedPlayers, filled: numbersFilled } = fillNumbersFromSaved(parsedData.players.map(parsedPlayer => ({
-        id: null,
-        number: parsedPlayer.number || null,
-        firstName: parsedPlayer.firstName || '',
-        lastName: parsedPlayer.lastName || '',
-        dob: importedIdValue(parsedPlayer, idMode),
-        libero: '',
-        isCaptain: false,
-        isLfp: parsedPlayer.isLfp || false
-      })), savedTeamOf('home'))
-      if (numbersFilled) toast.info(t('savedTeams.numbersFilled', { count: numbersFilled }))
-
-      setHomeRoster(mergedPlayers)
-
-      // Update bench officials
-      const importedBenchOfficials = []
-      if (parsedData.coach) {
-        importedBenchOfficials.push({
-          role: 'Coach',
-          firstName: parsedData.coach.firstName || '',
-          lastName: parsedData.coach.lastName || '',
-          dob: importedIdValue(parsedData.coach, idMode)
-        })
-      }
-      if (parsedData.ac1) {
-        importedBenchOfficials.push({
-          role: 'Assistant Coach 1',
-          firstName: parsedData.ac1.firstName || '',
-          lastName: parsedData.ac1.lastName || '',
-          dob: importedIdValue(parsedData.ac1, idMode)
-        })
-      }
-      if (parsedData.ac2) {
-        importedBenchOfficials.push({
-          role: 'Assistant Coach 2',
-          firstName: parsedData.ac2.firstName || '',
-          lastName: parsedData.ac2.lastName || '',
-          dob: importedIdValue(parsedData.ac2, idMode)
-        })
-      }
-
-      setBenchHome(importedBenchOfficials)
-
       // Not written to the database here: the roster editor's Save writes
       // the players and the bench, its Back discards the import
-
-      // Clear file input and state
       if (homeFileInputRef.current) {
         homeFileInputRef.current.value = ''
       }
       setHomePdfFile(null)
-
-      // An Einsatzliste lists every eligible player: with more than 14, the
-      // scorer ticks who plays (the summary follows the choice)
-      const summary = { team: 'home', players: mergedPlayers.length, benchOfficials: importedBenchOfficials.length }
-      if (mergedPlayers.length > ROSTER_MAX) {
-        await openPlayerPool('home', { imported: mergedPlayers, includeCurrent: false, summary })
-      } else {
-        // Show import summary modal
-        setImportSummaryModal({ ...summary, errors: [] })
-      }
+      await applyImportedRoster('home', importedRosterOf(parsedData, 'pdf'))
     } catch (err) {
       console.error('Error parsing PDF:', err)
       setHomePdfError(rosterPdfErrorText(err, t))
@@ -4183,72 +4146,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
 
     try {
       const parsedData = await parseRosterPdf(file)
-
-      // Replace all players with imported ones (overwrite mode)
-      // An Einsatzliste has no shirt numbers: the side's saved team gives them
-      // (by licence, else name; owner 2026-11-19), the 14 or fewer and the
-      // player pool of more alike
-      const { roster: mergedPlayers, filled: numbersFilled } = fillNumbersFromSaved(parsedData.players.map(parsedPlayer => ({
-        id: null,
-        number: parsedPlayer.number || null,
-        firstName: parsedPlayer.firstName || '',
-        lastName: parsedPlayer.lastName || '',
-        dob: importedIdValue(parsedPlayer, idMode),
-        libero: '',
-        isCaptain: false,
-        isLfp: parsedPlayer.isLfp || false
-      })), savedTeamOf('away'))
-      if (numbersFilled) toast.info(t('savedTeams.numbersFilled', { count: numbersFilled }))
-
-      setAwayRoster(mergedPlayers)
-
-      // Update bench officials
-      const importedBenchOfficials = []
-      if (parsedData.coach) {
-        importedBenchOfficials.push({
-          role: 'Coach',
-          firstName: parsedData.coach.firstName || '',
-          lastName: parsedData.coach.lastName || '',
-          dob: importedIdValue(parsedData.coach, idMode)
-        })
-      }
-      if (parsedData.ac1) {
-        importedBenchOfficials.push({
-          role: 'Assistant Coach 1',
-          firstName: parsedData.ac1.firstName || '',
-          lastName: parsedData.ac1.lastName || '',
-          dob: importedIdValue(parsedData.ac1, idMode)
-        })
-      }
-      if (parsedData.ac2) {
-        importedBenchOfficials.push({
-          role: 'Assistant Coach 2',
-          firstName: parsedData.ac2.firstName || '',
-          lastName: parsedData.ac2.lastName || '',
-          dob: importedIdValue(parsedData.ac2, idMode)
-        })
-      }
-
-      setBenchAway(importedBenchOfficials)
-
       // Not written to the database here: the roster editor's Save writes
       // the players and the bench, its Back discards the import
-
-      // Clear file input and state
       if (awayFileInputRef.current) {
         awayFileInputRef.current.value = ''
       }
       setAwayPdfFile(null)
-
-      // An Einsatzliste lists every eligible player: with more than 14, the
-      // scorer ticks who plays (the summary follows the choice)
-      const summary = { team: 'away', players: mergedPlayers.length, benchOfficials: importedBenchOfficials.length }
-      if (mergedPlayers.length > ROSTER_MAX) {
-        await openPlayerPool('away', { imported: mergedPlayers, includeCurrent: false, summary })
-      } else {
-        // Show import summary modal
-        setImportSummaryModal({ ...summary, errors: [] })
-      }
+      await applyImportedRoster('away', importedRosterOf(parsedData, 'pdf'))
     } catch (err) {
       console.error('Error parsing PDF:', err)
       setAwayPdfError(rosterPdfErrorText(err, t))
