@@ -1,6 +1,9 @@
 /**
  * lib/mailer.js — the account emails of lib/auth.js (password reset, email
  * confirmation, "your password was changed"), sent over SMTP with nodemailer.
+ * The same mailbox sends the mails a signed-in user asks for to its own
+ * address (sendUser: the game PIN and the match information, server.js POST
+ * /api/match/send-pin and /send-info).
  *
  * Configuration (deploy/env.example, README "Account emails"):
  *   SMTP_HOST   e.g. smtp.migadu.com            required to send
@@ -41,13 +44,17 @@
  *     (reset, password_changed) and "confirm" (sign-up / resend confirmation);
  *     the final scoresheets ("scoresheet") and the test scoresheets
  *     ("scoresheet_test") have their own, so test mails cannot starve the
- *     real ones; budgetsFromEnv reads the operator's sizes (BUDGET_ENV);
+ *     real ones; so have the mails users ask for to their own address
+ *     ("user", sendUser); budgetsFromEnv reads the operator's sizes (BUDGET_ENV);
  *   - per delivered inbox (inboxKey: plus-tags removed, Gmail dots ignored,
  *     googlemail.com = gmail.com) for reset and confirm mails, so one inbox
- *     cannot be flooded through spelling variants of its address.
+ *     cannot be flooded through spelling variants of its address; sendUser
+ *     counts its own mails per inbox apart from those, so asking for a game
+ *     PIN never uses up the inbox's password resets.
  * A mail over a limit is dropped (the request still succeeds, so the answer
  * never tells whether a mail went out), logged, and counted in stats(), which
- * the internal /health body shows.
+ * the internal /health body shows. sendUser leaves the answer to its caller:
+ * its address is the caller's own, so server.js says 429 rather than "sent".
  *
  * Public API:
  *   mailerFromEnv(env, { logger }) -> mailer      (disabled mailer when not configured)
@@ -64,6 +71,10 @@
  *                                            skipped: 'budget' | 'inbox' | 'disabled'
  *   mailer.sendOps({ to, subject, text, html }) -> Promise<{ sent, skipped? }>   a mail to the operator
  *                                            (lib/errorAlerts.js), rendered by the caller; own budget OPS_PER_HOUR
+ *   mailer.sendUser({ to, subject, text }) -> Promise<{ sent, skipped? }>   a mail a signed-in user asks
+ *                                            for to its own address (server.js send-pin, send-info), rendered
+ *                                            by the caller, plain text; budget "user", capped per inbox
+ *                                            skipped: 'budget' | 'inbox' | 'disabled'
  *   mailer.stats()                 -> { enabled, budgets, inboxDropped, failed, lastDropAt, ... }
  *   budgetsFromEnv(env)            -> { budgets, warnings }  the hourly budgets the environment sets (BUDGET_ENV)
  *   mailer.close()
@@ -74,6 +85,7 @@
  *   maskEmail(email)
  *   inboxKey(email)                -> the delivered inbox of an address (rate-limit key)
  *   describeMailError(err)         -> loggable text of a send error, addresses masked
+ *   mailErrorReason(err)           -> a value-free word for a send error ('timeout', EAUTH, ..., 'error')
  */
 
 import nodemailer from 'nodemailer'
@@ -127,15 +139,17 @@ export function mailBrandOf(kind, app) {
 // the club-manager invitations, the team-manager proposals and the final
 // mail's notices (a missing PDF, a reopened match): none can starve the
 // account mails. email_changed (a changed login address) is an account mail too.
+// "user" carries the mails a signed-in user asks for to its own address
+// (sendUser: the game PIN, the match information), which have no kind.
 export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', confirm: 'confirm', approval: 'security', approval_pin_locked: 'security', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them; scoresheet_test: test mails
 // (any scorer, any time) must not use up the final scoresheets' budget
-export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 150, notify: 100, signup: 100, security: 50, scoresheet: 300, scoresheet_test: 50 })
+export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 150, notify: 100, signup: 100, security: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
 // The budgets an operator sizes (deploy/env.example), each by its variable:
 // a whole number above 0 per hour; anything else keeps the default, with a
 // warning at startup. A size given to createMailer wins (tests).
-export const BUDGET_ENV = Object.freeze({ account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST' })
+export const BUDGET_ENV = Object.freeze({ account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
 
 /** The hourly budgets the environment sets (BUDGET_ENV): { budgets: { name: n }, warnings: [line] }. */
 export function budgetsFromEnv(env = process.env) {
@@ -158,6 +172,7 @@ export const DEFAULT_MAX_PER_INBOX = 5
 // The final scoresheet is not capped: a club's contact gets every game of a
 // tournament day.
 // club_manager_invite: an admin types the address, so one inbox is capped like a confirmation
+// (sendUser: its own count per inbox, the same maximum)
 const INBOX_CAPPED = new Set(['reset', 'confirm', 'scoresheet_test', 'club_manager_invite'])
 const ATTACHING = new Set(['scoresheet', 'scoresheet_test'])
 const HOUR_MS = 60 * 60 * 1000
@@ -237,6 +252,22 @@ export function describeMailError(err) {
     .replace(/\s+/g, ' ').trim().slice(0, 300)
   if (msg) parts.push(msg)
   return parts.join(' ') || 'unknown error'
+}
+
+/**
+ * A value-free word for a failed send, for a log line that may name neither
+ * the recipient nor anything the mail holds (server.js send-pin, send-info):
+ * 'timeout' (an aborted request, nodemailer's ETIMEDOUT), nodemailer's code
+ * (EAUTH, ECONNECTION, EENVELOPE, ...) with the SMTP reply code when there is
+ * one (EENVELOPE/550), else 'error'. Never the message: an SMTP rejection or
+ * a provider's answer quotes the address.
+ */
+export function mailErrorReason(err) {
+  if (err?.name === 'AbortError' || err?.code === 'ETIMEDOUT') return 'timeout'
+  const code = typeof err?.code === 'string' && /^E[A-Z]{2,20}$/.test(err.code) ? err.code : ''
+  if (!code) return 'error'
+  const reply = /^[245]\d\d$/.test(String(err.responseCode ?? '')) ? `/${err.responseCode}` : ''
+  return code + reply
 }
 
 /** MANAGER_URL/#reset?token=...&lang=de (the token is in the fragment: never sent to a server). */
@@ -981,6 +1012,7 @@ export function disabledMailer(reason = 'not configured') {
     fromFor: () => null,
     async send() { return { sent: false, skipped: 'disabled' } },
     async sendOps() { return { sent: false, skipped: 'disabled' } },
+    async sendUser() { return { sent: false, skipped: 'disabled' } },
     stats() { return { enabled: false, reason } },
     close() {}
   }
@@ -1025,8 +1057,8 @@ export function transportOptions({ host, port, user, pass, tls = {}, secure }) {
  * @param {boolean} [o.secure]      implicit TLS (default: port === 465)
  * @param {object} [o.transport]    a ready nodemailer-like { sendMail, close } (tests)
  * @param {number} [o.maxPerHour]     every budget at once (tests); else o.budgets
- * @param {{account?: number, confirm?: number, notify?: number, scoresheet?: number, scoresheet_test?: number}} [o.budgets]  per hour, see DEFAULT_BUDGETS
- * @param {number} [o.maxPerInbox]    reset + confirm mails per inbox and hour
+ * @param {{account?: number, confirm?: number, notify?: number, scoresheet?: number, scoresheet_test?: number, user?: number}} [o.budgets]  per hour, see DEFAULT_BUDGETS
+ * @param {number} [o.maxPerInbox]    reset + confirm mails per inbox and hour (and, counted apart, sendUser's)
  * @param {object} [o.logger]
  */
 export function createMailer(o = {}) {
@@ -1043,7 +1075,10 @@ export function createMailer(o = {}) {
     return Number.isInteger(v) && v > 0 ? v : DEFAULT_BUDGETS[name]
   }
   const budgets = Object.fromEntries(Object.keys(DEFAULT_BUDGETS).map((name) => [name, hourlyBudget(budgetMax(name), o.now)]))
-  const perInbox = inboxCounter(Number.isInteger(o.maxPerInbox) && o.maxPerInbox > 0 ? o.maxPerInbox : DEFAULT_MAX_PER_INBOX, o.now)
+  const maxPerInbox = Number.isInteger(o.maxPerInbox) && o.maxPerInbox > 0 ? o.maxPerInbox : DEFAULT_MAX_PER_INBOX
+  const perInbox = inboxCounter(maxPerInbox, o.now)
+  // sendUser's mails per inbox: apart from the reset and confirmation mails
+  const userInbox = inboxCounter(maxPerInbox, o.now)
   // The operator's own mails (sendOps): their own small budget, never one of the users'
   const opsBudget = hourlyBudget(Number.isInteger(o.opsPerHour) && o.opsPerHour > 0 ? o.opsPerHour : OPS_PER_HOUR, o.now)
   const counters = { sent: 0, failed: 0, inboxDropped: 0, lastDropAt: null, lastFailureAt: null }
@@ -1139,6 +1174,52 @@ export function createMailer(o = {}) {
     return { sent: true }
   }
 
+  /**
+   * A mail a signed-in user asks for to its own address (server.js: the game
+   * PIN, the match information), rendered by the caller: plain text, from
+   * OpenVolley's sender, no kind and no template. Budget "user", and at most
+   * maxPerInbox an hour to one delivered inbox (inboxKey), counted apart from
+   * the reset and confirmation mails. A mail over a limit is dropped and
+   * logged with the address masked; the caller decides what to answer.
+   * Throws when the send fails.
+   */
+  async function sendUser({ to, subject, text } = {}) {
+    if (typeof to !== 'string' || !to.includes('@')) throw new Error('mailer: no recipient')
+    if (typeof subject !== 'string' || !subject || typeof text !== 'string' || !text) throw new Error('mailer: a user mail needs a subject and a text')
+    const budget = budgets.user
+    if (!budget.take()) {
+      counters.lastDropAt = new Date().toISOString()
+      log.warn(`[mail] hourly user budget (${budget.max}) used up; mail to ${maskEmail(to)} dropped`)
+      if (budget.alertDue()) log.error(`[mail] ALERT: the hourly user mail budget (${budget.max}) is used up; mails are dropped until the window ends (raise ${BUDGET_ENV.user} if this is real traffic)`)
+      return { sent: false, skipped: 'budget' }
+    }
+    if (!userInbox.take(inboxKey(to))) {
+      budget.refund()
+      counters.inboxDropped++
+      counters.lastDropAt = new Date().toISOString()
+      log.warn(`[mail] ${userInbox.max} user mails per hour to one inbox reached; mail to ${maskEmail(to)} dropped`)
+      return { sent: false, skipped: 'inbox' }
+    }
+    try {
+      await transport.sendMail({
+        from: brands.indoor.from,
+        to,
+        subject: subject.replace(/[\r\n]+/g, ' ').slice(0, 200),
+        text,
+        headers: { 'Auto-Submitted': 'auto-generated', 'X-Auto-Response-Suppress': 'All' },
+        disableFileAccess: true,
+        disableUrlAccess: true
+      })
+    } catch (err) {
+      budget.refund()
+      counters.failed++
+      counters.lastFailureAt = new Date().toISOString()
+      throw err
+    }
+    counters.sent++
+    return { sent: true }
+  }
+
   /** Counters for monitoring (no addresses): the internal /health body shows them. */
   function stats() {
     const b = Object.fromEntries(Object.entries(budgets).map(([k, v]) => [k, v.snapshot()]))
@@ -1165,6 +1246,7 @@ export function createMailer(o = {}) {
     budgets,
     send,
     sendOps,
+    sendUser,
     stats,
     close() { try { transport.close?.() } catch { /* already closed */ } }
   }

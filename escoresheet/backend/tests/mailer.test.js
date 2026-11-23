@@ -7,7 +7,7 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickLang, authLink, renderMail, maskEmail, mailerFromEnv, createMailer, transportOptions,
-  inboxKey, describeMailError, disabledMailer, mailApp, mailBrandOf, brandFrom, beachManagerBase, privacyLine, budgetsFromEnv,
+  inboxKey, describeMailError, mailErrorReason, disabledMailer, mailApp, mailBrandOf, brandFrom, beachManagerBase, privacyLine, budgetsFromEnv,
   MAIL_LANGS, MAIL_KINDS, MAIL_APPS, MAIL_BRANDS, DEFAULT_MANAGER_URL, DEFAULT_MANAGER_URL_BEACH, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX,
   MAIL_BUDGET_OF, BUDGET_ENV
 } from '../lib/mailer.js'
@@ -267,6 +267,21 @@ describe('mailer: SMTP sessions against a local sink', () => {
     } finally { m.close() }
   })
 
+  it('sendUser: a plain-text mail over STARTTLS from OpenVolley\'s sender, no HTML part', async () => {
+    const m = mailerFor(starttls)
+    try {
+      assert.deepEqual(await m.sendUser({ to: 'scorer.one@example.ch', subject: 'Game 1 eScoresheet: game PIN', text: 'Game PIN: 123456\nÄnderung' }), { sent: true })
+      const mail = await starttls.waitForMail((x) => x.envelope.to.includes('scorer.one@example.ch'))
+      assert.equal(mail.secure, true)
+      assert.equal(mail.from, 'OpenVolley <noreply@example.test>')
+      assert.equal(mail.subject, 'Game 1 eScoresheet: game PIN')
+      assert.equal(mail.text.replace(/\r\n/g, '\n').trim(), 'Game PIN: 123456\nÄnderung', 'SMTP lines end in CRLF')
+      assert.equal(mail.html, '')
+      assert.doesNotMatch(mail.headers['content-type'], /multipart/i)
+      assert.equal(mail.headers['auto-submitted'], 'auto-generated')
+    } finally { m.close() }
+  })
+
   it('a recipient the server rejects: the error text is loggable without the address', async () => {
     const m = mailerFor(starttls)
     const to = 'rejected.victim.name@club.example'
@@ -281,6 +296,7 @@ describe('mailer: SMTP sessions against a local sink', () => {
       assert.equal(line.includes('victim.name'), false, line)
       assert.match(line, /re\*\*\*@club\.example/)
       assert.match(line, /SMTP 550/)
+      assert.equal(mailErrorReason(caught), 'EENVELOPE/550', 'the value-free reason')
       assert.equal(m.stats().failed, 1)
     } finally { m.close() }
   })
@@ -305,6 +321,18 @@ describe('mailer: inbox key and loggable errors', () => {
     assert.equal(describeMailError(undefined), 'unknown error')
     assert.ok(describeMailError(new Error('x'.repeat(1000))).length <= 300)
   })
+  it('mailErrorReason: a code and the SMTP reply code, never the message', () => {
+    const err = Object.assign(new Error('550 5.1.1 <someone.else@club.ch>: Recipient address rejected'), { code: 'EENVELOPE', responseCode: 550 })
+    assert.equal(mailErrorReason(err), 'EENVELOPE/550')
+    assert.equal(mailErrorReason(Object.assign(new Error('Invalid login: 535'), { code: 'EAUTH' })), 'EAUTH')
+    assert.equal(mailErrorReason(Object.assign(new Error('x'), { code: 'ETIMEDOUT' })), 'timeout')
+    assert.equal(mailErrorReason(Object.assign(new Error('aborted'), { name: 'AbortError' })), 'timeout', 'the Resend fetch')
+    // anything that is not a plain code: no value can reach the log
+    for (const e of [new Error('a@b.ch'), { code: 'a@b.ch' }, { code: 'E' + 'X'.repeat(30) }, { code: '23505' }, { code: 'EAUTH', responseCode: '<a@b.ch>' }, null, undefined, 'a@b.ch']) {
+      const r = mailErrorReason(e)
+      assert.match(r, /^(error|EAUTH)$/, JSON.stringify(e))
+    }
+  })
 })
 
 describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
@@ -314,8 +342,10 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   }
   const link = 'https://x.test/#t?token=t'
 
-  it('defaults: 50 account and 150 confirmation mails per hour, 100 notices, 100 sign-up notices, 50 security notices of their own, 300 final and 50 test scoresheets, 5 per inbox', () => {
-    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 150, notify: 100, signup: 100, security: 50, scoresheet: 300, scoresheet_test: 50 })
+  it('defaults: 50 account and 150 confirmation mails per hour, 100 notices, 100 sign-up notices, 50 security notices of their own, 300 final and 50 test scoresheets, 100 user mails, 5 per inbox', () => {
+    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 150, notify: 100, signup: 100, security: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
+    // the user mails (sendUser) have no kind: nothing else draws from their budget
+    assert.equal(Object.values(MAIL_BUDGET_OF).includes('user'), false)
     // nothing but the approval notices draws from the security budget
     assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'security'), ['approval', 'approval_pin_locked'])
     assert.equal(MAIL_BUDGET_OF.signup, 'signup')
@@ -412,8 +442,9 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   })
 
   it('budgetsFromEnv: the operator sizes the final and the test scoresheet budgets; a bad value keeps the default, with a warning', () => {
-    assert.deepEqual({ ...BUDGET_ENV }, { account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST' })
+    assert.deepEqual({ ...BUDGET_ENV }, { account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
     assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_CONFIRM: '400', MAIL_BUDGET_SECURITY: '80' }).budgets, { confirm: 400, security: 80 })
+    assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_USER: '30' }).budgets, { user: 30 })
     assert.deepEqual(budgetsFromEnv({}), { budgets: {}, warnings: [] })
     assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_FINAL: ' 600 ', MAIL_BUDGET_TEST: '20' }).budgets, { scoresheet: 600, scoresheet_test: 20 })
     for (const bad of ['0', '-5', '1.5', 'lots', '99999999']) {
@@ -433,6 +464,92 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
     const m = createMailer({ ...stub(), from: 'x <x@example.test>', maxPerHour: 7, logger: silent })
     assert.equal(m.stats().budgets.account.max, 7)
     assert.equal(m.stats().budgets.confirm.max, 7)
+  })
+})
+
+describe('mailer: sendUser, the mails users ask for to their own address (stub transport)', () => {
+  const stub = () => {
+    const sent = []
+    return { sent, transport: { async sendMail(m) { sent.push(m) }, close() {} } }
+  }
+  const mail = (to) => ({ to, subject: 'Game 7 eScoresheet: game PIN', text: 'Game PIN: 123456' })
+  const link = 'https://x.test/#t?token=t'
+
+  it('sends what it is given, as plain text from OpenVolley\'s sender; never a file or a URL', async () => {
+    const { sent, transport } = stub()
+    const m = createMailer({ transport, from: 'OpenVolley <noreply@example.test>', logger: silent })
+    assert.deepEqual(await m.sendUser({ to: 'anna@example.ch', subject: 'Game 7\r\nBcc: x@y.ch', text: 'Game PIN: 123456' }), { sent: true })
+    assert.equal(sent.length, 1)
+    assert.equal(sent[0].from, 'OpenVolley <noreply@example.test>')
+    assert.equal(sent[0].to, 'anna@example.ch')
+    assert.equal(sent[0].subject, 'Game 7 Bcc: x@y.ch', 'no header from the subject')
+    assert.equal(sent[0].text, 'Game PIN: 123456')
+    assert.equal('html' in sent[0], false, 'plain text only')
+    assert.equal('attachments' in sent[0], false)
+    assert.equal(sent[0].disableFileAccess, true)
+    assert.equal(sent[0].disableUrlAccess, true)
+    assert.equal(sent[0].headers['Auto-Submitted'], 'auto-generated')
+    await assert.rejects(m.sendUser({ subject: 's', text: 't' }), /no recipient/)
+    await assert.rejects(m.sendUser({ to: 'anna@example.ch', subject: '', text: 't' }), /subject and a text/)
+    await assert.rejects(m.sendUser({ to: 'anna@example.ch', subject: 's', text: '' }), /subject and a text/)
+    assert.deepEqual(await disabledMailer().sendUser(mail('a@example.ch')), { sent: false, skipped: 'disabled' })
+  })
+
+  it('its own budget: a flood of them leaves the account mails alone, and is told to the operator once per window', async () => {
+    let t = 0
+    const { sent, transport } = stub()
+    const warnings = []
+    const errors = []
+    const m = createMailer({ transport, from: 'x <x@example.test>', budgets: { user: 2 }, now: () => t, logger: { ...silent, warn: (l) => warnings.push(l), error: (l) => errors.push(l) } })
+    assert.equal((await m.sendUser(mail('u1@example.ch'))).sent, true)
+    assert.equal((await m.sendUser(mail('u2@example.ch'))).sent, true)
+    assert.deepEqual(await m.sendUser(mail('victim.name@example.ch')), { sent: false, skipped: 'budget' })
+    assert.deepEqual(await m.sendUser(mail('u4@example.ch')), { sent: false, skipped: 'budget' })
+    assert.equal(sent.length, 2)
+    assert.ok(warnings.some((w) => /hourly user budget \(2\) used up; mail to vi\*\*\*@example\.ch dropped/.test(w)), warnings.join('\n'))
+    assert.equal(warnings.some((w) => w.includes('victim.name')), false, 'the address is masked')
+    assert.equal(errors.length, 1)
+    assert.match(errors[0], /ALERT.*user.*MAIL_BUDGET_USER/)
+    assert.doesNotMatch(errors[0], /@/)
+    assert.deepEqual(await m.send('reset', { to: 'u1@example.ch', link }), { sent: true }, 'reset has its own budget')
+    assert.deepEqual(m.stats().exhausted, ['user'])
+    t = 60 * 60 * 1000
+    assert.equal((await m.sendUser(mail('u5@example.ch'))).sent, true, 'a new hour')
+  })
+
+  it('5 an hour to one inbox, whatever the spelling, counted apart from the reset and confirmation mails', async () => {
+    let t = 0
+    const { sent, transport } = stub()
+    const m = createMailer({ transport, from: 'x <x@example.test>', now: () => t, logger: silent })
+    const variants = ['victimname@gmail.com', 'victim.name@gmail.com', 'Victim.Name+pin@gmail.com', 'v.ictimname@googlemail.com', 'victimn.ame@gmail.com', 'vi.ctimname@gmail.com']
+    const results = []
+    for (const to of variants) results.push((await m.sendUser(mail(to))).skipped || 'sent')
+    assert.deepEqual(results, ['sent', 'sent', 'sent', 'sent', 'sent', 'inbox'])
+    // the inbox's reset and confirmation mails still go: their own count
+    assert.deepEqual(await m.send('reset', { to: 'victim.name@gmail.com', link }), { sent: true })
+    assert.deepEqual(await m.send('confirm', { to: 'victimname@gmail.com', link }), { sent: true })
+    // and the other way round: an inbox whose reset mails are used up still gets its PIN
+    for (let i = 0; i < 6; i++) await m.send('confirm', { to: 'other.box@example.ch', link })
+    assert.equal((await m.send('reset', { to: 'other.box@example.ch', link })).skipped, 'inbox')
+    assert.deepEqual(await m.sendUser(mail('other.box@example.ch')), { sent: true })
+    const st = m.stats()
+    assert.equal(st.budgets.user.used, 6, 'a mail the inbox cap holds back does not use the budget')
+    assert.ok(st.inboxDropped >= 3)
+    assert.equal(sent.filter((x) => x.subject.includes('game PIN')).length, 6)
+    t = 60 * 60 * 1000
+    assert.equal((await m.sendUser(mail('victimname@gmail.com'))).sent, true, 'a new hour')
+  })
+
+  it('a failed send throws, is counted, and gives its budget back', async () => {
+    const m = createMailer({
+      transport: { async sendMail() { throw Object.assign(new Error('550 <anna@example.ch> rejected'), { code: 'EENVELOPE', responseCode: 550 }) }, close() {} },
+      from: 'x <x@example.test>', budgets: { user: 1 }, logger: silent
+    })
+    await assert.rejects(m.sendUser(mail('anna@example.ch')), (err) => mailErrorReason(err) === 'EENVELOPE/550')
+    const st = m.stats()
+    assert.equal(st.failed, 1)
+    assert.equal(st.budgets.user.used, 0)
+    assert.ok(st.lastFailureAt)
   })
 })
 
