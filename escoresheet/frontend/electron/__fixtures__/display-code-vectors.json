@@ -961,7 +961,7 @@
    ]
   },
   {
-   "name": "wrong codes are limited per address, before any comparison",
+   "name": "wrong codes are limited per address, before any comparison; a code the address resolved before is not",
    "caps": {
     "failPerIp": 3
    },
@@ -970,6 +970,15 @@
      "op": "set",
      "room": "room-1",
      "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "set",
+     "room": "room-2",
+     "code": "BCDE3456",
      "expect": {
       "ok": true,
       "endsAt": 43200000
@@ -1015,12 +1024,22 @@
     },
     {
      "op": "resolve",
-     "code": "ABCD2345",
+     "code": "BCDE3456",
      "ip": "a",
      "expect": {
       "ok": false,
       "reason": "rate-limited",
       "retryAfter": 299
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
      }
     },
     {
@@ -1036,18 +1055,18 @@
     {
      "at": 300000,
      "op": "resolve",
-     "code": "ABCD2345",
+     "code": "BCDE3456",
      "ip": "a",
      "expect": {
       "ok": true,
-      "room": "room-1",
+      "room": "room-2",
       "endsAt": 43200000
      }
     }
    ]
   },
   {
-   "name": "every lookup counts",
+   "name": "every lookup of a code the address has not resolved counts",
    "caps": {
     "lookupPerIp": 2
    },
@@ -1066,7 +1085,7 @@
      "n": 2,
      "step": {
       "op": "resolve",
-      "code": "ABCD2345",
+      "code": "ZZZZZZZZ",
       "ip": "a"
      }
     },
@@ -1088,6 +1107,247 @@
       "ok": true,
       "room": "room-1",
       "endsAt": 43200000
+     }
+    }
+   ]
+  },
+  {
+   "name": "lookups of a code the address resolved count on a budget of their own",
+   "caps": {
+    "lookupPerIp": 2,
+    "hitPerIp": 3
+   },
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "repeat",
+     "n": 3,
+     "step": {
+      "op": "resolve",
+      "code": "ABCD2345",
+      "ip": "a"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "rate-limited",
+      "retryAfter": 300
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ZZZZZZZZ",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "not-found"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "b",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    }
+   ]
+  },
+  {
+   "name": "the cloud: a flood of wrong codes from a hall's address does not stop the boards that follow by their code",
+   "via": "cloud",
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "repeat",
+     "n": 20,
+     "step": {
+      "op": "resolve",
+      "code": "ZZZZZZZZ",
+      "ip": "a"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ZZZZZZZZ",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "rate-limited",
+      "retryAfter": 300
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "body": {
+      "code": "ABCD-2345"
+     },
+     "ip": "a",
+     "expect": {
+      "status": 200,
+      "body": {
+       "ok": true,
+       "matchId": "room-1",
+       "endsAt": 43200000
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*"
+      }
+     }
+    },
+    {
+     "op": "http",
+     "endpoint": "lookup",
+     "contentType": "application/json",
+     "body": {
+      "code": "BCDE3456"
+     },
+     "ip": "a",
+     "expect": {
+      "status": 429,
+      "body": {
+       "ok": false,
+       "code": "OV_DISPLAY_RATE_LIMITED",
+       "message": "Too many requests. Please wait a moment."
+      },
+      "headers": {
+       "Cache-Control": "no-store",
+       "Access-Control-Allow-Origin": "*",
+       "Retry-After": "300"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "a code the address resolved that ended answers ended while its tombstone lasts",
+   "caps": {
+    "failPerIp": 1
+   },
+   "steps": [
+    {
+     "op": "set",
+     "room": "room-1",
+     "code": "ABCD2345",
+     "expect": {
+      "ok": true,
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": true,
+      "room": "room-1",
+      "endsAt": 43200000
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ZZZZZZZZ",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "not-found"
+     }
+    },
+    {
+     "op": "revoke",
+     "room": "room-1",
+     "expect": true
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "ended"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "ended"
+     }
+    },
+    {
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "b",
+     "expect": {
+      "ok": false,
+      "reason": "ended"
+     }
+    },
+    {
+     "at": 600001,
+     "op": "resolve",
+     "code": "ABCD2345",
+     "ip": "a",
+     "expect": {
+      "ok": false,
+      "reason": "not-found"
      }
     }
    ]

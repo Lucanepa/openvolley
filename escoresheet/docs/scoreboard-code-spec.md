@@ -67,8 +67,16 @@ only.
   (`/board#ABCD2345`, also `?code=`, which the page removes from the address).
 - **Not guessable at scale.** Wrong codes are counted per address (IPv4, IPv6
   /64): 20 per 5 minutes on the cloud, 60 on a LAN relay, then `rate-limited`
-  with a wait. Every lookup counts too (600 / 1200 per 5 minutes). With 1,000
-  live codes, one address guesses a code in about 5·10⁻⁶ of its days.
+  with a wait, before any comparison. Every lookup counts too (600 / 1200 per
+  5 minutes). With 1,000 live codes, one address guesses a code in about
+  5·10⁻⁶ of its days.
+- **Not stopped by someone else's wrong codes.** A code the address has
+  resolved before is answered while it is live on a budget of its own (6,000 /
+  12,000 lookups per 5 minutes), never refused for the address's wrong codes:
+  the boards of a hall behind one NAT address keep following and polling. On
+  the cloud a page of another site (an untrusted `Origin`) counts on a bucket
+  of its own per address, so a page or an ad opened on a phone in the hall
+  cannot spend the budget of the hall's boards either.
 
 ## 3. Wire contract (every relay)
 

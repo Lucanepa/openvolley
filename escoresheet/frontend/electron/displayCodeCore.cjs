@@ -33,8 +33,14 @@
  * that followed by it. An ended code answers 'ended' for TOMBSTONE_MS.
  *
  * Wrong codes count per address (failPerIp) and are refused beyond, before
- * any comparison; every lookup counts too (lookupPerIp). No code is ever
- * logged: one line per change, `display.<event> ref=<8 hex of the hash> via=…`.
+ * any comparison; every lookup counts too (lookupPerIp). A code the address
+ * has resolved before, while it is live, is answered on a budget of its own
+ * (hitPerIp) and never refused for the address's wrong codes: a page opened
+ * on a phone behind a hall's NAT cannot stop the hall's boards that follow by
+ * their code with a few wrong ones (audit 2611 SEC-21). It learns nothing it
+ * did not know: only codes that address resolved are compared outside the
+ * budget. No code is ever logged: one line per change,
+ * `display.<event> ref=<8 hex of the hash> via=…`.
  */
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // 32 symbols, no 0/O/1/I
@@ -47,11 +53,14 @@ const BODY_MAX = 1024
 const ROOM_MAX = 128
 
 // total: live codes; failPerIp: wrong codes per address and window (guesses);
-// lookupPerIp: every lookup per address and window (a board polling
-// /api/display/live every 2 s makes 150); setPerOwner: set / revoke per scorer
-// socket and window; tombstones: ended codes remembered
-const CLOUD_CAPS = Object.freeze({ total: 5000, failPerIp: 20, lookupPerIp: 600, setPerOwner: 30, tombstones: 5000 })
-const LAN_CAPS = Object.freeze({ total: 200, failPerIp: 60, lookupPerIp: 1200, setPerOwner: 60, tombstones: 500 })
+// lookupPerIp: every other lookup per address and window (a board polling
+// /api/display/live every 2 s makes 150); hitPerIp: lookups per address and
+// window of the codes it resolved before (every board of a hall behind one
+// NAT address polling); known: the (address, code) pairs remembered for that;
+// setPerOwner: set / revoke per scorer socket and window; tombstones: ended
+// codes remembered
+const CLOUD_CAPS = Object.freeze({ total: 5000, failPerIp: 20, lookupPerIp: 600, hitPerIp: 6000, known: 20000, setPerOwner: 30, tombstones: 5000 })
+const LAN_CAPS = Object.freeze({ total: 200, failPerIp: 60, lookupPerIp: 1200, hitPerIp: 12000, known: 2000, setPerOwner: 60, tombstones: 500 })
 
 // The live-state columns only a socket with the match's PIN gets (the same
 // list as backend/lib/publicColumns.js LIVE_STATE_PRIVATE_COLUMNS):
@@ -178,6 +187,7 @@ function createDisplayCodes(options = {}) {
   const byRoom = new Map() // room -> hash
   const dead = new Map() // hash -> { room, until }
   const rate = new Map() // key -> { count, start, window }
+  const known = new Map() // `${ipKey}\0${hash}` -> true: the address resolved that live code (oldest first)
   let sweeper = null
 
   const codeKey = (code) => sha256(`d:${code}`)
@@ -243,6 +253,10 @@ function createDisplayCodes(options = {}) {
     for (const e of [...byHash.values()]) if (t >= e.endsAt) end(e, 'expired', e.endsAt)
     for (const [k, d] of dead) if (t >= d.until) dead.delete(k)
     for (const [k, e] of rate) if (t - e.start >= e.window) rate.delete(k)
+    for (const k of known.keys()) {
+      const h = k.slice(k.lastIndexOf('\0') + 1)
+      if (!byHash.has(h) && !dead.has(h)) known.delete(k)
+    }
   }
 
   const validRoom = (room) => typeof room === 'string' && room.length > 0 && room.length <= ROOM_MAX
@@ -329,15 +343,33 @@ function createDisplayCodes(options = {}) {
    * { ok, room, endsAt, hash } or { ok:false, reason, retryAfter? }.
    */
   function resolve(code, { ipKey = 'unknown' } = {}) {
+    const c = normalizeCode(code)
+    const hash = c ? codeKey(c) : null
+    // a code this address resolved before: its own budget, never the wrong codes'
+    const knownKey = hash ? `${ipKey}\0${hash}` : null
+    if (knownKey && known.has(knownKey)) {
+      const k = live(hash)
+      if (k) {
+        const wait = limited(`hit:${ipKey}`, caps.hitPerIp)
+        if (wait) return { ok: false, reason: 'rate-limited', retryAfter: wait }
+        return { ok: true, room: k.room, endsAt: k.endsAt, hash }
+      }
+      // ended: said so while its tombstone lasts (the address knew the code)
+      const d = dead.get(hash)
+      if (d && now() < d.until) return { ok: false, reason: 'ended' }
+      known.delete(knownKey)
+    }
     // over the wrong-code budget: refused before any comparison
     const blocked = over(`fail:${ipKey}`, caps.failPerIp)
     if (blocked) return { ok: false, reason: 'rate-limited', retryAfter: blocked }
     const retry = limited(`look:${ipKey}`, caps.lookupPerIp)
     if (retry) return { ok: false, reason: 'rate-limited', retryAfter: retry }
-    const c = normalizeCode(code)
-    const hash = c ? codeKey(c) : null
     const e = hash ? live(hash) : null
-    if (e) return { ok: true, room: e.room, endsAt: e.endsAt, hash }
+    if (e) {
+      if (known.size >= caps.known) known.delete(known.keys().next().value)
+      known.set(knownKey, true)
+      return { ok: true, room: e.room, endsAt: e.endsAt, hash }
+    }
     limited(`fail:${ipKey}`, caps.failPerIp)
     if (!c) return { ok: false, reason: 'bad-code' }
     const d = dead.get(hash)
@@ -384,7 +416,7 @@ function createDisplayCodes(options = {}) {
   function dispose() {
     if (sweeper) timers.clearInterval(sweeper)
     sweeper = null
-    byHash.clear(); byRoom.clear(); dead.clear(); rate.clear()
+    byHash.clear(); byRoom.clear(); dead.clear(); rate.clear(); known.clear()
   }
 
   return {

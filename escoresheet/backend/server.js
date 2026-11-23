@@ -2668,6 +2668,22 @@ const displayCodes = createDisplayCodes({
 })
 const displayCodeFollowers = new Map() // code hash -> Set of client ids that follow its room by it
 
+/**
+ * The address bucket a display lookup counts in (the code table's budgets):
+ * the address, and for a page of another site (an Origin the origin rule
+ * does not trust) a bucket of its own beside it. Any page or ad opened on a
+ * phone behind a hall's NAT could otherwise spend the hall's wrong-code
+ * budget with a few no-cors text/plain POSTs, and every new board of the
+ * hall (the native boards send no Origin, the board page is ours) was refused
+ * for five minutes (audit 2611 SEC-21). Boards on other sites keep the HTTP
+ * feed (docs/scoreboard-feed.md), all of them on that one bucket per address.
+ */
+function displayLookupKey(req) {
+  const ipKey = ipBucketKey(getClientIp(req))
+  const origin = req.headers.origin
+  return origin !== undefined && !isTrustedOrigin(origin, { host: req.headers.host }) ? `${ipKey} cross-site` : ipKey
+}
+
 /** POST /api/display/lookup | live (read-only, CORS *, no credentials). */
 async function handleDisplayRequest(req, res, endpoint) {
   const send = (r) => {
@@ -2684,7 +2700,7 @@ async function handleDisplayRequest(req, res, endpoint) {
   send(displayCodes.http(endpoint, {
     contentType: req.headers['content-type'],
     text,
-    ipKey: ipBucketKey(getClientIp(req)),
+    ipKey: displayLookupKey(req),
     summaryOf: (room) => {
       const entry = activeMatches.get(room)
       return entry?.match ? relaySummaryBundle(entry) : null
@@ -3101,7 +3117,8 @@ const TEXT_TYPE_RE = /^\s*text\/plain\s*(;|$)/i
 function apiWriteRefusal(req, pathname) {
   if (!WRITE_METHODS.has(req.method) || !pathname.startsWith('/api/')) return null
   // Scoreboard codes: read-only lookups with no credentials, for any board
-  // on any site (CORS *); the body check is the core's own
+  // on any site (CORS *); the body check is the core's own. A page of another
+  // site counts its wrong codes on a budget of its own (displayLookupKey).
   if (displayEndpointOf(pathname)) return null
   const origin = req.headers.origin
   if (origin !== undefined && !isTrustedOrigin(origin, { host: req.headers.host })) {

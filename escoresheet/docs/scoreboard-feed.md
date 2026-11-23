@@ -45,9 +45,12 @@ the relay its scorer is connected to.
   send it in a WebSocket frame or a POST body. OpenVolley's own page reads it
   from the fragment (`#ABCD2345`), which browsers never send.
 - Wrong codes count per address: 20 per 5 minutes on the cloud, 60 on a hall
-  relay. Beyond that every lookup from that address is refused with
-  `rate-limited` and a wait in seconds. All lookups count too (600 / 1200 per
-  5 minutes), so poll at most every 2 s.
+  relay. Beyond that every lookup from that address of a code it has not
+  resolved before is refused with `rate-limited` and a wait in seconds. A code
+  your address resolved keeps resolving while it is live (6,000 / 12,000
+  lookups per 5 minutes for those); all other lookups count too (600 / 1200
+  per 5 minutes), so poll at most every 2 s. A web page of another site counts
+  on its own bucket per address.
 
 ## 3. WebSocket (recommended: pushes every change)
 
