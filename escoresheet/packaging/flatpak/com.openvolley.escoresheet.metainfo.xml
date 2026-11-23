@@ -71,6 +71,21 @@
   </screenshots>
 
   <releases>
+    <release version="26.11.5" date="2026-11-23">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.5</url>
+      <description>
+        <ul>
+          <li>Faster on slow tablets; a device check suggests lighter effects (Options)</li>
+          <li>Scoresheet preview no longer stuck on "Loading"</li>
+          <li>A finger marks every button you can tap (off in Options)</li>
+          <li>Time-out: "TO 1 of 2"; Replay without sanctions; last action names a replay</li>
+          <li>Score numbers next to the colon</li>
+          <li>Game PIN shown after Create match, can be sent by email</li>
+          <li>Playing coach: a player who is also C/AC/P/M is one person</li>
+          <li>"Keep as game captain"; copy an earlier set's line-up</li>
+        </ul>
+      </description>
+    </release>
     <release version="26.11.3" date="2026-11-22">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.3</url>
       <description>
