@@ -280,7 +280,12 @@ jobs:
           grep -q '^Authority=Apple Distribution: ' <<<"$sig" || { echo "$sig"; echo "::error::not signed with Apple Distribution"; exit 1; }
           ent=$(codesign -d --entitlements - --xml "$app" 2>/dev/null)
           grep -q 'T2Q99T2KH5\.com\.openvolley\.escoresheet' <<<"$ent" || { echo "$ent"; echo "::error::no application-identifier T2Q99T2KH5.com.openvolley.escoresheet"; exit 1; }
-          ! grep -A1 'get-task-allow' <<<"$ent" | grep -q '<true/>' || { echo "::error::get-task-allow is on (a debug signature)"; exit 1; }
+          # codesign --xml prints the whole plist on one line: read the key itself (a grep
+          # for <true/> after it also caught beta-reports-active, true in every App Store build)
+          printf '%s' "$ent" > "$w/entitlements.plist"
+          gta=$(plutil -extract get-task-allow raw -o - "$w/entitlements.plist" 2>/dev/null || echo absent)
+          [ "$gta" != true ] || { echo "::error::get-task-allow is on (a debug signature)"; exit 1; }
+          echo "get-task-allow: $gta"
           security cms -D -i "$app/embedded.mobileprovision" > "$w/embedded.plist"
           [ "$(plutil -extract UUID raw "$w/embedded.plist")" = "$IOS_PROFILE_UUID" ] || { echo "::error::the .ipa does not embed the OpenVolley App Store profile"; exit 1; }
           echo "IOS_IPA=$ipa" >> "$GITHUB_ENV"
