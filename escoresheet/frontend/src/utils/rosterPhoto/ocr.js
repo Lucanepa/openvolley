@@ -92,6 +92,22 @@ export function ocrDir (base = typeof document !== 'undefined' ? document.baseUR
   return new URL(`${root.replace(/\/?$/, '/')}ocr/${TESSERACT_VERSION}/`, base).href
 }
 
+/**
+ * Whether this page may run WebAssembly at all: an empty module compiled
+ * here (8 bytes). A page whose Content-Security-Policy forbids it, or an
+ * engine without it, fails at once instead of after OCR_START_TIMEOUT_MS
+ * (the worker dies inside, and Tesseract never answers).
+ */
+export function wasmAllowed () {
+  try {
+    // eslint-disable-next-line no-new
+    new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]))
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function simdSupported () {
   try {
     const { simd } = await import('wasm-feature-detect')
@@ -121,6 +137,7 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
   signal?.addEventListener?.('abort', onAbort)
   try {
     if (signal?.aborted) throw cancelled()
+    if (!wasmAllowed()) throw coded('ocr-load', 'This page may not run WebAssembly (its Content-Security-Policy, or the engine)')
     try {
       const create = createWorker || await loadCreateWorker()
       const at = dir || ocrDir()
