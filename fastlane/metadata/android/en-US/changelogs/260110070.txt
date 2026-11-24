@@ -1,0 +1,6 @@
+OpenVolley 26.11.7
+- Restore match: the found match can be tapped again on short screens when signed in
+- Scoresheet: Fullscreen now shows the sheet alone on the whole screen
+- Help ("?"): every way to fill a roster and every button explained
+- New help videos for every section
+- The device check card stays in view on small tablets
