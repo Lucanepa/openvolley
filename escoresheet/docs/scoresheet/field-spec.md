@@ -1,7 +1,9 @@
 # Scoresheet field spec (indoor, Swiss Matchblatt layout)
 
 Status: reference for the `scoresheet_pdf` rewrite (branch `feat/scoresheet-pdf`).
-Date: 2026-10-07.
+Date: 2026-10-07. Updated 2026-11-24: the column beside a name (sections 3, 10 and 13.3) holds
+the licence, not the date of birth, since the owner's decision of 2026-11-19 (db/048). Sections
+14, 16 and 17 are kept as written then.
 
 This file lists every area of the official paper scoresheet and how each one is filled in:
 what gets written, ticked, circled or crossed, when, and in which format. It also covers the
@@ -118,9 +120,14 @@ contains:
 
 1. **Panel header**: a circle with the letter A or B, and the team name (short name allowed).
 2. **14 player rows** with three columns:
-   - "Lizenz-Nr." column, which is **actually filled with the date of birth**. SC p.10 and p.11
-     say explicitly: "It says Licence n. but actually it is DoB". Format `DD.MM.YYYY`.
-     **OV decision:** the column header prints `DoB`.
+   - "Lizenz-Nr." column. On the paper Matchblatt it is **filled with the date of birth** (SC
+     p.10 and p.11: "It says Licence n. but actually it is DoB").
+     **OV decision (owner 2026-11-19, replaces the `DoB` header of 2026-10-07):** in a Swiss
+     match the header prints `Licence` and the cell holds the licence number, or a date of
+     birth (`DD.MM.YYYY`) when the scorer typed one there; a value with a `.` counts as a date.
+     A Global match prints the organiser's choice: `DoB`, `ID` or `Info` (`src/domain/idMode.js`,
+     `idHeadingOf` in `scoresheet_pdf/utils/sheetFormat.ts`). The value is still stored in the
+     person's `dob` field.
    - "Spieler Nr.": the shirt number.
    - "Name": `Lastname, F.` (last name, comma, first initial with a full stop, SC p.10).
 
@@ -129,8 +136,8 @@ contains:
 3. **LIBEROS («L»)**: 2 rows, with the same three columns. **A libero is written twice**: once in
    the general roster and once here (SC p.10).
 4. **Officials (Offizielle)**: 5 rows labelled `C` (coach), `AC1`, `AC2` (assistant coaches),
-   `P` (physio) and `M` (medical doctor). Each row has the DoB to the left of the label and the
-   name to the right.
+   `P` (physio) and `M` (medical doctor). Each row has the same value as the player rows
+   (licence, or a typed date of birth) to the left of the label and the name to the right.
 5. **Signatures ("Unterschrift")**: Kapitän (captain) and Trainer (coach). These are the
    **pre-match** signatures, given right after the coin toss (SC p.14).
 
@@ -537,20 +544,22 @@ Rows and footer:
 
 Rows, from top to bottom:
 
-| Row | Name | Land | "Lizenz-Nr." → **DoB** | Signature |
+| Row | Name | Land | "Lizenz-Nr." → **Licence** | Signature |
 |---|---|---|---|---|
-| 1. (1st referee) | `Lastname, F.` | 3-letter country code, e.g. `CHE` | `DD.MM.YYYY` | yes |
+| 1. (1st referee) | `Lastname, F.` | 3-letter country code, e.g. `CHE` | licence, or `DD.MM.YYYY` | yes |
 | 2. (2nd referee) | same | same | same | yes |
 | Schreiber (scorer) | same | same | same | yes |
 | Schreiber Ass. (assistant scorer) | same | same | same | yes |
 | Linienrichter (line judges) 1. 2. / 3. 4. | names only, two per row | none | none | none |
 | Unterschrift Kapitäne (captains' signatures) | captain A next to `(A)`, captain B next to `(B)` | none | none | post-match |
 
-- **DoB column.** The paper header says "Lizenz-Nr." but the column holds the **date of birth**
-  (SC p.11). **OV decision, owner request:** the header prints **`DoB`**, not "Lic.". The value
-  is the official's `dob` from `match.officials[].dob`, normalised to `DD.MM.YYYY` (section
-  12.3). The column width stays the same as before, so the row lines and the signature column
-  stay aligned.
+- **Licence column.** The paper header says "Lizenz-Nr." and holds the date of birth (SC p.11).
+  **OV decision (owner 2026-11-19, replaces the `DoB` header of 2026-10-07):** the header is
+  the rosters' one (`Licence` in a Swiss match; a Global match: `DoB`, `ID` or `Info`, section
+  3). The value is the official's `match.officials[].dob`: a date is normalised to `DD.MM.YYYY`
+  (section 12.3), anything else (a licence) is printed as it is; an older match's
+  `officials[].licence` is the fallback (`FooterSection.tsx`). The column width stays the same,
+  so the row lines and the signature column stay aligned.
 - **Signing order** (SC p.84, 87):
   1. The captains sign right after the result is written.
   2. When the sheet is complete, the assistant scorer signs, then the scorer.
@@ -646,7 +655,8 @@ are left unchanged.
      `Subject = "OpenVolley eScoresheet: <Home> vs <Away>, <DD.MM.YYYY>, game <no>"`,
      `Creator = "OpenVolley eScoresheet"`.
 2. **Ball**: only the new flat ball A from `brand/ball.svg`, everywhere on the sheet.
-3. **Approval column**: `DoB` instead of `Lic.`, filled from the officials' `dob` (section 10).
+3. **Approval column**: the rosters' heading (`Licence` in a Swiss match), filled from the
+   officials' `dob` field (section 10). From 2026-10-07 to 2026-11-19 it printed `DoB`.
 4. **File name** (owner, 2026-10-13): `game<gameNo>_<league>_<YYYY-MM-DD>.pdf`, e.g.
    `game382208_2L_2026-10-07.pdf`; the league left out when there is none. The manager's
    download of a stored scoresheet has the same name. (Until 2.4.4:

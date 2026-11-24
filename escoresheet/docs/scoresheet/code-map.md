@@ -14,6 +14,12 @@ of 2026-10-07:
 Paths are relative to `escoresheet/frontend/` unless they start with
 `escoresheet/`. Line numbers are those of 0399609b.
 
+> **Superseded in part (2026-11-19, noted 2026-11-24).** This map describes the code of
+> 0399609b. The "DoB" header it targets for APPROVAL and the rosters was replaced by the owner's
+> licence decision (db/048): a Swiss match prints `Licence` and the licence number (or a date of
+> birth the scorer typed); a Global match prints `DoB`, `ID` or `Info`. See `field-spec.md`
+> sections 3 and 10 and `idHeadingOf` in `scoresheet_pdf/utils/sheetFormat.ts`.
+
 ---
 
 ## 0. Short answers for the request
