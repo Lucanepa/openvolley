@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import App from '../App_Scoresheet'
 import { LiberoControlSheet } from '../components/LiberoControlSheet'
 import { Results } from '../components/FooterSection'
@@ -190,6 +190,66 @@ describe('App_Scoresheet on a phone', () => {
       delete (window as any).__OV_POINTHUB_BOARD__
       close.mockRestore()
     }
+  })
+})
+
+// owner 2026-11-24: "the PDF actually go full picture/fullscreen when I click the fullscreen button"
+describe('App_Scoresheet fullscreen', () => {
+  const size = { w: window.innerWidth, h: window.innerHeight }
+  const setViewport = (w: number, h: number) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: w })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: h })
+  }
+  const boxWidth = () => parseFloat(screen.getByTestId('sheet-turn-box').style.width)
+  const SHEET_W = (410 * 96) / 25.4
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterAll(() => {
+    setViewport(size.w, size.h)
+    vi.restoreAllMocks()
+  })
+
+  it('the button shows an icon, asks for the platform\'s fullscreen, hides the bar and fits the sheet to the whole screen; Exit brings the bar back', async () => {
+    setViewport(1280, 800)
+    const request = vi.fn().mockResolvedValue(undefined)
+    ;(document.documentElement as any).requestFullscreen = request
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    const open = screen.getByTestId('sheet-full-view')
+    expect(open.querySelector('svg')).not.toBeNull()
+    expect(open.textContent).toBe('')
+    const before = boxWidth()
+    await act(async () => { fireEvent.click(open) })
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('sheet-toolbar')).toBeNull()
+    expect(container.querySelector('[data-full-view="true"]')).not.toBeNull()
+    // the bar's room is the sheet's now: bigger than the opening fit, and it fits 1280 x 800
+    expect(boxWidth()).toBeGreaterThan(before)
+    expect(boxWidth()).toBeLessThanOrEqual(1280 - 16)
+    expect(parseFloat(screen.getByTestId('sheet-turn-box').style.height)).toBeLessThanOrEqual(800 - 16)
+    await act(async () => { fireEvent.click(screen.getByTestId('sheet-exit-full-view')) })
+    expect(screen.getByTestId('sheet-toolbar')).toBeTruthy()
+    expect(container.querySelector('[data-full-view="true"]')).toBeNull()
+    expect(boxWidth()).toBeCloseTo(before, 0)
+    delete (document.documentElement as any).requestFullscreen
+  })
+
+  it('on a big screen the sheet grows past 100 %', async () => {
+    setViewport(2560, 1440)
+    render(<App matchData={buildMatch()} autoAction="preview" />)
+    expect(boxWidth()).toBeCloseTo(SHEET_W, 0)
+    await act(async () => { fireEvent.click(screen.getByTestId('sheet-full-view')) })
+    expect(boxWidth()).toBeGreaterThan(SHEET_W * 1.2)
+  })
+
+  it('without a fullscreen of its own (the Android app, a frame) the view still fills the window, and Esc ends it', async () => {
+    setViewport(1280, 800)
+    render(<App matchData={buildMatch()} autoAction="preview" />)
+    await act(async () => { fireEvent.click(screen.getByTestId('sheet-full-view')) })
+    expect(screen.queryByTestId('sheet-toolbar')).toBeNull()
+    await act(async () => { fireEvent.keyDown(window, { key: 'Escape' }) })
+    expect(screen.getByTestId('sheet-toolbar')).toBeTruthy()
   })
 })
 

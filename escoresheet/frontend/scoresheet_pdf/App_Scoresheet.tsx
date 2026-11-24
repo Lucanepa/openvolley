@@ -14,6 +14,8 @@ import { useMatchTz } from '../src/ui/useMatchTz.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
 import { onPointHubBoard } from '../src/utils/pointHubBoard';
+import { hideSystemBars, showSystemBars } from '../src/utils/nativeSystemBars';
+import { Maximize, Minimize } from 'lucide-react';
 import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, type SaveOutcome } from './utils/pdfOutput';
 import { usePinchZoom } from './usePinchZoom';
 import { applyTextFont } from './utils/pdfFont';
@@ -134,7 +136,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   // Zoom state for tablet/viewport control
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // Fullscreen (owner 2026-11-24: "the PDF actually go full picture"): the
+  // bar goes, the sheet is fitted to the whole screen (above 100 % on a big
+  // one) and only an exit button stays in the corner. The browser's or the
+  // desktop app's fullscreen, and the Android app's bars hidden, where the
+  // platform allows it; the view fills the window either way.
+  const [fullView, setFullView] = useState(false);
+  const fullViewRef = useRef(false);
+  fullViewRef.current = fullView;
 
   // Viewport tracking for portrait/landscape detection
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366);
@@ -170,43 +179,74 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   };
   usePinchZoom({ scrollRef: scrollContainerRef, boxRef: sheetBoxRef, zoom: zoomLevel, setZoom: setZoomLevel, preview: previewZoom, min: MIN_ZOOM, max: MAX_ZOOM });
 
-  const fitToScreen = () => {
+  const fitToScreen = (full = fullViewRef.current) => {
     if (!containerRef.current) return;
-    // Get viewport dimensions (minus toolbar height ~50px)
-    const viewportWidth = window.innerWidth - 32; // padding
-    const viewportHeight = window.innerHeight - 70 - reservedTop; // toolbar + padding (+ the host page's bar)
+    // Get viewport dimensions (minus toolbar height ~50px); in the full view
+    // only the scroll area's own padding (p-2)
+    const viewportWidth = window.innerWidth - (full ? 16 : 32); // padding
+    const viewportHeight = window.innerHeight - (full ? 16 : 70 + reservedTop); // toolbar + padding (+ the host page's bar)
     // Scoresheet is 410mm x 287mm, convert to px (1mm ≈ 3.78px at 96 DPI);
     // turned, its width runs down the screen
     const scoresheetWidth = (turnedRef.current ? 287 : 410) * 3.78;
     const scoresheetHeight = (turnedRef.current ? 410 : 287) * 3.78;
     const zoomX = viewportWidth / scoresheetWidth;
     const zoomY = viewportHeight / scoresheetHeight;
-    const optimalZoom = Math.min(zoomX, zoomY, 1);
+    const optimalZoom = Math.min(zoomX, zoomY, full ? MAX_ZOOM : 1);
     setZoomLevel(Math.max(MIN_ZOOM, Math.floor(optimalZoom * 100) / 100));
   };
 
-  const toggleFullscreen = async () => {
+  // true once the platform's own fullscreen came on for the full view: when
+  // it ends (Esc, the browser's own exit), the full view ends with it
+  const platformFullRef = useRef(false);
+  const enterFullView = async () => {
+    setFullView(true);
+    void hideSystemBars().catch(() => {});
     try {
-      if (!document.fullscreenElement) {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
         await document.documentElement.requestFullscreen();
-        setIsFullscreen(true);
-      } else {
-        await document.exitFullscreen();
-        setIsFullscreen(false);
       }
     } catch (err) {
-      console.error('Fullscreen toggle failed:', err);
+      console.warn('Fullscreen not allowed here, the view fills the window:', err);
+    }
+  };
+  const exitFullView = async () => {
+    setFullView(false);
+    platformFullRef.current = false;
+    void showSystemBars().catch(() => {});
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
+    } catch (err) {
+      console.warn('Exit fullscreen failed:', err);
     }
   };
 
-  // Listen for fullscreen changes
+  // The platform's fullscreen ended by itself (Esc, the browser's bar): leave the full view too
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      if (document.fullscreenElement) {
+        if (fullViewRef.current) platformFullRef.current = true;
+      } else if (platformFullRef.current) {
+        platformFullRef.current = false;
+        setFullView(false);
+        void showSystemBars().catch(() => {});
+      }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
+
+  // Esc ends the full view (the browser's own Esc ends its fullscreen too;
+  // the Android app and a frame have none)
+  useEffect(() => {
+    if (!fullView) return undefined;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') void exitFullView(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullView]);
+
+  // The Android app's bars come back if the sheet closes while they are hidden
+  useEffect(() => () => { if (fullViewRef.current) void showSystemBars().catch(() => {}); }, []);
 
   // Lock orientation to landscape for scoresheet (not as a view inside another
   // page: the referee tablet keeps its own orientation)
@@ -248,6 +288,23 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // The full view fits the sheet to the whole screen, again when the screen
+  // changes size (the platform's fullscreen arrives a moment later); leaving
+  // it fits the sheet as on opening
+  const fullViewSeen = useRef(false);
+  useEffect(() => {
+    if (generatingRef.current) return;
+    if (fullView) {
+      fullViewSeen.current = true;
+      fitToScreen(true);
+    } else if (fullViewSeen.current) {
+      fullViewSeen.current = false;
+      if (window.innerWidth < 410 * 3.78) fitToScreen(false);
+      else setZoomLevel(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullView, viewportWidth, viewportHeight]);
 
   // Auto-fit to screen on mount if viewport is smaller than scoresheet
   useEffect(() => {
@@ -695,7 +752,19 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         </div>
       )}
 
-      <div className={`flex flex-col justify-center items-center print:hidden w-full bg-gray-100 py-2 ${embedded ? 'shrink-0' : 'mb-2 sticky top-0 z-50'}`}>
+      {fullView && (
+        <button
+          type="button"
+          onClick={() => void exitFullView()}
+          data-testid="sheet-exit-full-view"
+          className="fixed right-3 top-3 z-[100] inline-flex h-11 w-11 items-center justify-center rounded-full bg-stone-900/70 text-white shadow-lg backdrop-blur-sm hover:bg-stone-900/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white print:hidden"
+          aria-label={t('scoresheetPdf.exitFullscreen', 'Exit fullscreen')}
+          title={t('scoresheetPdf.exitFullscreen', 'Exit fullscreen')}
+        >
+          <Minimize size={20} strokeWidth={2.25} aria-hidden="true" />
+        </button>
+      )}
+      {!fullView && <div data-testid="sheet-toolbar" className={`flex flex-col justify-center items-center print:hidden w-full bg-gray-100 py-2 ${embedded ? 'shrink-0' : 'mb-2 sticky top-0 z-50'}`}>
         <div className="flex flex-wrap items-center justify-center gap-2 px-2">
           {/* Zoom controls */}
           <button
@@ -713,7 +782,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             {Math.round(zoomLevel * 100)}%
           </button>
           <button
-            onClick={fitToScreen}
+            onClick={() => fitToScreen()}
             className="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1 rounded text-sm shadow"
             title={t('scoresheetPdf.fitToScreen', 'Fit to Screen')}
           >
@@ -752,13 +821,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             </button>
           )}
 
-          {/* Fullscreen button (a view inside another page: that page's own) */}
+          {/* Fullscreen: the sheet alone on the whole screen (a view-only sheet: its page's own) */}
           {!readOnly && <button
-            onClick={toggleFullscreen}
-            className="bg-blue-500 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm shadow"
-            title={isFullscreen ? t('scoresheetPdf.exitFullscreen', 'Exit Fullscreen') : t('scoresheetPdf.fullscreen', 'Fullscreen')}
+            type="button"
+            onClick={() => void enterFullView()}
+            data-testid="sheet-full-view"
+            className="inline-flex items-center justify-center bg-blue-500 hover:bg-blue-700 text-white px-2.5 py-1 rounded text-sm shadow"
+            aria-label={t('scoresheetPdf.fullscreen', 'Fullscreen')}
+            title={t('scoresheetPdf.fullscreen', 'Fullscreen')}
           >
-            {isFullscreen ? '⤓' : '⤢'}
+            <Maximize size={18} strokeWidth={2.25} aria-hidden="true" />
           </button>}
 
           {/* Save PDF button (one-click, no dialog); not in a view-only sheet */}
@@ -846,7 +918,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             </button>
           </div>
         )}
-      </div>
+      </div>}
       <style>{`
         @media print {
           .scoresheet-container {
@@ -872,9 +944,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           }
         }
       `}</style>
+      {/* Full view: the area covers the window and the sheet sits in its middle
+          (margin auto on the box, so a sheet zoomed past the screen still
+          scrolls from its edge) */}
       <div
         ref={scrollContainerRef}
-        className={`scoresheet-scroll-container ${embedded ? 'min-h-0 flex-1' : 'min-h-screen'} bg-gray-100 p-2 flex justify-center overflow-auto print:bg-white`}
+        data-full-view={fullView ? 'true' : undefined}
+        className={`scoresheet-scroll-container ${fullView ? 'fixed inset-0 z-[90]' : embedded ? 'min-h-0 flex-1' : 'min-h-screen'} bg-gray-100 p-2 flex justify-center overflow-auto print:bg-white`}
         style={{ touchAction: 'pan-x pan-y', justifyContent: boxed ? 'flex-start' : undefined }}
       >
         {/* LCS View */}
@@ -910,8 +986,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           data-testid="sheet-turn-box"
           style={boxed
             ? turned
-              ? { width: SHEET_H_PX * zoomLevel, height: SHEET_W_PX * zoomLevel, overflow: 'hidden', flex: 'none', margin: '0 auto' }
-              : { width: SHEET_W_PX * zoomLevel, height: SHEET_H_PX * zoomLevel, overflow: 'hidden', flex: 'none', margin: '0 auto' }
+              ? { width: SHEET_H_PX * zoomLevel, height: SHEET_W_PX * zoomLevel, overflow: 'hidden', flex: 'none', margin: fullView ? 'auto' : '0 auto' }
+              : { width: SHEET_W_PX * zoomLevel, height: SHEET_H_PX * zoomLevel, overflow: 'hidden', flex: 'none', margin: fullView ? 'auto' : '0 auto' }
             : { display: 'contents' }}
         >
         <div
