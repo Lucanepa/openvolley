@@ -3142,7 +3142,7 @@
       "a_restoreMatch": "Tap “Restore match”. Choose “Restore from cloud backup” (game number and game PIN, then “Search cloud backups”), a backup under “Saved on this device or a drive”, or “Restore from local file” (“Select backup file”). Check the “Restore preview”, then tap “Confirm restore”. In the Global tool, “Restore from the online backup” asks for the backup code, then the referee PIN.",
       "tip_restoreMatch": "Tap here to restore a match from a cloud or local backup.",
       "q_settings": "How do I change the language or settings?",
-      "a_settings": "The language is in the menu (☰) of the header. The other settings are in “Options”: on Home, in Match setup, or in the scoring screen under Match › Options. On Home, “Options” › “Tool” switches between Swiss and Global.",
+      "a_settings": "The language is in the menu (☰) of the header. The other settings are in “Options”: on Home, in Match setup, or on the scoring screen under Match › Options. There you find “Tool” (Swiss or Global, on Home), “Theme” (“Light”, “Dark” for a dim hall, “E-ink” in black and white for bright light), “Show tap hints” (the small finger on the buttons you can tap now) and “Set 2-3 interval duration” (the break between sets 2 and 3; when it is extended to 10 minutes, switch on “10-minute interval after set 2” in Match info instead).",
       "q_backgroundHome": "Why did the app go back to Home?",
       "a_backgroundHome": "After 15 minutes or more in the background (another app, the screen off), the app shows Home. Nothing is closed or deleted: tap “Continue match”. Time with the screen on, such as a long set break, does not count.",
       "q_matchStates": "What do the labels on a match mean?",
@@ -3154,7 +3154,21 @@
       "q_dashboards": "Can this phone or tablet be the referee or bench tablet?",
       "a_dashboards": "Yes. On a phone or tablet, the menu (☰) on Home has “Referee dashboard” and “Bench dashboard”. They open the referee or bench screen on this device; “Back to scorer” in its menu brings you back. Not on a computer and not during a match.",
       "q_gamePin": "What is the game PIN on Home?",
-      "a_gamePin": "For an official match, Home shows its “Game PIN” under “Restore match”. Keep it: you need it to delete the match, to restore it and to continue it on another device."
+      "a_gamePin": "For an official match, Home shows its “Game PIN” under “Restore match”. Keep it: you need it to delete the match, to restore it and to continue it on another device.",
+      "q_login": "What does signing in give me?",
+      "a_login": "Tap “Login” on Home. With an account the app loads the Swiss league games (“Load match from schedule”), your saved teams, your club's licence lists (“Add from club”) and the referee directory, and your official matches are saved in the cloud while you score. Without an account, test, easy and new matches work too; they stay on this device.",
+      "q_support": "Where do I get help or report a problem?",
+      "a_support": "The “?” button opens the help of the screen you are on, with a short video and “Show me”. “Support & feedback” on Home has the help pages and a form for a question or a problem: leave “Include diagnostics” on, it adds what was done in the app in the last two hours and its errors (never passwords, PINs or typed text), so we can see what happened.",
+      "q_scoreboardTool": "What is “Scoreboard” on Home?",
+      "a_scoreboardTool": "A simple scoreboard for any game, without a scoresheet: “Point for Home” and “Point for Away” add a point, “One point off” takes one back, “Swap sides”, “Next set” and “New game”. Nothing is saved as a match. To show a scored match on a TV, use Match › “Show on a scoreboard” on the scoring screen.",
+      "q_liveScreen": "What is the live screen in Options?",
+      "a_liveScreen": "“Start a live screen” shows the score of every court of your event on TVs or a beamer, for any match. Start it on one scorer device and type its “Live screen code” on the other scorer devices (“Join”). Only the score goes online (team names, points, sets). On a smart TV, open its web browser at the address shown.",
+      "q_effects": "The app is slow on my tablet: what can I do?",
+      "a_effects": "Options › “Effects and speed”: “Check this device” measures how fast it is (about a second, nothing leaves the device) and recommends lighter settings. You can also switch off “Blur behind dialogs” and “Animations”, turn off “Seconds on the clock”, and turn off “Sharp PDF” for a faster scoresheet preview. Home offers the check once; run it again any time from Options on Home.",
+      "q_maintenance": "What do the buttons at the end of Options do?",
+      "a_maintenance": "“Download backup now” saves a backup file of this device's matches. “Show activity log” lists what the app did, and “Export diagnostics (.jsonl)” saves it as a file for support. “Check for updates” looks for a new app version. “Clear cache” deletes cached files and reloads the app; your settings stay. “Clear all (includes settings)” also resets your settings: use it only when support asks you to.",
+      "q_tapHints": "What is the small finger on the buttons?",
+      "a_tapHints": "It marks the buttons you can tap right now (scoring screen, Match setup, coin toss). If you find it too busy, switch off “Show tap hints” in Options."
     },
     "matchSetup": {
       "q_matchInfo": "How do I fill in match information?",
@@ -3164,7 +3178,7 @@
       "a_teamColors": "The team names and short names are in the match info. On each team's card, tap the shirt next to “Select colour” to pick the shirt colour. The app warns you when the two colours are close.",
       "tip_teamColors": "Tap the shirt to pick this team's shirt colour.",
       "q_addPlayers": "How do I add players to a team roster?",
-      "a_addPlayers": "Tap “Edit roster” on the team's card. In the “Add new player” row, enter the number (1-99), last name, first name and date of birth, then tap “Add”. A team needs at least 6 players, not counting the liberos, and at most 14.",
+      "a_addPlayers": "Tap “Edit roster” on the team's card. In the “Add new player” row, enter the number (1-99), last name, first name and the licence number (“Licence/DoB”: for someone without a licence, the date of birth), then tap “Add”. The number can wait until later. A team needs at least 6 players, not counting the liberos, and at most 14.",
       "tip_addPlayers": "Enter a player here and tap “Add”. A team needs at least 6 players, not counting the liberos.",
       "q_importPdf": "How do I import a roster from PDF?",
       "a_importPdf": "In “Edit roster”, keep “Local” selected and tap “Upload PDF”. Choose the team's roster PDF or the Einsatzliste, then tap “Import PDF”. It replaces the players and the bench officials. With more than 14 players, tick who plays. Then check the dates of birth, enter missing shirt numbers, and set the captain and the liberos. A date of birth on 1 January is often a placeholder (01.01.1900 when the date is not known) or an import error: the roster lists these people above the players. Correct the dates you know. The coin toss does not ask about them.",
@@ -3179,7 +3193,7 @@
       "a_benchOfficials": "In “Edit roster”, tap “+ Add bench official”. Enter the coach, the assistant coaches, the physiotherapist and the doctor. A coach is needed, and a team has at most 5 bench officials.",
       "tip_benchOfficials": "Add the coach and the other bench officials here.",
       "q_proceed": "How do I proceed to the coin toss?",
-      "a_proceed": "When every card is complete, tap “Coin toss” at the bottom. If it is greyed out, the warning next to it shows what is missing.",
+      "a_proceed": "When every card is complete, tap “Coin toss” at the bottom. If it is greyed out, the yellow “!” next to it shows what is missing, for example players without a shirt number: tap it (“Click to see what's missing”) for the list.",
       "tip_proceed": "Tap here to go to the coin toss. Every required field must be complete first.",
       "q_loadSchedule": "Can I load the game from the schedule?",
       "a_loadSchedule": "Yes. On the “Match info” card, tap “Load match from schedule”. Choose the gender and the league, then the game. The app fills in the game number, the teams, the date, the time, the hall and the referees. It needs an internet connection. Then set the team colours and the short names.",
@@ -3200,7 +3214,21 @@
       "q_clubPlayers": "What do the green and gray shields mean?",
       "a_clubPlayers": "For a team of your club, each roster and bench row shows a shield (in landscape). Green: the person is in the club's licence lists; a dot means the club knows a first name or date of birth the row lacks: tap to fill it in. Gray: typed by hand: tap to link the row to someone in the club's lists. “Add from club” adds players from the lists.",
       "q_rosterSignatures": "Can the coach and the captain sign in Match setup?",
-      "a_rosterSignatures": "Yes, if you like: “Edit roster” › “Signatures”. If that team's players or bench change after signing, its signatures are removed and they sign again."
+      "a_rosterSignatures": "Yes, if you like: “Edit roster” › “Signatures”. If that team's players or bench change after signing, its signatures are removed and they sign again.",
+      "q_back": "How do I get back to Home from Match setup?",
+      "a_back": "Tap “← Back” at the top, next to “Scoresheet” and “Options”. The match stays on Home: “Continue match” opens it again.",
+      "q_gamePinNotice": "What is the game PIN dialog after “Create match”?",
+      "a_gamePinNotice": "For a new official match the app shows its game PIN. Write it down: you need it to restore the match, to continue it on another device and to reopen it. “Send to my email” mails it to your account's confirmed address; for another address, type it and tap “Open in mail app” (nothing goes through the server then).",
+      "q_scorerLicence": "Why can't I create the match?",
+      "a_scorerLicence": "The scorer's licence number is needed (for someone without a licence, the date of birth). Until it is filled in, “Create match” stays greyed and the warning beside it says so, with anything else that is missing (“Click to see what's missing”).",
+      "q_showRosters": "Where do I see both rosters at once?",
+      "a_showRosters": "“Show rosters” under the team cards lists both rosters with numbers, licences, liberos, captain and bench officials; “Hide rosters” closes them. During the match: Match › “Show rosters” (on a phone “Rosters”).",
+      "q_rosterWays": "How can I get a team's roster in?",
+      "a_rosterWays": "In “Edit roster” on the team's card: 1. type the players in “Add new player”; 2. “Upload PDF” (Local): the team's roster PDF or the Einsatzliste; 3. “Remote”: the coach uploads the PDF on roster.openvolley.app with your upload PIN (or the team sends it from the manager page), and you “Accept” it; 4. “Choose players”: tick who plays from the players the app knows for this team; 5. “Load saved team” (signed in): a team saved in your account; 6. “Add from club” (signed in, your club): from the club's licence lists; 7. in a test match, “Load TEST roster”. In Global mode the rosters come from Excel (“Import rosters”). A restored match brings its rosters with it. A saved team loads its players and bench officials in one tap: check the numbers for this game. The test players of “Load TEST roster” disappear when you load a game from the schedule or type another team name; the players you added yourself stay.",
+      "q_choosePlayers": "What is “Choose players”?",
+      "a_choosePlayers": "It lists every player the app knows for this team (its saved team and the players of an imported Einsatzliste). Tick who plays this match (“All” ticks everyone), then tap “Use n players”: they go on the roster with their numbers. Add or change numbers in the roster afterwards.",
+      "q_numbers": "Can I save a roster without shirt numbers?",
+      "a_numbers": "Yes. Players without a number are kept: their empty # is highlighted and a note says how many still need one. Add the numbers when you know them (an Einsatzliste never has any). The coin toss waits until every player of both teams has a number."
     },
     "coinToss": {
       "q_record": "How do I record the coin toss?",
@@ -3222,7 +3250,11 @@
       "q_gameCaptain": "What if the team captain is not on court?",
       "a_gameCaptain": "When the team captain is not among the six, the line-up dialog shows “Game captain” (optional): choose the player who acts as captain. If you leave “None”, the app asks before the set starts. During the set it asks again only when the game captain leaves the court. This follows “Manage captain on court” in the options (on by default).",
       "q_mistake": "I recorded the coin toss wrong?",
-      "a_mistake": "Before “Confirm coin toss result”, just switch again. After it, the page is locked: change Team A or the first serve in Match › “Corrections”. Before the first rally of set 1, a new Team A there redoes the coin toss (Team A on the left)."
+      "a_mistake": "Before “Confirm coin toss result”, just switch again. After it, the page is locked: change Team A or the first serve in Match › “Corrections”. Before the first rally of set 1, a new Team A there redoes the coin toss (Team A on the left).",
+      "q_rosterDialog": "Can I still change a roster at the coin toss?",
+      "a_rosterDialog": "Yes: “Show roster” under each team opens it. “+ Add player”, delete a player, add or delete a bench official.",
+      "q_connectionChecks": "What are the “Connection checks” after the coin toss?",
+      "a_connectionChecks": "Before the first set the app checks that the server, the backups and the connected tablets answer. A warning lists what does not; “Proceed anyway” starts the match: scoring works offline and the changes are sent later."
     },
     "scoreboard": {
       "q_startRally": "How do I start the first rally?",
@@ -3294,7 +3326,11 @@
       "q_finalMail": "Who gets the final scoresheet by e-mail?",
       "a_finalMail": "Where the league sends final scoresheets, the PDF is mailed a few minutes after the approval to the scorer, the referees (their accounts, or the e-mail typed for them in the match setup) and each team's contact. Type a team's contact in the match setup (“Team contact email (optional)”) or later in Match › “Edit match info” › “Team contacts”.",
       "q_remarksSignature": "A referee coach must sign too?",
-      "a_remarksSignature": "Tap “Add a signature to the remarks”, type the role and the name, then sign. It is printed in the remarks."
+      "a_remarksSignature": "Tap “Add a signature to the remarks”, type the role and the name, then sign. It is printed in the remarks.",
+      "q_technicalRemarks": "What is a technical remark?",
+      "a_technicalRemarks": "At match end, “Add technical remark” records something for the administration (a device problem, a correction) that is not printed on the scoresheet: it is kept with the match and sent with the final scoresheet, and the signatures stay. “Edit remarks” changes the remarks printed on the sheet.",
+      "q_downloadLogs": "What is “Download logs”?",
+      "a_downloadLogs": "It saves the app's log of this match as a file, for support when something went wrong."
     },
     "manualAdjustments": {
       "q_editScores": "How do I correct a set score?",
@@ -3365,9 +3401,13 @@
       "q_serveRotation": "How do I see who serves and the rotation?",
       "a_serveRotation": "The “SERVE” box in the top corner of the serving team's side shows the number of the server; the ball is next to that player on court. The court shows each team's positions I to VI. The app rotates a team when it wins the service back. A wrong rotation is fixed in Match › Corrections with “Fix the line-up”.",
       "q_scoreDisplay": "What does the score display show?",
-      "a_scoreDisplay": "The points of the set, the sets won and the serving team. Each team's side shows its time-outs (TO) and substitutions (SUB) in this set. Match › Show sanctions and results lists every set.",
+      "a_scoreDisplay": "The points of the set, the sets won and the serving team. Each team's side shows its time-outs and substitutions in this set (“Time-out”, “Substitution”): tap them to record one. Match › Show sanctions and results lists every set. For more room, “Hide header” (the arrow under the header) and “Hide toolbar” fold them away; the arrow brings them back.",
       "q_phone": "Can I score on a phone?",
-      "a_phone": "Yes. In the options, set “Screen mode” to “Auto” or “Smartphone”, and hold the phone upright. The score, the court, the time-outs, the substitutions and the point buttons fit on one screen. On a tablet, scoring is in landscape: held upright, it asks you to turn it."
+      "a_phone": "Yes. In the options, set “Screen mode” to “Auto” or “Smartphone”, and hold the phone upright. The score, the court, the time-outs, the substitutions and the point buttons fit on one screen. On a tablet, scoring is in landscape: held upright, it asks you to turn it.",
+      "q_matchMenu": "What is in the Match menu?",
+      "a_matchMenu": "“Match” on the scoring screen (on a phone ☰): “Show rosters”, “Show sanctions and results”, “History” (every rally and action), “Set preview” (the set as it prints), “Open remarks recording”, “Show match setup”, “Corrections”, “Go back”, “Options”, “Pair a phone (keyboard)” (type on your phone into this device's text fields), “Show on a scoreboard” (a TV, tablet or LED board follows the score with a code) and “Stop the match” (default, incomplete team or impossibility, with remarks).",
+      "q_replay": "How do I record a replayed rally?",
+      "a_replay": "During a rally, “Replay rally” (on a phone “Replay”) replays it without a point. After a point, “Decision change” › “Replay the rally” takes it back; the dialog shows the score before and after each choice."
     },
     "subsTimeouts": {
       "q_subLimit": "How many substitutions does a team have?",
@@ -3385,7 +3425,9 @@
       "q_requestWarning": "Why does a warning open when I record a time-out or a substitution?",
       "a_requestWarning": "The app checks the rules for requests: a third time-out, a seventh substitution, a second substitution request of the same team in one interruption, a player who may not come in, or a request after the team's delay warning. The warning says why and offers what to record, such as “Record as improper request” or a delay sanction. “Continue anyway” records nothing more when the referee allowed it (not offered for a third time-out or a seventh substitution).",
       "q_gameCaptain": "The team captain went off court: who is game captain?",
-      "a_gameCaptain": "The app asks “Game captain”: tap the player on court who acts as captain (the last game captain is offered first, marked “Last”). Until one is chosen, a “Game captain” button shows on that team's side. The game captain stays until they leave the court, the team captain comes back or the set ends. This needs “Manage captain on court” in the options (on by default)."
+      "a_gameCaptain": "The app asks “Game captain”: tap the player on court who acts as captain (the last game captain is offered first, marked “Last”). Until one is chosen, a “Game captain” button shows on that team's side. The game captain stays until they leave the court, the team captain comes back or the set ends. This needs “Manage captain on court” in the options (on by default).",
+      "q_subDialog": "How does the substitution dialog work?",
+      "a_subDialog": "Tap the team's “Substitution” box (on a phone “SUB”). Tap who comes in, then who goes out: only legal players are shown (a substituted starter only for his substitute, never the libero). The pair goes into the list and the dialog asks for the next one; “Confirm” records them all, “Cancel” none. “Recorded” lists this set's substitutions; at 6 of 6 only “Injury / exceptional” is left. During a rally the box shows only that list."
     },
     "sanctions": {
       "q_teamSanctions": "How do I record an improper request or a delay?",
@@ -3539,7 +3581,9 @@
       "q_refused": "It says “Not synced” with a reason?",
       "a_refused": "The server refused this match, for example: the game is already scored by another account, your account waits for approval, or it is not a home game of your club. The match stays safe on this device. The notice tells you what to do.",
       "q_testMatch": "Does a test match go online?",
-      "a_testMatch": "A test match is never saved to the cloud: no cloud backup, no online livescore. Its score does reach referee and bench tablets over the internet: on the tablet, tap “Switch to test matches”."
+      "a_testMatch": "A test match is never saved to the cloud: no cloud backup, no online livescore. Its score does reach referee and bench tablets over the internet: on the tablet, tap “Switch to test matches”.",
+      "q_onlineSwitch": "Why is the Online switch grey?",
+      "a_onlineSwitch": "“Online” is on, but nothing answers: no network, or the server cannot be reached. The changes wait on this device (the status beside it says “Offline (n waiting)”) and are sent once the connection is back; the switch turns green again by itself. Switched off, it is offline mode: the app does not try at all."
     },
     "installUpdates": {
       "q_appOrBrowser": "Browser or app?",

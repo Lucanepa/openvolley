@@ -1834,7 +1834,7 @@
     "clearApplicationCache": "Anwendungs-Cache leeren",
     "clearApplicationCacheInfo": "Leert Caches und optional localStorage. Verwenden wenn App sich unerwartet verhält.",
     "clearCache": "Cache leeren",
-    "clearAll": "Alles läschen (inkl. Einstellungen)",
+    "clearAll": "Alles löschen (inkl. Einstellungen)",
     "confirmClearCache": "Cache-Löschen bestätigen",
     "clearAllWarning": "Alle gecachten Daten UND deine Einstellungen löschen? Die Seite wird neu geladen.",
     "clearCacheWarning": "Alle gecachte Dateien löschen? Deine Einstellungen bleiben erhalten. Die Seite wird neu geladen.",
@@ -2865,7 +2865,7 @@
       "a_restoreMatch": "Tippe auf «Spiel wiederherstellen». Wähle «Aus Cloud-Backup wiederherstellen» (Spielnummer und Spiel-PIN, dann «Cloud-Backups suchen»), ein Backup unter «Auf diesem Gerät oder einem Laufwerk gesichert» oder «Aus lokaler Datei wiederherstellen» («Backup-Datei auswählen»). Prüfe die «Wiederherstellungs-Vorschau» und tippe auf «Wiederherstellen». Im Werkzeug Global fragt «Aus der Online-Sicherung wiederherstellen» nach dem Sicherungscode, dann nach der Schiedsrichter-PIN.",
       "tip_restoreMatch": "Tippe hier, um ein Spiel aus einem Cloud- oder lokalen Backup wiederherzustellen.",
       "q_settings": "Wie ändere ich die Sprache oder Einstellungen?",
-      "a_settings": "Die Sprache findest du im Menü (☰) in der Kopfzeile. Die übrigen Einstellungen sind in den «Optionen»: auf der Startseite, in der Spieleinrichtung oder auf dem Erfassungsbildschirm unter Spiel › Optionen. Auf der Startseite wechselt «Optionen» › «Werkzeug» zwischen Schweiz und Global.",
+      "a_settings": "Die Sprache ist im Menü (☰) der Kopfzeile. Die anderen Einstellungen sind in „Optionen“: auf Home, in der Spieleinrichtung oder im Schreibbildschirm unter Spiel › Optionen. Dort findest du „Werkzeug“ (Swiss oder Global, auf Home), „Farbschema“ („Hell“, „Dunkel“ für eine dunkle Halle, „E-Ink“ schwarz-weiss für helles Licht), „Tipp-Hinweise anzeigen“ (der kleine Finger auf den Knöpfen, die du gerade antippen kannst) und „Pause zwischen Satz 2-3“ (die Pause zwischen Satz 2 und 3; wird sie auf 10 Minuten verlängert, schalte stattdessen „10-Minuten-Pause nach Satz 2“ in den Spielinfos ein).",
       "q_backgroundHome": "Warum ist die App wieder auf der Startseite?",
       "a_backgroundHome": "Nach 15 Minuten oder mehr im Hintergrund (andere App, Bildschirm aus) zeigt die App die Startseite. Nichts wird geschlossen oder gelöscht: Tippe auf «Spiel fortsetzen». Zeit mit eingeschaltetem Bildschirm, etwa eine lange Satzpause, zählt nicht.",
       "q_matchStates": "Was bedeuten die Hinweise bei einem Spiel?",
@@ -2877,7 +2877,21 @@
       "q_dashboards": "Kann dieses Handy oder Tablet das Schiedsrichter- oder Bank-Tablet sein?",
       "a_dashboards": "Ja. Auf einem Handy oder Tablet hat das Menü (☰) auf der Startseite «Schiedsrichter-Dashboard» und «Bank-Dashboard». Sie öffnen die Ansicht des Schiedsrichters oder der Bank auf diesem Gerät; «Zurück zum Schreiber» in deren Menü bringt dich zurück. Nicht auf einem Computer und nicht während eines Spiels.",
       "q_gamePin": "Was ist die Spiel-PIN auf der Startseite?",
-      "a_gamePin": "Bei einem offiziellen Spiel zeigt die Startseite unter «Spiel wiederherstellen» seine «Spiel-PIN». Bewahre sie auf: Du brauchst sie, um das Spiel zu löschen, es wiederherzustellen und es auf einem anderen Gerät weiterzuführen."
+      "a_gamePin": "Bei einem offiziellen Spiel zeigt die Startseite unter «Spiel wiederherstellen» seine «Spiel-PIN». Bewahre sie auf: Du brauchst sie, um das Spiel zu löschen, es wiederherzustellen und es auf einem anderen Gerät weiterzuführen.",
+      "q_login": "Was bringt mir die Anmeldung?",
+      "a_login": "Tippe auf Home auf „Anmeldung“. Mit einem Konto lädt die App die Spiele der Swiss-Volley-Ligen („Spiel aus dem Spielplan laden“), deine gespeicherten Teams, die Lizenzlisten deines Vereins („Aus dem Verein hinzufügen“) und das Schiedsrichterverzeichnis, und deine offiziellen Spiele werden beim Schreiben in der Cloud gesichert. Ohne Konto gehen Test-, Easy- und neue Spiele auch; sie bleiben auf diesem Gerät.",
+      "q_support": "Wo finde ich Hilfe oder melde ein Problem?",
+      "a_support": "Der „?“-Knopf öffnet die Hilfe des Bildschirms, auf dem du bist, mit einem kurzen Video und „Zeig mir“. „Support & Feedback“ auf Home hat die Hilfeseiten und ein Formular für eine Frage oder ein Problem: Lass „Diagnosedaten mitsenden“ an, es schickt mit, was in den letzten zwei Stunden in der App passiert ist und ihre Fehler (nie Passwörter, PINs oder Eingaben), damit wir sehen, was los war.",
+      "q_scoreboardTool": "Was ist die „Anzeigetafel“ auf Home?",
+      "a_scoreboardTool": "Eine einfache Anzeigetafel für jedes Spiel, ohne Spielbericht: „Punkt für …“ zählt einen Punkt, „Ein Punkt weniger für …“ nimmt einen zurück, dazu „Seiten wechseln“, „Nächster Satz“ und „Neues Spiel“. Nichts wird als Spiel gespeichert. Um ein geschriebenes Spiel auf einem TV zu zeigen, nimm im Schreibbildschirm Spiel › „Auf einer Anzeigetafel zeigen“.",
+      "q_liveScreen": "Was ist der Live-Bildschirm in den Optionen?",
+      "a_liveScreen": "„Live-Bildschirm starten“ zeigt den Spielstand aller Felder deines Anlasses auf TVs oder einem Beamer, für jedes Spiel. Starte ihn auf einem Schreibgerät und gib seinen „Live-Bildschirm-Code“ auf den anderen Schreibgeräten ein („Beitreten“). Nur der Spielstand geht online (Teamnamen, Punkte, Sätze). Auf einem Smart-TV öffnest du den Webbrowser mit der angezeigten Adresse.",
+      "q_effects": "Die App ist auf meinem Tablet langsam: Was kann ich tun?",
+      "a_effects": "Optionen › „Effekte und Tempo“: „Dieses Gerät testen“ misst, wie schnell es ist (etwa eine Sekunde, nichts verlässt das Gerät), und empfiehlt leichtere Einstellungen. Du kannst auch „Unschärfe hinter Dialogen“ und „Animationen“ ausschalten, „Sekunden auf der Uhr“ ausschalten und „Scharfes PDF“ ausschalten, damit die Spielberichtsvorschau schneller kommt. Home bietet den Test einmal an; du kannst ihn jederzeit in den Optionen auf Home wiederholen.",
+      "q_maintenance": "Was machen die Knöpfe am Ende der Optionen?",
+      "a_maintenance": "„Backup jetzt herunterladen“ speichert eine Backup-Datei der Spiele dieses Geräts. „Aktivitätsprotokoll anzeigen“ listet, was die App gemacht hat, und „Diagnose exportieren (.jsonl)“ speichert das als Datei für den Support. „Nach Updates suchen“ sucht eine neue App-Version. „Cache leeren“ löscht zwischengespeicherte Dateien und lädt die App neu; deine Einstellungen bleiben. „Alles löschen (inkl. Einstellungen)“ setzt auch deine Einstellungen zurück: nur, wenn der Support dich darum bittet.",
+      "q_tapHints": "Was ist der kleine Finger auf den Knöpfen?",
+      "a_tapHints": "Er zeigt die Knöpfe, die du gerade antippen kannst (Schreibbildschirm, Spieleinrichtung, Auslosung). Wenn er dich stört, schalte „Tipp-Hinweise anzeigen“ in den Optionen aus."
     },
     "matchSetup": {
       "q_matchInfo": "Wie fülle ich die Spielinformationen aus?",
@@ -2887,7 +2901,7 @@
       "a_teamColors": "Teamnamen und Kurznamen stehen in der Spielinfo. Tippe auf der Karte jedes Teams auf das Trikot neben «Farbe wählen», um die Trikotfarbe festzulegen. Die App warnt, wenn die beiden Farben sich ähneln.",
       "tip_teamColors": "Tippe auf das Trikot, um die Trikotfarbe dieses Teams festzulegen.",
       "q_addPlayers": "Wie füge ich Spieler zum Teamkader hinzu?",
-      "a_addPlayers": "Tippe auf der Karte des Teams auf «Kader bearbeiten». Gib in der Zeile «Spieler hinzufügen» Nummer (1-99), Nachname, Vorname und Geburtsdatum ein und tippe auf «Hinzufügen». Ein Team braucht mindestens 6 Spieler ohne die Liberos und höchstens 14.",
+      "a_addPlayers": "Tippe auf der Teamkarte auf „Kader bearbeiten“. In der Zeile „Spieler hinzufügen“ gibst du Nummer (1-99), Nachname, Vorname und Lizenznummer ein („Lizenz/Geb.“: bei jemandem ohne Lizenz das Geburtsdatum), dann tippst du auf „Hinzufügen“. Die Nummer kann warten. Ein Team braucht mindestens 6 Spieler ohne die Liberos und höchstens 14.",
       "tip_addPlayers": "Gib hier einen Spieler ein und tippe auf «Hinzufügen». Ein Team braucht mindestens 6 Spieler ohne die Liberos.",
       "q_importPdf": "Wie importiere ich einen Kader aus einer PDF?",
       "a_importPdf": "Lass in «Kader bearbeiten» «Lokal» ausgewählt und tippe auf «PDF hochladen». Wähle das Kader-PDF des Teams oder die Einsatzliste und tippe auf «PDF importieren». Es ersetzt die Spieler und die Bankoffiziellen. Bei mehr als 14 Spielern kreuzt du an, wer spielt. Prüfe dann die Geburtsdaten, ergänze fehlende Trikotnummern und lege Captain und Liberos fest. Ein Geburtsdatum am 1. Januar ist oft ein Platzhalter (01.01.1900, wenn das Datum nicht bekannt ist) oder ein Importfehler: Der Kader listet diese Personen über den Spielern auf. Korrigiere die Daten, die du kennst. Die Auslosung fragt nicht danach.",
@@ -2902,7 +2916,7 @@
       "a_benchOfficials": "Tippe in «Kader bearbeiten» auf «+ Offiziellen hinzufügen». Trage Coach, Assistenz-Coaches, Physiotherapeut und Arzt ein. Ein Coach ist nötig, und ein Team hat höchstens 5 Bankoffizielle.",
       "tip_benchOfficials": "Trage hier den Coach und die anderen Bankoffiziellen ein.",
       "q_proceed": "Wie gelange ich zum Münzwurf?",
-      "a_proceed": "Wenn alle Karten vollständig sind, tippe unten auf «Auslosung». Ist die Schaltfläche grau, zeigt die Warnung daneben, was fehlt.",
+      "a_proceed": "Wenn alle Karten vollständig sind, tippe unten auf „Auslosung“. Ist der Knopf grau, zeigt das gelbe „!“ daneben, was fehlt, zum Beispiel Spieler ohne Trikotnummer: Tippe darauf („Klicken, um fehlende Angaben zu sehen“) für die Liste.",
       "tip_proceed": "Tippe hier, um zur Auslosung zu gehen. Zuerst müssen alle Pflichtangaben vollständig sein.",
       "q_loadSchedule": "Kann ich das Spiel aus dem Spielplan laden?",
       "a_loadSchedule": "Ja. Tippe auf der Karte «Spielinfo» auf «Spiel aus dem Spielplan laden». Wähle Geschlecht und Liga, dann das Spiel. Die App trägt Spielnummer, Teams, Datum, Zeit, Halle und Schiedsrichter ein. Dafür braucht es eine Internetverbindung. Lege danach die Teamfarben und die Kurznamen fest.",
@@ -2923,7 +2937,21 @@
       "q_clubPlayers": "Was bedeuten die grünen und grauen Schilder?",
       "a_clubPlayers": "Bei einem Team deines Vereins zeigt jede Zeile des Kaders und der Bank ein Schild (im Querformat). Grün: Die Person ist in den Lizenzlisten des Vereins; ein Punkt heisst, der Verein kennt einen Vornamen oder ein Geburtsdatum, das in der Zeile fehlt: Tippe, um es einzutragen. Grau: von Hand eingetippt: Tippe, um die Zeile mit jemandem aus den Listen des Vereins zu verknüpfen. «Aus dem Verein hinzufügen» fügt Spieler aus den Listen hinzu.",
       "q_rosterSignatures": "Können Coach und Captain in der Spieleinrichtung unterschreiben?",
-      "a_rosterSignatures": "Ja, wenn du willst: «Kader bearbeiten» › «Unterschriften». Ändern sich nach dem Unterschreiben die Spieler oder die Bank dieses Teams, werden seine Unterschriften entfernt, und sie unterschreiben neu."
+      "a_rosterSignatures": "Ja, wenn du willst: «Kader bearbeiten» › «Unterschriften». Ändern sich nach dem Unterschreiben die Spieler oder die Bank dieses Teams, werden seine Unterschriften entfernt, und sie unterschreiben neu.",
+      "q_back": "Wie komme ich aus der Spieleinrichtung zurück nach Home?",
+      "a_back": "Tippe oben auf „← Zurück“, neben „Scoresheet“ und „Optionen“. Das Spiel bleibt auf Home: „Spiel fortsetzen“ öffnet es wieder.",
+      "q_gamePinNotice": "Was ist das Fenster mit der Spiel-PIN nach „Spiel erstellen“?",
+      "a_gamePinNotice": "Für ein neues offizielles Spiel zeigt die App seine Spiel-PIN. Schreib sie auf: Du brauchst sie, um das Spiel wiederherzustellen, auf einem anderen Gerät weiterzuschreiben und wieder zu öffnen. „An meine E-Mail senden“ schickt sie an die bestätigte Adresse deines Kontos; für eine andere Adresse gibst du sie ein und tippst auf „In der Mail-App öffnen“ (dann geht nichts über den Server).",
+      "q_scorerLicence": "Warum kann ich das Spiel nicht erstellen?",
+      "a_scorerLicence": "Die Lizenznummer des Schreibers fehlt (bei jemandem ohne Lizenz das Geburtsdatum). Bis sie eingetragen ist, bleibt „Spiel erstellen“ grau, und die Warnung daneben sagt es, zusammen mit allem anderen, was fehlt („Klicken, um fehlende Angaben zu sehen“).",
+      "q_showRosters": "Wo sehe ich beide Kader auf einmal?",
+      "a_showRosters": "„Kader anzeigen“ unter den Teamkarten listet beide Kader mit Nummern, Lizenzen, Liberos, Captain und Bankoffiziellen; „Kader ausblenden“ schliesst sie. Während des Spiels: Spiel › „Kader anzeigen“ (auf dem Handy „Kader“).",
+      "q_rosterWays": "Wie bekomme ich den Kader eines Teams hinein?",
+      "a_rosterWays": "In „Kader bearbeiten“ auf der Teamkarte: 1. die Spieler unter „Spieler hinzufügen“ eintippen; 2. „PDF hochladen“ (Lokal): das Kader-PDF des Teams oder die Einsatzliste; 3. „Remote“: Der Coach lädt das PDF mit deiner Upload-PIN auf roster.openvolley.app hoch (oder das Team schickt es aus der Managerseite), und du tippst auf „Akzeptieren“; 4. „Spieler wählen“: aus den Spielern, die die App für dieses Team kennt, ankreuzen, wer spielt; 5. „Gespeichertes Team laden“ (angemeldet): ein Team aus deinem Konto; 6. „Aus dem Verein hinzufügen“ (angemeldet, dein Verein): aus den Lizenzlisten des Vereins; 7. in einem Testspiel „TEST Kader laden“. Im Global-Modus kommen die Kader aus Excel („Kader importieren“). Ein wiederhergestelltes Spiel bringt seine Kader mit. Ein gespeichertes Team lädt seine Spieler und Bankoffiziellen mit einem Tipp: Prüf die Nummern für dieses Spiel. Die Testspieler von „TEST Kader laden“ verschwinden, wenn du ein Spiel aus dem Spielplan lädst oder einen anderen Teamnamen eintippst; die Spieler, die du selbst hinzugefügt hast, bleiben.",
+      "q_choosePlayers": "Was ist „Spieler wählen“?",
+      "a_choosePlayers": "Es listet alle Spieler, die die App für dieses Team kennt (sein gespeichertes Team und die Spieler einer importierten Einsatzliste). Kreuze an, wer dieses Spiel spielt („Alle“ kreuzt alle an), dann tippe auf „n Spieler übernehmen“: Sie kommen mit ihren Nummern in den Kader. Nummern ergänzt oder änderst du danach im Kader.",
+      "q_numbers": "Kann ich einen Kader ohne Trikotnummern speichern?",
+      "a_numbers": "Ja. Spieler ohne Nummer bleiben gespeichert: Ihre leere # ist markiert, und ein Hinweis sagt, wie viele noch eine brauchen. Trag die Nummern ein, sobald du sie kennst (eine Einsatzliste hat nie welche). Die Auslosung wartet, bis jeder Spieler beider Teams eine Nummer hat."
     },
     "coinToss": {
       "q_record": "Wie zeichne ich den Münzwurf auf?",
@@ -2945,7 +2973,11 @@
       "q_gameCaptain": "Was, wenn der Captain nicht auf dem Feld ist?",
       "a_gameCaptain": "Ist der Teamcaptain nicht unter den sechs, zeigt der Aufstellungsdialog «Spielkapitän» (optional): Wähle den Spieler, der als Captain amtet. Lässt du «Keiner», fragt die App vor Satzbeginn. Während des Satzes fragt sie nur wieder, wenn der Spielkapitän das Feld verlässt. Das folgt «Kapitän auf dem Feld verwalten» in den Optionen (standardmässig an).",
       "q_mistake": "Ich habe die Auslosung falsch erfasst?",
-      "a_mistake": "Vor «Seitenwahl bestätigen» wechselst du einfach nochmals. Danach ist die Seite gesperrt: Ändere Team A oder den ersten Aufschlag unter Spiel › «Korrekturen». Vor dem ersten Ballwechsel von Satz 1 wiederholt ein neues Team A dort die Auslosung (Team A links)."
+      "a_mistake": "Vor «Seitenwahl bestätigen» wechselst du einfach nochmals. Danach ist die Seite gesperrt: Ändere Team A oder den ersten Aufschlag unter Spiel › «Korrekturen». Vor dem ersten Ballwechsel von Satz 1 wiederholt ein neues Team A dort die Auslosung (Team A links).",
+      "q_rosterDialog": "Kann ich bei der Auslosung noch einen Kader ändern?",
+      "a_rosterDialog": "Ja: „Kader anzeigen“ unter jedem Team öffnet ihn. „+ Spieler hinzufügen“, einen Spieler löschen, einen Bankoffiziellen hinzufügen oder löschen.",
+      "q_connectionChecks": "Was ist die „Verbindungsprüfung“ nach der Auslosung?",
+      "a_connectionChecks": "Vor dem ersten Satz prüft die App, ob der Server, die Backups und die verbundenen Tablets antworten. Eine Warnung listet, was nicht antwortet; „Trotzdem fortfahren“ startet das Spiel: Schreiben geht offline, die Änderungen werden später gesendet."
     },
     "scoreboard": {
       "q_startRally": "Wie starte ich den ersten Ballwechsel?",
@@ -3017,7 +3049,11 @@
       "q_finalMail": "Wer erhält das endgültige Matchblatt per E-Mail?",
       "a_finalMail": "Wo der Verband endgültige Matchblätter verschickt, geht das PDF einige Minuten nach der Genehmigung per E-Mail an den Schreiber, die Schiedsrichter (an ihr Konto oder an die für sie in der Spieleinrichtung eingetippte E-Mail) und den Kontakt jedes Teams. Den Kontakt eines Teams trägst du in der Spieleinrichtung ein («E-Mail Teamkontakt (freiwillig)») oder später unter Spiel › «Spielinfo bearbeiten» › «Teamkontakte».",
       "q_remarksSignature": "Muss auch ein Schiedsrichter-Coach unterschreiben?",
-      "a_remarksSignature": "Tippe auf «Unterschrift in den Bemerkungen hinzufügen», gib Rolle und Namen ein und unterschreibe dann. Die Unterschrift wird in den Bemerkungen gedruckt."
+      "a_remarksSignature": "Tippe auf «Unterschrift in den Bemerkungen hinzufügen», gib Rolle und Namen ein und unterschreibe dann. Die Unterschrift wird in den Bemerkungen gedruckt.",
+      "q_technicalRemarks": "Was ist eine technische Bemerkung?",
+      "a_technicalRemarks": "Am Spielende erfasst „Technische Bemerkung hinzufügen“ etwas für die Administration (ein Geräteproblem, eine Korrektur), das nicht auf dem Spielbericht steht: Es bleibt beim Spiel und geht mit dem endgültigen Spielbericht mit, die Unterschriften bleiben. „Bemerkungen bearbeiten“ ändert die Bemerkungen auf dem Bericht.",
+      "q_downloadLogs": "Was ist „Protokolle herunterladen“?",
+      "a_downloadLogs": "Es speichert das Protokoll der App zu diesem Spiel als Datei, für den Support, wenn etwas schiefging."
     },
     "manualAdjustments": {
       "q_editScores": "Wie korrigiere ich ein Satzresultat?",
@@ -3088,9 +3124,13 @@
       "q_serveRotation": "Wo sehe ich, wer aufschlägt, und die Rotation?",
       "a_serveRotation": "Das Kästchen «AUFSCHLAG» in der oberen Ecke auf der Seite des aufschlagenden Teams zeigt die Nummer des Aufschlägers; der Ball liegt neben diesem Spieler auf dem Feld. Das Feld zeigt die Positionen I bis VI jedes Teams. Die App lässt ein Team rotieren, wenn es den Aufschlag zurückgewinnt. Eine falsche Rotation korrigierst du unter Spiel › Korrekturen mit «Aufstellung korrigieren».",
       "q_scoreDisplay": "Was zeigt die Spielstandanzeige?",
-      "a_scoreDisplay": "Die Punkte des Satzes, die gewonnenen Sätze und das aufschlagende Team. Die Seite jedes Teams zeigt seine Timeouts (TO) und Wechsel (AUS) in diesem Satz. Spiel › Sanktionen und Ergebnisse anzeigen listet jeden Satz.",
+      "a_scoreDisplay": "Die Punkte des Satzes, die gewonnenen Sätze und das servierende Team. Die Seite jedes Teams zeigt seine Timeouts und Wechsel in diesem Satz („Timeout“, „Wechsel“): Tippe darauf, um einen zu erfassen. Spiel › Sanktionen und Ergebnisse anzeigen listet jeden Satz. Für mehr Platz klappen „Kopfzeile ausblenden“ (der Pfeil unter der Kopfzeile) und „Werkzeugleiste ausblenden“ sie weg; der Pfeil holt sie zurück.",
       "q_phone": "Kann ich auf einem Handy erfassen?",
-      "a_phone": "Ja. Stelle in den Optionen den «Bildschirmmodus» auf «Auto» oder «Smartphone» und halte das Handy hochkant. Spielstand, Feld, Timeouts, Wechsel und Punkt-Schaltflächen passen auf einen Bildschirm. Auf einem Tablet erfasst du im Querformat: Hältst du es hochkant, bittet es dich, es zu drehen."
+      "a_phone": "Ja. Stelle in den Optionen den «Bildschirmmodus» auf «Auto» oder «Smartphone» und halte das Handy hochkant. Spielstand, Feld, Timeouts, Wechsel und Punkt-Schaltflächen passen auf einen Bildschirm. Auf einem Tablet erfasst du im Querformat: Hältst du es hochkant, bittet es dich, es zu drehen.",
+      "q_matchMenu": "Was ist im Menü „Spiel“?",
+      "a_matchMenu": "„Spiel“ im Schreibbildschirm (auf dem Handy ☰): „Kader anzeigen“, „Sanktionen und Ergebnisse anzeigen“, „Verlauf“ (jeder Ballwechsel und jede Aktion), „Satzvorschau“ (der Satz, wie er gedruckt wird), „Bemerkungen erfassen“, „Spieleinrichtung anzeigen“, „Korrekturen“, „Zurück“, „Optionen“, „Handy koppeln (Tastatur)“ (auf dem Handy in die Textfelder dieses Geräts tippen), „Auf einer Anzeigetafel zeigen“ (ein TV, Tablet oder LED-Board folgt dem Spielstand mit einem Code) und „Spiel abbrechen“ (Forfait, unvollständiges Team oder Unmöglichkeit, mit Bemerkungen).",
+      "q_replay": "Wie erfasse ich einen wiederholten Ballwechsel?",
+      "a_replay": "Während eines Ballwechsels wiederholt „Ballwechsel wiederholen“ (auf dem Handy „Wiederholen“) ihn ohne Punkt. Nach einem Punkt nimmt „Entscheidungsänderung“ › „Ballwechsel wiederholen“ ihn zurück; das Fenster zeigt den Spielstand vor und nach jeder Wahl."
     },
     "subsTimeouts": {
       "q_subLimit": "Wie viele Wechsel hat ein Team?",
@@ -3108,7 +3148,9 @@
       "q_requestWarning": "Warum öffnet sich eine Warnung, wenn ich ein Timeout oder einen Wechsel erfasse?",
       "a_requestWarning": "Die App prüft die Regeln für Anfragen: ein drittes Timeout, ein siebter Wechsel, eine zweite Wechselanfrage desselben Teams in derselben Unterbrechung, ein Spieler, der nicht hineinkommen darf, oder eine Anfrage nach der Verzögerungswarnung des Teams. Die Warnung sagt, warum, und bietet an, was erfasst werden soll, etwa «Als nicht ordnungsgemässen Antrag erfassen» oder eine Verzögerungssanktion. «Trotzdem weiter» erfasst nichts weiter, wenn der Schiedsrichter es erlaubt hat (nicht angeboten bei einem dritten Timeout oder einem siebten Wechsel).",
       "q_gameCaptain": "Der Teamcaptain ist vom Feld gegangen: Wer ist Spielkapitän?",
-      "a_gameCaptain": "Die App fragt «Spielkapitän»: Tippe auf den Spieler auf dem Feld, der als Captain amtet (der letzte Spielkapitän wird zuerst angeboten, mit «Zuletzt» markiert). Bis einer gewählt ist, zeigt die Seite dieses Teams eine Schaltfläche «Spielkapitän». Der Spielkapitän bleibt, bis er das Feld verlässt, der Teamcaptain zurückkommt oder der Satz endet. Dafür braucht es «Kapitän auf dem Feld verwalten» in den Optionen (standardmässig an)."
+      "a_gameCaptain": "Die App fragt «Spielkapitän»: Tippe auf den Spieler auf dem Feld, der als Captain amtet (der letzte Spielkapitän wird zuerst angeboten, mit «Zuletzt» markiert). Bis einer gewählt ist, zeigt die Seite dieses Teams eine Schaltfläche «Spielkapitän». Der Spielkapitän bleibt, bis er das Feld verlässt, der Teamcaptain zurückkommt oder der Satz endet. Dafür braucht es «Kapitän auf dem Feld verwalten» in den Optionen (standardmässig an).",
+      "q_subDialog": "Wie funktioniert das Wechselfenster?",
+      "a_subDialog": "Tippe auf das Feld „Wechsel“ des Teams (auf dem Handy „AUS“). Tippe an, wer reinkommt, dann wer rausgeht: Es erscheinen nur erlaubte Spieler (ein ausgewechselter Stammspieler nur für seinen Ersatz, nie der Libero). Das Paar kommt in die Liste, und das Fenster fragt nach dem nächsten; „Bestätigen“ erfasst alle, „Abbrechen“ keinen. „Erfasst“ listet die Wechsel dieses Satzes; bei 6 von 6 bleibt nur „Verletzung / ausserordentlich“. Während eines Ballwechsels zeigt das Feld nur diese Liste."
     },
     "sanctions": {
       "q_teamSanctions": "Wie erfasse ich einen nicht ordnungsgemässen Antrag oder eine Verzögerung?",
@@ -3262,7 +3304,9 @@
       "q_refused": "Es steht «Nicht synchronisiert» mit einem Grund?",
       "a_refused": "Der Server hat dieses Spiel abgelehnt, zum Beispiel: Das Spiel wird schon von einem anderen Konto erfasst, dein Konto wartet auf die Freigabe, oder es ist kein Heimspiel deines Vereins. Das Spiel bleibt auf diesem Gerät sicher. Der Hinweis sagt dir, was zu tun ist.",
       "q_testMatch": "Geht ein Testspiel online?",
-      "a_testMatch": "Ein Testspiel wird nie in der Cloud gespeichert: kein Cloud-Backup, kein Online-Livescore. Sein Spielstand erreicht Schiedsrichter- und Bank-Tablets trotzdem über das Internet: Tippe auf dem Tablet auf «Zu Testspielen wechseln»."
+      "a_testMatch": "Ein Testspiel wird nie in der Cloud gespeichert: kein Cloud-Backup, kein Online-Livescore. Sein Spielstand erreicht Schiedsrichter- und Bank-Tablets trotzdem über das Internet: Tippe auf dem Tablet auf «Zu Testspielen wechseln».",
+      "q_onlineSwitch": "Warum ist der Online-Schalter grau?",
+      "a_onlineSwitch": "„Online“ ist an, aber nichts antwortet: kein Netz, oder der Server ist nicht erreichbar. Die Änderungen warten auf diesem Gerät (daneben steht „Offline (n ausstehend)“) und werden gesendet, sobald die Verbindung wieder da ist; der Schalter wird von selbst wieder grün. Ausgeschaltet ist es der Offline-Modus: Die App versucht es dann gar nicht."
     },
     "installUpdates": {
       "q_appOrBrowser": "Browser oder App?",

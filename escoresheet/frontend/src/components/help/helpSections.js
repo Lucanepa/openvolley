@@ -48,23 +48,29 @@ export const HELP_SECTIONS = [
     q('home', 'restoreMatch', 'home-restore-button'),
     q('home', 'settings'),
     q('home', 'tool'),
-    q('home', 'dashboards'),
-    q('home', 'gamePin')
+    q('home', 'login'),
+    q('home', 'support')
   ]),
   section('setup', [
     q('matchSetup', 'loadSchedule'),
+    q('matchSetup', 'back'),
     q('matchSetup', 'matchInfo', 'setup-match-info-card'),
     q('matchSetup', 'officials'),
     q('matchSetup', 'teamColors', 'setup-home-team-card'),
     q('matchSetup', 'teamContact'),
     q('matchSetup', 'pins'),
+    q('matchSetup', 'scorerLicence'),
+    q('matchSetup', 'showRosters'),
     q('matchSetup', 'backups'),
     q('matchSetup', 'proceed', 'setup-proceed-cointoss'),
     q('matchSetup', 'afterCoinToss')
   ]),
   // The rosters of Match setup (its "Edit roster"): own section since 3.2.5, setup had 18 questions
   section('rosters', [
+    q('matchSetup', 'rosterWays'),
     q('matchSetup', 'addPlayers', 'setup-add-player'),
+    q('matchSetup', 'numbers'),
+    q('matchSetup', 'choosePlayers'),
     q('matchSetup', 'importPdf', 'setup-pdf-import'),
     q('matchSetup', 'rosterUpload'),
     q('matchSetup', 'sentRoster'),
@@ -79,28 +85,32 @@ export const HELP_SECTIONS = [
     q('coinToss', 'sides', 'cointoss-side-selector'),
     q('coinToss', 'serve', 'cointoss-serve-selector'),
     q('coinToss', 'signatures'),
+    q('coinToss', 'rosterDialog'),
     q('coinToss', 'start', 'cointoss-confirm-button'),
+    q('coinToss', 'connectionChecks'),
     q('coinToss', 'lineups'),
     q('coinToss', 'gameCaptain'),
-    q('coinToss', 'mistake')
+    q('coinToss', 'mistake'),
+    q('scoreboard', 'coveredLineup'),
+    q('scoreboard', 'missingSignature')
   ]),
   section('scoring', [
     q('scoreboard', 'lineup', 'scoreboard-court-left'),
-    q('scoreboard', 'coveredLineup'),
     q('scoreboard', 'startRally', 'scoreboard-start-rally'),
-    q('scoreboard', 'missingSignature'),
     q('scoreboard', 'awardPoint', 'scoreboard-point-left'),
     q('scoring', 'doubleTap'),
     q('scoring', 'serveRotation'),
     q('scoreboard', 'undo', 'scoreboard-undo'),
     q('scoreboard', 'changeDecision', 'scoreboard-undo'),
+    q('scoring', 'replay'),
     q('scoring', 'scoreDisplay'),
-    q('scoreboard', 'shortcuts'),
-    q('scoring', 'phone')
+    q('scoring', 'matchMenu'),
+    q('home', 'tapHints')
   ]),
   section('subs-timeouts', [
     q('scoreboard', 'timeout', 'scoreboard-timeout-left'),
     q('scoreboard', 'substitution', 'scoreboard-court-left'),
+    q('subsTimeouts', 'subDialog'),
     q('subsTimeouts', 'subLimit'),
     q('subsTimeouts', 'injury'),
     q('scoreboard', 'libero', 'scoreboard-bench-left'),
@@ -128,7 +138,8 @@ export const HELP_SECTIONS = [
     q('scoreboard', 'set5', 'scoreboard-set-display'),
     q('setEnd', 'courtSwitch'),
     q('setEnd', 'syncAtSetEnd'),
-    q('setEnd', 'matchEnd')
+    q('setEnd', 'matchEnd'),
+    q('matchEnd', 'reopenSet', 'matchend-reopen-set')
   ]),
   section('match-end', [
     q('matchEnd', 'reviewResults', 'matchend-results-table'),
@@ -138,11 +149,11 @@ export const HELP_SECTIONS = [
     q('matchEnd', 'approve'),
     q('matchEnd', 'pdfFailed'),
     q('matchEnd', 'exportPdf', 'matchend-export-pdf'),
-    q('matchEnd', 'downloadJson', 'matchend-export-json'),
     q('matchEnd', 'closeMatch'),
-    q('matchEnd', 'reopenSet', 'matchend-reopen-set'),
     q('matchEnd', 'finalMail'),
-    q('matchEnd', 'remarksSignature')
+    q('matchEnd', 'remarksSignature'),
+    q('matchEnd', 'technicalRemarks'),
+    q('matchEnd', 'downloadLogs')
   ]),
   section('corrections', [
     q('manualAdjustments', 'whereCorrections'),
@@ -196,7 +207,8 @@ export const HELP_SECTIONS = [
     q('bench', 'invalidPin'),
     q('bench', 'outage'),
     q('bench', 'scorerAway'),
-    q('bench', 'roster')
+    q('bench', 'roster'),
+    q('home', 'dashboards')
   ]),
   section('livescore', [
     q('livescore', 'open'),
@@ -204,7 +216,9 @@ export const HELP_SECTIONS = [
     q('livescore', 'notListed'),
     q('livescore', 'bigScreen'),
     q('livescore', 'stale'),
-    q('livescore', 'ledBoard')
+    q('livescore', 'ledBoard'),
+    q('home', 'scoreboardTool'),
+    q('home', 'liveScreen')
   ]),
   section('handover', [
     q('handover', 'continueOther'),
@@ -214,11 +228,15 @@ export const HELP_SECTIONS = [
     q('handover', 'backups'),
     q('handover', 'restoreFile'),
     q('handover', 'restoreRefused'),
-    q('handover', 'lostPins')
+    q('handover', 'lostPins'),
+    q('home', 'gamePin'),
+    q('matchSetup', 'gamePinNotice'),
+    q('matchEnd', 'downloadJson', 'matchend-export-json')
   ]),
   section('sync-offline', [
     q('syncOffline', 'offlineScoring'),
     q('syncOffline', 'switch'),
+    q('syncOffline', 'onlineSwitch'),
     q('syncOffline', 'status'),
     q('syncOffline', 'unsent'),
     q('syncOffline', 'signIn'),
@@ -235,7 +253,11 @@ export const HELP_SECTIONS = [
     q('installUpdates', 'android'),
     q('installUpdates', 'desktopUpdates'),
     q('installUpdates', 'webUpdate'),
-    q('installUpdates', 'updateNeeded')
+    q('installUpdates', 'updateNeeded'),
+    q('home', 'effects'),
+    q('home', 'maintenance'),
+    q('scoring', 'phone'),
+    q('scoreboard', 'shortcuts')
   ]),
   // The Global tool (utils/toolMode.js): shown only while the device uses it
   section('global', [
@@ -333,11 +355,11 @@ export const SECTION_IDS = HELP_SECTIONS.map(s => s.id)
  * their own screen (helpEvents.js openHelp).
  */
 export const HELP_SCREENS = {
-  home: { app: 'scorer', nameKey: 'contextHelp.pageNames.home', sections: ['home', 'global', 'handover', 'sync-offline', 'install-updates'] },
-  matchSetup: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchSetup', sections: ['setup', 'rosters', 'global', 'connections'] },
+  home: { app: 'scorer', nameKey: 'contextHelp.pageNames.home', sections: ['home', 'global', 'handover', 'sync-offline', 'install-updates', 'livescore', 'bench'] },
+  matchSetup: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchSetup', sections: ['setup', 'rosters', 'global', 'connections', 'handover'] },
   coinToss: { app: 'scorer', nameKey: 'contextHelp.pageNames.coinToss', sections: ['coin-toss'] },
-  scoreboard: { app: 'scorer', nameKey: 'contextHelp.pageNames.scoreboard', sections: ['scoring', 'subs-timeouts', 'sanctions', 'set-end', 'corrections', 'sync-offline'] },
-  matchEnd: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchEnd', sections: ['match-end', 'corrections'] },
+  scoreboard: { app: 'scorer', nameKey: 'contextHelp.pageNames.scoreboard', sections: ['scoring', 'subs-timeouts', 'sanctions', 'set-end', 'corrections', 'sync-offline', 'coin-toss', 'install-updates', 'livescore'] },
+  matchEnd: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchEnd', sections: ['match-end', 'corrections', 'set-end', 'handover'] },
   // the Corrections page at the match end (it covers the header: its own help button)
   manualAdjustments: { app: 'scorer', nameKey: 'contextHelp.pageNames.manualAdjustments', sections: ['corrections', 'match-end'] },
   // Match › Corrections during the match (Scoreboard)

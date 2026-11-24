@@ -3141,7 +3141,7 @@
       "a_restoreMatch": "Tocca «Ripristina partita». Scegli «Ripristina da backup cloud» (numero partita e PIN partita, poi «Cerca backup cloud»), un backup in «Salvato su questo dispositivo o su un’unità» oppure «Ripristina da file locale» («Seleziona file di backup»). Controlla l'«Anteprima ripristino», poi tocca «Conferma ripristino». Nello strumento Globale, «Ripristina dal backup online» chiede il codice di backup, poi il PIN arbitro.",
       "tip_restoreMatch": "Tocca qui per ripristinare una partita da un backup cloud o locale.",
       "q_settings": "Come cambio la lingua o le impostazioni?",
-      "a_settings": "La lingua è nel menu (☰) dell'intestazione. Le altre impostazioni sono nelle «Opzioni»: sulla home, nella configurazione della partita oppure nella schermata del punteggio in Partita › Opzioni. Sulla home, «Opzioni» › «Strumento» passa da Svizzera a Globale e viceversa.",
+      "a_settings": "La lingua è nel menu (☰) dell'intestazione. Le altre impostazioni sono in «Opzioni»: nella pagina iniziale, nell'impostazione partita o nella schermata di segnatura sotto Partita › Opzioni. Lì trovi «Strumento» (Swiss o Global, nella pagina iniziale), «Tema» («Chiaro», «Scuro» per una palestra buia, «E-ink» in bianco e nero per la luce forte), «Mostra il dito sui pulsanti» (il piccolo dito sui pulsanti che puoi toccare adesso) e «Durata pausa set 2-3» (la pausa tra il set 2 e il 3; se viene prolungata a 10 minuti, attiva invece «Intervallo di 10 minuti dopo il set 2» nelle info della partita).",
       "q_backgroundHome": "Perché l'app è tornata alla home?",
       "a_backgroundHome": "Dopo 15 minuti o più in secondo piano (un'altra app, lo schermo spento), l'app mostra la home. Niente viene chiuso o eliminato: tocca «Continua partita». Il tempo con lo schermo acceso, come una lunga pausa tra i set, non conta.",
       "q_matchStates": "Cosa significano le indicazioni su una partita?",
@@ -3153,7 +3153,21 @@
       "q_dashboards": "Questo telefono o tablet può fare da tablet dell'arbitro o della panchina?",
       "a_dashboards": "Sì. Su un telefono o un tablet, il menu (☰) della home ha «Dashboard arbitro» e «Dashboard panchina». Aprono la schermata dell'arbitro o della panchina su questo dispositivo; «Torna al segnapunti» nel suo menu ti riporta indietro. Non su un computer e non durante una partita.",
       "q_gamePin": "Cos'è il PIN partita sulla home?",
-      "a_gamePin": "Per una partita ufficiale, la home mostra il suo «PIN partita» sotto «Ripristina partita». Conservalo: ti serve per eliminare la partita, per ripristinarla e per continuarla su un altro dispositivo."
+      "a_gamePin": "Per una partita ufficiale, la home mostra il suo «PIN partita» sotto «Ripristina partita». Conservalo: ti serve per eliminare la partita, per ripristinarla e per continuarla su un altro dispositivo.",
+      "q_login": "Cosa mi dà l'accesso?",
+      "a_login": "Tocca «Accesso» nella pagina iniziale. Con un account l'app carica le partite delle leghe di Swiss Volley («Carica partita dal calendario»), le tue squadre salvate, le liste licenze della tua società («Aggiungi dalla società») e l'elenco degli arbitri, e le tue partite ufficiali vengono salvate nel cloud mentre segni. Senza account funzionano anche le partite test, easy e nuove; restano su questo dispositivo.",
+      "q_support": "Dove trovo aiuto o segnalo un problema?",
+      "a_support": "Il pulsante «?» apre l'aiuto della schermata in cui sei, con un breve video e «Mostrami». «Supporto e feedback» nella pagina iniziale ha le pagine d'aiuto e un modulo per una domanda o un problema: lascia attivo «Includi la diagnostica», aggiunge cosa è stato fatto nell'app nelle ultime due ore e i suoi errori (mai password, PIN o testo digitato), così vediamo cosa è successo.",
+      "q_scoreboardTool": "Cos'è il «Tabellone» nella pagina iniziale?",
+      "a_scoreboardTool": "Un tabellone semplice per qualsiasi partita, senza referto: «Punto per …» aggiunge un punto, «Un punto in meno a …» ne toglie uno, più «Cambia campo», «Set successivo» e «Nuova partita». Niente viene salvato come partita. Per mostrare una partita segnata su una TV, usa Partita › «Mostra su un tabellone» nella schermata di segnatura.",
+      "q_liveScreen": "Cos'è lo schermo live nelle opzioni?",
+      "a_liveScreen": "«Avvia uno schermo live» mostra il punteggio di ogni campo del tuo evento su TV o un proiettore, per qualsiasi partita. Avvialo su un dispositivo di segnatura e inserisci il suo «Codice schermo live» sugli altri («Partecipa»). Va online solo il punteggio (nomi delle squadre, punti, set). Su una smart TV, apri il browser all'indirizzo mostrato.",
+      "q_effects": "L'app è lenta sul mio tablet: cosa posso fare?",
+      "a_effects": "Opzioni › «Effetti e velocità»: «Testa questo dispositivo» misura quanto è veloce (circa un secondo, niente lascia il dispositivo) e consiglia impostazioni più leggere. Puoi anche disattivare «Sfocatura dietro le finestre» e «Animazioni», «Secondi sull'orologio» e «PDF nitido» per un'anteprima del referto più veloce. La pagina iniziale propone il test una volta; ripetilo quando vuoi dalle opzioni della pagina iniziale.",
+      "q_maintenance": "A cosa servono i pulsanti alla fine delle opzioni?",
+      "a_maintenance": "«Scarica backup ora» salva un file di backup delle partite di questo dispositivo. «Mostra il registro» elenca cosa ha fatto l'app, ed «Esporta la diagnostica (.jsonl)» lo salva come file per il supporto. «Verifica degli aggiornamenti» cerca una nuova versione. «Cancella cache» elimina i file in cache e ricarica l'app; le tue impostazioni restano. «Cancella tutto (include le impostazioni)» azzera anche le impostazioni: solo se te lo chiede il supporto.",
+      "q_tapHints": "Cos'è il piccolo dito sui pulsanti?",
+      "a_tapHints": "Indica i pulsanti che puoi toccare adesso (schermata di segnatura, impostazione partita, sorteggio). Se ti disturba, disattiva «Mostra il dito sui pulsanti» nelle opzioni."
     },
     "matchSetup": {
       "q_matchInfo": "Come compilo le informazioni della partita?",
@@ -3163,7 +3177,7 @@
       "a_teamColors": "I nomi e i nomi brevi delle squadre sono nelle info partita. Sulla scheda di ogni squadra tocca la maglia accanto a «Seleziona colore» per sceglierne il colore. L'app ti avvisa se i due colori sono troppo simili.",
       "tip_teamColors": "Tocca la maglia per scegliere il colore di questa squadra.",
       "q_addPlayers": "Come aggiungo giocatori alla rosa della squadra?",
-      "a_addPlayers": "Tocca «Modifica roster» sulla scheda della squadra. Nella riga «Aggiungi giocatore» inserisci numero (1-99), cognome, nome e data di nascita, poi tocca «Aggiungi». Una squadra ha bisogno di almeno 6 giocatori senza contare i libero, e al massimo 14.",
+      "a_addPlayers": "Tocca «Modifica roster» sulla scheda della squadra. Nella riga «Aggiungi giocatore» inserisci numero (1-99), cognome, nome e numero di licenza («Licenza/DDN»: per chi non ha licenza, la data di nascita), poi tocca «Aggiungi». Il numero può aspettare. Una squadra ha bisogno di almeno 6 giocatori senza i liberi e al massimo 14.",
       "tip_addPlayers": "Inserisci qui un giocatore e tocca «Aggiungi». Una squadra ha bisogno di almeno 6 giocatori senza i libero.",
       "q_importPdf": "Come importo una rosa da PDF?",
       "a_importPdf": "In «Modifica roster», lascia selezionato «Locale» e tocca «Carica PDF». Scegli il PDF del roster della squadra o l'Einsatzliste, poi tocca «Importa PDF». Sostituisce i giocatori e gli ufficiali di panchina. Con più di 14 giocatori, spunta chi gioca. Poi controlla le date di nascita, inserisci i numeri di maglia mancanti e imposta il capitano e i liberi. Una data di nascita al 1° gennaio è spesso un segnaposto (01.01.1900 quando la data non è nota) o un errore d'importazione: il roster elenca queste persone sopra i giocatori. Correggi le date che conosci. Il sorteggio non te le chiede.",
@@ -3178,7 +3192,7 @@
       "a_benchOfficials": "In «Modifica roster», tocca «+ Aggiungi ufficiale». Inserisci l'allenatore, gli allenatori in seconda, il fisioterapista e il medico. L'allenatore è obbligatorio, e una squadra ha al massimo 5 ufficiali di panchina.",
       "tip_benchOfficials": "Inserisci qui l'allenatore e gli altri ufficiali di panchina.",
       "q_proceed": "Come procedo al sorteggio?",
-      "a_proceed": "Quando tutte le schede sono complete, tocca «Sorteggio» in basso. Se il pulsante è grigio, l'avviso accanto mostra cosa manca.",
+      "a_proceed": "Quando tutte le schede sono complete, tocca «Sorteggio» in basso. Se è grigio, il «!» giallo accanto mostra cosa manca, per esempio giocatori senza numero di maglia: toccalo («Clicca per vedere cosa manca») per l'elenco.",
       "tip_proceed": "Tocca qui per andare al sorteggio. Prima tutti i campi obbligatori devono essere completi.",
       "q_loadSchedule": "Posso caricare la partita dal calendario?",
       "a_loadSchedule": "Sì. Sulla scheda «Info partita», tocca «Carica partita dal calendario». Scegli genere e campionato, poi la partita. L'app inserisce numero partita, squadre, data, ora, palestra e arbitri. Serve una connessione internet. Poi imposta i colori e i nomi brevi delle squadre.",
@@ -3199,7 +3213,21 @@
       "q_clubPlayers": "Cosa significano gli scudi verdi e grigi?",
       "a_clubPlayers": "Per una squadra della tua società, ogni riga del roster e della panchina mostra uno scudo (in orizzontale). Verde: la persona è negli elenchi di licenze della società; un punto significa che la società conosce un nome o una data di nascita che manca nella riga: tocca per completarla. Grigio: inserito a mano: tocca per collegare la riga a qualcuno degli elenchi della società. «Aggiungi dalla società» aggiunge giocatori dagli elenchi.",
       "q_rosterSignatures": "L'allenatore e il capitano possono firmare nella configurazione della partita?",
-      "a_rosterSignatures": "Sì, se vuoi: «Modifica roster» › «Firme». Se i giocatori o la panchina di quella squadra cambiano dopo la firma, le sue firme vengono tolte e si firma di nuovo."
+      "a_rosterSignatures": "Sì, se vuoi: «Modifica roster» › «Firme». Se i giocatori o la panchina di quella squadra cambiano dopo la firma, le sue firme vengono tolte e si firma di nuovo.",
+      "q_back": "Come torno alla pagina iniziale dall'impostazione partita?",
+      "a_back": "Tocca «← Indietro» in alto, accanto a «eScoresheet» e «Opzioni». La partita resta nella pagina iniziale: «Continua partita» la riapre.",
+      "q_gamePinNotice": "Cos'è la finestra con il PIN della partita dopo «Crea partita»?",
+      "a_gamePinNotice": "Per una nuova partita ufficiale l'app mostra il suo PIN di partita. Annotalo: ti serve per ripristinare la partita, continuarla su un altro dispositivo e riaprirla. «Invia alla mia email» lo invia all'indirizzo confermato del tuo account; per un altro indirizzo, scrivilo e tocca «Apri nell'app email» (allora non passa niente dal server).",
+      "q_scorerLicence": "Perché non posso creare la partita?",
+      "a_scorerLicence": "Manca il numero di licenza del segnapunti (per chi non ha licenza, la data di nascita). Finché manca, «Crea partita» resta grigio e l'avviso accanto lo dice, con tutto ciò che manca ancora («Clicca per vedere cosa manca»).",
+      "q_showRosters": "Dove vedo le due rose insieme?",
+      "a_showRosters": "«Mostra rose» sotto le schede delle squadre elenca le due rose con numeri, licenze, liberi, capitano e ufficiali di panchina; «Nascondi rose» le chiude. Durante la partita: Partita › «Mostra rose» (sul telefono «Rose»).",
+      "q_rosterWays": "Come inserisco la rosa di una squadra?",
+      "a_rosterWays": "In «Modifica roster» sulla scheda della squadra: 1. digita i giocatori in «Aggiungi giocatore»; 2. «Carica PDF» (Locale): il PDF della rosa o l'Einsatzliste; 3. «Remoto»: l'allenatore carica il PDF su roster.openvolley.app con il tuo PIN di caricamento (o la squadra lo invia dalla pagina manager), e tu tocchi «Accetta»; 4. «Scegli i giocatori»: spunta chi gioca tra i giocatori che l'app conosce per questa squadra; 5. «Carica squadra salvata» (con accesso): una squadra del tuo account; 6. «Aggiungi dalla società» (con accesso, la tua società): dalle liste licenze della società; 7. in una partita test, «Carica rosa TEST». In modalità Global le rose arrivano da Excel («Importa rose»). Una partita ripristinata porta con sé le sue rose. Una squadra salvata carica i suoi giocatori e ufficiali di panchina con un tocco: controlla i numeri per questa partita. I giocatori test di «Carica rosa TEST» spariscono quando carichi una partita dal calendario o scrivi un altro nome di squadra; quelli aggiunti da te restano.",
+      "q_choosePlayers": "Cos'è «Scegli i giocatori»?",
+      "a_choosePlayers": "Elenca tutti i giocatori che l'app conosce per questa squadra (la squadra salvata e i giocatori di un'Einsatzliste importata). Spunta chi gioca questa partita («Tutti» li spunta tutti), poi tocca «Usa n giocatori»: entrano nella rosa con i loro numeri. Aggiungi o cambia i numeri dopo nella rosa.",
+      "q_numbers": "Posso salvare una rosa senza numeri di maglia?",
+      "a_numbers": "Sì. I giocatori senza numero restano salvati: il loro # vuoto è evidenziato e una nota dice quanti ne mancano ancora. Aggiungi i numeri quando li sai (un'Einsatzliste non ne ha mai). Il sorteggio aspetta che ogni giocatore delle due squadre abbia un numero."
     },
     "coinToss": {
       "q_record": "Come registro il sorteggio?",
@@ -3221,7 +3249,11 @@
       "q_gameCaptain": "E se il capitano non è in campo?",
       "a_gameCaptain": "Quando il capitano della squadra non è tra i sei, la finestra della formazione mostra «Capitano in gioco» (facoltativo): scegli il giocatore che fa da capitano. Se lasci «Nessuno», l'app chiede prima dell'inizio del set. Durante il set chiede di nuovo solo quando il capitano in gioco lascia il campo. Questo segue «Gestisci capitano in campo» nelle opzioni (attivo di base).",
       "q_mistake": "Ho registrato male il sorteggio?",
-      "a_mistake": "Prima di «Conferma il sorteggio», basta invertire di nuovo. Dopo, la pagina è bloccata: cambia la squadra A o il primo servizio in Partita › «Correzioni». Prima del primo scambio del set 1, una nuova squadra A lì rifà il sorteggio (squadra A a sinistra)."
+      "a_mistake": "Prima di «Conferma il sorteggio», basta invertire di nuovo. Dopo, la pagina è bloccata: cambia la squadra A o il primo servizio in Partita › «Correzioni». Prima del primo scambio del set 1, una nuova squadra A lì rifà il sorteggio (squadra A a sinistra).",
+      "q_rosterDialog": "Posso ancora cambiare una rosa al sorteggio?",
+      "a_rosterDialog": "Sì: «Mostra rosa» sotto ogni squadra la apre. «+ Aggiungi giocatore», eliminare un giocatore, aggiungere o eliminare un ufficiale di panchina.",
+      "q_connectionChecks": "Cos'è la «Verifica delle connessioni» dopo il sorteggio?",
+      "a_connectionChecks": "Prima del primo set l'app controlla che il server, i backup e i tablet collegati rispondano. Un avviso elenca cosa non risponde; «Procedi comunque» avvia la partita: la segnatura funziona offline e le modifiche partono dopo."
     },
     "scoreboard": {
       "q_startRally": "Come avvio il primo scambio?",
@@ -3293,7 +3325,11 @@
       "q_finalMail": "Chi riceve il referto finale via e-mail?",
       "a_finalMail": "Dove la lega invia i referti finali, il PDF viene spedito qualche minuto dopo l'approvazione al segnapunti, agli arbitri (al loro account, o all'e-mail inserita per loro nella configurazione della partita) e al contatto di ogni squadra. Inserisci il contatto di una squadra nella configurazione della partita («E-mail del contatto della squadra (facoltativa)») o più tardi in Partita › «Modifica info partita» › «Contatti delle squadre».",
       "q_remarksSignature": "Deve firmare anche un osservatore arbitrale?",
-      "a_remarksSignature": "Tocca «Aggiungi una firma alle osservazioni», scrivi il ruolo e il nome, poi firma. La firma viene stampata nelle osservazioni."
+      "a_remarksSignature": "Tocca «Aggiungi una firma alle osservazioni», scrivi il ruolo e il nome, poi firma. La firma viene stampata nelle osservazioni.",
+      "q_technicalRemarks": "Cos'è un'osservazione tecnica?",
+      "a_technicalRemarks": "A fine partita, «Aggiungi osservazione tecnica» registra qualcosa per l'amministrazione (un problema del dispositivo, una correzione) che non è stampato sul referto: resta con la partita e parte con il referto finale, le firme restano. «Modifica osservazioni» cambia le osservazioni stampate sul referto.",
+      "q_downloadLogs": "Cos'è «Scarica logs»?",
+      "a_downloadLogs": "Salva il registro dell'app per questa partita come file, per il supporto quando qualcosa è andato storto."
     },
     "manualAdjustments": {
       "q_editScores": "Come correggo il punteggio di un set?",
@@ -3364,9 +3400,13 @@
       "q_serveRotation": "Dove vedo chi serve e la rotazione?",
       "a_serveRotation": "La casella «SERVIZIO» nell'angolo in alto dal lato della squadra al servizio mostra il numero di chi serve; il pallone è accanto a quel giocatore in campo. Il campo mostra le posizioni da I a VI di ogni squadra. L'app fa ruotare una squadra quando riconquista il servizio. Una rotazione sbagliata si corregge in Partita › Correzioni con «Correggi la formazione».",
       "q_scoreDisplay": "Cosa mostra il display del punteggio?",
-      "a_scoreDisplay": "I punti del set, i set vinti e la squadra al servizio. Il lato di ogni squadra mostra i suoi timeout (TO) e le sostituzioni (SOS) in questo set. Partita › Mostra sanzioni e risultati elenca ogni set.",
+      "a_scoreDisplay": "I punti del set, i set vinti e la squadra al servizio. Il lato di ogni squadra mostra i suoi timeout e le sostituzioni in questo set («Timeout», «Sostituzione»): toccali per registrarne uno. Partita › Mostra sanzioni e risultati elenca ogni set. Per più spazio, «Nascondi intestazione» (la freccia sotto l'intestazione) e «Nascondi barra degli strumenti» le ripiegano; la freccia le fa tornare.",
       "q_phone": "Posso refertare su un telefono?",
-      "a_phone": "Sì. Nelle opzioni imposta la «Modalita schermo» su «Auto» o «Phone», e tieni il telefono in verticale. Punteggio, campo, timeout, sostituzioni e pulsanti del punto stanno in un'unica schermata. Su un tablet, il punteggio si tiene in orizzontale: se lo tieni in verticale, ti chiede di girarlo."
+      "a_phone": "Sì. Nelle opzioni imposta la «Modalita schermo» su «Auto» o «Phone», e tieni il telefono in verticale. Punteggio, campo, timeout, sostituzioni e pulsanti del punto stanno in un'unica schermata. Su un tablet, il punteggio si tiene in orizzontale: se lo tieni in verticale, ti chiede di girarlo.",
+      "q_matchMenu": "Cosa c'è nel menu Partita?",
+      "a_matchMenu": "«Partita» nella schermata di segnatura (sul telefono ☰): «Mostra rose», «Mostra sanzioni e risultati», «Cronologia» (ogni scambio e azione), «Anteprima del set» (il set come si stampa), «Apri la registrazione delle osservazioni», «Mostra impostazione partita», «Correzioni», «Tornare indietro», «Opzioni», «Collega un telefono (tastiera)» (scrivere sul telefono nei campi di questo dispositivo), «Mostra su un tabellone» (una TV, un tablet o un tabellone LED segue il punteggio con un codice) e «Interrompi partita» (forfait, squadra incompleta o impossibilità, con osservazioni).",
+      "q_replay": "Come registro uno scambio ripetuto?",
+      "a_replay": "Durante uno scambio, «Ripeti scambio» (sul telefono «Ripeti») lo ripete senza punto. Dopo un punto, «Cambio decisione» › «Ripeti lo scambio» lo annulla; la finestra mostra il punteggio prima e dopo ogni scelta."
     },
     "subsTimeouts": {
       "q_subLimit": "Quante sostituzioni ha una squadra?",
@@ -3384,7 +3424,9 @@
       "q_requestWarning": "Perché si apre un avviso quando registro un timeout o una sostituzione?",
       "a_requestWarning": "L'app controlla le regole delle richieste: un terzo timeout, una settima sostituzione, una seconda richiesta di sostituzione della stessa squadra nella stessa interruzione, un giocatore che non può entrare, o una richiesta dopo l'avvertimento per ritardo della squadra. L'avviso dice il motivo e propone cosa registrare, come «Registrare come richiesta impropria» o una sanzione per ritardo. «Continuare comunque» non registra nient'altro quando l'arbitro l'ha permesso (non proposto per un terzo timeout o una settima sostituzione).",
       "q_gameCaptain": "Il capitano della squadra è uscito dal campo: chi è il capitano in gioco?",
-      "a_gameCaptain": "L'app chiede «Capitano in gioco»: tocca il giocatore in campo che fa da capitano (l'ultimo capitano in gioco è proposto per primo, segnato «Ultimo»). Finché non ne è scelto uno, dal lato di quella squadra c'è un pulsante «Capitano in gioco». Il capitano in gioco resta finché non lascia il campo, il capitano della squadra torna o il set finisce. Serve «Gestisci capitano in campo» nelle opzioni (attivo di base)."
+      "a_gameCaptain": "L'app chiede «Capitano in gioco»: tocca il giocatore in campo che fa da capitano (l'ultimo capitano in gioco è proposto per primo, segnato «Ultimo»). Finché non ne è scelto uno, dal lato di quella squadra c'è un pulsante «Capitano in gioco». Il capitano in gioco resta finché non lascia il campo, il capitano della squadra torna o il set finisce. Serve «Gestisci capitano in campo» nelle opzioni (attivo di base).",
+      "q_subDialog": "Come funziona la finestra delle sostituzioni?",
+      "a_subDialog": "Tocca la casella «Sostituzione» della squadra (sul telefono «SOS»). Tocca chi entra, poi chi esce: compaiono solo i giocatori ammessi (un titolare sostituito solo per il suo sostituto, mai il libero). La coppia va nell'elenco e la finestra chiede la prossima; «Conferma» le registra tutte, «Annulla» nessuna. «Registrate» elenca le sostituzioni di questo set; a 6 su 6 resta solo «Infortunio / eccezionale». Durante uno scambio la casella mostra solo quell'elenco."
     },
     "sanctions": {
       "q_teamSanctions": "Come registro una richiesta impropria o un ritardo?",
@@ -3538,7 +3580,9 @@
       "q_refused": "C'è scritto «Non sincronizzata» con un motivo?",
       "a_refused": "Il server ha rifiutato questa partita, per esempio: la partita è già refertata da un altro account, il tuo account aspetta l'approvazione, o non è una partita in casa del tuo club. La partita resta al sicuro su questo dispositivo. L'avviso ti dice cosa fare.",
       "q_testMatch": "Una partita test va online?",
-      "a_testMatch": "Una partita test non viene mai salvata nel cloud: niente backup nel cloud, niente livescore online. Il suo punteggio arriva comunque ai tablet dell'arbitro e delle panchine via internet: sul tablet, tocca «Passa alle partite di prova»."
+      "a_testMatch": "Una partita test non viene mai salvata nel cloud: niente backup nel cloud, niente livescore online. Il suo punteggio arriva comunque ai tablet dell'arbitro e delle panchine via internet: sul tablet, tocca «Passa alle partite di prova».",
+      "q_onlineSwitch": "Perché l'interruttore Online è grigio?",
+      "a_onlineSwitch": "«Online» è attivo, ma niente risponde: niente rete, o il server non è raggiungibile. Le modifiche aspettano su questo dispositivo (accanto c'è «Offline (n in attesa)») e partono appena torna la connessione; l'interruttore ridiventa verde da solo. Disattivato è la modalità offline: l'app non ci prova nemmeno."
     },
     "installUpdates": {
       "q_appOrBrowser": "Browser o app?",
